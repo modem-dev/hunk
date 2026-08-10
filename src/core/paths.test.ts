@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  resolveBundledHunkReviewSkillPath,
+  BUNDLED_SKILL_NAMES,
+  resolveBundledSkillName,
+  resolveBundledSkillPath,
   resolveCanonicalPath,
   resolveGlobalConfigPath,
   resolveHunkStatePath,
@@ -41,13 +43,41 @@ describe("paths", () => {
     );
   });
 
-  test("locates the bundled Hunk review skill from source", () => {
-    const resolvedPath = resolveBundledHunkReviewSkillPath([import.meta.dir]);
+  test("locates the bundled Hunk review skill from source by default", () => {
+    const resolvedPath = resolveBundledSkillPath(undefined, [import.meta.dir]);
 
     expect(resolvedPath).toEndWith(join("skills", "hunk-review", "SKILL.md"));
   });
 
-  test("locates the bundled Hunk review skill through a nested hunkdiff package", () => {
+  test("locates every bundled skill from source by name", () => {
+    for (const skillName of BUNDLED_SKILL_NAMES) {
+      expect(resolveBundledSkillPath(skillName, [import.meta.dir])).toEndWith(
+        join("skills", skillName, "SKILL.md"),
+      );
+    }
+  });
+
+  test("resolves bundled skill names and their short aliases", () => {
+    expect(resolveBundledSkillName("hunk-extensions")).toBe("hunk-extensions");
+    expect(resolveBundledSkillName("extensions")).toBe("hunk-extensions");
+    expect(resolveBundledSkillName(" Review ")).toBe("hunk-review");
+    expect(resolveBundledSkillName("launch-video")).toBeUndefined();
+    expect(resolveBundledSkillName("")).toBeUndefined();
+  });
+
+  test("names the missing skill when one cannot be located", () => {
+    const tempRoot = createTempRoot("hunk-skill-missing-");
+
+    try {
+      expect(() => resolveBundledSkillPath("hunk-extensions", [tempRoot])).toThrow(
+        "Could not locate the bundled Hunk hunk-extensions skill.",
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("locates a bundled skill through a nested hunkdiff package", () => {
     const tempRoot = createTempRoot("hunk-skill-path-");
 
     try {
@@ -60,7 +90,7 @@ describe("paths", () => {
       writeFileSync(skillPath, "# skill\n");
       writeFileSync(fakeBinary, "binary\n");
 
-      expect(resolveBundledHunkReviewSkillPath([fakeBinary])).toBe(skillPath);
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(skillPath);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

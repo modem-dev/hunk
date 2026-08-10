@@ -1,7 +1,32 @@
 import fs from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-const HUNK_REVIEW_SKILL_RELATIVE_PATH = join("skills", "hunk-review", "SKILL.md");
+/**
+ * Skills Hunk ships, in the order `hunk skill path` lists them.
+ *
+ * A skill is bundled only if it is in `package.json`'s `files` allowlist and the
+ * prebuilt artifact staging; `skills/` also holds maintainer-only documents that
+ * never ship, and naming them here would resolve paths users cannot have.
+ */
+export const BUNDLED_SKILL_NAMES = ["hunk-review", "hunk-extensions"] as const;
+export type BundledSkillName = (typeof BUNDLED_SKILL_NAMES)[number];
+
+/** The skill `hunk skill path` prints when the user names none. */
+export const DEFAULT_BUNDLED_SKILL_NAME: BundledSkillName = "hunk-review";
+
+/** Short aliases accepted alongside each skill's own name. */
+const BUNDLED_SKILL_ALIASES: Record<string, BundledSkillName> = {
+  review: "hunk-review",
+  extensions: "hunk-extensions",
+};
+
+/** Resolve one user-supplied skill name, or nothing when it names no bundled skill. */
+export function resolveBundledSkillName(value: string): BundledSkillName | undefined {
+  const normalized = value.trim().toLowerCase();
+  return (
+    BUNDLED_SKILL_NAMES.find((name) => name === normalized) ?? BUNDLED_SKILL_ALIASES[normalized]
+  );
+}
 
 /**
  * Canonicalize one filesystem path, resolving through existing ancestors.
@@ -106,13 +131,22 @@ function findRelativePathFromAncestors(startPath: string, relativePath: string) 
   }
 }
 
-/** Resolve the bundled Hunk review skill path from source, npm, or prebuilt package layouts. */
-export function resolveBundledHunkReviewSkillPath(searchRoots?: string[]) {
+/**
+ * Resolve one bundled skill's path from source, npm, or prebuilt package layouts.
+ *
+ * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so
+ * the name is the only thing that varies and the search itself stays one walk.
+ */
+export function resolveBundledSkillPath(
+  name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
+  searchRoots?: string[],
+) {
   const roots = searchRoots ?? [import.meta.dir, process.execPath];
+  const skillRelativePath = join("skills", name, "SKILL.md");
   const relativeCandidates = [
-    HUNK_REVIEW_SKILL_RELATIVE_PATH,
-    join("hunkdiff", HUNK_REVIEW_SKILL_RELATIVE_PATH),
-    join("node_modules", "hunkdiff", HUNK_REVIEW_SKILL_RELATIVE_PATH),
+    skillRelativePath,
+    join("hunkdiff", skillRelativePath),
+    join("node_modules", "hunkdiff", skillRelativePath),
   ];
 
   for (const root of roots) {
@@ -124,5 +158,5 @@ export function resolveBundledHunkReviewSkillPath(searchRoots?: string[]) {
     }
   }
 
-  throw new Error("Could not locate the bundled Hunk review skill.");
+  throw new Error(`Could not locate the bundled Hunk ${name} skill.`);
 }

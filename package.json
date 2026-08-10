@@ -31,6 +31,7 @@
     "bin",
     "dist/npm",
     "skills/hunk-review",
+    "skills/hunk-extensions",
     "README.md",
     "LICENSE"
   ],

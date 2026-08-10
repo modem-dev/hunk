@@ -298,16 +298,33 @@ describe("parseCli", () => {
     expect(parsed.text).toEndWith(`${join("skills", "hunk-review", "SKILL.md")}\n`);
   });
 
+  test("prints a named bundled skill path, by name or alias", async () => {
+    for (const requested of ["hunk-extensions", "extensions"]) {
+      const parsed = await parseCli(["bun", "hunk", "skill", "path", requested]);
+
+      expect(parsed.kind).toBe("help");
+      if (parsed.kind !== "help") {
+        throw new Error("Expected bundled skill path output.");
+      }
+
+      expect(parsed.text).toEndWith(`${join("skills", "hunk-extensions", "SKILL.md")}\n`);
+    }
+  });
+
   test("prints skill help for hunk skill --help", async () => {
     const parsed = await parseCli(["bun", "hunk", "skill", "--help"]);
 
     expect(parsed).toEqual({
       kind: "help",
       text: [
-        "Usage: hunk skill path",
+        "Usage: hunk skill path [name]",
         "",
-        "Print the bundled Hunk review skill path.",
+        "Print a bundled Hunk skill path.",
         "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+        "",
+        "Skills:",
+        `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
+        `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
         "",
       ].join("\n"),
     });
@@ -1256,9 +1273,16 @@ describe("parseCli argument validation", () => {
     await expect(parseCli(["bun", "hunk", "skill", "bogus"])).rejects.toThrow(
       "Only `hunk skill path` is supported.",
     );
-    await expect(parseCli(["bun", "hunk", "skill", "path", "extra"])).rejects.toThrow(
-      "`hunk skill path` does not accept additional arguments.",
+    await expect(parseCli(["bun", "hunk", "skill", "path", "bogus"])).rejects.toThrow(
+      'Unknown skill "bogus". Bundled skills are hunk-review and hunk-extensions.',
     );
+    // Maintainer-only skills are not bundled, so naming one is not a path lookup.
+    await expect(parseCli(["bun", "hunk", "skill", "path", "launch-video"])).rejects.toThrow(
+      'Unknown skill "launch-video".',
+    );
+    await expect(
+      parseCli(["bun", "hunk", "skill", "path", "hunk-review", "extra"]),
+    ).rejects.toThrow("`hunk skill path` accepts at most one skill name.");
     await expect(parseCli(["bun", "hunk", "daemon", "bogus"])).rejects.toThrow(
       "Only `hunk daemon serve` is supported.",
     );

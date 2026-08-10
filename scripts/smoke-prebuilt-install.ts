@@ -157,16 +157,21 @@ try {
     );
   }
 
-  const skillPath = run([installedHunk, "skill", "path"], {
-    env: commandEnv,
-  }).stdout.trim();
-  if (
-    !skillPath.endsWith(path.join("skills", "hunk-review", "SKILL.md")) ||
-    !existsSync(skillPath)
-  ) {
-    throw new Error(
-      `Expected installed hunk skill path to resolve to the bundled skill.\n${skillPath}`,
-    );
+  // The bare command keeps naming the review skill; every bundled skill must
+  // also resolve by name, since the install is what users discover them through.
+  const skillPathChecks: [args: string[], skillName: string][] = [
+    [["skill", "path"], "hunk-review"],
+    [["skill", "path", "hunk-review"], "hunk-review"],
+    [["skill", "path", "hunk-extensions"], "hunk-extensions"],
+  ];
+
+  for (const [args, skillName] of skillPathChecks) {
+    const skillPath = run([installedHunk, ...args], { env: commandEnv }).stdout.trim();
+    if (!skillPath.endsWith(path.join("skills", skillName, "SKILL.md")) || !existsSync(skillPath)) {
+      throw new Error(
+        `Expected installed \`hunk ${args.join(" ")}\` to resolve the bundled ${skillName} skill.\n${skillPath}`,
+      );
+    }
   }
 
   const bunCheck = Bun.spawnSync(

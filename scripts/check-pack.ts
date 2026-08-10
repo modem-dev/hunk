@@ -255,9 +255,10 @@ const requiredPaths = [
   "README.md",
   "LICENSE",
   "package.json",
-  // The bundled review skill must survive the narrowed "skills/hunk-review"
-  // files entry — `hunk skill path` depends on it at runtime.
+  // The bundled skills must survive the narrowed per-skill files entries —
+  // `hunk skill path [name]` resolves them at runtime.
   "skills/hunk-review/SKILL.md",
+  "skills/hunk-extensions/SKILL.md",
 ];
 
 for (const path of requiredPaths) {
