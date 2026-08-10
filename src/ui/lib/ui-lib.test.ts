@@ -249,6 +249,8 @@ describe("ui helpers", () => {
       { text: "\u0d4eക", width: 1, startsNewLine: false },
       { text: "x", width: 1, startsNewLine: true },
     ]);
+    expect(measureTextWidth("ｶﾞ")).toBe(2);
+    expect(sliceTextByWidth("ｶﾞ", 0, 2)).toEqual({ text: "ｶﾞ", width: 2 });
     for (const cluster of ["กำ", "ກຳ", "ｶﾞ", "ｶﾟ"]) {
       const width = stringWidth(cluster);
       expect(measureTextWidth(cluster)).toBe(width);
