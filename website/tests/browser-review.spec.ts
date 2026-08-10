@@ -223,6 +223,11 @@ test("Tree selection jumps within one duplicate-path stream and notes render", a
   await page.goto("/review/session#capability=test-capability");
   await expect(page.locator("[data-review-stream] > [data-file-key]")).toHaveCount(2);
   await expect(page.locator('[data-note-id="note:first"]')).toBeVisible();
+  const search = page.getByLabel("Search changed files");
+  await search.fill("duplicate.ts");
+  await expect(page.getByRole("treeitem", { name: "duplicate.ts" })).toHaveCount(2);
+  await expect(page.locator("[data-review-stream] > [data-file-key]")).toHaveCount(2);
+  await search.fill("");
   const tree = page.locator('[aria-label="Changed files"]');
   await tree.evaluate((host) => {
     const leaves = Array.from(
@@ -238,6 +243,77 @@ test("Tree selection jumps within one duplicate-path stream and notes render", a
   await expect(page.locator(".web-review")).toHaveAttribute("data-theme", "light");
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator(".web-review")).toHaveAttribute("data-theme", "dark");
+});
+
+test("multi-hunk files render isolated Pierre inputs without asynchronous highlight errors", async ({
+  page,
+}) => {
+  const entry = reviewFile("multi", { filePath: "src/multi.ts" });
+  const canonical = JSON.parse(entry.content) as {
+    additionLines: string[];
+    deletionLines: string[];
+    hunks: Array<Record<string, unknown>>;
+  };
+  const first = canonical.hunks[0]!;
+  canonical.additionLines.push("second new");
+  canonical.deletionLines.push("second old");
+  canonical.hunks.push({
+    ...first,
+    index: 1,
+    splitLineStart: 1,
+    unifiedLineStart: 2,
+    additionStart: 10,
+    deletionStart: 10,
+    additionLineIndex: 1,
+    deletionLineIndex: 1,
+    hunkContent: [
+      {
+        type: "change",
+        additions: 1,
+        deletions: 1,
+        additionLineIndex: 1,
+        deletionLineIndex: 1,
+      },
+    ],
+    hunkSpecs: "@@ -10 +10 @@",
+  });
+  entry.content = JSON.stringify(canonical);
+  entry.manifest.hunkCount = 2;
+  entry.manifest.hunks.push({
+    index: 1,
+    header: "@@ -10 +10 @@",
+    oldRange: [10, 10],
+    newRange: [10, 10],
+  });
+  entry.resource.byteLength = Buffer.byteLength(entry.content);
+  entry.resource.digest = createHash("sha256").update(entry.content).digest("hex");
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  await routeReviewShell(page);
+  await page.route("**/review-api/session/snapshot", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(reviewSnapshot("generation:browser", [entry])),
+    }),
+  );
+  await page.route("**/review-api/session/events", (route) =>
+    route.fulfill({ contentType: "text/event-stream", body: ": heartbeat\n\n" }),
+  );
+  await page.route("**/review-api/session/resources/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: entry.resource.contentType,
+      body: entry.content,
+    }),
+  );
+
+  await page.goto("/review/session#capability=test-capability");
+  await expect(page.getByText("second new", { exact: true })).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(consoleErrors).toEqual([]);
 });
 
 test("live document replacement aborts the old generation and renders the new resource", async ({

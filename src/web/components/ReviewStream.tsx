@@ -7,6 +7,7 @@ import type { HunkReviewActionV1, HunkReviewStateV1 } from "../../session/review
 import type { BrowserReviewApiClient } from "../lib/apiClient";
 import {
   findReviewResource,
+  isolatePierreHunk,
   parseCanonicalReviewFile,
   toPierreReviewFile,
   type PierreReviewFile,
@@ -458,11 +459,7 @@ function ReviewFile({
                     ))}
                     <FileDiff<ReviewNoteV1>
                       disableWorkerPool
-                      fileDiff={{
-                        ...pierre.fileDiff,
-                        hunks: [hunk],
-                        cacheKey: `${pierre.fileDiff.cacheKey}:hunk:${hunkIndex}`,
-                      }}
+                      fileDiff={isolatePierreHunk(pierre.fileDiff, hunkIndex)}
                       lineAnnotations={annotations}
                       options={{
                         theme: theme.diffs,

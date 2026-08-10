@@ -62,6 +62,32 @@ describe("Pierre tree source", () => {
     source.model.cleanUp();
   });
 
+  test("search keeps matching files reachable without changing authoritative input order", () => {
+    const source = createReviewTreeSource(
+      document("generation:search", [
+        file("first", "src/first.ts"),
+        file("target", "deep/path/mirror.ts"),
+        file("last", "last.ts"),
+      ]),
+      [],
+      () => {},
+    );
+    source.search("mirror.ts");
+    expect(
+      source.model
+        .getVisibleRows(0, 10)
+        .filter((row) => row.kind === "file")
+        .map((row) => row.path),
+    ).toEqual(["deep/path/mirror.ts"]);
+    source.search("");
+    expect(Array.from(source.pathToFileKey.keys())).toEqual([
+      "src/first.ts",
+      "deep/path/mirror.ts",
+      "last.ts",
+    ]);
+    source.model.cleanUp();
+  });
+
   test("keeps duplicate canonical paths as distinct reachable leaves and jump targets", () => {
     const files = [file("first", "duplicate.ts"), file("second", "duplicate.ts")];
     const selected: string[] = [];
