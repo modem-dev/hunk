@@ -65,7 +65,8 @@ export interface CliReferenceCommand {
 
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
-  { flag: "--web", description: "open the review in the local browser surface" },
+  { flag: "--web", description: "open the review in the browser surface" },
+  { flag: "--tailscale", description: "publish browser review routes on the local tailnet" },
   { flag: "--no-open", description: "print the browser review URL without opening it" },
   { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
   {
@@ -293,6 +294,7 @@ function collectRepeatedValue(value: string, previous: string[] = []) {
 function buildCommonOptions(
   options: {
     web?: boolean;
+    tailscale?: boolean;
     open?: boolean;
     mode?: LayoutMode;
     cursorLine?: CursorLine;
@@ -311,6 +313,11 @@ function buildCommonOptions(
   const optionArgv = pathspecDelimiter >= 0 ? argv.slice(0, pathspecDelimiter) : argv;
   const web = options.web === true;
   const noOpen = options.open === false;
+  if (options.tailscale && !web) {
+    throw new HunkUserError("`--tailscale` requires `--web`.", [
+      "Use `--web --tailscale` to publish a capability-authenticated tailnet review.",
+    ]);
+  }
   if (noOpen && !web) {
     throw new HunkUserError("`--no-open` requires `--web`.", [
       "Use `--web --no-open` to print a browser review URL without opening it.",
@@ -319,6 +326,7 @@ function buildCommonOptions(
 
   return {
     web: web ? true : undefined,
+    tailscale: options.tailscale ? true : undefined,
     openBrowser: noOpen ? false : undefined,
     mode: options.mode,
     cursorLine: options.cursorLine,
@@ -451,7 +459,8 @@ function renderCliHelp() {
     "  --experimental                          enable experimental review features (currently STML)",
     "",
     "Common review options:",
-    "  --web                                   open the review in the local browser surface",
+    "  --web                                   open the review in the browser surface",
+    "  --tailscale                             publish browser review routes on the local tailnet",
     "  --no-open                               print the browser review URL without opening it",
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
@@ -1001,6 +1010,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       output: "text",
       selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
       openBrowser: parsedOptions.open !== false,
+      tailscale: parsedOptions.tailscale === true,
     };
   }
 

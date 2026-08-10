@@ -12,6 +12,10 @@ import {
 } from "./brokerConfig";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import {
+  TailscaleBrowserListener,
+  type TailscaleBrowserListenerOptions,
+} from "./tailscaleBrowserListener";
+import {
   BrowserReviewServer,
   withBrowserReviewSecurityHeaders,
   type BrowserReviewServerOptions,
@@ -68,6 +72,8 @@ export interface ServeSessionBrokerDaemonOptions {
   staleSessionSweepIntervalMs?: number;
   /** Test override; production safe-loopback daemons serve browser review by default. */
   browserReview?: false | BrowserReviewServerOptions;
+  /** Injectable Tailscale detection/transport used by portable broker tests. */
+  tailscaleBrowser?: Pick<TailscaleBrowserListenerOptions, "detectIp" | "serve">;
 }
 
 export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
@@ -224,7 +230,10 @@ async function parseJsonRequest(request: Request) {
 export async function handleSessionApiRequest(
   state: HunkSessionBrokerState,
   request: Request,
-  options: { allowBrowserReview?: boolean } = {},
+  options: {
+    allowBrowserReview?: boolean;
+    enableTailscaleBrowser?: () => Promise<string>;
+  } = {},
 ) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
@@ -265,11 +274,17 @@ export async function handleSessionApiRequest(
       }
       case "open": {
         const target = state.getSession(input.selector);
+        const browserOrigin = input.tailscale
+          ? await options.enableTailscaleBrowser?.()
+          : undefined;
+        if (input.tailscale && !browserOrigin) {
+          throw new Error("Tailscale browser review is unavailable in this daemon.");
+        }
         response = {
           result: await state.dispatchCommand<BrowserReviewUrlResult, "get_browser_review_url">({
             selector: { sessionId: target.sessionId },
             command: "get_browser_review_url",
-            input: { sessionId: target.sessionId },
+            input: { sessionId: target.sessionId, browserOrigin },
             timeoutMessage: "Timed out waiting for the session to create a browser review URL.",
           }),
         };
@@ -460,6 +475,13 @@ export function serveSessionBrokerDaemon(
     browserReviewOptions !== false && !allowRemote
       ? new BrowserReviewServer(state, browserReviewOptions)
       : null;
+  const tailscaleBrowser = browserReview
+    ? new TailscaleBrowserListener({
+        port: config.port,
+        browserReview,
+        ...options.tailscaleBrowser,
+      })
+    : null;
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
@@ -535,6 +557,7 @@ export function serveSessionBrokerDaemon(
       if (url.pathname === HUNK_SESSION_API_PATH) {
         return handleSessionApiRequest(state, request, {
           allowBrowserReview: !allowRemote,
+          enableTailscaleBrowser: tailscaleBrowser ? () => tailscaleBrowser.enable() : undefined,
         });
       }
 
@@ -553,6 +576,7 @@ export function serveSessionBrokerDaemon(
 
   const rawStop = server.stop.bind(server);
   const stop: typeof server.stop = (closeActiveConnections) => {
+    tailscaleBrowser?.stop();
     browserReview?.close();
     return rawStop(closeActiveConnections);
   };
@@ -572,6 +596,7 @@ export function serveSessionBrokerDaemon(
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   void server.stopped.finally(() => {
+    tailscaleBrowser?.stop();
     browserReview?.close();
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);

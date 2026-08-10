@@ -151,17 +151,28 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses browser review startup and rejects standalone --no-open", async () => {
+  test("parses browser review startup and rejects standalone browser modifiers", async () => {
     const opened = await parseCli(["bun", "hunk", "show", "HEAD", "--web"]);
-    const printed = await parseCli(["bun", "hunk", "patch", "change.patch", "--web", "--no-open"]);
+    const printed = await parseCli([
+      "bun",
+      "hunk",
+      "patch",
+      "change.patch",
+      "--web",
+      "--tailscale",
+      "--no-open",
+    ]);
 
     expect(opened).toMatchObject({ kind: "show", options: { web: true } });
     expect(printed).toMatchObject({
       kind: "patch",
-      options: { web: true, openBrowser: false },
+      options: { web: true, tailscale: true, openBrowser: false },
     });
     await expect(parseCli(["bun", "hunk", "diff", "--no-open"])).rejects.toThrow(
       "`--no-open` requires `--web`",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--tailscale"])).rejects.toThrow(
+      "`--tailscale` requires `--web`",
     );
   });
 
@@ -174,6 +185,7 @@ describe("parseCli", () => {
       "--",
       "--web",
       "--no-open",
+      "--tailscale",
       "--no-line-numbers",
       "--no-extensions",
     ]);
@@ -191,7 +203,7 @@ describe("parseCli", () => {
     expect(diff).toMatchObject({
       kind: "vcs",
       range: "main",
-      pathspecs: ["--web", "--no-open", "--no-line-numbers", "--no-extensions"],
+      pathspecs: ["--web", "--no-open", "--tailscale", "--no-line-numbers", "--no-extensions"],
     });
     expect(show).toMatchObject({
       kind: "show",
@@ -201,6 +213,7 @@ describe("parseCli", () => {
     if (diff.kind === "vcs" && show.kind === "show") {
       expect(diff.options.web).toBeUndefined();
       expect(diff.options.openBrowser).toBeUndefined();
+      expect(diff.options.tailscale).toBeUndefined();
       expect(diff.options.lineNumbers).toBeUndefined();
       expect(diff.options.extensions).toBeUndefined();
       expect(show.options.web).toBeUndefined();
@@ -465,7 +478,16 @@ describe("parseCli", () => {
 
   test("parses session open with default-open and print-only modes", async () => {
     const opened = await parseCli(["bun", "hunk", "session", "open", "session-1"]);
-    const printed = await parseCli(["bun", "hunk", "session", "open", "--repo", ".", "--no-open"]);
+    const printed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "open",
+      "--repo",
+      ".",
+      "--tailscale",
+      "--no-open",
+    ]);
 
     expect(opened).toMatchObject({
       kind: "session",
@@ -478,6 +500,7 @@ describe("parseCli", () => {
       action: "open",
       selector: { repoRoot: process.cwd() },
       openBrowser: false,
+      tailscale: true,
     });
   });
 

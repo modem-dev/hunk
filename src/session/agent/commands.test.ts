@@ -958,8 +958,15 @@ describe("session command compatibility checks", () => {
   test("opens browser reviews without printing bearer capabilities by default", async () => {
     const url = "http://127.0.0.1:47657/review/session-1/#capability=secret";
     const opened: string[] = [];
+    const requests: unknown[] = [];
     setSessionCommandTestHooks({
-      createClient: () => createClient({ getBrowserReviewUrl: async () => ({ url }) }),
+      createClient: () =>
+        createClient({
+          getBrowserReviewUrl: async (input) => {
+            requests.push(input);
+            return { url };
+          },
+        }),
       resolveDaemonAvailability: async () => true,
       openBrowserUrl: async (value) => {
         opened.push(value);
@@ -978,6 +985,7 @@ describe("session command compatibility checks", () => {
       action: "open",
       selector: { sessionId: "session-1" },
       openBrowser: false,
+      tailscale: true,
       output: "text",
     } satisfies SessionCommandInput);
 
@@ -985,6 +993,10 @@ describe("session command compatibility checks", () => {
     expect(defaultOutput).not.toContain("capability=");
     expect(opened).toEqual([url]);
     expect(printOutput).toBe(`${url}\n`);
+    expect(requests).toEqual([
+      { selector: { sessionId: "session-1" }, tailscale: undefined },
+      { selector: { sessionId: "session-1" }, tailscale: true },
+    ]);
   });
 
   // Intent: remaining command branches dispatch to the daemon and keep text output stable.

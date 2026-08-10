@@ -84,6 +84,7 @@ import {
   isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "../session/broker/brokerConfig";
+import { parseTailscaleBrowserOrigin } from "../session/tailscale";
 import {
   buildBrowserReviewUrl,
   createBrowserReviewCapability,
@@ -275,11 +276,14 @@ export class ReviewSessionRuntime {
     }
     const sessionId = this.hostClient?.getRegistration().sessionId;
     if (!sessionId) throw new Error("Review session is not attached to the local broker.");
-    return buildBrowserReviewUrl(
-      origin ?? config.httpOrigin,
-      sessionId,
-      this.browserReviewCapability.capability,
-    );
+    const browserOrigin = origin ?? config.httpOrigin;
+    if (
+      browserOrigin !== config.httpOrigin &&
+      !parseTailscaleBrowserOrigin(browserOrigin, config.port)
+    ) {
+      throw new Error("Browser review origin was not issued by the local or Tailscale daemon.");
+    }
+    return buildBrowserReviewUrl(browserOrigin, sessionId, this.browserReviewCapability.capability);
   }
 
   /** Open this runtime's browser review using the shared shell-free platform opener. */
@@ -1768,11 +1772,13 @@ export class ReviewSessionRuntime {
           !exactCommandEnvelope ||
           !sessionId ||
           input.sessionId !== sessionId ||
-          Object.keys(input).some((key) => !["sessionId", "sessionPath", "repoRoot"].includes(key))
+          Object.keys(input).some(
+            (key) => !["sessionId", "sessionPath", "repoRoot", "browserOrigin"].includes(key),
+          )
         ) {
           throw new Error("Browser review URL request is invalid for this session.");
         }
-        const result = { url: this.getBrowserReviewUrl() };
+        const result = { url: this.getBrowserReviewUrl(input.browserOrigin) };
         this.assertCommandResultWithinBounds(result, "Browser review URL result");
         return result;
       }

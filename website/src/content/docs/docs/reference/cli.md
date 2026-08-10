@@ -18,7 +18,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 
 | Option                      | Description                                                     |
 | --------------------------- | --------------------------------------------------------------- |
-| `--web`                     | open the review in the local browser surface                    |
+| `--web`                     | open the review in the browser surface                          |
+| `--tailscale`               | publish browser review routes on the local tailnet              |
 | `--no-open`                 | print the browser review URL without opening it                 |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
 | `--cursor-line <style>`     | current-line marker: row, number, off                           |
@@ -315,15 +316,16 @@ hunk session review (<session-id> | --repo <path>) [--include-patch] [--include-
 
 ### `hunk session open`
 
-open one live Hunk review in the local browser
+open one live Hunk review in the browser
 
 ```bash
-hunk session open (<session-id> | --repo <path>) [--no-open]
+hunk session open (<session-id> | --repo <path>) [--tailscale] [--no-open]
 ```
 
 | Option          | Description                                                  |
 | --------------- | ------------------------------------------------------------ |
 | `--repo <path>` | target the live session whose repo root matches this path    |
+| `--tailscale`   | publish browser review routes on the local tailnet           |
 | `--no-open`     | print the capability URL without opening the default browser |
 
 **Positionals:** `[sessionId]`.
@@ -332,7 +334,7 @@ hunk session open (<session-id> | --repo <path>) [--no-open]
 
 ```bash
 hunk session open --repo .
-hunk session open --repo . --no-open
+hunk session open --repo . --tailscale --no-open
 ```
 
 ### `hunk session navigate`
