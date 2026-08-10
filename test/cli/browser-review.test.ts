@@ -191,8 +191,9 @@ describe("browser review CLI", () => {
       expect(`${openStdout}${openStderr}`).not.toContain("capability=");
       expect(readFileSync(opener.output, "utf8")).toBe(url);
 
-      child.kill("SIGTERM");
-      expect(await child.exited).toBe(0);
+      child.kill();
+      const exitCode = await child.exited;
+      if (process.platform !== "win32") expect(exitCode).toBe(0);
       const producerStderr = await new Response(child.stderr).text();
       expect(producerStderr).not.toContain("capability=");
       await stopDaemon(port);
@@ -256,8 +257,9 @@ describe("browser review CLI", () => {
       expect(opened.exitCode).toBe(0);
       expect(Buffer.from(opened.stdout).toString("utf8").trim()).toBe(url);
 
-      child.kill("SIGTERM");
-      expect(await child.exited).toBe(0);
+      child.kill();
+      const exitCode = await child.exited;
+      if (process.platform !== "win32") expect(exitCode).toBe(0);
       await stopDaemon(port);
     },
     20_000,
@@ -277,8 +279,9 @@ describe("browser review CLI", () => {
     await readUrl(child);
     await Bun.sleep(100);
     expect(child.exitCode).toBeNull();
-    child.kill("SIGTERM");
-    expect(await child.exited).toBe(0);
+    child.kill();
+    const exitCode = await child.exited;
+    if (process.platform !== "win32") expect(exitCode).toBe(0);
     await stopDaemon(port);
   }, 20_000);
 });

@@ -667,15 +667,17 @@ export class ReviewSessionRuntime {
       selectedHunkIndex: nextSessionSnapshot.state.selectedHunkIndex,
     } satisfies ReloadedSessionResult;
     this.assertCommandResultWithinBounds(result, "Reload result");
-    this.assertCommandResultWithinBounds(
-      {
-        kind: "review-snapshot",
-        generation: projection.document.generation,
-        manifest: createHunkReviewManifest(bootstrap, projection.document),
-        state: createHunkReviewState(store.getSnapshot()),
-      },
-      "Review reconnect snapshot",
-    );
+    if (this.hostClient) {
+      this.assertCommandResultWithinBounds(
+        {
+          kind: "review-snapshot",
+          generation: projection.document.generation,
+          manifest: createHunkReviewManifest(bootstrap, projection.document),
+          state: createHunkReviewState(store.getSnapshot()),
+        },
+        "Review reconnect snapshot",
+      );
+    }
     if (this.disposed) throw new Error("Review session runtime is disposed.");
 
     // No active authority, registry, trust history, watch, or broker state changes before here.
@@ -1677,11 +1679,12 @@ export class ReviewSessionRuntime {
           ? target.hunkIndex - state.selection.hunkIndex
           : fileIndex - visibleFileIndex;
       };
+      // Annotated navigation is non-cyclic, matching terminal hunk navigation at both edges.
       const target =
         input.commentDirection === "next"
-          ? (annotated.find((candidate) => compareToSelection(candidate) > 0) ?? annotated[0]!)
+          ? (annotated.find((candidate) => compareToSelection(candidate) > 0) ?? annotated.at(-1)!)
           : ([...annotated].reverse().find((candidate) => compareToSelection(candidate) < 0) ??
-            annotated.at(-1)!);
+            annotated[0]!);
       semantic = state.document.files.find((file) => file.key === target.fileKey);
       hunkIndex = target.hunkIndex;
     } else {

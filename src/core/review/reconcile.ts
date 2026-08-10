@@ -2,6 +2,7 @@ import { reviewGapAddress } from "./expansion";
 import { reviewDigest } from "./identity";
 import { reviewFileMatchesFilter } from "./selectors";
 import type {
+  ReviewDraftNote,
   ReviewExpandedGapState,
   ReviewSemanticSelection,
   ReviewState,
@@ -24,28 +25,68 @@ export function reviewHunkRange(hunk: ReviewHunkV1, side: ReviewSide) {
   return [start, Math.max(start, start + Math.max(count, 1) - 1)] as const;
 }
 
-/** Hash a small renderer-neutral line neighborhood for reload rematching. */
-export function reviewLineContextDigest(file: ReviewFileV1, side: ReviewSide, line: number) {
-  const lines = side === "new" ? file.additionLines : file.deletionLines;
-  const index = line - 1;
-  if (index < 0 || index >= lines.length) return undefined;
-  return reviewDigest(JSON.stringify(lines.slice(Math.max(0, index - 2), index + 3)));
+/** Map one absolute semantic line to its compact patch-array address. */
+export function reviewLineAddress(file: ReviewFileV1, side: ReviewSide, line: number) {
+  for (let hunkIndex = 0; hunkIndex < file.hunks.length; hunkIndex += 1) {
+    const hunk = file.hunks[hunkIndex]!;
+    const start = side === "new" ? hunk.additionStart : hunk.deletionStart;
+    const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
+    const lineIndex = side === "new" ? hunk.additionLineIndex : hunk.deletionLineIndex;
+    if (count <= 0 || line < start || line >= start + count) continue;
+    const arrayIndex = file.flags.partial ? lineIndex + line - start : line - 1;
+    const lines = side === "new" ? file.additionLines : file.deletionLines;
+    if (arrayIndex < 0 || arrayIndex >= lines.length) return undefined;
+    return { hunkIndex, arrayIndex };
+  }
+  return undefined;
 }
 
-/** Find a line carrying the same context digest, preferring the previous line number. */
+/** Enumerate absolute semantic lines backed by one side's compact patch arrays. */
+function reviewSemanticLines(file: ReviewFileV1, side: ReviewSide) {
+  if (!file.flags.partial) {
+    const lines = side === "new" ? file.additionLines : file.deletionLines;
+    return Array.from({ length: lines.length }, (_, index) => index + 1);
+  }
+  return file.hunks.flatMap((hunk) => {
+    const start = side === "new" ? hunk.additionStart : hunk.deletionStart;
+    const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
+    return Array.from({ length: count }, (_, offset) => start + offset);
+  });
+}
+
+/** Hash a fixed hunk-local neighborhood for reload rematching. */
+export function reviewLineContextDigest(file: ReviewFileV1, side: ReviewSide, line: number) {
+  const address = reviewLineAddress(file, side, line);
+  if (!address) return undefined;
+  const hunk = file.hunks[address.hunkIndex]!;
+  const lines = side === "new" ? file.additionLines : file.deletionLines;
+  const lineIndex = side === "new" ? hunk.additionLineIndex : hunk.deletionLineIndex;
+  const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
+  const offset = file.flags.partial ? address.arrayIndex - lineIndex : address.arrayIndex;
+  const availableStart = file.flags.partial ? lineIndex : 0;
+  const availableCount = file.flags.partial ? count : lines.length;
+  const neighborhood = [-2, -1, 0, 1, 2].map((delta) => {
+    const candidate = offset + delta;
+    return candidate >= 0 && candidate < availableCount ? lines[availableStart + candidate] : null;
+  });
+  return reviewDigest(JSON.stringify(neighborhood));
+}
+
+/** Find a uniquely nearest semantic line carrying the same context digest. */
 function rematchLine(
   file: ReviewFileV1,
   side: ReviewSide,
   line: number,
   contextDigest: string | undefined,
 ) {
-  if (!contextDigest) return line;
+  if (!contextDigest) return reviewLineAddress(file, side, line) ? line : undefined;
   if (reviewLineContextDigest(file, side, line) === contextDigest) return line;
-  const lines = side === "new" ? file.additionLines : file.deletionLines;
-  for (let candidate = 1; candidate <= lines.length; candidate += 1) {
-    if (reviewLineContextDigest(file, side, candidate) === contextDigest) return candidate;
-  }
-  return undefined;
+  const matches = reviewSemanticLines(file, side)
+    .filter((candidate) => reviewLineContextDigest(file, side, candidate) === contextDigest)
+    .map((candidate) => ({ line: candidate, distance: Math.abs(candidate - line) }))
+    .toSorted((left, right) => left.distance - right.distance || left.line - right.line);
+  if (matches.length === 0 || matches[0]!.distance === matches[1]?.distance) return undefined;
+  return matches[0]!.line;
 }
 
 /** Match one logical file without depending on stream order or mutable runtime ids. */
@@ -66,18 +107,29 @@ export function reconcileReviewFile(
     (file) =>
       endpoints.has(file.path) || (file.previousPath ? endpoints.has(file.previousPath) : false),
   );
-  if (candidates.length <= 1 || !context?.digest) return candidates[0];
-  return candidates.find(
-    (file) => rematchLine(file, context.side, context.line, context.digest) !== undefined,
-  );
+  if (candidates.length <= 1) return candidates[0];
+  if (context?.digest) {
+    const rematched = candidates.flatMap((file) => {
+      const line = rematchLine(file, context.side, context.line, context.digest);
+      return line === undefined ? [] : [{ file, distance: Math.abs(line - context.line) }];
+    });
+    rematched.sort((left, right) => left.distance - right.distance);
+    if (rematched.length > 0) {
+      const nearest = rematched.filter(
+        (candidate) => candidate.distance === rematched[0]!.distance,
+      );
+      if (nearest.length === 1) return nearest[0]!.file;
+      const exactNearest = nearest.filter(({ file }) => file.path === previous.path);
+      return exactNearest.length === 1 ? exactNearest[0]!.file : undefined;
+    }
+  }
+  const exactPath = candidates.filter((file) => file.path === previous.path);
+  return exactPath.length === 1 ? exactPath[0] : undefined;
 }
 
 /** Resolve a hunk index from a semantic line address. */
 function hunkIndexForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
-  return file.hunks.findIndex((hunk) => {
-    const range = reviewHunkRange(hunk, side);
-    return line >= range[0] && line <= range[1];
-  });
+  return reviewLineAddress(file, side, line)?.hunkIndex ?? -1;
 }
 
 /** Reconcile selection by file identity and line context, then fall back deterministically. */
@@ -382,9 +434,44 @@ function reconcileMutableNoteIds(
   };
 }
 
-/** Compare complete serialized documents for safe reconcile no-op detection. */
+/** Compare immutable generation identities for constant-time reconcile no-op detection. */
 export function reviewDocumentsEqual(left: ReviewDocumentV1, right: ReviewDocumentV1) {
-  return left === right || JSON.stringify(left) === JSON.stringify(right);
+  return left === right || left.generation === right.generation;
+}
+
+/** Preserve a draft only when its semantic source address rematches confidently. */
+function reconcileDraftNote(
+  draft: ReviewDraftNote | null,
+  previousDocument: ReviewDocumentV1,
+  document: ReviewDocumentV1,
+) {
+  if (!draft) return null;
+  const previousFile = previousDocument.files.find((file) => file.key === draft.fileKey);
+  if (!previousFile) return null;
+  const digest = reviewLineContextDigest(previousFile, draft.side, draft.line);
+  const matched = reconcileReviewFile(previousFile, previousDocument.documentIdentity, document, {
+    side: draft.side,
+    line: draft.line,
+    digest,
+  });
+  if (!matched) return null;
+  const line = rematchLine(matched, draft.side, draft.line, digest);
+  if (line === undefined) return null;
+  const hunkIndex = hunkIndexForLine(matched, draft.side, line);
+  if (hunkIndex < 0) return null;
+  const oldResult = rematchDeclaredRange(draft.oldRange, "old", previousFile, matched, undefined);
+  const newResult = rematchDeclaredRange(draft.newRange, "new", previousFile, matched, undefined);
+  if (!oldResult.verified || !newResult.verified) return null;
+  const oldRange = oldResult.range;
+  const newRange = newResult.range;
+  return {
+    ...draft,
+    fileKey: matched.key,
+    hunkIndex,
+    line,
+    ...(oldRange ? { oldRange: [...oldRange] as [number, number] } : {}),
+    ...(newRange ? { newRange: [...newRange] as [number, number] } : {}),
+  };
 }
 
 /** Atomically replace a document and reconcile all shared semantic state. */
@@ -427,7 +514,7 @@ export function reconcileReviewState(state: ReviewState, document: ReviewDocumen
     selection: reconcileReviewSelection(state, document),
     liveNotes: notes.liveNotes,
     userNotes: notes.userNotes,
-    draftNote: null,
+    draftNote: reconcileDraftNote(state.draftNote, state.document, document),
     expandedGaps,
     sourceStatusByFileKey: reconciledSourceStatus,
   };

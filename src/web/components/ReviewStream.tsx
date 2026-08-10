@@ -257,7 +257,8 @@ function ReviewFile({
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) onVisibleFile(file.key);
       },
-      { rootMargin: "0px", threshold: 0.15 },
+      // Whole-file sections can be many viewports tall, so any visible intersection must qualify.
+      { rootMargin: "0px", threshold: 0 },
     );
     nearObserver.observe(element);
     visibleObserver.observe(element);

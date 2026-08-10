@@ -12,8 +12,10 @@ import {
   resolveSessionBrokerConfig,
 } from "../session/broker/brokerConfig";
 import { HUNK_SESSION_API_PATH } from "../session/protocol";
+import { ReviewProducerCapacityError } from "../session/reviewProtocol";
 import type {
   BrowserReviewUrlResult,
+  HunkSessionBrokerClient,
   HunkSessionCommandResult,
   HunkSessionInfo,
   HunkSessionServerMessage,
@@ -29,13 +31,17 @@ export interface ReviewSessionInput {
   controllingTerminal: ControllingTerminal | null;
 }
 
-/** Construct the one runtime and broker client shared by every review surface. */
-function createReviewAuthority({ bootstrap, rawInput }: ReviewSessionInput) {
-  const runtime = createReviewSessionRuntime(bootstrap, { rawInput });
+/** Construct broker publication only after renderer selection confirms it is available. */
+function createReviewHostClient(
+  input: ReviewSessionInput,
+  runtime: ReturnType<typeof createReviewSessionRuntime>,
+) {
   const runtimeSnapshot = runtime.getSnapshot();
-  const registration = createSessionRegistration(bootstrap, runtimeSnapshot.projection.document, {
-    browserReviewCapabilityHash: runtime.getBrowserReviewCapabilityHash(),
-  });
+  const registration = createSessionRegistration(
+    input.bootstrap,
+    runtimeSnapshot.projection.document,
+    { browserReviewCapabilityHash: runtime.getBrowserReviewCapabilityHash() },
+  );
   const initialSnapshot = createSessionSnapshotFromReviewState(runtimeSnapshot.store.getSnapshot());
   assertSessionRegistrationEnvelopeWithinBounds(registration, initialSnapshot);
   const hostClient = new SessionBrokerClient<
@@ -45,7 +51,24 @@ function createReviewAuthority({ bootstrap, rawInput }: ReviewSessionInput) {
     HunkSessionCommandResult
   >(registration, initialSnapshot);
   runtime.attachHostClient(hostClient);
-  return { runtime, hostClient };
+  return hostClient;
+}
+
+/** Prepare optional terminal publication without letting transport capacity block local review. */
+export function prepareTerminalReviewBroker(
+  input: ReviewSessionInput,
+  runtime: ReturnType<typeof createReviewSessionRuntime>,
+  disabled = process.env.HUNK_MCP_DISABLE === "1",
+): { hostClient?: HunkSessionBrokerClient; sessionNotice?: string } {
+  if (disabled) return {};
+  try {
+    return { hostClient: createReviewHostClient(input, runtime) };
+  } catch (error) {
+    if (!(error instanceof ReviewProducerCapacityError)) throw error;
+    return {
+      sessionNotice: "Session brokering is unavailable for this large review; reviewing locally.",
+    };
+  }
 }
 
 /** Wait until the producer registration and production browser route are both live. */
@@ -114,32 +137,21 @@ async function requestTailscaleBrowserUrl(
 /** Keep a renderer-free browser-owned review alive until the owning process receives a signal. */
 async function runWebReview(
   runtime: ReturnType<typeof createReviewSessionRuntime>,
-  hostClient: SessionBrokerClient<
-    HunkSessionInfo,
-    HunkSessionState,
-    HunkSessionServerMessage,
-    HunkSessionCommandResult
-  >,
+  hostClient: HunkSessionBrokerClient,
   options: CliInput["options"],
 ) {
-  if (process.env.HUNK_MCP_DISABLE === "1") {
-    throw new HunkUserError("Browser review requires the local Hunk session daemon.", [
-      "Unset HUNK_MCP_DISABLE and retry, or omit `--web` to use the terminal review.",
-    ]);
-  }
-  const config = resolveSessionBrokerConfig();
-  if (!isLoopbackHost(config.host) || allowsUnsafeRemoteSessionBroker()) {
-    throw new HunkUserError(
-      "Browser review is available only through Hunk's safe loopback daemon.",
-      ["Use HUNK_MCP_HOST=127.0.0.1 and disable unsafe remote broker access."],
-    );
-  }
-
-  hostClient.start();
-  runtime.start();
-  const sessionId = hostClient.getRegistration().sessionId;
-
   try {
+    const config = resolveSessionBrokerConfig();
+    if (!isLoopbackHost(config.host) || allowsUnsafeRemoteSessionBroker()) {
+      throw new HunkUserError(
+        "Browser review is available only through Hunk's safe loopback daemon.",
+        ["Use HUNK_MCP_HOST=127.0.0.1 and disable unsafe remote broker access."],
+      );
+    }
+
+    hostClient.start();
+    runtime.start();
+    const sessionId = hostClient.getRegistration().sessionId;
     const url = options.tailscale
       ? await requestTailscaleBrowserUrl(config, sessionId)
       : runtime.getBrowserReviewUrl(config.httpOrigin);
@@ -167,16 +179,47 @@ async function runWebReview(
 
 /** Select a renderer over one already-loaded review authority without duplicating bootstrap work. */
 export async function runReviewSession(input: ReviewSessionInput): Promise<void> {
-  const { runtime, hostClient } = createReviewAuthority(input);
-  if (input.bootstrap.input.options.web) {
+  const web = Boolean(input.bootstrap.input.options.web);
+  if (web && process.env.HUNK_MCP_DISABLE === "1") {
     input.controllingTerminal?.close();
+    throw new HunkUserError("Browser review requires the local Hunk session daemon.", [
+      "Unset HUNK_MCP_DISABLE and retry, or omit `--web` to use the terminal review.",
+    ]);
+  }
+
+  const runtime = createReviewSessionRuntime(input.bootstrap, { rawInput: input.rawInput });
+  if (web) {
+    input.controllingTerminal?.close();
+    let hostClient: HunkSessionBrokerClient;
+    try {
+      hostClient = createReviewHostClient(input, runtime);
+    } catch (error) {
+      await runtime.shutdown();
+      throw error;
+    }
     await runWebReview(runtime, hostClient, input.bootstrap.input.options);
     return;
   }
 
-  hostClient.start();
+  let prepared: ReturnType<typeof prepareTerminalReviewBroker>;
+  try {
+    prepared = prepareTerminalReviewBroker(input, runtime);
+    prepared.hostClient?.start();
+  } catch (error) {
+    await runtime.shutdown();
+    throw error;
+  }
+  const { hostClient, sessionNotice } = prepared;
+
   // This is the only renderer import in orchestration, so browser-only startup never imports or
   // extracts OpenTUI and never mounts against a piped stdin stream.
-  const { runInteractiveApp } = await import("../ui/runInteractiveApp");
-  await runInteractiveApp({ ...input, runtime, hostClient });
+  try {
+    const { runInteractiveApp } = await import("../ui/runInteractiveApp");
+    await runInteractiveApp({ ...input, runtime, hostClient, sessionNotice });
+  } catch (error) {
+    hostClient?.stop();
+    input.controllingTerminal?.close();
+    await runtime.shutdown();
+    throw error;
+  }
 }

@@ -613,38 +613,71 @@ test("failed reconnect recovery stays read-only through deltas and retries a com
   await expect.poll(() => pendingFailures).toBeGreaterThan(0);
   await expect(visibility).toBeDisabled();
 
-  snapshot.state.stateRevision = 2;
-  await page.evaluate((state) => {
-    const source = (window as unknown as { __hunkTestEventSource: EventSource })
-      .__hunkTestEventSource;
-    source.dispatchEvent(
-      new MessageEvent("state", {
-        data: JSON.stringify({ generation: state.documentGeneration, state }),
-      }),
-    );
-  }, snapshot.state);
   releaseFailure?.();
   await expect.poll(() => completedFailures).toBeGreaterThan(0);
   await expect.poll(() => pendingFailures).toBe(0);
   failRecoveries = false;
-  await page.waitForTimeout(20);
   await expect(page.getByText("Reconnecting…", { exact: true })).toBeVisible();
   await expect(visibility).toBeDisabled();
 
-  snapshot.state.stateRevision = 3;
-  await page.evaluate((state) => {
+  // Recovery retries without relying on an unrelated later SSE delta.
+  await expect.poll(() => successfulSnapshots).toBe(2);
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(visibility).toBeEnabled();
+  expect(snapshotReads).toBeGreaterThanOrEqual(3);
+});
+
+test("terminal disconnect invalidates an in-flight snapshot recovery", async ({ page }) => {
+  const generation = "generation:disconnect-race";
+  const entry = reviewFile("disconnect-race", { generation, filePath: "src/disconnect-race.ts" });
+  const snapshot = reviewSnapshot(generation, [entry]);
+  snapshot.manifest.capabilities = { actions: ["notes/set-visibility"] };
+  let snapshotReads = 0;
+  let pendingSnapshots = 0;
+  let releaseSnapshots: (() => void) | undefined;
+  const snapshotGate = new Promise<void>((resolve) => {
+    releaseSnapshots = resolve;
+  });
+
+  await routeReviewShell(page);
+  await page.route("**/review-api/session/snapshot", async (route) => {
+    snapshotReads += 1;
+    if (snapshotReads > 1) {
+      pendingSnapshots += 1;
+      await snapshotGate;
+      pendingSnapshots -= 1;
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(snapshot) });
+  });
+  await page.route("**/review-api/session/resources/**", (route) =>
+    route.fulfill({ contentType: entry.resource.contentType, body: entry.content }),
+  );
+  await keepEventSourceOpen(page);
+
+  await page.goto("/review/session#capability=test-capability");
+  const visibility = page.getByRole("button", { name: "Hide agent notes" });
+  await expect(visibility).toBeEnabled();
+  await page.evaluate(() => {
+    const source = (window as unknown as { __hunkTestEventSource: EventSource })
+      .__hunkTestEventSource;
+    source.onerror?.(new Event("error"));
+  });
+  await expect.poll(() => pendingSnapshots).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  await expect.poll(() => pendingSnapshots).toBeGreaterThan(1);
+  await page.evaluate(() => {
     const source = (window as unknown as { __hunkTestEventSource: EventSource })
       .__hunkTestEventSource;
     source.dispatchEvent(
-      new MessageEvent("state", {
-        data: JSON.stringify({ generation: state.documentGeneration, state }),
-      }),
+      new MessageEvent("disconnect", { data: JSON.stringify({ reason: "retired" }) }),
     );
-  }, snapshot.state);
-  await expect(page.getByText("Live", { exact: true })).toBeVisible();
-  await expect(visibility).toBeEnabled();
-  expect(successfulSnapshots).toBe(2);
-  expect(snapshotReads).toBeGreaterThanOrEqual(3);
+  });
+  await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  releaseSnapshots?.();
+  await expect.poll(() => pendingSnapshots).toBe(0);
+  await page.waitForTimeout(50);
+  await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  await expect(visibility).toBeDisabled();
 });
 
 test("quiet reconnect accepts an unchanged complete snapshot", async ({ page }) => {
@@ -730,13 +763,8 @@ test("recovery accepts a newer complete SSE generation while its older snapshot 
       .__hunkTestEventSource;
     source.onerror?.(new Event("error"));
   });
-  await page.evaluate(() => {
-    const source = (window as unknown as { __hunkTestEventSource: EventSource })
-      .__hunkTestEventSource;
-    source.onopen?.(new Event("open"));
-  });
-  await expect.poll(() => snapshotReads).toBeGreaterThanOrEqual(2);
-  await page.waitForTimeout(20);
+  // The client retires the failed source and opens a replacement before accepting new events.
+  await expect.poll(() => snapshotReads).toBeGreaterThanOrEqual(3);
   const readsBeforeNewGeneration = snapshotReads;
   await page.evaluate((complete) => {
     const source = (window as unknown as { __hunkTestEventSource: EventSource })

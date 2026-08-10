@@ -1,3 +1,4 @@
+import { parsePatchFiles } from "@pierre/diffs";
 import { describe, expect, test } from "bun:test";
 import {
   createTestDiffFile,
@@ -7,7 +8,7 @@ import {
 import { projectReviewDocument } from "./document";
 import { reviewGapAddress } from "./expansion";
 import { projectReviewNote } from "./notes";
-import { reconcileReviewState, reviewLineContextDigest } from "./reconcile";
+import { reconcileReviewState, reviewLineAddress, reviewLineContextDigest } from "./reconcile";
 import { createReviewStore, prepareReviewState } from "./store";
 import type { DiffFile } from "../types";
 
@@ -17,6 +18,36 @@ function documentFor(files: DiffFile[], generation: string, sourceLabel = "repo:
     { id: generation, sourceLabel, title: "Review", files },
     { generation, sourceIdentity: sourceLabel },
   ).document;
+}
+
+/** Build a compact patch-parsed file whose semantic line numbers exceed its array indices. */
+function patchFile(id: string, secondHunkStart = 18): DiffFile {
+  const path = "patch.ts";
+  const patch = `diff --git a/${path} b/${path}
+index 1111111..2222222 100644
+--- a/${path}
++++ b/${path}
+@@ -3,3 +3,3 @@
+ three
+-old five
++new five
+ six
+@@ -${secondHunkStart},3 +${secondHunkStart},3 @@
+ eighteen
+-old twenty
++new twenty
+ twenty-one
+`;
+  const metadata = parsePatchFiles(patch, id, true)[0]!.files[0]!;
+  return {
+    id,
+    path,
+    language: "typescript",
+    metadata,
+    patch,
+    stats: { additions: 2, deletions: 2 },
+    agent: null,
+  };
 }
 
 /** Build one one-hunk file suitable for semantic store tests. */
@@ -62,6 +93,125 @@ function storedNote(document: ReturnType<typeof documentFor>, sourceFile: DiffFi
 }
 
 describe("ReviewStore", () => {
+  test("maps and rematches absolute patch lines through compact hunk arrays", () => {
+    const previous = documentFor([patchFile("patch-before")], "generation:patch-before");
+    const next = documentFor([patchFile("patch-after", 20)], "generation:patch-after");
+    const previousFile = previous.files[0]!;
+    expect(reviewLineAddress(previousFile, "new", 19)).toEqual({
+      hunkIndex: 1,
+      arrayIndex: 4,
+    });
+    expect(reviewLineAddress(previousFile, "new", 10)).toBeUndefined();
+    const digest = reviewLineContextDigest(previousFile, "new", 19);
+    expect(digest).toBeDefined();
+
+    const store = createReviewStore(previous);
+    store.dispatch({
+      type: "selection/select",
+      selection: {
+        fileKey: previousFile.key,
+        hunkIndex: 1,
+        side: "new",
+        line: 19,
+        contextDigest: digest,
+      },
+    });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: previous.generation,
+      draft: {
+        id: "draft:watch",
+        fileKey: previousFile.key,
+        hunkIndex: 1,
+        side: "new",
+        line: 19,
+        newRange: [19, 19],
+        body: "Do not lose this draft.",
+      },
+    });
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: previous.generation,
+      document: next,
+    });
+
+    expect(store.getSnapshot().selection).toMatchObject({ hunkIndex: 1, side: "new", line: 21 });
+    expect(store.getSnapshot().draftNote).toMatchObject({
+      id: "draft:watch",
+      body: "Do not lose this draft.",
+      hunkIndex: 1,
+      line: 21,
+      newRange: [21, 21],
+    });
+  });
+
+  test("prefers unique context over a replacement file retaining the old path", () => {
+    const original = createTestDiffFile({
+      id: "rename-original",
+      path: "b.ts",
+      before: lines("one", "two", "three", "old target", "five", "six", "seven"),
+      after: lines("one", "two", "three", "unique target", "five", "six", "seven"),
+    });
+    const previous = documentFor([original], "generation:rename-before");
+    const previousFile = previous.files[0]!;
+    const store = createReviewStore(previous);
+    const digest = reviewLineContextDigest(previousFile, "new", 4);
+    store.dispatch({
+      type: "selection/select",
+      selection: {
+        fileKey: previousFile.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 4,
+        contextDigest: digest,
+      },
+    });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: previous.generation,
+      draft: {
+        id: "draft:rename",
+        fileKey: previousFile.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 4,
+        newRange: [4, 4],
+        body: "Follow the renamed content.",
+      },
+    });
+    const replacement = createTestDiffFile({
+      id: "path-replacement",
+      path: "b.ts",
+      before: "replacement old\n",
+      after: "replacement new\n",
+    });
+    const renamed = createTestDiffFile({
+      id: "rename-target",
+      path: "c.ts",
+      previousPath: "b.ts",
+      before: lines("prefix", "one", "two", "three", "old target", "five", "six", "seven"),
+      after: lines("prefix", "one", "two", "three", "unique target", "five", "six", "seven"),
+    });
+    const next = documentFor([replacement, renamed], "generation:rename-after");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: previous.generation,
+      document: next,
+    });
+
+    const renamedFile = next.files.find((file) => file.path === "c.ts")!;
+    expect(store.getSnapshot().selection).toMatchObject({
+      fileKey: renamedFile.key,
+      side: "new",
+      line: 5,
+    });
+    expect(store.getSnapshot().draftNote).toMatchObject({
+      fileKey: renamedFile.key,
+      line: 5,
+      body: "Follow the renamed content.",
+    });
+  });
+
   test("publishes synchronously and increments revisions only for real mutations", () => {
     const document = documentFor([file("alpha", "alpha.ts", 1)], "generation:one");
     const store = createReviewStore(document);
@@ -623,6 +773,20 @@ describe("ReviewStore", () => {
       expectedGeneration: first.generation,
       notes: [storedNoteAt(first, original, "live:asymmetric", 6)],
     });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: first.generation,
+      draft: {
+        id: "draft:asymmetric",
+        fileKey: first.files[0]!.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 6,
+        oldRange: [6, 7],
+        newRange: [6, 7],
+        body: "Preserve both sides independently.",
+      },
+    });
 
     const prefix = ["prefix 1", "prefix 2", "prefix 3"];
     const movedNewSide = createTestDiffFile({
@@ -648,6 +812,13 @@ describe("ReviewStore", () => {
         },
       },
     });
+    expect(store.getSnapshot().draftNote).toMatchObject({
+      id: "draft:asymmetric",
+      line: 9,
+      oldRange: [6, 7],
+      newRange: [9, 10],
+      body: "Preserve both sides independently.",
+    });
   });
 
   test("marks a dual-range note stale when one declared side cannot be verified", () => {
@@ -667,6 +838,20 @@ describe("ReviewStore", () => {
       expectedGeneration: first.generation,
       notes: [storedNoteAt(first, original, "live:unverified", 6)],
     });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: first.generation,
+      draft: {
+        id: "draft:unverified",
+        fileKey: first.files[0]!.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 6,
+        oldRange: [6, 7],
+        newRange: [6, 7],
+        body: "Do not save a partially stale anchor.",
+      },
+    });
     const replacedOldSide = createTestDiffFile({
       id: "unverified-reload",
       path: "unverified.ts",
@@ -684,6 +869,7 @@ describe("ReviewStore", () => {
       contextDigest: reviewLineContextDigest(next.files[0]!, "new", 9),
       note: { anchor: { oldRange: [6, 7], newRange: [9, 10] } },
     });
+    expect(store.getSnapshot().draftNote).toBeNull();
   });
 
   test("reattaches orphan notes when their source-scoped file and context return", () => {

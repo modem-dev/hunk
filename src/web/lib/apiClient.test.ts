@@ -4,9 +4,31 @@ import type { ReviewCanonicalFileResourceDescriptorV1 } from "../../core/review/
 import { BrowserReviewApiClient, BrowserReviewConflictError } from "./apiClient";
 
 const originalFetch = globalThis.fetch;
+const originalEventSource = globalThis.EventSource;
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  globalThis.EventSource = originalEventSource;
 });
+
+class TestEventSource extends EventTarget {
+  static instances: TestEventSource[] = [];
+  readonly url: string;
+  readonly withCredentials = true;
+  readyState = 0;
+  onopen: ((event: Event) => unknown) | null = null;
+  onerror: ((event: Event) => unknown) | null = null;
+  onmessage: ((event: MessageEvent) => unknown) | null = null;
+
+  constructor(url: string | URL) {
+    super();
+    this.url = String(url);
+    TestEventSource.instances.push(this);
+  }
+
+  close() {
+    this.readyState = 2;
+  }
+}
 
 function descriptor(
   generation: string,
@@ -25,6 +47,79 @@ function descriptor(
 }
 
 describe("browser canonical resource queue", () => {
+  test("rebuilds failed event streams without allowing stale probes to overwrite recovery", async () => {
+    TestEventSource.instances = [];
+    globalThis.EventSource = TestEventSource as unknown as typeof EventSource;
+    let resolveProbe!: (response: Response) => void;
+    const probe = new Promise<Response>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const client = new BrowserReviewApiClient("session", (() => probe) as unknown as typeof fetch);
+    const errors: Array<number | undefined> = [];
+    let opens = 0;
+    const stop = client.events({
+      onEvent: () => undefined,
+      onMalformed: () => undefined,
+      onOpen: () => {
+        opens += 1;
+      },
+      onError: (status) => errors.push(status),
+    });
+    const first = TestEventSource.instances[0]!;
+    first.onerror?.(new Event("error"));
+    await Bun.sleep(300);
+    const replacement = TestEventSource.instances[1]!;
+    replacement.onopen?.(new Event("open"));
+    resolveProbe(new Response(null, { status: 401 }));
+    await Bun.sleep(0);
+    expect(errors).toEqual([undefined]);
+    expect(opens).toBe(1);
+    expect(TestEventSource.instances).toHaveLength(2);
+    stop();
+  });
+
+  test("drops queued messages when their event stream is retired", async () => {
+    TestEventSource.instances = [];
+    globalThis.EventSource = TestEventSource as unknown as typeof EventSource;
+    const client = new BrowserReviewApiClient("session");
+    let delivered = 0;
+    const stop = client.events({
+      onEvent: () => {
+        delivered += 1;
+      },
+      onMalformed: () => undefined,
+      onOpen: () => undefined,
+      onError: () => undefined,
+    });
+    TestEventSource.instances[0]!.dispatchEvent(
+      new MessageEvent("state", {
+        data: JSON.stringify({ generation: "generation:old", state: {} }),
+      }),
+    );
+    stop();
+    await Bun.sleep(0);
+    expect(delivered).toBe(0);
+  });
+
+  test("recreates an event stream after a transient status probe", async () => {
+    TestEventSource.instances = [];
+    globalThis.EventSource = TestEventSource as unknown as typeof EventSource;
+    const client = new BrowserReviewApiClient(
+      "session",
+      (async () => new Response(null, { status: 200 })) as unknown as typeof fetch,
+    );
+    const stop = client.events({
+      onEvent: () => undefined,
+      onMalformed: () => undefined,
+      onOpen: () => undefined,
+      onError: () => undefined,
+    });
+    TestEventSource.instances[0]!.onerror?.(new Event("error"));
+    await Bun.sleep(300);
+    expect(TestEventSource.instances).toHaveLength(2);
+    stop();
+  });
+
   test("selection and note revisions reuse one generation resource fetch", async () => {
     let requests = 0;
     globalThis.fetch = (async () => {

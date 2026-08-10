@@ -73,34 +73,39 @@ afterEach(async () => {
 });
 
 describe("session daemon lifecycle", () => {
-  test("exits cleanly after SIGTERM instead of hot-looping after server shutdown", async () => {
-    const port = await reserveLoopbackPort();
-    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "daemon", "serve"], {
-      cwd: repoRoot,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: testConfigHome,
-        HUNK_MCP_PORT: String(port),
-      },
-    });
-    spawned.push(proc);
+  const signalTest = process.platform === "win32" ? test.skip : test;
+  signalTest(
+    "exits cleanly after SIGTERM instead of hot-looping after server shutdown",
+    async () => {
+      const port = await reserveLoopbackPort();
+      const proc = Bun.spawn(["bun", "run", "src/main.tsx", "daemon", "serve"], {
+        cwd: repoRoot,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          XDG_CONFIG_HOME: testConfigHome,
+          HUNK_MCP_PORT: String(port),
+        },
+      });
+      spawned.push(proc);
 
-    const health = await waitUntil("daemon health", () => readHealth(port), 3_000, 50);
-    expect(health).toMatchObject({ ok: true, pid: proc.pid });
+      const health = await waitUntil("daemon health", () => readHealth(port), 3_000, 50);
+      expect(health).toMatchObject({ ok: true, pid: proc.pid });
 
-    let exited = false;
-    void proc.exited.then(() => {
-      exited = true;
-    });
+      let exited = false;
+      void proc.exited.then(() => {
+        exited = true;
+      });
 
-    process.kill(proc.pid, "SIGTERM");
+      process.kill(proc.pid, "SIGTERM");
 
-    await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
-    await waitUntil("daemon port close", async () =>
-      (await readHealth(port)) === null ? true : null,
-    );
-  }, 10_000);
+      await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
+      await waitUntil("daemon port close", async () =>
+        (await readHealth(port)) === null ? true : null,
+      );
+    },
+    10_000,
+  );
 });

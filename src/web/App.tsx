@@ -51,6 +51,10 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
   );
   const stopEvents = useRef<(() => void) | undefined>(undefined);
   const recovery = useRef<Promise<boolean> | undefined>(undefined);
+  const recoverSnapshotRef = useRef<(() => Promise<boolean>) | undefined>(undefined);
+  const recoveryRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const recoveryRetryAttempt = useRef(0);
+  const recoveryEpoch = useRef(0);
   const reconnectNeedsSnapshot = useRef(false);
   const completeSnapshotToken = useRef(0);
   const latestAcceptedComplete = useRef<
@@ -91,21 +95,30 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
     );
   });
 
+  const clearRecoveryRetry = useCallback(() => {
+    if (recoveryRetryTimer.current) clearTimeout(recoveryRetryTimer.current);
+    recoveryRetryTimer.current = undefined;
+    recoveryRetryAttempt.current = 0;
+  }, []);
+
   const recoverSnapshot = useCallback(() => {
     mutationsAvailable.current = false;
     reconnectNeedsSnapshot.current = true;
     setConnection("reconnecting");
     if (recovery.current) return recovery.current;
+    const taskEpoch = ++recoveryEpoch.current;
     const startingCompleteToken = completeSnapshotToken.current;
     const recover = async () => {
       let staleAttempts = 0;
       while (reconnectNeedsSnapshot.current) {
         const complete = await api.snapshot();
+        if (recoveryEpoch.current !== taskEpoch || !reconnectNeedsSnapshot.current) return false;
         const result = mirrorRef.current.apply({ type: "snapshot", data: complete });
         if (result.kind === "accepted" && result.snapshot) {
           setSnapshot(result.snapshot);
           reconnectNeedsSnapshot.current = false;
           mutationsAvailable.current = true;
+          clearRecoveryRetry();
           setConnection("connected");
           return true;
         }
@@ -128,6 +141,7 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
           setSnapshot(current);
           reconnectNeedsSnapshot.current = false;
           mutationsAvailable.current = true;
+          clearRecoveryRetry();
           setConnection("connected");
           return true;
         }
@@ -142,9 +156,23 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
     };
     const task = recover()
       .catch((error: { status?: number }) => {
+        if (recoveryEpoch.current !== taskEpoch || !reconnectNeedsSnapshot.current) return false;
         reconnectNeedsSnapshot.current = true;
         mutationsAvailable.current = false;
-        setConnection(error.status === 401 ? "expired" : "reconnecting");
+        if (error.status === 401 || error.status === 404) {
+          clearRecoveryRetry();
+          setConnection(error.status === 401 ? "expired" : "disconnected");
+          return false;
+        }
+        setConnection("reconnecting");
+        if (!recoveryRetryTimer.current) {
+          const delay = Math.min(200 * 2 ** recoveryRetryAttempt.current, 4_000);
+          recoveryRetryAttempt.current += 1;
+          recoveryRetryTimer.current = setTimeout(() => {
+            recoveryRetryTimer.current = undefined;
+            void recoverSnapshotRef.current?.();
+          }, delay);
+        }
         return false;
       })
       .finally(() => {
@@ -152,7 +180,8 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
       });
     recovery.current = task;
     return task;
-  }, [api]);
+  }, [api, clearRecoveryRetry]);
+  recoverSnapshotRef.current = recoverSnapshot;
 
   /** Confirm one authoritative action result before adopting durable browser state. */
   const dispatchAction = useCallback(
@@ -207,6 +236,9 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
       const result = mirrorRef.current.apply(event);
       if (result.kind === "disconnect") {
         mutationsAvailable.current = false;
+        recoveryEpoch.current += 1;
+        reconnectNeedsSnapshot.current = false;
+        clearRecoveryRetry();
         setConnection("disconnected");
         stopEvents.current?.();
       } else if (result.kind === "gap") {
@@ -231,7 +263,7 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
         }
       }
     },
-    [recoverSnapshot],
+    [clearRecoveryRetry, recoverSnapshot],
   );
 
   useEffect(() => {
@@ -254,14 +286,24 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
       onError: (status) => {
         // This ref closes the mutation gate synchronously, before React commits connection UI.
         mutationsAvailable.current = false;
-        reconnectNeedsSnapshot.current = true;
-        if (status === 401) setConnection("expired");
-        else if (status === 404) setConnection("disconnected");
-        else setConnection("reconnecting");
+        if (status === 401 || status === 404) {
+          recoveryEpoch.current += 1;
+          reconnectNeedsSnapshot.current = false;
+          clearRecoveryRetry();
+          setConnection(status === 401 ? "expired" : "disconnected");
+        } else {
+          reconnectNeedsSnapshot.current = true;
+          setConnection("reconnecting");
+        }
       },
     });
-    return () => stopEvents.current?.();
-  }, [api, onMirrorEvent, recoverSnapshot]);
+    return () => {
+      recoveryEpoch.current += 1;
+      reconnectNeedsSnapshot.current = false;
+      clearRecoveryRetry();
+      stopEvents.current?.();
+    };
+  }, [api, clearRecoveryRetry, onMirrorEvent, recoverSnapshot]);
 
   useEffect(() => {
     const sharedSelection = validSelection(snapshot, visible.files);

@@ -37,6 +37,11 @@ export const MAX_REVIEW_PRODUCER_ENVELOPE_BYTES = MAX_WS_MESSAGE_BYTES - 64 * 10
 export const MAX_REVIEW_NOTE_BYTES = 256 * 1024;
 export const MAX_REVIEW_RESOURCE_DESCRIPTORS = 15_000;
 
+/** Capacity failure that terminal-only sessions may safely degrade around. */
+export class ReviewProducerCapacityError extends Error {
+  override readonly name = "ReviewProducerCapacityError";
+}
+
 export interface HunkReviewManifestHunkV1 {
   index: number;
   header: string;
@@ -265,7 +270,9 @@ export function parseGetReviewSnapshotInput(value: unknown): GetReviewSnapshotIn
 /** Fail before transport when one complete producer envelope cannot fit safely in one frame. */
 export function assertReviewProducerEnvelopeWithinBounds(value: unknown, label: string) {
   if (utf8ByteLength(JSON.stringify(value)) > MAX_REVIEW_PRODUCER_ENVELOPE_BYTES) {
-    throw new Error(`${label} exceeds the bounded session websocket envelope limit.`);
+    throw new ReviewProducerCapacityError(
+      `${label} exceeds the bounded session websocket envelope limit.`,
+    );
   }
 }
 
