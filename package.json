@@ -132,7 +132,7 @@
     "diff": "^8.0.3",
     "get-east-asian-width": "^1.5.0",
     "shell-quote": "1.9.0",
-    "string-width": "^8.2.1",
+    "string-width": "^7.2.0",
     "zod": "~4.4.3"
   },
   "devDependencies": {

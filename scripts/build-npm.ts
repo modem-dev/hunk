@@ -123,6 +123,7 @@ runBun([
   "node",
   "--format",
   "esm",
+  "--splitting",
   "--external",
   "@pierre/diffs",
   "--outdir",
