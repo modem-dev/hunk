@@ -204,15 +204,16 @@ describe("built-in commands under user keybindings", () => {
 });
 
 describe("builtinCommandKeyDefaults", () => {
-  test("keeps the documented command-id table identical to the runtime catalog", () => {
+  test("keeps the documented command-id table sorted and identical to the runtime catalog", () => {
     const markdown = readFileSync(resolve(import.meta.dir, "../../../docs/keybindings.md"), "utf8");
     const documentedIds = Array.from(
       markdown.matchAll(/^\| `(hunk\.[^`]+)`\s+\|/gm),
       (match) => match[1],
     );
     const { commands } = createTestCommands();
+    const sortedRuntimeIds = commands.map((command) => command.id).toSorted();
 
-    expect(documentedIds).toEqual(commands.map((command) => command.id));
+    expect(documentedIds).toEqual(sortedRuntimeIds);
   });
 
   test("reports every built-in command with the chords it ships with", () => {

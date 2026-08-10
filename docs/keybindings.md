@@ -41,51 +41,51 @@ The built-in commands and the keys they ship with:
 
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
-| `hunk.review.jumpToBottom`                     | Jump to end                                    | `G`, `end`                   |
-| `hunk.review.jumpToTop`                        | Jump to start                                  | `g`, `home`                  |
-| `hunk.app.quit`                                | Quit                                           | `q`                          |
-| `hunk.app.toggleHelp`                          | Toggle help                                    | `?`                          |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
+| `hunk.app.quit`                                | Quit                                           | `q`                          |
+| `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.app.toggleFocusArea`                     | Switch focus between files and filter          | `tab`                        |
+| `hunk.app.toggleHelp`                          | Toggle help                                    | `?`                          |
+| `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
+| `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
+| `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
+| `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
-| `hunk.review.startNote`                        | Add a review note                              | `c`                          |
-| `hunk.review.pageDown`                         | Scroll down one page                           | `pagedown`, `space`, `f`     |
-| `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`                          |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`                          |
-| `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
-| `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.jumpToBottom`                     | Jump to end                                    | `G`, `end`                   |
+| `hunk.review.jumpToTop`                        | Jump to start                                  | `g`, `home`                  |
+| `hunk.review.nextAnnotatedFile`                | Next annotated file                            | _(none)_                     |
+| `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
+| `hunk.review.nextFile`                         | Next file                                      | `.`                          |
+| `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
+| `hunk.review.pageDown`                         | Scroll down one page                           | `pagedown`, `space`, `f`     |
+| `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
+| `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
+| `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
+| `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
+| `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
-| `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
-| `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
-| `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
-| `hunk.view.cursorLineRow`                      | Highlight the current row                      | _(none)_                     |
+| `hunk.review.startNote`                        | Add a review note                              | `c`                          |
+| `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
+| `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |
 | `hunk.view.cursorLineOff`                      | Hide the current-line marker                   | _(none)_                     |
+| `hunk.view.cursorLineRow`                      | Highlight the current row                      | _(none)_                     |
+| `hunk.view.layoutAuto`                         | Auto layout                                    | `0`                          |
 | `hunk.view.layoutSplit`                        | Split layout                                   | `1`                          |
 | `hunk.view.layoutStack`                        | Stack layout                                   | `2`                          |
-| `hunk.view.layoutAuto`                         | Auto layout                                    | `0`                          |
-| `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
-| `hunk.view.toggleSidebar`                      | Toggle sidebar                                 | `s`                          |
-| `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.view.openThemeSelector`                  | Choose theme                                   | `t`                          |
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
+| `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
+| `hunk.view.toggleHunkHeaders`                  | Toggle hunk headers                            | `m`                          |
 | `hunk.view.toggleLineNumbers`                  | Toggle line numbers                            | `l`                          |
 | `hunk.view.toggleLineWrap`                     | Toggle line wrapping                           | `w`                          |
 | `hunk.view.toggleMenuBar`                      | Toggle menu bar                                | `M`                          |
-| `hunk.view.toggleHunkHeaders`                  | Toggle hunk headers                            | `m`                          |
-| `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
-| `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
-| `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
-| `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
-| `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
-| `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
-| `hunk.review.nextFile`                         | Next file                                      | `.`                          |
-| `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
-| `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
-| `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
-| `hunk.review.nextAnnotatedFile`                | Next annotated file                            | _(none)_                     |
+| `hunk.view.toggleSidebar`                      | Toggle sidebar                                 | `s`                          |
 
 Commands marked _(none)_ ship without a key: they remain callable by command id
 and can be assigned a shortcut through `[keybindings]`. Some also appear in a
