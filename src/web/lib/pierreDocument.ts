@@ -108,6 +108,44 @@ export function toPierreReviewFile(
   };
 }
 
+/** Rebase one canonical hunk and its line arrays for an isolated Pierre renderer instance. */
+export function isolatePierreHunk(fileDiff: FileDiffMetadata, hunkIndex: number): FileDiffMetadata {
+  const hunk = fileDiff.hunks[hunkIndex];
+  if (!hunk) throw new Error(`Review hunk ${hunkIndex} does not exist.`);
+  const deletionOffset = hunk.deletionLineIndex;
+  const additionOffset = hunk.additionLineIndex;
+  const isolatedHunk = {
+    ...hunk,
+    deletionLineIndex: 0,
+    additionLineIndex: 0,
+    splitLineStart: 0,
+    unifiedLineStart: 0,
+    hunkContent: hunk.hunkContent.map((content) => ({
+      ...content,
+      deletionLineIndex: content.deletionLineIndex - deletionOffset,
+      additionLineIndex: content.additionLineIndex - additionOffset,
+    })),
+  };
+  return {
+    ...fileDiff,
+    hunks: [isolatedHunk],
+    deletionLines: fileDiff.deletionLines.slice(
+      deletionOffset,
+      deletionOffset + hunk.deletionCount,
+    ),
+    additionLines: fileDiff.additionLines.slice(
+      additionOffset,
+      additionOffset + hunk.additionCount,
+    ),
+    splitLineCount: hunk.splitLineCount,
+    unifiedLineCount: hunk.unifiedLineCount,
+    // The sliced arrays are one patch fragment even when the authoritative file resource carried
+    // complete before/after documents. Prevent Pierre from treating them as whole-file contents.
+    isPartial: true,
+    cacheKey: `${fileDiff.cacheKey}:hunk:${hunkIndex}`,
+  };
+}
+
 /** Anchor inside the core-owned hunk, falling back to its first extant-side code line. */
 export function pierreNoteAnchor(
   file: BrowserReviewFile,

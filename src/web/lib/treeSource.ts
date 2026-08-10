@@ -7,7 +7,7 @@ import {
   type GitStatus,
 } from "@pierre/trees";
 import { FileTree as PierreTreeReact } from "@pierre/trees/react";
-import { createElement, useEffect, type CSSProperties } from "react";
+import { createElement, useEffect, useState, type CSSProperties } from "react";
 import type { ReviewNoteV1 } from "../../core/review/types";
 import type { BrowserReviewDocument, BrowserReviewFile } from "./reviewTypes";
 import type { HunkWebTheme } from "./theme";
@@ -32,6 +32,7 @@ export interface ReviewTreeSource {
   pathToFileKey: Map<string, string>;
   fileKeyToPath: Map<string, string>;
   decorations: Map<string, TreeFileDecoration>;
+  search(query: string): void;
   reset(
     document: BrowserReviewDocument,
     notes: readonly ReviewNoteV1[],
@@ -85,14 +86,19 @@ export function createReviewTreeSource(
   const preparedInput = identities.some((entry) => entry.treePath !== entry.canonicalPath)
     ? preparePresortedFileTreeInput(identities.map((entry) => entry.treePath))
     : canonicalPreparedInput;
+  let currentDocument = document;
+  let currentIdentities = identities;
+  let currentPreparedInput = preparedInput;
+  let searchQuery = "";
+  let searchExpandedPaths: string[] | null = null;
+  let searchSelectedKey: string | undefined;
   const model = new PierreTreeModel({
     preparedInput,
     sort: () => 0,
     flattenEmptyDirectories: false,
     initialExpansion: 1,
     initialSelectedPaths: identities[0] ? [identities[0].treePath] : [],
-    search: true,
-    fileTreeSearchMode: "expand-matches",
+    search: false,
     dragAndDrop: false,
     renaming: false,
     gitStatus: gitStatuses(document.files, identities),
@@ -136,6 +142,46 @@ export function createReviewTreeSource(
     pathToFileKey,
     fileKeyToPath,
     decorations,
+    search(query) {
+      const normalized = query.trim().toLowerCase();
+      searchQuery = query;
+      if (!normalized) {
+        if (searchExpandedPaths === null) return;
+        model.resetPaths({
+          preparedInput: currentPreparedInput,
+          ...(searchExpandedPaths ? { initialExpandedPaths: searchExpandedPaths } : {}),
+        });
+        model.setGitStatus(gitStatuses(currentDocument.files, currentIdentities));
+        source.selectFile(searchSelectedKey);
+        searchExpandedPaths = null;
+        searchSelectedKey = undefined;
+        return;
+      }
+      if (searchExpandedPaths === null) {
+        searchExpandedPaths = Array.from(
+          directoryPaths(currentIdentities.map((entry) => entry.treePath)),
+        ).filter((path) => {
+          const item = model.getItem(path);
+          return item?.isDirectory() && (item as FileTreeDirectoryHandle).isExpanded();
+        });
+        const selectedPath = model.getSelectedPaths().at(-1);
+        searchSelectedKey = selectedPath ? pathToFileKey.get(selectedPath) : undefined;
+      }
+      const matches = currentIdentities.filter((entry) =>
+        entry.canonicalPath.toLowerCase().includes(normalized),
+      );
+      const matchedKeys = new Set(matches.map((entry) => entry.fileKey));
+      model.resetPaths({
+        preparedInput: preparePresortedFileTreeInput(matches.map((entry) => entry.treePath)),
+        initialExpandedPaths: Array.from(directoryPaths(matches.map((entry) => entry.treePath))),
+      });
+      model.setGitStatus(
+        gitStatuses(
+          currentDocument.files.filter((file) => matchedKeys.has(file.key)),
+          matches,
+        ),
+      );
+    },
     reset(nextDocument, nextNotes, selectedKey) {
       const oldDirectories = directoryPaths(Array.from(pathToFileKey.keys()));
       const expanded = Array.from(oldDirectories).filter((path) => {
@@ -155,10 +201,15 @@ export function createReviewTreeSource(
       const canonicalInput = preparePresortedFileTreeInput(
         nextDocument.files.map((file) => file.path),
       );
+      currentDocument = nextDocument;
+      currentIdentities = nextIdentities;
+      currentPreparedInput = nextIdentities.some((entry) => entry.treePath !== entry.canonicalPath)
+        ? preparePresortedFileTreeInput(nextPaths)
+        : canonicalInput;
+      searchExpandedPaths = null;
+      searchSelectedKey = undefined;
       model.resetPaths({
-        preparedInput: nextIdentities.some((entry) => entry.treePath !== entry.canonicalPath)
-          ? preparePresortedFileTreeInput(nextPaths)
-          : canonicalInput,
+        preparedInput: currentPreparedInput,
         initialExpandedPaths: expanded.filter((path) => nextDirectories.has(path)),
       });
       model.setGitStatus(gitStatuses(nextDocument.files, nextIdentities));
@@ -167,6 +218,7 @@ export function createReviewTreeSource(
           ? selectedKey
           : nextDocument.files[0]?.key;
       source.selectFile(retainedKey);
+      if (searchQuery) source.search(searchQuery);
       return retainedKey;
     },
     selectFile(key) {
@@ -192,20 +244,45 @@ export function ReviewFileTree({
   source: ReviewTreeSource;
   theme: HunkWebTheme;
 }) {
-  useEffect(() => () => source.model.cleanUp(), [source]);
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    setSearch("");
+    source.search("");
+    return () => source.model.cleanUp();
+  }, [source]);
   const style = {
     ...themeToTreeStyles(theme),
-    height: "100%",
+    flex: "1 1 auto",
     minHeight: 0,
     "--trees-selected-bg-override": "var(--hunk-selected)",
     "--trees-border-color-override": "var(--hunk-border)",
     "--trees-fg-override": "var(--hunk-fg)",
   } as CSSProperties;
-  return createElement(PierreTreeReact, {
-    "aria-label": "Changed files",
-    model: source.model,
-    style,
-  });
+  return createElement(
+    "div",
+    { className: "review-tree", "data-tree-search": search },
+    createElement(
+      "label",
+      { className: "review-tree__search" },
+      createElement("span", null, "Search files"),
+      createElement("input", {
+        "aria-label": "Search changed files",
+        placeholder: "Search…",
+        type: "search",
+        value: search,
+        onChange: (event: { currentTarget: { value: string } }) => {
+          const value = event.currentTarget.value;
+          setSearch(value);
+          source.search(value);
+        },
+      }),
+    ),
+    createElement(PierreTreeReact, {
+      "aria-label": "Changed files",
+      model: source.model,
+      style,
+    }),
+  );
 }
 
 function updateDecorations(
@@ -267,6 +344,7 @@ function invisibleOccurrence(value: number) {
 }
 
 const TREE_UNSAFE_CSS = `
+  [data-file-tree-search-container='true'] { display: none !important; }
   button[data-type='item'] { border-radius: 5px; }
   button[data-type='item'][data-item-selected] { font-weight: 600; }
 `;

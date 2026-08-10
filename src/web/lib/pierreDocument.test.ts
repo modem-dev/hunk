@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewFileV1, ReviewNoteV1 } from "../../core/review/types";
-import { pierreNoteAnchor, toPierreReviewFile } from "./pierreDocument";
+import { isolatePierreHunk, pierreNoteAnchor, toPierreReviewFile } from "./pierreDocument";
 import type { BrowserReviewDocument, BrowserReviewFile } from "./reviewTypes";
 
 const note: ReviewNoteV1 = {
@@ -163,6 +163,60 @@ function manifestWithSides(
     hunks: [{ ...file.hunks[0]!, oldRange, newRange }],
   };
 }
+
+describe("isolated Pierre hunks", () => {
+  test("rebases later hunk line indices and slices only its canonical lines", () => {
+    const first = canonical.hunks[0]!;
+    const second = {
+      ...first,
+      index: 1,
+      deletionLineIndex: 1,
+      additionLineIndex: 1,
+      splitLineStart: 1,
+      unifiedLineStart: 2,
+      deletionStart: 10,
+      additionStart: 10,
+      hunkContent: [
+        {
+          type: "change" as const,
+          additions: 1,
+          deletions: 1,
+          additionLineIndex: 1,
+          deletionLineIndex: 1,
+        },
+      ],
+    };
+    const fileDiff = toPierreReviewFile(
+      {
+        ...document,
+        files: [{ ...file, hunkCount: 2, hunks: [...file.hunks, { ...file.hunks[0]!, index: 1 }] }],
+      },
+      { ...file, hunkCount: 2, hunks: [...file.hunks, { ...file.hunks[0]!, index: 1 }] },
+      JSON.stringify({
+        ...canonical,
+        additionLines: ["first new", "second new"],
+        deletionLines: ["first old", "second old"],
+        hunks: [first, second],
+      }),
+    ).fileDiff;
+
+    fileDiff.isPartial = false;
+    const isolated = isolatePierreHunk(fileDiff, 1);
+    expect(isolated.isPartial).toBeTrue();
+    expect(isolated.additionLines).toEqual(["second new"]);
+    expect(isolated.deletionLines).toEqual(["second old"]);
+    expect(isolated.hunks).toEqual([
+      expect.objectContaining({
+        index: 1,
+        additionLineIndex: 0,
+        deletionLineIndex: 0,
+        splitLineStart: 0,
+        unifiedLineStart: 0,
+        hunkContent: [expect.objectContaining({ additionLineIndex: 0, deletionLineIndex: 0 })],
+      }),
+    ]);
+  });
+});
 
 describe("browser document to Pierre adapter", () => {
   test("uses canonical projected lines/hunks/moves/context without reparsing VCS semantics", () => {

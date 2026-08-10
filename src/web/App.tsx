@@ -65,7 +65,9 @@ export function WebReviewApp({ api, initialSnapshot }: WebReviewAppProps) {
 
   const revealFile = useCallback((fileKey: string, focus: boolean) => {
     const target = globalThis.document?.getElementById(fileAnchorId(fileKey));
-    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+    // Large reviews window most file bodies; jump directly so a distant reveal does not animate
+    // through a long run of intentional spacers before the target resource mounts.
+    target?.scrollIntoView({ block: "start", behavior: "auto" });
     if (focus && target) requestAnimationFrame(() => target.focus({ preventScroll: true }));
   }, []);
 
