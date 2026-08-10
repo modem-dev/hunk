@@ -72,11 +72,13 @@ dependencies, helper modules, or a README; a single file keeps the install to on
 exist on every machine that loads it — keep a repo-shared extension
 dependency-free.
 
-The **id** is the file stem (or folder name), and it is the namespace the
-extension owns: commands are `<id>.<commandId>`, sidebar views `<id>:<viewId>`,
-config `[extension.<id>]`. Ids match `/^[A-Za-z0-9][A-Za-z0-9_-]*$/`; `hunk`,
-`git`, `jj`, and `sl` are reserved. A bad or duplicate id is skipped with a
-startup notice.
+The **id** is the file stem, or the folder name for a folder extension — unless
+its manifest declares several entries, in which case each entry is its own
+extension named by its own stem (numeric suffix on collision). The id is the
+namespace it owns: commands are `<id>.<commandId>`, sidebar views
+`<id>:<viewId>`, config `[extension.<id>]`. Ids match
+`/^[A-Za-z0-9][A-Za-z0-9_-]*$/`; `hunk`, `git`, `jj`, and `sl` are reserved. A
+bad or duplicate id is skipped with a startup notice.
 
 ## Pick the touchpoint
 
@@ -122,9 +124,11 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   the routing decision, so kick off async work and report it later through
   `notify` or `refresh`. Escape is host-owned and never reaches `onKey`.
 
-Public file/hunk data is always the frozen `ExtensionDiffFile` /
-`ExtensionDiffHunk` shape; the opaque `metadata` is the renderer's parsed diff and
-should only ever be passed through untouched.
+Event payloads, sidebar props, and a command's selection all hand you frozen
+`ExtensionDiffFile` / `ExtensionDiffHunk` views. A changeset transform is the
+exception: it receives the live changeset and is expected to return a new one.
+`metadata` is unfrozen either way — it is the renderer's parsed diff, so pass it
+through untouched.
 
 ## Rules that bite
 
@@ -192,8 +196,9 @@ Practical checks, in order of cost:
 1. **Typecheck.** In a checkout, `bun run typecheck` covers
    `examples/extensions/**` via the `hunkdiff/extension` path mapping. Standalone,
    add `hunkdiff` as a dev dependency and run `tsc --noEmit`; for a `.tsx`
-   extension also add `react`, `@opentui/core`, and `@opentui/react` as **dev**
-   dependencies and set `"jsx": "react-jsx"` with
+   extension also add `react`, `@types/react` (React ships no declarations of its
+   own), `@opentui/core`, and `@opentui/react` as **dev** dependencies and set
+   `"jsx": "react-jsx"` with
    `"jsxImportSource": "@opentui/react"`, or every `<box>` and `<text>` is an
    untyped intrinsic. Types only — shipping those packages is the second-React bug.
 2. **Unit-test the logic.** When parsing, matching, or formatting is worth
@@ -209,8 +214,9 @@ Practical checks, in order of cost:
 
 ## If it does not load
 
-- No startup notice at all → discovery never saw the file. Check the directory,
-  the entry suffix, or the folder's `package.json` `hunk.extensions` paths.
+- No startup notice at all → a successful load is silent, so either it loaded and
+  nothing opened it, or discovery never saw the file. Check the directory, the
+  entry suffix, or the folder's `package.json` `hunk.extensions` paths.
 - Notice naming the extension → id rejected (reserved, malformed, or already
   claimed), import failure, missing default export, or a throwing factory.
 - Repo-local extension silently absent → the trust prompt was dismissed or denied;
