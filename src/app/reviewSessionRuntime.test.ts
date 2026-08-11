@@ -458,7 +458,7 @@ describe("ReviewSessionRuntime", () => {
     const sessionId = host.hostClient.getRegistration().sessionId;
     const state = runtime.getSnapshot().store.getSnapshot();
     const file = state.document.files[0]!;
-    const apply = (requestId: string, action: any, expectedStateRevision?: number) =>
+    const apply = (requestId: string, action: any, expectedStateRevision: number) =>
       host.dispatchCommand({
         type: "command",
         requestId,
@@ -466,29 +466,39 @@ describe("ReviewSessionRuntime", () => {
         input: {
           sessionId,
           generation: runtime.getSnapshot().store.getSnapshot().documentGeneration,
-          ...(expectedStateRevision === undefined ? {} : { expectedStateRevision }),
+          expectedStateRevision,
           action,
         },
       });
 
-    await apply("reveal-1", {
-      type: "selection/select",
-      selection: { fileKey: file.key, hunkIndex: 0 },
-      reveal: { kind: "hunk" },
-    });
-    await apply("reveal-2", {
-      type: "selection/select",
-      selection: { fileKey: file.key, hunkIndex: 0 },
-      reveal: { kind: "hunk" },
-    });
+    await apply(
+      "reveal-1",
+      {
+        type: "selection/select",
+        selection: { fileKey: file.key, hunkIndex: 0 },
+        reveal: { kind: "hunk" },
+      },
+      state.stateRevision,
+    );
+    const afterFirstReveal = runtime.getSnapshot().store.getSnapshot();
+    await apply(
+      "reveal-2",
+      {
+        type: "selection/select",
+        selection: { fileKey: file.key, hunkIndex: 0 },
+        reveal: { kind: "hunk" },
+      },
+      afterFirstReveal.stateRevision,
+    );
     expect(runtime.getSnapshot().store.getSnapshot().reveal.hunkToken).toBe(2);
 
     const revision = runtime.getSnapshot().store.getSnapshot().stateRevision;
+    const line = file.hunks[0]!.additionStart;
     const created = await apply(
       "note-create",
       {
         type: "notes/create-user",
-        note: { fileKey: file.key, hunkIndex: 0, side: "new", line: 1, body: "Browser note" },
+        note: { fileKey: file.key, hunkIndex: 0, side: "new", line, body: "Browser note" },
       },
       revision,
     );
@@ -496,12 +506,36 @@ describe("ReviewSessionRuntime", () => {
     const noteId = runtime.getSnapshot().store.getSnapshot().userNotes[0]!.note.id;
     expect(runtime.getSnapshot().store.getSnapshot().userNotes).toHaveLength(1);
 
+    const staleSelection = await apply(
+      "selection-stale-revision",
+      {
+        type: "selection/set-line",
+        fileKey: file.key,
+        hunkIndex: 0,
+        side: "new",
+        line,
+        reveal: true,
+      },
+      revision,
+    );
+    expect(staleSelection).toMatchObject({ kind: "review-action" });
+    const afterStaleSelection = runtime.getSnapshot().store.getSnapshot();
+    expect(afterStaleSelection.selection).toEqual({
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line,
+      contextDigest: expect.any(String),
+    });
+    expect(afterStaleSelection.reveal).toMatchObject({ kind: "line", lineToken: 1 });
+
     const stale = await apply(
       "note-stale",
       { type: "notes/update-user", noteId, body: "stale" },
       revision,
     );
     expect(stale).toMatchObject({ kind: "review-error", error: { code: "stale-revision" } });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(afterStaleSelection);
     expect(runtime.getSnapshot().store.getSnapshot().userNotes[0]!.note.summary).toBe(
       "Browser note",
     );
@@ -542,7 +576,12 @@ describe("ReviewSessionRuntime", () => {
         type: "command",
         requestId,
         command: "apply_review_action",
-        input: { sessionId, generation: state.documentGeneration, action },
+        input: {
+          sessionId,
+          generation: state.documentGeneration,
+          expectedStateRevision: runtime.getSnapshot().store.getSnapshot().stateRevision,
+          action,
+        },
       } as HunkSessionServerMessage);
 
     const valid = await apply("canonical-line", {

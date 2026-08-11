@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import {
-  buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
   firstCommentTargetForHunk,
@@ -73,53 +72,6 @@ describe("live comment helpers", () => {
     ).toMatchObject({
       hunkIndex: 0,
       side: "new",
-    });
-  });
-
-  test("carries STML markup through to the live annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Rendered note",
-        markup: "<box border>shape</box>",
-      },
-      "comment-2",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment.markup).toBe("<box border>shape</box>");
-  });
-
-  test("builds a live MCP comment annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Note",
-        rationale: "Why this matters",
-        author: "Pi",
-      },
-      "comment-1",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment).toMatchObject({
-      id: "comment-1",
-      source: "mcp",
-      author: "Pi",
-      filePath: "src/example.ts",
-      hunkIndex: 0,
-      side: "new",
-      line: 4,
-      summary: "Note",
-      rationale: "Why this matters",
-      newRange: [4, 4],
-      tags: ["mcp"],
     });
   });
 
