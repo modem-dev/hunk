@@ -516,6 +516,502 @@ describe("ReviewSessionRuntime", () => {
     runtime.dispose();
   });
 
+  test("rejects browser cross-hunk and incomplete selections while deriving line evidence", async () => {
+    const diff = createTestDiffFile({
+      path: "alpha.ts",
+      before: "old one\nstable two\nstable three\nstable four\nold five\n",
+      after: "new one\nstable two\nstable three\nstable four\nnew five\n",
+      context: 0,
+    });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [diff] },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const file = state.document.files[0]!;
+    expect(file.hunks).toHaveLength(2);
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const apply = (requestId: string, action: unknown) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "apply_review_action",
+        input: { sessionId, generation: state.documentGeneration, action },
+      } as HunkSessionServerMessage);
+
+    const valid = await apply("canonical-line", {
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line: file.hunks[0]!.additionStart,
+      contextDigest: "caller-authored",
+      reveal: true,
+    });
+    expect(valid).toMatchObject({
+      kind: "review-action",
+      state: { selection: { contextDigest: expect.any(String) } },
+    });
+    const afterValid = runtime.getSnapshot().store.getSnapshot();
+    expect(afterValid.selection.contextDigest).not.toBe("caller-authored");
+
+    const crossHunk = await apply("cross-hunk-line", {
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 1,
+      side: "new",
+      line: file.hunks[0]!.additionStart,
+    });
+    expect(crossHunk).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action" },
+    });
+    const incomplete = await apply("incomplete-line", {
+      type: "selection/select",
+      selection: { fileKey: file.key, hunkIndex: 0, side: "new" },
+    });
+    expect(incomplete).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action" },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(afterValid);
+    runtime.dispose();
+  });
+
+  test("executes direct semantic intents transactionally with canonical targets and no-ops", () => {
+    const fixed = new Date("2026-02-03T04:05:06.000Z");
+    const runtime = createReviewSessionRuntime(createBootstrap(), {
+      deps: { nowImpl: () => fixed },
+    });
+    const store = runtime.getSnapshot().store;
+    const initial = store.getSnapshot();
+    let publications = 0;
+    const unsubscribe = store.subscribePublished(() => {
+      publications += 1;
+    });
+    const file = initial.document.files[0]!;
+    const hunk = file.hunks[0]!;
+    const line = hunk.additionStart;
+
+    const unchanged = runtime.executeReviewIntent({
+      type: "notes/set-visibility",
+      visible: initial.showAgentNotes,
+    });
+    expect(unchanged).toEqual({ before: initial, state: initial, changed: false });
+    expect(store.getSnapshot()).toBe(initial);
+    expect(publications).toBe(0);
+
+    const created = runtime.executeReviewIntent({
+      type: "note/create-user",
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line,
+      body: "  direct note  ",
+    });
+    expect(created.before).toBe(initial);
+    expect(created.changed).toBe(true);
+    expect(created.state.stateRevision).toBe(1);
+    expect(created.createdNote).toMatchObject({
+      note: {
+        id: `user:${fixed.getTime()}-1`,
+        summary: "direct note",
+        createdAt: fixed.toISOString(),
+        anchor: {
+          preferred: { side: "new", line },
+          ownerHunkIndex: 0,
+        },
+      },
+    });
+
+    const selected = runtime.executeReviewIntent({
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line,
+      reveal: true,
+    });
+    expect(selected.state.selection).toMatchObject({
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line,
+      contextDigest: expect.any(String),
+    });
+    expect(selected.state.stateRevision).toBe(2);
+
+    const filtered = runtime.executeReviewIntent({ type: "filter/set", filter: "alpha" });
+    expect(filtered.state.filter).toBe("alpha");
+    const visible = runtime.executeReviewIntent({
+      type: "notes/set-visibility",
+      visible: true,
+    });
+    expect(visible.state.showAgentNotes).toBe(true);
+
+    const updated = runtime.executeReviewIntent({
+      type: "note/update-user",
+      noteId: created.createdNote!.note.id,
+      body: " updated ",
+    });
+    expect(updated.state.userNotes[0]!.note).toMatchObject({
+      id: created.createdNote!.note.id,
+      summary: "updated",
+      createdAt: fixed.toISOString(),
+      updatedAt: fixed.toISOString(),
+    });
+    const removed = runtime.executeReviewIntent({
+      type: "note/remove-user",
+      noteId: created.createdNote!.note.id,
+    });
+    expect(removed.changed).toBe(true);
+    expect(removed.state.userNotes).toHaveLength(0);
+    expect(removed.state.stateRevision).toBe(6);
+    expect(publications).toBe(6);
+    unsubscribe();
+    runtime.dispose();
+  });
+
+  test("rejects stale and invalid direct intent targets without publishing", () => {
+    const runtime = createReviewSessionRuntime(createBootstrap());
+    const store = runtime.getSnapshot().store;
+    const before = store.getSnapshot();
+    let publications = 0;
+    const unsubscribe = store.subscribePublished(() => {
+      publications += 1;
+    });
+    const file = before.document.files[0]!;
+    const line = file.hunks[0]!.additionStart;
+
+    expect(() =>
+      runtime.executeReviewIntent(
+        { type: "filter/set", filter: "alpha" },
+        { mode: "generation", expectedGeneration: "generation:retired" },
+      ),
+    ).toThrow("stale-generation");
+    expect(() =>
+      runtime.executeReviewIntent(
+        { type: "filter/set", filter: "alpha" },
+        {
+          mode: "revision",
+          expectedGeneration: before.documentGeneration,
+          expectedStateRevision: before.stateRevision + 1,
+        },
+      ),
+    ).toThrow("stale-revision");
+    expect(() =>
+      runtime.executeReviewIntent({
+        type: "selection/set-line",
+        fileKey: file.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 999,
+      }),
+    ).toThrow(/not backed/);
+    if (file.hunks.length > 1) {
+      expect(() =>
+        runtime.executeReviewIntent({
+          type: "selection/set-line",
+          fileKey: file.key,
+          hunkIndex: 1,
+          side: "new",
+          line,
+        }),
+      ).toThrow(/belongs to hunk/);
+    }
+    expect(store.getSnapshot()).toBe(before);
+    expect(publications).toBe(0);
+    unsubscribe();
+    runtime.dispose();
+  });
+
+  test("does not consume user identities on semantic or attached preflight failures", async () => {
+    const fixed = new Date("2026-03-01T00:00:00.000Z");
+    const semanticRuntime = createReviewSessionRuntime(createBootstrap(), {
+      deps: { nowImpl: () => fixed },
+    });
+    const semanticState = semanticRuntime.getSnapshot().store.getSnapshot();
+    const semanticFile = semanticState.document.files[0]!;
+    const semanticTarget = {
+      fileKey: semanticFile.key,
+      hunkIndex: 0,
+      side: "new" as const,
+      line: semanticFile.hunks[0]!.additionStart,
+    };
+
+    expect(() =>
+      semanticRuntime.executeReviewIntent({
+        type: "note/create-user",
+        ...semanticTarget,
+        line: 999,
+        body: "invalid",
+      }),
+    ).toThrow(/not backed/);
+    expect(
+      semanticRuntime.executeReviewIntent({
+        type: "note/create-user",
+        ...semanticTarget,
+        body: "first valid note",
+      }).createdNote?.note.id,
+    ).toBe(`user:${fixed.getTime()}-1`);
+    semanticRuntime.dispose();
+
+    const attachedHost = createHeadlessHostClient(createBootstrap());
+    const attachedRuntime = createReviewSessionRuntime(createNoteHeavyBootstrap(), {
+      deps: { ...createReloadDeps(), nowImpl: () => fixed },
+      hostClient: attachedHost.hostClient,
+    });
+    const attachedBefore = attachedRuntime.getSnapshot().store.getSnapshot();
+    const attachedFile = attachedBefore.document.files[0]!;
+    const attachedTarget = {
+      fileKey: attachedFile.key,
+      hunkIndex: 0,
+      side: "new" as const,
+      line: attachedFile.hunks[0]!.additionStart,
+    };
+
+    expect(() =>
+      attachedRuntime.executeReviewIntent({
+        type: "note/create-user",
+        ...attachedTarget,
+        body: "rejected by attached producer preflight",
+      }),
+    ).toThrow(/metadata limit|websocket envelope limit/);
+    expect(attachedRuntime.getSnapshot().store.getSnapshot()).toBe(attachedBefore);
+
+    await attachedRuntime.reload("manual", reloadInput("after-preflight-failure"), {
+      resetApp: false,
+    });
+    const reloadedState = attachedRuntime.getSnapshot().store.getSnapshot();
+    const reloadedFile = reloadedState.document.files[0]!;
+    expect(
+      attachedRuntime.executeReviewIntent({
+        type: "note/create-user",
+        fileKey: reloadedFile.key,
+        hunkIndex: 0,
+        side: "new",
+        line: reloadedFile.hunks[0]!.additionStart,
+        body: "first valid note after reload",
+      }).createdNote?.note.id,
+    ).toBe(`user:${fixed.getTime()}-1`);
+    attachedRuntime.dispose();
+  });
+
+  test("allocates fixed-clock user identities once across collisions and calls", () => {
+    const fixed = new Date("2026-03-04T05:06:07.000Z");
+    const baseId = `user:${fixed.getTime()}-1`;
+    const bootstrap = createBootstrap({
+      changeset: {
+        ...createBootstrap().changeset,
+        files: [
+          createTestDiffFile({
+            path: "alpha.ts",
+            agent: {
+              path: "alpha.ts",
+              annotations: [{ id: baseId, newRange: [1, 1], summary: "collision" }],
+            },
+          }),
+        ],
+      },
+    });
+    const runtime = createReviewSessionRuntime(bootstrap, { deps: { nowImpl: () => fixed } });
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const file = state.document.files[0]!;
+    const target = {
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new" as const,
+      line: file.hunks[0]!.additionStart,
+    };
+
+    const first = runtime.executeReviewIntent({
+      type: "note/create-user",
+      ...target,
+      body: "first",
+    });
+    const second = runtime.executeReviewIntent({
+      type: "note/create-user",
+      ...target,
+      body: "second",
+    });
+    expect(first.createdNote?.note.id).toBe(`${baseId}:1`);
+    expect(second.createdNote?.note.id).toBe(`user:${fixed.getTime()}-2`);
+    expect(
+      runtime
+        .getSnapshot()
+        .store.getSnapshot()
+        .userNotes.map((entry) => entry.note.id),
+    ).toEqual([`${baseId}:1`, `user:${fixed.getTime()}-2`]);
+    runtime.dispose();
+  });
+
+  test("preserves markup tri-state and rejects disabled STML before publication", () => {
+    const fixed = new Date("2026-04-05T06:07:08.000Z");
+    const experimentalBootstrap = createBootstrap({
+      input: { kind: "vcs", staged: false, options: { experimental: true } },
+    });
+    const runtime = createReviewSessionRuntime(experimentalBootstrap, {
+      deps: { nowImpl: () => fixed },
+    });
+    const initial = runtime.getSnapshot().store.getSnapshot();
+    const file = initial.document.files[0]!;
+    const created = runtime.executeReviewIntent({
+      type: "note/create-user",
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line: file.hunks[0]!.additionStart,
+      body: "markup",
+      markup: "<strong>markup</strong>",
+    });
+    const noteId = created.createdNote!.note.id;
+    expect(created.createdNote?.note.markup).toBe("<strong>markup</strong>");
+    expect(
+      runtime.executeReviewIntent({ type: "note/update-user", noteId, body: "preserve" }).state
+        .userNotes[0]!.note.markup,
+    ).toBe("<strong>markup</strong>");
+    expect(
+      runtime.executeReviewIntent({
+        type: "note/update-user",
+        noteId,
+        body: "clear",
+        markup: "   ",
+      }).state.userNotes[0]!.note.markup,
+    ).toBeUndefined();
+    runtime.dispose();
+
+    const disabled = createReviewSessionRuntime(createBootstrap());
+    const disabledBefore = disabled.getSnapshot().store.getSnapshot();
+    const disabledFile = disabledBefore.document.files[0]!;
+    expect(() =>
+      disabled.executeReviewIntent({
+        type: "note/create-user",
+        fileKey: disabledFile.key,
+        hunkIndex: 0,
+        side: "new",
+        line: disabledFile.hunks[0]!.additionStart,
+        body: "blocked",
+        markup: "<strong>blocked</strong>",
+      }),
+    ).toThrow(/STML markup is disabled/);
+    expect(disabled.getSnapshot().store.getSnapshot()).toBe(disabledBefore);
+    disabled.dispose();
+  });
+
+  test("emits browser-created user notes once after commit and isolates handler failures", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const events: Array<{ id: string; body: string }> = [];
+    extensions.registry.eventHandlers.note_created.push(
+      {
+        extensionId: "capture",
+        handler: ({ note }) => {
+          events.push({ id: note.id, body: note.body });
+        },
+      },
+      {
+        extensionId: "failure",
+        handler: () => {
+          throw new Error("handler failed");
+        },
+      },
+    );
+    const bootstrap = createBootstrap({ extensions });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const file = before.document.files[0]!;
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-created-event",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: before.documentGeneration,
+        expectedStateRevision: before.stateRevision,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: file.key,
+            hunkIndex: 0,
+            side: "new",
+            line: file.hunks[0]!.additionStart,
+            body: "Browser event",
+          },
+        },
+      },
+    });
+    expect(result).toMatchObject({ kind: "review-action" });
+    const stored = runtime.getSnapshot().store.getSnapshot().userNotes[0]!;
+    expect(events).toEqual([{ id: stored.note.id, body: "Browser event" }]);
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes).toHaveLength(1);
+
+    const revision = runtime.getSnapshot().store.getSnapshot().stateRevision;
+    const invalid = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-invalid-event",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: before.documentGeneration,
+        expectedStateRevision: revision,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: file.key,
+            hunkIndex: 0,
+            side: "new",
+            line: 999,
+            body: "invalid",
+          },
+        },
+      },
+    });
+    expect(invalid).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
+    expect(events).toHaveLength(1);
+    runtime.dispose();
+  });
+
+  test("does not emit created-note events when attached publication preflight rejects", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    let eventCount = 0;
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture",
+      handler: () => {
+        eventCount += 1;
+      },
+    });
+    const bootstrap = { ...createNoteHeavyBootstrap(), extensions };
+    const host = createHeadlessHostClient(createBootstrap());
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const file = before.document.files[0]!;
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "preflight-created-event",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: before.documentGeneration,
+        expectedStateRevision: before.stateRevision,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: file.key,
+            hunkIndex: 0,
+            side: "new",
+            line: file.hunks[0]!.additionStart,
+            body: "blocked by preflight",
+          },
+        },
+      },
+    });
+    expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+    expect(eventCount).toBe(0);
+    runtime.dispose();
+  });
+
   test("rejects a near-limit note before publishing state or revision", async () => {
     const bootstrap = createBootstrap();
     const host = createHeadlessHostClient(bootstrap);
@@ -724,6 +1220,86 @@ describe("ReviewSessionRuntime", () => {
     expect(result).toMatchObject({ commentId: "mcp:agent-comment" });
     expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(1);
     expect(host.updated.at(-1)?.state.liveComments).toHaveLength(1);
+    runtime.dispose();
+  });
+
+  test("removes compatible live notes through browser intents and preserves cached retries", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const comment = {
+      type: "command",
+      requestId: "removable-live-note",
+      command: "comment",
+      input: {
+        sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "Removable agent note",
+        reveal: false,
+      },
+    } as const;
+    const created = await host.dispatchCommand(comment);
+    expect(created).toMatchObject({ commentId: "mcp:removable-live-note" });
+    const liveNote = runtime.getSnapshot().store.getSnapshot().liveNotes[0]!;
+    expect(liveNote.note).toMatchObject({ origin: "live-agent", editable: false });
+    const retainedIds = (runtime as unknown as { sessionCommentIds: Map<string, string> })
+      .sessionCommentIds;
+    expect(retainedIds.get(comment.requestId)).toBe(liveNote.note.id);
+
+    const beforeRemoval = runtime.getSnapshot().store.getSnapshot();
+    const removed = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-remove-live",
+      command: "apply_review_action",
+      input: {
+        sessionId,
+        generation: beforeRemoval.documentGeneration,
+        expectedStateRevision: beforeRemoval.stateRevision,
+        action: { type: "notes/remove-live", noteId: liveNote.note.id },
+      },
+    });
+    expect(removed).toMatchObject({ kind: "review-action" });
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(0);
+    expect(retainedIds.has(comment.requestId)).toBe(false);
+
+    // Existing retry results remain idempotent and do not recreate a removed note.
+    expect(await host.dispatchCommand(comment)).toEqual(created);
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(0);
+
+    const current = runtime.getSnapshot().store.getSnapshot();
+    const locked = {
+      ...liveNote,
+      note: {
+        ...liveNote.note,
+        id: "sidecar:locked",
+        origin: "sidecar" as const,
+        editable: false,
+      },
+    };
+    runtime.getSnapshot().store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: current.documentGeneration,
+      notes: [locked],
+    });
+    const lockedState = runtime.getSnapshot().store.getSnapshot();
+    const rejected = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-remove-locked-live",
+      command: "apply_review_action",
+      input: {
+        sessionId,
+        generation: lockedState.documentGeneration,
+        expectedStateRevision: lockedState.stateRevision,
+        action: { type: "notes/remove-live", noteId: locked.note.id },
+      },
+    });
+    expect(rejected).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action" },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(lockedState);
     runtime.dispose();
   });
 
