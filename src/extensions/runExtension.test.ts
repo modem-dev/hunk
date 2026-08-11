@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
 import { createEmptyExtensionRegistry, type ExtensionLoadIssue } from "./types";
 
@@ -100,6 +101,123 @@ describe("runExtensionFactory", () => {
   });
 });
 
+describe("registerPane", () => {
+  test("collects every placement with normalized thickness", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("panes"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        for (const placement of ["left", "right", "top", "bottom"] as const) {
+          hunk.registerPane({
+            id: placement,
+            placement,
+            thickness: { preferred: 3, min: 2, max: 4 },
+            component: () => null,
+          });
+        }
+      },
+    });
+    expect(issues).toEqual([]);
+    expect(registry.panes.map(({ pane }) => [pane.id, pane.placement, pane.thickness])).toEqual([
+      ["left", "left", { preferred: 3, min: 2, max: 4 }],
+      ["right", "right", { preferred: 3, min: 2, max: 4 }],
+      ["top", "top", { preferred: 3, min: 2, max: 4 }],
+      ["bottom", "bottom", { preferred: 3, min: 2, max: 4 }],
+    ]);
+  });
+
+  test("uses placement-aware defaults on each thickness axis", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("pane-defaults"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerPane({ id: "side", placement: "right", component: () => null });
+        hunk.registerPane({ id: "vertical", placement: "bottom", component: () => null });
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.panes.map(({ pane }) => pane.thickness)).toEqual([
+      { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
+      { preferred: 8, min: 3, max: Number.MAX_SAFE_INTEGER },
+    ]);
+  });
+
+  test("validates opt-ins, replacement keys, and synchronous availability callbacks", () => {
+    for (const pane of [
+      { id: "paint", currentLine: "yes", component: () => null },
+      { id: "replacement", replaces: "", component: () => null },
+      { id: "self", replaces: "bad-pane:self", component: () => null },
+      { id: "availability", available: true, component: () => null },
+    ]) {
+      const registry = createEmptyExtensionRegistry();
+      const issues: ExtensionLoadIssue[] = [];
+      runExtensionFactory({
+        metadata: bundledMetadata("bad-pane"),
+        registry,
+        issues,
+        factory: (hunk) => hunk.registerPane(pane as never),
+      });
+      expect(registry.panes).toEqual([]);
+      expect(issues).toHaveLength(1);
+    }
+  });
+
+  test("rejects invalid placements, thickness values, and bounds", () => {
+    const invalidPanes = [
+      { id: "", component: () => null },
+      { id: "component", component: null },
+      { id: "placement", placement: "center", component: () => null },
+      { id: "zero", thickness: { preferred: 0 }, component: () => null },
+      { id: "fraction", thickness: { preferred: 1.5 }, component: () => null },
+      { id: "infinite", thickness: { preferred: Number.POSITIVE_INFINITY }, component: () => null },
+      {
+        id: "unsafe",
+        thickness: { preferred: Number.MAX_SAFE_INTEGER + 1 },
+        component: () => null,
+      },
+      { id: "bounds", thickness: { preferred: 3, min: 4 }, component: () => null },
+      { id: "maximum", thickness: { preferred: 4, max: 3 }, component: () => null },
+    ];
+
+    for (const pane of invalidPanes) {
+      const registry = createEmptyExtensionRegistry();
+      const issues: ExtensionLoadIssue[] = [];
+      runExtensionFactory({
+        metadata: bundledMetadata("bad-pane"),
+        registry,
+        issues,
+        factory: (hunk) => hunk.registerPane(pane as never),
+      });
+      expect(registry.panes).toEqual([]);
+      expect(issues).toHaveLength(1);
+    }
+  });
+
+  test("rolls pane registrations back when their factory later throws", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("half-pane"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerPane({ id: "tree", component: () => null });
+        throw new Error("after registering");
+      },
+    });
+
+    expect(registry.panes).toEqual([]);
+    expect(issues.map((issue) => issue.extensionId)).toEqual(["half-pane"]);
+  });
+});
+
 describe("registerSidebarView", () => {
   test("collects a valid view tagged with the owning extension", () => {
     const registry = createEmptyExtensionRegistry();
@@ -116,8 +234,16 @@ describe("registerSidebarView", () => {
     });
 
     expect(issues).toEqual([]);
-    expect(registry.sidebarViews).toEqual([
-      { extensionId: "side", view: { id: "tree", component } },
+    expect(registry.panes).toEqual([
+      {
+        extensionId: "side",
+        pane: {
+          id: "tree",
+          placement: "left",
+          thickness: { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
+          component,
+        },
+      },
     ]);
   });
 
@@ -134,7 +260,7 @@ describe("registerSidebarView", () => {
       },
     });
 
-    expect(registry.sidebarViews).toEqual([]);
+    expect(registry.panes).toEqual([]);
     expect(issues.map((issue) => issue.extensionId)).toEqual(["broken-side"]);
     expect(issues[0]?.message).toContain("component function");
   });
@@ -154,8 +280,36 @@ describe("registerSidebarView", () => {
     });
 
     // A failed factory is not loaded, so its sidebar must not win the session.
-    expect(registry.sidebarViews).toEqual([]);
+    expect(registry.panes).toEqual([]);
     expect(issues.map((issue) => issue.extensionId)).toEqual(["half-side"]);
+  });
+
+  test("collides with registerPane through one identity path and keeps the first", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const first = () => null;
+    const duplicate = () => null;
+
+    runExtensionFactory({
+      metadata: bundledMetadata("mixed"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSidebarView({ id: "tree", component: first });
+        hunk.registerPane({ id: "tree", component: duplicate });
+      },
+    });
+
+    const resolved = resolveExtensionPanes(registry);
+    expect(issues).toEqual([]);
+    expect(resolved.panes).toHaveLength(1);
+    expect(resolved.panes[0]?.pane.component).toBe(first);
+    expect(resolved.issues).toEqual([
+      {
+        extensionId: "mixed",
+        message: 'Skipped duplicate pane "mixed:tree" from extension mixed',
+      },
+    ]);
   });
 });
 

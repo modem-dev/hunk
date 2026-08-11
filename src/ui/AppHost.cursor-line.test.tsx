@@ -268,6 +268,27 @@ describe("current line highlight", () => {
     }
   });
 
+  test("hides the lens in pager mode", async () => {
+    const base = createCursorLineBootstrap("row", "split");
+    const bootstrap = {
+      ...base,
+      input: { ...base.input, options: { ...base.input.options, pager: true } },
+    };
+    const setup = await testRender(<AppHost bootstrap={bootstrap as never} />, {
+      width: 120,
+      height: 16,
+    });
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).not.toContain("Current line");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("hides the lens when it would consume the whole review viewport", async () => {
     const setup = await testRender(
       <AppHost bootstrap={createCursorLineBootstrap("row", "split") as never} />,

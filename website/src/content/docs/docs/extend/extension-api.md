@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Branch on it if you want one file to support several Hunk versions. Version 4 adds session-scoped keyboard modes; version 3 added live execution of public Hunk commands from extension command handlers.
+The API generation this Hunk speaks (currently `4`). Branch on it if you want one file to support several Hunk versions. Version 4 adds session-scoped keyboard modes and generalizes sidebars into host-owned panes dockable on every terminal edge; the API-v3 sidebar names remain deprecated aliases during the compatibility window. Version 3 added live execution of public Hunk commands from extension command handlers.
 
 ## `hunk.registerTheme(theme)`
 
@@ -42,11 +42,11 @@ Contribute an additional version-control backend — the same call Hunk's own bu
 
 Full contract: [VCS adapters](/docs/extend/vcs-adapters/).
 
-## `hunk.registerSidebarView(view)`
+## `hunk.registerPane(pane)`
 
-Contribute a sidebar view — your own React component, rendered inside Hunk's OpenTUI tree beside (or in place of) the built-in file navigation. Views receive live review props, guarded navigation actions, the user's resolved keybindings, and a scrollbox ref contract for selection-following and windowing.
+Contribute a pane — your own React component, rendered inside Hunk's OpenTUI tree on the `left`, `right`, `top`, or `bottom` of the review. Panes receive exact host-owned width and height, live review props, guarded navigation actions, the user's resolved keybindings, and optional opaque current-line paint. `registerSidebarView` remains a deprecated left/right compatibility alias.
 
-Full contract: [Custom sidebars](/docs/extend/custom-sidebars/).
+Full contract: [Custom panes](/docs/extend/custom-sidebars/).
 
 ## `hunk.registerFileView(view)`
 
@@ -122,7 +122,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 
 - `ctx.commands.isEnabled(commandId)` / `execute(commandId, { count? })` — probes or invokes an explicitly public built-in `hunk.*` command through the same live table as keyboard and menu actions. Relative movement applies counts atomically; extension-owned and cross-extension commands return `false`.
 - `ctx.keyboardModes.enterMode(id)` / `exitMode()` / `isActive(id?)` — controls only keyboard modes registered by this command's owning extension.
-- `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
+- `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` / `isOpen(paneId)` — a bare id names your own pane, `"files"` the built-in file navigation, `"<extensionId>:<paneId>"` any registered pane. Opening a left/right pane also reveals a hidden sidebar area. `ctx.sidebars` remains a deprecated alias.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
 - `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts, stops, or checks an [interactive preview](/docs/extend/file-previews/#interactive-previews). Entering selects the view and returns whether its mode started.
@@ -235,7 +235,7 @@ Writes require a reloadable, unstaged working-tree review and a writable reviewe
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.sidebars` alongside `cwd` and `notify`, so a `changeset_loaded` handler can reveal its extension's sidebar without a keypress.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes` alongside `cwd` and `notify`, so a `changeset_loaded` handler can reveal its extension's pane without a keypress. `ctx.sidebars` is the deprecated compatibility alias.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
@@ -266,12 +266,12 @@ import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
   hunk.events.on<{ fileCount: number }>("summary:ready", (payload, ctx) => {
-    if (payload.fileCount > 100) ctx.sidebars.open("summary");
+    if (payload.fileCount > 100) ctx.panes.open("summary");
   });
 
   hunk.on("changeset_loaded", ({ changeset }, ctx) => {
     hunk.events.emit("summary:ready", { fileCount: changeset.files.length });
-    ctx.sidebars.open("summary");
+    ctx.panes.open("summary");
   });
 }
 ```

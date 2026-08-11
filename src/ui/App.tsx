@@ -6,7 +6,6 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { writeFile } from "node:fs/promises";
 import {
-  Fragment,
   Suspense,
   lazy,
   useCallback,
@@ -50,11 +49,13 @@ import type {
   ExtensionFileSide,
   ExtensionNotifyType,
   ExtensionReviewNote,
-  ExtensionSidebarControls,
+  ExtensionCurrentLinePaint,
+  ExtensionPaneControls,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
   RegisteredCommand,
+  RegisteredPane,
 } from "../extensions/types";
 import type {
   HunkSessionBrokerClient,
@@ -67,7 +68,7 @@ import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
-import { ExtensionSidebarPane } from "./components/panes/ExtensionSidebarPane";
+import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import {
   findMaxLineNumber,
@@ -99,17 +100,18 @@ import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
-import { createExtensionSidebarKeybindings, resolveCommandKeys } from "./lib/keymap";
+import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
-  buildSessionSidebarViews,
-  bundledSidebarViewKey,
-  initialSidebarOpenState,
-  planSidebarLayout,
-  reconcileSidebarOpenState,
-  resolveSidebarViewKey,
-  type SidebarPanePlan,
-  type SidebarPlacement,
-} from "./lib/sidebarPanes";
+  buildSessionPanes,
+  initialPaneOpenState,
+  planExtensionPanes,
+  reconcilePaneOpenState,
+  resolvePaneKey,
+  type PlannedPane,
+} from "./lib/extensionPanes";
+import type { ExtensionPanePlacement } from "../extension-api/types";
+import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../extensions/extensionIds";
+import { defaultExtensionPaneThickness } from "../extensions/panes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import {
   normalizeWorkspaceWriteRequest,
@@ -208,11 +210,8 @@ export function App({
   watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
-  const SIDEBAR_DEFAULT_WIDTH = 34;
   const DIFF_MIN_WIDTH = 48;
   const BODY_PADDING = 2;
-  const DIVIDER_WIDTH = 1;
-  const DIVIDER_HIT_WIDTH = 5;
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
@@ -246,7 +245,6 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [cursorLine, setCursorLine] = useState<CursorLine>(bootstrap.initialCursorLine ?? "row");
-  const [showLineLens, setShowLineLens] = useState(bootstrap.initialShowLineLens ?? false);
   const [lineCursorAlignmentRequest, setLineCursorAlignmentRequest] = useState<{
     id: number;
     alignment: CurrentLineAlignment;
@@ -265,17 +263,39 @@ export function App({
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
-  const [sidebarWidths, setSidebarWidths] = useState<Record<string, number>>({});
-  const [sidebarResize, setSidebarResize] = useState<{
+  const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
+  const [paneResize, setPaneResize] = useState<{
     key: string;
-    placement: SidebarPlacement;
-    originX: number;
-    startWidth: number;
-    maxWidth: number;
+    registered: RegisteredPane;
+    placement: ExtensionPanePlacement;
+    origin: number;
+    startSize: number;
+    maxSize: number;
+    minSize: number;
   } | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensions = bootstrap.extensions;
+  const sessionPanes = useMemo(
+    () => buildSessionPanes(extensions, { lineLensDefaultOpen: bootstrap.initialShowLineLens }),
+    [bootstrap.initialShowLineLens, extensions],
+  );
+  const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
+  useEffect(
+    () => setPaneOpenState((current) => reconcilePaneOpenState(sessionPanes, current)),
+    [sessionPanes],
+  );
+  const sessionPanesRef = useRef(sessionPanes);
+  sessionPanesRef.current = sessionPanes;
+  const paneOpenStateRef = useRef(paneOpenState);
+  paneOpenStateRef.current = paneOpenState;
+  const showLineLens = paneOpenState.open.includes(HUNK_LINE_LENS_PANE_KEY);
+  const currentLinePaintRequested = sessionPanes.some(
+    (pane) => paneOpenState.open.includes(pane.key) && pane.registered.pane.currentLine === true,
+  );
+  const [currentLinePaint, setCurrentLinePaint] = useState<ExtensionCurrentLinePaint | null>(null);
+  const [paneFailureEpoch, setPaneFailureEpoch] = useState(0);
+  const paneAvailabilityQuarantineRef = useRef(new WeakSet());
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
   // Repo-local extensions were discovered but skipped for want of a trust
@@ -564,32 +584,11 @@ export function App({
     emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
   }, [bootstrap.changeset, extensions]);
 
-  // Every sidebar view this session offers — the bundled file navigation plus
-  // each registered view — and which of them are open. Registration is
-  // additive; the built-in sidebar is itself a bundled extension, so every
-  // pane renders through the extension path.
-  const sessionSidebarViews = useMemo(() => buildSessionSidebarViews(extensions), [extensions]);
-  const [sidebarOpenState, setSidebarOpenState] = useState(() =>
-    initialSidebarOpenState(sessionSidebarViews),
-  );
-  useEffect(() => {
-    // Reloads may add or remove views; keep the user's open/closed choices for
-    // the ones that survived.
-    setSidebarOpenState((current) => reconcileSidebarOpenState(sessionSidebarViews, current));
-  }, [sessionSidebarViews]);
-  const sessionSidebarViewsRef = useRef(sessionSidebarViews);
-  sessionSidebarViewsRef.current = sessionSidebarViews;
-  const sidebarOpenStateRef = useRef(sidebarOpenState);
-  sidebarOpenStateRef.current = sidebarOpenState;
-
-  const setSidebarOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
-    setSidebarOpenState((current) => {
+  const setPaneOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
+    setPaneOpenState((current) => {
       const isOpen = current.open.includes(key);
       const resolved = nextOpen === "toggle" ? !isOpen : nextOpen;
-      if (resolved === isOpen) {
-        return current;
-      }
-
+      if (resolved === isOpen) return current;
       return {
         known: current.known,
         open: resolved ? [...current.open, key] : current.open.filter((open) => open !== key),
@@ -597,65 +596,50 @@ export function App({
     });
   }, []);
 
-  /** Close a sidebar view that failed rendering; never leave the area empty. */
-  const handleSidebarViewFailure = useCallback((key: string) => {
-    setSidebarOpenState((current) => {
-      const open = current.open.filter((openKey) => openKey !== key);
-      return {
-        known: current.known,
-        open: open.length > 0 ? open : [bundledSidebarViewKey()],
-      };
-    });
-  }, []);
-
-  /** Build the sidebar controls one extension's command handlers receive. */
-  const createSidebarControls = useCallback(
-    (extensionId: string): ExtensionSidebarControls => {
-      const resolve = (method: string, viewId: string) => {
-        const key = resolveSidebarViewKey(sessionSidebarViewsRef.current, extensionId, viewId);
-        if (!key) {
+  /** Build the canonical pane controls; deprecated sidebar controls share this object. */
+  const createPaneControls = useCallback(
+    (extensionId: string): ExtensionPaneControls => {
+      const resolve = (method: string, id: string) => {
+        const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
+        if (!key)
           extensions?.context.notify(
-            `Extension ${extensionId} ${method} targeted unknown sidebar view "${viewId}"`,
+            `Extension ${extensionId} ${method} targeted unknown pane "${id}"`,
             "warning",
           );
-        }
-
         return key;
       };
-
+      const revealIfSide = (key: string) => {
+        const pane = sessionPanesRef.current.find((entry) => entry.key === key);
+        if (pane?.placement === "left" || pane?.placement === "right")
+          revealSidebarAreaRef.current();
+      };
       return {
-        open(viewId: string) {
-          const key = resolve("sidebars.open", viewId);
+        open(id) {
+          const key = resolve("panes.open", id);
           if (key) {
-            setSidebarOpen(key, true);
-            // Opening a view is a request to *see* it: a sidebar area the
-            // user hid with `s` reveals again, or the open would be silent.
-            revealSidebarAreaRef.current();
+            setPaneOpen(key, true);
+            revealIfSide(key);
           }
         },
-        close(viewId: string) {
-          const key = resolve("sidebars.close", viewId);
+        close(id) {
+          const key = resolve("panes.close", id);
+          if (key) setPaneOpen(key, false);
+        },
+        toggle(id) {
+          const key = resolve("panes.toggle", id);
           if (key) {
-            setSidebarOpen(key, false);
+            const opens = !paneOpenStateRef.current.open.includes(key);
+            setPaneOpen(key, "toggle");
+            if (opens) revealIfSide(key);
           }
         },
-        toggle(viewId: string) {
-          const key = resolve("sidebars.toggle", viewId);
-          if (key) {
-            const willOpen = !sidebarOpenStateRef.current.open.includes(key);
-            setSidebarOpen(key, "toggle");
-            if (willOpen) {
-              revealSidebarAreaRef.current();
-            }
-          }
-        },
-        isOpen(viewId: string) {
-          const key = resolveSidebarViewKey(sessionSidebarViewsRef.current, extensionId, viewId);
-          return key !== undefined && sidebarOpenStateRef.current.open.includes(key);
+        isOpen(id) {
+          const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
+          return key !== undefined && paneOpenStateRef.current.open.includes(key);
         },
       };
     },
-    [extensions, setSidebarOpen],
+    [extensions, setPaneOpen],
   );
 
   /**
@@ -785,19 +769,23 @@ export function App({
     [createExtensionDialogs],
   );
 
-  // Lifecycle and bus listeners receive the same sidebar controls as commands,
+  // Lifecycle and bus listeners receive the same pane controls as commands,
   // so an extension can react to loaded content by revealing its own pane.
   if (extensions) {
-    extensions.eventContextProvider = (extensionId): ExtensionEventContext => ({
-      cwd: extensions.context.cwd,
-      notify: (message, type) => extensions.context.notify(message, type),
-      sidebars: createSidebarControls(extensionId),
-      events: {
-        emit(event, payload) {
-          emitExtensionCustomEvent(extensions, event, payload);
+    extensions.eventContextProvider = (extensionId): ExtensionEventContext => {
+      const panes = createPaneControls(extensionId);
+      return {
+        cwd: extensions.context.cwd,
+        notify: (message, type) => extensions.context.notify(message, type),
+        panes,
+        sidebars: panes,
+        events: {
+          emit(event, payload) {
+            emitExtensionCustomEvent(extensions, event, payload);
+          },
         },
-      },
-    });
+      };
+    };
   }
 
   /** Invoke one extension command with its context, containing any failure. */
@@ -810,12 +798,14 @@ export function App({
           "warning",
         );
       };
+      const panes = createPaneControls(registered.extensionId);
       const ctx: ExtensionCommandContext = {
         cwd: extensions?.context.cwd ?? process.cwd(),
         commands: extensionCommandControls,
         keyboardModes: createKeyboardModeControls(registered.extensionId, extensions?.registry),
         notify: (message, type) => extensions?.context.notify(message, type),
-        sidebars: createSidebarControls(registered.extensionId),
+        panes,
+        sidebars: panes,
         fileViews: createFileViewControls(registered.extensionId),
         // Snapshot semantics: built when the key fires, so the handler sees
         // where the review was at that moment, even if it awaits and the user
@@ -862,7 +852,7 @@ export function App({
       createExtensionDialogs,
       createFileViewControls,
       createKeyboardModeControls,
-      createSidebarControls,
+      createPaneControls,
       extensionCommandControls,
       createWorkspaceControls,
       extensions,
@@ -900,14 +890,14 @@ export function App({
       }),
     [registeredExtensionCommands, resolvedCommandKeys, runExtensionCommand],
   );
-  // Sidebar views receive the dispatcher’s effective keys, including command
+  // Pane views receive the dispatcher’s effective keys, including command
   // conflicts, rather than independently resolving their default bindings.
-  const sidebarKeybindings = useMemo(() => {
+  const paneKeybindings = useMemo(() => {
     const effectiveKeys = new Map(resolvedCommandKeys);
     for (const command of extensionAppCommands.commands) {
       effectiveKeys.set(command.id, command.keys);
     }
-    return createExtensionSidebarKeybindings(effectiveKeys);
+    return createExtensionPaneKeybindings(effectiveKeys);
   }, [extensionAppCommands.commands, resolvedCommandKeys]);
   const reportedCommandConflictsRef = useRef(new Set<string>());
   useEffect(() => {
@@ -985,7 +975,7 @@ export function App({
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
+  const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + 1 + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const resolvedLayout = responsiveLayout.layout;
@@ -1000,36 +990,80 @@ export function App({
     }
     reportedLayoutRef.current = signature;
   }, [extensions, layoutMode, resolvedLayout]);
-  const sidebarLayout = useMemo(
+  const statusBarVisible =
+    focusArea === "filter" ||
+    Boolean(review.filter) ||
+    Boolean(
+      sessionNoticeText ??
+      transientNoticeText ??
+      noticeText ??
+      fileViewModeHint ??
+      keyboardModeHint,
+    );
+  const bodyHeight = Math.max(
+    0,
+    terminal.height - (showMenuBar ? 1 : 0) - (extensionToast ? 1 : 0) - (statusBarVisible ? 1 : 0),
+  );
+  const failedFilesReplacement = sessionPanes.some(
+    (pane) =>
+      paneOpenState.open.includes(pane.key) &&
+      pane.registered.pane.replaces === HUNK_FILES_PANE_KEY &&
+      paneAvailabilityQuarantineRef.current.has(pane.registered),
+  );
+  const effectiveOpenPaneKeys = paneOpenState.open.filter((key) => {
+    const pane = sessionPanes.find((entry) => entry.key === key);
+    return sidebarAreaVisible || (pane?.placement !== "left" && pane?.placement !== "right");
+  });
+  if (
+    failedFilesReplacement &&
+    sidebarAreaVisible &&
+    !effectiveOpenPaneKeys.includes(HUNK_FILES_PANE_KEY)
+  ) {
+    effectiveOpenPaneKeys.push(HUNK_FILES_PANE_KEY);
+  }
+  const paneLayout = useMemo(
     () =>
-      sidebarAreaVisible
-        ? planSidebarLayout({
-            views: sessionSidebarViews,
-            openKeys: sidebarOpenState.open,
-            widths: sidebarWidths,
-            defaultWidth: SIDEBAR_DEFAULT_WIDTH,
-            minWidth: SIDEBAR_MIN_WIDTH,
-            dividerWidth: DIVIDER_WIDTH,
-            bodyWidth,
-            diffMinWidth: DIFF_MIN_WIDTH,
-          })
-        : { left: [], right: [], totalWidth: 0, leftWidth: 0 },
+      planExtensionPanes({
+        panes: sessionPanes,
+        openKeys: effectiveOpenPaneKeys,
+        sizes: paneSizes,
+        bodyWidth,
+        bodyHeight,
+        minReviewWidth: DIFF_MIN_WIDTH,
+        minReviewHeight: 5,
+        currentLine: currentLinePaint,
+        availabilityContext: {
+          files: getExtensionFileViews(),
+          selectedFileId,
+          selectedHunkIndex,
+        },
+        quarantined: paneAvailabilityQuarantineRef.current,
+        onAvailabilityError: (pane, error) =>
+          extensions?.context.notify(
+            `Extension ${pane.registered.extensionId} pane "${pane.registered.pane.id}" availability failed • ${error instanceof Error ? error.message : String(error)}`,
+            "warning",
+          ),
+      }),
     [
+      bodyHeight,
       bodyWidth,
-      DIFF_MIN_WIDTH,
-      DIVIDER_WIDTH,
-      SIDEBAR_DEFAULT_WIDTH,
-      SIDEBAR_MIN_WIDTH,
-      sessionSidebarViews,
-      sidebarAreaVisible,
-      sidebarOpenState.open,
-      sidebarWidths,
+      currentLinePaint,
+      effectiveOpenPaneKeys.join("\0"),
+      extensions,
+      filteredFiles,
+      getExtensionFileViews,
+      paneFailureEpoch,
+      paneSizes,
+      selectedFileId,
+      selectedHunkIndex,
+      sessionPanes,
     ],
   );
-  const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
-  // DIFF_MIN_WIDTH reserves room while planning sidebars; the pane itself must
-  // still fit terminals narrower than that preferred minimum.
-  const diffPaneWidth = Math.max(0, bodyWidth - sidebarLayout.totalWidth);
+  const renderSidebar = paneLayout.panes.some(
+    ({ pane }) => pane.placement === "left" || pane.placement === "right",
+  );
+  const diffPaneWidth = paneLayout.reviewBounds.width;
+  const diffPaneHeight = paneLayout.reviewBounds.height;
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Mirrors toggleSidebar's reveal half: visible again, forced open when the
   // responsive layout alone would keep it hidden and the terminal has room.
@@ -1100,13 +1134,22 @@ export function App({
       ),
     [diffContentWidth, maxLineNumberDigits, resolvedLayout, showLineNumbers],
   );
-  const isResizingSidebar = sidebarResize !== null;
+  const isResizingPane = paneResize !== null;
 
   useEffect(() => {
-    if (!renderSidebar) {
-      setSidebarResize(null);
+    if (
+      paneResize &&
+      !paneLayout.panes.some(
+        (planned) =>
+          planned.pane.key === paneResize.key &&
+          planned.pane.registered === paneResize.registered &&
+          planned.pane.placement === paneResize.placement &&
+          planned.divider !== undefined,
+      )
+    ) {
+      setPaneResize(null);
     }
-  }, [renderSidebar]);
+  }, [paneLayout.panes, paneResize]);
 
   useEffect(() => {
     // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
@@ -1204,7 +1247,7 @@ export function App({
 
   /** Toggle the old-above-new lens pinned beneath split diffs. */
   const toggleLineLens = () => {
-    setShowLineLens((current) => !current);
+    setPaneOpen(HUNK_LINE_LENS_PANE_KEY, "toggle");
   };
 
   /** Toggle whether mouse selection copies review decorations or only file content. */
@@ -1885,53 +1928,49 @@ export function App({
     themeSelectorOpen: themeSelectorState.open,
   });
 
-  /** Start a mouse drag resize for one sidebar pane's divider. */
-  const beginSidebarResize =
-    (key: string, placement: SidebarPlacement, currentWidth: number) => (event: TuiMouseEvent) => {
-      if (event.button !== MouseButton.LEFT) {
-        return;
-      }
-
-      closeMenu();
-      setSidebarResize({
-        key,
-        placement,
-        originX: event.x,
-        startWidth: currentWidth,
-        // The pane may grow by whatever the review stream can give up.
-        maxWidth: currentWidth + Math.max(0, diffPaneWidth - DIFF_MIN_WIDTH),
-      });
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-  /** Update the dragged pane's width while a resize is active. */
-  const updateSidebarResize = (event: TuiMouseEvent) => {
-    if (!sidebarResize) {
-      return;
-    }
-
-    const { key, placement, originX, startWidth, maxWidth } = sidebarResize;
-    // A right-side pane's divider is its left edge, so the drag delta inverts:
-    // swapping origin and current feeds the same clamp the mirrored motion.
-    const nextWidth =
-      placement === "right"
-        ? resizeSidebarWidth(startWidth, event.x, originX, SIDEBAR_MIN_WIDTH, maxWidth)
-        : resizeSidebarWidth(startWidth, originX, event.x, SIDEBAR_MIN_WIDTH, maxWidth);
-    setSidebarWidths((current) =>
-      current[key] === nextWidth ? current : { ...current, [key]: nextWidth },
-    );
+  /** Start a mouse drag for one resizable pane. */
+  const beginPaneResize = (planned: PlannedPane) => (event: TuiMouseEvent) => {
+    if (event.button !== MouseButton.LEFT) return;
+    const vertical = planned.pane.placement === "left" || planned.pane.placement === "right";
+    const spec =
+      planned.pane.registered.pane.thickness ??
+      defaultExtensionPaneThickness(planned.pane.placement);
+    const currentSize = vertical ? planned.bounds.width : planned.bounds.height;
+    closeMenu();
+    setPaneResize({
+      key: planned.pane.key,
+      registered: planned.pane.registered,
+      placement: planned.pane.placement,
+      origin: vertical ? event.x : event.y,
+      startSize: currentSize,
+      maxSize: Math.min(
+        spec.max ?? Number.MAX_SAFE_INTEGER,
+        currentSize + Math.max(0, vertical ? diffPaneWidth - DIFF_MIN_WIDTH : diffPaneHeight - 5),
+      ),
+      minSize: spec.min ?? 1,
+    });
     event.preventDefault();
     event.stopPropagation();
   };
 
-  /** End the current sidebar resize interaction. */
-  const endSidebarResize = (event?: TuiMouseEvent) => {
-    if (!isResizingSidebar) {
-      return;
-    }
+  /** Update the active pane drag on its placement axis. */
+  const updatePaneResize = (event: TuiMouseEvent) => {
+    if (!paneResize) return;
+    const { key, placement, origin, startSize, maxSize, minSize } = paneResize;
+    const vertical = placement === "left" || placement === "right";
+    const position = vertical ? event.x : event.y;
+    const inverted = placement === "right" || placement === "bottom";
+    const next = inverted
+      ? resizeSidebarWidth(startSize, position, origin, minSize, maxSize)
+      : resizeSidebarWidth(startSize, origin, position, minSize, maxSize);
+    setPaneSizes((current) => (current[key] === next ? current : { ...current, [key]: next }));
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-    setSidebarResize(null);
+  const endPaneResize = (event?: TuiMouseEvent) => {
+    if (!isResizingPane) return;
+    setPaneResize(null);
     event?.preventDefault();
     event?.stopPropagation();
   };
@@ -1950,47 +1989,87 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  // Mirror the App layout: bodyPadding/2 left-padding, then every left pane
-  // plus its divider. Keep this in lockstep with the body container's
-  // paddingLeft and the sidebar render branch below.
-  const diffPaneScreenLeft = bodyPadding / 2 + sidebarLayout.leftWidth;
-  const diffPaneScreenTop = showMenuBar ? 1 : 0;
+  const diffPaneScreenLeft = bodyPadding / 2 + paneLayout.reviewBounds.x;
+  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
 
-  /** Render one open sidebar view at its planned width. */
-  const renderSidebarPane = (pane: SidebarPanePlan) => {
-    // Resolved here so hidden sidebars never pay for the conversion; the
-    // per-source cache hands every pane (and command snapshots) one list.
-    const paneSelection = getExtensionSelection();
+  /** Render one pane from the exact accepted host rectangle. */
+  const renderPane = (planned: PlannedPane) => {
+    const selection = getExtensionSelection();
+    const { bounds, pane } = planned;
     return (
-      <ExtensionSidebarPane
-        registered={pane.view.registered}
-        files={filteredFiles}
-        fileViews={getExtensionFileViews()}
-        selectedFileId={paneSelection.file?.id ?? null}
-        selectedHunkIndex={paneSelection.hunkIndex}
-        showTopChrome={showMenuBar}
-        theme={activeTheme}
-        width={pane.width}
-        keybindings={sidebarKeybindings}
-        notify={(message, type) => extensions?.context.notify(message, type)}
-        onSelectFile={(fileId) => {
-          focusFiles();
-          jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+      <box
+        key={pane.key}
+        style={{
+          position: "absolute",
+          left: bodyPadding / 2 + bounds.x,
+          top: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
         }}
-        onSelectHunk={(fileId, hunkIndex) => {
-          focusFiles();
-          review.selectHunk(fileId, hunkIndex);
-        }}
-        // Extension panes close on a render failure; the bundled files pane is
-        // Hunk's own and keeps its in-place fallback semantics.
-        onRenderFailure={
-          pane.view.key === bundledSidebarViewKey()
-            ? undefined
-            : () => handleSidebarViewFailure(pane.view.key)
-        }
-      />
+      >
+        <ExtensionPaneHost
+          registered={pane.registered}
+          files={filteredFiles}
+          fileViews={getExtensionFileViews()}
+          selectedFileId={selection.file?.id ?? null}
+          selectedHunkIndex={selection.hunkIndex}
+          placement={pane.placement}
+          theme={activeTheme}
+          width={bounds.width}
+          height={bounds.height}
+          currentLine={pane.registered.pane.currentLine ? currentLinePaint : null}
+          showTopChrome={showMenuBar}
+          keybindings={paneKeybindings}
+          notify={(message, type) => extensions?.context.notify(message, type)}
+          onSelectFile={(fileId) => {
+            focusFiles();
+            jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+          }}
+          onSelectHunk={(fileId, hunkIndex) => {
+            focusFiles();
+            review.selectHunk(fileId, hunkIndex);
+          }}
+          onRenderFailure={
+            pane.key === HUNK_FILES_PANE_KEY
+              ? undefined
+              : () => {
+                  paneAvailabilityQuarantineRef.current.add(pane.registered);
+                  if (pane.registered.pane.replaces === HUNK_FILES_PANE_KEY) {
+                    revealSidebarAreaRef.current();
+                  }
+                  setPaneFailureEpoch((value) => value + 1);
+                }
+          }
+        />
+      </box>
     );
   };
+
+  const renderDivider = (planned: PlannedPane) =>
+    planned.divider ? (
+      <box
+        key={`${planned.pane.key}:divider`}
+        style={{
+          position: "absolute",
+          left: bodyPadding / 2 + planned.divider.x,
+          top: planned.divider.y,
+          width: planned.divider.width,
+          height: planned.divider.height,
+        }}
+      >
+        <PaneDivider
+          orientation={planned.divider.width === 1 ? "vertical" : "horizontal"}
+          width={planned.divider.width}
+          height={planned.divider.height}
+          isResizing={paneResize?.key === planned.pane.key}
+          theme={activeTheme}
+          onMouseDown={beginPaneResize(planned)}
+          onMouseDrag={updatePaneResize}
+          onMouseDragEnd={endPaneResize}
+          onMouseUp={endPaneResize}
+        />
+      </box>
+    ) : null;
 
   return (
     <box
@@ -2019,146 +2098,99 @@ export function App({
 
       <box
         style={{
-          flexGrow: 1,
-          flexDirection: "row",
-          gap: 0,
+          width: bodyWidth,
+          height: bodyHeight,
+          flexShrink: 0,
           paddingLeft: bodyPadding / 2,
           paddingRight: bodyPadding / 2,
-          paddingTop: 0,
-          paddingBottom: 0,
           position: "relative",
         }}
-        onMouseDrag={updateSidebarResize}
+        onMouseDrag={updatePaneResize}
         onMouseDragEnd={(event) => {
-          endSidebarResize(event);
+          endPaneResize(event);
           cancelCopySelectionRef.current?.();
         }}
         onMouseUp={(event) => {
-          endSidebarResize(event);
+          endPaneResize(event);
           closeMenu();
           cancelCopySelectionRef.current?.();
         }}
       >
-        {sidebarLayout.left.map((pane, index) => {
-          // Each left pane is followed by its own draggable divider; the hit
-          // zone tracks the divider's absolute column inside the body row.
-          const paneLeft =
-            bodyPadding / 2 +
-            sidebarLayout.left
-              .slice(0, index)
-              .reduce((sum, previous) => sum + previous.width + DIVIDER_WIDTH, 0);
-          const dividerX = paneLeft + pane.width;
-          return (
-            <Fragment key={pane.view.key}>
-              {renderSidebarPane(pane)}
-              <PaneDivider
-                dividerHitLeft={Math.max(
-                  1,
-                  dividerX - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
-                )}
-                dividerHitWidth={DIVIDER_HIT_WIDTH}
-                isResizing={sidebarResize?.key === pane.view.key}
-                theme={activeTheme}
-                onMouseDown={beginSidebarResize(pane.view.key, "left", pane.width)}
-                onMouseDrag={updateSidebarResize}
-                onMouseDragEnd={endSidebarResize}
-                onMouseUp={endSidebarResize}
-              />
-            </Fragment>
-          );
-        })}
-
-        <DiffPane
-          cancelCopySelectionRef={cancelCopySelectionRef}
-          codeHorizontalOffset={codeHorizontalOffset}
-          copyDecorations={copyDecorations}
-          diffContentWidth={diffContentWidth}
-          expandedGapsByFileId={review.expandedGapsByFileId}
-          fileViews={fileViewLayouts}
-          files={filteredFiles}
-          pagerMode={pagerMode}
-          screenLeft={diffPaneScreenLeft}
-          screenTop={diffPaneScreenTop}
-          showTopChrome={showMenuBar}
-          headerLabelWidth={diffHeaderLabelWidth}
-          headerStatsWidth={diffHeaderStatsWidth}
-          layout={resolvedLayout}
-          scrollRef={diffScrollRef}
-          selectedFileId={selectedFile?.id}
-          selectedHunkIndex={selectedHunkIndex}
-          scrollToNote={review.scrollToNote}
-          draftNote={review.draftNote}
-          draftNoteFocused={focusArea === "note"}
-          separatorWidth={diffSeparatorWidth}
-          showAgentNotes={showAgentNotes}
-          showLineNumbers={showLineNumbers}
-          showHunkHeaders={showHunkHeaders}
-          showLineLens={showLineLens}
-          sourceStatusByFileId={review.sourceStatusByFileId}
-          tabWidth={tabWidth}
-          wrapLines={wrapLines}
-          wrapToggleScrollTop={wrapToggleScrollTopRef.current}
-          layoutToggleScrollTop={layoutToggleScrollTopRef.current}
-          layoutToggleRequestId={layoutToggleRequestId}
-          selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
-          selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
-          cursorLine={cursorLine}
-          lineCursor={review.lineCursor}
-          lineCursorRevealRequestId={review.lineCursorRevealRequestId}
-          lineCursorAlignmentRequest={lineCursorAlignmentRequest}
-          theme={activeTheme}
-          width={diffPaneWidth}
-          onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
-          onRemoveUserNote={review.removeUserNote}
-          onSaveDraftNote={saveDraftNote}
-          onStartUserNoteAtHunk={startUserNote}
-          onUpdateDraftNote={updateDraftNote}
-          onBlurDraftNote={blurDraftNote}
-          onCancelDraftNote={cancelDraftNote}
-          onFocusDraftNote={focusDraftNote}
-          onScrollCodeHorizontally={(delta) => {
-            scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
+        {paneLayout.panes.map(renderPane)}
+        {paneLayout.panes.map(renderDivider)}
+        <box
+          style={{
+            position: "absolute",
+            left: bodyPadding / 2 + paneLayout.reviewBounds.x,
+            top: paneLayout.reviewBounds.y,
+            width: diffPaneWidth,
+            height: diffPaneHeight,
           }}
-          onCopyFeedback={showTransientNotice}
-          onFileViewRowFailure={reportFileViewRowFailure}
-          onSelectFile={jumpToFile}
-          onToggleGap={review.toggleGap}
-          onViewportCenteredHunkChange={(fileId, hunkIndex) =>
-            review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
-          }
-          onLineCursorsChange={setLineCursors}
-          onViewportLineCursorChange={review.anchorLineCursor}
-        />
-
-        {sidebarLayout.right.map((pane, index) => {
-          // Right panes sit after the review stream; each is preceded by its
-          // divider, and dragging that divider left grows the pane.
-          const dividerX =
-            bodyPadding / 2 +
-            sidebarLayout.leftWidth +
-            diffPaneWidth +
-            sidebarLayout.right
-              .slice(0, index)
-              .reduce((sum, previous) => sum + previous.width + DIVIDER_WIDTH, 0);
-          return (
-            <Fragment key={pane.view.key}>
-              <PaneDivider
-                dividerHitLeft={Math.max(
-                  1,
-                  dividerX - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
-                )}
-                dividerHitWidth={DIVIDER_HIT_WIDTH}
-                isResizing={sidebarResize?.key === pane.view.key}
-                theme={activeTheme}
-                onMouseDown={beginSidebarResize(pane.view.key, "right", pane.width)}
-                onMouseDrag={updateSidebarResize}
-                onMouseDragEnd={endSidebarResize}
-                onMouseUp={endSidebarResize}
-              />
-              {renderSidebarPane(pane)}
-            </Fragment>
-          );
-        })}
+        >
+          <DiffPane
+            cancelCopySelectionRef={cancelCopySelectionRef}
+            codeHorizontalOffset={codeHorizontalOffset}
+            copyDecorations={copyDecorations}
+            diffContentWidth={diffContentWidth}
+            expandedGapsByFileId={review.expandedGapsByFileId}
+            fileViews={fileViewLayouts}
+            files={filteredFiles}
+            pagerMode={pagerMode}
+            screenLeft={diffPaneScreenLeft}
+            screenTop={diffPaneScreenTop}
+            showTopChrome={showMenuBar}
+            headerLabelWidth={diffHeaderLabelWidth}
+            headerStatsWidth={diffHeaderStatsWidth}
+            layout={resolvedLayout}
+            scrollRef={diffScrollRef}
+            selectedFileId={selectedFile?.id}
+            selectedHunkIndex={selectedHunkIndex}
+            scrollToNote={review.scrollToNote}
+            draftNote={review.draftNote}
+            draftNoteFocused={focusArea === "note"}
+            separatorWidth={diffSeparatorWidth}
+            showAgentNotes={showAgentNotes}
+            showLineNumbers={showLineNumbers}
+            showHunkHeaders={showHunkHeaders}
+            sourceStatusByFileId={review.sourceStatusByFileId}
+            tabWidth={tabWidth}
+            wrapLines={wrapLines}
+            wrapToggleScrollTop={wrapToggleScrollTopRef.current}
+            layoutToggleScrollTop={layoutToggleScrollTopRef.current}
+            layoutToggleRequestId={layoutToggleRequestId}
+            selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
+            selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
+            cursorLine={cursorLine}
+            lineCursor={review.lineCursor}
+            lineCursorRevealRequestId={review.lineCursorRevealRequestId}
+            lineCursorAlignmentRequest={lineCursorAlignmentRequest}
+            theme={activeTheme}
+            width={diffPaneWidth}
+            height={diffPaneHeight}
+            onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+            onRemoveUserNote={review.removeUserNote}
+            onSaveDraftNote={saveDraftNote}
+            onStartUserNoteAtHunk={startUserNote}
+            onUpdateDraftNote={updateDraftNote}
+            onBlurDraftNote={blurDraftNote}
+            onCancelDraftNote={cancelDraftNote}
+            onFocusDraftNote={focusDraftNote}
+            onScrollCodeHorizontally={(delta) => {
+              scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
+            }}
+            onCopyFeedback={showTransientNotice}
+            onFileViewRowFailure={reportFileViewRowFailure}
+            onSelectFile={jumpToFile}
+            onToggleGap={review.toggleGap}
+            onViewportCenteredHunkChange={(fileId, hunkIndex) =>
+              review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
+            }
+            onLineCursorsChange={setLineCursors}
+            currentLinePaintRequested={currentLinePaintRequested}
+            onCurrentLinePaintChange={setCurrentLinePaint}
+            onViewportLineCursorChange={review.anchorLineCursor}
+          />
+        </box>
       </box>
 
       {extensionToast ? (
@@ -2169,15 +2201,7 @@ export function App({
         />
       ) : null}
 
-      {focusArea === "filter" ||
-      Boolean(review.filter) ||
-      Boolean(
-        sessionNoticeText ??
-        transientNoticeText ??
-        noticeText ??
-        fileViewModeHint ??
-        keyboardModeHint,
-      ) ? (
+      {statusBarVisible ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}

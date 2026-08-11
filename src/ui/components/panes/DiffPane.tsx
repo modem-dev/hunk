@@ -14,6 +14,7 @@ import {
   type RefObject,
 } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
+import type { ExtensionCurrentLinePaint } from "../../../extension-api/types";
 import type {
   AgentAnnotation,
   CursorLine,
@@ -75,7 +76,7 @@ import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { SplitLineLens } from "./SplitLineLens";
+import { createExtensionCurrentLinePaint } from "../../lib/extensionCurrentLine";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -227,7 +228,6 @@ export function DiffPane({
   screenTop = 0,
   showTopChrome,
   showAgentNotes,
-  showLineLens = false,
   showLineNumbers,
   showHunkHeaders,
   sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
@@ -240,6 +240,7 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
+  height,
   cancelCopySelectionRef,
   onActiveAddNoteAffordanceChange,
   onRemoveUserNote,
@@ -256,6 +257,8 @@ export function DiffPane({
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
   onLineCursorsChange,
+  currentLinePaintRequested = false,
+  onCurrentLinePaintChange,
   onViewportCenteredHunkChange,
   onViewportLineCursorChange,
 }: {
@@ -285,7 +288,6 @@ export function DiffPane({
   screenTop?: number;
   showTopChrome?: boolean;
   showAgentNotes: boolean;
-  showLineLens?: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   sourceStatusByFileId?: Record<string, FileSourceStatus>;
@@ -298,6 +300,7 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
+  height?: number;
   cancelCopySelectionRef?: RefObject<(() => void) | null>;
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
@@ -316,6 +319,8 @@ export function DiffPane({
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
+  currentLinePaintRequested?: boolean;
+  onCurrentLinePaintChange?: (paint: ExtensionCurrentLinePaint | null) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
@@ -325,9 +330,10 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
-  const [lineLensRowPlan, setLineLensRowPlan] = useState<{
-    fileId: string;
+  const [currentLineRowPlan, setCurrentLineRowPlan] = useState<{
+    source: { file: DiffFile; theme: AppTheme; tabWidth: number };
     rowPlan: DiffSectionRowPlan;
+    highlighted: boolean;
   } | null>(null);
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
@@ -961,24 +967,22 @@ export function DiffPane({
     [cursorLine, renderedLineCursor],
   );
 
-  // The lens is fixed outside the scroll stream, so its height changes only the live viewport —
-  // never section geometry, windowing coordinates, or review navigation targets.
-  const splitLineLensFile = useMemo(() => {
+  // Current-line paint closes over the exact accepted renderer plan. It remains opaque to
+  // extensions and never introduces another highlight request, cache, or cursor model.
+  const currentLinePaintFile = useMemo(() => {
     if (
-      !showLineLens ||
+      !currentLinePaintRequested ||
       layout !== "split" ||
       cursorLine === "off" ||
       !renderedLineCursor ||
       pagerMode ||
-      renderer.height - screenTop < 8 ||
       fileViewRenderPlans.has(renderedLineCursor.fileId)
-    ) {
+    )
       return undefined;
-    }
-
     const sectionIndex = fileSectionIndexById.get(renderedLineCursor.fileId);
     return sectionIndex === undefined ? undefined : files[sectionIndex];
   }, [
+    currentLinePaintRequested,
     cursorLine,
     fileSectionIndexById,
     fileViewRenderPlans,
@@ -986,23 +990,54 @@ export function DiffPane({
     layout,
     pagerMode,
     renderedLineCursor,
-    renderer.height,
-    screenTop,
-    showLineLens,
   ]);
 
-  const lineLensRowPlanCallback = useMemo(() => {
-    if (!splitLineLensFile) {
-      return undefined;
-    }
+  const currentLinePaintSource = useMemo(
+    () => (currentLinePaintFile ? { file: currentLinePaintFile, theme, tabWidth } : null),
+    [currentLinePaintFile, tabWidth, theme],
+  );
 
-    const fileId = splitLineLensFile.id;
-    return (rowPlan: DiffSectionRowPlan) => {
-      setLineLensRowPlan((current) =>
-        current?.fileId === fileId && current.rowPlan === rowPlan ? current : { fileId, rowPlan },
+  const currentLineRowPlanCallback = useMemo(() => {
+    if (!currentLinePaintSource) return undefined;
+    return (rowPlan: DiffSectionRowPlan, highlighted: boolean) => {
+      setCurrentLineRowPlan((current) =>
+        current?.source === currentLinePaintSource &&
+        current.rowPlan === rowPlan &&
+        current.highlighted === highlighted
+          ? current
+          : { source: currentLinePaintSource, rowPlan, highlighted },
       );
     };
-  }, [splitLineLensFile]);
+  }, [currentLinePaintSource]);
+
+  const currentLinePaint = useMemo(() => {
+    if (
+      !currentLinePaintSource ||
+      !renderedLineCursor ||
+      !currentLineRowPlan?.highlighted ||
+      currentLineRowPlan.source !== currentLinePaintSource
+    )
+      return null;
+    return createExtensionCurrentLinePaint({
+      cursor: renderedLineCursor,
+      rowPlan: currentLineRowPlan.rowPlan,
+      showLineNumbers,
+      codeHorizontalOffset,
+      theme,
+    });
+  }, [
+    codeHorizontalOffset,
+    currentLinePaintSource,
+    currentLineRowPlan,
+    renderedLineCursor,
+    showLineNumbers,
+    theme,
+  ]);
+
+  useLayoutEffect(() => {
+    onCurrentLinePaintChange?.(currentLinePaint);
+    return () => onCurrentLinePaintChange?.(null);
+  }, [currentLinePaint, onCurrentLinePaintChange]);
 
   const copySelectedRowKeysByFile = useMemo(
     () =>
@@ -2149,6 +2184,7 @@ export function DiffPane({
     <box
       style={{
         width,
+        ...(height === undefined ? {} : { height }),
         border: renderTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
@@ -2280,7 +2316,9 @@ export function DiffPane({
                           reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
                         }
                         onRowPlanChange={
-                          file.id === splitLineLensFile?.id ? lineLensRowPlanCallback : undefined
+                          file.id === currentLinePaintFile?.id
+                            ? currentLineRowPlanCallback
+                            : undefined
                         }
                         onSelect={selectFileCallback(file.id)}
                         onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
@@ -2297,18 +2335,6 @@ export function DiffPane({
                 theme={theme}
               />
             </box>
-            {splitLineLensFile &&
-            renderedLineCursor &&
-            lineLensRowPlan?.fileId === splitLineLensFile.id ? (
-              <SplitLineLens
-                codeHorizontalOffset={codeHorizontalOffset}
-                cursor={renderedLineCursor}
-                rowPlan={lineLensRowPlan.rowPlan}
-                showLineNumbers={showLineNumbers}
-                theme={theme}
-                width={diffContentWidth}
-              />
-            ) : null}
           </box>
         </box>
       ) : (

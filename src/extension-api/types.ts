@@ -162,7 +162,7 @@ export interface ExtensionDiffFile {
    * is what the renderer draws from. Carry it through untouched — spreading a
    * file (`{ ...file, path }`) preserves it. A file returned without usable
    * metadata is rejected, and the previous changeset is kept. On the read-only
-   * views Hunk hands outward (event payloads, sidebar props, a command's
+   * views Hunk hands outward (event payloads, pane props, a command's
    * selection) it is guarded like the rest of the view: reads pass through,
    * writes into it are refused.
    */
@@ -170,7 +170,7 @@ export interface ExtensionDiffFile {
   /**
    * How this file changed, using the same vocabulary VCS adapters report.
    *
-   * Present on the read-only views Hunk hands outward (event payloads, sidebar
+   * Present on the read-only views Hunk hands outward (event payloads, pane
    * props); a transform that synthesizes a file may omit it, and the file is
    * treated as an ordinary `"change"`.
    */
@@ -182,7 +182,7 @@ export interface ExtensionDiffFile {
    * order — empty for a file with nothing to select (binary, skipped).
    *
    * Like `changeType`, this is filled on the read-only views Hunk hands
-   * outward (event payloads, sidebar props, a command's selection). It is
+   * outward (event payloads, pane props, a command's selection). It is
    * derived from `metadata` at that boundary, so a transform neither receives
    * nor needs to produce it — a `hunks` value on a transform's returned file
    * is ignored in favor of what the metadata actually parses to.
@@ -839,7 +839,7 @@ export interface ExtensionVcsAdapter {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Sidebar views                                                               */
+/* Docked panes                                                                */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -874,8 +874,10 @@ export interface ExtensionPaintTheme {
   noteBorder: string;
 }
 
-/** Backward-compatible name for the shared extension painter theme. */
-export type ExtensionSidebarTheme = ExtensionPaintTheme;
+/** Theme exposed to extension-owned pane painters. */
+export type ExtensionPaneTheme = ExtensionPaintTheme;
+/** @deprecated Use ExtensionPaneTheme. */
+export type ExtensionSidebarTheme = ExtensionPaneTheme;
 
 /**
  * Navigation any extension surface can trigger, exactly as the built-in
@@ -898,25 +900,27 @@ export interface ExtensionReviewNavigation {
 }
 
 /**
- * What a custom sidebar component can trigger: review navigation plus a toast.
+ * What a custom pane component can trigger: review navigation plus a toast.
  *
  * Actions stay valid for as long as the component is mounted.
  */
-export interface ExtensionSidebarActions extends ExtensionReviewNavigation {
+export interface ExtensionPaneActions extends ExtensionReviewNavigation {
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
 }
+/** @deprecated Use ExtensionPaneActions. */
+export type ExtensionSidebarActions = ExtensionPaneActions;
 
 /**
- * The resolved command bindings available to a custom sidebar.
+ * The resolved command bindings available to a custom pane.
  *
- * This mirrors Pi's injected keybindings manager: sidebar components name a
+ * This mirrors Pi's injected keybindings manager: pane components name a
  * command instead of repeating its default chord, so their local key handling
  * follows the user's `[keybindings]` configuration. The command ids are the
  * same ids documented by Hunk (`"hunk.review.nextFile"`) and extensions
  * (`"<extensionId>.<commandId>"`).
  */
-export interface ExtensionSidebarKeybindings {
+export interface ExtensionPaneKeybindings {
   /** Report whether one terminal key event matches the command's current binding. */
   matches(
     key: {
@@ -933,64 +937,91 @@ export interface ExtensionSidebarKeybindings {
   getKeys(commandId: string): readonly string[];
 }
 
-/** Everything a custom sidebar component receives, refreshed as the app changes. */
+/** A terminal edge where a host-owned pane can be docked. */
+export type ExtensionPanePlacement = "left" | "right" | "top" | "bottom";
+
+/** Axis-neutral requested pane size: columns at the sides, rows at the top/bottom. */
+export interface ExtensionPaneThickness {
+  preferred: number;
+  min?: number;
+  max?: number;
+}
+
+/** Opaque host renderer for the selected split row. */
+export interface ExtensionCurrentLinePaint {
+  /** Paint one side as a clipped, no-wrap terminal row. */
+  render(side: "old" | "new", width: number): unknown;
+}
+
+/** Immutable state used to decide whether an open pane is meaningful this frame. */
+export interface ExtensionPaneAvailabilityContext {
+  readonly placement: ExtensionPanePlacement;
+  readonly files: readonly ExtensionDiffFile[];
+  readonly selectedFileId: string | null;
+  readonly selectedHunkIndex: number | null;
+  readonly currentLine: ExtensionCurrentLinePaint | null;
+}
+
+/** Everything a custom pane component receives, refreshed as the app changes. */
+export interface ExtensionPaneProps {
+  readonly files: readonly ExtensionDiffFile[];
+  readonly selectedFileId: string | null;
+  readonly selectedHunkIndex: number | null;
+  readonly placement: ExtensionPanePlacement;
+  /** Exact host-owned component rectangle. */
+  readonly width: number;
+  readonly height: number;
+  readonly theme: ExtensionPaneTheme;
+  readonly keybindings: ExtensionPaneKeybindings;
+  readonly actions: ExtensionPaneActions;
+  /** Non-null only when the registration explicitly requested current-line paint. */
+  readonly currentLine: ExtensionCurrentLinePaint | null;
+}
+
+/** A React/OpenTUI component mounted inside an exact host-owned rectangle. */
+export type ExtensionPaneComponent = (props: ExtensionPaneProps) => unknown;
+
+/** A docked pane contributed by an extension. */
+export interface ExtensionPane {
+  /** Identifies the pane within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  title?: string;
+  /** Defaults to `"left"`. */
+  placement?: ExtensionPanePlacement;
+  /** Defaults to `34`/`22` columns at the sides and `8`/`3` rows at the top/bottom. */
+  thickness?: ExtensionPaneThickness;
+  defaultOpen?: boolean;
+  /** Start in place of this pane. Replacement changes initial defaults only. */
+  replaces?: string;
+  /** Opt into live current-line paint; unrelated panes receive stable null. */
+  currentLine?: boolean;
+  /** Synchronous frame-availability policy. */
+  available?(context: ExtensionPaneAvailabilityContext): boolean;
+  component: ExtensionPaneComponent;
+}
+
+/** @deprecated Use ExtensionPaneKeybindings. */
+export type ExtensionSidebarKeybindings = ExtensionPaneKeybindings;
+/** @deprecated Use ExtensionPanePlacement. */
+export type ExtensionSidebarPlacement = Extract<ExtensionPanePlacement, "left" | "right">;
+/** @deprecated Use ExtensionPaneProps. */
 export interface ExtensionSidebarViewProps {
-  /**
-   * The reviewed files currently visible, in review-stream order.
-   *
-   * Read-only frozen views, filtered the way the built-in sidebar is: the
-   * app's file filter applies before the list reaches the component.
-   */
   files: ExtensionDiffFile[];
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
-  /** Terminal columns the sidebar pane occupies; height comes from flex layout. */
   width: number;
   theme: ExtensionSidebarTheme;
-  /** Resolved command bindings; use these instead of hard-coding sidebar chords. */
   keybindings: ExtensionSidebarKeybindings;
   actions: ExtensionSidebarActions;
 }
-
-/**
- * A custom sidebar component.
- *
- * This is a plain React function component rendered inside Hunk's own tree —
- * import `react` normally (Hunk serves its own instance to extension files, so
- * hooks work; never bundle a copy of React into an extension) and return
- * OpenTUI elements (`box`, `text`, `scrollbox`, ...). The return type is
- * opaque here only because this module publishes no React types; annotate the
- * component with your own `@types/react` and it satisfies this shape.
- */
+/** @deprecated Use ExtensionPaneComponent. */
 export type ExtensionSidebarComponent = (props: ExtensionSidebarViewProps) => unknown;
-
-/** Which side of the review stream a sidebar pane sits on. */
-export type ExtensionSidebarPlacement = "left" | "right";
-
-/**
- * A sidebar view contributed by an extension.
- *
- * Registration is additive: every registered view exists alongside the
- * built-in file navigation, and any number can be open at once. A view opens
- * when `defaultOpen` asks for it, or when extension code opens it through the
- * sidebar controls — typically from a `registerCommand` handler bound to a
- * key.
- */
+/** @deprecated Use ExtensionPane. */
 export interface ExtensionSidebarView {
-  /** Identifies the view within its extension; `<extensionId>:<id>` globally. */
   id: string;
-  /** Human-readable name, for diagnostics and future menu listings. */
   title?: string;
-  /** Which side of the review stream the pane sits on. Defaults to `"left"`. */
   placement?: ExtensionSidebarPlacement;
-  /** Open this view when the session starts. Defaults to closed. */
   defaultOpen?: boolean;
-  /**
-   * Stand in for the built-in file navigation instead of joining it.
-   *
-   * Implies `defaultOpen`: the view starts open and the built-in `files`
-   * sidebar starts closed (the user or an extension can still reopen it).
-   */
   replacesDefault?: boolean;
   component: ExtensionSidebarComponent;
 }
@@ -1074,21 +1105,23 @@ export interface ExtensionKeyboardModeControls {
   isActive(modeId?: string): boolean;
 }
 
-/** Open, close, and inspect sidebar views from a command handler. */
-export interface ExtensionSidebarControls {
+/** Open, close, and inspect panes from a command handler. */
+export interface ExtensionPaneControls {
   /**
-   * Resolve one view: a bare id names this extension's own view, `"files"`
-   * names the built-in file navigation, and `"<extensionId>:<viewId>"`
-   * addresses any registered view explicitly.
+   * Resolve one pane: a bare id names this extension's own pane, `"files"`
+   * names the built-in file navigation, and `"<extensionId>:<paneId>"`
+   * addresses any registered pane explicitly.
    *
-   * Opening a view (here, or via `toggle`) also reveals the sidebar area when
-   * the user has hidden it, so the open is never silent.
+   * Opening a left/right pane (here, or via `toggle`) also reveals the sidebar
+   * area when the user has hidden it, so the open is never silent.
    */
   open(viewId: string): void;
   close(viewId: string): void;
   toggle(viewId: string): void;
   isOpen(viewId: string): boolean;
 }
+/** @deprecated Use ExtensionPaneControls. */
+export type ExtensionSidebarControls = ExtensionPaneControls;
 
 /** Select or inspect the active file presentation from an extension command. */
 export interface ExtensionFileViewControls {
@@ -1182,7 +1215,7 @@ export interface ExtensionReviewSelection {
   /**
    * The selected file among the currently visible (filtered) files, or `null`.
    *
-   * The same frozen read-only view a sidebar component receives in its `files`
+   * The same frozen read-only view a pane component receives in its `files`
    * prop, so holding or mutating it cannot reach the review model. Hunk keeps
    * the selection inside the visible list — filtering away the selected file
    * immediately reselects the first visible one — so in practice this is
@@ -1389,7 +1422,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
   readonly commands: ExtensionCommandControls;
   /** Session keyboard modes registered by this command's owning extension. */
   readonly keyboardModes: ExtensionKeyboardModeControls;
-  sidebars: ExtensionSidebarControls;
+  /** Session panes registered by this command's owning extension. */
+  readonly panes: ExtensionPaneControls;
+  /** @deprecated Use panes. */
+  readonly sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
   fileViews: ExtensionFileViewControls;
   /**
@@ -1400,7 +1436,7 @@ export interface ExtensionCommandContext extends ExtensionContext {
    */
   readonly selection: ExtensionReviewSelection;
   /**
-   * Navigate the review stream, exactly as a sidebar's actions do.
+   * Navigate the review stream, exactly as a pane's actions do.
    *
    * Live rather than snapshot, the opposite of `selection`: a call acts on the
    * review as it is at that moment, validated against the currently visible
@@ -1448,8 +1484,10 @@ export interface ExtensionEventBus {
   emit<Payload = unknown>(event: string, payload: Payload): void;
 }
 
-/** Context lifecycle and bus listeners receive, including live sidebar controls. */
+/** Context lifecycle and bus listeners receive, including live pane controls. */
 export interface ExtensionEventContext extends ExtensionContext {
+  panes: ExtensionPaneControls;
+  /** @deprecated Use panes. */
   sidebars: ExtensionSidebarControls;
   events: Pick<ExtensionEventBus, "emit">;
 }
@@ -1533,13 +1571,13 @@ export interface HunkExtensionAPI {
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
   /**
-   * Contribute a sidebar view beside (or in place of) the built-in one.
+   * Register a docked pane on any terminal edge.
    *
-   * Any number of views can be registered and open simultaneously, on either
-   * side of the review stream. A view that throws while rendering is closed
-   * with a warning naming the extension; the built-in file navigation is
-   * restored if nothing else is showing files.
+   * Any number can be open simultaneously. Hunk owns their exact rectangles,
+   * minimum review bounds, availability, and render-failure containment.
    */
+  registerPane(pane: ExtensionPane): void;
+  /** @deprecated Use registerPane. */
   registerSidebarView(view: ExtensionSidebarView): void;
   /**
    * Register a host-rendered alternative presentation for matching files.
@@ -1561,13 +1599,13 @@ export interface HunkExtensionAPI {
    *
    * The handler runs when the key fires outside modal UI (dialogs, menus,
    * focused inputs own their keys first). Handlers receive the standard
-   * context plus sidebar controls, so a command can open the sidebar view its
-   * extension registered.
+   * context plus pane controls, so a command can open the pane its extension
+   * registered.
    */
   registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler): void;
   /** Rewrite every loaded changeset before review. */
   transformChangeset(fn: ChangesetTransform): void;
-  /** Subscribe to one Hunk lifecycle or UI event. Handlers receive sidebar controls. */
+  /** Subscribe to one Hunk lifecycle or UI event. Handlers receive pane controls. */
   on<Event extends ExtensionEventName>(event: Event, handler: ExtensionEventHandler<Event>): void;
   /** Publish or subscribe to a namespaced event shared with other loaded extensions. */
   readonly events: ExtensionEventBus;

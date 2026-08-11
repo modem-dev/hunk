@@ -105,7 +105,7 @@ export function PierreDiffView({
   onHover?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
-  onRowPlanChange?: (rowPlan: DiffSectionRowPlan) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onToggleGap?: (gapKey: string) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
@@ -243,9 +243,12 @@ export function PierreDiffView({
       visibleAgentNotes,
     ],
   );
+  const rowPlanHighlighted =
+    resolvedHighlighted !== null &&
+    (sourceTextForHighlight === undefined || resolvedHighlightedSource !== null);
   useEffect(() => {
-    onRowPlanChange?.(sectionRowPlan);
-  }, [onRowPlanChange, sectionRowPlan]);
+    onRowPlanChange?.(sectionRowPlan, rowPlanHighlighted);
+  }, [onRowPlanChange, rowPlanHighlighted, sectionRowPlan]);
 
   const plannedRows = sectionRowPlan.plannedRows;
   const lineNumberDigits = sectionRowPlan.lineNumberDigits;

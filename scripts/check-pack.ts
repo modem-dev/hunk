@@ -31,6 +31,7 @@ import type {
   ExtensionKeyboardModeControls,
   ExtensionKeyboardModeKeyResult,
   ExtensionPaintTheme,
+  ExtensionPaneProps,
   ExtensionReviewSelection,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
@@ -54,6 +55,24 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.registerTheme(theme);
   hunk.registerFileLanguage(".zig", "zig");
+
+  const pane = (props: ExtensionPaneProps) => {
+    hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);
+    props.currentLine?.render("new", props.width);
+    return null;
+  };
+  for (const placement of ["left", "right", "top", "bottom"] as const) {
+    hunk.registerPane({ id: placement, placement, thickness: { preferred: 3, min: 2, max: 4 },
+      currentLine: placement === "bottom", component: pane });
+  }
+  hunk.registerSidebarView({
+    id: "legacy",
+    placement: "right",
+    component: ({ files, width }) => {
+      hunk.log(\`legacy:\${files.length}:\${width}\`);
+      return null;
+    },
+  });
 
   const renderRow = (props: ExtensionFileViewRowComponentProps) => {
     const paintTheme: ExtensionPaintTheme = props.theme;
@@ -132,6 +151,8 @@ export default function (hunk: HunkExtensionAPI) {
       modeControls.enterMode("review-keys");
     }
     modeControls.exitMode();
+    ctx.panes.toggle("bottom");
+    if (ctx.sidebars.isOpen("legacy")) ctx.sidebars.close("legacy");
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {

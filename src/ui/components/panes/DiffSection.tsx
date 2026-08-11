@@ -49,7 +49,7 @@ interface DiffSectionProps {
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
-  onRowPlanChange?: (rowPlan: DiffSectionRowPlan) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
 }

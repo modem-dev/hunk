@@ -3,24 +3,24 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, useState, type ReactNode } from "react";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import type {
-  ExtensionSidebarActions,
-  ExtensionSidebarKeybindings,
-  ExtensionSidebarViewProps,
+  ExtensionPaneActions,
+  ExtensionPaneKeybindings,
+  ExtensionPaneProps,
 } from "../../../extension-api/types";
 import { toReadOnlyFileViews } from "../../../extensions/events";
-import type { RegisteredSidebarView } from "../../../extensions/types";
+import type { RegisteredPane } from "../../../extensions/types";
 import { resolveTheme } from "../../themes";
-import { ExtensionSidebarPane } from "./ExtensionSidebarPane";
+import { ExtensionPaneHost } from "./ExtensionPane";
 
 /** One registration object, the way each extension load pass produces a fresh one. */
-function registeredView(component: (props: ExtensionSidebarViewProps) => ReactNode) {
+function registeredView(component: (props: ExtensionPaneProps) => ReactNode) {
   return {
     extensionId: "probe",
-    view: { id: "probe-view", component },
-  } as RegisteredSidebarView;
+    pane: { id: "probe-view", placement: "left", thickness: { preferred: 34, min: 22 }, component },
+  } as unknown as RegisteredPane;
 }
 
-const TEST_KEYBINDINGS: ExtensionSidebarKeybindings = {
+const TEST_KEYBINDINGS: ExtensionPaneKeybindings = {
   matches: () => false,
   getKeys: () => [],
 };
@@ -61,16 +61,16 @@ async function withPane(
   }
 }
 
-describe("ExtensionSidebarPane actions", () => {
+describe("ExtensionPaneHost actions", () => {
   test("refuses garbage hunk indices and clamps the rest into the file's range", async () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
     const notifications: string[] = [];
     const hunkSelections: Array<[string, number]> = [];
-    let actions: ExtensionSidebarActions | undefined;
+    let actions: ExtensionPaneActions | undefined;
 
     await withPane(
-      <ExtensionSidebarPane
+      <ExtensionPaneHost
         registered={registeredView((props) => {
           actions = props.actions;
           return <text content="probe" />;
@@ -82,6 +82,9 @@ describe("ExtensionSidebarPane actions", () => {
         showTopChrome={true}
         theme={theme}
         width={30}
+        height={100}
+        placement="left"
+        currentLine={null}
         keybindings={TEST_KEYBINDINGS}
         notify={(message) => notifications.push(message)}
         onSelectFile={() => {}}
@@ -119,7 +122,48 @@ describe("ExtensionSidebarPane actions", () => {
   });
 });
 
-describe("ExtensionSidebarPane failure recovery", () => {
+describe("ExtensionPaneHost failure recovery", () => {
+  test("the bundled files pane has a renderer-independent safe fallback", async () => {
+    const files = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    const notifications: string[] = [];
+    const registered: RegisteredPane = {
+      extensionId: "hunk",
+      pane: {
+        id: "files",
+        placement: "left",
+        thickness: { preferred: 34, min: 22 },
+        component: () => {
+          throw new Error("files exploded");
+        },
+      },
+    };
+
+    await withPane(
+      <ExtensionPaneHost
+        registered={registered}
+        files={files}
+        fileViews={toReadOnlyFileViews(files)}
+        selectedFileId={null}
+        selectedHunkIndex={null}
+        showTopChrome={true}
+        theme={theme}
+        width={30}
+        height={20}
+        placement="left"
+        currentLine={null}
+        keybindings={TEST_KEYBINDINGS}
+        notify={(message) => notifications.push(message)}
+        onSelectFile={() => {}}
+        onSelectHunk={() => {}}
+      />,
+      async (setup) => {
+        expect(setup.captureCharFrame()).toContain("Files pane unavailable");
+        expect(notifications.some((line) => line.includes("failed rendering"))).toBe(true);
+      },
+    );
+  });
+
   test("a fresh registration clears the failed boundary under unchanged ids", async () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
@@ -131,12 +175,12 @@ describe("ExtensionSidebarPane failure recovery", () => {
     // extension produces, and what the id-keyed remount above cannot detect.
     const fixed = registeredView(() => <text content="FIXED VIEW" />);
 
-    let swapRegistered: ((next: RegisteredSidebarView) => void) | undefined;
+    let swapRegistered: ((next: RegisteredPane) => void) | undefined;
     function Harness() {
       const [registered, setRegistered] = useState(broken);
       swapRegistered = setRegistered;
       return (
-        <ExtensionSidebarPane
+        <ExtensionPaneHost
           registered={registered}
           files={files}
           fileViews={toReadOnlyFileViews(files)}
@@ -145,6 +189,9 @@ describe("ExtensionSidebarPane failure recovery", () => {
           showTopChrome={true}
           theme={theme}
           width={30}
+          height={100}
+          placement="left"
+          currentLine={null}
           keybindings={TEST_KEYBINDINGS}
           notify={(message) => notifications.push(message)}
           onSelectFile={() => {}}

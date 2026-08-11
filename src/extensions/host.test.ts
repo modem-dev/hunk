@@ -241,9 +241,9 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
       { id: "flat-sidebar", sourcePath: entryPath, origin: "global" },
     ]);
     expect(
-      result.registry.sidebarViews.map((entry) => ({
+      result.registry.panes.map((entry) => ({
         extensionId: entry.extensionId,
-        viewId: entry.view.id,
+        viewId: entry.pane.id,
       })),
     ).toEqual([{ extensionId: "flat-sidebar", viewId: "flat" }]);
   });

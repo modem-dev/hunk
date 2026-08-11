@@ -71,6 +71,33 @@ describe("PTY current line", () => {
     }
   });
 
+  test("stepping updates lens content without moving its fixed rectangle", async () => {
+    const fixture = harness.createWideCharacterFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split", "--line-lens"],
+      cols: 140,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/Current line · old above, new below/, {
+        timeout: 15_000,
+      });
+      const lensRow = lineIndexOf(initial, "Current line");
+      expect(initial.split("\n")[lensRow + 1]).toContain("日本語");
+      expect(initial.split("\n")[lensRow + 2]).toContain("한국어");
+
+      await harness.ensureKeyboardIsLive(session);
+      for (let step = 0; step < 4; step += 1) await session.press("j");
+      const moved = await session.waitForText(/plain = 'after'/, { timeout: 5_000 });
+      expect(lineIndexOf(moved, "Current line")).toBe(lensRow);
+      expect(moved.split("\n")[lensRow + 1]).toContain("plain = 'before'");
+      expect(moved.split("\n")[lensRow + 2]).toContain("plain = 'after'");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a held step key advances one line per press", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
