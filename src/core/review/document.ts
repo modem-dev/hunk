@@ -5,6 +5,7 @@ import {
   reviewResourceId,
   semanticFileEntryIdentity,
 } from "./identity";
+import { measureJsonStream } from "./jsonStream";
 import { projectReviewNote, stableReviewNoteId } from "./notes";
 import {
   REVIEW_DOCUMENT_VERSION,
@@ -306,17 +307,18 @@ function projectReviewDocumentGeneration(
       notes,
       expandedContext,
     };
-    const canonicalContent = JSON.stringify(reviewFile);
+    // Canonical file bytes are measured now for a complete immutable descriptor, but are
+    // materialized lazily by the runtime so terminal-only reviews do not retain duplicate JSON.
+    const canonicalMeasurement = measureJsonStream(reviewFile);
     resources.push({
       id: canonicalResourceId,
       kind: "canonical-file",
       generation,
       fileKey,
       contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
-      byteLength: utf8ByteLength(canonicalContent),
-      digest: reviewDigest(canonicalContent),
+      byteLength: canonicalMeasurement.byteLength,
+      digest: canonicalMeasurement.digest,
     });
-    resourceContents[canonicalResourceId] = canonicalContent;
     return reviewFile;
   });
 

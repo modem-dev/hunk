@@ -21,7 +21,20 @@ export function shutdownSession({
   renderer: ShutdownRenderer;
   exit?: (code: number) => never | void;
 }) {
-  root.unmount();
-  renderer.destroy();
-  exit(0);
+  let firstError: unknown;
+  let hasError = false;
+  /** Attempt every cleanup owner while retaining the first failure for deterministic reporting. */
+  const attempt = (cleanup: () => void) => {
+    try {
+      cleanup();
+    } catch (error) {
+      if (!hasError) firstError = error;
+      hasError = true;
+    }
+  };
+
+  attempt(() => root.unmount());
+  attempt(() => renderer.destroy());
+  attempt(() => exit(0));
+  if (hasError) throw firstError;
 }

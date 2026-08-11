@@ -1,9 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDeferred, createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
 import type { HunkConfigResolution } from "../core/config";
+import { reviewGapAddress } from "../core/review/expansion";
 import { projectReviewNote } from "../core/review/notes";
 import { reviewLineContextDigest } from "../core/review/reconcile";
 import type { AppBootstrap, CliInput } from "../core/types";
@@ -114,10 +115,132 @@ describe("ReviewSessionRuntime", () => {
 
     expect(snapshot.bootstrap.changeset.title).toBe("initial");
     expect(snapshot.store.getSnapshot().document).toBe(snapshot.projection.document);
-    const patchId = snapshot.projection.document.files[0]!.patchResourceId;
+    const semanticFile = snapshot.projection.document.files[0]!;
+    const patchId = semanticFile.patchResourceId;
     expect(runtime.getResource(patchId)).toBe(snapshot.bootstrap.changeset.files[0]!.patch);
+    expect(snapshot.projection.resourceContents[semanticFile.canonicalResourceId]).toBeUndefined();
+    const canonical = runtime.getResource(semanticFile.canonicalResourceId);
+    expect(JSON.parse(canonical!)).toEqual(semanticFile);
+    expect(snapshot.projection.resourceContents[semanticFile.canonicalResourceId]).toBe(canonical);
+    expect(runtime.getResource(semanticFile.canonicalResourceId)).toBe(canonical);
     expect(runtime.getReloadBounds().roots).toEqual([process.cwd()]);
     runtime.dispose();
+  });
+
+  test("reuses encoded patch and canonical bytes within one generation and isolates reloads", async () => {
+    const patch = `@@ -1 +1 @@\n-${"a".repeat(300_000)}\n+${"b".repeat(300_000)}\n`;
+    const base = createTestDiffFile({ path: "alpha.ts" });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [{ ...base, patch }] },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: createReloadDeps(async (input, cwd, extensions) => ({
+        ...bootstrap,
+        input,
+        reloadContext: { cwd },
+        extensions,
+      })),
+    });
+    const firstProjection = runtime.getSnapshot().projection;
+    const firstFile = firstProjection.document.files[0]!;
+    const firstGeneration = firstProjection.document.generation;
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const canonical = JSON.stringify(firstFile);
+    const fromSpy = spyOn(Buffer, "from");
+
+    /** Read one producer resource range through the real command bridge. */
+    const read = (generation: string, resourceId: string, offset: number, requestId: string) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "read_review_resource",
+        input: {
+          sessionId,
+          generation,
+          resourceId,
+          offset,
+          length: 256 * 1024,
+        },
+      });
+
+    try {
+      expect(await read(firstGeneration, firstFile.patchResourceId, 0, "patch-1")).toMatchObject({
+        kind: "review-resource",
+        offset: 0,
+      });
+      expect(
+        await read(firstGeneration, firstFile.patchResourceId, 256 * 1024, "patch-2"),
+      ).toMatchObject({ kind: "review-resource", offset: 256 * 1024 });
+      expect(
+        await read(firstGeneration, firstFile.canonicalResourceId, 0, "canonical-1"),
+      ).toMatchObject({ kind: "review-resource", offset: 0 });
+      expect(
+        await read(firstGeneration, firstFile.canonicalResourceId, 0, "canonical-2"),
+      ).toMatchObject({ kind: "review-resource", offset: 0 });
+      expect(fromSpy.mock.calls.filter((call) => call[0] === patch)).toHaveLength(1);
+      expect(fromSpy.mock.calls.filter((call) => call[0] === canonical)).toHaveLength(1);
+
+      await runtime.reload("daemon", reloadInput("replacement"));
+      const replacement = runtime.getSnapshot().projection;
+      const replacementFile = replacement.document.files[0]!;
+      expect(replacement).not.toBe(firstProjection);
+      expect(
+        await read(firstGeneration, firstFile.patchResourceId, 0, "patch-stale"),
+      ).toMatchObject({ kind: "review-error", error: { code: "stale-generation" } });
+      expect(
+        await read(
+          replacement.document.generation,
+          replacementFile.patchResourceId,
+          0,
+          "patch-replacement",
+        ),
+      ).toMatchObject({ kind: "review-resource", offset: 0 });
+      expect(fromSpy.mock.calls.filter((call) => call[0] === patch)).toHaveLength(2);
+    } finally {
+      fromSpy.mockRestore();
+      runtime.dispose();
+    }
+  });
+
+  test("rejects oversized and inconsistent canonical resources before caching output", () => {
+    const oversizedRuntime = createReviewSessionRuntime(createBootstrap());
+    const oversizedProjection = oversizedRuntime.getSnapshot().projection;
+    const oversizedFile = oversizedProjection.document.files[0]!;
+    const oversizedDescriptor = oversizedProjection.document.resources.find(
+      (resource) => resource.id === oversizedFile.canonicalResourceId,
+    )!;
+    let serializationStarted = false;
+    Object.defineProperty(oversizedFile, "toJSON", {
+      configurable: true,
+      get: () => {
+        serializationStarted = true;
+        return undefined;
+      },
+    });
+    oversizedDescriptor.byteLength = 32 * 1024 * 1024 + 1;
+    expect(() => oversizedRuntime.getResource(oversizedFile.canonicalResourceId)).toThrow(
+      "outside resource bounds",
+    );
+    expect(serializationStarted).toBe(false);
+    expect(oversizedProjection.resourceContents[oversizedFile.canonicalResourceId]).toBeUndefined();
+    oversizedRuntime.dispose();
+
+    const inconsistentRuntime = createReviewSessionRuntime(createBootstrap());
+    const inconsistentProjection = inconsistentRuntime.getSnapshot().projection;
+    const inconsistentFile = inconsistentProjection.document.files[0]!;
+    const inconsistentDescriptor = inconsistentProjection.document.resources.find(
+      (resource) => resource.id === inconsistentFile.canonicalResourceId,
+    )!;
+    inconsistentDescriptor.digest = "0".repeat(64);
+    expect(() => inconsistentRuntime.getResource(inconsistentFile.canonicalResourceId)).toThrow(
+      "integrity verification",
+    );
+    expect(
+      inconsistentProjection.resourceContents[inconsistentFile.canonicalResourceId],
+    ).toBeUndefined();
+    inconsistentRuntime.dispose();
   });
 
   test("publishes headless store dispatches and retires old-store broker callbacks", async () => {
@@ -133,12 +256,98 @@ describe("ReviewSessionRuntime", () => {
     expect(host.updated.at(-1)?.state.showAgentNotes).toBe(true);
 
     await runtime.reload("manual", reloadInput("next"), { resetApp: false });
+    expect(host.replaced).toHaveLength(1);
+    expect(host.updated).toHaveLength(1);
     const publicationsAfterReload = host.updated.length;
     previousStore.dispatch({ type: "notes/set-visibility", visible: false });
     expect(host.updated).toHaveLength(publicationsAfterReload);
 
     runtime.getSnapshot().store.dispatch({ type: "notes/set-visibility", visible: false });
     expect(host.updated.at(-1)?.state.showAgentNotes).toBe(false);
+    runtime.dispose();
+  });
+
+  test("keeps drafts local while publishing browser actions, saves, and renderer widths exactly once", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const store = runtime.getSnapshot().store;
+    const initial = store.getSnapshot();
+    const semantic = initial.document.files[0]!;
+    const sourceFile = bootstrap.changeset.files[0]!;
+    const line = semantic.hunks[0]!.additionStart;
+    const generalRevisions: number[] = [];
+    store.subscribe(() => generalRevisions.push(store.getSnapshot().stateRevision));
+
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: initial.documentGeneration,
+      draft: {
+        id: "draft:runtime",
+        fileKey: semantic.key,
+        hunkIndex: 0,
+        side: "new",
+        line,
+        body: "",
+      },
+    });
+    store.dispatch({
+      type: "draft/update",
+      expectedGeneration: initial.documentGeneration,
+      body: "terminal typing",
+    });
+    expect(generalRevisions).toEqual([0, 0]);
+    expect(store.getSnapshot().stateRevision).toBe(0);
+    expect(host.updated).toHaveLength(0);
+
+    const browserResult = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-after-terminal-draft",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: initial.documentGeneration,
+        expectedStateRevision: 0,
+        action: { type: "filter/set", filter: "alpha" },
+      },
+    });
+    expect(browserResult).toMatchObject({ kind: "review-action", stateRevision: 1 });
+    expect(host.updated).toHaveLength(1);
+
+    store.dispatch({
+      type: "draft/save",
+      expectedGeneration: initial.documentGeneration,
+      note: {
+        note: projectReviewNote({
+          annotation: {
+            id: "user:runtime-draft",
+            source: "user",
+            summary: "terminal typing",
+            newRange: [line, line],
+          },
+          fileKey: semantic.key,
+          hunks: sourceFile.metadata.hunks,
+          origin: "user",
+          editable: true,
+        }),
+        contextDigest: reviewLineContextDigest(semantic, "new", line),
+        resolution: "active",
+      },
+    });
+    expect(store.getSnapshot()).toMatchObject({ stateRevision: 2, draftNote: null });
+    expect(host.updated).toHaveLength(2);
+
+    runtime.setSessionRendererFields({ noteMarkupWidth: 42 });
+    expect(host.updated).toHaveLength(3);
+    expect(host.updated.at(-1)?.state).toMatchObject({ stateRevision: 2, noteMarkupWidth: 42 });
+    runtime.setSessionRendererFields({
+      noteMarkupWidth: 42,
+      validateMarkup: () => ["terminal-only"],
+    });
+    expect(host.updated).toHaveLength(3);
+    runtime.setSessionRendererFields({ noteMarkupWidth: 44 });
+    expect(host.updated).toHaveLength(4);
+    expect(host.updated.at(-1)?.state.noteMarkupWidth).toBe(44);
     runtime.dispose();
   });
 
@@ -356,6 +565,65 @@ describe("ReviewSessionRuntime", () => {
     const sourceId = semantic.sourceResourceIds.new!;
     expect(runtime.getResource(sourceId)).toContain("changed");
     runtime.dispose();
+  });
+
+  test("loads only old source for valid deleted-side gaps and rejects whole-file deletion gaps", async () => {
+    const sides: string[] = [];
+    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const changed = [...lines];
+    changed[15] = "changed";
+    const deletedMarked = createTestDiffFile({
+      id: "deleted-marked",
+      path: "deleted-marked.ts",
+      before: `${lines.join("\n")}\n`,
+      after: `${changed.join("\n")}\n`,
+      sourceFetcher: {
+        cacheKey: "deleted-marked-source",
+        getFullText: async (side) => {
+          sides.push(side);
+          return `${lines.join("\n")}\n`;
+        },
+      },
+    });
+    deletedMarked.metadata.type = "deleted";
+    const runtime = createReviewSessionRuntime(
+      createBootstrap({
+        changeset: { ...createBootstrap().changeset, files: [deletedMarked] },
+      }),
+    );
+    const semantic = runtime.getSnapshot().projection.document.files[0]!;
+    await runtime.toggleSourceGap(semantic.key, "before:0");
+    expect(sides).toEqual(["old"]);
+    expect(runtime.getResource(semantic.sourceResourceIds.old!)).toContain("line 1");
+    expect(runtime.getResource(semantic.sourceResourceIds.new!)).toBeUndefined();
+    runtime.dispose();
+
+    let wholeFileReads = 0;
+    const wholeDeletion = createTestDiffFile({
+      id: "whole-deletion",
+      path: "whole-deletion.ts",
+      before: `${lines.join("\n")}\n`,
+      after: "",
+      sourceFetcher: {
+        cacheKey: "whole-deletion-source",
+        getFullText: async () => {
+          wholeFileReads += 1;
+          return `${lines.join("\n")}\n`;
+        },
+      },
+    });
+    const deletionRuntime = createReviewSessionRuntime(
+      createBootstrap({
+        changeset: { ...createBootstrap().changeset, files: [wholeDeletion] },
+      }),
+    );
+    const deletedFile = deletionRuntime.getSnapshot().projection.document.files[0]!;
+    expect(reviewGapAddress(deletedFile, "trailing:0")).toBeUndefined();
+    await expect(deletionRuntime.toggleSourceGap(deletedFile.key, "trailing:0")).rejects.toThrow(
+      "invalid",
+    );
+    expect(wholeFileReads).toBe(0);
+    deletionRuntime.dispose();
   });
 
   test("routes legacy agent comments directly and publishes each exactly once", async () => {
@@ -844,6 +1112,9 @@ describe("ReviewSessionRuntime", () => {
     expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("newer");
     expect(runtime.getSnapshot().revision).toBe(1);
     expect(loadedThemes).toEqual(["older", "newer"]);
+    await runtime.reload("manual", reloadInput("ignored-after-supersede"), { resetApp: false });
+    expect(loadedThemes).toEqual(["older", "newer", "newer"]);
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("newer");
     runtime.dispose();
   });
 
@@ -1155,7 +1426,13 @@ describe("ReviewSessionRuntime", () => {
     const bootstrap = createBootstrap({
       input: { kind: "vcs", staged: false, options: { theme: "old-config" } },
     });
-    const runtime = createReviewSessionRuntime(bootstrap, { deps, rawInput });
+    const host = createHeadlessHostClient(bootstrap);
+    deps.loadStartupExtensionsImpl = async () => createEmptyExtensionLoadResult(process.cwd());
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      deps,
+      rawInput,
+      hostClient: host.hostClient,
+    });
 
     configuredTheme = "config-two";
     await runtime.reload("manual", bootstrap.input, {
@@ -1168,6 +1445,71 @@ describe("ReviewSessionRuntime", () => {
 
     await runtime.reload("daemon", reloadInput("daemon-explicit"), { resetApp: false });
     expect(configuredInputs.at(-1)?.input.options.theme).toBe("daemon-explicit");
+
+    await runtime.reload("manual", reloadInput("ignored-manual-argument"), { resetApp: false });
+    expect(configuredInputs.at(-1)?.input.options.theme).toBe("daemon-explicit");
+    await runtime.reload("watch", reloadInput("ignored-watch-argument"), { resetApp: false });
+    expect(configuredInputs.at(-1)?.input.options.theme).toBe("daemon-explicit");
+
+    const state = runtime.getSnapshot().store.getSnapshot();
+    await expect(
+      host.dispatchCommand({
+        type: "command",
+        requestId: "browser-reload-keeps-daemon-input",
+        command: "apply_review_action",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          generation: state.documentGeneration,
+          expectedStateRevision: state.stateRevision,
+          action: { type: "session/reload" },
+        },
+      }),
+    ).resolves.toMatchObject({ kind: "review-action" });
+    expect(configuredInputs.at(-1)?.input.options.theme).toBe("daemon-explicit");
+    runtime.dispose();
+  });
+
+  test("does not promote daemon input rejected by publication preflight", async () => {
+    const configuredInputs: CliInput[] = [];
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const deps = createReloadDeps(async (input, cwd, extensions) => ({
+      ...createBootstrap(),
+      input,
+      reloadContext: { cwd },
+      changeset: {
+        ...createBootstrap().changeset,
+        title:
+          input.options.theme === "daemon-publication-fails"
+            ? "x".repeat(5 * 1024 * 1024)
+            : (input.options.theme ?? "none"),
+      },
+      extensions,
+    }));
+    const resolveConfigured = deps.resolveConfiguredCliInputImpl!;
+    deps.resolveConfiguredCliInputImpl = ((input: CliInput, options?: { cwd?: string }) => {
+      configuredInputs.push(input);
+      return resolveConfigured(input, options);
+    }) as typeof import("../core/config").resolveConfiguredCliInput;
+    const runtime = createReviewSessionRuntime(bootstrap, { deps, hostClient: host.hostClient });
+
+    await runtime.reload("daemon", reloadInput("daemon-published"), { resetApp: false });
+    const publishedSnapshot = runtime.getSnapshot();
+    expect(host.replaced).toHaveLength(1);
+    await expect(
+      runtime.reload("daemon", reloadInput("daemon-publication-fails"), { resetApp: false }),
+    ).rejects.toThrow(/metadata limit|websocket envelope limit/);
+    expect(runtime.getSnapshot()).toBe(publishedSnapshot);
+    expect(host.replaced).toHaveLength(1);
+
+    await runtime.reload("manual", reloadInput("ignored"), { resetApp: false });
+    expect(configuredInputs.map((input) => input.options.theme)).toEqual([
+      "daemon-published",
+      "daemon-publication-fails",
+      "daemon-published",
+    ]);
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("daemon-published");
+    expect(host.replaced).toHaveLength(2);
     runtime.dispose();
   });
 

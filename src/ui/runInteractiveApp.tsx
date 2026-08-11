@@ -23,17 +23,39 @@ export interface InteractiveAppInput {
   sessionNotice?: string;
 }
 
+export interface InteractiveAppRuntimeDeps {
+  createCliRendererImpl?: typeof createCliRenderer;
+  createRootImpl?: typeof createRoot;
+  installJobControlInterruptSupportImpl?: typeof installJobControlInterruptSupport;
+  installJobControlSuspendSupportImpl?: typeof installJobControlSuspendSupport;
+  shutdownSessionImpl?: typeof shutdownSession;
+  onSignalImpl?: (signal: NodeJS.Signals, listener: () => void) => void;
+  offSignalImpl?: (signal: NodeJS.Signals, listener: () => void) => void;
+}
+
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
-export async function runInteractiveApp({
-  bootstrap,
-  rawInput,
-  controllingTerminal,
-  runtime,
-  hostClient,
-  sessionNotice,
-}: InteractiveAppInput): Promise<void> {
+export async function runInteractiveApp(
+  {
+    bootstrap,
+    rawInput,
+    controllingTerminal,
+    runtime,
+    hostClient,
+    sessionNotice,
+  }: InteractiveAppInput,
+  deps: InteractiveAppRuntimeDeps = {},
+): Promise<void> {
+  const createCliRendererImpl = deps.createCliRendererImpl ?? createCliRenderer;
+  const createRootImpl = deps.createRootImpl ?? createRoot;
+  const installInterruptImpl =
+    deps.installJobControlInterruptSupportImpl ?? installJobControlInterruptSupport;
+  const installSuspendImpl =
+    deps.installJobControlSuspendSupportImpl ?? installJobControlSuspendSupport;
+  const shutdownSessionImpl = deps.shutdownSessionImpl ?? shutdownSession;
+  const onSignalImpl = deps.onSignalImpl ?? ((signal, listener) => process.once(signal, listener));
+  const offSignalImpl = deps.offSignalImpl ?? ((signal, listener) => process.off(signal, listener));
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
-  const renderer = await createCliRenderer({
+  const renderer = await createCliRendererImpl({
     stdin: controllingTerminal?.stdin,
     stdout: process.stdout,
     useMouse: shouldUseMouseForApp({
@@ -48,9 +70,13 @@ export async function runInteractiveApp({
   const appRenderer = renderer;
   let root: ReturnType<typeof createRoot>;
   try {
-    root = createRoot(appRenderer);
+    root = createRootImpl(appRenderer);
   } catch (error) {
-    appRenderer.destroy();
+    try {
+      appRenderer.destroy();
+    } catch {
+      // Root construction remains the authoritative startup failure.
+    }
     throw error;
   }
   const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
@@ -62,19 +88,28 @@ export async function runInteractiveApp({
   function teardown(exit: boolean) {
     if (shuttingDown) return;
     shuttingDown = true;
-    for (const signal of shutdownSignals) process.off(signal, shutdown);
-    jobControlInterruptSupport.dispose();
-    jobControlSuspendSupport.dispose();
-    hostClient?.stop();
-    if (exit) {
-      shutdownSession({ root, renderer: appRenderer });
-      return;
+    let firstError: unknown;
+    let hasError = false;
+    /** Continue through every owner while retaining the first cleanup failure. */
+    const attempt = (cleanup: () => void) => {
+      try {
+        cleanup();
+      } catch (error) {
+        if (!hasError) firstError = error;
+        hasError = true;
+      }
+    };
+
+    for (const signal of shutdownSignals) attempt(() => offSignalImpl(signal, shutdown));
+    attempt(() => jobControlInterruptSupport.dispose());
+    attempt(() => jobControlSuspendSupport.dispose());
+    attempt(() => hostClient?.stop());
+    if (exit) attempt(() => shutdownSessionImpl({ root, renderer: appRenderer }));
+    else {
+      attempt(() => root.unmount());
+      attempt(() => appRenderer.destroy());
     }
-    try {
-      root.unmount();
-    } finally {
-      appRenderer.destroy();
-    }
+    if (hasError) throw firstError;
   }
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
@@ -84,10 +119,10 @@ export async function runInteractiveApp({
 
   try {
     for (const signal of shutdownSignals) {
-      process.once(signal, shutdown);
+      onSignalImpl(signal, shutdown);
     }
-    jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
-    jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
+    jobControlInterruptSupport = installInterruptImpl(appRenderer, shutdown);
+    jobControlSuspendSupport = installSuspendImpl(appRenderer);
 
     // The app owns the full alternate screen session from this point on.
     root.render(
@@ -102,7 +137,11 @@ export async function runInteractiveApp({
       />,
     );
   } catch (error) {
-    teardown(false);
+    try {
+      teardown(false);
+    } catch {
+      // Startup/render failure remains authoritative over cleanup failures.
+    }
     throw error;
   }
 }

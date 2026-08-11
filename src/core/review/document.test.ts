@@ -40,6 +40,16 @@ describe("review document projection", () => {
         fileKey: file.key,
       });
       expect(resourceContents[file.patchResourceId]).toBe(fixture.changeset.files[index]?.patch);
+      const canonical = document.resources.find(
+        (resource) => resource.id === file.canonicalResourceId,
+      );
+      const serializedFile = JSON.stringify(file);
+      expect(canonical).toMatchObject({
+        kind: "canonical-file",
+        byteLength: Buffer.byteLength(serializedFile, "utf8"),
+        digest: reviewDigest(serializedFile),
+      });
+      expect(resourceContents[file.canonicalResourceId]).toBeUndefined();
     }
 
     const moved = document.files.find((file) => file.path === "src/moved.ts")!;

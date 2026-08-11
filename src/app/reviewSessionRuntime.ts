@@ -46,6 +46,7 @@ import {
   type SessionRendererSnapshotFields,
 } from "../session/app/reviewSnapshot";
 import {
+  MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
   assertReviewProducerEnvelopeWithinBounds,
@@ -136,6 +137,8 @@ interface QueuedReload {
 interface PreparedReload {
   epoch: number;
   reason: SessionReloadReason;
+  /** Raw authoritative invocation used to prepare this candidate. */
+  requestedInput: CliInput;
   options: ReloadSessionOptions;
   cwd: string;
   prepared: SessionBootstrapResult;
@@ -151,6 +154,12 @@ type CachedSessionCommentResult =
   | { command: "comment_batch"; requestId: string; result: AppliedCommentBatchResult };
 
 const MAX_SESSION_COMMENT_RESULTS = 256;
+const MAX_ENCODED_RESOURCE_CACHE_BYTES = MAX_REVIEW_RESOURCE_BYTES * 2;
+
+interface EncodedResourceCache {
+  entries: Map<string, Buffer>;
+  totalBytes: number;
+}
 
 /** Project the renderer-neutral generation and all of its materialized resources. */
 function projectBootstrap(bootstrap: AppBootstrap, generation: string) {
@@ -172,7 +181,7 @@ export class ReviewSessionRuntime {
   private hostClient?: HunkSessionBrokerClient;
   private readonly watchRuntime?: WatchedInputRuntime;
   private readonly deps: Required<ReviewSessionRuntimeDeps>;
-  private readonly rawInput: CliInput;
+  private currentRawInput: CliInput;
   private readonly launchExperimental: boolean;
   private readonly launchExtensionsEnabled: boolean | undefined;
   private readonly launchExtensionPaths: string[] | undefined;
@@ -182,6 +191,7 @@ export class ReviewSessionRuntime {
   private readonly preparingExtensionResults = new Map<number, ExtensionLoadResult>();
   private extensionsCwd: string;
   private rendererFields: SessionRendererSnapshotFields = {};
+  private lastBrokerPublicationKey: string | undefined;
   private watchController: WatchController | null = null;
   private storeSubscription: (() => void) | null = null;
   private reloadQueue: QueuedReload[] = [];
@@ -195,6 +205,11 @@ export class ReviewSessionRuntime {
   private readonly sessionCommentIds = new Map<string, string>();
   private readonly sessionCommentResults = new Map<string, CachedSessionCommentResult>();
   private readonly sourceLoads = new Map<string, Promise<void>>();
+  /** Generation projections own bounded encoded bytes without widening the protocol model. */
+  private readonly encodedResourceBytes = new WeakMap<
+    ReviewDocumentProjectionV1,
+    EncodedResourceCache
+  >();
   private asynchronousActionReservation:
     | { generation: string; stateRevision: number; token: symbol }
     | undefined;
@@ -215,10 +230,11 @@ export class ReviewSessionRuntime {
       loadStartupExtensionsImpl: options.deps?.loadStartupExtensionsImpl ?? loadStartupExtensions,
       writeExtensionTrustImpl: options.deps?.writeExtensionTrustImpl ?? writeExtensionTrust,
     };
-    this.rawInput = options.rawInput ?? bootstrap.input;
-    this.launchExperimental = this.rawInput.options.experimental === true;
-    this.launchExtensionsEnabled = this.rawInput.options.extensions;
-    this.launchExtensionPaths = this.rawInput.options.extensionPaths;
+    const launchInput = options.rawInput ?? bootstrap.input;
+    this.currentRawInput = launchInput;
+    this.launchExperimental = launchInput.options.experimental === true;
+    this.launchExtensionsEnabled = launchInput.options.extensions;
+    this.launchExtensionPaths = launchInput.options.extensionPaths;
     this.reloadBounds = createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd });
     this.extensionsCwd = this.reloadBounds.defaultCwd;
     const projection = projectBootstrap(bootstrap, "generation:runtime:0");
@@ -248,6 +264,7 @@ export class ReviewSessionRuntime {
   attachHostClient(hostClient: HunkSessionBrokerClient) {
     if (this.disposed) return;
     this.hostClient = hostClient;
+    this.lastBrokerPublicationKey = this.brokerPublicationKey(this.snapshot.store.getSnapshot());
     hostClient.setBridge({ dispatchCommand: (message) => this.dispatchSessionCommand(message) });
   }
 
@@ -296,13 +313,82 @@ export class ReviewSessionRuntime {
     return { roots: [...this.reloadBounds.roots], defaultCwd: this.reloadBounds.defaultCwd };
   }
 
-  /** Resolve one materialized resource only from the active generation. */
-  getResource(resourceId: string) {
-    const descriptor = this.snapshot.projection.document.resources.find(
-      (resource) => resource.id === resourceId,
-    );
+  /** Materialize one active-generation resource string without retaining encoded duplicates. */
+  private materializeResourceText(projection: ReviewDocumentProjectionV1, resourceId: string) {
+    const descriptor = projection.document.resources.find((resource) => resource.id === resourceId);
     if (!descriptor) throw new Error(`Unknown or retired review resource ${resourceId}.`);
-    return this.snapshot.projection.resourceContents[resourceId];
+    const cached = projection.resourceContents[resourceId];
+    if (cached !== undefined) return cached;
+    if (descriptor.kind !== "canonical-file") return undefined;
+    if (
+      descriptor.byteLength === undefined ||
+      descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES ||
+      !descriptor.digest
+    ) {
+      throw new Error(`Canonical review resource ${resourceId} is outside resource bounds.`);
+    }
+    const file = projection.document.files.find(
+      (candidate) =>
+        candidate.key === descriptor.fileKey && candidate.canonicalResourceId === resourceId,
+    );
+    if (!file) throw new Error(`Canonical review resource ${resourceId} has no matching file.`);
+    // Descriptor measurement preflights the complete output, so this allocation is always bounded.
+    const text = JSON.stringify(file);
+    projection.resourceContents[resourceId] = text;
+    return text;
+  }
+
+  /** Encode and verify one active resource once within its projection-scoped bounded LRU. */
+  private resolveResourceBytes(projection: ReviewDocumentProjectionV1, resourceId: string) {
+    const descriptor = projection.document.resources.find((resource) => resource.id === resourceId);
+    if (
+      !descriptor ||
+      descriptor.byteLength === undefined ||
+      descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES ||
+      !descriptor.digest
+    ) {
+      throw new Error(`Review resource ${resourceId} is outside materialized resource bounds.`);
+    }
+    let cache = this.encodedResourceBytes.get(projection);
+    if (!cache) {
+      cache = { entries: new Map(), totalBytes: 0 };
+      this.encodedResourceBytes.set(projection, cache);
+    }
+    const cached = cache.entries.get(resourceId);
+    if (cached) {
+      cache.entries.delete(resourceId);
+      cache.entries.set(resourceId, cached);
+      return cached;
+    }
+    const text = this.materializeResourceText(projection, resourceId);
+    if (text === undefined) throw new Error(`Review resource ${resourceId} is not materialized.`);
+    const bytes = Buffer.from(text, "utf8");
+    if (bytes.byteLength !== descriptor.byteLength || reviewDigest(bytes) !== descriptor.digest) {
+      if (descriptor.kind === "canonical-file") delete projection.resourceContents[resourceId];
+      throw new Error(`Review resource ${resourceId} failed integrity verification.`);
+    }
+    while (
+      cache.entries.size > 0 &&
+      cache.totalBytes + bytes.byteLength > MAX_ENCODED_RESOURCE_CACHE_BYTES
+    ) {
+      const oldestId = cache.entries.keys().next().value;
+      if (oldestId === undefined) break;
+      const retired = cache.entries.get(oldestId)!;
+      cache.entries.delete(oldestId);
+      cache.totalBytes -= retired.byteLength;
+    }
+    cache.entries.set(resourceId, bytes);
+    cache.totalBytes += bytes.byteLength;
+    return bytes;
+  }
+
+  /** Resolve one verified materialized resource only from the active generation. */
+  getResource(resourceId: string) {
+    const { projection } = this.snapshot;
+    const text = this.materializeResourceText(projection, resourceId);
+    if (text === undefined) return undefined;
+    this.resolveResourceBytes(projection, resourceId);
+    return text;
   }
 
   /** Begin lifecycle events and watch observation after an adapter has mounted. */
@@ -317,8 +403,9 @@ export class ReviewSessionRuntime {
 
   /** Update terminal-only fields used when mirroring semantic state to the broker. */
   setSessionRendererFields(fields: SessionRendererSnapshotFields) {
+    const previousWidth = this.rendererFields.noteMarkupWidth;
     this.rendererFields = fields;
-    this.publishBrokerSnapshot(this.snapshot.store);
+    if (fields.noteMarkupWidth !== previousWidth) this.publishBrokerSnapshot(this.snapshot.store);
   }
 
   /** Queue every reload trigger through one ordered executor. */
@@ -390,7 +477,7 @@ export class ReviewSessionRuntime {
 
     if (canReloadInput(this.snapshot.bootstrap.input)) {
       try {
-        await this.reload("manual", this.rawInput, {
+        await this.reload("manual", this.currentRawInput, {
           resetApp: false,
           reloadExtensions: true,
           sourcePath: this.currentSourcePath(),
@@ -518,9 +605,9 @@ export class ReviewSessionRuntime {
 
   /** Run canonical config, extension discovery, VCS resolution, loading, and transforms. */
   private async prepareReload(request: QueuedReload): Promise<PreparedReload> {
-    // Local refreshes reapply config to the launch invocation. Daemon requests are new,
-    // explicit invocations and therefore remain authoritative for their own source/options.
-    const requestedInput = request.reason === "daemon" ? request.input : this.rawInput;
+    // Local refreshes reapply config to the current authoritative raw invocation. Daemon
+    // requests are explicit candidates and become authoritative only after successful publish.
+    const requestedInput = request.reason === "daemon" ? request.input : this.currentRawInput;
     const launchOverrides = {
       experimental: this.launchExperimental,
       ...(this.launchExtensionsEnabled !== undefined
@@ -590,6 +677,7 @@ export class ReviewSessionRuntime {
     return {
       epoch: request.epoch,
       reason: request.reason,
+      requestedInput,
       options: request.options,
       cwd,
       prepared,
@@ -692,11 +780,14 @@ export class ReviewSessionRuntime {
     }
     if (this.hostClient && nextRegistration) {
       this.hostClient.replaceSession(nextRegistration, nextSessionSnapshot);
+      this.lastBrokerPublicationKey = this.brokerPublicationKey(store.getSnapshot());
       this.hostClient.setBridge({
         dispatchCommand: (message) => this.dispatchSessionCommand(message),
       });
     }
     if (this.disposed) return result;
+    // Promote a daemon invocation only after the complete generation and broker replacement publish.
+    if (reload.reason === "daemon") this.currentRawInput = reload.requestedInput;
 
     this.bindStore(store);
     if (this.disposed) return result;
@@ -742,7 +833,7 @@ export class ReviewSessionRuntime {
       runtime: this.watchRuntime,
       onReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
       refresh: async () => {
-        await this.reload("watch", this.rawInput, {
+        await this.reload("watch", this.currentRawInput, {
           resetApp: false,
           sourcePath: this.currentSourcePath(),
         });
@@ -774,18 +865,26 @@ export class ReviewSessionRuntime {
     extensions.registry.pendingCustomEvents.length = 0;
   }
 
-  /** Publish a semantic snapshot only for the currently bound store generation. */
-  private publishBrokerSnapshot(store: ReviewStore) {
-    if (this.disposed || store !== this.snapshot.store) return;
-    this.hostClient?.updateSnapshot(
-      createSessionSnapshotFromReviewState(store.getSnapshot(), this.rendererFields),
-    );
+  /** Identify the externally visible semantic and renderer fields mirrored to the broker. */
+  private brokerPublicationKey(state: ReviewState) {
+    return `${state.documentGeneration}\0${state.stateRevision}\0${this.rendererFields.noteMarkupWidth ?? ""}`;
   }
 
-  /** Subscribe broker publication directly to the active renderer-neutral store. */
+  /** Publish a semantic snapshot only when its broker-visible revision or width changed. */
+  private publishBrokerSnapshot(store: ReviewStore) {
+    if (this.disposed || store !== this.snapshot.store || !this.hostClient) return;
+    const state = store.getSnapshot();
+    const key = this.brokerPublicationKey(state);
+    if (key === this.lastBrokerPublicationKey) return;
+    this.hostClient.updateSnapshot(
+      createSessionSnapshotFromReviewState(state, this.rendererFields),
+    );
+    this.lastBrokerPublicationKey = key;
+  }
+
+  /** Subscribe broker publication only to externally visible store revisions. */
   private bindStore(store: ReviewStore) {
-    this.storeSubscription = store.subscribe(() => this.publishBrokerSnapshot(store));
-    this.publishBrokerSnapshot(store);
+    this.storeSubscription = store.subscribePublished(() => this.publishBrokerSnapshot(store));
   }
 
   /** Retire both semantic publication and command mutation authority before generation cutover. */
@@ -846,24 +945,21 @@ export class ReviewSessionRuntime {
       );
     }
 
-    const descriptor = this.snapshot.projection.document.resources.find(
+    const { projection } = this.snapshot;
+    const descriptor = projection.document.resources.find(
       (resource) => resource.id === input.resourceId,
     );
-    const text = this.snapshot.projection.resourceContents[input.resourceId];
-    if (
-      !descriptor ||
-      descriptor.byteLength === undefined ||
-      !descriptor.digest ||
-      text === undefined
-    ) {
+    let bytes: Buffer | undefined;
+    try {
+      bytes = this.resolveResourceBytes(projection, input.resourceId);
+    } catch {
+      bytes = undefined;
+    }
+    if (!descriptor || descriptor.byteLength === undefined || !descriptor.digest || !bytes) {
       return this.reviewCommandError(
         "unknown-resource",
         `Review resource ${input.resourceId} has no bounded materialized descriptor.`,
       );
-    }
-    const bytes = Buffer.from(text, "utf8");
-    if (bytes.byteLength !== descriptor.byteLength) {
-      return this.reviewCommandError("unknown-resource", "Resource content size is inconsistent.");
     }
     if (input.offset > descriptor.byteLength) {
       return this.reviewCommandError("invalid-range", "Resource offset is outside its content.");
@@ -1419,7 +1515,7 @@ export class ReviewSessionRuntime {
         case "session/reload":
           if (!canReloadInput(this.snapshot.bootstrap.input))
             throw new Error("This review cannot be reloaded.");
-          await this.reload("manual", this.rawInput, {
+          await this.reload("manual", this.currentRawInput, {
             resetApp: false,
             reloadExtensions: true,
             sourcePath: this.currentSourcePath(),

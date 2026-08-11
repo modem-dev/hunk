@@ -132,6 +132,8 @@ interface Subscriber {
 /** Add browser-review authentication, assets, API, and observer SSE above Hunk broker state. */
 export class BrowserReviewServer {
   private readonly authSessions = new Map<string, AuthSession>();
+  /** Sessions that have completed an authenticated snapshot read or opened an event stream. */
+  private readonly interestedSessions = new Set<string>();
   private readonly eventsBySession = new Map<string, HistoryEntry[]>();
   private readonly subscribers = new Set<Subscriber>();
   private readonly encoder = new TextEncoder();
@@ -184,7 +186,7 @@ export class BrowserReviewServer {
     switch (api.kind) {
       case "snapshot":
         return request.method === "GET"
-          ? this.json(this.state.getBrowserReviewSnapshot(api.sessionId))
+          ? this.handleSnapshot(api.sessionId)
           : this.methodNotAllowed("GET");
       case "events":
         return request.method === "GET"
@@ -229,6 +231,7 @@ export class BrowserReviewServer {
     clearInterval(this.heartbeat);
     this.unsubscribe();
     this.authSessions.clear();
+    this.interestedSessions.clear();
     this.eventsBySession.clear();
     this.totalHistoryBytes = 0;
     for (const subscriber of Array.from(this.subscribers)) this.closeSubscriber(subscriber);
@@ -380,6 +383,7 @@ export class BrowserReviewServer {
       capabilityHash: expected,
       expiresAt: this.now() + this.cookieTtlMs,
     });
+    this.pruneOrphanedInterest();
     const path = `/review-api/${encodeURIComponent(record.sessionId)}/`;
     const cookie = [
       `${COOKIE_NAME}=${token}`,
@@ -393,6 +397,13 @@ export class BrowserReviewServer {
       { ok: true, sessionId: record.sessionId },
       { headers: { "set-cookie": cookie } },
     );
+  }
+
+  /** Return the current snapshot and begin browser event retention only after it exists. */
+  private handleSnapshot(sessionId: string) {
+    const snapshot = this.state.getBrowserReviewSnapshot(sessionId);
+    this.interestedSessions.add(sessionId);
+    return this.json(snapshot);
   }
 
   private authenticate(request: Request, sessionId: string) {
@@ -435,6 +446,31 @@ export class BrowserReviewServer {
         this.authSessions.delete(key);
       }
     }
+    for (const subscriber of Array.from(this.subscribers)) {
+      this.revalidateSubscriber(subscriber);
+    }
+    this.pruneOrphanedInterest();
+  }
+
+  /** Drop replay state once no valid cookie or stream can reconnect to it. */
+  private pruneOrphanedInterest() {
+    for (const sessionId of Array.from(this.interestedSessions)) {
+      const authorized = Array.from(this.authSessions.values()).some(
+        (auth) => auth.sessionId === sessionId && auth.expiresAt > this.now(),
+      );
+      const subscribed = Array.from(this.subscribers).some(
+        (subscriber) => subscriber.sessionId === sessionId && !subscriber.closed,
+      );
+      if (!authorized && !subscribed) this.clearSessionInterest(sessionId);
+    }
+  }
+
+  /** Release one session's browser interest and bounded reconnect history. */
+  private clearSessionInterest(sessionId: string) {
+    this.interestedSessions.delete(sessionId);
+    const retiredHistory = this.eventsBySession.get(sessionId) ?? [];
+    this.totalHistoryBytes -= retiredHistory.reduce((sum, entry) => sum + entry.byteLength, 0);
+    this.eventsBySession.delete(sessionId);
   }
 
   private hasJsonContentType(request: Request) {
@@ -629,22 +665,28 @@ export class BrowserReviewServer {
   /** Translate one broker mirror observation without consulting the producer socket. */
   private observe(event: HunkSessionObserverEvent) {
     if (event.type === "disconnect") {
-      const frame = this.eventBatch(`disconnect.${this.now()}`, "disconnect", {
-        sessionId: event.sessionId,
-      }).frames[0]!;
-      for (const subscriber of Array.from(this.subscribers)) {
-        if (subscriber.sessionId !== event.sessionId) continue;
-        if (subscriber.expiresAt <= this.now()) this.closeSubscriber(subscriber);
-        else this.sendFinalFrameAndClose(subscriber, frame);
+      const matchingSubscribers = Array.from(this.subscribers).filter(
+        (subscriber) => subscriber.sessionId === event.sessionId,
+      );
+      let frame: SseFrame | undefined;
+      for (const subscriber of matchingSubscribers) {
+        if (subscriber.expiresAt <= this.now()) {
+          this.closeSubscriber(subscriber);
+          continue;
+        }
+        frame ??= this.eventBatch(`disconnect.${this.now()}`, "disconnect", {
+          sessionId: event.sessionId,
+        }).frames[0]!;
+        this.sendFinalFrameAndClose(subscriber, frame);
       }
       for (const [key, auth] of this.authSessions) {
         if (auth.sessionId === event.sessionId) this.authSessions.delete(key);
       }
-      const retiredHistory = this.eventsBySession.get(event.sessionId) ?? [];
-      this.totalHistoryBytes -= retiredHistory.reduce((sum, entry) => sum + entry.byteLength, 0);
-      this.eventsBySession.delete(event.sessionId);
+      this.clearSessionInterest(event.sessionId);
       return;
     }
+    this.pruneAuth();
+    if (!this.interestedSessions.has(event.sessionId)) return;
     try {
       const snapshot = this.state.getBrowserReviewSnapshot(event.sessionId);
       const type = event.type === "state-revision" ? "state" : "document";
@@ -860,6 +902,7 @@ export class BrowserReviewServer {
       // The producer may retire between capability authentication and stream construction.
       return this.jsonError("Review session is no longer active.", 404);
     }
+    this.interestedSessions.add(sessionId);
     let subscriber!: Subscriber;
     const stream = new ReadableStream<Uint8Array>(
       {
@@ -995,6 +1038,8 @@ export class BrowserReviewServer {
 
   /** Revalidate every stream before sending one bounded heartbeat frame. */
   private broadcastHeartbeat() {
+    this.pruneAuth();
+    if (this.subscribers.size === 0) return;
     const heartbeat = { bytes: this.encoder.encode(": heartbeat\n\n") } satisfies SseFrame;
     for (const subscriber of Array.from(this.subscribers)) {
       this.enqueueFrames(subscriber, [heartbeat]);

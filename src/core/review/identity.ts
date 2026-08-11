@@ -14,7 +14,7 @@ export interface SemanticFileEntryIdentityInput extends SemanticFileIdentityInpu
 }
 
 /** Return a compact deterministic SHA-256 identity for serialization-safe review records. */
-export function reviewDigest(value: string) {
+export function reviewDigest(value: string | Uint8Array) {
   return createHash("sha256").update(value).digest("hex");
 }
 

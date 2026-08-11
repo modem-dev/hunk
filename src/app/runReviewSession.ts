@@ -31,6 +31,48 @@ export interface ReviewSessionInput {
   controllingTerminal: ControllingTerminal | null;
 }
 
+interface ReviewSessionCleanupOwners {
+  hostClient?: Pick<HunkSessionBrokerClient, "stop">;
+  controllingTerminal?: Pick<ControllingTerminal, "close"> | null;
+  runtime: Pick<ReturnType<typeof createReviewSessionRuntime>, "shutdown">;
+}
+
+/** Attempt every outer review owner and preserve the first cleanup failure. */
+export async function closeReviewSessionOwners({
+  hostClient,
+  controllingTerminal,
+  runtime,
+}: ReviewSessionCleanupOwners) {
+  let firstError: unknown;
+  let hasError = false;
+  const attempt = async (cleanup: () => void | Promise<void>) => {
+    try {
+      await cleanup();
+    } catch (error) {
+      if (!hasError) firstError = error;
+      hasError = true;
+    }
+  };
+
+  await attempt(() => hostClient?.stop());
+  await attempt(() => controllingTerminal?.close());
+  await attempt(() => runtime.shutdown());
+  if (hasError) throw firstError;
+}
+
+/** Clean all outer owners without replacing the failure that initiated teardown. */
+async function rethrowAfterReviewCleanup(
+  error: unknown,
+  owners: ReviewSessionCleanupOwners,
+): Promise<never> {
+  try {
+    await closeReviewSessionOwners(owners);
+  } catch {
+    // The original review failure remains authoritative after every cleanup has been attempted.
+  }
+  throw error;
+}
+
 /** Construct broker publication only after renderer selection confirms it is available. */
 function createReviewHostClient(
   input: ReviewSessionInput,
@@ -171,10 +213,10 @@ async function runWebReview(
       };
       for (const signal of signals) process.once(signal, stop);
     });
-  } finally {
-    hostClient.stop();
-    await runtime.shutdown();
+  } catch (error) {
+    return rethrowAfterReviewCleanup(error, { hostClient, runtime });
   }
+  await closeReviewSessionOwners({ hostClient, runtime });
 }
 
 /** Select a renderer over one already-loaded review authority without duplicating bootstrap work. */
@@ -189,25 +231,31 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<void>
 
   const runtime = createReviewSessionRuntime(input.bootstrap, { rawInput: input.rawInput });
   if (web) {
-    input.controllingTerminal?.close();
+    try {
+      input.controllingTerminal?.close();
+    } catch (error) {
+      return rethrowAfterReviewCleanup(error, { runtime });
+    }
     let hostClient: HunkSessionBrokerClient;
     try {
       hostClient = createReviewHostClient(input, runtime);
     } catch (error) {
-      await runtime.shutdown();
-      throw error;
+      return rethrowAfterReviewCleanup(error, { runtime });
     }
     await runWebReview(runtime, hostClient, input.bootstrap.input.options);
     return;
   }
 
-  let prepared: ReturnType<typeof prepareTerminalReviewBroker>;
+  let prepared: ReturnType<typeof prepareTerminalReviewBroker> | undefined;
   try {
     prepared = prepareTerminalReviewBroker(input, runtime);
     prepared.hostClient?.start();
   } catch (error) {
-    await runtime.shutdown();
-    throw error;
+    return rethrowAfterReviewCleanup(error, {
+      hostClient: prepared?.hostClient,
+      controllingTerminal: input.controllingTerminal,
+      runtime,
+    });
   }
   const { hostClient, sessionNotice } = prepared;
 
@@ -217,9 +265,10 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<void>
     const { runInteractiveApp } = await import("../ui/runInteractiveApp");
     await runInteractiveApp({ ...input, runtime, hostClient, sessionNotice });
   } catch (error) {
-    hostClient?.stop();
-    input.controllingTerminal?.close();
-    await runtime.shutdown();
-    throw error;
+    await rethrowAfterReviewCleanup(error, {
+      hostClient,
+      controllingTerminal: input.controllingTerminal,
+      runtime,
+    });
   }
 }

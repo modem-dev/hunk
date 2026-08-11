@@ -680,6 +680,50 @@ describe("browser review server", () => {
     expect(server.getSubscriberBufferedByteCount()).toBe(0);
   });
 
+  test("does no snapshot or SSE history work before authenticated browser interest", async () => {
+    const { state, socket } = createRegisteredState();
+    const originalSnapshot = state.getBrowserReviewSnapshot.bind(state);
+    let snapshotReads = 0;
+    state.getBrowserReviewSnapshot = (sessionId: string) => {
+      snapshotReads += 1;
+      return originalSnapshot(sessionId);
+    };
+    const server = new BrowserReviewServer(state, { heartbeatMs: 60_000 });
+    servers.push(server);
+
+    const update = (revision: number) => {
+      const review = {
+        ...createTestSessionSnapshot().state.review,
+        stateRevision: revision,
+        filter: `revision-${revision}`,
+      };
+      expect(
+        state.updateSnapshot(
+          socket,
+          "session-1",
+          createTestSessionSnapshot({ stateRevision: revision, review }),
+        ),
+      ).toBe("updated");
+    };
+    update(1);
+    expect(snapshotReads).toBe(0);
+    expect(server.getHistoryEntryCount("session-1")).toBe(0);
+
+    const cookie = await authorize(server, "session-1", "capability-one");
+    update(2);
+    expect(snapshotReads).toBe(0);
+    expect(server.getHistoryEntryCount("session-1")).toBe(0);
+
+    const snapshot = await server.handle(
+      request("/review-api/session-1/snapshot", { headers: { cookie } }),
+    );
+    expect(snapshot?.status).toBe(200);
+    expect(snapshotReads).toBe(1);
+    update(3);
+    expect(snapshotReads).toBe(2);
+    expect(server.getHistoryEntryCount("session-1")).toBe(1);
+  });
+
   test("replays retained chunked history, prunes whole entries, and falls back for unknown ids", async () => {
     const { state, socket } = createRegisteredState();
     const server = new BrowserReviewServer(state, {
@@ -689,6 +733,11 @@ describe("browser review server", () => {
       maxHistoryEntryBytes: 1024 * 1024,
     });
     servers.push(server);
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const snapshot = await server.handle(
+      request("/review-api/session-1/snapshot", { headers: { cookie } }),
+    );
+    expect(snapshot?.status).toBe(200);
     const largeFilter = "h".repeat(600 * 1024);
     for (let revision = 1; revision <= 3; revision += 1) {
       const review = {
@@ -706,7 +755,6 @@ describe("browser review server", () => {
     }
     expect(server.getHistoryEntryCount("session-1")).toBe(2);
 
-    const cookie = await authorize(server, "session-1", "capability-one");
     const generation = createHash("sha256").update("generation:test").digest("hex").slice(0, 32);
     const replay = await server.handle(
       request("/review-api/session-1/events", {
@@ -726,14 +774,20 @@ describe("browser review server", () => {
     expect(fallbackFrame.text).toContain("event: snapshot");
   });
 
-  test("does not retain a semantic history entry that exceeds its complete-entry budget", () => {
+  test("does not retain a semantic history entry that exceeds its complete-entry budget", async () => {
     const { state, socket } = createRegisteredState();
     const server = new BrowserReviewServer(state, {
       heartbeatMs: 60_000,
       maxHistoryEntryBytes: 64 * 1024,
     });
     servers.push(server);
-    const review = {
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const snapshot = await server.handle(
+      request("/review-api/session-1/snapshot", { headers: { cookie } }),
+    );
+    expect(snapshot?.status).toBe(200);
+
+    const oversizedReview = {
       ...createTestSessionSnapshot().state.review,
       stateRevision: 1,
       filter: "z".repeat(600 * 1024),
@@ -742,10 +796,24 @@ describe("browser review server", () => {
       state.updateSnapshot(
         socket,
         "session-1",
-        createTestSessionSnapshot({ stateRevision: 1, review }),
+        createTestSessionSnapshot({ stateRevision: 1, review: oversizedReview }),
       ),
     ).toBe("updated");
     expect(server.getHistoryEntryCount("session-1")).toBe(0);
+
+    const boundedReview = {
+      ...createTestSessionSnapshot().state.review,
+      stateRevision: 2,
+      filter: "bounded",
+    };
+    expect(
+      state.updateSnapshot(
+        socket,
+        "session-1",
+        createTestSessionSnapshot({ stateRevision: 2, review: boundedReview }),
+      ),
+    ).toBe("updated");
+    expect(server.getHistoryEntryCount("session-1")).toBe(1);
   });
 
   test("enforces aggregate subscriber bytes and cleans real cancellation and abort state", async () => {
