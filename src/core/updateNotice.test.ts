@@ -160,6 +160,85 @@ describe("startup update notice", () => {
     });
   });
 
+  test("suppresses update notices for mise-managed installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "mise" },
+          fetchImpl: async () => {
+            throw new Error("should not fetch for mise installs");
+          },
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("detects unmarked mise installs from their mise install path", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: {},
+          fetchImpl: async () => {
+            throw new Error("should not fetch for mise installs");
+          },
+          resolveExecutablePath: () =>
+            "/home/user/.local/share/mise/installs/aqua-modem-dev-hunk/0.7.0/hunk",
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("detects unmarked mise installs from Windows-style install paths", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: {},
+          fetchImpl: async () => {
+            throw new Error("should not fetch for mise installs");
+          },
+          resolveExecutablePath: () =>
+            "C:\\Users\\user\\AppData\\Local\\mise\\installs\\aqua-modem-dev-hunk\\0.7.0\\hunk.exe",
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("never surfaces beta or latest notices for a resolved mise install source", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          resolveInstallSource: () => "mise",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("keeps npm notices for paths that only mention mise outside an install directory", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: {},
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1" }),
+          resolveExecutablePath: () => "/home/mise/projects/hunk/node_modules/.bin/hunk",
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • npm i -g hunkdiff",
+      });
+    });
+  });
+
   test("returns null when already up to date", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(

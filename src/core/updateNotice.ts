@@ -1,3 +1,4 @@
+import { posix, win32 } from "node:path";
 import { readHunkStateRecord, updateHunkStateRecord } from "./hunkState";
 import { resolveHunkStatePath } from "./paths";
 import type { StartupNotice } from "./startupNotice";
@@ -17,7 +18,17 @@ interface PersistedStartupState {
 }
 
 export type UpdateChannel = "latest" | "beta";
-export type InstallSource = "npm" | "homebrew" | "nix";
+export type InstallSource = "npm" | "homebrew" | "nix" | "mise";
+
+/**
+ * Install sources that upgrade Hunk on their own, so Hunk never surfaces an update notice for them.
+ *
+ * mise owns its tool versions: omarchy's `hunk` wrapper runs `mise use -g aqua:modem-dev/hunk`
+ * before exec'ing the binary, so the newest release is already installed by the time this session
+ * starts. A notice there would ask the user to fix something mise just fixed, so suppress rather
+ * than swap in a mise-flavored update command.
+ */
+const SELF_UPDATING_INSTALL_SOURCES: readonly InstallSource[] = ["mise"];
 
 type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -68,20 +79,56 @@ function isNewerVersion(current: string, candidate: string) {
   }
 }
 
+/** Split one filesystem path into segments, tolerating either platform's separator. */
+function splitPathSegments(candidatePath: string) {
+  return candidatePath
+    .split(win32.sep)
+    .flatMap((segment) => segment.split(posix.sep))
+    .filter((segment) => segment.length > 0);
+}
+
+/**
+ * Return whether this executable lives inside a mise-managed install directory.
+ *
+ * mise lays every backend out as `<data dir>/mise/installs/<tool>/<version>/<bin>` on all
+ * platforms, so the adjacent `mise/installs` segments are the one signal that survives `mise x`
+ * (the omarchy wrapper's launch path, which sets none of mise's shell env vars) as well as shims
+ * and activated shells.
+ */
+function isMiseManagedExecutablePath(executablePath: string) {
+  const segments = splitPathSegments(executablePath);
+  return segments.some(
+    (segment, index) => segment === "mise" && segments[index + 1] === "installs",
+  );
+}
+
 /** Resolve which package manager installed this binary, defaulting to the npm package path. */
 function resolveInstallSourceFromRuntime(
   env: NodeJS.ProcessEnv = process.env,
   executablePath = process.execPath,
 ): InstallSource {
   const installSource = env[INSTALL_SOURCE_ENV];
-  if (installSource === "homebrew" || installSource === "nix") {
+  if (installSource === "homebrew" || installSource === "nix" || installSource === "mise") {
     return installSource;
   }
 
-  return executablePath.startsWith("/nix/store/") ? "nix" : "npm";
+  if (executablePath.startsWith("/nix/store/")) {
+    return "nix";
+  }
+
+  return isMiseManagedExecutablePath(executablePath) ? "mise" : "npm";
 }
 
-/** Build the install-aware update instruction shown for one release channel. */
+/** Return whether the install source manages its own upgrades and needs no update notice. */
+function managesOwnUpdates(installSource: InstallSource) {
+  return SELF_UPDATING_INSTALL_SOURCES.includes(installSource);
+}
+
+/**
+ * Build the install-aware update instruction shown for one release channel.
+ *
+ * Self-updating sources never reach here; they are filtered out before the dist-tag lookup.
+ */
 function updateInstructionForChannel(channel: UpdateChannel, installSource: InstallSource) {
   if (installSource === "homebrew") {
     return "brew update && brew upgrade hunk";
@@ -259,6 +306,12 @@ export async function resolveStartupUpdateNotice(
   const resolveInstallSource =
     deps.resolveInstallSource ??
     (() => resolveInstallSourceFromRuntime(env, deps.resolveExecutablePath?.()));
+  const installSource = resolveInstallSource();
+  // Resolved before fetching so self-updating installs skip the dist-tag request entirely.
+  if (managesOwnUpdates(installSource)) {
+    return null;
+  }
+
   const { signal, dispose } = createFetchTimeoutSignal(fetchTimeoutMs);
 
   try {
@@ -268,7 +321,7 @@ export async function resolveStartupUpdateNotice(
     }
 
     const parsedPayload = parseDistTags(await response.json());
-    return selectUpdateNotice(resolveInstalledVersion(), parsedPayload, resolveInstallSource());
+    return selectUpdateNotice(resolveInstalledVersion(), parsedPayload, installSource);
   } catch {
     return null;
   } finally {
