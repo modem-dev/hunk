@@ -67,7 +67,10 @@ describe("extension panes", () => {
     const panes = buildSessionPanes(
       loadResultWith([
         registeredPane("meta", "base", { defaultOpen: true }),
-        registeredPane("other", "replacement", { replaces: "meta:base" }),
+        registeredPane("other", "replacement", {
+          replaces: "meta:base",
+          defaultOpen: false,
+        }),
       ]),
     );
 
@@ -142,11 +145,15 @@ describe("extension panes", () => {
 
   test("keeps logical open preferences while synchronous availability omits a pane", () => {
     let available = false;
+    let availabilityCalls = 0;
     const registered = registeredPane("a", "detail", {
       placement: "bottom",
       height: { preferred: 3, min: 3, max: 3 },
       currentLine: true,
-      available: ({ currentLine }) => available && currentLine !== null,
+      available: ({ currentLine }) => {
+        availabilityCalls += 1;
+        return available && currentLine !== null;
+      },
     });
     const panes = buildSessionPanes(loadResultWith([registered]));
     const state = { known: panes.map((pane) => pane.key), open: ["a:detail"] };
@@ -170,6 +177,15 @@ describe("extension panes", () => {
     const paint = { render: () => null };
     const restored = planExtensionPanes({ ...options, currentLine: paint });
     expect(restored.panes.some((entry) => entry.pane.key === "a:detail")).toBe(true);
+
+    const callsBeforePending = availabilityCalls;
+    const pending = planExtensionPanes({
+      ...options,
+      currentLine: null,
+      retainCurrentLineKeys: new Set(["a:detail"]),
+    });
+    expect(pending.panes.some((entry) => entry.pane.key === "a:detail")).toBe(true);
+    expect(availabilityCalls).toBe(callsBeforePending);
     expect(state.open).toEqual(["a:detail"]);
   });
 

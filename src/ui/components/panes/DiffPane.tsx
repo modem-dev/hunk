@@ -14,7 +14,6 @@ import {
   type RefObject,
 } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
-import type { ExtensionCurrentLinePaint } from "../../../extension-api/types";
 import type {
   AgentAnnotation,
   CursorLine,
@@ -76,7 +75,10 @@ import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { createExtensionCurrentLinePaint } from "../../lib/extensionCurrentLine";
+import {
+  createExtensionCurrentLinePaint,
+  type ExtensionCurrentLinePaintUpdate,
+} from "../../lib/extensionCurrentLine";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -320,7 +322,7 @@ export function DiffPane({
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
   currentLinePaintRequested?: boolean;
-  onCurrentLinePaintChange?: (paint: ExtensionCurrentLinePaint | null) => void;
+  onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
@@ -1034,10 +1036,31 @@ export function DiffPane({
     theme,
   ]);
 
+  const currentLinePaintUpdate = useMemo<ExtensionCurrentLinePaintUpdate>(() => {
+    if (!currentLinePaintSource) return { status: "unavailable" };
+    if (
+      !renderedLineCursor ||
+      !currentLineRowPlan?.highlighted ||
+      currentLineRowPlan.source !== currentLinePaintSource
+    )
+      return { status: "pending" };
+    return currentLinePaint
+      ? {
+          status: "ready",
+          fileId: renderedLineCursor.fileId,
+          cursorKey: renderedLineCursor.stableKey,
+          paint: currentLinePaint,
+        }
+      : { status: "unavailable" };
+  }, [currentLinePaint, currentLinePaintSource, currentLineRowPlan, renderedLineCursor]);
+
   useLayoutEffect(() => {
-    onCurrentLinePaintChange?.(currentLinePaint);
-    return () => onCurrentLinePaintChange?.(null);
-  }, [currentLinePaint, onCurrentLinePaintChange]);
+    onCurrentLinePaintChange?.(currentLinePaintUpdate);
+  }, [currentLinePaintUpdate, onCurrentLinePaintChange]);
+  useLayoutEffect(
+    () => () => onCurrentLinePaintChange?.({ status: "unavailable" }),
+    [onCurrentLinePaintChange],
+  );
 
   const copySelectedRowKeysByFile = useMemo(
     () =>

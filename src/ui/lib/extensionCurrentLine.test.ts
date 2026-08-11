@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import { buildDiffSectionRowPlan } from "../diff/diffSectionRowPlan";
 import { resolveTheme } from "../themes";
-import { createExtensionCurrentLinePaint } from "./extensionCurrentLine";
+import {
+  applyExtensionCurrentLinePaintUpdate,
+  createExtensionCurrentLinePaint,
+  extensionCurrentLinePaintMatchesCursor,
+} from "./extensionCurrentLine";
 import type { LineCursor } from "./lineCursors";
 
 /** Build one accepted split row plan and a cursor that resolves inside it. */
@@ -103,5 +107,44 @@ describe("extension current-line paint", () => {
     });
 
     expect(paint).toBeNull();
+  });
+
+  test("withholds stale paint while a new plan is pending", () => {
+    const paint = { render: () => null };
+    const ready = applyExtensionCurrentLinePaintUpdate(
+      { status: "unavailable", fileId: null, cursorKey: null, paint: null },
+      { status: "ready", fileId: "alpha", cursorKey: "row:1", paint },
+    );
+    expect(
+      extensionCurrentLinePaintMatchesCursor(ready, {
+        fileId: "beta",
+        stableKey: "row:1",
+      }),
+    ).toBe(false);
+    expect(
+      extensionCurrentLinePaintMatchesCursor(ready, {
+        fileId: "alpha",
+        stableKey: "row:1",
+      }),
+    ).toBe(true);
+
+    const pending = applyExtensionCurrentLinePaintUpdate(ready, { status: "pending" });
+    expect(pending).toEqual({ status: "pending", fileId: null, cursorKey: null, paint: null });
+    expect(applyExtensionCurrentLinePaintUpdate(pending, { status: "pending" })).toBe(pending);
+  });
+
+  test("clears accepted paint when the current-line capability becomes unavailable", () => {
+    const paint = { render: () => null };
+    const unavailable = applyExtensionCurrentLinePaintUpdate(
+      { status: "ready", fileId: "alpha", cursorKey: "row:1", paint },
+      { status: "unavailable" },
+    );
+
+    expect(unavailable).toEqual({
+      status: "unavailable",
+      fileId: null,
+      cursorKey: null,
+      paint: null,
+    });
   });
 });

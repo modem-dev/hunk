@@ -543,8 +543,10 @@ are positive integers, and equal min/max makes the pane fixed. Omitted width
 defaults to 34 preferred / 22 minimum columns; omitted height defaults to 8 / 3
 rows. The exported `ExtensionVerticalPane` and `ExtensionHorizontalPane` types
 form the `ExtensionPane` union, so TypeScript rejects `height` on left/right
-panes and `width` on top/bottom panes. `replaces: "hunk:files"` changes initial
-defaults without removing the files pane. `available(context)` is a synchronous
+panes and `width` on top/bottom panes. `replaces: "hunk:files"` starts the
+replacement open and the files pane closed, taking precedence over
+`defaultOpen`; it changes initial defaults without removing the files pane.
+`available(context)` is a synchronous
 frame policy: an open but
 unavailable pane retains its logical open preference. Set `currentLine: true`
 only when the pane needs the opaque `currentLine.render("old" | "new", width)`

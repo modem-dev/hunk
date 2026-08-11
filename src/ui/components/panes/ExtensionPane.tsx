@@ -8,7 +8,9 @@ import type {
   ExtensionCurrentLinePaint,
 } from "../../../extension-api/types";
 import type { DiffFile } from "../../../core/types";
+import { paneKey } from "../../../extensions/apply";
 import { BuiltInSidebarView } from "../../../extensions/default/ui/sidebar";
+import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";
 import type { ExtensionNotifySink, RegisteredPane } from "../../../extensions/types";
 import { createGuardedReviewNavigation } from "../../lib/extensionNavigation";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
@@ -117,7 +119,7 @@ function ExtensionPaneHostView({
     actions,
     currentLine: registered.pane.currentLine ? currentLine : null,
   };
-  const filesChrome = extensionId === "hunk" && registered.pane.id === "files";
+  const filesChrome = paneKey(registered) === HUNK_FILES_PANE_KEY;
   const box = (children: ReactNode) => (
     <box
       style={{
@@ -149,8 +151,10 @@ function ExtensionPaneHostView({
       registered={registered}
       fallback={fallback}
       onError={(error) => {
+        const fallbackNotice =
+          onRenderFailure || filesChrome ? "" : " • using the built-in files pane";
         notify(
-          `Extension ${extensionId} pane "${registered.pane.id}" failed rendering • ${describeError(error)}${onRenderFailure ? "" : " • using the built-in files pane"}`,
+          `Extension ${extensionId} pane "${registered.pane.id}" failed rendering • ${describeError(error)}${fallbackNotice}`,
           "warning",
         );
         onRenderFailure?.();

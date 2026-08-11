@@ -160,6 +160,9 @@ describe("ExtensionPaneHost failure recovery", () => {
       async (setup) => {
         expect(setup.captureCharFrame()).toContain("Files pane unavailable");
         expect(notifications.some((line) => line.includes("failed rendering"))).toBe(true);
+        expect(notifications.some((line) => line.includes("using the built-in files pane"))).toBe(
+          false,
+        );
       },
     );
   });
@@ -204,6 +207,9 @@ describe("ExtensionPaneHost failure recovery", () => {
       // The broken view fell back to the built-in sidebar and warned once.
       expect(setup.captureCharFrame()).toContain("alpha.ts");
       expect(notifications.some((line) => line.includes("failed rendering"))).toBe(true);
+      expect(notifications.some((line) => line.includes("using the built-in files pane"))).toBe(
+        true,
+      );
 
       await act(async () => {
         swapRegistered?.(fixed);

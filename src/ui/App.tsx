@@ -49,7 +49,6 @@ import type {
   ExtensionFileSide,
   ExtensionNotifyType,
   ExtensionReviewNote,
-  ExtensionCurrentLinePaint,
   ExtensionPaneControls,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
@@ -93,6 +92,12 @@ import {
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
 import { createExtensionCommandControls } from "./lib/extensionCommandControls";
+import {
+  applyExtensionCurrentLinePaintUpdate,
+  extensionCurrentLinePaintMatchesCursor,
+  type ExtensionCurrentLinePaintState,
+  type ExtensionCurrentLinePaintUpdate,
+} from "./lib/extensionCurrentLine";
 import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
@@ -103,7 +108,9 @@ import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeContro
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
   buildSessionPanes,
+  EXTENSION_PANE_DIVIDER_SIZE,
   initialPaneOpenState,
+  MIN_EXTENSION_REVIEW_HEIGHT,
   planExtensionPanes,
   reconcilePaneOpenState,
   resolvePaneKey,
@@ -293,7 +300,17 @@ export function App({
   const currentLinePaintRequested = sessionPanes.some(
     (pane) => paneOpenState.open.includes(pane.key) && pane.registered.pane.currentLine === true,
   );
-  const [currentLinePaint, setCurrentLinePaint] = useState<ExtensionCurrentLinePaint | null>(null);
+  const [currentLinePaintState, setCurrentLinePaintState] =
+    useState<ExtensionCurrentLinePaintState>({
+      status: "unavailable",
+      fileId: null,
+      cursorKey: null,
+      paint: null,
+    });
+  const onCurrentLinePaintChange = useCallback((update: ExtensionCurrentLinePaintUpdate) => {
+    setCurrentLinePaintState((current) => applyExtensionCurrentLinePaintUpdate(current, update));
+  }, []);
+  const retainedCurrentLinePaneKeysRef = useRef<ReadonlySet<string>>(new Set());
   const [paneFailureEpoch, setPaneFailureEpoch] = useState(0);
   const paneAvailabilityQuarantineRef = useRef(new WeakSet());
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
@@ -396,6 +413,14 @@ export function App({
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
   const selectedFileId = selectedFile?.id ?? null;
+  const currentLinePaintMatchesCursor = extensionCurrentLinePaintMatchesCursor(
+    currentLinePaintState,
+    review.lineCursor,
+  );
+  const currentLinePaint = currentLinePaintMatchesCursor ? currentLinePaintState.paint : null;
+  const currentLinePaintPending =
+    currentLinePaintState.status === "pending" ||
+    (currentLinePaintState.status === "ready" && !currentLinePaintMatchesCursor);
   const sessionFileViews = useMemo(
     () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
     [extensions],
@@ -975,7 +1000,8 @@ export function App({
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + 1 + DIFF_MIN_WIDTH;
+  const canForceShowSidebar =
+    bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const resolvedLayout = responsiveLayout.layout;
@@ -1030,8 +1056,11 @@ export function App({
         bodyWidth,
         bodyHeight,
         minReviewWidth: DIFF_MIN_WIDTH,
-        minReviewHeight: 5,
+        minReviewHeight: MIN_EXTENSION_REVIEW_HEIGHT,
         currentLine: currentLinePaint,
+        retainCurrentLineKeys: currentLinePaintPending
+          ? retainedCurrentLinePaneKeysRef.current
+          : undefined,
         availabilityContext: {
           files: getExtensionFileViews(),
           selectedFileId,
@@ -1048,6 +1077,7 @@ export function App({
       bodyHeight,
       bodyWidth,
       currentLinePaint,
+      currentLinePaintPending,
       effectiveOpenPaneKeys.join("\0"),
       extensions,
       filteredFiles,
@@ -1059,6 +1089,14 @@ export function App({
       sessionPanes,
     ],
   );
+  useLayoutEffect(() => {
+    if (currentLinePaintPending) return;
+    retainedCurrentLinePaneKeysRef.current = new Set(
+      paneLayout.panes
+        .filter(({ pane }) => pane.registered.pane.currentLine === true)
+        .map(({ pane }) => pane.key),
+    );
+  }, [currentLinePaintPending, paneLayout]);
   const renderSidebar = paneLayout.panes.some(
     ({ pane }) => pane.placement === "left" || pane.placement === "right",
   );
@@ -1943,7 +1981,13 @@ export function App({
       startSize: currentSize,
       maxSize: Math.min(
         spec.max ?? Number.MAX_SAFE_INTEGER,
-        currentSize + Math.max(0, vertical ? diffPaneWidth - DIFF_MIN_WIDTH : diffPaneHeight - 5),
+        currentSize +
+          Math.max(
+            0,
+            vertical
+              ? diffPaneWidth - DIFF_MIN_WIDTH
+              : diffPaneHeight - MIN_EXTENSION_REVIEW_HEIGHT,
+          ),
       ),
       minSize: spec.min ?? 1,
     });
@@ -2185,7 +2229,7 @@ export function App({
             }
             onLineCursorsChange={setLineCursors}
             currentLinePaintRequested={currentLinePaintRequested}
-            onCurrentLinePaintChange={setCurrentLinePaint}
+            onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}
           />
         </box>

@@ -987,7 +987,10 @@ interface ExtensionPaneBase {
   id: string;
   title?: string;
   defaultOpen?: boolean;
-  /** Start in place of this pane. Replacement changes initial defaults only. */
+  /**
+   * Start open in place of this pane, which starts closed.
+   * Replacement initial defaults take precedence over `defaultOpen`.
+   */
   replaces?: string;
   /** Opt into live current-line paint; unrelated panes receive stable null. */
   currentLine?: boolean;
