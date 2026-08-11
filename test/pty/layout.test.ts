@@ -314,7 +314,10 @@ describe("PTY layout", () => {
       session.resize({ cols: 140, rows: 24 });
       const tight = await harness.waitForSnapshot(
         session,
-        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) === 1,
+        (text) =>
+          /▌.*▌/.test(text) &&
+          harness.countMatches(text, /alpha\.ts/g) === 1 &&
+          text.includes("betaValue = 1"),
         5_000,
       );
 
