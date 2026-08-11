@@ -741,6 +741,237 @@ describe("semantic user note intents", () => {
   });
 });
 
+describe("semantic live-agent note intents", () => {
+  const timestamp = "2026-03-04T05:06:07.000Z";
+
+  test("constructs one canonical batch while preserving raw optional agent fields", () => {
+    const state = createState();
+    const file = state.document.files[0]!;
+    const target = targetIn(file, 1, "new");
+    const input = {
+      noteId: "mcp:canonical",
+      ...target,
+      summary: "  raw summary  ",
+      rationale: "  raw rationale  ",
+      markup: "<box>raw</box>",
+      author: "agent-name",
+      createdAt: timestamp,
+    };
+    const plan = planReviewIntent(state, {
+      type: "note/create-live-agent-batch",
+      notes: [input],
+    });
+
+    expect(plan.actions).toHaveLength(1);
+    const action = plan.actions[0];
+    expect(action).toMatchObject({
+      type: "notes/add-live",
+      expectedGeneration: state.documentGeneration,
+      notes: [
+        {
+          note: {
+            id: "mcp:canonical",
+            source: "agent",
+            origin: "live-agent",
+            originalSource: "mcp",
+            fileKey: file.key,
+            summary: "  raw summary  ",
+            rationale: "  raw rationale  ",
+            markup: "<box>raw</box>",
+            author: "agent-name",
+            createdAt: timestamp,
+            editable: false,
+            tags: ["mcp"],
+            confidence: "high",
+            anchor: {
+              newRange: [target.line, target.line],
+              preferred: { side: "new", line: target.line },
+              intersectingHunkIndices: [1],
+              ownerHunkIndex: 1,
+            },
+          },
+          contextDigest: expect.any(String),
+          contextDigests: { new: expect.any(String) },
+          resolution: "active",
+        },
+      ],
+    });
+  });
+
+  test("validates a complete batch before producing ordered reveal actions", () => {
+    const state = createState();
+    const file = state.document.files[0]!;
+    const first = {
+      noteId: "mcp:first",
+      ...targetIn(file, 0, "old"),
+      summary: "first",
+      createdAt: timestamp,
+    };
+    const second = {
+      noteId: "mcp:second",
+      ...targetIn(file, 1, "new"),
+      summary: "second",
+      createdAt: timestamp,
+    };
+    const plan = planReviewIntent(state, {
+      type: "note/create-live-agent-batch",
+      notes: [first, second],
+      reveal: { fileKey: file.key, hunkIndex: 0 },
+    });
+    expect(plan.actions.map((action) => action.type)).toEqual([
+      "notes/add-live",
+      "notes/set-visibility",
+      "selection/select",
+    ]);
+    expect(plan.actions[2]).toMatchObject({
+      type: "selection/select",
+      selection: { fileKey: file.key, hunkIndex: 0 },
+      reveal: { kind: "hunk", scrollToNote: true },
+    });
+
+    expectPlanningError(
+      () =>
+        planReviewIntent(state, {
+          type: "note/create-live-agent-batch",
+          notes: [first, { ...second, hunkIndex: 0 }],
+        }),
+      "line-hunk-mismatch",
+    );
+  });
+
+  test("accepts backed addition, deletion, context, and partial-patch targets", () => {
+    const fixtures = [
+      {
+        source: createTestDiffFile({ before: "", after: lines("added"), context: 0 }),
+        side: "new" as const,
+      },
+      {
+        source: createTestDiffFile({ before: lines("removed"), after: "", context: 0 }),
+        side: "old" as const,
+      },
+      {
+        source: createTestDiffFile({
+          before: lines("old", "context"),
+          after: lines("new", "context"),
+          context: 1,
+        }),
+        side: "new" as const,
+        contextLine: 2,
+      },
+    ];
+    for (const [index, fixture] of fixtures.entries()) {
+      const state = createStateForSource(fixture.source);
+      const file = state.document.files[0]!;
+      if (index === fixtures.length - 1) file.flags.partial = true;
+      const target = {
+        fileKey: file.key,
+        hunkIndex: 0,
+        side: fixture.side,
+        line:
+          fixture.contextLine ??
+          (fixture.side === "new" ? file.hunks[0]!.additionStart : file.hunks[0]!.deletionStart),
+      };
+      expect(
+        planReviewIntent(state, {
+          type: "note/create-live-agent-batch",
+          notes: [
+            { noteId: `mcp:case:${index}`, ...target, summary: "case", createdAt: timestamp },
+          ],
+        }).actions[0],
+      ).toMatchObject({ type: "notes/add-live" });
+    }
+  });
+
+  test("plans trusted locked mutable-note removal and exact resolved clears", () => {
+    const state = createState();
+    const locked = mutableNote(state, "sidecar:locked", {
+      origin: "sidecar",
+      editable: false,
+    });
+    const lockedUser = mutableNote(state, "user:locked", { editable: false });
+    state.liveNotes = [locked];
+    state.userNotes = [lockedUser];
+    expectPlanningError(
+      () => planReviewIntent(state, { type: "note/remove-live", noteId: locked.note.id }),
+      "note-not-editable",
+    );
+    expect(
+      planReviewIntent(state, {
+        type: "note/remove-live",
+        noteId: locked.note.id,
+        policy: "trusted-agent",
+      }).actions,
+    ).toEqual([
+      {
+        type: "notes/remove-live",
+        expectedGeneration: state.documentGeneration,
+        noteId: locked.note.id,
+      },
+    ]);
+    expectPlanningError(
+      () => planReviewIntent(state, { type: "note/remove-user", noteId: lockedUser.note.id }),
+      "note-not-editable",
+    );
+    expect(
+      planReviewIntent(state, {
+        type: "note/remove-user",
+        noteId: lockedUser.note.id,
+        policy: "trusted-agent",
+      }).actions,
+    ).toEqual([
+      {
+        type: "notes/remove-user",
+        expectedGeneration: state.documentGeneration,
+        noteId: lockedUser.note.id,
+      },
+    ]);
+
+    expect(
+      planReviewIntent(state, {
+        type: "notes/clear-resolved",
+        liveNoteIds: [locked.note.id, locked.note.id],
+        userNoteIds: [lockedUser.note.id],
+        includeUser: true,
+      }).actions,
+    ).toEqual([
+      {
+        type: "notes/clear-live",
+        expectedGeneration: state.documentGeneration,
+        noteIds: [locked.note.id],
+        userNoteIds: [lockedUser.note.id],
+        includeUser: true,
+      },
+    ]);
+  });
+
+  test("rejects missing and unbacked targets without producing partial actions", () => {
+    const state = createState();
+    const file = state.document.files[0]!;
+    const valid = {
+      noteId: "mcp:valid",
+      ...targetIn(file),
+      summary: "valid",
+      createdAt: timestamp,
+    };
+    expectPlanningError(
+      () =>
+        planReviewIntent(state, {
+          type: "note/create-live-agent-batch",
+          notes: [valid, { ...valid, noteId: "mcp:invalid", line: 999 }],
+        }),
+      "line-not-backed",
+    );
+    expectPlanningError(
+      () =>
+        planReviewIntent(state, {
+          type: "note/create-live-agent-batch",
+          notes: [{ ...valid, fileKey: "missing" }],
+        }),
+      "file-not-found",
+    );
+  });
+});
+
 describe("live-note compatibility intents", () => {
   test("names and preserves the existing live removal policy", () => {
     const base = createState();
