@@ -5,17 +5,17 @@ import {
   type ExtensionVcsDiffInput,
   type ExtensionVcsShowInput,
   type ExtensionVcsStashShowInput,
-} from "../../extension-api/types";
-import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "./largeFile";
-import { escapeUntrackedPatchPath } from "../patch/normalize";
-import { normalizePathForOS } from "../../lib/osPath";
+} from "hunkdiff/extension";
+import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "../../../../lib/largeFile";
+import { escapeUntrackedPatchPath } from "../../../../lib/patchPath";
+import { normalizePathForOS } from "../../../../lib/osPath";
 
 /**
  * Every Git command Hunk runs, and the failures they translate into.
  *
  * This is the implementation layer behind the bundled Git backend
- * (`src/extensions/default/vcs/git/`), so nothing here reaches into the diff
- * engine or the adapter registry — user-facing failures are raised as the
+ * (`src/extensions/default/vcs/git/`), so nothing here reaches into core, the
+ * diff engine, or the adapter registry — user-facing failures are raised as the
  * published `HunkExtensionUserError`, which is exactly what a third-party
  * backend would throw.
  */

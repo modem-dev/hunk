@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildJjDiffArgs, runJjText } from "./jujutsu";
-import type { VcsDiffCommandInput } from "../types";
+import { buildJjDiffArgs, runJjText } from "./commands";
+import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
 // Windows subprocess setup can exceed Bun's default 5s timeout while generating enough jj changes.
@@ -20,7 +20,7 @@ function cleanupTempDirs() {
 
 /** Build one working-tree review input for the jj command helpers. */
 function diffInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
-  return { kind: "vcs", staged: false, options: { mode: "auto", vcs: "jj" }, ...overrides };
+  return { kind: "vcs", staged: false, options: {}, ...overrides };
 }
 
 function createTempDir(prefix: string) {

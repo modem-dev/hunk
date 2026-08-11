@@ -2,11 +2,24 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeWatchSignature } from "./watch";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { createVcsCatalog } from "./vcs";
+import {
+  computeWatchSignature as computeCoreWatchSignature,
+  type WatchSignatureContext,
+} from "./watch";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 
 const tempDirs: string[] = [];
+
+/** Compute with the app's bundled catalog unless a test supplies another. */
+function computeWatchSignature(input: CliInput, context: WatchSignatureContext) {
+  return computeCoreWatchSignature(input, {
+    vcsCatalog: getBundledVcsCatalog(),
+    ...context,
+  });
+}
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -160,9 +173,12 @@ describe("computeWatchSignature", () => {
       options: { mode: "auto", vcs: "hg" },
     } satisfies CliInput;
 
-    expect(computeWatchSignature(input, { cwd: process.cwd(), vcsAdapters: [adapter] })).toBe(
-      "vcs\n---\nhg:working-copy",
-    );
+    expect(
+      computeWatchSignature(input, {
+        cwd: process.cwd(),
+        vcsCatalog: createVcsCatalog([adapter], "demo", []),
+      }),
+    ).toBe("vcs\n---\nhg:working-copy");
   });
 
   test("rejects unsupported watch operations before invoking adapter signatures", () => {

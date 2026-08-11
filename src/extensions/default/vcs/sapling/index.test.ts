@@ -7,7 +7,7 @@ import type {
   ExtensionVcsOperations,
   ExtensionVcsShowInput,
   ExtensionVcsDiffInput,
-} from "../../../../extension-api/types";
+} from "hunkdiff/extension";
 
 // The adapter is written against the published contract, so the tests read it
 // through that contract too — including the operations an adapter may omit.

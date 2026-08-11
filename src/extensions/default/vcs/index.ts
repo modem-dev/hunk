@@ -9,7 +9,6 @@ import {
   type ExtensionMetadata,
   type ExtensionRegistry,
 } from "../../types";
-import type { VcsAdapter } from "../../../core/vcs/types";
 
 /**
  * The bundled extension tier.
@@ -36,8 +35,8 @@ import type { VcsAdapter } from "../../../core/vcs/types";
  * rather than a crash — even though these factories are Hunk's own and that
  * path should be unreachable.
  *
- * VCS backends are the only registration kind this tier uses today, and the
- * only one consumed from here (`src/core/vcs` reads `getBundledVcsAdapters`).
+ * VCS backends are the only registration kind this tier uses today. The app
+ * composition root reads `getBundledVcsAdapters` and builds the core catalog.
  * A bundled extension that registered a theme or a changeset transform would
  * also have to be threaded through `applyExtensionRegistrations`, which today
  * only sees the user-extension load result.
@@ -52,7 +51,7 @@ interface BundledExtensionDefinition {
  * Every bundled extension, in load order.
  *
  * Load order only breaks ties: detection order comes from each adapter's
- * `detectionPriority`, assembled in `src/core/vcs`.
+ * `detectionPriority`, assembled by the app-owned catalog.
  */
 const BUNDLED_EXTENSIONS: readonly BundledExtensionDefinition[] = [
   { id: "jj", factory: jjExtension },
@@ -104,6 +103,6 @@ export function loadBundledExtensions(): BundledExtensionLoad {
 }
 
 /** Return the VCS backends the bundled tier registered, in registration order. */
-export function getBundledVcsAdapters(): readonly VcsAdapter[] {
+export function getBundledVcsAdapters() {
   return loadBundledExtensions().registry.vcsAdapters.map((entry) => entry.adapter);
 }

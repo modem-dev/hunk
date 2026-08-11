@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { resolveGlobalExtensionsDir } from "../core/paths";
-import { findVcsRepoRootCandidate } from "../core/vcs";
+import { findProjectRootCandidate } from "../core/projectRoot";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 
 /** Entry-file suffixes Hunk will import directly, in preference order. */
@@ -262,7 +262,7 @@ function expandExplicitPath(path: string, cwd: string): DiscoveredExtensionEntry
 export function discoverExtensions(options: DiscoverExtensionsOptions = {}): ExtensionCandidate[] {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
-  const repoRoot = options.repoRoot ?? findVcsRepoRootCandidate(cwd);
+  const repoRoot = options.repoRoot ?? findProjectRootCandidate(cwd);
   const globalExtensionsDir = options.globalExtensionsDir ?? resolveGlobalExtensionsDir(env);
 
   const groups: Array<{ origin: ExtensionOrigin; entries: DiscoveredExtensionEntry[] }> = [

@@ -1,8 +1,13 @@
-import type { RegisteredTheme } from "../extensions/types";
 import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "./themeCatalog";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS } from "./legacySyntaxScopes";
 import type { StartupNotice } from "./startupNotice";
 import type { NamedCustomThemeConfig } from "./types";
+
+/** Provider-neutral shape accepted from any custom-theme registration source. */
+export interface RegisteredCustomTheme {
+  extensionId: string;
+  theme: NamedCustomThemeConfig;
+}
 
 /** Id of the theme defined by the original single-slot `[custom_theme]` config table. */
 export const LEGACY_CUSTOM_THEME_ID = "custom";
@@ -315,7 +320,7 @@ export interface SessionCustomThemes {
  */
 export function collectSessionCustomThemes(
   configThemes: readonly NamedCustomThemeConfig[] = [],
-  extensionThemes: readonly RegisteredTheme[] = [],
+  extensionThemes: readonly RegisteredCustomTheme[] = [],
 ): SessionCustomThemes {
   const themes = [...configThemes];
   const notices: StartupNotice[] = [];

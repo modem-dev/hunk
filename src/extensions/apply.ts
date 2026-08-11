@@ -1,8 +1,8 @@
 import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
 import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
-import { detectVcs, getDefaultVcsAdapter, isVcsId, resolveVcsAdapters } from "../core/vcs";
-import type { VcsAdapter } from "../core/vcs/types";
+import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
+import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import type {
   ExtensionContext,
@@ -77,13 +77,14 @@ export interface ResolvedExtensionVcsAdapters {
  */
 export function resolveExtensionVcsAdapters(
   registry: ExtensionRegistry,
+  baseCatalog: VcsCatalog,
 ): ResolvedExtensionVcsAdapters {
   const adapters: VcsAdapter[] = [];
   const issues: ExtensionApplyIssue[] = [];
   const claimed = new Set<string>();
 
   for (const { extensionId, adapter } of registry.vcsAdapters) {
-    if (isVcsId(adapter.id)) {
+    if (baseCatalog.reservedIds.has(adapter.id)) {
       issues.push({
         extensionId,
         message: `Skipped VCS adapter "${adapter.id}" from extension ${extensionId} • a built-in backend owns that id`,
@@ -237,8 +238,10 @@ export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedE
 
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */
 export interface AppliedExtensionRegistrations {
-  /** Extension adapters to thread into `loadAppBootstrap`. */
+  /** Accepted user adapters, retained for notices and extension-facing UI state. */
   vcsAdapters: VcsAdapter[];
+  /** Complete bundled plus user catalog used by loading, reload, and watch. */
+  vcsCatalog: VcsCatalog;
   issues: ExtensionApplyIssue[];
 }
 
@@ -251,13 +254,14 @@ export interface AppliedExtensionRegistrations {
  */
 export function applyExtensionRegistrations(
   result: ExtensionLoadResult | undefined,
+  baseCatalog: VcsCatalog,
 ): AppliedExtensionRegistrations {
   if (!result) {
-    return { vcsAdapters: [], issues: [] };
+    return { vcsAdapters: [], vcsCatalog: baseCatalog, issues: [] };
   }
 
   const languageIssues = applyExtensionFileLanguages(result.registry);
-  const vcs = resolveExtensionVcsAdapters(result.registry);
+  const vcs = resolveExtensionVcsAdapters(result.registry, baseCatalog);
   // Resolved again where the UI consumes them; consulted here so skipped
   // duplicate registrations surface through the same notice path as every
   // other refusal.
@@ -266,6 +270,7 @@ export function applyExtensionRegistrations(
   const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
+    vcsCatalog: extendVcsCatalog(baseCatalog, vcs.adapters),
     issues: [
       ...languageIssues,
       ...vcs.issues,
@@ -277,8 +282,8 @@ export function applyExtensionRegistrations(
 }
 
 /** Report whether one id names a backend this session actually loaded. */
-function ownsVcsId(adapters: readonly VcsAdapter[], vcsId: string) {
-  return resolveVcsAdapters(adapters).some((adapter) => adapter.id === vcsId);
+function ownsVcsId(catalog: VcsCatalog, vcsId: string) {
+  return catalog.adapters.some((adapter) => adapter.id === vcsId);
 }
 
 /**
@@ -304,19 +309,14 @@ function ownsVcsId(adapters: readonly VcsAdapter[], vcsId: string) {
  */
 export function resolveDetectedVcsIdWithExtensions(
   cwd: string,
-  adapters: readonly VcsAdapter[],
+  catalog: VcsCatalog,
   explicitVcsId?: string,
 ): string | undefined {
-  if (adapters.length === 0) {
-    // Config already detected across exactly this adapter list.
+  if (explicitVcsId !== undefined && ownsVcsId(catalog, explicitVcsId)) {
     return undefined;
   }
 
-  if (explicitVcsId !== undefined && ownsVcsId(adapters, explicitVcsId)) {
-    return undefined;
-  }
-
-  return detectVcs(cwd, adapters)?.id;
+  return detectVcs(cwd, catalog)?.id;
 }
 
 /** The backend one session will load with, plus a configured id nothing owned. */
@@ -347,19 +347,19 @@ export interface ResolvedSessionVcsId {
 export function resolveSessionVcsId(
   configuredVcsId: string | undefined,
   cwd: string,
-  adapters: readonly VcsAdapter[],
+  catalog: VcsCatalog,
 ): ResolvedSessionVcsId {
   if (!configuredVcsId) {
     return { vcsId: configuredVcsId };
   }
 
-  if (ownsVcsId(adapters, configuredVcsId)) {
+  if (ownsVcsId(catalog, configuredVcsId)) {
     return { vcsId: configuredVcsId };
   }
 
   // Same fallback config itself would have produced had it dropped the id.
   return {
-    vcsId: detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id,
+    vcsId: detectVcs(cwd, catalog)?.id ?? getDefaultVcsAdapter(catalog).id,
     unknownVcsId: configuredVcsId,
   };
 }

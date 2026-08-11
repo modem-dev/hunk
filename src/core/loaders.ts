@@ -14,7 +14,7 @@ import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatch, stripTerminalControl } from "./patch/normalize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
-import type { VcsAdapter } from "./vcs/types";
+import type { VcsCatalog } from "./vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
 import { computeWatchSignature } from "./watch";
 import type {
@@ -34,13 +34,12 @@ import type {
   VcsStashShowCommandInput,
 } from "./types";
 
-interface LoadAppBootstrapOptions {
+export interface LoadAppBootstrapOptions {
   cwd?: string;
   /** Selectable custom themes for this session, already merged into menu order. */
   customThemes?: readonly NamedCustomThemeConfig[];
-  /** Extension-contributed VCS backends this session may load reviews through. */
-  vcsAdapters?: readonly VcsAdapter[];
-  gitExecutable?: string;
+  /** Complete adapter catalog composed by the app for this session. */
+  vcsCatalog?: VcsCatalog;
 }
 
 /** Return the final path segment for display-oriented labels. */
@@ -385,13 +384,12 @@ async function loadFileDiffChangeset(
 async function loadVcsChangeset(
   input: VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput,
   agentContext: AgentContext | null,
-  cwd = process.cwd(),
-  gitExecutable = "git",
-  extensionVcsAdapters: readonly VcsAdapter[] = [],
+  cwd: string,
+  vcsCatalog: VcsCatalog,
 ) {
-  const adapter = getConfiguredVcsAdapter(input.options.vcs, extensionVcsAdapters);
+  const adapter = getConfiguredVcsAdapter(input.options.vcs, vcsCatalog);
   const operation = operationFromInput(input);
-  const result = await loadVcsReview(adapter, operation, { cwd, gitExecutable });
+  const result = await loadVcsReview(adapter, operation, { cwd }, vcsCatalog);
   const parsedChangeset = normalizePatchChangeset(
     result.patchText,
     result.title,
@@ -451,18 +449,15 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  {
-    cwd = process.cwd(),
-    customThemes,
-    vcsAdapters,
-    gitExecutable = "git",
-  }: LoadAppBootstrapOptions = {},
+  { cwd = process.cwd(), customThemes, vcsCatalog }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
     try {
-      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable, vcsAdapters });
+      if (vcsCatalog || !["vcs", "show", "stash-show"].includes(input.kind)) {
+        initialWatchSignature = computeWatchSignature(input, { cwd, vcsCatalog });
+      }
     } catch {
       // A transient signature failure must not prevent an otherwise valid initial review.
     }
@@ -478,7 +473,10 @@ export async function loadAppBootstrap(
     case "show":
     case "stash-show":
       {
-        const result = await loadVcsChangeset(input, agentContext, cwd, gitExecutable, vcsAdapters);
+        if (!vcsCatalog) {
+          throw new Error("VCS-backed reviews require a composed VCS catalog.");
+        }
+        const result = await loadVcsChangeset(input, agentContext, cwd, vcsCatalog);
         changeset = result.changeset;
         repoRoot = result.repoRoot;
       }
@@ -501,7 +499,7 @@ export async function loadAppBootstrap(
 
   return {
     input,
-    reloadContext: { cwd, repoRoot, initialWatchSignature, vcsAdapters },
+    reloadContext: { cwd, repoRoot, initialWatchSignature, vcsCatalog },
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,

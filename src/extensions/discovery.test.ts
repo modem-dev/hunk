@@ -104,6 +104,21 @@ describe("extension discovery", () => {
     expect(candidates).toEqual([{ id: "dual", path: typescriptIndex, origin: "flag" }]);
   });
 
+  test("bootstraps repo-local extensions from .hunk without a bundled VCS marker", () => {
+    const repo = createTempDir("hunk-ext-provider-neutral-repo-");
+    const nested = join(repo, "src", "nested");
+    mkdirSync(nested, { recursive: true });
+    const repoPath = writeExtensionFile(repo, ".hunk", "extensions", "custom-vcs.ts");
+
+    const candidates = discoverExtensions({
+      cwd: nested,
+      globalExtensionsDir: undefined,
+      env: {},
+    });
+
+    expect(candidates).toEqual([{ id: "custom-vcs", path: repoPath, origin: "repo" }]);
+  });
+
   test("orders flag, user config, global, then repo-local sources", () => {
     const repo = createRepo("hunk-ext-repo-");
     const globalDir = join(repo, "global-extensions");

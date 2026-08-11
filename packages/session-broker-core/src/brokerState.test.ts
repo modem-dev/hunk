@@ -218,6 +218,23 @@ describe("session broker state", () => {
     );
   });
 
+  test("resolves repo subdirectories to the nearest registered provider root", () => {
+    const sessions = [
+      createListedSession({ sessionId: "outer", repoRoot: "/repo", cwd: "/repo" }),
+      createListedSession({
+        sessionId: "inner",
+        repoRoot: "/repo/packages/app",
+        cwd: "/repo/packages/app",
+      }),
+    ];
+
+    expect(resolveSessionTarget(sessions, { repoRoot: "/repo/packages/app/src" }).sessionId).toBe(
+      "inner",
+    );
+    expect(resolveSessionTarget(sessions, { repoRoot: "/repo/other" }).sessionId).toBe("outer");
+    expect(resolveSessionTarget(sessions, { repoRoot: "/repo/..cache" }).sessionId).toBe("outer");
+  });
+
   test("keeps session-path matching tied to the live session cwd", () => {
     const sessions = [
       createListedSession({

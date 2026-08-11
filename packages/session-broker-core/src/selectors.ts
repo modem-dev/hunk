@@ -1,10 +1,27 @@
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { SessionTargetInput } from "./types";
 
 export interface SelectableSession {
   sessionId: string;
   cwd: string;
   repoRoot?: string;
+}
+
+/** Return containment distance when a repo selector belongs to one session root. */
+export function repoSelectorDistance(
+  session: SelectableSession,
+  selectorPath: string,
+): number | null {
+  if (!session.repoRoot) {
+    return null;
+  }
+
+  const offset = relative(session.repoRoot, selectorPath);
+  if (offset === ".." || offset.startsWith(`..${sep}`) || isAbsolute(offset)) {
+    return null;
+  }
+
+  return offset === "" ? 0 : offset.split(/[\\/]+/).filter(Boolean).length;
 }
 
 /** Return whether one session matches the selector precedence shared by the broker and CLI. */
@@ -25,7 +42,7 @@ export function matchesSessionSelector(
   }
 
   if (selector.repoRoot) {
-    return session.repoRoot === selector.repoRoot;
+    return repoSelectorDistance(session, selector.repoRoot) !== null;
   }
 
   return true;

@@ -17,9 +17,9 @@ object and registry collection (`src/extensions/runExtension.ts`):
   `src/extensions/trust.ts`.
 - **Bundled extensions** live in `src/extensions/default/` and are compiled
   into the binary. `default/vcs/{git,jujutsu,sapling}` is statically imported
-  and loaded synchronously _from VCS adapter resolution_
-  (`default/vcs/index.ts`), so backends exist during config resolution — that
-  load path must stay renderer-free. `default/ui/sidebar/` is deliberately not
+  by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
+  before config resolution, so backends exist without making core import the
+  extension host. `default/ui/sidebar/` is deliberately not
   part of that list: it is UI code, loaded through `getBundledSidebarView`
   where the app resolves its sidebar views.
 
@@ -38,7 +38,7 @@ owns for commands (`<extensionId>.<commandId>`), sidebar views
 (`<extensionId>:<viewId>`), and config (`[extension.<id>]`). `host.ts` is the
 one place those ids are vetted — discovery stays a pure filesystem walk, and
 every way an id can be derived arrives there as `candidate.id`. It refuses
-reserved ids (`hunk`, plus the bundled backends via `isVcsId`), ids outside
+reserved ids (`hunk`, plus the base catalog's bundled backend ids), ids outside
 `/^[A-Za-z0-9][A-Za-z0-9_-]*$/` (a dot or colon would make the composed ids
 unsplittable), and the later of two sources claiming one id; each refusal is a
 load issue and costs only that extension. The rules themselves are stated in
@@ -191,16 +191,22 @@ none — which is why the visible menu list is derived from the menus record
 
 ## VCS adapters
 
-`src/core/vcs/index.ts` is the single assembly point ordering bundled + user
-adapters by `detectionPriority` (Git is the baseline at 0; jj 200 / sl 100
-sit above it for colocated checkouts — the constants in
-`src/extension-api/types.ts` document the reasoning). Detection is uniform
-across tiers: nearest checkout wins, priority breaks equal-distance ties, an
-explicit `vcs` id a loaded backend owns beats detection
-(`src/extensions/apply.ts`). `src/extensions/vcsPatchResult.ts` is the one
-conversion boundary where a published `ExtensionVcsPatchResult` becomes
-Hunk's internal diff model — anything a backend needs that cannot be
-expressed publicly is a real gap in the contract.
+`src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
+detection, and operation dispatch. `src/app/vcsCatalog.ts` composes bundled
+registrations, while `src/app/sessionBootstrap.ts` extends that catalog with
+accepted user adapters and threads the same value through loading, reload, and
+watch. Detection is uniform across tiers: nearest checkout wins, priority breaks
+equal-distance ties, and an explicit `vcs` id owned by the catalog wins.
+
+Provider implementations — command construction, spawning, error translation,
+and exact-source reading — live entirely under
+`src/extensions/default/vcs/<provider>/`. `src/extensions/vcsPatchResult.ts` is
+the one conversion boundary where a published `ExtensionVcsPatchResult`
+becomes Hunk's internal diff model, including structural `too-large` source
+results. `src/core/projectRoot.ts` treats `.hunk` as a provider-independent
+bootstrap marker and also consults the available catalog; startup performs a
+second root/config pass when a global, config-path, or CLI adapter recognizes a
+repository unavailable to the bundled catalog.
 
 ## Public contract rules
 

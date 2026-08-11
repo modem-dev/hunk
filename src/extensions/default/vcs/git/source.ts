@@ -1,25 +1,23 @@
 import { join } from "node:path";
-import {
-  DEFAULT_SOURCE_TEXT_MAX_BYTES,
-  SourceTextTooLargeError,
-  logSourceDiagnostic,
-  readFileSourceSpec,
-  readStreamTextWithLimit,
-  type FileSourceSpec,
-} from "../fileSource";
-import type { GitDiffEndpoint } from "./git";
+import type {
+  ExtensionVcsFileSourceResult,
+  ExtensionVcsFileSourceTooLarge,
+} from "hunkdiff/extension";
+import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readStreamTextWithLimit } from "../../../../lib/sourceText";
+import type { GitDiffEndpoint } from "./commands";
 
-/**
- * Reading a reviewed file's full contents out of Git.
- *
- * Git can name the exact bytes on each side of a diff — a blob at a commit, the
- * staged entry, the file on disk — which is what lets Hunk expand context and
- * highlight against the real file instead of against the patch. Everything here
- * answers one question: given a resolved source spec, what is that text?
- */
+/** A provider-local signal converted to the public structural result at this boundary. */
+class GitSourceTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`Source text exceeds ${maxBytes} bytes.`);
+    this.name = "GitSourceTooLargeError";
+  }
+}
 
+/** Source locations Git can resolve without consulting Hunk core internals. */
 export type GitFileSourceSpec =
-  | FileSourceSpec
+  | { kind: "none" }
+  | { kind: "fs"; absolutePath: string }
   | { kind: "git-blob"; repoRoot: string; ref: string; path: string }
   | { kind: "git-index"; repoRoot: string; path: string };
 
@@ -46,6 +44,23 @@ export function gitEndpointSourceSpec(
   }
 }
 
+/** Keep provider diagnostics terse without coupling source reads to core logging. */
+function logSourceDiagnostic(message: string, detail?: unknown) {
+  if (detail instanceof Error) {
+    console.error(`hunk: ${message}: ${detail.message}`, detail);
+    return;
+  }
+
+  const firstLine =
+    typeof detail === "string"
+      ? detail
+          .split("\n")
+          .map((line) => line.trim())
+          .find(Boolean)
+      : undefined;
+  console.error(firstLine ? `hunk: ${message}: ${firstLine}` : `hunk: ${message}`);
+}
+
 /** Return whether a Git failure is an expected missing source side/path. */
 function isExpectedMissingGitSource(stderr: string) {
   const normalized = stderr.toLowerCase();
@@ -58,13 +73,38 @@ function isExpectedMissingGitSource(stderr: string) {
   ].some((fragment) => normalized.includes(fragment));
 }
 
+/** Represent an exceeded resource limit through the public extension contract. */
+function tooLarge(maxBytes: number): ExtensionVcsFileSourceTooLarge {
+  return { kind: "too-large", maxBytes };
+}
+
+/** Read a filesystem source without importing Hunk's private source-fetcher implementation. */
+async function readFilesystemSource(
+  absolutePath: string,
+  maxSourceBytes: number,
+): Promise<ExtensionVcsFileSourceResult> {
+  try {
+    const file = Bun.file(absolutePath);
+    if (!(await file.exists())) {
+      return null;
+    }
+    if (file.size > maxSourceBytes) {
+      return tooLarge(maxSourceBytes);
+    }
+    return await file.text();
+  } catch (error) {
+    logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
+    return null;
+  }
+}
+
 /** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
 async function readGitObjectSpec(
   repoRoot: string,
   objectName: string,
-  gitExecutable = "git",
+  gitExecutable: string,
   maxSourceBytes: number,
-): Promise<string | null> {
+): Promise<ExtensionVcsFileSourceResult> {
   let proc: Bun.ReadableSubprocess;
 
   try {
@@ -83,19 +123,24 @@ async function readGitObjectSpec(
   try {
     output = await Promise.all([
       proc.exited,
-      readStreamTextWithLimit(proc.stdout, maxSourceBytes, () => proc.kill()),
+      readStreamTextWithLimit(
+        proc.stdout,
+        maxSourceBytes,
+        () => proc.kill(),
+        (limit) => new GitSourceTooLargeError(limit),
+      ),
       readStreamTextWithLimit(
         proc.stderr,
         64 * 1024,
         undefined,
-        (maxBytes) => new Error(`Git source diagnostics exceeded ${maxBytes} bytes.`),
+        (limit) => new Error(`Git source diagnostics exceeded ${limit} bytes.`),
       ),
     ]);
   } catch (error) {
-    if (error instanceof SourceTextTooLargeError) {
+    if (error instanceof GitSourceTooLargeError) {
       proc.kill();
       await proc.exited.catch(() => undefined);
-      throw error;
+      return tooLarge(error.maxBytes);
     }
 
     logSourceDiagnostic(`failed to collect Git source ${objectName}`, error);
@@ -103,7 +148,6 @@ async function readGitObjectSpec(
   }
 
   const [exitCode, stdout, stderr] = output;
-
   if (exitCode !== 0) {
     if (!isExpectedMissingGitSource(stderr)) {
       logSourceDiagnostic(`failed to read Git source ${objectName} in ${repoRoot}`, stderr);
@@ -114,22 +158,19 @@ async function readGitObjectSpec(
   return stdout;
 }
 
-/**
- * Read the full text one resolved Git source spec names.
- *
- * Resolves to `null` rather than rejecting whenever a side simply is not there
- * — the old side of an added file, a path the ref never contained — so callers
- * can treat "no source" as an ordinary answer. Only a source too large to read
- * safely rejects.
- */
+/** Read the full text one resolved Git source spec names. */
 export function readGitFileSource(
   spec: GitFileSourceSpec,
   {
     gitExecutable = "git",
     maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES,
   }: Readonly<GitFileSourceOptions> = {},
-): Promise<string | null> {
+): Promise<ExtensionVcsFileSourceResult> {
   switch (spec.kind) {
+    case "none":
+      return Promise.resolve(null);
+    case "fs":
+      return readFilesystemSource(spec.absolutePath, maxSourceBytes);
     case "git-index":
       return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
     case "git-blob":
@@ -139,7 +180,5 @@ export function readGitFileSource(
         gitExecutable,
         maxSourceBytes,
       );
-    default:
-      return readFileSourceSpec(spec, { maxSourceBytes });
   }
 }

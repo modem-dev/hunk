@@ -8,7 +8,7 @@ import type {
   ExtensionVcsWatchTargetSource,
 } from "../extension-api/types";
 import type { CliInput } from "./types";
-import type { VcsAdapter } from "./vcs/types";
+import type { VcsCatalog } from "./vcs/types";
 import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 
 /**
@@ -25,15 +25,8 @@ export type WatchPlan = ExtensionVcsWatchPlan;
 export interface WatchPlanContext {
   cwd: string;
   platform?: NodeJS.Platform;
-  gitExecutable?: string;
-  /**
-   * Extension-contributed adapters this session resolved reviews through.
-   *
-   * Watch planning has to see the same adapter set the changeset was loaded
-   * with, or a review backed by an extension backend would fall back to
-   * polling — or fail to find its adapter at all.
-   */
-  vcsAdapters?: readonly VcsAdapter[];
+  /** Complete catalog retained from the review load. */
+  vcsCatalog?: VcsCatalog;
 }
 
 interface FileTarget {
@@ -124,11 +117,16 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
     case "vcs":
     case "show":
     case "stash-show": {
-      const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsAdapters);
-      const adapterPlan = createVcsWatchPlan(adapter, operationFromInput(input), {
-        cwd: context.cwd,
-        gitExecutable: context.gitExecutable,
-      });
+      if (!context.vcsCatalog) {
+        throw new Error("VCS-backed watch plans require a composed VCS catalog.");
+      }
+      const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsCatalog);
+      const adapterPlan = createVcsWatchPlan(
+        adapter,
+        operationFromInput(input),
+        { cwd: context.cwd },
+        context.vcsCatalog,
+      );
       coverage = adapterPlan.coverage;
       adapterTargets = adapterPlan.targets;
       break;

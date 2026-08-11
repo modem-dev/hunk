@@ -20,6 +20,10 @@ export interface LoadStartupExtensionsOptions {
   env?: NodeJS.ProcessEnv;
   /** Entry paths from repeated `--extension` flags. */
   cliExtensionPaths?: readonly string[];
+  /** Project root resolved before user extensions execute. */
+  projectRoot?: string;
+  /** Product-owned ids user extension modules may not claim. */
+  reservedExtensionIds?: ReadonlySet<string>;
   /**
    * Sink extension `ctx.notify` calls land in. Pass the hub from an earlier
    * pass when reloading extensions so the mounted UI keeps receiving them.
@@ -53,7 +57,7 @@ export async function loadStartupExtensions(
   const candidates = discoverExtensions({
     cwd,
     env,
-    repoRoot: options.hostOverrides?.repoRoot,
+    repoRoot: options.projectRoot ?? options.hostOverrides?.repoRoot,
     flagPaths: options.cliExtensionPaths,
     configPaths: options.extensions.paths,
     repoConfigPaths: options.extensions.repoPaths,
@@ -70,6 +74,8 @@ export async function loadStartupExtensions(
     extensionConfigs: options.extensions.extensionConfigs,
     notifications,
     ...options.hostOverrides,
+    repoRoot: options.projectRoot ?? options.hostOverrides?.repoRoot,
+    reservedExtensionIds: options.reservedExtensionIds,
   });
 }
 

@@ -1,5 +1,10 @@
 import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
-import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
+import { getBundledVcsCatalog } from "./vcsCatalog";
+import {
+  createExtensionApplyNotices,
+  createUnknownVcsNotice,
+  resolveExtensionVcsAdapters,
+} from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/default/vcs";
 import {
   createExtensionLoadNotices,
@@ -8,6 +13,8 @@ import {
 } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/config";
 import { HunkUserError } from "../core/errors";
+import { findProjectRootCandidate } from "../core/projectRoot";
+import { extendVcsCatalog } from "../core/vcs";
 import { loadAppBootstrap } from "../core/loaders";
 import { looksLikePatchInput } from "../core/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/themeDetection";
@@ -17,8 +24,8 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "../core/terminal";
+import type { AppBootstrap } from "./types";
 import type {
-  AppBootstrap,
   CliInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
@@ -115,6 +122,7 @@ export async function prepareStartupPlan(
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
+  const baseVcsCatalog = getBundledVcsCatalog();
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
@@ -168,6 +176,9 @@ export async function prepareStartupPlan(
       };
       const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
+        {
+          vcsCatalog: baseVcsCatalog,
+        },
       );
       const staticPlan = {
         kind: "static-diff-pager" as const,
@@ -232,7 +243,12 @@ export async function prepareStartupPlan(
   }
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
-  const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
+  const startupCwd = process.cwd();
+  let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
+    cwd: startupCwd,
+    env,
+    vcsCatalog: baseVcsCatalog,
+  });
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
 
@@ -265,13 +281,41 @@ export async function prepareStartupPlan(
   // Extensions load before the changeset so later stages can hand their VCS adapters and
   // changeset transforms to the loading pipeline. Failures never reach here: the host
   // isolates them into issues that become startup notices below.
-  const startupCwd = process.cwd();
-  const extensionResult = await loadStartupExtensionsImpl({
+  let extensionResult = await loadStartupExtensionsImpl({
     extensions: configured.extensions,
     cwd: startupCwd,
     env,
     cliExtensionPaths: cliInput.options.extensionPaths,
+    projectRoot: configured.projectRoot,
+    reservedExtensionIds: baseVcsCatalog.reservedIds,
   });
+
+  // Global, config-path, and CLI adapters can recognize repositories the bundled
+  // catalog cannot. Once those factories have registered, settle the project root
+  // again and load that repository's config/extensions before the final review.
+  const provisionalAdapters = resolveExtensionVcsAdapters(
+    extensionResult.registry,
+    baseVcsCatalog,
+  ).adapters;
+  const provisionalCatalog = extendVcsCatalog(baseVcsCatalog, provisionalAdapters);
+  const extensionProjectRoot = findProjectRootCandidate(startupCwd, provisionalCatalog);
+  if (provisionalAdapters.length > 0 && extensionProjectRoot !== configured.projectRoot) {
+    configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
+      cwd: startupCwd,
+      env,
+      vcsCatalog: provisionalCatalog,
+    });
+    cliInput = configured.input;
+    extensionResult = await loadStartupExtensionsImpl({
+      extensions: configured.extensions,
+      cwd: startupCwd,
+      env,
+      cliExtensionPaths: cliInput.options.extensionPaths,
+      projectRoot: configured.projectRoot,
+      reservedExtensionIds: baseVcsCatalog.reservedIds,
+      notifications: extensionResult.notifications,
+    });
+  }
 
   let preparedSession: SessionBootstrapResult;
   try {
@@ -281,6 +325,7 @@ export async function prepareStartupPlan(
       extensions: extensionResult,
       initialThemeMode,
       loadAppBootstrapImpl,
+      baseVcsCatalog,
     });
   } catch (error) {
     controllingTerminal?.close();

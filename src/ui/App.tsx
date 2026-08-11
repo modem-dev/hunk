@@ -50,6 +50,7 @@ import type {
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
+  ExtensionLoadResult,
   RegisteredCommand,
 } from "../extensions/types";
 import type {
@@ -269,7 +270,7 @@ export function App({
   } | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const extensions = bootstrap.extensions;
+  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
   // Repo-local extensions were discovered but skipped for want of a trust

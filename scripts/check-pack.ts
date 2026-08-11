@@ -161,7 +161,12 @@ export default function (hunk: HunkExtensionAPI) {
             title: "Mercurial working copy",
             patchText: "",
             untrackedPaths: [],
-            readFileSource: async ({ path, side }) => (side === "old" ? null : path),
+            readFileSource: async ({ path, side }) =>
+              side === "old"
+                ? null
+                : path.endsWith(".generated")
+                  ? { kind: "too-large", maxBytes: 1_000_000 }
+                  : path,
             extraFiles: [
               { kind: "patch", path: "notes.md", patchText: "", isUntracked: true },
               {

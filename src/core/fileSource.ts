@@ -1,3 +1,10 @@
+import {
+  DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  readStreamTextWithLimit as readLimitedStreamText,
+} from "../lib/sourceText";
+
+export { DEFAULT_SOURCE_TEXT_MAX_BYTES } from "../lib/sourceText";
+
 /**
  * Generic full-file source fetcher primitives used by input loaders and VCS adapters.
  *
@@ -22,8 +29,6 @@ export interface FileSourceFetcher {
    */
   getFullText(side: FileSourceSide): Promise<string | null>;
 }
-
-export const DEFAULT_SOURCE_TEXT_MAX_BYTES = 1_000_000;
 
 /** Raised when expanded-context source would require reading an unsafe amount of text. */
 export class SourceTextTooLargeError extends Error {
@@ -86,45 +91,13 @@ async function readFsSpec(
   }
 }
 
-export async function readStreamTextWithLimit(
+export function readStreamTextWithLimit(
   stream: ReadableStream<Uint8Array> | null,
   maxBytes: number,
   onTooLarge?: () => void,
-  createLimitError: (maxBytes: number) => Error = (maxBytes) =>
-    new SourceTextTooLargeError(maxBytes),
+  createLimitError: (maxBytes: number) => Error = (limit) => new SourceTextTooLargeError(limit),
 ) {
-  if (!stream) {
-    return "";
-  }
-
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) {
-      onTooLarge?.();
-      await reader.cancel().catch(() => undefined);
-      throw createLimitError(maxBytes);
-    }
-
-    chunks.push(value);
-  }
-
-  const combined = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return new TextDecoder().decode(combined);
+  return readLimitedStreamText(stream, maxBytes, onTooLarge, createLimitError);
 }
 
 /** Read the text one filesystem-backed source spec names, or null when there is none. */

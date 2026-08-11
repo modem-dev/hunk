@@ -3,7 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState } from "react";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../app/types";
 import type { ExtensionCommandControls } from "../extension-api/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { App } from "./App";

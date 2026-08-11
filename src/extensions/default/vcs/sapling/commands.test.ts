@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSlDiffArgs, runSlText } from "./sapling";
-import type { VcsDiffCommandInput } from "../types";
+import { buildSlDiffArgs, runSlText } from "./commands";
+import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const slAvailable = (() => {
   try {
@@ -28,7 +28,7 @@ function cleanupTempDirs() {
 
 /** Build one working-tree review input for the sl command helpers. */
 function diffInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
-  return { kind: "vcs", staged: false, options: { mode: "auto", vcs: "sl" }, ...overrides };
+  return { kind: "vcs", staged: false, options: {}, ...overrides };
 }
 
 function createTempDir(prefix: string) {

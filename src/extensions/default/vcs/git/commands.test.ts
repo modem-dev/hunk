@@ -14,8 +14,8 @@ import {
   resolveGitMetadata,
   runGitText,
   shouldSkipLargeTrackedDiff,
-} from "./git";
-import type { VcsDiffCommandInput } from "../types";
+} from "./commands";
+import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
 

@@ -36,7 +36,6 @@ import {
   constraintViolationMessage,
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
-import { detectVcs } from "./vcs";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "./tabWidth";
 import { resolveCliVersion } from "./version";
 
@@ -555,21 +554,10 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
   });
 }
 
-/**
- * Resolve a `--repo <path>` selector to the containing VCS toplevel.
- *
- * Sessions register under their repo root, so the selector must walk up from the
- * given path to that root; otherwise a query run from a subdirectory would never
- * match. The detected root is canonicalized through symlinks to mirror the
- * session's registered repoRoot (git's `--show-toplevel` is realpath-canonical),
- * so matching also holds under a symlinked ancestor like macOS `/tmp`. Falls back
- * to the resolved path when it is not inside a known checkout.
- */
+/** Canonicalize a `--repo` path without assuming which VCS owns it. */
 function resolveRepoSelectorRoot(repoPath: string): string {
   const resolved = resolve(repoPath);
-  const repoRoot = detectVcs(resolved)?.repoRoot;
-  // The detected root always exists on disk, so realpath cannot throw here.
-  return repoRoot ? realpathSync.native(repoRoot) : resolved;
+  return existsSync(resolved) ? realpathSync.native(resolved) : resolved;
 }
 
 /** Normalize one explicit session selector from either session id or repo root. */

@@ -16,7 +16,6 @@ export interface VcsDetection {
 
 export interface VcsLoadContext {
   cwd: string;
-  gitExecutable?: string;
 }
 
 export type VcsReviewInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
@@ -59,6 +58,14 @@ export interface VcsPatchResult {
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
   /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
+}
+
+/** Complete ordered VCS capability set used throughout one session. */
+export interface VcsCatalog {
+  adapters: readonly VcsAdapter[];
+  defaultAdapterId: VcsId;
+  /** Adapter ids owned by the base product and unavailable to user registrations. */
+  reservedIds: ReadonlySet<VcsId>;
 }
 
 export interface VcsAdapter {

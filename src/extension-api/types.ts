@@ -484,14 +484,16 @@ export type ExtensionThemeConfig = NamedCustomThemeConfig;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Detection priority of Hunk's Git backend.
+ * Baseline detection priority used by Hunk's default bundled backend.
  *
- * Adapters are consulted highest priority first, so this is the baseline every
- * other backend positions itself around. Hunk's bundled Jujutsu and Sapling
- * backends deliberately register above it: a colocated jj or Sapling checkout
- * also contains a `.git` directory, and must not be reviewed as plain Git.
+ * Adapters are consulted highest priority first. Bundled providers that must
+ * win a same-root tie register above this value; user adapters can do the same
+ * when their repository metadata establishes the authoritative working copy.
  */
-export const HUNK_CORE_VCS_DETECTION_PRIORITY = 0;
+export const HUNK_VCS_DETECTION_BASELINE_PRIORITY = 0;
+
+/** @deprecated Use `HUNK_VCS_DETECTION_BASELINE_PRIORITY`. */
+export const HUNK_CORE_VCS_DETECTION_PRIORITY = HUNK_VCS_DETECTION_BASELINE_PRIORITY;
 
 /**
  * Detection priority an adapter gets when it does not choose one.
@@ -511,7 +513,6 @@ export interface ExtensionVcsDetection {
 /** Ambient information an operation may need to shell out. */
 export interface ExtensionVcsLoadContext {
   cwd: string;
-  gitExecutable?: string;
 }
 
 /**
@@ -598,7 +599,9 @@ export interface ExtensionVcsFileSourceRequest {
  * what lets Hunk expand context beyond the hunk, highlight against the real
  * file, and word-diff accurately. Return `null` when the side has no content —
  * a missing path, or the absent side of an added or deleted file — rather than
- * throwing.
+ * throwing. Return `{ kind: "too-large", maxBytes }` when reading the source
+ * would exceed the adapter's safety limit; Hunk presents that as an unavailable
+ * expansion without treating it as an extension failure.
  *
  * Hunk calls this at most once per file and side and caches what it resolves,
  * so the reader does not need its own cache. It is never called for a file the
@@ -606,9 +609,19 @@ export interface ExtensionVcsFileSourceRequest {
  * operation is loading and close over them: the request describes the file, not
  * the commits, because only the adapter knows how to name them.
  */
+/** A source side the adapter declined to read because it exceeded its safety limit. */
+export interface ExtensionVcsFileSourceTooLarge {
+  kind: "too-large";
+  /** The byte ceiling the source exceeded, when useful to diagnostics. */
+  maxBytes?: number;
+}
+
+/** One exact-source read result returned through the public adapter boundary. */
+export type ExtensionVcsFileSourceResult = string | null | ExtensionVcsFileSourceTooLarge;
+
 export type ExtensionVcsFileSourceReader = (
   request: ExtensionVcsFileSourceRequest,
-) => Promise<string | null>;
+) => Promise<ExtensionVcsFileSourceResult>;
 
 /* -------------------------------------------------------------------------- */
 /* Extra reviewed files                                                        */

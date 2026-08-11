@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { resolveConfiguredCliInput } from "../core/config";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { StartupNotice } from "../core/startupNotice";
 import type { AppBootstrap, CliInput } from "../core/types";
+import type { ExtensionLoadResult } from "../extensions/types";
 import { createUnknownVcsNotice, reportExtensionApplyIssues } from "../extensions/apply";
 import {
   emitExtensionEvent,
@@ -38,14 +40,23 @@ export function AppHost({
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
   watchRuntime?: WatchedInputRuntime;
 }) {
-  const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
+  const initialBootstrap = bootstrap.reloadContext.vcsCatalog
+    ? bootstrap
+    : {
+        ...bootstrap,
+        reloadContext: {
+          ...bootstrap.reloadContext,
+          vcsCatalog: getBundledVcsCatalog(),
+        },
+      };
+  const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
   const [appVersion, setAppVersion] = useState(0);
   // Extensions outlive App remounts, and a trust grant can replace the whole
   // load result mid-session, so the host owns them rather than the bootstrap.
-  const extensionsRef = useRef(bootstrap.extensions);
+  const extensionsRef = useRef(initialBootstrap.extensions as ExtensionLoadResult | undefined);
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
-  const launchExperimental = bootstrap.input.options.experimental === true;
+  const launchExperimental = initialBootstrap.input.options.experimental === true;
   // Extension authority is launch authority for the same reason. A reload command
   // names *content* to reopen — `hunk session reload <id> -- diff` — and is parsed
   // fresh, so it carries none of the extension flags the session was launched
@@ -54,10 +65,10 @@ export function AppHost({
   // `--extension` paths silently stop loading. Both are captured raw: `undefined`
   // means "no flag given", which must keep deferring to the config layers rather
   // than becoming an explicit choice.
-  const launchExtensionsEnabled = bootstrap.input.options.extensions;
-  const launchExtensionPaths = bootstrap.input.options.extensionPaths;
+  const launchExtensionsEnabled = initialBootstrap.input.options.extensions;
+  const launchExtensionPaths = initialBootstrap.input.options.extensionPaths;
   const [sessionFileBounds] = useState(() =>
-    createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
+    createSessionReloadBounds(initialBootstrap, { cwd: initialBootstrap.reloadContext.cwd }),
   );
   // Which working directory the current extension set was discovered for.
   // Discovery is cwd-relative, so a reload that moves the session to another
@@ -87,9 +98,9 @@ export function AppHost({
     }
 
     emitExtensionEvent(extensions, "startup", {
-      cwd: bootstrap.reloadContext.cwd,
+      cwd: initialBootstrap.reloadContext.cwd,
     });
-  }, [bootstrap.reloadContext.cwd]);
+  }, [initialBootstrap.reloadContext.cwd]);
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: ReloadSessionOptions) => {
@@ -109,7 +120,11 @@ export function AppHost({
       const { cwd } = validateSessionReloadWithinBounds(sessionFileBounds, runtimeInput, {
         sourcePath: options?.sourcePath,
       });
-      const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+      const baseVcsCatalog = getBundledVcsCatalog();
+      const configured = resolveConfiguredCliInput(runtimeInput, {
+        cwd,
+        vcsCatalog: baseVcsCatalog,
+      });
 
       // Extensions loaded before this pass; used below to tell newly loaded ones apart.
       const previouslyLoadedIds = new Set(
@@ -133,6 +148,8 @@ export function AppHost({
           cwd,
           cliExtensionPaths: configured.input.options.extensionPaths,
           notifications: extensionsRef.current?.notifications,
+          projectRoot: configured.projectRoot,
+          reservedExtensionIds: baseVcsCatalog.reservedIds,
         });
         extensionsCwdRef.current = cwd;
         reloadedExtensions = true;
@@ -149,6 +166,7 @@ export function AppHost({
         cwd,
         extensions,
         loadAtCwd: true,
+        baseVcsCatalog,
       });
       if (extensions) {
         reportExtensionApplyIssues(applied.issues, extensions.context);
