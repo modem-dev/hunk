@@ -175,11 +175,13 @@ function cloneSource(source: ExtensionInstallSource, destination: string) {
 }
 
 /**
- * Clone into a staging directory, validate the layout, and prepare dependencies.
+ * Clone into a staging directory and validate the layout.
  *
  * Everything that can fail happens against the staging path, so the real
  * install directory is only ever swapped in whole; a failed install or update
- * leaves whatever was there before untouched.
+ * leaves whatever was there before untouched. Dependencies are deliberately
+ * not installed here: an update compares the staged commit first, so an
+ * unchanged install never pays for a dependency pass.
  */
 function stageClone(context: ExtensionManageContext, source: ExtensionInstallSource) {
   mkdirSync(context.installedRoot, { recursive: true });
@@ -196,15 +198,21 @@ function stageClone(context: ExtensionManageContext, source: ExtensionInstallSou
       ]);
     }
 
-    const dependencyWarning = declaresDependencies(stagingDir)
-      ? (context.log("installing dependencies…"), installDependencies(stagingDir))
-      : undefined;
-
-    return { stagingDir, commit, dependencyWarning };
+    return { stagingDir, commit };
   } catch (error) {
     rmSync(stagingDir, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** Install a staged clone's npm dependencies when it declares any. */
+function prepareStagedDependencies(context: ExtensionManageContext, stagingDir: string) {
+  if (!declaresDependencies(stagingDir)) {
+    return undefined;
+  }
+
+  context.log("installing dependencies…");
+  return installDependencies(stagingDir);
 }
 
 /** Swap one staged clone into its final directory. */
@@ -250,7 +258,8 @@ export function installExtension(
   }
 
   context.log(`cloning ${source.cloneUrl}${source.ref ? ` @ ${source.ref}` : ""}…`);
-  const { stagingDir, commit, dependencyWarning } = stageClone(context, source);
+  const { stagingDir, commit } = stageClone(context, source);
+  const dependencyWarning = prepareStagedDependencies(context, stagingDir);
   promoteStagedClone(stagingDir, directory);
 
   const timestamp = (context.now?.() ?? new Date()).toISOString();
@@ -306,7 +315,7 @@ export function updateExtension(
   const directory = join(context.installedRoot, name);
 
   context.log(`checking ${record.cloneUrl}${record.ref ? ` @ ${record.ref}` : ""}…`);
-  const { stagingDir, commit, dependencyWarning } = stageClone(context, source);
+  const { stagingDir, commit } = stageClone(context, source);
 
   if (commit === record.commit && existsSync(directory)) {
     rmSync(stagingDir, { recursive: true, force: true });
@@ -320,6 +329,7 @@ export function updateExtension(
     };
   }
 
+  const dependencyWarning = prepareStagedDependencies(context, stagingDir);
   promoteStagedClone(stagingDir, directory);
   saveRecord(context, records, name, {
     ...record,
