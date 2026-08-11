@@ -1,13 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { HunkUserError } from "../../core/errors";
 import { directoryContainsExtensionEntries } from "../discovery";
-import {
-  readInstallRecords,
-  writeInstallRecords,
-  type ExtensionInstallRecord,
-  type ExtensionInstallRecordMap,
-} from "./records";
+import { readInstallRecords, writeInstallRecords, type ExtensionInstallRecord } from "./records";
 import type { ExtensionInstallSource } from "./source";
 
 /**
@@ -185,7 +180,9 @@ function cloneSource(source: ExtensionInstallSource, destination: string) {
  */
 function stageClone(context: ExtensionManageContext, source: ExtensionInstallSource) {
   mkdirSync(context.installedRoot, { recursive: true });
-  const stagingDir = join(context.installedRoot, `.staging-${source.name}`);
+  // Pid-suffixed so two overlapping commands for the same name cannot clone
+  // into — or clean up — each other's staging directory.
+  const stagingDir = join(context.installedRoot, `.staging-${source.name}-${process.pid}`);
   rmSync(stagingDir, { recursive: true, force: true });
 
   let commit: string;
@@ -215,20 +212,50 @@ function prepareStagedDependencies(context: ExtensionManageContext, stagingDir: 
   return installDependencies(stagingDir);
 }
 
-/** Swap one staged clone into its final directory. */
+/**
+ * Swap one staged clone into its final directory.
+ *
+ * The existing install is moved aside rather than deleted first, so a rename
+ * that fails (a file held open on Windows, say) can restore it: the update
+ * either lands whole or leaves the previous install exactly where it was.
+ * The aside directory is dot-prefixed so discovery never scans it.
+ */
 function promoteStagedClone(stagingDir: string, directory: string) {
-  rmSync(directory, { recursive: true, force: true });
-  renameSync(stagingDir, directory);
+  const previousDir = join(dirname(directory), `.previous-${basename(directory)}`);
+  rmSync(previousDir, { recursive: true, force: true });
+
+  const hadPrevious = existsSync(directory);
+  if (hadPrevious) {
+    renameSync(directory, previousDir);
+  }
+
+  try {
+    renameSync(stagingDir, directory);
+  } catch (error) {
+    if (hadPrevious) {
+      renameSync(previousDir, directory);
+    }
+    rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  rmSync(previousDir, { recursive: true, force: true });
 }
 
-/** Persist one record, merging over whatever is already stored. */
-function saveRecord(
-  context: ExtensionManageContext,
-  records: ExtensionInstallRecordMap,
-  name: string,
-  record: ExtensionInstallRecord,
-) {
-  writeInstallRecords(context.installedRoot, { ...records, [name]: record });
+/**
+ * Persist one record, merging over a fresh read of the stored map.
+ *
+ * The map is re-read here rather than carried from the operation's start,
+ * because a clone sits between the two: merging over that stale snapshot
+ * would silently drop any record another process wrote in the meantime. The
+ * remaining read-to-write window matches the accepted posture of Hunk's
+ * state file (see `updateHunkStateRecord`).
+ */
+function saveRecord(context: ExtensionManageContext, name: string, record: ExtensionInstallRecord) {
+  writeInstallRecords(context.installedRoot, {
+    ...readInstallRecords(context.installedRoot),
+    [name]: record,
+  });
 }
 
 /**
@@ -263,7 +290,7 @@ export function installExtension(
   promoteStagedClone(stagingDir, directory);
 
   const timestamp = (context.now?.() ?? new Date()).toISOString();
-  saveRecord(context, records, source.name, {
+  saveRecord(context, source.name, {
     source: source.spec,
     cloneUrl: source.cloneUrl,
     ...(source.ref !== undefined ? { ref: source.ref } : {}),
@@ -331,7 +358,7 @@ export function updateExtension(
 
   const dependencyWarning = prepareStagedDependencies(context, stagingDir);
   promoteStagedClone(stagingDir, directory);
-  saveRecord(context, records, name, {
+  saveRecord(context, name, {
     ...record,
     commit,
     updatedAt: (context.now?.() ?? new Date()).toISOString(),

@@ -1,4 +1,5 @@
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
+import { expandHomePath } from "../discovery";
 import { EXTENSION_ID_RULE, isValidExtensionId } from "../extensionIds";
 
 /**
@@ -98,8 +99,13 @@ export function parseExtensionInstallSource(spec: string): ExtensionInstallSourc
   }
 
   let cloneUrl: string;
-  if (hasExplicitTransport(location) || isLocalPath(location)) {
+  if (hasExplicitTransport(location)) {
     cloneUrl = location;
+  } else if (isLocalPath(location)) {
+    // Git never expands `~` itself, and the record must survive a later
+    // `update` run from a different working directory, so local paths are
+    // stored home-expanded and absolute.
+    cloneUrl = resolve(expandHomePath(location));
   } else if (!explicitGit && GITHUB_SHORTHAND_PATTERN.test(location)) {
     cloneUrl = `https://github.com/${location}`;
   } else if (location.includes("/")) {

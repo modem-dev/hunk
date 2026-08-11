@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { parseExtensionInstallSource } from "./source";
 
 describe("extension install source parsing", () => {
@@ -64,5 +66,17 @@ describe("extension install source parsing", () => {
   test("refuses an empty ref and a bare word", () => {
     expect(() => parseExtensionInstallSource("acme/hunk-ext@")).toThrow(/empty ref/);
     expect(() => parseExtensionInstallSource("not-a-repo")).toThrow(/not a repository/);
+  });
+});
+
+describe("local path sources", () => {
+  test("expands ~ and stores local paths absolute so update survives a cwd change", () => {
+    const tilde = parseExtensionInstallSource("~/dev/hunk-word-diff@v1");
+    expect(tilde.cloneUrl).toBe(join(homedir(), "dev", "hunk-word-diff"));
+    expect(tilde.ref).toBe("v1");
+
+    const relative = parseExtensionInstallSource("./fixtures/hunk-ext");
+    expect(isAbsolute(relative.cloneUrl)).toBe(true);
+    expect(relative.cloneUrl).toBe(resolve("./fixtures/hunk-ext"));
   });
 });

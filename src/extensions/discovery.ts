@@ -290,7 +290,9 @@ function scanInstalledExtensionsRoot(root: string): DiscoveredExtensionEntry[] {
   const entries: DiscoveredExtensionEntry[] = [];
 
   for (const entry of readSortedDirEntries(root)) {
-    if (!entry.isDirectory()) {
+    // Dot-prefixed directories are the installer's own workspace (staging
+    // clones, promotion backups) and must never load as extensions.
+    if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
     }
 
@@ -308,8 +310,9 @@ function scanInstalledExtensionsRoot(root: string): DiscoveredExtensionEntry[] {
  * `~/` prefix is expanded — `~user` is deliberately left alone, since resolving
  * another account's home is a shell feature Hunk has no business guessing at.
  * Both separators are accepted so a Windows config may write `~\dev\...`.
+ * Exported so install-source parsing expands `~` the same single way.
  */
-function expandHomePath(path: string) {
+export function expandHomePath(path: string) {
   if (path === "~") {
     return homedir();
   }

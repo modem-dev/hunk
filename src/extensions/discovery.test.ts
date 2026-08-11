@@ -529,3 +529,22 @@ describe("manifest api version requirements", () => {
     expect(candidates).toEqual([{ id: "bad-api-ext", path: entry, origin: "flag" }]);
   });
 });
+
+describe("managed install root scanning", () => {
+  test("skips the installer's dot-prefixed staging and backup directories", () => {
+    const globalDir = createTempDir("hunk-ext-installed-dots-");
+    const installedRoot = join(globalDir, "installed");
+    const real = writeExtensionFile(installedRoot, "real-ext", "index.ts");
+    // Installer workspace directories carry full extension layouts but must not load.
+    writeExtensionFile(installedRoot, ".staging-real-ext-123", "index.ts");
+    writeExtensionFile(installedRoot, ".previous-real-ext", "index.ts");
+
+    const candidates = discoverExtensions({
+      cwd: globalDir,
+      repoRoot: undefined,
+      globalExtensionsDir: globalDir,
+    });
+
+    expect(candidates).toEqual([{ id: "real-ext", path: real, origin: "global" }]);
+  });
+});
