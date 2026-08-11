@@ -53,6 +53,7 @@ import type {
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
+  ExtensionLoadResult,
   RegisteredCommand,
   RegisteredPane,
 } from "../extensions/types";
@@ -282,7 +283,7 @@ export function App({
   } | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const extensions = bootstrap.extensions;
+  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
   const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
   useEffect(

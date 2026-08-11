@@ -326,7 +326,11 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     const backend = createTestExtension(dir, "git.ts", source);
     const healthy = createTestExtension(dir, "healthy.ts", source);
 
-    const result = await loadExtensions({ candidates: [vendor, backend, healthy], cwd: dir });
+    const result = await loadExtensions({
+      candidates: [vendor, backend, healthy],
+      cwd: dir,
+      reservedExtensionIds: new Set(["git", "jj", "sl"]),
+    });
 
     expect(result.loaded.map((entry) => entry.id)).toEqual(["healthy"]);
     expect(result.issues.map((issue) => issue.extensionId)).toEqual(["hunk", "git"]);

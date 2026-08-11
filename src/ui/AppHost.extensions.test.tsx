@@ -6,8 +6,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap } from "../core/loaders";
-import type { AppBootstrap, CliInput } from "../core/types";
+import type { AppBootstrap } from "../app/types";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/loaders";
+import type { CliInput } from "../core/types";
+
 import type { HunkSessionBrokerClient } from "../session/types";
 import {
   applyExtensionRegistrations,
@@ -15,6 +18,15 @@ import {
 } from "../extensions/apply";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
+
+/** Specialize the core loader result with extension state assigned by these tests. */
+function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {
+  const [input, options] = args;
+  return loadCoreAppBootstrap(input, {
+    vcsCatalog: getBundledVcsCatalog(),
+    ...options,
+  }) as Promise<AppBootstrap>;
+}
 
 /**
  * Extension behavior that only exists once a session is *running*.
@@ -536,6 +548,7 @@ function writeHgExtension(extPath: string) {
 }
 
 describe("reload re-runs extension VCS detection", () => {
+  const baseVcsCatalog = getBundledVcsCatalog();
   test("an extension backend keeps a checkout no built-in recognizes", async () => {
     // A directory with only an `.hg` marker. No built-in backend detects it, so
     // config resolves `vcs` to the default Git backend on every pass — including
@@ -555,7 +568,7 @@ describe("reload re-runs extension VCS detection", () => {
       cliExtensionPaths: [extPath],
     });
     expect(extensions.issues).toEqual([]);
-    const { vcsAdapters } = applyExtensionRegistrations(extensions);
+    const { vcsCatalog } = applyExtensionRegistrations(extensions, baseVcsCatalog);
 
     // Launch the way `prepareStartupPlan` does: extension detection claims the
     // checkout, and the changeset loads through the extension backend.
@@ -566,10 +579,10 @@ describe("reload re-runs extension VCS detection", () => {
         options: {
           mode: "stack",
           extensionPaths: [extPath],
-          vcs: resolveDetectedVcsIdWithExtensions(repo, vcsAdapters),
+          vcs: resolveDetectedVcsIdWithExtensions(repo, vcsCatalog),
         },
       },
-      { cwd: repo, vcsAdapters },
+      { cwd: repo, vcsCatalog },
     );
     bootstrap.extensions = extensions;
     expect(bootstrap.changeset.title).toBe("Mercurial working copy");
@@ -616,10 +629,10 @@ describe("reload re-runs extension VCS detection", () => {
       cliExtensionPaths: [extPath],
     });
     expect(extensions.issues).toEqual([]);
-    const { vcsAdapters } = applyExtensionRegistrations(extensions);
+    const { vcsCatalog } = applyExtensionRegistrations(extensions, baseVcsCatalog);
 
     // First launch: the nearer `.hg` root wins over the outer Git root.
-    expect(resolveDetectedVcsIdWithExtensions(inner, vcsAdapters)).toBe("hg");
+    expect(resolveDetectedVcsIdWithExtensions(inner, vcsCatalog)).toBe("hg");
     const bootstrap = await loadAppBootstrap(
       {
         kind: "vcs",
@@ -627,10 +640,10 @@ describe("reload re-runs extension VCS detection", () => {
         options: {
           mode: "stack",
           extensionPaths: [extPath],
-          vcs: resolveDetectedVcsIdWithExtensions(inner, vcsAdapters),
+          vcs: resolveDetectedVcsIdWithExtensions(inner, vcsCatalog),
         },
       },
-      { cwd: inner, vcsAdapters },
+      { cwd: inner, vcsCatalog },
     );
     bootstrap.extensions = extensions;
     expect(bootstrap.changeset.title).toBe("Mercurial working copy");

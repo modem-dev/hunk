@@ -6,11 +6,23 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap } from "../core/loaders";
-import type { AppBootstrap, CliInput } from "../core/types";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/loaders";
+
+import type { AppBootstrap } from "../app/types";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import type { CliInput } from "../core/types";
 import type { HunkSessionBrokerClient } from "../session/types";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
+
+/** Specialize the core loader result with extension state assigned by these tests. */
+function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {
+  const [input, options] = args;
+  return loadCoreAppBootstrap(input, {
+    vcsCatalog: getBundledVcsCatalog(),
+    ...options,
+  }) as Promise<AppBootstrap>;
+}
 
 /**
  * `ctx.dialogs`, driven through the real app: a fixture extension asks a

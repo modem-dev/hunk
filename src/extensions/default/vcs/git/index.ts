@@ -20,11 +20,11 @@ import {
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
   type GitDiffEndpoints,
-} from "../../../../core/vcs/git";
-import { gitEndpointSourceSpec, readGitFileSource } from "../../../../core/vcs/gitSource";
-import { inspectLargeUntrackedFile } from "../../../../core/vcs/largeFile";
+} from "./commands";
+import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import { inspectLargeUntrackedFile } from "../../../../lib/largeFile";
 import {
-  HUNK_CORE_VCS_DETECTION_PRIORITY,
+  HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
   type ExtensionVcsDiffInput,
   type ExtensionVcsDirectoryTreeWatchTarget,
@@ -32,7 +32,7 @@ import {
   type ExtensionVcsFileSourceReader,
   type ExtensionVcsWatchPlan,
   type HunkExtensionAPI,
-} from "../../../../extension-api/types";
+} from "hunkdiff/extension";
 
 /**
  * Hunk's Git backend, as a bundled extension.
@@ -40,9 +40,9 @@ import {
  * Git is the backend that exercises every integration point there is — exact
  * file sources, skipped-too-large placeholders, untracked files, watch plans,
  * rich failures — so it is deliberately written the way a third-party backend
- * would be: it sees only the published `hunkdiff/extension` contract plus its
- * own implementation helpers in `src/core/vcs/git.ts`, `src/core/vcs/gitSource.ts`, and
- * `src/core/vcs/largeFile.ts`. Nothing here reaches into the diff engine or the
+ * would be: it sees only the published `hunkdiff/extension` contract plus
+ * implementation helpers owned by this extension directory and generic `src/lib`
+ * utilities. Nothing here reaches into core, the diff engine, or the
  * adapter registry. If something Git needs cannot be said in these types, the
  * published contract is missing it, and that is the point of shipping it this
  * way.
@@ -309,167 +309,183 @@ function buildGitWatchPlan(
  * Registered at the baseline detection priority: it is what every other
  * backend, bundled or installed, positions itself against.
  */
-export const GitVcsAdapter = {
-  id: "git",
-  name: "Git",
-  detect: detectGitRepo,
-  detectionPriority: HUNK_CORE_VCS_DETECTION_PRIORITY,
-  operations: {
-    "working-tree-diff": {
-      async load(input, { cwd, gitExecutable = "git" }) {
-        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
-        const repoName = basename(repoRoot);
-        const title = input.staged
-          ? `${repoName} staged changes`
-          : input.range
-            ? `${repoName} ${input.range}`
-            : `${repoName} working tree`;
-        // Ask for stats before the patch so files too large to render can be
-        // excluded from the diff instead of generating output nobody reads.
-        const largeTrackedFiles = parseGitNumstat(
-          runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
-        ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
-        const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
-        const sourceCapability = createGitDiffSourceCapability(input, repoRoot, cwd, gitExecutable);
+export interface GitVcsAdapterOptions {
+  gitExecutable?: string;
+}
 
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title,
-          patchText: runGitText({
+/** Create a Git adapter with provider-owned process dependencies. */
+export function createGitVcsAdapter({
+  gitExecutable = "git",
+}: Readonly<GitVcsAdapterOptions> = {}) {
+  return {
+    id: "git",
+    name: "Git",
+    detect: detectGitRepo,
+    detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY,
+    operations: {
+      "working-tree-diff": {
+        async load(input, { cwd }) {
+          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+          const repoName = basename(repoRoot);
+          const title = input.staged
+            ? `${repoName} staged changes`
+            : input.range
+              ? `${repoName} ${input.range}`
+              : `${repoName} working tree`;
+          // Ask for stats before the patch so files too large to render can be
+          // excluded from the diff instead of generating output nobody reads.
+          const largeTrackedFiles = parseGitNumstat(
+            runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
+          ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
+          const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
+          const sourceCapability = createGitDiffSourceCapability(
             input,
-            args: buildGitDiffArgs(
-              input,
-              largeTrackedFiles.map((file) => file.path),
-              colorMoved,
-            ),
+            repoRoot,
             cwd,
             gitExecutable,
-          }),
-          ...sourceCapability,
-          extraFiles: [
-            ...largeTrackedFiles.map(
-              (file): ExtensionVcsExtraFile => ({
-                kind: "skipped",
-                path: file.path,
-                reason: "too-large",
-                changeType: "change",
-                stats: { additions: file.additions, deletions: file.deletions },
-              }),
-            ),
-            ...listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }).map((filePath) =>
-              buildUntrackedExtraFile(input, filePath, repoRoot, gitExecutable),
-            ),
-          ],
-        };
-      },
-      watchPlan(input, { cwd, gitExecutable = "git" }) {
-        return buildGitWatchPlan(input, cwd, gitExecutable);
-      },
-      watchSignature(input, { cwd, gitExecutable = "git" }) {
-        const trackedPatch = runGitText({
-          input,
-          args: buildGitDiffArgs(input),
-          cwd,
-          gitExecutable,
-          preventOptionalLocks: true,
-        });
-        const repoRoot = resolveGitRepoRoot(input, {
-          cwd,
-          gitExecutable,
-          preventOptionalLocks: true,
-        });
-        const untrackedSignatures = listGitUntrackedFiles(input, {
-          cwd,
-          repoRoot,
-          gitExecutable,
-          preventOptionalLocks: true,
-        }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
-        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
-      },
-    },
-    "revision-show": {
-      async load(input, { cwd, gitExecutable = "git" }) {
-        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
-        const repoName = basename(repoRoot);
-        const sourceCapability = createGitRevisionSourceCapability(
-          input,
-          input.ref ?? "HEAD",
-          repoRoot,
-          gitExecutable,
-        );
+          );
 
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
-          patchText: runGitText({
-            input,
-            args: buildGitShowArgs(
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title,
+            patchText: runGitText({
               input,
-              resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
-            ),
+              args: buildGitDiffArgs(
+                input,
+                largeTrackedFiles.map((file) => file.path),
+                colorMoved,
+              ),
+              cwd,
+              gitExecutable,
+            }),
+            ...sourceCapability,
+            extraFiles: [
+              ...largeTrackedFiles.map(
+                (file): ExtensionVcsExtraFile => ({
+                  kind: "skipped",
+                  path: file.path,
+                  reason: "too-large",
+                  changeType: "change",
+                  stats: { additions: file.additions, deletions: file.deletions },
+                }),
+              ),
+              ...listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }).map((filePath) =>
+                buildUntrackedExtraFile(input, filePath, repoRoot, gitExecutable),
+              ),
+            ],
+          };
+        },
+        watchPlan(input, { cwd }) {
+          return buildGitWatchPlan(input, cwd, gitExecutable);
+        },
+        watchSignature(input, { cwd }) {
+          const trackedPatch = runGitText({
+            input,
+            args: buildGitDiffArgs(input),
             cwd,
             gitExecutable,
-          }),
-          ...sourceCapability,
-        };
-      },
-      watchPlan(input, { cwd, gitExecutable = "git" }) {
-        return buildGitWatchPlan(input, cwd, gitExecutable);
-      },
-      watchSignature(input, { cwd, gitExecutable = "git" }) {
-        return runGitText({
-          input,
-          args: buildGitShowArgs(input),
-          cwd,
-          gitExecutable,
-          preventOptionalLocks: true,
-        });
-      },
-    },
-    "stash-show": {
-      async load(input, { cwd, gitExecutable = "git" }) {
-        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
-        const repoName = basename(repoRoot);
-        const sourceCapability = createGitRevisionSourceCapability(
-          input,
-          input.ref ?? "stash@{0}",
-          repoRoot,
-          gitExecutable,
-        );
-
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
-          patchText: runGitText({
-            input,
-            args: buildGitStashShowArgs(
-              input,
-              resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
-            ),
+            preventOptionalLocks: true,
+          });
+          const repoRoot = resolveGitRepoRoot(input, {
             cwd,
             gitExecutable,
-          }),
-          ...sourceCapability,
-        };
+            preventOptionalLocks: true,
+          });
+          const untrackedSignatures = listGitUntrackedFiles(input, {
+            cwd,
+            repoRoot,
+            gitExecutable,
+            preventOptionalLocks: true,
+          }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
+          return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+        },
       },
-      watchPlan(input, { cwd, gitExecutable = "git" }) {
-        return buildGitWatchPlan(input, cwd, gitExecutable);
+      "revision-show": {
+        async load(input, { cwd }) {
+          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+          const repoName = basename(repoRoot);
+          const sourceCapability = createGitRevisionSourceCapability(
+            input,
+            input.ref ?? "HEAD",
+            repoRoot,
+            gitExecutable,
+          );
+
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
+            patchText: runGitText({
+              input,
+              args: buildGitShowArgs(
+                input,
+                resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+              ),
+              cwd,
+              gitExecutable,
+            }),
+            ...sourceCapability,
+          };
+        },
+        watchPlan(input, { cwd }) {
+          return buildGitWatchPlan(input, cwd, gitExecutable);
+        },
+        watchSignature(input, { cwd }) {
+          return runGitText({
+            input,
+            args: buildGitShowArgs(input),
+            cwd,
+            gitExecutable,
+            preventOptionalLocks: true,
+          });
+        },
       },
-      watchSignature(input, { cwd, gitExecutable = "git" }) {
-        return runGitText({
-          input,
-          args: buildGitStashShowArgs(input),
-          cwd,
-          gitExecutable,
-          preventOptionalLocks: true,
-        });
+      "stash-show": {
+        async load(input, { cwd }) {
+          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+          const repoName = basename(repoRoot);
+          const sourceCapability = createGitRevisionSourceCapability(
+            input,
+            input.ref ?? "stash@{0}",
+            repoRoot,
+            gitExecutable,
+          );
+
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
+            patchText: runGitText({
+              input,
+              args: buildGitStashShowArgs(
+                input,
+                resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+              ),
+              cwd,
+              gitExecutable,
+            }),
+            ...sourceCapability,
+          };
+        },
+        watchPlan(input, { cwd }) {
+          return buildGitWatchPlan(input, cwd, gitExecutable);
+        },
+        watchSignature(input, { cwd }) {
+          return runGitText({
+            input,
+            args: buildGitStashShowArgs(input),
+            cwd,
+            gitExecutable,
+            preventOptionalLocks: true,
+          });
+        },
       },
     },
-  },
-} satisfies ExtensionVcsAdapter;
+  } satisfies ExtensionVcsAdapter;
+}
+
+export const GitVcsAdapter = createGitVcsAdapter();
 
 export default function (hunk: HunkExtensionAPI) {
   hunk.registerVcsAdapter(GitVcsAdapter);

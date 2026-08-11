@@ -7,6 +7,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
 
+const { getBundledVcsCatalog } = await import("../app/vcsCatalog");
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
 
@@ -96,7 +97,7 @@ describe("reload stale highlight cache", () => {
 
     const bootstrap = await loadAppBootstrap(
       { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
-      { cwd: dir },
+      { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {

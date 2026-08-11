@@ -3,12 +3,21 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
-import { loadAppBootstrap } from "./loaders";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { createGitVcsAdapter } from "../extensions/default/vcs/git";
+import { toInternalVcsAdapter } from "../extensions/runExtension";
+import { createVcsCatalog } from "./vcs";
+import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 import { computeWatchSignature } from "./watch";
 
 const tempDirs: string[] = [];
+
+/** Load through the same bundled catalog the app composes in production. */
+function loadAppBootstrap(input: CliInput, options: LoadAppBootstrapOptions = {}) {
+  return loadCoreAppBootstrap(input, { vcsCatalog: getBundledVcsCatalog(), ...options });
+}
 
 // Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
 const JjLoaderIntegrationTestTimeoutMs = 20_000;
@@ -200,14 +209,14 @@ describe("loadAppBootstrap", () => {
 
     const bootstrap = await loadAppBootstrap(
       { kind: "vcs", staged: false, options: { vcs: "demo" } },
-      { cwd: dir, vcsAdapters: [adapter] },
+      { cwd: dir, vcsCatalog: createVcsCatalog([adapter], "demo", []) },
     );
 
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["note.txt"]);
     expect(bootstrap.changeset.files[0]?.isUntracked).toBe(true);
     expect(bootstrap.changeset.files[0]?.patch).toContain("+hello");
     // Watch planning has to resolve the same extension adapter the load used.
-    expect(bootstrap.reloadContext.vcsAdapters).toEqual([adapter]);
+    expect(bootstrap.reloadContext.vcsCatalog?.adapters).toEqual([adapter]);
   });
 
   test("captures a watched signature before content loading", async () => {
@@ -1809,7 +1818,13 @@ describe("loadAppBootstrap source fetcher attachment", () => {
           staged: false,
           options: { mode: "auto" },
         },
-        { cwd: dir, gitExecutable },
+        {
+          cwd: dir,
+          vcsCatalog: createVcsCatalog(
+            [toInternalVcsAdapter(createGitVcsAdapter({ gitExecutable }))],
+            "git",
+          ),
+        },
       );
 
       const file = bootstrap.changeset.files[0];

@@ -24,6 +24,9 @@ CLI input
 
 - CLI entrypoints: `diff`, `show`, `stash show`, `patch`, `pager`, `difftool`.
 - All input sources normalize into one internal changeset model.
+- Bundled VCS implementations live under `src/extensions/default/vcs/<provider>/` and consume the
+  public extension contract; `src/app` composes their registrations into the provider-neutral
+  core VCS catalog. Do not add provider commands, spawning, or source readers under `src/core`.
 - Pager mode has two paths: full diff UI for patch-like stdin, plain-text fallback for non-diff pager content.
 - View defaults are layered through built-ins, user config, repo `.hunk/config.toml`, command sections, pager sections, and CLI flags.
 - `hunk daemon serve` runs one loopback daemon that brokers agent commands to many live Hunk sessions. Normal Hunk sessions should auto-start and register with that daemon when session brokering is enabled. Keep it local-only and session-brokered rather than opening per-TUI ports.

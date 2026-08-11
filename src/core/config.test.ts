@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "./types";
 import {
   diffPersistedViewPreferences,
@@ -945,24 +946,18 @@ describe("config resolution", () => {
       staged: false,
       options: {},
     } satisfies CliInput;
+    const resolveIn = (cwd: string) =>
+      resolveConfiguredCliInput(input, {
+        cwd,
+        env: { HOME: home },
+        vcsCatalog: getBundledVcsCatalog(),
+      }).input.options.vcs;
 
-    expect(
-      resolveConfiguredCliInput(input, { cwd: jjRepo, env: { HOME: home } }).input.options.vcs,
-    ).toBe("jj");
-    expect(
-      resolveConfiguredCliInput(input, { cwd: colocatedRepo, env: { HOME: home } }).input.options
-        .vcs,
-    ).toBe("jj");
-    expect(
-      resolveConfiguredCliInput(input, { cwd: gitRepo, env: { HOME: home } }).input.options.vcs,
-    ).toBe("git");
-    expect(
-      resolveConfiguredCliInput(input, { cwd: gitRepoInsideParentJj, env: { HOME: home } }).input
-        .options.vcs,
-    ).toBe("git");
-    expect(
-      resolveConfiguredCliInput(input, { cwd: plainDir, env: { HOME: home } }).input.options.vcs,
-    ).toBe("git");
+    expect(resolveIn(jjRepo)).toBe("jj");
+    expect(resolveIn(colocatedRepo)).toBe("jj");
+    expect(resolveIn(gitRepo)).toBe("git");
+    expect(resolveIn(gitRepoInsideParentJj)).toBe("git");
+    expect(resolveIn(plainDir)).toBe("git");
   });
 
   test("explicit config overrides auto-detected jj mode", () => {

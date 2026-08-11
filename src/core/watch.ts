@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { resolve } from "node:path";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
-import type { VcsAdapter } from "./vcs/types";
+import type { VcsCatalog } from "./vcs/types";
 
 /** Format one file stat into a stable signature fragment, or mark the path missing. */
 function statSignature(path: string) {
@@ -19,16 +19,18 @@ function vcsPatchSignature(
   input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>,
   context: WatchSignatureContext,
 ) {
-  const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsAdapters);
+  if (!context.vcsCatalog) {
+    throw new Error("VCS-backed watch signatures require a composed VCS catalog.");
+  }
+  const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsCatalog);
   const operation = operationFromInput(input);
-  return createVcsWatchSignature(adapter, operation, context);
+  return createVcsWatchSignature(adapter, operation, { cwd: context.cwd }, context.vcsCatalog);
 }
 
 export interface WatchSignatureContext {
   cwd: string;
-  gitExecutable?: string;
-  /** Extension-contributed adapters, so a watched review keeps its own backend. */
-  vcsAdapters?: readonly VcsAdapter[];
+  /** Complete catalog retained from the review load. */
+  vcsCatalog?: VcsCatalog;
 }
 
 /** Compute a change-detection signature relative to the source's stable load context. */

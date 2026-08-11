@@ -1,7 +1,8 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { resolveCanonicalPath } from "../../core/paths";
-import { findVcsRepoRootCandidate } from "../../core/vcs";
+import { findProjectRootCandidate } from "../../core/projectRoot";
 import type { AppBootstrap, CliInput, CommonOptions } from "../../core/types";
+import type { VcsCatalog } from "../../core/vcs/types";
 
 /**
  * Session reload filesystem policy:
@@ -56,8 +57,8 @@ function normalizeRoots(roots: string[]) {
 }
 
 /** Return the initial repo root when every requested file is inside that checkout. */
-function resolveRepoReloadRoots(initialCwd: string, paths: string[]) {
-  const repoRoot = findVcsRepoRootCandidate(initialCwd);
+function resolveRepoReloadRoots(initialCwd: string, paths: string[], vcsCatalog?: VcsCatalog) {
+  const repoRoot = findProjectRootCandidate(initialCwd, vcsCatalog);
   if (!repoRoot) {
     return [];
   }
@@ -83,12 +84,20 @@ export function createSessionReloadBounds(
       break;
     case "diff":
     case "difftool":
-      roots = resolveRepoReloadRoots(initialCwd, [bootstrap.input.left, bootstrap.input.right]);
+      roots = resolveRepoReloadRoots(
+        initialCwd,
+        [bootstrap.input.left, bootstrap.input.right],
+        bootstrap.reloadContext.vcsCatalog,
+      );
       break;
     case "patch":
       roots =
         bootstrap.input.file && bootstrap.input.file !== "-"
-          ? resolveRepoReloadRoots(initialCwd, [bootstrap.input.file])
+          ? resolveRepoReloadRoots(
+              initialCwd,
+              [bootstrap.input.file],
+              bootstrap.reloadContext.vcsCatalog,
+            )
           : [];
       break;
   }

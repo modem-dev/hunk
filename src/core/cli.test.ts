@@ -369,7 +369,7 @@ describe("parseCli", () => {
     });
   });
 
-  test("resolves --repo from a subdirectory to the containing repo root", async () => {
+  test("keeps --repo provider-neutral while canonicalizing the selected subdirectory", async () => {
     const repoRoot = realpathSync.native(createTempDir("hunk-cli-repo-"));
     mkdirSync(join(repoRoot, ".git"));
     const subdir = join(repoRoot, "packages", "app");
@@ -380,7 +380,7 @@ describe("parseCli", () => {
     expect(parsed).toMatchObject({
       kind: "session",
       action: "get",
-      selector: { repoRoot },
+      selector: { repoRoot: realpathSync.native(subdir) },
     });
   });
 
@@ -544,7 +544,7 @@ describe("parseCli", () => {
     });
   });
 
-  test("resolves session reload --repo from a subdirectory to the containing repo root", async () => {
+  test("keeps session reload --repo provider-neutral for subdirectories", async () => {
     const repoRoot = realpathSync.native(createTempDir("hunk-cli-reload-"));
     mkdirSync(join(repoRoot, ".git"));
     const subdir = join(repoRoot, "packages", "app");
@@ -564,7 +564,7 @@ describe("parseCli", () => {
     expect(parsed).toMatchObject({
       kind: "session",
       action: "reload",
-      selector: { repoRoot },
+      selector: { repoRoot: realpathSync.native(subdir) },
     });
   });
 

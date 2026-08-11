@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
-import { resolveWatchPlan } from "./watchPlan";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { createVcsCatalog } from "./vcs";
+import { resolveWatchPlan as resolveCoreWatchPlan, type WatchPlanContext } from "./watchPlan";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 
 const cwd = posix.join("/", "workspace", "review");
+
+/** Resolve with the app's bundled catalog unless a test supplies another. */
+function resolveWatchPlan(input: CliInput, context: WatchPlanContext) {
+  return resolveCoreWatchPlan(input, { vcsCatalog: getBundledVcsCatalog(), ...context });
+}
 
 /** Build one expected exact-entry target for a plan assertion. */
 function entries(
@@ -232,7 +239,13 @@ describe("resolveWatchPlan", () => {
     };
     const input = { kind: "vcs", staged: false, options: { vcs: "hg" } } satisfies CliInput;
 
-    expect(resolveWatchPlan(input, { cwd, platform: "linux", vcsAdapters: [adapter] })).toEqual({
+    expect(
+      resolveWatchPlan(input, {
+        cwd,
+        platform: "linux",
+        vcsCatalog: createVcsCatalog([adapter], "hg", []),
+      }),
+    ).toEqual({
       coverage: "hybrid",
       targets: [target],
     });
@@ -251,7 +264,13 @@ describe("resolveWatchPlan", () => {
     };
     const input = { kind: "vcs", staged: false, options: { vcs: "hg" } } satisfies CliInput;
 
-    expect(resolveWatchPlan(input, { cwd, platform: "linux", vcsAdapters: [adapter] })).toEqual({
+    expect(
+      resolveWatchPlan(input, {
+        cwd,
+        platform: "linux",
+        vcsCatalog: createVcsCatalog([adapter], "hg", []),
+      }),
+    ).toEqual({
       coverage: "poll-only",
       targets: [],
     });

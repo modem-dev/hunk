@@ -28,6 +28,7 @@ export {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
   HUNK_EXTENSION_API_VERSION,
+  HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   HUNK_EXTENSION_USER_ERROR_NAME,
   HunkExtensionUserError,
 } from "./types.js";
@@ -116,6 +117,8 @@ export type {
   ExtensionVcsFileSide,
   ExtensionVcsFileSourceReader,
   ExtensionVcsFileSourceRequest,
+  ExtensionVcsFileSourceResult,
+  ExtensionVcsFileSourceTooLarge,
   ExtensionVcsFileStats,
   ExtensionVcsLoadContext,
   ExtensionVcsOperation,

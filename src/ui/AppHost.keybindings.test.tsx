@@ -7,6 +7,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { resolveConfiguredCliInput } from "../core/config";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap } from "../core/types";
 import { AppHost } from "./AppHost";
@@ -75,8 +76,9 @@ async function launchWithConfig(repo: string, configToml: string): Promise<AppBo
     staged: false,
     options: { mode: "stack" as const, promptSaveViewPreferences: false },
   };
-  const configured = resolveConfiguredCliInput(input, { cwd: repo });
-  const bootstrap = await loadAppBootstrap(configured.input, { cwd: repo });
+  const vcsCatalog = getBundledVcsCatalog();
+  const configured = resolveConfiguredCliInput(input, { cwd: repo, vcsCatalog });
+  const bootstrap = await loadAppBootstrap(configured.input, { cwd: repo, vcsCatalog });
   bootstrap.keybindings = configured.keybindings;
   return bootstrap;
 }

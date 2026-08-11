@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { RegisteredTheme } from "../extensions/types";
+import type { RegisteredCustomTheme } from "./customThemes";
 import { collectSessionCustomThemes, describeCustomThemeIdIssue } from "./customThemes";
 import type { NamedCustomThemeConfig } from "./types";
 
@@ -7,7 +7,7 @@ import type { NamedCustomThemeConfig } from "./types";
 function createTestRegisteredTheme(
   extensionId: string,
   theme: NamedCustomThemeConfig,
-): RegisteredTheme {
+): RegisteredCustomTheme {
   return { extensionId, theme };
 }
 

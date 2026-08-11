@@ -6,20 +6,20 @@ import {
   createJjStagedError,
   resolveJjRepoRoot,
   runJjText,
-} from "../../../../core/vcs/jujutsu";
+} from "./commands";
 import {
-  HUNK_CORE_VCS_DETECTION_PRIORITY,
+  HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
-} from "../../../../extension-api/types";
+} from "hunkdiff/extension";
 
 /**
  * Hunk's Jujutsu backend, as a bundled extension.
  *
  * This file is written the way a third-party VCS extension would be: it sees
- * only the published `hunkdiff/extension` contract plus its own implementation
- * helpers in `src/core/vcs/jujutsu.ts`. If something here cannot be said in those types,
- * the contract is missing something.
+ * only the published `hunkdiff/extension` contract plus implementation helpers
+ * owned by this extension directory. If something here cannot be said in those
+ * types, the contract is missing something.
  */
 
 /** Return the last path segment for review titles. */
@@ -49,7 +49,7 @@ export const JjVcsAdapter = {
   detect: detectJjRepo,
   // Above Git: a colocated jj repository carries a `.git` directory too, and
   // reviewing it as plain Git would show the wrong working copy.
-  detectionPriority: HUNK_CORE_VCS_DETECTION_PRIORITY + 200,
+  detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 200,
   operations: {
     "working-tree-diff": {
       async load(input, { cwd }) {

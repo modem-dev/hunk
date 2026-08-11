@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { findVcsRepoRootCandidate, isVcsId } from "../core/vcs";
+import { findProjectRootCandidate } from "../core/projectRoot";
 import { EXTENSION_ID_RULE, HUNK_VENDOR_EXTENSION_ID, isValidExtensionId } from "./extensionIds";
 import { bindExtensionEventBus } from "./events";
 import { registerHostRuntimeModules } from "./hostRuntimeModules";
@@ -28,6 +28,8 @@ export interface LoadExtensionsOptions {
   notifications?: ExtensionNotificationHub;
   /** Repo root repo-local candidates belong to; discovered from `cwd` when omitted. */
   repoRoot?: string;
+  /** Product-owned ids user extension modules may not claim. */
+  reservedExtensionIds?: ReadonlySet<string>;
   env?: NodeJS.ProcessEnv;
   /** Trust lookup seam so tests can drive gating without touching the state file. */
   resolveRepoTrustImpl?: (repoRoot: string, options: ExtensionTrustOptions) => ExtensionTrustState;
@@ -41,16 +43,9 @@ async function importExtensionModule(path: string): Promise<unknown> {
   return await import(pathToFileURL(path).href);
 }
 
-/**
- * Report whether an id belongs to Hunk itself rather than to an extension.
- *
- * The bundled tier names each extension after the backend it registers, so
- * `isVcsId` is the single source for `git`/`jj`/`sl` instead of a second list
- * that could drift when a backend is added; `hunk` covers everything else Hunk
- * owns — built-in commands and the bundled sidebar's views alike.
- */
-function isReservedExtensionId(id: string) {
-  return id === HUNK_VENDOR_EXTENSION_ID || isVcsId(id);
+/** Report whether an id belongs to Hunk rather than to a user extension. */
+function isReservedExtensionId(id: string, reservedIds: ReadonlySet<string>) {
+  return id === HUNK_VENDOR_EXTENSION_ID || reservedIds.has(id);
 }
 
 /**
@@ -64,8 +59,9 @@ function isReservedExtensionId(id: string) {
 function describeIdRefusal(
   candidate: ExtensionCandidate,
   claimedBy: ReadonlyMap<string, string>,
+  reservedIds: ReadonlySet<string>,
 ): string | undefined {
-  if (isReservedExtensionId(candidate.id)) {
+  if (isReservedExtensionId(candidate.id, reservedIds)) {
     return `"${candidate.id}" is reserved by Hunk and cannot be an extension id • rename ${candidate.path}`;
   }
 
@@ -96,13 +92,16 @@ interface AcceptedCandidates {
  * uses everywhere else, with the loser reported rather than silently sharing
  * the winner's config table, command ids, and view keys.
  */
-function acceptCandidateIds(candidates: readonly ExtensionCandidate[]): AcceptedCandidates {
+function acceptCandidateIds(
+  candidates: readonly ExtensionCandidate[],
+  reservedIds: ReadonlySet<string>,
+): AcceptedCandidates {
   const accepted: ExtensionCandidate[] = [];
   const issues: ExtensionLoadIssue[] = [];
   const claimedBy = new Map<string, string>();
 
   for (const candidate of candidates) {
-    const refusal = describeIdRefusal(candidate, claimedBy);
+    const refusal = describeIdRefusal(candidate, claimedBy, reservedIds);
     if (refusal !== undefined) {
       issues.push({
         extensionId: candidate.id,
@@ -132,7 +131,10 @@ function acceptCandidateIds(candidates: readonly ExtensionCandidate[]): Accepted
 export async function loadExtensions(options: LoadExtensionsOptions): Promise<ExtensionLoadResult> {
   // Ids are settled before anything is imported, so a refused candidate never
   // gets a loader hook, let alone an evaluated module.
-  const { accepted, issues } = acceptCandidateIds(options.candidates);
+  const { accepted, issues } = acceptCandidateIds(
+    options.candidates,
+    options.reservedExtensionIds ?? new Set(),
+  );
   // Before any candidate is imported, so its `react` (and `hunkdiff/extension`)
   // imports resolve to the host's own instances rather than the filesystem.
   registerHostRuntimeModules(accepted.map((candidate) => candidate.path));
@@ -147,7 +149,7 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
 
   /** Resolve the repo trust state once per load pass, lazily. */
   const resolveRepoTrustState = () => {
-    repoRoot ??= findVcsRepoRootCandidate(options.cwd);
+    repoRoot ??= findProjectRootCandidate(options.cwd);
     if (!repoRoot) {
       return "unknown" as const;
     }

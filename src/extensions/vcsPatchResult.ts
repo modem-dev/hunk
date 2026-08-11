@@ -4,7 +4,11 @@ import {
   type BuildDiffFileOptions,
 } from "../core/diffFile";
 import { parseSingleFilePatch } from "../core/patch/singleFile";
-import type { FileSourceSide } from "../core/fileSource";
+import {
+  DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  SourceTextTooLargeError,
+  type FileSourceSide,
+} from "../core/fileSource";
 import type { DiffFile } from "../core/types";
 import type { VcsPatchResult } from "../core/vcs/types";
 import type {
@@ -31,8 +35,8 @@ type SourceFetcherBuilder = NonNullable<BuildDiffFileOptions["sourceFetcherBuild
  * read, because there is no source text worth highlighting and every backend
  * would otherwise repeat the check. And each side is read at most once and
  * cached, so the published contract can promise that and adapters can stay
- * stateless. A rejected read is deliberately left uncached: a source that was
- * too large to expand once should be retried, not remembered as broken.
+ * stateless. Ordinary rejected reads remain retryable, while a structural
+ * too-large answer is cached and rethrown without asking the adapter again.
  */
 function toSourceFetcherBuilder(
   read: ExtensionVcsFileSourceReader,
@@ -44,6 +48,7 @@ function toSourceFetcherBuilder(
     }
 
     const cache = new Map<FileSourceSide, string | null>();
+    const tooLargeCache = new Map<FileSourceSide, number>();
 
     return {
       cacheKey: sourceCacheKey,
@@ -51,16 +56,34 @@ function toSourceFetcherBuilder(
         if (cache.has(side)) {
           return cache.get(side) ?? null;
         }
+        const cachedLimit = tooLargeCache.get(side);
+        if (cachedLimit !== undefined) {
+          throw new SourceTextTooLargeError(cachedLimit);
+        }
 
-        const text = await read({
+        const result = await read({
           path: file.path,
           previousPath: file.previousPath,
           changeType: file.type,
           isUntracked: file.isUntracked,
           side,
         });
-        cache.set(side, text);
-        return text;
+        if (typeof result === "object" && result !== null) {
+          if (result.kind === "too-large") {
+            const maxBytes =
+              typeof result.maxBytes === "number" &&
+              Number.isFinite(result.maxBytes) &&
+              result.maxBytes > 0
+                ? result.maxBytes
+                : DEFAULT_SOURCE_TEXT_MAX_BYTES;
+            tooLargeCache.set(side, maxBytes);
+            throw new SourceTextTooLargeError(maxBytes);
+          }
+          throw new Error("VCS source readers must return text, null, or a too-large result.");
+        }
+
+        cache.set(side, result);
+        return result;
       },
     };
   };
