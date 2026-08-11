@@ -1004,7 +1004,9 @@ hunk.registerCommand({ id: "vim", title: "Toggle Vim navigation", key: "ctrl+v" 
 `ctx.keyboardModes.enterMode(id)` resolves only a mode registered by the same
 extension. `exitMode()` and `isActive(id?)` likewise act only on that extension's
 active mode, so one extension cannot inspect or stop another. Entering a mode
-replaces the previous session mode and runs its `onExit` first. Only one session
+replaces the previous session mode and runs its `onExit` first. While `onEnter` or
+`onExit` runs, `enterMode()` and `exitMode()` return `false`; lifecycle callbacks
+reset extension-owned state but cannot change keyboard ownership. Only one session
 keyboard mode runs at a time.
 
 `onKey` returns synchronously:
@@ -1020,8 +1022,8 @@ mode is the highest-priority active input owner, host-owned Escape exits without
 reaching `onKey`; the status badge and a host-owned **Extensions** menu item are
 clickable exits too. Controls handed to a mode are activation-scoped: after that
 activation exits, retained callbacks cannot inspect, stop, or replace a later mode.
-Host exits invalidate them before `onExit`, while an active `onKey` may deliberately
-enter another mode from the same extension.
+An active `onKey` may deliberately enter another mode from the same extension; its
+outgoing lifecycle callback cannot supersede that replacement.
 
 Dialogs, menus, focused filter/note inputs, and interactive file-view modes run
 before a session mode. A file-view mode may temporarily overlap it: the first

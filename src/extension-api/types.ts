@@ -247,7 +247,8 @@ export interface ExtensionKeyboardModeContext extends ExtensionContext {
    * Controls scoped to this extension and activation.
    *
    * They become inert when the activation exits, so retained callbacks cannot inspect, stop, or
-   * replace a later mode. A deliberate replacement may be entered while `onKey` is running.
+   * replace a later mode. A deliberate replacement may be entered while `onKey` is running;
+   * ownership changes return `false` while `onEnter` or `onExit` is running.
    */
   readonly keyboardModes: ExtensionKeyboardModeControls;
 }
@@ -266,9 +267,9 @@ export interface ExtensionKeyboardMode {
   title: string;
   /** Decide whether to consume, pass, or consume-and-exit for one key. */
   onKey(key: ExtensionKeyEvent, ctx: ExtensionKeyboardModeContext): ExtensionKeyboardModeKeyResult;
-  /** Runs once before the first key reaches the mode. Must return synchronously. */
+  /** Runs once before the first key reaches the mode. Must return synchronously; cannot change ownership. */
   onEnter?(ctx: ExtensionKeyboardModeContext): void;
-  /** Runs exactly once on every exit path. Must return synchronously. */
+  /** Runs exactly once on every exit path. Must return synchronously; cannot change ownership. */
   onExit?(ctx: ExtensionKeyboardModeContext): void;
 }
 
@@ -1060,11 +1061,14 @@ export interface ExtensionCommandControls {
   execute(commandId: string, options?: ExtensionCommandExecutionOptions): boolean;
 }
 
-/** Enter, leave, and inspect this extension's registered session keyboard modes. */
+/**
+ * Enter, leave, and inspect this extension's registered session keyboard modes.
+ * Ownership-changing calls return `false` during `onEnter` and `onExit`.
+ */
 export interface ExtensionKeyboardModeControls {
-  /** Enter one mode registered by this extension, replacing the active session mode. */
+  /** Enter one owned mode from a command or `onKey`, replacing the active session mode. */
   enterMode(modeId: string): boolean;
-  /** Leave this extension's active mode. Returns false when another extension owns it. */
+  /** Leave this extension's active mode from a command or `onKey`. */
   exitMode(): boolean;
   /** Report whether this extension owns the active mode, optionally requiring one local id. */
   isActive(modeId?: string): boolean;

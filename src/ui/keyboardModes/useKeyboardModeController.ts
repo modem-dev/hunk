@@ -18,11 +18,8 @@ import {
   type ActiveSessionKeyboardMode,
 } from "./mode";
 
-/** Authority retained only for the lifetime of one active mode context. */
-interface KeyboardModeControlScope {
-  active: ActiveSessionKeyboardMode | null;
-  canEnter: boolean;
-}
+/** Activation identity retained only for the lifetime of one mode context. */
+type KeyboardModeControlScope = { active: ActiveSessionKeyboardMode | null };
 
 export interface KeyboardModeController {
   /** Build controls restricted to one extension and registry generation. */
@@ -69,7 +66,7 @@ export function useKeyboardModeController({
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
   const aliveRef = useRef(true);
-  const controlScopesRef = useRef(new WeakMap<object, KeyboardModeControlScope>());
+  const lifecycleDepthRef = useRef(0);
 
   // The ref changes eagerly so several keys delivered in one input flush see entry and exit.
   const [activeMode, setActiveModeState] = useState<ActiveSessionKeyboardMode | null>(null);
@@ -80,26 +77,32 @@ export function useKeyboardModeController({
   }, []);
   const warnMode = useCallback((message: string) => notifyRef.current(message, "warning"), []);
 
-  /**
-   * Tear down the active mode exactly once.
-   *
-   * Deliberate replacement gives the outgoing `onExit` one synchronous handoff window. Host exits
-   * invalidate its controls before calling extension code, so Escape and teardown cannot be
-   * defeated. Either way the old context becomes permanently inert when `onExit` returns.
-   */
-  const teardownMode = useCallback(
-    (allowSynchronousHandoff: boolean) => {
-      const active = activeModeRef.current;
-      if (!active) return;
-      setActiveMode(null);
-      const authority = controlScopesRef.current.get(active.ctx.keyboardModes);
-      if (authority) authority.canEnter = allowSynchronousHandoff;
-      runSessionKeyboardModeLifecycle(active, "onExit", warnMode);
-      if (authority) authority.canEnter = false;
+  /** Run lifecycle code while ownership-changing controls are intentionally inert. */
+  const runModeLifecycle = useCallback(
+    (active: ActiveSessionKeyboardMode, phase: "onEnter" | "onExit") => {
+      lifecycleDepthRef.current += 1;
+      try {
+        return runSessionKeyboardModeLifecycle(active, phase, warnMode);
+      } finally {
+        lifecycleDepthRef.current -= 1;
+      }
     },
-    [setActiveMode, warnMode],
+    [warnMode],
   );
-  const exitMode = useCallback(() => teardownMode(false), [teardownMode]);
+
+  /**
+   * Tear down the active mode exactly once before running extension lifecycle code.
+   *
+   * Lifecycle callbacks may observe their scoped state but cannot change keyboard ownership. This
+   * keeps every replacement on the explicit command/onKey path and makes host teardown final.
+   */
+  const teardownMode = useCallback(() => {
+    const active = activeModeRef.current;
+    if (!active) return;
+    setActiveMode(null);
+    runModeLifecycle(active, "onExit");
+  }, [runModeLifecycle, setActiveMode]);
+  const exitMode = teardownMode;
   const exitModeRef = useRef(exitMode);
   exitModeRef.current = exitMode;
 
@@ -130,11 +133,9 @@ export function useKeyboardModeController({
       owningRegistry: ExtensionRegistry,
       registered: RegisteredKeyboardMode,
     ) => {
-      teardownMode(true);
-      // An outgoing onExit may have entered a replacement. That re-entrant activation wins.
-      if (activeModeRef.current) return false;
+      exitMode();
 
-      const scope: KeyboardModeControlScope = { active: null, canEnter: true };
+      const scope: KeyboardModeControlScope = { active: null };
       const keyboardModes = createControlsRef.current(extensionId, owningRegistry, scope);
       const ctx: ExtensionKeyboardModeContext = Object.freeze({
         cwd: cwdRef.current,
@@ -152,15 +153,14 @@ export function useKeyboardModeController({
       };
       scope.active = active;
       setActiveMode(active);
-      if (!runSessionKeyboardModeLifecycle(active, "onEnter", warnMode)) {
-        // onEnter may have installed a replacement before failing; never tear that one down.
+      if (!runModeLifecycle(active, "onEnter")) {
         if (activeModeRef.current === active) exitMode();
         return false;
       }
 
       return activeModeRef.current === active;
     },
-    [exitMode, setActiveMode, teardownMode, warnMode],
+    [exitMode, runModeLifecycle, setActiveMode],
   );
 
   /** Build live controls without capturing mode selection or active state. */
@@ -179,10 +179,14 @@ export function useKeyboardModeController({
         modesRef.current.find(
           (registered) => registered.extensionId === extensionId && registered.mode.id === modeId,
         );
+      const canChangeOwnership = () =>
+        hasAuthority() &&
+        lifecycleDepthRef.current === 0 &&
+        (!scope || activeModeRef.current === scope.active);
 
       const controls: ExtensionKeyboardModeControls = {
         enterMode(modeId: string) {
-          if (!hasAuthority() || !owningRegistry || (scope && !scope.canEnter)) return false;
+          if (!owningRegistry || !canChangeOwnership()) return false;
           if (typeof modeId !== "string" || modeId.trim().length === 0) {
             showNotice(`Extension ${extensionId} targeted an invalid keyboard mode id`);
             return false;
@@ -195,7 +199,7 @@ export function useKeyboardModeController({
           return beginMode(extensionId, owningRegistry, registered);
         },
         exitMode() {
-          if (!hasAuthority()) return false;
+          if (!canChangeOwnership()) return false;
           const active = getLiveActiveMode();
           if (!active || active.extensionId !== extensionId || (scope && active !== scope.active)) {
             return false;
@@ -217,7 +221,6 @@ export function useKeyboardModeController({
           );
         },
       };
-      if (scope) controlScopesRef.current.set(controls, scope);
       return Object.freeze(controls);
     },
     [beginMode, exitMode, getLiveActiveMode, showNotice],

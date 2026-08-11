@@ -6,7 +6,10 @@ import type {
 } from "../../extension-api/types";
 import type { ExtensionRegistry, RegisteredKeyboardMode } from "../../extensions/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { callExtensionSynchronously } from "../lib/synchronousExtensionCallback";
+import {
+  deliverSynchronousExtensionModeKey,
+  runSynchronousExtensionModeLifecycle,
+} from "../lib/synchronousExtensionCallback";
 
 /** Everything the host retains while one session keyboard mode is active. */
 export interface ActiveSessionKeyboardMode {
@@ -16,11 +19,6 @@ export interface ActiveSessionKeyboardMode {
   readonly mode: ExtensionKeyboardMode;
   readonly ctx: ExtensionKeyboardModeContext;
   readonly registry: ExtensionRegistry;
-}
-
-/** Read an error without assuming extension code threw an Error instance. */
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message || error.name : String(error);
 }
 
 /** Attribute one contained callback failure to its extension and mode. */
@@ -64,14 +62,12 @@ export function runSessionKeyboardModeLifecycle(
   notify: (message: string) => void,
 ): boolean {
   const callback = active.mode[phase];
-  if (!callback) return true;
-
-  const result = callExtensionSynchronously(() => callback.call(active.mode, active.ctx));
-  if (result.kind === "returned") return true;
-  const detail =
-    result.kind === "thenable" ? `${phase} must return synchronously` : describeError(result.error);
-  notify(formatKeyboardModeFailure(active, phase, detail));
-  return false;
+  return runSynchronousExtensionModeLifecycle(
+    callback ? () => callback.call(active.mode, active.ctx) : undefined,
+    phase,
+    (action, detail) => formatKeyboardModeFailure(active, action, detail),
+    notify,
+  );
 }
 
 /** Deliver one frozen public key snapshot and normalize the extension's routing answer. */
@@ -80,15 +76,9 @@ export function deliverSessionKeyboardModeKey(
   key: ExtensionKeyEvent,
   notify: (message: string) => void,
 ): ExtensionKeyboardModeKeyResult {
-  const result = callExtensionSynchronously(() =>
-    active.mode.onKey.call(active.mode, key, active.ctx),
+  return deliverSynchronousExtensionModeKey(
+    () => active.mode.onKey.call(active.mode, key, active.ctx),
+    (action, detail) => formatKeyboardModeFailure(active, action, detail),
+    notify,
   );
-  if (result.kind === "returned") {
-    return result.value === "handled" || result.value === "exit" ? result.value : "pass";
-  }
-
-  const detail =
-    result.kind === "thenable" ? "onKey must return synchronously" : describeError(result.error);
-  notify(formatKeyboardModeFailure(active, "onKey", detail));
-  return "exit";
 }

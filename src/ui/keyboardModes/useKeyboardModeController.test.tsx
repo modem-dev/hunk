@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useCallback, useState } from "react";
-import type { ExtensionCommandControls, ExtensionKeyboardMode } from "../../extension-api/types";
+import type {
+  ExtensionCommandControls,
+  ExtensionKeyboardMode,
+  ExtensionKeyboardModeContext,
+} from "../../extension-api/types";
 import {
   createEmptyExtensionRegistry,
   type ExtensionRegistry,
@@ -129,25 +133,82 @@ describe("useKeyboardModeController", () => {
     }
   });
 
-  test("preserves a reentrant replacement installed by the outgoing onExit", async () => {
-    const events: string[] = [];
+  test("keeps lifecycle callbacks from changing keyboard ownership", async () => {
+    const attempts: boolean[] = [];
+    const attemptOwnershipChange = (ctx: ExtensionKeyboardModeContext) => {
+      attempts.push(ctx.keyboardModes.enterMode("gamma"), ctx.keyboardModes.exitMode());
+    };
     const alpha = registered("vim", "alpha", {
-      onExit: (ctx) => {
-        events.push("exit alpha");
-        ctx.keyboardModes.enterMode("gamma");
-      },
+      onEnter: attemptOwnershipChange,
+      onExit: attemptOwnershipChange,
     });
-    const beta = registered("vim", "beta", { onEnter: () => events.push("enter beta") });
-    const gamma = registered("vim", "gamma", { onEnter: () => events.push("enter gamma") });
+    const beta = registered("vim", "beta");
+    const gamma = registered("vim", "gamma");
     const registry = registryWith([alpha, beta, gamma]);
     const harness = await renderController({ registry, modes: [alpha, beta, gamma] });
     const controls = harness.controller().createControls("vim", registry);
 
     try {
       await act(async () => expect(controls.enterMode("alpha")).toBe(true));
-      await act(async () => expect(controls.enterMode("beta")).toBe(false));
-      expect(controls.isActive("gamma")).toBe(true);
-      expect(events).toEqual(["exit alpha", "enter gamma"]);
+      await act(async () => expect(controls.enterMode("beta")).toBe(true));
+      expect(attempts).toEqual([false, false, false, false]);
+      expect(controls.isActive("beta")).toBe(true);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("cleans up a failed onEnter and permits a later command entry", async () => {
+    let failedExits = 0;
+    const failed = registered("vim", "failed", {
+      onEnter: () => {
+        throw new Error("entry failed");
+      },
+      onExit: () => (failedExits += 1),
+    });
+    const healthy = registered("vim", "healthy");
+    const registry = registryWith([failed, healthy]);
+    const harness = await renderController({ registry, modes: [failed, healthy] });
+    const controls = harness.controller().createControls("vim", registry);
+
+    try {
+      await act(async () => expect(controls.enterMode("failed")).toBe(false));
+      expect(failedExits).toBe(1);
+      expect(controls.isActive()).toBe(false);
+      expect(harness.notices).toContain(
+        'Extension vim keyboard mode "failed" failed onEnter • entry failed',
+      );
+
+      await act(async () => expect(controls.enterMode("healthy")).toBe(true));
+      expect(controls.isActive("healthy")).toBe(true);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("keeps an onKey replacement when its predecessor returns exit", async () => {
+    let alphaExits = 0;
+    const alpha = registered("vim", "alpha", {
+      onExit: () => (alphaExits += 1),
+      onKey: (_key, ctx) => {
+        expect(ctx.keyboardModes.enterMode("beta")).toBe(true);
+        return "exit";
+      },
+    });
+    const beta = registered("vim", "beta");
+    const registry = registryWith([alpha, beta]);
+    const harness = await renderController({ registry, modes: [alpha, beta] });
+    const controls = harness.controller().createControls("vim", registry);
+
+    try {
+      await act(async () => expect(controls.enterMode("alpha")).toBe(true));
+      let result = "pass";
+      await act(async () => {
+        result = harness.controller().sendModeKey({ name: "x" });
+      });
+      expect(result).toBe("handled");
+      expect(alphaExits).toBe(1);
+      expect(controls.isActive("beta")).toBe(true);
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }

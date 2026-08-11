@@ -94,7 +94,7 @@ hunk.registerCommand({ id: "vim", title: "Toggle Vim navigation", key: "ctrl+v" 
 });
 ```
 
-`onKey` returns `"handled"`, `"pass"`, or `"exit"` synchronously. Optional `onEnter`/`onExit` callbacks reset extension-owned state such as counts and pending sequences. The context exposes only `cwd`, `notify`, public `commands`, and activation-scoped `keyboardModes` controls. Those controls become inert on exit, so retained callbacks cannot replace a later mode. When the session mode is the highest-priority input owner, host-owned Escape exits it; the persistent status badge and Extensions-menu exit are clickable too.
+`onKey` returns `"handled"`, `"pass"`, or `"exit"` synchronously. Optional `onEnter`/`onExit` callbacks reset extension-owned state such as counts and pending sequences; while either lifecycle callback runs, `enterMode()` and `exitMode()` return `false`. The context exposes only `cwd`, `notify`, public `commands`, and activation-scoped `keyboardModes` controls. Those controls become inert on exit, so retained callbacks cannot replace a later mode. When the session mode is the highest-priority input owner, host-owned Escape exits it; the persistent status badge and Extensions-menu exit are clickable too.
 
 One session mode runs at a time. Entering another runs the outgoing `onExit` first. A focused file-view mode temporarily outranks, rather than destroys, a session mode. Content soft reloads preserve it; extension reload, registry closure, and App teardown retire it. See the complete [authoring guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#session-keyboard-modes) and [`vim-navigation` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/vim-navigation).
 

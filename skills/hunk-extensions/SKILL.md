@@ -130,9 +130,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   and never reaches `onKey`.
 - **Session keyboard-mode handlers** get only `ctx.commands` and activation-scoped
   `ctx.keyboardModes` beyond the standard context. Those controls become inert on
-  exit. Keys are frozen snapshots; dialogs, focused inputs, and file-view modes
-  outrank them. When the session mode owns input, Escape exits it; the status badge
-  and Extensions menu are unconditional host-owned exits.
+  exit, and lifecycle callbacks cannot change keyboard ownership. Keys are frozen
+  snapshots; dialogs, focused inputs, and file-view modes outrank them. When the
+  session mode owns input, Escape exits it; the status badge and Extensions menu
+  are unconditional host-owned exits.
 
 Event payloads, sidebar props, and a command's selection all hand you frozen
 `ExtensionDiffFile` / `ExtensionDiffHunk` views. A changeset transform is the

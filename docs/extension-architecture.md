@@ -113,17 +113,19 @@ Session-wide modes registered through `registerKeyboardMode` are resolved with
 the same extension ownership and first-registration rules as other surfaces.
 `src/ui/keyboardModes/useKeyboardModeController.ts` owns the one active session
 mode, with eager ref state for input chunks, registry-generation authority,
-contained synchronous lifecycle callbacks, re-entrant handoff protection, and
-one teardown used by Escape, status, menu, reload, and unmount. Mode controls
-are activation-scoped and invalidated before unconditional host teardown, so
-`onExit` cannot defeat recovery or later manipulate a replacement.
+contained synchronous lifecycle callbacks, and one teardown used by Escape,
+status, menu, reload, and unmount. Mode controls are activation-scoped;
+`onEnter` and `onExit` cannot change ownership, while `onKey` may deliberately
+replace its activation without letting the outgoing callback defeat recovery or
+manipulate the replacement.
 `src/ui/lib/extensionKeyEvent.ts` freezes the method-free public key snapshot
 used by both session and file-view mode delivery, so OpenTUI events and their
-consumption methods never cross the extension boundary. Both mode systems use
-`src/ui/lib/synchronousExtensionCallback.ts` to reject thenables without leaving
-unhandled rejections. A focused file-view
-mode may overlap and temporarily outrank a session mode; leaving it resumes the
-session mode rather than destroying unrelated state.
+consumption methods never cross the extension boundary. Their shared
+`src/ui/lib/synchronousExtensionCallback.ts` path contains lifecycle failures,
+rejects thenables without leaving unhandled rejections, and normalizes key
+results; each mode module supplies only its context and attributed warnings. A
+focused file-view mode may overlap and temporarily outrank a session mode;
+leaving it resumes the session mode rather than destroying unrelated state.
 
 ## Command system
 

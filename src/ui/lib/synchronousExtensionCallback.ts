@@ -4,6 +4,14 @@ export type SynchronousExtensionCallbackResult<Value> =
   | { readonly kind: "thenable" }
   | { readonly kind: "threw"; readonly error: unknown };
 
+/** The routing decisions shared by interactive extension mode flavors. */
+type SynchronousExtensionModeKeyResult = "handled" | "pass" | "exit";
+
+/** Read an error without assuming extension code threw an Error instance. */
+function describeError(error: unknown) {
+  return error instanceof Error ? error.message || error.name : String(error);
+}
+
 /** Report whether an untyped extension returned promise-like work. */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   return (
@@ -30,4 +38,38 @@ export function callExtensionSynchronously<Value>(
   } catch (error) {
     return { kind: "threw", error };
   }
+}
+
+/** Run one extension mode lifecycle callback through the shared synchronous contract. */
+export function runSynchronousExtensionModeLifecycle(
+  callback: (() => unknown) | undefined,
+  phase: "onEnter" | "onExit",
+  formatFailure: (action: string, detail: string) => string,
+  notify: (message: string) => void,
+): boolean {
+  if (!callback) return true;
+
+  const result = callExtensionSynchronously(callback);
+  if (result.kind === "returned") return true;
+  const detail =
+    result.kind === "thenable" ? `${phase} must return synchronously` : describeError(result.error);
+  notify(formatFailure(phase, detail));
+  return false;
+}
+
+/** Deliver one extension mode key through the shared synchronous routing contract. */
+export function deliverSynchronousExtensionModeKey(
+  callback: () => unknown,
+  formatFailure: (action: string, detail: string) => string,
+  notify: (message: string) => void,
+): SynchronousExtensionModeKeyResult {
+  const result = callExtensionSynchronously(callback);
+  if (result.kind === "returned") {
+    return result.value === "handled" || result.value === "exit" ? result.value : "pass";
+  }
+
+  const detail =
+    result.kind === "thenable" ? "onKey must return synchronously" : describeError(result.error);
+  notify(formatFailure("onKey", detail));
+  return "exit";
 }
