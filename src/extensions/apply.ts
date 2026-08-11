@@ -10,6 +10,7 @@ import type {
   ExtensionRegistry,
   RegisteredCommand,
   RegisteredFileView,
+  RegisteredKeyboardMode,
   RegisteredSidebarView,
 } from "./types";
 
@@ -198,6 +199,42 @@ export function resolveExtensionFileViews(registry: ExtensionRegistry): Resolved
   return { views, issues };
 }
 
+/** Derive the key one session keyboard mode is addressed by everywhere in the app. */
+export function keyboardModeKey(registered: RegisteredKeyboardMode) {
+  return qualifiedViewKey(registered.extensionId, registered.mode.id);
+}
+
+/** The session keyboard modes one session offers, plus duplicate diagnostics. */
+export interface ResolvedExtensionKeyboardModes {
+  modes: RegisteredKeyboardMode[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve session keyboard-mode identities with first registration winning. */
+export function resolveExtensionKeyboardModes(
+  registry: ExtensionRegistry,
+): ResolvedExtensionKeyboardModes {
+  const modes: RegisteredKeyboardMode[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.keyboardModes) {
+    const key = keyboardModeKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate keyboard mode "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    modes.push(registered);
+  }
+
+  return { modes, issues };
+}
+
 /** The commands one session offers, plus the registrations skipped as duplicates. */
 export interface ResolvedExtensionCommands {
   commands: RegisteredCommand[];
@@ -263,6 +300,7 @@ export function applyExtensionRegistrations(
   // other refusal.
   const sidebars = resolveExtensionSidebarViews(result.registry);
   const fileViews = resolveExtensionFileViews(result.registry);
+  const keyboardModes = resolveExtensionKeyboardModes(result.registry);
   const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
@@ -271,6 +309,7 @@ export function applyExtensionRegistrations(
       ...vcs.issues,
       ...sidebars.issues,
       ...fileViews.issues,
+      ...keyboardModes.issues,
       ...commands.issues,
     ],
   };

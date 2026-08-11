@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 3;
+export const HUNK_EXTENSION_API_VERSION = 4;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -233,6 +233,46 @@ export interface ExtensionKeyEvent {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Session keyboard modes                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** What a session keyboard mode did with one key. */
+export type ExtensionKeyboardModeKeyResult = "handled" | "pass" | "exit";
+
+/** Renderer-free capabilities available while a session keyboard mode runs. */
+export interface ExtensionKeyboardModeContext extends ExtensionContext {
+  /** Live access to explicitly public built-in Hunk commands. */
+  readonly commands: ExtensionCommandControls;
+  /**
+   * Controls scoped to this extension and activation.
+   *
+   * They become inert when the activation exits, so retained callbacks cannot inspect, stop, or
+   * replace a later mode. A deliberate replacement may be entered while `onKey` is running.
+   */
+  readonly keyboardModes: ExtensionKeyboardModeControls;
+}
+
+/**
+ * One deliberately activated, session-scoped keyboard interpretation.
+ *
+ * Modes receive keys after host modal/focused surfaces and interactive file
+ * views, but before ordinary app commands. They are synchronous because their
+ * return value decides ownership of the current terminal key.
+ */
+export interface ExtensionKeyboardMode {
+  /** Identifies the mode within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  /** Human-readable label shown while the mode is active. */
+  title: string;
+  /** Decide whether to consume, pass, or consume-and-exit for one key. */
+  onKey(key: ExtensionKeyEvent, ctx: ExtensionKeyboardModeContext): ExtensionKeyboardModeKeyResult;
+  /** Runs once before the first key reaches the mode. Must return synchronously. */
+  onEnter?(ctx: ExtensionKeyboardModeContext): void;
+  /** Runs exactly once on every exit path. Must return synchronously. */
+  onExit?(ctx: ExtensionKeyboardModeContext): void;
+}
+
+/* -------------------------------------------------------------------------- */
 /* File views                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -350,31 +390,31 @@ export interface ExtensionFileViewModeContext extends ExtensionContext {
  * `fileViews.enterMode`, never on its own — during which keys reach `onKey`
  * before Hunk's command table. Modes are session-scoped: nothing persists.
  *
- * Only one mode is active at a time, app-wide, and the host guarantees a way
- * out: Escape always exits, and every exit path runs `onExit` exactly once.
+ * Only one file-view mode is active at a time. When it is the highest-priority
+ * input owner, Escape exits it; every exit path runs `onExit` exactly once.
  */
 export interface ExtensionFileViewMode {
   /**
    * Decide what happens to one key, synchronously.
    *
    * The return value *is* the routing decision, so it cannot be awaited:
-   * `"handled"` consumes the key, `"pass"` declines it (the key then flows on
-   * to the command table and scrolling exactly as if no mode were active), and
-   * `"exit"` consumes the key and leaves the mode. Start async work here and
+   * `"handled"` consumes the key, `"pass"` declines it (routing then continues
+   * through any active session keyboard mode, the command table, and focused
+   * scrolling), and `"exit"` consumes the key and leaves the mode. Start async work here and
    * report it afterwards through `ctx.notify` or `ctx.fileViews.refresh`.
    *
    * Every key the app's modal surfaces do not claim arrives — including plain
    * printable characters, which would otherwise run whatever command is bound
-   * to them. Escape is the one exception: it is host-owned and exits the mode
-   * without ever reaching this handler.
+   * to them. When this mode owns input, Escape is the one exception: it is
+   * host-owned and exits the mode without ever reaching this handler.
    *
    * A throw is contained: Hunk warns naming the extension, exits the mode, and
    * the review keeps working.
    */
   onKey(key: ExtensionKeyEvent, ctx: ExtensionFileViewModeContext): ExtensionFileViewModeKeyResult;
-  /** Runs once when the mode is entered, before any key reaches `onKey`. */
+  /** Runs once when the mode is entered, before any key reaches `onKey`. Must return synchronously. */
   onEnter?(ctx: ExtensionFileViewModeContext): void;
-  /** Runs on every exit — key result, Escape, host auto-exit, or a contained throw. */
+  /** Runs synchronously on every exit — key result, Escape, host auto-exit, or a contained throw. */
   onExit?(ctx: ExtensionFileViewModeContext): void;
 }
 
@@ -1020,6 +1060,16 @@ export interface ExtensionCommandControls {
   execute(commandId: string, options?: ExtensionCommandExecutionOptions): boolean;
 }
 
+/** Enter, leave, and inspect this extension's registered session keyboard modes. */
+export interface ExtensionKeyboardModeControls {
+  /** Enter one mode registered by this extension, replacing the active session mode. */
+  enterMode(modeId: string): boolean;
+  /** Leave this extension's active mode. Returns false when another extension owns it. */
+  exitMode(): boolean;
+  /** Report whether this extension owns the active mode, optionally requiring one local id. */
+  isActive(modeId?: string): boolean;
+}
+
 /** Open, close, and inspect sidebar views from a command handler. */
 export interface ExtensionSidebarControls {
   /**
@@ -1091,8 +1141,9 @@ export interface ExtensionFileViewControls {
    * resolves, and a layout that declines or fails falls back to raw diff.
    *
    * While the mode is active, keys the app's modal surfaces do not claim reach
-   * `onKey` before Hunk's command table. Escape is host-owned: it exits the
-   * mode and never reaches the handler, so there is always a way out.
+   * `onKey` before Hunk's command table. When the mode is the highest-priority
+   * input owner, Escape is host-owned: it exits the mode and never reaches the
+   * handler, so there is always a way out.
    *
    * Hunk also exits the mode by itself when the review moves out from under it
    * — the selected file changes, the view stops being that file's presentation
@@ -1109,8 +1160,8 @@ export interface ExtensionFileViewControls {
   /**
    * Leave the active mode, whichever view owns it.
    *
-   * Global rather than per-view, because only one mode is active at a time,
-   * and idempotent: calling it with no mode active does nothing.
+   * Global across file views because only one file-view mode is active at a
+   * time, and idempotent: calling it with no file-view mode active does nothing.
    */
   exitMode(): void;
   /** Report whether this view's mode is the one currently active. */
@@ -1332,6 +1383,8 @@ export interface ExtensionWorkspace {
 export interface ExtensionCommandContext extends ExtensionContext {
   /** Live access to the public built-in command table. */
   readonly commands: ExtensionCommandControls;
+  /** Session keyboard modes registered by this command's owning extension. */
+  readonly keyboardModes: ExtensionKeyboardModeControls;
   sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
   fileViews: ExtensionFileViewControls;
@@ -1492,6 +1545,13 @@ export interface HunkExtensionAPI {
    * row component contract may paint React/OpenTUI content inside clipped host geometry.
    */
   registerFileView(view: ExtensionFileView): void;
+  /**
+   * Register one session-scoped keyboard interpretation.
+   *
+   * Registration alone changes nothing; a command deliberately enters it
+   * through `ctx.keyboardModes.enterMode()`.
+   */
+  registerKeyboardMode(mode: ExtensionKeyboardMode): void;
   /**
    * Register one named command, optionally bound to a key,
    *

@@ -187,11 +187,11 @@ mode: {
 },
 ```
 
-Start it from a command with `ctx.fileViews.enterMode("preview")`. Entering also selects the preview and returns whether the mode started. Only one mode runs at a time; use `exitMode()` to stop it and `isModeActive("preview")` to check it.
+Start it from a command with `ctx.fileViews.enterMode("preview")`. Entering also selects the preview and returns whether the mode started. Only one interactive preview mode runs at a time; use `exitMode()` to stop it and `isModeActive("preview")` to check it. It may overlap a session keyboard mode, but receives keys first until it exits.
 
-`onKey` returns `"handled"` to consume a key, `"pass"` to continue normal Hunk routing, or `"exit"` to consume the key and stop. It must return synchronously. Escape is reserved by Hunk and always exits.
+`onKey` returns `"handled"` to consume a key, `"pass"` to continue through any active session keyboard mode and then normal Hunk routing, or `"exit"` to consume the key and stop. It must return synchronously. When the file-view mode is the highest-priority input owner, Escape is reserved by Hunk and exits it.
 
-Modes also exit when their file, presentation, extension, or review session changes. Optional `onEnter` and `onExit` callbacks track that lifecycle; `onExit` runs exactly once per activation. A failing `onEnter` or `onKey` exits the mode, and any callback failure warns without breaking the review.
+Modes also exit when their file, presentation, extension, or review session changes. Optional `onEnter` and `onExit` callbacks track that lifecycle and must return synchronously; `onExit` runs exactly once per activation. A failing or asynchronous `onEnter` or `onKey` exits the mode, and any callback failure warns without breaking the review.
 
 ## Validation and fallback
 

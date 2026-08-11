@@ -6,6 +6,7 @@ import type {
   ExtensionKeyEvent,
 } from "../../extension-api/types";
 import type { RegisteredFileView } from "../../extensions/types";
+import { callExtensionSynchronously } from "../lib/synchronousExtensionCallback";
 import { registeredFileViewKey, resolveFileViewSelectionTarget } from "./state";
 
 /** Read an error's message without assuming extensions throw `Error` instances. */
@@ -169,10 +170,10 @@ export function fileViewModeStatusHint(active: ActiveFileViewMode): string {
 }
 
 /** Attribute one mode failure to the extension and the action that raised it. */
-function formatFileViewModeFailure(active: ActiveFileViewMode, action: string, error: unknown) {
+function formatFileViewModeFailure(active: ActiveFileViewMode, action: string, detail: string) {
   return (
     `Extension ${active.extensionId} file view "${active.viewId}" mode ` +
-    `failed ${action} • ${describeError(error)}`
+    `failed ${action} • ${detail}`
   );
 }
 
@@ -191,13 +192,12 @@ export function runFileViewModeLifecycle(
   const callback = active.mode[phase];
   if (!callback) return true;
 
-  try {
-    callback.call(active.mode, active.ctx);
-    return true;
-  } catch (error) {
-    notify(formatFileViewModeFailure(active, phase, error));
-    return false;
-  }
+  const result = callExtensionSynchronously(() => callback.call(active.mode, active.ctx));
+  if (result.kind === "returned") return true;
+  const detail =
+    result.kind === "thenable" ? `${phase} must return synchronously` : describeError(result.error);
+  notify(formatFileViewModeFailure(active, phase, detail));
+  return false;
 }
 
 /**
@@ -214,13 +214,15 @@ export function deliverFileViewModeKey(
   key: ExtensionKeyEvent,
   notify: (message: string) => void,
 ): ExtensionFileViewModeKeyResult {
-  let result: ExtensionFileViewModeKeyResult;
-  try {
-    result = active.mode.onKey.call(active.mode, key, active.ctx);
-  } catch (error) {
-    notify(formatFileViewModeFailure(active, "onKey", error));
-    return "exit";
+  const result = callExtensionSynchronously(() =>
+    active.mode.onKey.call(active.mode, key, active.ctx),
+  );
+  if (result.kind === "returned") {
+    return result.value === "handled" || result.value === "exit" ? result.value : "pass";
   }
 
-  return result === "handled" || result === "exit" ? result : "pass";
+  const detail =
+    result.kind === "thenable" ? "onKey must return synchronously" : describeError(result.error);
+  notify(formatFileViewModeFailure(active, "onKey", detail));
+  return "exit";
 }

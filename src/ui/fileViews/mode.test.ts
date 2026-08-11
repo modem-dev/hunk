@@ -201,7 +201,7 @@ describe("file-view mode state", () => {
     );
   });
 
-  test("runs lifecycle callbacks and contains a throwing one as a warning", () => {
+  test("runs lifecycle callbacks and contains throws and thenables as warnings", async () => {
     const warnings: string[] = [];
     const entered: string[] = [];
     const active = createTestActiveMode({
@@ -227,12 +227,30 @@ describe("file-view mode state", () => {
     expect(runFileViewModeLifecycle(broken, "onExit", (message) => warnings.push(message))).toBe(
       false,
     );
+    const asyncEntry = createTestActiveMode({
+      onEnter: (() => Promise.reject(new Error("late entry rejection"))) as never,
+      onKey: () => "handled",
+    });
+    expect(
+      runFileViewModeLifecycle(asyncEntry, "onEnter", (message) => warnings.push(message)),
+    ).toBe(false);
+    const asyncExit = createTestActiveMode({
+      onExit: (() => Promise.reject(new Error("late exit rejection"))) as never,
+      onKey: () => "handled",
+    });
+    expect(runFileViewModeLifecycle(asyncExit, "onExit", (message) => warnings.push(message))).toBe(
+      false,
+    );
+    await Promise.resolve();
+
     expect(warnings).toEqual([
       'Extension preview file view "rendered" mode failed onExit • teardown exploded',
+      'Extension preview file view "rendered" mode failed onEnter • onEnter must return synchronously',
+      'Extension preview file view "rendered" mode failed onExit • onExit must return synchronously',
     ]);
   });
 
-  test("normalizes key answers and turns a throwing handler into an exit", () => {
+  test("normalizes key answers and turns throws and thenables into an exit", async () => {
     const warnings: string[] = [];
     const seen: string[] = [];
     const push = (message: string) => warnings.push(message);
@@ -260,8 +278,15 @@ describe("file-view mode state", () => {
       },
     });
     expect(deliverFileViewModeKey(broken, { name: "j" }, push)).toBe("exit");
+    const asyncKey = createTestActiveMode({
+      onKey: (() => Promise.reject(new Error("late key rejection"))) as never,
+    });
+    expect(deliverFileViewModeKey(asyncKey, { name: "j" }, push)).toBe("exit");
+    await Promise.resolve();
+
     expect(warnings).toEqual([
       'Extension preview file view "rendered" mode failed onKey • key exploded',
+      'Extension preview file view "rendered" mode failed onKey • onKey must return synchronously',
     ]);
   });
 });

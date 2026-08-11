@@ -2,11 +2,14 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, lineIndexOf } from "./harness";
 
 const harness = createPtyHarness();
 const REVIEW_TRIAGE_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-triage", import.meta.url)),
+);
+const VIM_NAVIGATION_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
 );
 
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
@@ -394,6 +397,100 @@ describe("PTY extensions", () => {
       expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");
       expect(menu).toContain("Clear triage decisions");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real Vim navigation example routes counted and multi-key commands", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    // Enough changed rows that top/bottom navigation has an observable viewport effect.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", VIM_NAVIGATION_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && text.includes("Extensions"),
+        20_000,
+      );
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f6");
+      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+
+      // The host contributes a mouse-accessible exit independently of the extension command.
+      await session.clickAt(33, 0);
+      await session.waitForText(/Exit Vim navigation/, { timeout: 20_000 });
+      await session.click(/Exit Vim navigation/);
+      await harness.waitForSnapshot(
+        session,
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+      await session.press("f6");
+      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+
+      // A passed `c` exposes the host-owned current line through note placement,
+      // giving counted movement and alignment observable terminal effects.
+      await session.press("c");
+      const initialDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      const initialDraftRow = lineIndexOf(initialDraft, "Draft note");
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 20_000);
+
+      await session.press("1");
+      await session.press("0");
+      await session.press("j");
+      await session.press("c");
+      const countedDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      expect(lineIndexOf(countedDraft, "Draft note")).toBeGreaterThan(initialDraftRow);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 20_000);
+
+      await session.press("z");
+      await session.press("t");
+      const topAligned = await session.text({ immediate: true });
+      const topAlignedRow = lineIndexOf(topAligned, "export const line11 = 11;");
+
+      await session.press("z");
+      await session.press("z");
+      const centered = await session.text({ immediate: true });
+      expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
+
+      // Both absolute forms visibly move between the two long files.
+      await session.press(["shift", "g"]);
+      const bottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(bottom).toContain("second.ts");
+
+      await session.press("g");
+      await session.press("g");
+      const top = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && !text.includes("second.ts"),
+        20_000,
+      );
+      expect(top).toContain("first.ts");
+      const active = await session.waitForText(/Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
+      expect(active).toContain("Vim navigation");
+
+      await session.press("escape");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
     } finally {
       session.close();
     }

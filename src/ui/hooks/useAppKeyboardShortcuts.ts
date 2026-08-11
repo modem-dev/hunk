@@ -1,10 +1,15 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
-import type { ExtensionFileViewModeKeyResult } from "../../extensions/types";
+import type {
+  ExtensionFileViewModeKeyResult,
+  ExtensionKeyboardModeKeyResult,
+  ExtensionKeyEvent,
+} from "../../extensions/types";
 import type { MenuId } from "../components/chrome/menu";
 import { dispatchAppCommand, type AppCommand } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
+import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 
@@ -41,8 +46,14 @@ export interface UseAppKeyboardShortcutsOptions {
   isFileViewModeActive: () => boolean;
   /** Leave that mode, running its `onExit`. Idempotent. */
   exitFileViewMode: () => void;
-  /** Offer one key to the active mode and report what it decided. */
-  sendFileViewModeKey: (key: KeyEvent) => ExtensionFileViewModeKeyResult;
+  /** Offer one key to the active file-view mode and report what it decided. */
+  sendFileViewModeKey: (key: ExtensionKeyEvent) => ExtensionFileViewModeKeyResult;
+  /** Whether a session-scoped extension keyboard mode currently owns review keys. */
+  isKeyboardModeActive: () => boolean;
+  /** Leave the active session keyboard mode. */
+  exitKeyboardMode: () => void;
+  /** Offer one key to the active session keyboard mode. */
+  sendKeyboardModeKey: (key: ExtensionKeyEvent) => ExtensionKeyboardModeKeyResult;
   focusArea: FocusArea;
   moveMenuItem: (delta: number) => void;
   moveThemeSelector: (delta: number) => void;
@@ -100,6 +111,9 @@ export function useAppKeyboardShortcuts({
   isFileViewModeActive,
   exitFileViewMode,
   sendFileViewModeKey,
+  isKeyboardModeActive,
+  exitKeyboardMode,
+  sendKeyboardModeKey,
   focusArea,
   moveMenuItem,
   moveThemeSelector,
@@ -130,6 +144,9 @@ export function useAppKeyboardShortcuts({
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
   const exitFileViewModeRef = useRef(exitFileViewMode);
   const sendFileViewModeKeyRef = useRef(sendFileViewModeKey);
+  const isKeyboardModeActiveRef = useRef(isKeyboardModeActive);
+  const exitKeyboardModeRef = useRef(exitKeyboardMode);
+  const sendKeyboardModeKeyRef = useRef(sendKeyboardModeKey);
   // These three close over live dialog state (the highlighted option, the typed
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
@@ -148,6 +165,9 @@ export function useAppKeyboardShortcuts({
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
+  isKeyboardModeActiveRef.current = isKeyboardModeActive;
+  exitKeyboardModeRef.current = exitKeyboardMode;
+  sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
   cancelExtensionDialogRef.current = cancelExtensionDialog;
   moveExtensionDialogSelectionRef.current = moveExtensionDialogSelection;
@@ -487,7 +507,7 @@ export function useAppKeyboardShortcuts({
       return "mine";
     }
 
-    const result = sendFileViewModeKeyRef.current(key);
+    const result = sendFileViewModeKeyRef.current(toExtensionKeyEvent(key));
     if (result === "pass") {
       return "notMine";
     }
@@ -499,10 +519,28 @@ export function useAppKeyboardShortcuts({
     return "mine";
   };
 
+  /** Route review-level keys through the one active session extension mode. */
+  const handleKeyboardModeShortcut = (key: KeyEvent): KeyOwner => {
+    if (!isKeyboardModeActiveRef.current()) {
+      return "notMine";
+    }
+
+    // The host reserves Escape as a guaranteed way out of third-party routing.
+    if (isEscapeKey(key)) {
+      exitKeyboardModeRef.current();
+      return "mine";
+    }
+
+    const result = sendKeyboardModeKeyRef.current(toExtensionKeyEvent(key));
+    if (result === "pass") return "notMine";
+    if (result === "exit") exitKeyboardModeRef.current();
+    return "mine";
+  };
+
   useKeyboard((key: KeyEvent) => {
     // Precedence is the array order: app-critical prompts, extension dialogs,
-    // then menus and overlays, then focused text inputs, then an active file
-    // view mode, and finally the command table below.
+    // then menus and overlays, focused text inputs, a focused file-view mode,
+    // a session keyboard mode, and finally the command table below.
     const owned = routeKeyOwnership(
       [
         handleExtensionTrustPromptShortcut,
@@ -514,6 +552,7 @@ export function useAppKeyboardShortcuts({
         handleMenuShortcut,
         handleFocusedInputShortcut,
         handleFileViewModeShortcut,
+        handleKeyboardModeShortcut,
       ],
       key,
       consumeKey,

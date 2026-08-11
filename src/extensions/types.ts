@@ -9,6 +9,7 @@ import type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionFileView,
+  ExtensionKeyboardMode,
   ExtensionNotifyType,
   ExtensionSidebarView,
   ExtensionThemeConfig,
@@ -56,6 +57,10 @@ export type {
   ExtensionFactory,
   ExtensionInputOptions,
   ExtensionKeyEvent,
+  ExtensionKeyboardMode,
+  ExtensionKeyboardModeContext,
+  ExtensionKeyboardModeControls,
+  ExtensionKeyboardModeKeyResult,
   ExtensionReviewNote,
   ExtensionNotifyType,
   ExtensionPaintTheme,
@@ -137,6 +142,12 @@ export interface RegisteredFileView {
   view: ExtensionFileView;
 }
 
+/** One session-scoped keyboard mode registered by an extension. */
+export interface RegisteredKeyboardMode {
+  extensionId: string;
+  mode: ExtensionKeyboardMode;
+}
+
 export interface RegisteredCommand {
   extensionId: string;
   command: ExtensionCommand;
@@ -180,6 +191,7 @@ export interface ExtensionRegistry {
   changesetTransforms: RegisteredChangesetTransform[];
   sidebarViews: RegisteredSidebarView[];
   fileViews: RegisteredFileView[];
+  keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   customEventHandlers: RegisteredCustomEventHandler[];
@@ -254,6 +266,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     changesetTransforms: [],
     sidebarViews: [],
     fileViews: [],
+    keyboardModes: [],
     commands: [],
     eventHandlers: {
       startup: [],
