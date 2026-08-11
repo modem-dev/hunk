@@ -22,6 +22,8 @@ interface DiscoveredExtensionEntry {
   id: string;
   path: string;
   sortKey: string;
+  /** Minimum extension API version the folder's manifest declared, if any. */
+  requiresApiVersion?: number;
 }
 
 /** Describe one standalone entry file, which sorts and is named by its own path. */
@@ -77,19 +79,30 @@ function findFolderExtensionIndex(dir: string) {
   return indexBasename ? join(dir, indexBasename) : undefined;
 }
 
+/** What one folder extension's `package.json` manifest declares. */
+interface ExtensionManifest {
+  /** Absolute entry paths from `hunk.extensions`, or nothing when undeclared. */
+  entryPaths?: string[];
+  /** Minimum extension API version from `hunk.apiVersion`, or nothing when undeclared. */
+  requiresApiVersion?: number;
+}
+
 /**
- * Read the entry paths one folder extension declares in its `package.json`.
+ * Read one folder extension's `package.json` manifest.
  *
  * The manifest field is `"hunk": { "extensions": ["./src/index.ts"] }`, and each
  * declared path resolves against the folder. A declared path that does not exist
  * is kept rather than filtered out, matching the posture for explicit paths: the
  * host reports it as a load issue instead of the entry silently vanishing.
+ * `"hunk": { "apiVersion": 3 }` states the minimum extension API version the
+ * folder needs; the host refuses to load it on an older Hunk with a clear issue
+ * instead of failing partway through the factory.
  *
  * Anything that goes wrong — no `package.json`, an unreadable one, malformed
  * JSON, or a field of the wrong shape — means "no manifest", so a folder that
  * merely happens to ship a `package.json` still falls back to its index entry.
  */
-function readManifestEntryPaths(dir: string) {
+function readExtensionManifest(dir: string): ExtensionManifest | undefined {
   let manifest: unknown;
   try {
     manifest = JSON.parse(fs.readFileSync(join(dir, "package.json"), "utf8"));
@@ -107,15 +120,25 @@ function readManifestEntryPaths(dir: string) {
   }
 
   const declared = (section as Record<string, unknown>).extensions;
-  if (!Array.isArray(declared)) {
-    return undefined;
-  }
-
   // Non-string items are skipped rather than fatal; one bad array item should
   // not cost the folder the entries it declared correctly.
-  return declared
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => resolve(dir, entry));
+  const entryPaths = Array.isArray(declared)
+    ? declared
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => resolve(dir, entry))
+    : undefined;
+
+  // A malformed apiVersion is ignored rather than fatal, matching the "no
+  // manifest" posture for every other malformed field.
+  const declaredApiVersion = (section as Record<string, unknown>).apiVersion;
+  const requiresApiVersion =
+    typeof declaredApiVersion === "number" &&
+    Number.isInteger(declaredApiVersion) &&
+    declaredApiVersion > 0
+      ? declaredApiVersion
+      : undefined;
+
+  return { entryPaths, requiresApiVersion };
 }
 
 /** Assign deterministic, distinct ids to every entry in one manifest. */
@@ -159,23 +182,33 @@ function deriveManifestEntryIds(paths: readonly string[]) {
  * Returns an empty list when the folder is not an extension at all.
  */
 function resolveFolderExtensionEntries(dir: string): DiscoveredExtensionEntry[] {
-  const manifestPaths = readManifestEntryPaths(dir);
+  const manifest = readExtensionManifest(dir);
+  const manifestPaths = manifest?.entryPaths;
+  /** Attach the manifest's api requirement so the host can gate before importing. */
+  const withApiVersion = (entry: DiscoveredExtensionEntry): DiscoveredExtensionEntry =>
+    manifest?.requiresApiVersion !== undefined
+      ? { ...entry, requiresApiVersion: manifest.requiresApiVersion }
+      : entry;
 
   if (manifestPaths && manifestPaths.length > 0) {
     const folderName = basename(dir);
     const manifestIds = deriveManifestEntryIds(manifestPaths);
-    return manifestPaths.map((path, index) => ({
-      id:
-        manifestPaths.length === 1 && folderName.length > 0
-          ? folderName
-          : (manifestIds[index] ?? deriveExtensionId(path)),
-      path,
-      sortKey: dir,
-    }));
+    return manifestPaths.map((path, index) =>
+      withApiVersion({
+        id:
+          manifestPaths.length === 1 && folderName.length > 0
+            ? folderName
+            : (manifestIds[index] ?? deriveExtensionId(path)),
+        path,
+        sortKey: dir,
+      }),
+    );
   }
 
+  // The apiVersion requirement still applies to the index fallback: a manifest
+  // may state compatibility without redeclaring the entry file.
   const folderIndex = findFolderExtensionIndex(dir);
-  return folderIndex ? [toStandaloneEntry(folderIndex)] : [];
+  return folderIndex ? [withApiVersion(toStandaloneEntry(folderIndex))] : [];
 }
 
 /**
@@ -306,7 +339,16 @@ export function discoverExtensions(options: DiscoverExtensionsOptions = {}): Ext
       }
 
       seenPaths.add(entry.path);
-      candidates.push({ id: entry.id, path: entry.path, origin: group.origin });
+      candidates.push({
+        id: entry.id,
+        path: entry.path,
+        origin: group.origin,
+        // Attached only when declared so candidate equality stays byte-stable
+        // for the common manifest-less case.
+        ...(entry.requiresApiVersion !== undefined
+          ? { requiresApiVersion: entry.requiresApiVersion }
+          : {}),
+      });
     }
   }
 

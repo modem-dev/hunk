@@ -469,3 +469,63 @@ describe("tilde paths", () => {
     expect(candidates[0]?.path).toBe(resolve("/somewhere/else", "~someone/ext.ts"));
   });
 });
+
+describe("manifest api version requirements", () => {
+  test("attaches hunk.apiVersion to every entry the manifest declares", () => {
+    const root = createTempDir("hunk-ext-manifest-api-");
+    const folder = join(root, "api-ext");
+    writeExtensionManifest(
+      folder,
+      JSON.stringify({ hunk: { extensions: ["./entry.ts"], apiVersion: 9 } }),
+    );
+    const entry = writeExtensionFile(folder, "entry.ts");
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+    });
+
+    expect(candidates).toEqual([
+      { id: "api-ext", path: entry, origin: "flag", requiresApiVersion: 9 },
+    ]);
+  });
+
+  test("applies hunk.apiVersion to the index fallback when no entries are declared", () => {
+    const root = createTempDir("hunk-ext-manifest-api-index-");
+    const folder = join(root, "api-index-ext");
+    writeExtensionManifest(folder, JSON.stringify({ hunk: { apiVersion: 2 } }));
+    const index = writeExtensionFile(folder, "index.ts");
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+    });
+
+    expect(candidates).toEqual([
+      { id: "api-index-ext", path: index, origin: "flag", requiresApiVersion: 2 },
+    ]);
+  });
+
+  test("ignores a malformed apiVersion instead of dropping the folder", () => {
+    const root = createTempDir("hunk-ext-manifest-api-bad-");
+    const folder = join(root, "bad-api-ext");
+    writeExtensionManifest(
+      folder,
+      JSON.stringify({ hunk: { extensions: ["./entry.ts"], apiVersion: "4" } }),
+    );
+    const entry = writeExtensionFile(folder, "entry.ts");
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+    });
+
+    expect(candidates).toEqual([{ id: "bad-api-ext", path: entry, origin: "flag" }]);
+  });
+});

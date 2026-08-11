@@ -8,7 +8,12 @@ import type { VcsAdapter } from "../core/vcs/types";
 import { discoverExtensions } from "./discovery";
 import { loadExtensions } from "./host";
 import { createExtensionNotificationHub } from "./notifications";
-import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
+import {
+  deriveExtensionId,
+  HUNK_EXTENSION_API_VERSION,
+  type ExtensionCandidate,
+  type ExtensionOrigin,
+} from "./types";
 
 const tempDirs: string[] = [];
 
@@ -559,5 +564,66 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     const seen: string[] = [];
     result.notifications.subscribe((notification) => seen.push(notification.message));
     expect(seen).toEqual(["ignored"]);
+  });
+});
+
+describe("manifest api version gating", () => {
+  test("refuses a candidate requiring a newer extension API without importing it", async () => {
+    const dir = createTempDir("hunk-host-api-gate-");
+    // A syntax error proves refusal happens before the module is ever imported.
+    const path = writeTestFile(dir, "future.ts", "this is not valid typescript {{{");
+    const candidate: ExtensionCandidate = {
+      id: "future",
+      path,
+      origin: "global",
+      requiresApiVersion: 999,
+    };
+
+    const result = await loadExtensions({ candidates: [candidate], cwd: dir });
+
+    expect(result.loaded).toHaveLength(0);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]?.extensionId).toBe("future");
+    expect(result.issues[0]?.message).toContain("requires Hunk extension API v999");
+    expect(result.issues[0]?.message).toContain("upgrade Hunk");
+  });
+
+  test("loads a candidate whose requirement matches the current extension API", async () => {
+    const dir = createTempDir("hunk-host-api-ok-");
+    const candidate = {
+      ...createTestExtension(
+        dir,
+        "current.ts",
+        `export default (hunk) => { hunk.registerFileLanguage("xyz", "xml"); };\n`,
+      ),
+      requiresApiVersion: HUNK_EXTENSION_API_VERSION,
+    };
+
+    const result = await loadExtensions({ candidates: [candidate], cwd: dir });
+
+    expect(result.issues).toHaveLength(0);
+    expect(result.loaded.map((extension) => extension.id)).toEqual(["current"]);
+  });
+
+  test("lets a later compatible source claim an id refused for its api requirement", async () => {
+    const dir = createTempDir("hunk-host-api-dup-");
+    const refusedPath = writeTestFile(dir, "newer/tool.ts", "export default () => {};\n");
+    const compatible = createTestExtension(
+      join(dir, "older"),
+      "tool.ts",
+      `export default (hunk) => { hunk.registerFileLanguage("abc", "xml"); };\n`,
+    );
+
+    const result = await loadExtensions({
+      candidates: [
+        { id: "tool", path: refusedPath, origin: "global", requiresApiVersion: 999 },
+        compatible,
+      ],
+      cwd: dir,
+    });
+
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]?.path).toBe(refusedPath);
+    expect(result.loaded.map((extension) => extension.id)).toEqual(["tool"]);
   });
 });

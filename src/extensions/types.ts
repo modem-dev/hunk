@@ -120,6 +120,12 @@ export interface ExtensionCandidate {
   /** Absolute, resolved path to the entry file. */
   path: string;
   origin: ExtensionOrigin;
+  /**
+   * Minimum extension API version the folder's manifest requires
+   * (`"hunk": { "apiVersion": N }`). The host refuses the candidate before
+   * importing it when this Hunk's API is older.
+   */
+  requiresApiVersion?: number;
 }
 
 export interface RegisteredTheme {

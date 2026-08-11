@@ -73,6 +73,28 @@ Because the manifest is a real `package.json`, a folder extension may depend on
 npm packages: declare them, install them into the folder's own `node_modules`,
 and imports resolve from the entry file the way they do in any other package.
 
+The `hunk` field may also state the minimum extension API version the folder
+needs:
+
+```json
+{
+  "name": "my-ext",
+  "version": "1.0.0",
+  "description": "What the extension does",
+  "hunk": { "extensions": ["./src/index.ts"], "apiVersion": 3 }
+}
+```
+
+A Hunk whose extension API is older than `apiVersion` refuses the folder with a
+startup notice naming the version it would need, instead of failing somewhere
+inside the factory with whatever error the missing surface happens to produce.
+Omit it while you only use surface that has been around a while; declare it when
+you depend on something recent (the current version is exported as
+`HUNK_EXTENSION_API_VERSION` from `hunkdiff/extension` and handed to factories
+as `hunk.apiVersion`). The standard `name`, `version`, and `description` fields
+are how tooling and humans identify a shared extension, so fill them in on
+anything you publish.
+
 Pointing `--extension` or `[extensions] paths` straight at a directory works
 either way: a directory that is itself a folder extension loads as that one
 extension, so its helper modules stay helpers. A directory that is not is

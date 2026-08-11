@@ -9,6 +9,7 @@ import { resolveRepoTrust, type ExtensionTrustOptions, type ExtensionTrustState 
 import {
   createEmptyExtensionRegistry,
   createExtensionContext,
+  HUNK_EXTENSION_API_VERSION,
   type ExtensionCandidate,
   type ExtensionFactory,
   type ExtensionLoadIssue,
@@ -88,7 +89,25 @@ interface AcceptedCandidates {
 }
 
 /**
- * Gate every candidate's id before anything is imported.
+ * State why one candidate's manifest is incompatible, or nothing when it loads.
+ *
+ * A manifest that requires a newer extension API than this Hunk provides would
+ * fail somewhere inside its factory with whatever error the missing surface
+ * happens to produce; refusing it here turns that into one actionable message.
+ */
+function describeApiVersionRefusal(candidate: ExtensionCandidate): string | undefined {
+  if (
+    candidate.requiresApiVersion === undefined ||
+    candidate.requiresApiVersion <= HUNK_EXTENSION_API_VERSION
+  ) {
+    return undefined;
+  }
+
+  return `requires Hunk extension API v${candidate.requiresApiVersion}, but this Hunk provides v${HUNK_EXTENSION_API_VERSION} • upgrade Hunk to load ${candidate.path}`;
+}
+
+/**
+ * Gate every candidate before anything is imported.
  *
  * This is the one enforcement point: discovery stays a pure filesystem walk
  * with no issue channel, and every way an id can be produced — file stem,
@@ -96,7 +115,9 @@ interface AcceptedCandidates {
  * arrives here as `candidate.id`, so one gate covers all of them. Duplicates
  * across discovery sources resolve first-wins, the same tiebreak the registry
  * uses everywhere else, with the loser reported rather than silently sharing
- * the winner's config table, command ids, and view keys.
+ * the winner's config table, command ids, and view keys. Manifest API-version
+ * requirements gate here too; a refused candidate does not claim its id, so a
+ * compatible same-id candidate from a later source may still load.
  */
 function acceptCandidateIds(
   candidates: readonly ExtensionCandidate[],
@@ -108,7 +129,8 @@ function acceptCandidateIds(
   const claimedBy = new Map(initialClaims);
 
   for (const candidate of candidates) {
-    const refusal = describeIdRefusal(candidate, claimedBy, reservedIds);
+    const refusal =
+      describeIdRefusal(candidate, claimedBy, reservedIds) ?? describeApiVersionRefusal(candidate);
     if (refusal !== undefined) {
       issues.push({
         extensionId: candidate.id,
