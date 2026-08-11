@@ -62,9 +62,9 @@ describe("embedded browser assets", () => {
         `bundle:${readFileSync(path.join(currentRoot, "src/core/review/stml.ts"), "utf8")}`;
       writeFileSync(bundle, await rebuild(root));
 
-      await expect(assertBrowserBundleCurrent(root, rebuild)).resolves.toBeUndefined();
+      await expect(assertBrowserBundleCurrent(root, rebuild, "linux")).resolves.toBeUndefined();
       writeFileSync(shared, "maxDepth: 31");
-      await expect(assertBrowserBundleCurrent(root, rebuild)).rejects.toThrow("stale");
+      await expect(assertBrowserBundleCurrent(root, rebuild, "linux")).rejects.toThrow("stale");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -206,6 +206,8 @@ describe("PTY chrome", () => {
       expect(initial).toContain("add = true");
       expect(initial).toContain("betaValue");
 
+      // First paint can precede keyboard subscription under CI load; prove input is live first.
+      await harness.ensureKeyboardIsLive(session);
       await session.press("tab");
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
@@ -241,6 +243,7 @@ describe("PTY chrome", () => {
       expect(initial).toContain("alphaOnly = true");
       expect(initial).toContain("betaValue = 2");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.type("/");
       await harness.waitForSnapshot(
         session,
