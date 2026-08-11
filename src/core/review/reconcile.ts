@@ -1,3 +1,4 @@
+import { resolveReviewNoteAnchor, reviewLineAddress, reviewLineContextDigest } from "./anchors";
 import { reviewGapAddress } from "./expansion";
 import { reviewDigest } from "./identity";
 import { reviewFileMatchesFilter } from "./selectors";
@@ -9,37 +10,9 @@ import type {
   ReviewStoredNote,
   ReviewStoredNoteAddress,
 } from "./state";
-import type {
-  ReviewDocumentV1,
-  ReviewFileV1,
-  ReviewHunkV1,
-  ReviewLineRange,
-  ReviewRangeAnchorV1,
-  ReviewSide,
-} from "./types";
+import type { ReviewDocumentV1, ReviewFileV1, ReviewLineRange, ReviewSide } from "./types";
 
-/** Return the inclusive semantic range occupied by one hunk on one side. */
-export function reviewHunkRange(hunk: ReviewHunkV1, side: ReviewSide) {
-  const start = side === "new" ? hunk.additionStart : hunk.deletionStart;
-  const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
-  return [start, Math.max(start, start + Math.max(count, 1) - 1)] as const;
-}
-
-/** Map one absolute semantic line to its compact patch-array address. */
-export function reviewLineAddress(file: ReviewFileV1, side: ReviewSide, line: number) {
-  for (let hunkIndex = 0; hunkIndex < file.hunks.length; hunkIndex += 1) {
-    const hunk = file.hunks[hunkIndex]!;
-    const start = side === "new" ? hunk.additionStart : hunk.deletionStart;
-    const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
-    const lineIndex = side === "new" ? hunk.additionLineIndex : hunk.deletionLineIndex;
-    if (count <= 0 || line < start || line >= start + count) continue;
-    const arrayIndex = file.flags.partial ? lineIndex + line - start : line - 1;
-    const lines = side === "new" ? file.additionLines : file.deletionLines;
-    if (arrayIndex < 0 || arrayIndex >= lines.length) return undefined;
-    return { hunkIndex, arrayIndex };
-  }
-  return undefined;
-}
+export { reviewHunkRange, reviewLineAddress, reviewLineContextDigest } from "./anchors";
 
 /** Enumerate absolute semantic lines backed by one side's compact patch arrays. */
 function reviewSemanticLines(file: ReviewFileV1, side: ReviewSide) {
@@ -52,24 +25,6 @@ function reviewSemanticLines(file: ReviewFileV1, side: ReviewSide) {
     const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
     return Array.from({ length: count }, (_, offset) => start + offset);
   });
-}
-
-/** Hash a fixed hunk-local neighborhood for reload rematching. */
-export function reviewLineContextDigest(file: ReviewFileV1, side: ReviewSide, line: number) {
-  const address = reviewLineAddress(file, side, line);
-  if (!address) return undefined;
-  const hunk = file.hunks[address.hunkIndex]!;
-  const lines = side === "new" ? file.additionLines : file.deletionLines;
-  const lineIndex = side === "new" ? hunk.additionLineIndex : hunk.deletionLineIndex;
-  const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
-  const offset = file.flags.partial ? address.arrayIndex - lineIndex : address.arrayIndex;
-  const availableStart = file.flags.partial ? lineIndex : 0;
-  const availableCount = file.flags.partial ? count : lines.length;
-  const neighborhood = [-2, -1, 0, 1, 2].map((delta) => {
-    const candidate = offset + delta;
-    return candidate >= 0 && candidate < availableCount ? lines[availableStart + candidate] : null;
-  });
-  return reviewDigest(JSON.stringify(neighborhood));
 }
 
 /** Find a uniquely nearest semantic line carrying the same context digest. */
@@ -127,7 +82,7 @@ export function reconcileReviewFile(
   return exactPath.length === 1 ? exactPath[0] : undefined;
 }
 
-/** Resolve a hunk index from a semantic line address. */
+/** Resolve a hunk index only from a backed canonical line address. */
 function hunkIndexForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
   return reviewLineAddress(file, side, line)?.hunkIndex ?? -1;
 }
@@ -210,37 +165,6 @@ function rematchDeclaredRange(
     range: rematchedRange,
     digest: reviewLineContextDigest(matchedFile, side, line),
     verified: true,
-  };
-}
-
-/** Recompute all hunk memberships and ownership from independently rematched ranges. */
-function rematchedAnchor(
-  file: ReviewFileV1,
-  preferred: { side: ReviewSide; line: number } | undefined,
-  oldRange: ReviewLineRange | undefined,
-  newRange: ReviewLineRange | undefined,
-): ReviewRangeAnchorV1 {
-  const intersectingHunkIndices = file.hunks.flatMap((hunk, index) => {
-    const oldHunkRange = reviewHunkRange(hunk, "old");
-    const newHunkRange = reviewHunkRange(hunk, "new");
-    const intersects =
-      Boolean(oldRange && oldRange[0] <= oldHunkRange[1] && oldHunkRange[0] <= oldRange[1]) ||
-      Boolean(newRange && newRange[0] <= newHunkRange[1] && newHunkRange[0] <= newRange[1]);
-    return intersects ? [index] : [];
-  });
-  const preferredOwner = preferred
-    ? hunkIndexForLine(file, preferred.side, preferred.line)
-    : undefined;
-  const ownerHunkIndex =
-    preferredOwner !== undefined && preferredOwner >= 0
-      ? preferredOwner
-      : (intersectingHunkIndices[0] ?? (file.hunks.length > 0 ? 0 : undefined));
-  return {
-    ...(oldRange ? { oldRange } : {}),
-    ...(newRange ? { newRange } : {}),
-    ...(preferred ? { preferred } : {}),
-    intersectingHunkIndices,
-    ...(ownerHunkIndex !== undefined ? { ownerHunkIndex } : {}),
   };
 }
 
@@ -331,7 +255,11 @@ function reconcileStoredNote(
     preferred && preferredLine !== undefined
       ? { side: preferred.side, line: preferredLine }
       : undefined;
-  const anchor = rematchedAnchor(matched, nextPreferred, oldResult.range, newResult.range);
+  const anchor = resolveReviewNoteAnchor(matched, {
+    preferred: nextPreferred,
+    oldRange: oldResult.range,
+    newRange: newResult.range,
+  });
   const verified =
     oldResult.verified &&
     newResult.verified &&
