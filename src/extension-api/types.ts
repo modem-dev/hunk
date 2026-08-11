@@ -553,6 +553,15 @@ export interface ExtensionVcsDetection {
 export interface ExtensionVcsLoadContext {
   cwd: string;
   gitExecutable?: string;
+  /**
+   * Set when Hunk may stop caring about the result before it arrives.
+   *
+   * Watch-mode polling passes one: closing a review aborts the signature check
+   * it started. Honoring it is optional — pass it to `spawn` or check it
+   * between steps to avoid leaving a subprocess running for an answer nobody
+   * will read.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -791,8 +800,15 @@ export interface ExtensionVcsWatchPlan {
 /** One review operation an adapter implements. */
 export interface ExtensionVcsOperation<Input> {
   load(input: Input, context: ExtensionVcsLoadContext): Promise<ExtensionVcsPatchResult>;
-  /** Optional cheap fingerprint of the reviewed state, for `--watch`. */
-  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string;
+  /**
+   * Optional cheap fingerprint of the reviewed state, for `--watch`.
+   *
+   * Returning a promise is preferred: Hunk re-runs this on every debounced file
+   * event and every safety poll, so a synchronous implementation that shells
+   * out blocks the terminal UI from drawing for as long as the command takes.
+   * A synchronous implementation still satisfies the contract.
+   */
+  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string | Promise<string>;
   /**
    * Optional filesystem targets `--watch` observes instead of polling.
    *

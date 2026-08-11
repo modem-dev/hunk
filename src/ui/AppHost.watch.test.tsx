@@ -6,8 +6,20 @@ import { act } from "react";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
 import { loadAppBootstrap } from "../core/loaders";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
+import { createSessionRegistration } from "../session/app/registration";
+import type { HunkSessionBrokerClient, HunkSessionServerMessage } from "../session/types";
 import { AppHost } from "./AppHost";
 import { resolveTheme } from "./themes";
+
+/** Create an externally controlled promise for reload-race tests. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
@@ -164,6 +176,128 @@ describe("watched input lifecycle", () => {
       );
       expect(setup.captureCharFrame()).toContain("Watch rationale updated");
     } finally {
+      await act(async () => setup.renderer.destroy());
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("superseded watch reloads and retries cannot replace newer daemon content", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-race-ui-"));
+    const left = join(dir, "before.ts");
+    const watchedRight = join(dir, "watched.ts");
+    const daemonRight = join(dir, "daemon.ts");
+    writeFileSync(left, "export const state = 'before';\n");
+    writeFileSync(watchedRight, "export const state = 'initial';\n");
+    writeFileSync(daemonRight, "export const state = 'daemon current';\n");
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right: watchedRight,
+      options: { mode: "stack", watch: true },
+    });
+    const watchTransformStarted = deferred<void>();
+    const watchTransformFinished = deferred<void>();
+    const releaseWatchTransform = deferred<void>();
+    const daemonTransformStarted = deferred<void>();
+    const releaseDaemonTransform = deferred<void>();
+    const extensions = createEmptyExtensionLoadResult(dir);
+    let transformCalls = 0;
+    extensions.registry.changesetTransforms.push({
+      extensionId: "slow-watch-transform",
+      async transform(changeset) {
+        transformCalls++;
+        if (transformCalls === 1) {
+          watchTransformStarted.resolve();
+          await releaseWatchTransform.promise;
+          watchTransformFinished.resolve();
+          return { ...changeset, title: "retired watch" };
+        }
+        if (transformCalls === 2) {
+          daemonTransformStarted.resolve();
+          await releaseDaemonTransform.promise;
+          return { ...changeset, title: "daemon current" };
+        }
+        return changeset;
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    let registration = createSessionRegistration(bootstrap);
+    const publishedTitles: string[] = [];
+    let bridge: { dispatchCommand(message: HunkSessionServerMessage): Promise<unknown> } | null =
+      null;
+    const hostClient = {
+      setBridge(nextBridge: typeof bridge) {
+        bridge = nextBridge;
+      },
+      updateSnapshot() {},
+      getRegistration() {
+        return registration;
+      },
+      replaceSession(nextRegistration: typeof registration) {
+        registration = nextRegistration;
+        publishedTitles.push(nextRegistration.info.title);
+      },
+    } as unknown as HunkSessionBrokerClient;
+    const watch = createWatchTestRuntime();
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} hostClient={hostClient} watchRuntime={watch.runtime} />,
+      { width: 120, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+      expect(bridge).not.toBeNull();
+      writeFileSync(watchedRight, "export const state = 'retired watch';\n");
+      watch.setSignature("signature:retired");
+      watch.emit();
+      await advanceWatch(setup, watch, 200);
+      await watchTransformStarted.promise;
+
+      const activeBridge = bridge!;
+      const daemonReload = activeBridge.dispatchCommand({
+        type: "command",
+        requestId: "reload-newer",
+        command: "reload_session",
+        input: {
+          sessionId: registration.sessionId,
+          nextInput: {
+            kind: "diff",
+            left,
+            right: daemonRight,
+            options: { mode: "stack" },
+          },
+        },
+      });
+      await daemonTransformStarted.promise;
+
+      // Finish the old watch reload after the newer generation has started but
+      // before React can commit it and abort the old hook. Signal-only guards
+      // miss this interval; the host generation must reject publication.
+      releaseWatchTransform.resolve();
+      await watchTransformFinished.promise;
+      await flush(setup);
+      expect(publishedTitles).not.toContain("retired watch");
+
+      // The superseded controller retains its old signature so it can retry.
+      // While the explicit replacement is still pending, that retry must not
+      // become a newer generation and cancel the replacement.
+      watch.emit(0);
+      await advanceWatch(setup, watch, 200);
+      expect(publishedTitles).not.toContain("retired watch");
+
+      releaseDaemonTransform.resolve();
+      await act(async () => await daemonReload);
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("daemon current"),
+        "the newer daemon reload to render",
+      );
+      expect(publishedTitles).toEqual(["daemon current"]);
+      expect(setup.captureCharFrame()).not.toContain("retired watch");
+    } finally {
+      releaseWatchTransform.resolve();
+      releaseDaemonTransform.resolve();
       await act(async () => setup.renderer.destroy());
       rmSync(dir, { force: true, recursive: true });
     }

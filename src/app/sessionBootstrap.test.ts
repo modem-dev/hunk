@@ -20,6 +20,15 @@ function createTestConfig(input: CliInput): HunkConfigResolution {
   };
 }
 
+/** Create an externally resolved promise for reload-lifetime tests. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 /** Build a loader result with a stable changeset for transform assertions. */
 function createTestBootstrap(input: CliInput): AppBootstrap {
   return {
@@ -53,5 +62,28 @@ describe("loadConfiguredSessionBootstrap", () => {
     expect(result.bootstrap.initialThemeMode).toBe("dark");
     expect(result.bootstrap.keybindings).toEqual({ "hunk.review.nextHunk": "]" });
     expect(result.bootstrap.viewPreferencesConfigPath).toBe("/tmp/hunk-config.toml");
+  });
+
+  test("rejects a bootstrap whose reload signal was aborted while loading", async () => {
+    const input = createTestInput();
+    const load = deferred<AppBootstrap>();
+    const controller = new AbortController();
+    let loaderSignal: AbortSignal | undefined;
+    const pending = loadConfiguredSessionBootstrap({
+      configured: createTestConfig(input),
+      cwd: process.cwd(),
+      signal: controller.signal,
+      loadAppBootstrapImpl: async (_resolvedInput, options) => {
+        loaderSignal = options?.signal;
+        return await load.promise;
+      },
+    });
+
+    await Promise.resolve();
+    expect(loaderSignal).toBe(controller.signal);
+    controller.abort();
+    load.resolve(createTestBootstrap(input));
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 });

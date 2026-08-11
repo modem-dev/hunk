@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -13,6 +22,7 @@ import {
   parseGitNumstat,
   resolveGitMetadata,
   runGitText,
+  runGitTextAsync,
   shouldSkipLargeTrackedDiff,
 } from "./git";
 import type { VcsDiffCommandInput } from "../types";
@@ -54,6 +64,21 @@ function createTempRepo(prefix: string) {
 /** Normalize symlinked and Windows short/long temp path spellings before path comparisons. */
 function normalizeComparablePath(path: string) {
   return realpathSync.native(path).replace(/\\/g, "/");
+}
+
+/** Quote one path for the POSIX helper scripts used by Unix-only process tests. */
+function shellQuote(path: string) {
+  return `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Report whether a Unix process still exists without sending it a signal. */
+function processExists(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function makeGitInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
@@ -154,6 +179,144 @@ describe("git command helpers", () => {
       "Git is required for `hunk diff`, but `definitely-not-a-real-git-binary` was not found in PATH.",
     );
   });
+
+  test.skipIf(process.platform === "win32")(
+    "aborting async Git kills descendants after the root process exits",
+    async () => {
+      const repoRoot = createTempDir("hunk-git-exited-root-abort-");
+      const executablePath = join(repoRoot, "fake-git.sh");
+      const pidPath = join(repoRoot, "child-pid");
+      writeFileSync(
+        executablePath,
+        [
+          "#!/bin/sh",
+          "trap '' HUP TERM",
+          "sleep 30 &",
+          "child=$!",
+          `printf '%s\\n' "$child" > ${shellQuote(pidPath)}`,
+          "exit 0",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(executablePath, 0o755);
+
+      const controller = new AbortController();
+      const pending = runGitTextAsync({
+        input: makeGitInput(),
+        args: ["status"],
+        cwd: repoRoot,
+        gitExecutable: executablePath,
+        signal: controller.signal,
+      });
+      const outcome = pending.then(
+        () => "resolved",
+        (error: Error) => error.name,
+      );
+      let childPid: number | undefined;
+
+      try {
+        for (let attempt = 0; attempt < 100 && !existsSync(pidPath); attempt++) {
+          await Bun.sleep(10);
+        }
+        expect(existsSync(pidPath)).toBe(true);
+        childPid = Number(readFileSync(pidPath, "utf8").trim());
+        expect(processExists(childPid)).toBe(true);
+        // The wrapper has exited, leaving only its child holding stdout open.
+        await Bun.sleep(50);
+
+        controller.abort();
+        expect(await Promise.race([outcome, Bun.sleep(1_000).then(() => "timeout")])).toBe(
+          "AbortError",
+        );
+        for (let attempt = 0; attempt < 50 && processExists(childPid); attempt++) {
+          await Bun.sleep(10);
+        }
+        expect(processExists(childPid)).toBe(false);
+      } finally {
+        controller.abort();
+        if (childPid !== undefined) {
+          try {
+            process.kill(childPid, "SIGKILL");
+          } catch {
+            // The expected path already terminated the descendant group.
+          }
+        }
+      }
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "aborting an async diff terminates textconv helpers and settles promptly",
+    async () => {
+      const repoRoot = createTempRepo("hunk-git-async-abort-");
+      const helperPath = join(repoRoot, "slow-textconv.sh");
+      const pidPath = join(repoRoot, "textconv-pids");
+      writeFileSync(
+        helperPath,
+        [
+          "#!/bin/sh",
+          // Reproduces helpers that ignore graceful termination; cancellation
+          // must still settle and reap the whole process group.
+          "trap '' TERM",
+          "sleep 30 &",
+          "child=$!",
+          `printf '%s\\n%s\\n' "$$" "$child" > ${shellQuote(pidPath)}`,
+          'wait "$child"',
+          'cat "$1"',
+          "",
+        ].join("\n"),
+      );
+      chmodSync(helperPath, 0o755);
+      git(repoRoot, "config", "diff.slow.textconv", helperPath);
+      writeFileSync(join(repoRoot, ".gitattributes"), "*.slow diff=slow\n");
+      writeFileSync(join(repoRoot, "example.slow"), "before\n");
+      git(repoRoot, "add", ".gitattributes", "example.slow");
+      git(repoRoot, "commit", "-m", "initial");
+      writeFileSync(join(repoRoot, "example.slow"), "after\n");
+
+      const input = makeGitInput();
+      const controller = new AbortController();
+      const pending = runGitTextAsync({
+        input,
+        args: buildGitDiffArgs(input),
+        cwd: repoRoot,
+        signal: controller.signal,
+      });
+      const outcome = pending.then(
+        () => "resolved",
+        (error: Error) => error.name,
+      );
+      let helperPids: number[] = [];
+
+      try {
+        for (let attempt = 0; attempt < 100 && !existsSync(pidPath); attempt++) {
+          await Bun.sleep(10);
+        }
+        expect(existsSync(pidPath)).toBe(true);
+        helperPids = readFileSync(pidPath, "utf8").trim().split("\n").map(Number);
+        expect(helperPids).toHaveLength(2);
+
+        controller.abort();
+        expect(await Promise.race([outcome, Bun.sleep(1_000).then(() => "timeout")])).toBe(
+          "AbortError",
+        );
+
+        for (let attempt = 0; attempt < 50 && helperPids.some(processExists); attempt++) {
+          await Bun.sleep(10);
+        }
+        expect(helperPids.filter(processExists)).toEqual([]);
+      } finally {
+        controller.abort();
+        for (const pid of helperPids) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            // The expected path already terminated the helper process group.
+          }
+        }
+      }
+    },
+  );
 });
 
 describe("listGitIgnoredDirectoryRoots", () => {

@@ -41,6 +41,8 @@ interface LoadAppBootstrapOptions {
   /** Extension-contributed VCS backends this session may load reviews through. */
   vcsAdapters?: readonly VcsAdapter[];
   gitExecutable?: string;
+  /** Abort a retired reload before it can publish a stale bootstrap. */
+  signal?: AbortSignal;
 }
 
 /** Return the final path segment for display-oriented labels. */
@@ -388,10 +390,12 @@ async function loadVcsChangeset(
   cwd = process.cwd(),
   gitExecutable = "git",
   extensionVcsAdapters: readonly VcsAdapter[] = [],
+  signal?: AbortSignal,
 ) {
   const adapter = getConfiguredVcsAdapter(input.options.vcs, extensionVcsAdapters);
   const operation = operationFromInput(input);
-  const result = await loadVcsReview(adapter, operation, { cwd, gitExecutable });
+  const result = await loadVcsReview(adapter, operation, { cwd, gitExecutable, signal });
+  signal?.throwIfAborted();
   const parsedChangeset = normalizePatchChangeset(
     result.patchText,
     result.title,
@@ -456,19 +460,28 @@ export async function loadAppBootstrap(
     customThemes,
     vcsAdapters,
     gitExecutable = "git",
+    signal,
   }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
+  signal?.throwIfAborted();
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
     try {
-      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable, vcsAdapters });
+      initialWatchSignature = await computeWatchSignature(input, {
+        cwd,
+        gitExecutable,
+        vcsAdapters,
+        signal,
+      });
     } catch {
+      signal?.throwIfAborted();
       // A transient signature failure must not prevent an otherwise valid initial review.
     }
   }
 
   const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
+  signal?.throwIfAborted();
 
   let changeset: Changeset;
   let repoRoot: string | undefined;
@@ -478,7 +491,14 @@ export async function loadAppBootstrap(
     case "show":
     case "stash-show":
       {
-        const result = await loadVcsChangeset(input, agentContext, cwd, gitExecutable, vcsAdapters);
+        const result = await loadVcsChangeset(
+          input,
+          agentContext,
+          cwd,
+          gitExecutable,
+          vcsAdapters,
+          signal,
+        );
         changeset = result.changeset;
         repoRoot = result.repoRoot;
       }
@@ -494,6 +514,7 @@ export async function loadAppBootstrap(
       break;
   }
 
+  signal?.throwIfAborted();
   changeset = {
     ...changeset,
     files: orderDiffFiles(changeset.files, agentContext),

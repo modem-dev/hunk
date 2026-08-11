@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { HunkExtensionUserError } from "../extension-api/types";
+import { HunkUserError } from "../core/errors";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
 import { createEmptyExtensionRegistry, type ExtensionLoadIssue } from "./types";
 
@@ -466,6 +468,43 @@ describe("registerCommand", () => {
 
     expect(registry.commands).toEqual([]);
     expect(issues[0]?.message).toContain("handler function");
+  });
+});
+
+describe("toInternalVcsAdapter operation errors", () => {
+  test("normalizes an asynchronously rejected watch signature", async () => {
+    const adapter = toInternalVcsAdapter({
+      id: "hg",
+      name: "Mercurial",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: "/repo",
+            sourceLabel: "/repo",
+            title: "hg",
+            patchText: "",
+          }),
+          watchSignature: async () => {
+            await Promise.resolve();
+            throw new HunkExtensionUserError("watch failed", {
+              suggestions: ["Repair the working copy."],
+            });
+          },
+        },
+      },
+    });
+
+    const operation = adapter.operations["working-tree-diff"]!;
+    const error = await Promise.resolve(
+      operation.watchSignature!({ kind: "vcs", staged: false, options: {} }, { cwd: "/repo" }),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(HunkUserError);
+    expect(error).toMatchObject({
+      message: "watch failed",
+      suggestions: ["Repair the working copy."],
+    });
   });
 });
 

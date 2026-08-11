@@ -179,6 +179,10 @@ export interface ClearedCommentsResult {
 export interface ReloadSessionOptions {
   /** False keeps the mounted App and its in-memory review state. */
   resetApp?: boolean;
+  /** Abort a retired watch reload before it can replace newer session content. */
+  signal?: AbortSignal;
+  /** Content generation that owns an internally triggered watch reload. */
+  watchContentGeneration?: number;
   sourcePath?: string;
   /** What triggered the reload; forwarded to extension `session_reload` handlers. */
   reason?: SessionReloadReason;

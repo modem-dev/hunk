@@ -239,7 +239,7 @@ describe("loadAppBootstrap", () => {
 
       expect(bootstrap.reloadContext.cwd).toBe(dir);
       expect(bootstrap.reloadContext.initialWatchSignature).toBeDefined();
-      expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
+      expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
         bootstrap.reloadContext.initialWatchSignature,
       );
     } finally {
@@ -346,7 +346,7 @@ describe("loadAppBootstrap", () => {
     );
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
-    expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
+    expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
       bootstrap.reloadContext.initialWatchSignature!,
     );
   });
