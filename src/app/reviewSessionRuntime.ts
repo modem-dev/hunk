@@ -6,6 +6,12 @@ import { resolveExperimentalDiffFiles } from "../core/experimental";
 import { projectReviewDocument } from "../core/review/document";
 import { reviewGapAddress } from "../core/review/expansion";
 import { reviewDigest } from "../core/review/identity";
+import {
+  planReviewIntent,
+  ReviewIntentPlanningError,
+  type ReviewIntent,
+  type ReviewIntentFacts,
+} from "../core/review/intents";
 import { encodeJsonStream, JsonStreamSizeError } from "../core/review/jsonStream";
 import { projectReviewNote } from "../core/review/notes";
 import { parseStml } from "../core/review/stml";
@@ -118,6 +124,24 @@ export interface ReviewSessionRuntimeDeps {
   loadConfiguredSessionBootstrapImpl?: typeof loadConfiguredSessionBootstrap;
   loadStartupExtensionsImpl?: typeof loadStartupExtensions;
   writeExtensionTrustImpl?: typeof writeExtensionTrust;
+  /** Supply runtime-owned identity and timestamp facts deterministically in tests. */
+  nowImpl?: () => Date;
+}
+
+export type ReviewIntentPreconditions =
+  | { mode: "current" }
+  | { mode: "generation"; expectedGeneration: string }
+  | {
+      mode: "revision";
+      expectedGeneration: string;
+      expectedStateRevision: number;
+    };
+
+export interface ReviewIntentExecution {
+  before: ReviewState;
+  state: ReviewState;
+  changed: boolean;
+  createdNote?: ReviewStoredNote;
 }
 
 export interface ReviewSessionRuntimeOptions {
@@ -159,6 +183,12 @@ type CachedSessionCommentResult =
 
 const MAX_SESSION_COMMENT_RESULTS = 256;
 const MAX_ENCODED_RESOURCE_CACHE_BYTES = MAX_REVIEW_RESOURCE_BYTES * 2;
+
+/** Reject an unclassified discriminated-union member at compile time and runtime. */
+function assertNever(value: never, context: string): never {
+  const type = (value as { type?: unknown }).type;
+  throw new Error(`Unclassified ${context}${typeof type === "string" ? `: ${type}` : "."}`);
+}
 
 interface CachedEncodedResource {
   bytes: Buffer;
@@ -246,6 +276,7 @@ export class ReviewSessionRuntime {
         options.deps?.loadConfiguredSessionBootstrapImpl ?? loadConfiguredSessionBootstrap,
       loadStartupExtensionsImpl: options.deps?.loadStartupExtensionsImpl ?? loadStartupExtensions,
       writeExtensionTrustImpl: options.deps?.writeExtensionTrustImpl ?? writeExtensionTrust,
+      nowImpl: options.deps?.nowImpl ?? (() => new Date()),
     };
     const launchInput = options.rawInput ?? bootstrap.input;
     this.currentRawInput = launchInput;
@@ -462,6 +493,12 @@ export class ReviewSessionRuntime {
       void this.processReloadQueue();
     });
   }
+
+  /** Execute one renderer-neutral semantic intent against the current runtime authority. */
+  executeReviewIntent = (
+    intent: ReviewIntent,
+    preconditions: ReviewIntentPreconditions = { mode: "current" },
+  ): ReviewIntentExecution => this.executeReviewIntentInternal(intent, preconditions);
 
   /** Toggle one canonical collapsed gap and let the runtime own generation-safe source loading. */
   toggleSourceGap(fileKey: string, gapId: string) {
@@ -1096,21 +1133,11 @@ export class ReviewSessionRuntime {
   }
 
   /** Preflight broker projections and atomically publish one logical review mutation. */
-  private commitReviewActions(actions: readonly ReviewAction[], includeActionResult = false) {
+  private commitReviewActions(actions: readonly ReviewAction[]) {
     const store = this.snapshot.store;
     const before = store.getSnapshot();
     const next = prepareReviewState(before, actions);
-    if (next === before) return next;
-    if (includeActionResult) {
-      const result = {
-        kind: "review-action" as const,
-        generation: next.documentGeneration,
-        stateRevision: next.stateRevision,
-        state: createHunkReviewState(next),
-      };
-      this.assertCommandResultWithinBounds(result, "Review action result");
-    }
-    return store.commitPrepared(before, next);
+    return next === before ? before : store.commitPrepared(before, next);
   }
 
   /** Validate optional STML at the terminal's live width while preserving safe degradation notes. */
@@ -1131,74 +1158,184 @@ export class ReviewSessionRuntime {
     };
   }
 
-  /** Build one core-resolved human note action at an authoritative semantic address. */
-  private prepareUserNote(
-    input: Extract<HunkReviewActionV1, { type: "notes/create-user" }>["note"],
-  ): ReviewAction {
-    const pair = this.reviewFilePair(input.fileKey);
-    if (!pair) throw new Error("The selected review file no longer exists.");
-    if (!pair.semantic.hunks[input.hunkIndex])
-      throw new Error("The selected review hunk no longer exists.");
-    if (!input.body.trim()) throw new Error("A user note body is required.");
-    this.reviewMarkupFeedback(input.markup);
-    const range = [input.line, input.line] as [number, number];
-    const annotation = {
-      id: `user:${Date.now()}-${++this.userNoteSequence}`,
-      source: "user" as const,
-      summary: input.body.trim(),
-      ...(input.markup ? { markup: input.markup } : {}),
-      author: "user",
-      createdAt: new Date().toISOString(),
-      editable: true,
-      ...(input.side === "old" ? { oldRange: range } : { newRange: range }),
-    };
-    const note = projectReviewNote({
-      annotation,
-      fileKey: input.fileKey,
-      hunks: pair.file.metadata.hunks,
-      origin: "user",
-      editable: true,
-    });
+  /** Enforce the caller's authority policy against one captured state snapshot. */
+  private assertReviewIntentPreconditions(
+    state: ReviewState,
+    preconditions: ReviewIntentPreconditions,
+  ) {
+    if (
+      preconditions.mode !== "current" &&
+      preconditions.expectedGeneration !== state.documentGeneration
+    ) {
+      throw new Error("stale-generation");
+    }
+    if (
+      preconditions.mode === "revision" &&
+      preconditions.expectedStateRevision !== state.stateRevision
+    ) {
+      throw new Error("stale-revision");
+    }
+  }
+
+  /** Prepare renderer-neutral facts without consuming identity until a commit succeeds. */
+  private reviewIntentFacts(intent: ReviewIntent): {
+    facts: ReviewIntentFacts;
+    pendingUserNoteSequence?: number;
+  } {
+    if (intent.type !== "note/create-user" && intent.type !== "note/update-user") {
+      return { facts: {} };
+    }
+    const now = this.deps.nowImpl();
+    if (intent.type === "note/update-user") {
+      return { facts: { timestamp: now.toISOString() } };
+    }
+    const pendingUserNoteSequence = this.userNoteSequence + 1;
     return {
-      type: "notes/add-user",
-      expectedGeneration: this.snapshot.projection.document.generation,
-      note: {
-        note,
-        contextDigest: reviewLineContextDigest(pair.semantic, input.side, input.line),
-        contextDigests: this.mutableNoteDigests(pair.semantic, annotation),
-        resolution: "active",
+      facts: {
+        timestamp: now.toISOString(),
+        noteId: `user:${now.getTime()}-${pendingUserNoteSequence}`,
       },
+      pendingUserNoteSequence,
     };
   }
 
-  /** Prepare replacement of one editable human note while retaining its core-owned anchor. */
-  private prepareUserNoteUpdate(noteId: string, body: string, markup?: string): ReviewAction {
-    const state = this.snapshot.store.getSnapshot();
-    const existing = state.userNotes.find((entry) => entry.note.id === noteId);
-    if (!existing) throw new Error(`No user note matches id ${noteId}.`);
-    if (!body.trim()) throw new Error("A user note body is required.");
-    this.reviewMarkupFeedback(markup);
-    const { markup: existingMarkup, ...withoutMarkup } = existing.note;
-    return {
-      type: "notes/update-user",
-      expectedGeneration: state.documentGeneration,
-      noteId,
+  /** Publish one canonical created-note event only after the committed identity is authoritative. */
+  private emitCreatedUserNote(entry: ReviewStoredNote) {
+    const semantic = this.snapshot.projection.document.files.find(
+      (file) => file.key === entry.note.fileKey,
+    );
+    const preferred = entry.note.anchor.preferred;
+    if (!semantic || !preferred) return;
+    emitExtensionEvent(this.snapshot.extensions, "note_created", {
       note: {
-        ...existing,
-        note: {
-          ...withoutMarkup,
-          summary: body.trim(),
-          ...(markup === undefined
-            ? existingMarkup === undefined
-              ? {}
-              : { markup: existingMarkup }
-            : markup.trim()
-              ? { markup }
-              : {}),
-          updatedAt: new Date().toISOString(),
-        },
+        id: entry.note.id,
+        fileId: semantic.runtimeId,
+        filePath: semantic.path,
+        hunkIndex: entry.note.anchor.ownerHunkIndex ?? 0,
+        side: preferred.side,
+        line: preferred.line,
+        body: entry.note.summary,
+        draft: false,
       },
+    });
+  }
+
+  /** Plan, preflight, and commit one semantic intent before running post-commit effects. */
+  private executeReviewIntentInternal(
+    intent: ReviewIntent,
+    preconditions: ReviewIntentPreconditions,
+    options: { preflightActionResult?: boolean } = {},
+  ): ReviewIntentExecution {
+    const store = this.snapshot.store;
+    const before = store.getSnapshot();
+    this.assertReviewIntentPreconditions(before, preconditions);
+    const { facts, pendingUserNoteSequence } = this.reviewIntentFacts(intent);
+    const plan = planReviewIntent(before, intent, facts);
+    if (intent.type === "note/create-user" && !intent.consumeDraft) {
+      this.reviewMarkupFeedback(intent.markup);
+    } else if (intent.type === "note/update-user") {
+      this.reviewMarkupFeedback(intent.markup);
+    }
+    const prepared = prepareReviewState(before, plan.actions);
+    if (prepared === before) return { before, state: before, changed: false };
+    if (options.preflightActionResult) {
+      this.assertCommandResultWithinBounds(
+        {
+          kind: "review-action",
+          generation: prepared.documentGeneration,
+          stateRevision: prepared.stateRevision,
+          state: createHunkReviewState(prepared),
+        },
+        "Review action result",
+      );
+    }
+    const state = store.commitPrepared(before, prepared);
+    if (pendingUserNoteSequence !== undefined) {
+      this.userNoteSequence = pendingUserNoteSequence;
+    }
+    const plannedCreatedId =
+      plan.outcome?.type === "note/created" ? plan.outcome.note.note.id : undefined;
+    const createdNote = plannedCreatedId
+      ? state.userNotes.find((entry) => entry.note.id === plannedCreatedId)
+      : undefined;
+    if (createdNote) this.emitCreatedUserNote(createdNote);
+    if (intent.type === "note/remove-live") this.releaseSessionCommentIdentity(intent.noteId);
+    return {
+      before,
+      state,
+      changed: true,
+      ...(createdNote ? { createdNote } : {}),
     };
+  }
+
+  /** Preserve established browser-facing messages while adopting stricter semantic failures. */
+  private browserIntentErrorMessage(action: HunkReviewActionV1, error: unknown) {
+    if (!(error instanceof ReviewIntentPlanningError)) {
+      return error instanceof Error ? error.message : "Review action failed.";
+    }
+    if (action.type === "notes/create-user") {
+      if (error.code === "file-not-found") return "The selected review file no longer exists.";
+      if (error.code === "hunk-not-found") return "The selected review hunk no longer exists.";
+    }
+    if (
+      action.type === "notes/remove-live" &&
+      (error.code === "note-not-found" || error.code === "note-not-editable")
+    ) {
+      return `Live note ${action.noteId} cannot be removed.`;
+    }
+    return error.message;
+  }
+
+  /** Convert one validated browser DTO into a semantic intent or explicit runtime action. */
+  private browserActionIntent(action: HunkReviewActionV1): ReviewIntent | "runtime" {
+    switch (action.type) {
+      case "selection/select": {
+        const { fileKey, hunkIndex, side, line } = action.selection;
+        if (fileKey === null) throw new Error("The selected review file no longer exists.");
+        if ((side === undefined) !== (line === undefined)) {
+          throw new Error("Review selection side and line must be provided together.");
+        }
+        return {
+          type: "selection/select",
+          fileKey,
+          hunkIndex,
+          ...(side !== undefined && line !== undefined ? { line: { side, line } } : {}),
+          ...(action.reveal ? { reveal: action.reveal } : {}),
+        };
+      }
+      case "selection/set-line":
+        return {
+          type: "selection/set-line",
+          fileKey: action.fileKey,
+          hunkIndex: action.hunkIndex,
+          side: action.side,
+          line: action.line,
+          ...(action.reveal === undefined ? {} : { reveal: action.reveal }),
+        };
+      case "filter/set":
+        return action;
+      case "notes/set-visibility":
+        return action;
+      case "notes/create-user":
+        return { type: "note/create-user", ...action.note };
+      case "notes/update-user":
+        return {
+          type: "note/update-user",
+          noteId: action.noteId,
+          body: action.body,
+          ...(action.markup === undefined ? {} : { markup: action.markup }),
+        };
+      case "notes/remove-user":
+        return { type: "note/remove-user", noteId: action.noteId };
+      case "notes/remove-live":
+        return { type: "note/remove-live", noteId: action.noteId };
+      case "expansion/toggle":
+      case "session/reload":
+      case "trust/decide":
+        return "runtime";
+      default:
+        return assertNever(action, "browser review action");
+    }
   }
 
   /** Toggle and materialize one generation-addressed source capability exactly once. */
@@ -1362,74 +1499,44 @@ export class ReviewSessionRuntime {
       };
     }
     try {
-      switch (action.type) {
-        case "notes/create-user":
-          this.commitReviewActions([this.prepareUserNote(action.note)], true);
-          break;
-        case "notes/update-user":
-          this.commitReviewActions(
-            [this.prepareUserNoteUpdate(action.noteId, action.body, action.markup)],
-            true,
-          );
-          break;
-        case "notes/remove-user": {
-          if (!before.userNotes.some((entry) => entry.note.id === action.noteId)) {
-            throw new Error(`No user note matches id ${action.noteId}.`);
-          }
-          this.commitReviewActions(
-            [
-              {
-                type: "notes/remove-user",
-                expectedGeneration: before.documentGeneration,
-                noteId: action.noteId,
+      const intent = this.browserActionIntent(action);
+      if (intent !== "runtime") {
+        this.executeReviewIntentInternal(
+          intent,
+          selectionAction
+            ? { mode: "generation", expectedGeneration: input.generation }
+            : {
+                mode: "revision",
+                expectedGeneration: input.generation,
+                expectedStateRevision: input.expectedStateRevision!,
               },
-            ],
-            true,
-          );
-          break;
+          { preflightActionResult: true },
+        );
+      } else {
+        switch (action.type) {
+          case "expansion/toggle":
+            await this.toggleSourceGapForState(
+              action.fileKey,
+              action.gapId,
+              input.generation,
+              before.stateRevision,
+            );
+            break;
+          case "session/reload":
+            if (!canReloadInput(this.snapshot.bootstrap.input))
+              throw new Error("This review cannot be reloaded.");
+            await this.reload("manual", this.currentRawInput, {
+              resetApp: false,
+              reloadExtensions: true,
+              sourcePath: this.currentSourcePath(),
+            });
+            break;
+          case "trust/decide":
+            if (!this.snapshot.trust.promptRepoRoot)
+              throw new Error("No repository extension trust decision is pending.");
+            await this.decideExtensionTrust(action.decision);
+            break;
         }
-        case "notes/remove-live": {
-          const note = before.liveNotes.find((entry) => entry.note.id === action.noteId);
-          if (!note || (note.note.origin !== "live-agent" && note.note.editable === false)) {
-            throw new Error(`Live note ${action.noteId} cannot be removed.`);
-          }
-          this.commitReviewActions(
-            [
-              {
-                type: "notes/remove-live",
-                expectedGeneration: before.documentGeneration,
-                noteId: action.noteId,
-              },
-            ],
-            true,
-          );
-          this.releaseSessionCommentIdentity(action.noteId);
-          break;
-        }
-        case "expansion/toggle":
-          await this.toggleSourceGapForState(
-            action.fileKey,
-            action.gapId,
-            input.generation,
-            before.stateRevision,
-          );
-          break;
-        case "session/reload":
-          if (!canReloadInput(this.snapshot.bootstrap.input))
-            throw new Error("This review cannot be reloaded.");
-          await this.reload("manual", this.currentRawInput, {
-            resetApp: false,
-            reloadExtensions: true,
-            sourcePath: this.currentSourcePath(),
-          });
-          break;
-        case "trust/decide":
-          if (!this.snapshot.trust.promptRepoRoot)
-            throw new Error("No repository extension trust decision is pending.");
-          await this.decideExtensionTrust(action.decision);
-          break;
-        default:
-          this.commitReviewActions([action], true);
       }
     } catch (error) {
       if (error instanceof Error && error.message === "stale-generation") {
@@ -1440,7 +1547,7 @@ export class ReviewSessionRuntime {
       }
       return this.reviewCommandError(
         "invalid-action",
-        error instanceof Error ? error.message : "Review action failed.",
+        this.browserIntentErrorMessage(action, error),
       );
     } finally {
       if (this.asynchronousActionReservation?.token === reservationToken) {
