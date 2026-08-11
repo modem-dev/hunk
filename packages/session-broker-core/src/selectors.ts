@@ -7,21 +7,31 @@ export interface SelectableSession {
   repoRoot?: string;
 }
 
-/** Return containment distance when a repo selector belongs to one session root. */
-export function repoSelectorDistance(
-  session: SelectableSession,
-  selectorPath: string,
-): number | null {
-  if (!session.repoRoot) {
-    return null;
-  }
-
-  const offset = relative(session.repoRoot, selectorPath);
+/** Return one path's relative containment depth below a candidate root. */
+function containmentDistance(root: string, candidate: string): number | null {
+  const offset = relative(root, candidate);
   if (offset === ".." || offset.startsWith(`..${sep}`) || isAbsolute(offset)) {
     return null;
   }
 
   return offset === "" ? 0 : offset.split(/[\\/]+/).filter(Boolean).length;
+}
+
+/** Return containment distance when a repo selector belongs to one eligible session root. */
+export function repoSelectorDistance(
+  session: SelectableSession,
+  selectorPath: string,
+  repoBoundary?: string,
+): number | null {
+  if (!session.repoRoot) {
+    return null;
+  }
+
+  if (repoBoundary && containmentDistance(repoBoundary, session.repoRoot) === null) {
+    return null;
+  }
+
+  return containmentDistance(session.repoRoot, selectorPath);
 }
 
 /** Return whether one session matches the selector precedence shared by the broker and CLI. */
@@ -42,7 +52,7 @@ export function matchesSessionSelector(
   }
 
   if (selector.repoRoot) {
-    return repoSelectorDistance(session, selector.repoRoot) !== null;
+    return repoSelectorDistance(session, selector.repoRoot, selector.repoBoundary) !== null;
   }
 
   return true;
@@ -54,6 +64,7 @@ export function normalizeSessionSelector(selector: SessionTargetInput): SessionT
     ...selector,
     sessionPath: selector.sessionPath ? resolve(selector.sessionPath) : undefined,
     repoRoot: selector.repoRoot ? resolve(selector.repoRoot) : undefined,
+    repoBoundary: selector.repoBoundary ? resolve(selector.repoBoundary) : undefined,
   };
 }
 

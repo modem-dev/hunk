@@ -60,11 +60,7 @@ export interface SessionBrokerViewAdapter<
 
 export type UpdateSnapshotResult = "updated" | "invalid" | "not-found";
 
-export interface SessionTargetSelector {
-  sessionId?: string;
-  sessionPath?: string;
-  repoRoot?: string;
-}
+export type SessionTargetSelector = SessionTargetInput;
 
 function describeSessionChoices<ListedSession extends SessionBrokerListedSession>(
   sessions: ListedSession[],
@@ -107,7 +103,7 @@ export function resolveSessionTarget<ListedSession extends SessionBrokerListedSe
     const candidates = sessions
       .map((session) => ({
         session,
-        distance: repoSelectorDistance(session, selector.repoRoot!),
+        distance: repoSelectorDistance(session, selector.repoRoot!, selector.repoBoundary),
       }))
       .filter(
         (entry): entry is { session: ListedSession; distance: number } => entry.distance !== null,

@@ -22,6 +22,7 @@ import {
 } from "../core/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
+import { isVcsReviewInput } from "../core/vcs";
 import type {
   AppBootstrap,
   CliInput,
@@ -1444,12 +1445,7 @@ export function App({
       await onReloadSession(nextInput, {
         ...options,
         resetApp: false,
-        sourcePath:
-          bootstrap.input.kind === "vcs" ||
-          bootstrap.input.kind === "show" ||
-          bootstrap.input.kind === "stash-show"
-            ? bootstrap.changeset.sourceLabel
-            : undefined,
+        sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
       });
     },
     [
@@ -1567,12 +1563,9 @@ export function App({
   }, [extensionTrustPromptRoot, showSessionNotice]);
 
   const triggerEditSelectedFile = useCallback(() => {
-    const basePath =
-      bootstrap.input.kind === "vcs" ||
-      bootstrap.input.kind === "show" ||
-      bootstrap.input.kind === "stash-show"
-        ? bootstrap.changeset.sourceLabel
-        : undefined;
+    const basePath = isVcsReviewInput(bootstrap.input)
+      ? bootstrap.changeset.sourceLabel
+      : undefined;
     const message = openSelectedFileInEditor({
       basePath,
       file: selectedFile,

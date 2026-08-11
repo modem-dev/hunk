@@ -169,6 +169,8 @@ export interface SessionSelectorInput {
   sessionId?: string;
   sessionPath?: string;
   repoRoot?: string;
+  /** Nearest project boundary known for this repo-path selector. */
+  repoBoundary?: string;
 }
 
 export interface SessionListCommandInput {

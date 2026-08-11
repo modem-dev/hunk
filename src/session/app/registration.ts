@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { resolveExperimentalFeatures } from "../../core/experimental";
+import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/hunkSummary";
 import { hunkLineRange } from "../../core/liveComments";
 import type { AppBootstrap } from "../../core/types";
@@ -27,11 +28,7 @@ function ttyname(): string | undefined {
 
 /** Infer the repo-root selector that remote session commands should match for this review input. */
 function inferRepoRoot(bootstrap: AppBootstrap) {
-  return bootstrap.input.kind === "vcs" ||
-    bootstrap.input.kind === "show" ||
-    bootstrap.input.kind === "stash-show"
-    ? bootstrap.changeset.sourceLabel
-    : undefined;
+  return isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined;
 }
 
 /** Convert the loaded changeset into the app-owned file-and-hunk review export model. */

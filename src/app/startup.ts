@@ -28,6 +28,7 @@ import type {
 } from "../core/types";
 import { canReloadInput } from "../core/inputReload";
 import { parseCli } from "../core/cli";
+import { resolveSessionSelectorBoundary } from "./sessionSelector";
 
 export type StartupPlan =
   | {
@@ -136,9 +137,16 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "session") {
+    const sessionInput =
+      "selector" in parsedCliInput
+        ? {
+            ...parsedCliInput,
+            selector: resolveSessionSelectorBoundary(parsedCliInput.selector, baseVcsCatalog),
+          }
+        : parsedCliInput;
     return {
       kind: "session-command",
-      input: parsedCliInput,
+      input: sessionInput,
     };
   }
 

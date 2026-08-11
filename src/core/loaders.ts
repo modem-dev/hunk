@@ -13,7 +13,12 @@ import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatch, stripTerminalControl } from "./patch/normalize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
-import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
+import {
+  getConfiguredVcsAdapter,
+  isVcsReviewInput,
+  loadVcsReview,
+  operationFromInput,
+} from "./vcs";
 import type { VcsCatalog } from "./vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
 import { computeWatchSignature } from "./watch";
@@ -455,7 +460,7 @@ export async function loadAppBootstrap(
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
     try {
-      if (vcsCatalog || !["vcs", "show", "stash-show"].includes(input.kind)) {
+      if (vcsCatalog || !isVcsReviewInput(input)) {
         initialWatchSignature = computeWatchSignature(input, { cwd, vcsCatalog });
       }
     } catch {

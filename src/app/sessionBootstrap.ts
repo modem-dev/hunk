@@ -1,4 +1,5 @@
 import type { HunkConfigResolution } from "../core/config";
+import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
 import { collectSessionCustomThemes } from "../core/customThemes";
@@ -62,7 +63,7 @@ export async function loadConfiguredSessionBootstrap({
     input = { ...input, options: { ...input.options, vcs: sessionVcs.vcsId } };
   }
 
-  const detectedVcsId = ["vcs", "show", "stash-show"].includes(input.kind)
+  const detectedVcsId = isVcsReviewInput(input)
     ? resolveDetectedVcsIdWithExtensions(cwd, applied.vcsCatalog, configured.explicitVcsId)
     : undefined;
   if (detectedVcsId !== undefined && detectedVcsId !== input.options.vcs) {

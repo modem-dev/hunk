@@ -20,7 +20,10 @@ describe("session daemon request validation", () => {
     const requests: unknown[] = [
       { action: "list" },
       { action: "get", selector: { sessionId: "s-1" } },
-      { action: "context", selector: { repoRoot: "/repo" } },
+      {
+        action: "context",
+        selector: { repoRoot: "/repo/nested", repoBoundary: "/repo" },
+      },
       { action: "review", selector: { sessionId: "s-1" } },
       { action: "review", selector: { sessionId: "s-1" }, includePatch: true, includeNotes: true },
       { action: "navigate", selector: { sessionId: "s-1" }, hunkNumber: 2 },

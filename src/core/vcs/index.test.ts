@@ -9,6 +9,7 @@ import {
   getDefaultVcsAdapter,
   getVcsAdapter,
   isVcsId,
+  isVcsReviewInput,
   loadVcsReview,
   operationFromInput,
 } from ".";
@@ -92,6 +93,14 @@ describe("VCS catalog", () => {
 });
 
 describe("VCS operation dispatch", () => {
+  test("classifies exactly the adapter-backed review inputs", () => {
+    expect(isVcsReviewInput({ kind: "vcs", staged: false, options: {} })).toBe(true);
+    expect(isVcsReviewInput({ kind: "show", options: {} })).toBe(true);
+    expect(isVcsReviewInput({ kind: "stash-show", options: {} })).toBe(true);
+    expect(isVcsReviewInput({ kind: "patch", file: "change.patch", options: {} })).toBe(false);
+    expect(isVcsReviewInput({ kind: "diff", left: "a", right: "b", options: {} })).toBe(false);
+  });
+
   test("maps review inputs to operation keys", () => {
     expect(operationFromInput({ kind: "vcs", staged: false, options: {} }).kind).toBe(
       "working-tree-diff",

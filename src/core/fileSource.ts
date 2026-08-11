@@ -1,5 +1,6 @@
 import {
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  readFileTextWithLimit,
   readStreamTextWithLimit as readLimitedStreamText,
 } from "../lib/sourceText";
 
@@ -47,48 +48,15 @@ interface ResolvedSpecs {
   new: FileSourceSpec;
 }
 
-/** Return the first useful diagnostic line from a failed source read. */
-function firstDiagnosticLine(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean);
-}
-
-/** Keep source-load diagnostics terse enough to be useful in logs. */
-export function logSourceDiagnostic(message: string, detail?: unknown) {
-  if (detail instanceof Error) {
-    console.error(`hunk: ${message}: ${detail.message}`, detail);
-    return;
-  }
-
-  const detailText = typeof detail === "string" ? firstDiagnosticLine(detail) : undefined;
-  console.error(detailText ? `hunk: ${message}: ${detailText}` : `hunk: ${message}`);
-}
-
 async function readFsSpec(
   spec: Extract<FileSourceSpec, { kind: "fs" }>,
   maxSourceBytes: number,
 ): Promise<string | null> {
-  try {
-    const file = Bun.file(spec.absolutePath);
-    if (!(await file.exists())) {
-      return null;
-    }
-
-    if (file.size > maxSourceBytes) {
-      throw new SourceTextTooLargeError(maxSourceBytes);
-    }
-
-    return await file.text();
-  } catch (error) {
-    if (error instanceof SourceTextTooLargeError) {
-      throw error;
-    }
-
-    logSourceDiagnostic(`failed to read source file ${spec.absolutePath}`, error);
-    return null;
+  const result = await readFileTextWithLimit(spec.absolutePath, maxSourceBytes);
+  if (typeof result === "object" && result !== null) {
+    throw new SourceTextTooLargeError(result.maxBytes);
   }
+  return result;
 }
 
 export function readStreamTextWithLimit(

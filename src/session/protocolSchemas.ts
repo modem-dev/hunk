@@ -16,6 +16,7 @@ const selectorSchema = z.strictObject({
   sessionId: z.string().optional(),
   sessionPath: z.string().optional(),
   repoRoot: z.string().optional(),
+  repoBoundary: z.string().optional(),
 });
 
 const sideSchema = z.enum(["old", "new"]);

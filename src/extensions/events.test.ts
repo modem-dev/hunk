@@ -5,7 +5,6 @@ import {
   emitExtensionCustomEvent,
   emitExtensionEvent,
   emitExtensionEventBounded,
-  emitExtensionEventToExtensions,
   readMetadataHunkCount,
   readMetadataHunkSummaries,
   retireExtensionLoadResult,
@@ -534,64 +533,5 @@ describe("read-only file views", () => {
 
     expect(views[0]!.hunks).toEqual([]);
     expect(views[1]!.hunks).toBe(views[0]!.hunks);
-  });
-});
-
-describe("emitExtensionEventToExtensions", () => {
-  test("delivers only to the named extensions", () => {
-    const seen: string[] = [];
-    const { result } = createTestLoadResult([
-      {
-        extensionId: "already-started",
-        event: "startup",
-        handler: () => {
-          seen.push("already-started");
-        },
-      },
-      {
-        extensionId: "newly-trusted",
-        event: "startup",
-        handler: () => {
-          seen.push("newly-trusted");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set(["newly-trusted"]));
-
-    expect(seen).toEqual(["newly-trusted"]);
-  });
-
-  test("does nothing when the id set is empty", () => {
-    const seen: string[] = [];
-    const { result } = createTestLoadResult([
-      {
-        extensionId: "any",
-        event: "startup",
-        handler: () => {
-          seen.push("any");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set());
-
-    expect(seen).toEqual([]);
-  });
-
-  test("still isolates a throwing handler", () => {
-    const { result, notices } = createTestLoadResult([
-      {
-        extensionId: "broken",
-        event: "startup",
-        handler: () => {
-          throw new Error("boom");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set(["broken"]));
-
-    expect(notices[0]).toContain("Extension broken failed handling startup • boom");
   });
 });

@@ -1,6 +1,7 @@
 import { relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
 import { HunkUserError } from "../errors";
+import type { CliInput } from "../types";
 import type {
   VcsAdapter,
   VcsCatalog,
@@ -110,6 +111,11 @@ export function detectVcs(cwd: string, catalog: VcsCatalog): VcsDetection | null
   }
 
   return bestDetection;
+}
+
+/** Return whether one CLI input loads a review through a VCS adapter. */
+export function isVcsReviewInput(input: CliInput): input is VcsReviewInput {
+  return input.kind === "vcs" || input.kind === "show" || input.kind === "stash-show";
 }
 
 /** Translate a CLI review input into the neutral operation map key. */

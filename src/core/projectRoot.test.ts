@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { findProjectRootCandidate } from "./projectRoot";
@@ -50,6 +50,15 @@ describe("findProjectRootCandidate", () => {
     mkdirSync(nested, { recursive: true });
 
     expect(findProjectRootCandidate(nested)).toBe(repo);
+  });
+
+  test("ignores a plain file named .hunk", () => {
+    const directory = tempDir();
+    const nested = join(directory, "src");
+    writeFileSync(join(directory, ".hunk"), "not a project directory\n");
+    mkdirSync(nested);
+
+    expect(findProjectRootCandidate(nested)).toBeUndefined();
   });
 
   test("chooses the nearest .hunk or registered VCS root", () => {

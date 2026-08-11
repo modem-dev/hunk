@@ -343,13 +343,8 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
   result: ExtensionLoadResult,
   event: Event,
   rawPayload: ExtensionEventPayloads[Event],
-  /** Restrict delivery to handlers owned by these extensions; all of them when omitted. */
-  extensionIds?: ReadonlySet<string>,
 ): Promise<void>[] {
-  const registered = result.registry.eventHandlers[event];
-  const handlers = extensionIds
-    ? registered.filter((entry) => extensionIds.has(entry.extensionId))
-    : registered;
+  const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
 
   if (handlers.length === 0) {
@@ -460,29 +455,6 @@ export function emitExtensionEvent<Event extends ExtensionEventName>(
   }
 
   runExtensionEventHandlers(result, event, payload);
-}
-
-/**
- * Emit one lifecycle event to a named subset of the loaded extensions.
- *
- * This exists for `startup`, which is a per-extension promise ("once, after the
- * app mounts with its first changeset") rather than a per-session one. Granting
- * repo trust mid-session loads extensions that missed the mount emit entirely,
- * and re-emitting to everyone would fire `startup` a second time for the
- * extensions that already had it. Delivering to just the newly loaded ones
- * keeps both halves of the promise.
- */
-export function emitExtensionEventToExtensions<Event extends ExtensionEventName>(
-  result: ExtensionLoadResult | undefined,
-  event: Event,
-  payload: ExtensionEventPayloads[Event],
-  extensionIds: ReadonlySet<string>,
-) {
-  if (!result || extensionIds.size === 0) {
-    return;
-  }
-
-  runExtensionEventHandlers(result, event, payload, extensionIds);
 }
 
 /**

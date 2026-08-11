@@ -3,7 +3,12 @@ import type {
   ExtensionVcsFileSourceResult,
   ExtensionVcsFileSourceTooLarge,
 } from "hunkdiff/extension";
-import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readStreamTextWithLimit } from "../../../../lib/sourceText";
+import {
+  DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  logSourceDiagnostic,
+  readFileTextWithLimit,
+  readStreamTextWithLimit,
+} from "../../../../lib/sourceText";
 import type { GitDiffEndpoint } from "./commands";
 
 /** A provider-local signal converted to the public structural result at this boundary. */
@@ -44,23 +49,6 @@ export function gitEndpointSourceSpec(
   }
 }
 
-/** Keep provider diagnostics terse without coupling source reads to core logging. */
-function logSourceDiagnostic(message: string, detail?: unknown) {
-  if (detail instanceof Error) {
-    console.error(`hunk: ${message}: ${detail.message}`, detail);
-    return;
-  }
-
-  const firstLine =
-    typeof detail === "string"
-      ? detail
-          .split("\n")
-          .map((line) => line.trim())
-          .find(Boolean)
-      : undefined;
-  console.error(firstLine ? `hunk: ${message}: ${firstLine}` : `hunk: ${message}`);
-}
-
 /** Return whether a Git failure is an expected missing source side/path. */
 function isExpectedMissingGitSource(stderr: string) {
   const normalized = stderr.toLowerCase();
@@ -76,26 +64,6 @@ function isExpectedMissingGitSource(stderr: string) {
 /** Represent an exceeded resource limit through the public extension contract. */
 function tooLarge(maxBytes: number): ExtensionVcsFileSourceTooLarge {
   return { kind: "too-large", maxBytes };
-}
-
-/** Read a filesystem source without importing Hunk's private source-fetcher implementation. */
-async function readFilesystemSource(
-  absolutePath: string,
-  maxSourceBytes: number,
-): Promise<ExtensionVcsFileSourceResult> {
-  try {
-    const file = Bun.file(absolutePath);
-    if (!(await file.exists())) {
-      return null;
-    }
-    if (file.size > maxSourceBytes) {
-      return tooLarge(maxSourceBytes);
-    }
-    return await file.text();
-  } catch (error) {
-    logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
-    return null;
-  }
 }
 
 /** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
@@ -170,7 +138,7 @@ export function readGitFileSource(
     case "none":
       return Promise.resolve(null);
     case "fs":
-      return readFilesystemSource(spec.absolutePath, maxSourceBytes);
+      return readFileTextWithLimit(spec.absolutePath, maxSourceBytes);
     case "git-index":
       return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
     case "git-blob":
