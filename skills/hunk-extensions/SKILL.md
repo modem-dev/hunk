@@ -68,9 +68,20 @@ one level of folder extensions. A folder is an extension if it has a
 `package.json` with `{"hunk": {"extensions": ["./index.ts"]}}`, or an
 `index.{ts,tsx,js,jsx,mjs}`. Reach for a folder only when you need npm
 dependencies, helper modules, or a README; a single file keeps the install to one
-`cp`. Hunk never installs anything, so a folder extension's `node_modules` has to
-exist on every machine that loads it — keep a repo-shared extension
-dependency-free.
+`cp`. A `.hunk/extensions/` folder extension's `node_modules` has to exist on
+every machine that loads it — keep a repo-shared extension dependency-free.
+
+Shared extensions install from git with `hunk extension install <source>`
+(`owner/repo[@ref]`, `git:host/path[@ref]`, a git URL, or a local path) into
+`~/.config/hunk/extensions/installed/<repo-name>/`, where they load with global
+origin; `list`, `update`, and `remove` manage them. Declared `dependencies` are
+`bun install`ed at install time. The manifest may state
+`{"hunk": {"apiVersion": N}}` — the minimum extension API version — and an older
+Hunk refuses the extension with a startup notice instead of failing mid-factory.
+To publish, push the folder-extension layout to a git repository's root with
+real `name`/`version`/`description`, tag releases for `@ref` pins, and add the
+`hunk-extension` GitHub topic so it appears at
+<https://github.com/topics/hunk-extension>.
 
 The **id** is the file stem, or the folder name for a folder extension — unless
 its manifest declares several entries, in which case each entry is its own

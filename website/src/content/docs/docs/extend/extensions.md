@@ -66,6 +66,36 @@ The **id** is the file stem, or the folder name for `<name>/index.ts` and single
 
 Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `git`, `jj`, and `sl` are reserved. An invalid id — or a second source offering an already-loaded id — is skipped with a startup notice.
 
+## Installing shared extensions
+
+Extensions are shared as plain git repositories. `hunk extension install` clones one into a managed directory under `~/.config/hunk/extensions/installed/`, verifies it contains an extension, installs its npm dependencies when it declares any, and records the source and commit:
+
+```bash
+hunk extension install acme/hunk-word-diff          # GitHub shorthand
+hunk extension install acme/hunk-word-diff@v1.2.0   # pin a tag, branch, or commit
+hunk extension install git:codeberg.org/acme/ext    # any host; https:// is assumed
+hunk extension install ~/dev/hunk-word-diff         # a local checkout, for testing
+```
+
+- `hunk extension list` shows every managed install with its version, commit, and source.
+- `hunk extension update [name]` re-clones one install (or all of them) from its recorded source; an `@ref` pin stays put until you re-install with a different one.
+- `hunk extension remove <name>` deletes the install and its record. Hand-copied extensions in `~/.config/hunk/extensions/` are never touched.
+
+Installing is the consent step: extensions run with your full user permissions, so a fresh install asks for confirmation (or takes `--yes`) after naming the repository. Only install repositories you trust. Managed installs then load through the global group above — same precedence, no further prompts.
+
+Find community extensions by browsing the [`hunk-extension` topic on GitHub](https://github.com/topics/hunk-extension).
+
+## Publishing an extension
+
+A publishable extension repository is the folder-extension layout at the repository root — `package.json` with a `hunk` field (or an `index.*` entry), code, README. To share one:
+
+1. Fill in `package.json`'s `name`, `version`, and `description`, and declare `"hunk": {"apiVersion": N}` if you rely on recent API surface — an older Hunk then refuses the install cleanly instead of failing mid-load.
+2. Keep `dependencies` real: they are installed into the extension's own `node_modules` at install time. `react`, `@opentui/*`, and `hunkdiff/extension` come from the host at runtime and belong in `devDependencies`.
+3. Tag releases so users can pin with `@v1.2.0`.
+4. Push to any git host and add the **`hunk-extension`** GitHub topic so your repository appears in the [community listing](https://github.com/topics/hunk-extension).
+
+Test the exact layout users will get with `hunk extension install /path/to/checkout`, or load it for one run with `hunk diff --extension /path/to/checkout`.
+
 ## Bundled extensions
 
 Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:

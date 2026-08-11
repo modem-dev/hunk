@@ -239,9 +239,22 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
+Extensions shared as git repositories install straight from their host, and a
+`hunk-extension` GitHub topic marks community ones:
+
+```bash
+hunk extension install acme/hunk-word-diff@v1.2.0   # or git:host/path, a URL, a local path
+hunk extension list                                 # then update [name] / remove <name>
+```
+
+Browse community extensions at
+[github.com/topics/hunk-extension](https://github.com/topics/hunk-extension);
+publish yours by pushing the extension to a repository root and adding that
+topic.
+
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
-and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
-include [review triage](examples/extensions/review-triage/), an optional
+publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
+Installable examples include [review triage](examples/extensions/review-triage/), an optional
 [rendered Markdown file view](examples/extensions/rendered-markdown/), and a
 [Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 
