@@ -44,13 +44,21 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
+Or with [mise](https://mise.jdx.dev) (macOS and Linux):
+
+```bash
+mise use -g hunk
+```
+
 Requirements:
 
-- Node.js 18+
 - macOS, Linux, or Windows
+- Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
+
+> Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
 ## Quick start
 
