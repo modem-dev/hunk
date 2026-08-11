@@ -11,6 +11,7 @@ interface GenerationAction {
   expectedGeneration: ReviewDocumentGeneration;
 }
 
+/** Internal reducer vocabulary produced by lifecycle code and semantic intent plans. */
 export type ReviewAction =
   | { type: "document/reconcile"; document: ReviewDocumentV1; expectedGeneration: string }
   | {
