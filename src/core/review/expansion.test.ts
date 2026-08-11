@@ -82,4 +82,47 @@ describe("reviewGapAddress", () => {
       expect(reviewGapAddress(file, malformed)).toBeUndefined();
     }
   });
+
+  test("rejects fabricated, partial, non-final, and asymmetric trailing gaps", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
+    const after = [...lines];
+    after[8] = "first change";
+    after[28] = "second change";
+    const file = projectReviewDocument(
+      {
+        id: "invalid-gap-test",
+        title: "invalid gaps",
+        sourceLabel: "fixture",
+        files: [
+          createTestDiffFile({
+            id: "invalid-gap-file",
+            path: "invalid-gap.ts",
+            before: `${lines.join("\n")}\n`,
+            after: `${after.join("\n")}\n`,
+            context: 2,
+          }),
+        ],
+      },
+      { generation: "generation:invalid-gaps" },
+    ).document.files[0]!;
+
+    expect(file.hunks.length).toBe(2);
+    expect(reviewGapAddress(file, "trailing:0")).toBeUndefined();
+    expect(
+      reviewGapAddress({ ...file, flags: { ...file.flags, partial: true } }, "trailing:1"),
+    ).toBeUndefined();
+    expect(
+      reviewGapAddress({ ...file, additionLines: file.additionLines.slice(0, -1) }, "trailing:1"),
+    ).toBeUndefined();
+    expect(
+      reviewGapAddress(
+        {
+          ...file,
+          hunks: [{ ...file.hunks[0]!, collapsedBefore: 0 }, ...file.hunks.slice(1)],
+        },
+        "before:0",
+      ),
+    ).toBeUndefined();
+    expect(reviewGapAddress(file, `before:${file.hunks.length}`)).toBeUndefined();
+  });
 });

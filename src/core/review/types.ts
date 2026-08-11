@@ -162,8 +162,9 @@ export interface ReviewDocumentV1 {
   resources: ReviewResourceDescriptorV1[];
 }
 
-/** Serialization-safe document plus materialized generation resources. */
+/** Serialization-safe document plus eagerly or lazily materialized generation resources. */
 export interface ReviewDocumentProjectionV1 {
   document: ReviewDocumentV1;
+  /** Materialized bytes by resource id; canonical files are intentionally absent until read. */
   resourceContents: Record<string, string>;
 }

@@ -970,7 +970,7 @@ describe("ReviewStore", () => {
       expectedGeneration: document.generation,
       draft: structuredClone(draft),
     });
-    expect(store.getSnapshot().stateRevision).toBe(1);
+    expect(store.getSnapshot().stateRevision).toBe(0);
     store.dispatch({
       type: "selection/set-line",
       fileKey: document.files[0]!.key,
@@ -988,7 +988,81 @@ describe("ReviewStore", () => {
       contextDigest: "digest:second",
     });
     expect(store.getSnapshot().selection.contextDigest).toBe("digest:second");
-    expect(store.getSnapshot().stateRevision).toBe(3);
+    expect(store.getSnapshot().stateRevision).toBe(2);
+  });
+
+  test("notifies local draft listeners without validation or published revision churn", () => {
+    const document = documentFor([file("alpha", "alpha.ts", 1)], "generation:one");
+    const validated: number[] = [];
+    const observed: string[] = [];
+    const published: number[] = [];
+    const store = createReviewStore(document, {
+      validateNextSnapshot(next) {
+        validated.push(next.stateRevision);
+      },
+    });
+    store.subscribe(() => observed.push(store.getSnapshot().draftNote?.body ?? "cancelled"));
+    store.subscribePublished(() => published.push(store.getSnapshot().stateRevision));
+    const draft = {
+      id: "draft:one",
+      fileKey: document.files[0]!.key,
+      hunkIndex: 0,
+      side: "new" as const,
+      line: 1,
+      body: "",
+    };
+
+    const initial = store.getSnapshot();
+    store.dispatch({ type: "draft/start", expectedGeneration: document.generation, draft });
+    const started = store.getSnapshot();
+    store.dispatch({
+      type: "draft/update",
+      expectedGeneration: document.generation,
+      body: "draft text",
+    });
+    store.dispatch({ type: "draft/cancel", expectedGeneration: document.generation });
+
+    expect(started).not.toBe(initial);
+    expect(store.getSnapshot().stateRevision).toBe(0);
+    expect(observed).toEqual(["", "draft text", "cancelled"]);
+    expect(validated).toEqual([]);
+    expect(published).toEqual([]);
+  });
+
+  test("publishes draft save as one validated semantic revision", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const document = documentFor([alpha], "generation:one");
+    const validated: number[] = [];
+    const published: number[] = [];
+    const store = createReviewStore(document, {
+      validateNextSnapshot(next) {
+        validated.push(next.stateRevision);
+      },
+    });
+    store.subscribePublished(() => published.push(store.getSnapshot().stateRevision));
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: document.generation,
+      draft: {
+        id: "draft:one",
+        fileKey: document.files[0]!.key,
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+        body: "saved text",
+      },
+    });
+    const user = storedNote(document, alpha, "user:saved");
+    user.note.summary = "saved text";
+    store.dispatch({ type: "draft/save", expectedGeneration: document.generation, note: user });
+
+    expect(store.getSnapshot()).toMatchObject({
+      stateRevision: 1,
+      draftNote: null,
+      userNotes: [{ note: { id: "user:saved", summary: "saved text" } }],
+    });
+    expect(validated).toEqual([1]);
+    expect(published).toEqual([1]);
   });
 
   test("rejects stale generation note and expansion actions", () => {

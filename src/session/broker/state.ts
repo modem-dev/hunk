@@ -111,6 +111,13 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     for (const observer of Array.from(this.observers)) observer(event);
   }
 
+  /** Allow a same-revision producer refresh to change only terminal renderer metadata. */
+  private sameRevisionSnapshotIsSafe(current: HunkSessionSnapshot, next: HunkSessionSnapshot) {
+    const { noteMarkupWidth: _currentWidth, ...currentShared } = current.state;
+    const { noteMarkupWidth: _nextWidth, ...nextShared } = next.state;
+    return JSON.stringify(currentShared) === JSON.stringify(nextShared);
+  }
+
   /** Validate state references against the exact immutable manifest generation. */
   private snapshotMatchesRegistration(
     registration: HunkSessionRegistration,
@@ -180,10 +187,16 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     const previousSocket = this.socketBySessionId.get(registration.sessionId);
     if (previous && previous.info.documentGeneration === registration.info.documentGeneration) {
       const currentRevision = this.stateRevisions.get(registration.sessionId);
+      const currentSnapshot = this.reviewSnapshots.get(registration.sessionId);
+      const sameRevision =
+        currentRevision !== undefined && snapshot.state.stateRevision === currentRevision;
       if (
         JSON.stringify(previous.info.reviewManifest) !==
           JSON.stringify(registration.info.reviewManifest) ||
-        (currentRevision !== undefined && snapshot.state.stateRevision < currentRevision)
+        (currentRevision !== undefined && snapshot.state.stateRevision < currentRevision) ||
+        (sameRevision &&
+          currentSnapshot &&
+          !this.sameRevisionSnapshotIsSafe(currentSnapshot, snapshot))
       ) {
         return false;
       }
@@ -235,10 +248,16 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     }
     const snapshot = parseSessionSnapshot(snapshotInput);
     const currentRevision = this.stateRevisions.get(sessionId);
+    const currentSnapshot = this.reviewSnapshots.get(sessionId);
+    const sameRevision =
+      currentRevision !== undefined && snapshot?.state.stateRevision === currentRevision;
     if (
       !snapshot ||
       !this.snapshotMatchesRegistration(registration, snapshot) ||
-      (currentRevision !== undefined && snapshot.state.stateRevision < currentRevision)
+      (currentRevision !== undefined && snapshot.state.stateRevision < currentRevision) ||
+      (sameRevision &&
+        currentSnapshot &&
+        !this.sameRevisionSnapshotIsSafe(currentSnapshot, snapshot))
     ) {
       return "invalid" as const;
     }
@@ -246,12 +265,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     if (result === "updated") {
       this.stateRevisions.set(sessionId, snapshot.state.stateRevision);
       this.reviewSnapshots.set(sessionId, snapshot);
-      this.emit({
-        type: "state-revision",
-        sessionId,
-        generation: snapshot.state.documentGeneration,
-        stateRevision: snapshot.state.stateRevision,
-      });
+      if (!sameRevision) {
+        this.emit({
+          type: "state-revision",
+          sessionId,
+          generation: snapshot.state.documentGeneration,
+          stateRevision: snapshot.state.stateRevision,
+        });
+      }
     }
     return result;
   }

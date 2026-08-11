@@ -114,6 +114,31 @@ describe("chunked review resources", () => {
     connected.runtime.dispose();
   });
 
+  test("reconstructs lazy canonical files once through verified bounded chunks", async () => {
+    const connected = connectRuntime(bootstrapWithPatch("@@ -1 +1 @@\n-old\n+new\n"));
+    const projection = connected.runtime.getSnapshot().projection;
+    const file = projection.document.files[0]!;
+    expect(projection.resourceContents[file.canonicalResourceId]).toBeUndefined();
+
+    const first = await connected.state.getBrowserReviewResource(
+      connected.registration.sessionId,
+      projection.document.generation,
+      file.canonicalResourceId,
+    );
+    expect(JSON.parse(Buffer.from(first.bytes).toString("utf8"))).toEqual(file);
+    expect(projection.resourceContents[file.canonicalResourceId]).toBeDefined();
+    const reads = connected.commandCounts.get("read_review_resource");
+
+    const second = await connected.state.getBrowserReviewResource(
+      connected.registration.sessionId,
+      projection.document.generation,
+      file.canonicalResourceId,
+    );
+    expect(second.bytes).toEqual(first.bytes);
+    expect(connected.commandCounts.get("read_review_resource")).toBe(reads);
+    connected.runtime.dispose();
+  });
+
   test("never returns a retired generation from a cache-hit replacement race", async () => {
     const cache = new RacingReviewResourceCache();
     const state = new HunkSessionBrokerState(cache);

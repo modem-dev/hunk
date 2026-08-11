@@ -53,6 +53,20 @@ function createTwoHunkFile() {
   return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
 }
 
+/** Build one file with three separated hunks for counted navigation coverage. */
+function createThreeHunkFile() {
+  const beforeLines = Array.from(
+    { length: 30 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[0] = "export const line1 = 100;";
+  afterLines[14] = "export const line15 = 1500;";
+  afterLines[29] = "export const line30 = 3000;";
+
+  return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
+}
+
 /** Build the same file id with only one hunk so stale hunk indices must clamp. */
 function createSingleHunkFile() {
   const beforeLines = Array.from(
@@ -618,6 +632,34 @@ describe("useReviewController", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("moves across several files with one semantic selection and reveal", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+      createDiffFile("gamma", "gamma.ts", "export const gamma = 1;\n", "export const gamma = 2;\n"),
+      createDiffFile("delta", "delta.ts", "export const delta = 1;\n", "export const delta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      const initialToken = controller.store.getSnapshot().reveal.fileTopToken;
+      await act(async () => controller.moveToFile(3));
+      await flush(setup);
+
+      const next = expectValue(controllerRef.current);
+      expect(next.selectedFile?.path).toBe("delta.ts");
+      const state = next.store.getSnapshot();
+      expect(state.document.files.find((file) => file.key === state.selection.fileKey)?.path).toBe(
+        "delta.ts",
+      );
+      expect(state.selection.hunkIndex).toBe(0);
+      expect(state.reveal.fileTopToken).toBe(initialToken + 1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -1394,6 +1436,72 @@ describe("useReviewController", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("moves several rendered lines with one semantic selection and reveal", async () => {
+    const file = createTwoHunkFile();
+    const expectedCursors = buildLineCursors(
+      [file],
+      [
+        measureDiffSectionGeometry(
+          file,
+          "stack",
+          true,
+          resolveTheme("github-dark-default", null),
+          [],
+          0,
+          true,
+          false,
+        ),
+      ],
+    );
+    const { controllerRef, setup } = await renderReviewController([file]);
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      const initial = expectValue(controller.lineCursor);
+      const initialIndex = expectedCursors.findIndex(
+        (cursor) => cursor.stableKey === initial.stableKey && cursor.fileId === initial.fileId,
+      );
+      const expected = expectValue(expectedCursors[initialIndex + 4]);
+      const initialToken = controller.store.getSnapshot().reveal.lineToken;
+      await act(async () => controller.moveLineCursor(4));
+      await flush(setup);
+
+      const next = expectValue(controllerRef.current);
+      expect(next.lineCursor).toEqual(expected);
+      const state = next.store.getSnapshot();
+      expect(state.selection).toMatchObject({
+        hunkIndex: expected.hunkIndex,
+        side: expected.target.side,
+        line: expected.target.line,
+      });
+      expect(state.reveal.lineToken).toBe(initialToken + 1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("moves across several hunks with one semantic selection and reveal", async () => {
+    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()]);
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.metadata.hunks).toHaveLength(3);
+      const initialToken = controller.store.getSnapshot().reveal.hunkToken;
+      await act(async () => controller.moveToHunk(2));
+      await flush(setup);
+
+      const next = expectValue(controllerRef.current);
+      expect(next.selectedHunkIndex).toBe(2);
+      expect(expectValue(next.lineCursor).hunkIndex).toBe(2);
+      expect(next.store.getSnapshot().selection.hunkIndex).toBe(2);
+      expect(next.store.getSnapshot().reveal.hunkToken).toBe(initialToken + 1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

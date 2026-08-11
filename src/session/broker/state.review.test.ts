@@ -65,6 +65,44 @@ describe("HunkSessionBrokerState review revisions", () => {
     ]);
   });
 
+  test("accepts renderer-only same-revision refreshes without semantic events", () => {
+    const state = new HunkSessionBrokerState();
+    const events: HunkSessionObserverEvent[] = [];
+    state.subscribeReviewEvents((event) => events.push(event));
+    const socket = { send: () => {} };
+    const registration = createTestSessionRegistration();
+    const snapshot = createTestSessionSnapshot();
+    expect(state.registerSession(socket, registration, snapshot)).toBe(true);
+
+    const rendererRefresh = structuredClone(snapshot);
+    rendererRefresh.state.noteMarkupWidth = 72;
+    expect(state.updateSnapshot(socket, registration.sessionId, rendererRefresh)).toBe("updated");
+    expect(events.map((event) => event.type)).toEqual(["registration", "state-revision"]);
+
+    const unsafeSameRevision = structuredClone(rendererRefresh);
+    unsafeSameRevision.state.review.filter = "silently changed";
+    expect(state.updateSnapshot(socket, registration.sessionId, unsafeSameRevision)).toBe(
+      "invalid",
+    );
+    expect(events.map((event) => event.type)).toEqual(["registration", "state-revision"]);
+  });
+
+  test("rejects semantic same-revision re-registration but permits renderer metadata", () => {
+    const state = new HunkSessionBrokerState();
+    const socket = { send: () => {} };
+    const registration = createTestSessionRegistration();
+    const snapshot = createTestSessionSnapshot();
+    expect(state.registerSession(socket, registration, snapshot)).toBe(true);
+
+    const rendererRefresh = structuredClone(snapshot);
+    rendererRefresh.state.noteMarkupWidth = 88;
+    expect(state.registerSession(socket, registration, rendererRefresh)).toBe(true);
+
+    const unsafeSameRevision = structuredClone(rendererRefresh);
+    unsafeSameRevision.state.review.filter = "silently changed during registration";
+    expect(state.registerSession(socket, registration, unsafeSameRevision)).toBe(false);
+  });
+
   test("releases in-flight resource reservations after producer disconnect", async () => {
     const cache = new ReviewResourceCache();
     const state = new HunkSessionBrokerState(cache);
