@@ -47,6 +47,16 @@ hunk session comment add --repo . --file src/App.tsx --new-line 42 --summary "Ch
 
 Agent notes remain spatially attached to the code they explain. Use `{` and `}` to move between annotated hunks while keeping the full changeset visible.
 
+## Give the agent the docs
+
+These docs are published as plain Markdown so an agent can read them without scraping HTML:
+
+- [/llms.txt](https://hunk.dev/llms.txt) — index of every page, for pulling only what is needed.
+- [/llms-small.txt](https://hunk.dev/llms-small.txt) — compact corpus for tight context budgets.
+- [/llms-full.txt](https://hunk.dev/llms-full.txt) — the complete docs in one file, around 130KB.
+
+Any docs page URL also returns its Markdown source with `.md` appended, so `https://hunk.dev/docs/reference/cli.md` is the CLI reference as the agent should read it.
+
 ## Keep control
 
 The agent can guide the visible selection and add agent-authored notes, but you remain in the review stream and can navigate normally. Ask it to summarize when finished, then use `{` and `}` to walk annotated hunks.
