@@ -5,6 +5,7 @@ import {
   assertBrowserAssetsCurrent,
   assertBrowserBundleCurrent,
   buildBrowserAssetBundle,
+  canRebuildCanonicalBrowserBundle,
   generateBrowserAssets,
 } from "./browser-assets";
 
@@ -14,6 +15,11 @@ if (process.argv.includes("--check")) {
   assertBrowserAssetsCurrent(repoRoot);
   console.log("Verified generated browser assets are current.");
 } else {
+  if (!canRebuildCanonicalBrowserBundle()) {
+    throw new Error(
+      "Browser assets must be generated on macOS, Linux, or WSL because Bun's Windows bundle output is host-dependent.",
+    );
+  }
   await buildBrowserAssetBundle(repoRoot);
   console.log(`Generated ${generateBrowserAssets(repoRoot)}.`);
 }

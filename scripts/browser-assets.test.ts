@@ -6,6 +6,7 @@ import { EMBEDDED_BROWSER_ASSETS } from "../src/browser/generated/assets";
 import {
   assertBrowserAssetsCurrent,
   assertBrowserBundleCurrent,
+  canRebuildCanonicalBrowserBundle,
   generateBrowserAssets,
   renderBrowserAssetModule,
 } from "./browser-assets";
@@ -35,6 +36,18 @@ describe("embedded browser assets", () => {
     );
     expect(server).not.toContain("import { EMBEDDED_BROWSER_ASSETS }");
     expect(server).toContain('import("../../browser/generated/assets")');
+  });
+
+  test("uses canonical rebuild checks on Unix and integrity-only checks on Windows", async () => {
+    const rebuild = async () => {
+      throw new Error("Windows must not invoke the host-dependent bundler.");
+    };
+
+    expect(canRebuildCanonicalBrowserBundle("linux")).toBe(true);
+    expect(canRebuildCanonicalBrowserBundle("darwin")).toBe(true);
+    expect(canRebuildCanonicalBrowserBundle("win32")).toBe(false);
+    await expect(assertBrowserBundleCurrent(repoRoot, rebuild, "win32")).resolves.toBeUndefined();
+    expect(() => assertBrowserAssetsCurrent(repoRoot)).not.toThrow();
   });
 
   test("rejects a rebuild changed by transitive shared input", async () => {

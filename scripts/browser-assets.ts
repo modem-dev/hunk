@@ -4,6 +4,11 @@ import path from "node:path";
 
 const ASSET_NAMES = ["review.html", "bootstrap.js", "review.css"] as const;
 
+/** Bun's minified browser output is byte-stable on Unix but currently host-dependent on Windows. */
+export function canRebuildCanonicalBrowserBundle(platform = process.platform) {
+  return platform !== "win32";
+}
+
 /** Bundle every transitive React/Pierre/shared source into one deterministic offline script. */
 export async function buildBrowserAssetBundle(repoRoot: string, write = true) {
   const result = await Bun.build({
@@ -29,12 +34,16 @@ export async function buildBrowserAssetBundle(repoRoot: string, write = true) {
 export async function assertBrowserBundleCurrent(
   repoRoot: string,
   buildBundle: (root: string, write: boolean) => Promise<string> = buildBrowserAssetBundle,
+  platform = process.platform,
 ) {
   const bundlePath = path.join(repoRoot, "src", "browser", "assets", "bootstrap.js");
-  if (
-    !existsSync(bundlePath) ||
-    readFileSync(bundlePath, "utf8") !== (await buildBundle(repoRoot, false))
-  ) {
+  if (!existsSync(bundlePath)) {
+    throw new Error("Embedded browser bundle is stale. Run `bun run generate:browser-assets`.");
+  }
+  // Windows verifies the checked-in module and content digest below, while canonical Unix CI
+  // performs the transitive rebuild check that Bun cannot currently reproduce byte-for-byte.
+  if (!canRebuildCanonicalBrowserBundle(platform)) return;
+  if (readFileSync(bundlePath, "utf8") !== (await buildBundle(repoRoot, false))) {
     throw new Error("Embedded browser bundle is stale. Run `bun run generate:browser-assets`.");
   }
 }
