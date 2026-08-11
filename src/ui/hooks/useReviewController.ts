@@ -231,7 +231,6 @@ export function useReviewController({
   dispatchReviewIntent,
   lineCursors = EMPTY_LINE_CURSORS,
   onMutationError,
-  toggleSourceGap,
 }: {
   files: DiffFile[];
   reviewStore: ReviewStore;
@@ -244,8 +243,6 @@ export function useReviewController({
   lineCursors?: LineCursor[];
   /** Surface a rejected authoritative mutation without discarding local draft state. */
   onMutationError?: (error: unknown) => void;
-  /** Runtime-owned generation-safe source expansion adapter. */
-  toggleSourceGap?: (fileKey: string, gapId: string) => void;
 }): ReviewController {
   const store = reviewStore;
   const document = reviewStore.getSnapshot().document;
@@ -268,11 +265,44 @@ export function useReviewController({
   const renderedLineRevealTokenRef = useRef(0);
   const previousLineCursorsRef = useRef(lineCursors);
   const pendingLineCursorRef = useRef<
-    | { kind: "reveal"; fileId: string; gapKey: string }
-    | { kind: "restore"; cursor: LineCursor }
+    | {
+        kind: "reveal";
+        fileId: string;
+        fileKey: string;
+        gapKey: string;
+        expectedExpanded: true;
+      }
+    | {
+        kind: "restore";
+        fileId: string;
+        fileKey: string;
+        gapKey: string;
+        expectedExpanded: false;
+        cursor: LineCursor;
+      }
     | null
   >(null);
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
+
+  useEffect(
+    () =>
+      store.subscribePublished(() => {
+        const pending = pendingLineCursorRef.current;
+        if (!pending) return;
+        const gap = store
+          .getSnapshot()
+          .expandedGaps.find(
+            (candidate) =>
+              candidate.fileKey === pending.fileKey && candidate.gapId === pending.gapKey,
+          );
+        // Observe every publication synchronously so a batched opposite/repeated transition
+        // cannot revive renderer-local work from an earlier expansion intent.
+        if (!gap || gap.expanded !== pending.expectedExpanded) {
+          pendingLineCursorRef.current = null;
+        }
+      }),
+    [store],
+  );
   const scrollToNote = reviewSnapshot.reveal.scrollToNote;
   const keyByFileId = useMemo(
     () => new Map(document.files.map((file) => [file.runtimeId, file.key])),
@@ -672,9 +702,11 @@ export function useReviewController({
     (fileId: string, gapKey: string) => {
       const file = allFiles.find((entry) => entry.id === fileId);
       const fileKey = keyByFileId.get(fileId);
-      if (!file?.sourceFetcher || !fileKey || !toggleSourceGap) return;
+      if (!file?.sourceFetcher || !fileKey) return;
       const restorePointKey = `${fileId}:${gapKey}`;
+      const hadRestorePoint = lineCursorBeforeExpandRef.current.has(restorePointKey);
       const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+      const previousPending = pendingLineCursorRef.current;
       const expanding = !store
         .getSnapshot()
         .expandedGaps.some(
@@ -684,16 +716,37 @@ export function useReviewController({
         if (lineCursorRef.current) {
           lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
         }
-        pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
+        pendingLineCursorRef.current = {
+          kind: "reveal",
+          fileId,
+          fileKey,
+          gapKey,
+          expectedExpanded: true,
+        };
       } else {
         lineCursorBeforeExpandRef.current.delete(restorePointKey);
         pendingLineCursorRef.current = restorePoint
-          ? { kind: "restore", cursor: restorePoint }
+          ? {
+              kind: "restore",
+              fileId,
+              fileKey,
+              gapKey,
+              expectedExpanded: false,
+              cursor: restorePoint,
+            }
           : null;
       }
-      toggleSourceGap(fileKey, gapKey);
+      const result = dispatchSemanticIntent({ type: "expansion/toggle", fileKey, gapId: gapKey });
+      if (!result) {
+        pendingLineCursorRef.current = previousPending;
+        if (hadRestorePoint && restorePoint) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, restorePoint);
+        } else {
+          lineCursorBeforeExpandRef.current.delete(restorePointKey);
+        }
+      }
     },
-    [allFiles, keyByFileId, store, toggleSourceGap],
+    [allFiles, dispatchSemanticIntent, keyByFileId, store],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */

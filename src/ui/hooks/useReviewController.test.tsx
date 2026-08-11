@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
-import { reviewGapAddress } from "../../core/review/expansion";
 import { reviewDigest } from "../../core/review/identity";
 import { planReviewIntent, type ReviewIntent } from "../../core/review/intents";
 import { projectReviewNote } from "../../core/review/notes";
@@ -158,8 +157,13 @@ function expectValue<T>(value: T): NonNullable<T> {
   return value as NonNullable<T>;
 }
 
-/** Execute controller intents through the same pure plan and transactional store seam as runtime. */
-function useTestReviewIntentDispatcher(store: ReviewStore): ReviewIntentDispatcher {
+/** Execute controller intents through the planner/store seam and materialize test source effects. */
+function useTestReviewIntentDispatcher(
+  store: ReviewStore,
+  files: DiffFile[],
+  activeStore: { current: ReviewStore },
+  sourceLoads: { current: Map<string, Promise<void>> },
+): ReviewIntentDispatcher {
   const userNoteSequence = useRef(0);
   return useCallback(
     (intent: ReviewIntent) => {
@@ -172,10 +176,69 @@ function useTestReviewIntentDispatcher(store: ReviewStore): ReviewIntentDispatch
           ? {}
           : { noteId: `user:test-${pendingSequence}`, timestamp }),
         ...(intent.type === "note/update-user" ? { timestamp } : {}),
+        ...(intent.type === "expansion/toggle" ? { sourceFetcherIdentity: "fetcher:test" } : {}),
       });
       const prepared = prepareReviewState(before, plan.actions);
       const state = store.commitPrepared(before, prepared);
       if (pendingSequence !== undefined) userNoteSequence.current = pendingSequence;
+      for (const effect of plan.effects ?? []) {
+        const semantic = state.document.files.find((file) => file.key === effect.fileKey);
+        const file = semantic
+          ? files.find((candidate) => candidate.id === semantic.runtimeId)
+          : undefined;
+        const fetcher = file?.sourceFetcher;
+        const source = state.document.resources.find(
+          (resource) => resource.id === effect.resourceId && resource.kind === "source",
+        );
+        if (!file || !fetcher || !source || source.kind !== "source") continue;
+        const loadKey = `${effect.generation}:${effect.fileKey}:${effect.side}`;
+        if (sourceLoads.current.has(loadKey)) continue;
+        const load = fetcher
+          .getFullText(effect.side)
+          .then(
+            (text) => {
+              if (activeStore.current !== store) return;
+              if (text !== null) {
+                source.byteLength = Buffer.byteLength(text, "utf8");
+                source.digest = reviewDigest(text);
+              }
+              store.dispatch({
+                type: "expansion/set-source-status",
+                expectedGeneration: effect.generation,
+                fileKey: effect.fileKey,
+                status: text === null ? { kind: "error" } : { kind: "loaded", text },
+              });
+            },
+            (error: unknown) => {
+              if (activeStore.current !== store) {
+                console.error(
+                  `hunk: ignored stale ${effect.side} source load failure for ${file.path} (${file.id}).`,
+                  error,
+                );
+                return;
+              }
+              if (!(error instanceof SourceTextTooLargeError)) {
+                console.error(
+                  `hunk: failed to load ${effect.side} source for ${file.path} (${file.id}).`,
+                  error,
+                );
+              }
+              store.dispatch({
+                type: "expansion/set-source-status",
+                expectedGeneration: effect.generation,
+                fileKey: effect.fileKey,
+                status: {
+                  kind: "error",
+                  ...(error instanceof SourceTextTooLargeError
+                    ? { reason: "too-large" as const }
+                    : {}),
+                },
+              });
+            },
+          )
+          .finally(() => sourceLoads.current.delete(loadKey));
+        sourceLoads.current.set(loadKey, load);
+      }
       const createdId =
         plan.outcome?.type === "note/created" ? plan.outcome.note.note.id : undefined;
       const createdNote = createdId
@@ -183,7 +246,7 @@ function useTestReviewIntentDispatcher(store: ReviewStore): ReviewIntentDispatch
         : undefined;
       return { state, ...(createdNote ? { createdNote } : {}) };
     },
-    [store],
+    [activeStore, files, sourceLoads, store],
   );
 }
 
@@ -191,12 +254,14 @@ function ReviewControllerHarness({
   initialFiles,
   onController,
   onMutationError,
+  onReviewIntent,
   onSetFiles,
   validateNextSnapshot,
 }: {
   initialFiles: DiffFile[];
   onController: (controller: ReviewController) => void;
   onMutationError?: (error: unknown) => void;
+  onReviewIntent?: (intent: ReviewIntent) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
   validateNextSnapshot?: ReviewStoreOptions["validateNextSnapshot"];
 }) {
@@ -209,97 +274,14 @@ function ReviewControllerHarness({
   const activeStore = useRef(store);
   activeStore.current = store;
   const sourceLoads = useRef(new Map<string, Promise<void>>());
-  const toggleSourceGap = useCallback(
-    (fileKey: string, gapId: string) => {
-      const snapshot = store.getSnapshot();
-      const semantic = snapshot.document.files.find((file) => file.key === fileKey);
-      const file = semantic
-        ? files.find((candidate) => candidate.id === semantic.runtimeId)
-        : undefined;
-      const side = file?.metadata.type === "deleted" ? "old" : "new";
-      const sourceId = semantic?.sourceResourceIds[side];
-      const source = snapshot.document.resources.find(
-        (resource) => resource.id === sourceId && resource.kind === "source",
-      );
-      const address = semantic ? reviewGapAddress(semantic, gapId) : undefined;
-      if (!semantic || !file?.sourceFetcher || !source || source.kind !== "source" || !address)
-        return;
-      const expanded = !snapshot.expandedGaps.some(
-        (gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded,
-      );
-      store.dispatch({
-        type: "expansion/toggle",
-        expectedGeneration: snapshot.documentGeneration,
-        gap: {
-          fileKey,
-          gapId,
-          side,
-          ...address,
-          sourceIdentity: source.sourceIdentity,
-          expanded,
-        },
-      });
-      if (!expanded) return;
-      const status = store.getSnapshot().sourceStatusByFileKey[fileKey]?.kind;
-      if (status === "loaded" || status === "loading") return;
-      store.dispatch({
-        type: "expansion/set-source-status",
-        expectedGeneration: snapshot.documentGeneration,
-        fileKey,
-        status: { kind: "loading" },
-      });
-      const loadKey = `${snapshot.documentGeneration}:${fileKey}:${side}`;
-      if (sourceLoads.current.has(loadKey)) return;
-      const fetcher = file.sourceFetcher;
-      const load = fetcher
-        .getFullText(side)
-        .then(
-          (text) => {
-            if (activeStore.current !== store) return;
-            if (text !== null) {
-              source.byteLength = Buffer.byteLength(text, "utf8");
-              source.digest = reviewDigest(text);
-            }
-            store.dispatch({
-              type: "expansion/set-source-status",
-              expectedGeneration: snapshot.documentGeneration,
-              fileKey,
-              status: text === null ? { kind: "error" } : { kind: "loaded", text },
-            });
-          },
-          (error: unknown) => {
-            if (activeStore.current !== store) {
-              console.error(
-                `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
-                error,
-              );
-              return;
-            }
-            if (!(error instanceof SourceTextTooLargeError)) {
-              console.error(
-                `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
-                error,
-              );
-            }
-            store.dispatch({
-              type: "expansion/set-source-status",
-              expectedGeneration: snapshot.documentGeneration,
-              fileKey,
-              status: {
-                kind: "error",
-                ...(error instanceof SourceTextTooLargeError
-                  ? { reason: "too-large" as const }
-                  : {}),
-              },
-            });
-          },
-        )
-        .finally(() => sourceLoads.current.delete(loadKey));
-      sourceLoads.current.set(loadKey, load);
+  const executeReviewIntent = useTestReviewIntentDispatcher(store, files, activeStore, sourceLoads);
+  const dispatchReviewIntent = useCallback(
+    (intent: ReviewIntent) => {
+      onReviewIntent?.(intent);
+      return executeReviewIntent(intent);
     },
-    [files, store],
+    [executeReviewIntent, onReviewIntent],
   );
-  const dispatchReviewIntent = useTestReviewIntentDispatcher(store);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const controller = useReviewController({
     files,
@@ -307,7 +289,6 @@ function ReviewControllerHarness({
     dispatchReviewIntent,
     lineCursors,
     onMutationError,
-    toggleSourceGap,
   });
   const visibleFiles = controller.visibleFiles;
   const { expandedGapsByFileId, sourceStatusByFileId } = controller;
@@ -359,10 +340,12 @@ async function renderReviewController(
   initialFiles: DiffFile[],
   {
     onMutationError,
+    onReviewIntent,
     strictMode = false,
     validateNextSnapshot,
   }: {
     onMutationError?: (error: unknown) => void;
+    onReviewIntent?: (intent: ReviewIntent) => void;
     strictMode?: boolean;
     validateNextSnapshot?: ReviewStoreOptions["validateNextSnapshot"];
   } = {},
@@ -376,6 +359,7 @@ async function renderReviewController(
         controllerRef.current = nextController;
       }}
       onMutationError={onMutationError}
+      onReviewIntent={onReviewIntent}
       onSetFiles={(nextSetFiles) => {
         setFilesRef.current = nextSetFiles;
       }}
@@ -902,9 +886,11 @@ describe("useReviewController", () => {
       side === "new" ? "alpha\nbeta\ngamma\n" : null,
     );
 
-    const { controllerRef, setup } = await renderReviewController([
-      createExpandableAlphaFile(fakeFetcher),
-    ]);
+    const intents: ReviewIntent[] = [];
+    const { controllerRef, setup } = await renderReviewController(
+      [createExpandableAlphaFile(fakeFetcher)],
+      { onReviewIntent: (intent) => intents.push(intent) },
+    );
 
     try {
       await flush(setup);
@@ -922,6 +908,11 @@ describe("useReviewController", () => {
         expect(status.text).toBe("alpha\nbeta\ngamma\n");
       }
       expect(fakeFetcher.calls.length).toBeGreaterThanOrEqual(1);
+      expect(intents[0]).toEqual({
+        type: "expansion/toggle",
+        fileKey: expect.any(String),
+        gapId: "before:0",
+      });
 
       await act(async () => {
         expectValue(controllerRef.current).toggleGap("alpha", "before:0");
@@ -930,6 +921,11 @@ describe("useReviewController", () => {
 
       const reCollapsed = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
       expect(reCollapsed?.has("before:0")).toBe(false);
+      expect(intents.at(-1)).toEqual({
+        type: "expansion/toggle",
+        fileKey: expect.any(String),
+        gapId: "before:0",
+      });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1046,17 +1042,16 @@ describe("useReviewController", () => {
       const expandedCursor = expectValue(controller.lineCursor);
       expect(expandedCursor).toMatchObject({ hunkIndex: 1, expandedGapKey: "before:1" });
       const expandedState = controller.store.getSnapshot();
-      const gap = expandedState.expandedGaps.find(
-        (candidate) =>
-          candidate.fileKey === expandedState.selection.fileKey && candidate.gapId === "before:1",
-      )!;
-
       await act(async () => {
-        controller.store.dispatch({
+        const plan = planReviewIntent(expandedState, {
           type: "expansion/toggle",
-          expectedGeneration: expandedState.documentGeneration,
-          gap: { ...gap, expanded: false },
+          fileKey: expandedState.selection.fileKey!,
+          gapId: "before:1",
         });
+        controller.store.commitPrepared(
+          expandedState,
+          prepareReviewState(expandedState, plan.actions),
+        );
       });
       await flush(setup);
 
@@ -1066,6 +1061,13 @@ describe("useReviewController", () => {
       expect(collapsedCursor.hunkIndex).toBe(1);
       expect(collapsedCursor.expandedGapKey).toBeUndefined();
       expect(collapsedCursor.stableKey).not.toBe(expandedCursor.stableKey);
+      expect(controller.store.getSnapshot().selection).toMatchObject({
+        fileKey: expandedState.selection.fileKey,
+        hunkIndex: 1,
+        side: collapsedCursor.target.side,
+        line: collapsedCursor.target.line,
+        contextDigest: expect.any(String),
+      });
 
       await act(async () => controller.moveLineCursor(1));
       await flush(setup);
@@ -1196,6 +1198,73 @@ describe("useReviewController", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("cancels a stale local reveal across an externally batched collapse and re-expand", async () => {
+    const deferred = createTestDeferred<string | null>();
+    const sourceFetcher = createTestSourceFetcher(() => deferred.promise);
+    const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    sourceLines[9] = "line 10 changed";
+    sourceLines[39] = "line 40 changed";
+    const { controllerRef, setup } = await renderReviewController([
+      createTwoGapFile(sourceFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:1");
+      });
+      await flush(setup);
+      const loading = expectValue(controllerRef.current).store.getSnapshot();
+      expect(loading.sourceStatusByFileKey[loading.selection.fileKey!]).toEqual({
+        kind: "loading",
+      });
+
+      await act(async () => {
+        const store = expectValue(controllerRef.current).store;
+        const expanded = store.getSnapshot();
+        const collapse = planReviewIntent(expanded, {
+          type: "expansion/toggle",
+          fileKey: expanded.selection.fileKey!,
+          gapId: "before:1",
+        });
+        store.commitPrepared(expanded, prepareReviewState(expanded, collapse.actions));
+
+        const collapsed = store.getSnapshot();
+        const reexpand = planReviewIntent(collapsed, {
+          type: "expansion/toggle",
+          fileKey: collapsed.selection.fileKey!,
+          gapId: "before:1",
+        });
+        store.commitPrepared(collapsed, prepareReviewState(collapsed, reexpand.actions));
+
+        const reexpanded = store.getSnapshot();
+        const semantic = reexpanded.document.files[0]!;
+        const hunk = semantic.hunks[0]!;
+        const externalSelection = planReviewIntent(reexpanded, {
+          type: "selection/set-line",
+          fileKey: semantic.key,
+          hunkIndex: 0,
+          side: "new",
+          line: hunk.additionStart,
+        });
+        store.commitPrepared(reexpanded, prepareReviewState(reexpanded, externalSelection.actions));
+      });
+      await flush(setup);
+
+      const externalSelection = expectValue(controllerRef.current).store.getSnapshot().selection;
+      expect(externalSelection).toMatchObject({ hunkIndex: 0, side: "new" });
+      deferred.resolve(lines(...sourceLines));
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.store.getSnapshot().selection).toEqual(externalSelection);
+      expect(controller.lineCursor).toMatchObject({ hunkIndex: 0 });
+      expect(controller.lineCursor?.expandedGapKey).toBeUndefined();
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

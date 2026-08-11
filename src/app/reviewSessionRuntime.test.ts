@@ -1255,12 +1255,27 @@ describe("ReviewSessionRuntime", () => {
     });
     const runtime = createReviewSessionRuntime(bootstrap);
     const semantic = runtime.getSnapshot().projection.document.files[0]!;
+    const store = runtime.getSnapshot().store;
+    const initialRevision = store.getSnapshot().stateRevision;
+    let publications = 0;
+    const unsubscribe = store.subscribePublished(() => {
+      publications += 1;
+    });
     const first = runtime.toggleSourceGap(semantic.key, "before:0");
     expect(runtime.getSnapshot().store.getSnapshot().sourceStatusByFileKey[semantic.key]).toEqual({
       kind: "loading",
     });
-    const second = runtime.toggleSourceGap(semantic.key, "before:0");
+    expect(store.getSnapshot().stateRevision).toBe(initialRevision + 1);
+    expect(publications).toBe(1);
+    let secondSettled = false;
+    const second = runtime.toggleSourceGap(semantic.key, "trailing:0").then(() => {
+      secondSettled = true;
+    });
+    expect(store.getSnapshot().stateRevision).toBe(initialRevision + 2);
+    expect(publications).toBe(2);
     expect(reads).toBe(1);
+    await Bun.sleep(0);
+    expect(secondSettled).toBe(false);
     deferred.resolve(`${after.join("\n")}\n`);
     await Promise.all([first, second]);
     expect(
@@ -1268,6 +1283,257 @@ describe("ReviewSessionRuntime", () => {
     ).toBe("loaded");
     const sourceId = semantic.sourceResourceIds.new!;
     expect(runtime.getResource(sourceId)).toContain("changed");
+    expect(store.getSnapshot().stateRevision).toBe(initialRevision + 3);
+    expect(publications).toBe(3);
+    await runtime.toggleSourceGap(semantic.key, "before:0");
+    await runtime.toggleSourceGap(semantic.key, "before:0");
+    expect(reads).toBe(1);
+    expect(store.getSnapshot().sourceStatusByFileKey[semantic.key]?.kind).toBe("loaded");
+    unsubscribe();
+    runtime.dispose();
+  });
+
+  test("starts terminal expansion effects after one synchronous commit and browser waits for completion", async () => {
+    const source = createTestDeferred<string | null>();
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[15] = "changed";
+    const file = createTestDiffFile({
+      id: "effect-timing",
+      path: "effect-timing.ts",
+      before: lines(...beforeLines),
+      after: lines(...afterLines),
+      sourceFetcher: createTestSourceFetcher(() => source.promise),
+    });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [file] },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const store = runtime.getSnapshot().store;
+    const initial = store.getSnapshot();
+    const semantic = initial.document.files[0]!;
+
+    const terminal = runtime.executeReviewIntent({
+      type: "expansion/toggle",
+      fileKey: semantic.key,
+      gapId: "before:0",
+    });
+    expect(terminal.state.stateRevision).toBe(initial.stateRevision + 1);
+    expect(terminal.state.sourceStatusByFileKey[semantic.key]).toEqual({ kind: "loading" });
+    expect(terminal.effectCompletion).toBeInstanceOf(Promise);
+    source.resolve(lines(...afterLines));
+    await terminal.effectCompletion;
+    expect(store.getSnapshot().sourceStatusByFileKey[semantic.key]?.kind).toBe("loaded");
+
+    runtime.dispose();
+
+    const browserSource = createTestDeferred<string | null>();
+    const browserFetcher = createTestSourceFetcher(() => browserSource.promise);
+    const browserFile = createTestDiffFile({
+      id: "browser-effect-timing",
+      path: "browser-effect-timing.ts",
+      before: lines(...beforeLines),
+      after: lines(...afterLines),
+      sourceFetcher: browserFetcher,
+    });
+    const browserBootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [browserFile] },
+    });
+    const browserHost = createHeadlessHostClient(browserBootstrap);
+    const browserRuntime = createReviewSessionRuntime(browserBootstrap, {
+      hostClient: browserHost.hostClient,
+    });
+    const beforeBrowser = browserRuntime.getSnapshot().store.getSnapshot();
+    const browserSemantic = beforeBrowser.document.files[0]!;
+    let browserSettled = false;
+    const browser = browserHost
+      .dispatchCommand({
+        type: "command",
+        requestId: "browser-expansion-await",
+        command: "apply_review_action",
+        input: {
+          sessionId: browserHost.hostClient.getRegistration().sessionId,
+          generation: beforeBrowser.documentGeneration,
+          expectedStateRevision: beforeBrowser.stateRevision,
+          action: {
+            type: "expansion/toggle",
+            fileKey: browserSemantic.key,
+            gapId: "before:0",
+          },
+        },
+      })
+      .then((result) => {
+        browserSettled = true;
+        return result;
+      });
+    await Bun.sleep(0);
+    expect(browserSettled).toBe(false);
+    const loadingBrowser = browserRuntime.getSnapshot().store.getSnapshot();
+    expect(loadingBrowser.sourceStatusByFileKey[browserSemantic.key]).toEqual({ kind: "loading" });
+    let secondBrowserSettled = false;
+    const secondBrowser = browserHost
+      .dispatchCommand({
+        type: "command",
+        requestId: "browser-expansion-reuse-await",
+        command: "apply_review_action",
+        input: {
+          sessionId: browserHost.hostClient.getRegistration().sessionId,
+          generation: loadingBrowser.documentGeneration,
+          expectedStateRevision: loadingBrowser.stateRevision,
+          action: {
+            type: "expansion/toggle",
+            fileKey: browserSemantic.key,
+            gapId: "trailing:0",
+          },
+        },
+      })
+      .then((result) => {
+        secondBrowserSettled = true;
+        return result;
+      });
+    await Bun.sleep(0);
+    expect(secondBrowserSettled).toBe(false);
+    expect(browserFetcher.calls).toHaveLength(1);
+    browserSource.resolve(lines(...afterLines));
+    const [result, secondResult] = await Promise.all([browser, secondBrowser]);
+    expect(result).toMatchObject({
+      kind: "review-action",
+      state: { sourceStatusByFileKey: { [browserSemantic.key]: { kind: "loaded" } } },
+    });
+    expect(secondResult).toMatchObject({
+      kind: "review-action",
+      state: { sourceStatusByFileKey: { [browserSemantic.key]: { kind: "loaded" } } },
+    });
+    browserRuntime.dispose();
+  });
+
+  test("guards source completion against replaced authority and disposal", async () => {
+    const makeRuntime = () => {
+      const deferred = createTestDeferred<string | null>();
+      const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+      const afterLines = [...beforeLines];
+      afterLines[15] = "changed";
+      const file = createTestDiffFile({
+        id: "guarded-effect",
+        path: "guarded-effect.ts",
+        before: lines(...beforeLines),
+        after: lines(...afterLines),
+        sourceFetcher: createTestSourceFetcher(() => deferred.promise),
+      });
+      const runtime = createReviewSessionRuntime(
+        createBootstrap({ changeset: { ...createBootstrap().changeset, files: [file] } }),
+        { deps: createReloadDeps() },
+      );
+      const semantic = runtime.getSnapshot().projection.document.files[0]!;
+      const completion = runtime.toggleSourceGap(semantic.key, "before:0");
+      return { deferred, file, runtime, semantic, completion, sourceText: lines(...afterLines) };
+    };
+
+    const fetcherReplacement = makeRuntime();
+    fetcherReplacement.file.sourceFetcher = createTestSourceFetcher(
+      () => fetcherReplacement.sourceText,
+    );
+    fetcherReplacement.deferred.resolve(fetcherReplacement.sourceText);
+    await fetcherReplacement.completion;
+    expect(
+      fetcherReplacement.runtime.getSnapshot().store.getSnapshot().sourceStatusByFileKey[
+        fetcherReplacement.semantic.key
+      ],
+    ).toEqual({ kind: "loading" });
+    expect(
+      fetcherReplacement.runtime.getResource(fetcherReplacement.semantic.sourceResourceIds.new!),
+    ).toBeUndefined();
+    fetcherReplacement.runtime.dispose();
+
+    const descriptorReplacement = makeRuntime();
+    const descriptor = descriptorReplacement.runtime
+      .getSnapshot()
+      .projection.document.resources.find(
+        (resource) => resource.id === descriptorReplacement.semantic.sourceResourceIds.new,
+      );
+    if (!descriptor || descriptor.kind !== "source") throw new Error("Expected source descriptor.");
+    descriptor.sourceIdentity = "source:replacement";
+    descriptorReplacement.deferred.resolve(descriptorReplacement.sourceText);
+    await descriptorReplacement.completion;
+    expect(
+      descriptorReplacement.runtime.getSnapshot().store.getSnapshot().sourceStatusByFileKey[
+        descriptorReplacement.semantic.key
+      ],
+    ).toEqual({ kind: "loading" });
+    expect(
+      descriptorReplacement.runtime.getResource(
+        descriptorReplacement.semantic.sourceResourceIds.new!,
+      ),
+    ).toBeUndefined();
+    descriptorReplacement.runtime.dispose();
+
+    const retired = makeRuntime();
+    const retiredGeneration = retired.runtime.getSnapshot().store.getSnapshot().documentGeneration;
+    await retired.runtime.reload("manual", reloadInput("retired-source-effect"), {
+      resetApp: false,
+    });
+    expect(retired.runtime.getSnapshot().store.getSnapshot().documentGeneration).not.toBe(
+      retiredGeneration,
+    );
+    retired.deferred.resolve(retired.sourceText);
+    await retired.completion;
+    expect(retired.runtime.getResource(retired.semantic.sourceResourceIds.new!)).toBeUndefined();
+    retired.runtime.dispose();
+
+    const disposed = makeRuntime();
+    disposed.runtime.dispose();
+    disposed.deferred.resolve(disposed.sourceText);
+    await disposed.completion;
+    expect(disposed.runtime.getResource(disposed.semantic.sourceResourceIds.new!)).toBeUndefined();
+  });
+
+  test("rolls back staged source bytes when loaded-state preflight rejects", async () => {
+    const source = createTestDeferred<string | null>();
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[15] = "changed";
+    const file = createTestDiffFile({
+      id: "rollback-effect",
+      path: "rollback-effect.ts",
+      before: lines(...beforeLines),
+      after: lines(...afterLines),
+      sourceFetcher: createTestSourceFetcher(() => source.promise),
+    });
+    const runtime = createReviewSessionRuntime(
+      createBootstrap({ changeset: { ...createBootstrap().changeset, files: [file] } }),
+    );
+    const store = runtime.getSnapshot().store;
+    const commitPrepared = store.commitPrepared.bind(store);
+    store.commitPrepared = (expected, next) => {
+      if (Object.values(next.sourceStatusByFileKey).some((status) => status.kind === "loaded")) {
+        throw new Error("test loaded-state preflight rejection");
+      }
+      return commitPrepared(expected, next);
+    };
+    const semantic = runtime.getSnapshot().projection.document.files[0]!;
+    const descriptor = runtime
+      .getSnapshot()
+      .projection.document.resources.find(
+        (resource) => resource.id === semantic.sourceResourceIds.new,
+      );
+    if (!descriptor || descriptor.kind !== "source") throw new Error("Expected source descriptor.");
+    const loggedErrors: unknown[][] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      loggedErrors.push(args);
+    });
+    const completion = runtime.toggleSourceGap(semantic.key, "before:0");
+    const loadingRevision = store.getSnapshot().stateRevision;
+    source.resolve(lines(...afterLines));
+    await completion;
+
+    expect(store.getSnapshot().stateRevision).toBe(loadingRevision + 1);
+    expect(loggedErrors[0]?.[0]).toContain("failed to load new source");
+    expect(descriptor.byteLength).toBeUndefined();
+    expect(descriptor.digest).toBeUndefined();
+    expect(runtime.getSnapshot().projection.resourceContents[descriptor.id]).toBeUndefined();
+    expect(store.getSnapshot().sourceStatusByFileKey[semantic.key]).toEqual({ kind: "error" });
+    errorSpy.mockRestore();
     runtime.dispose();
   });
 

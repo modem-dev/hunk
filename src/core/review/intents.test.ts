@@ -961,3 +961,225 @@ describe("semantic selection and shared state intents", () => {
     expect(prepareReviewState(state, visibilityPlan.actions)).toBe(state);
   });
 });
+
+/** Build one expansion-ready state without materializing its source. */
+function createExpansionPlanState() {
+  const text = lines("old one", "hidden two", "hidden three", "hidden four", "old five");
+  const next = lines("new one", "hidden two", "hidden three", "hidden four", "new five");
+  const state = createStateForSource(
+    createTestDiffFile({
+      before: text,
+      after: next,
+      context: 0,
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => next),
+        cacheKey: "source:expansion-plan",
+      },
+    }),
+  );
+  const file = state.document.files[0]!;
+  return { state, file, gapId: "before:1", sourceText: next };
+}
+
+describe("semantic expansion intents", () => {
+  const fetcherFacts = { sourceFetcherIdentity: "fetcher:test" };
+
+  test("atomically plans expansion and loading before emitting one guarded effect", () => {
+    const { state, file, gapId } = createExpansionPlanState();
+    const address = reviewGapAddress(file, gapId)!;
+    const descriptor = state.document.resources.find(
+      (resource) => resource.id === file.sourceResourceIds.new,
+    )!;
+    const plan = planReviewIntent(
+      state,
+      { type: "expansion/toggle", fileKey: file.key, gapId },
+      fetcherFacts,
+    );
+
+    expect(plan.actions).toEqual([
+      {
+        type: "expansion/toggle",
+        expectedGeneration: state.documentGeneration,
+        gap: {
+          fileKey: file.key,
+          gapId,
+          side: "new",
+          oldRange: [...address.oldRange],
+          newRange: [...address.newRange],
+          sourceIdentity: "source:expansion-plan",
+          expanded: true,
+        },
+      },
+      {
+        type: "expansion/set-source-status",
+        expectedGeneration: state.documentGeneration,
+        fileKey: file.key,
+        status: { kind: "loading" },
+      },
+    ]);
+    expect(plan.effects).toEqual([
+      {
+        type: "source/load",
+        generation: state.documentGeneration,
+        fileKey: file.key,
+        side: "new",
+        gapId,
+        oldRange: [...address.oldRange],
+        newRange: [...address.newRange],
+        sourceIdentity: "source:expansion-plan",
+        resourceId: descriptor.id,
+        sourceFetcherIdentity: "fetcher:test",
+      },
+    ]);
+    expect(prepareReviewState(state, plan.actions).stateRevision).toBe(state.stateRevision + 1);
+  });
+
+  test("reuses loaded and loading source while retrying error state", () => {
+    const loading = createExpansionPlanState();
+    loading.state.sourceStatusByFileKey[loading.file.key] = { kind: "loading" };
+    const loadingPlan = planReviewIntent(
+      loading.state,
+      { type: "expansion/toggle", fileKey: loading.file.key, gapId: loading.gapId },
+      {},
+    );
+    expect(loadingPlan.actions).toHaveLength(1);
+    expect(loadingPlan.effects).toBeUndefined();
+
+    const loaded = createExpansionPlanState();
+    const loadedDescriptor = loaded.state.document.resources.find(
+      (resource) => resource.id === loaded.file.sourceResourceIds.new,
+    );
+    if (!loadedDescriptor || loadedDescriptor.kind !== "source") {
+      throw new Error("Expected source descriptor.");
+    }
+    loadedDescriptor.byteLength = Buffer.byteLength(loaded.sourceText, "utf8");
+    loadedDescriptor.digest = reviewDigest(loaded.sourceText);
+    loaded.state.sourceStatusByFileKey[loaded.file.key] = {
+      kind: "loaded",
+      text: loaded.sourceText,
+    };
+    const loadedPlan = planReviewIntent(
+      loaded.state,
+      { type: "expansion/toggle", fileKey: loaded.file.key, gapId: loaded.gapId },
+      {},
+    );
+    expect(loadedPlan.actions).toHaveLength(1);
+    expect(loadedPlan.effects).toBeUndefined();
+
+    const { state, file, gapId } = createExpansionPlanState();
+    state.sourceStatusByFileKey[file.key] = { kind: "error", reason: "too-large" };
+    const retried = planReviewIntent(
+      state,
+      { type: "expansion/toggle", fileKey: file.key, gapId },
+      fetcherFacts,
+    );
+    expect(retried.actions[1]).toMatchObject({
+      type: "expansion/set-source-status",
+      status: { kind: "loading" },
+    });
+    expect(retried.effects).toHaveLength(1);
+  });
+
+  test("uses old-side source authority for deleted files", () => {
+    const fixture = createExpansionPlanState();
+    const deleted = {
+      ...fixture.state,
+      document: {
+        ...fixture.state.document,
+        files: [{ ...fixture.file, changeKind: "deleted" as const }],
+      },
+    };
+    const plan = planReviewIntent(
+      deleted,
+      { type: "expansion/toggle", fileKey: fixture.file.key, gapId: fixture.gapId },
+      fetcherFacts,
+    );
+    expect(plan.actions[0]).toMatchObject({ type: "expansion/toggle", gap: { side: "old" } });
+    expect(plan.effects?.[0]).toMatchObject({
+      type: "source/load",
+      side: "old",
+      resourceId: fixture.file.sourceResourceIds.old,
+    });
+  });
+
+  test("rejects invalid file, gap, resource, and missing fetcher fact", () => {
+    const { state, file, gapId } = createExpansionPlanState();
+    expectPlanningError(
+      () =>
+        planReviewIntent(
+          state,
+          { type: "expansion/toggle", fileKey: "missing", gapId },
+          fetcherFacts,
+        ),
+      "file-not-found",
+    );
+    expectPlanningError(
+      () =>
+        planReviewIntent(
+          state,
+          { type: "expansion/toggle", fileKey: file.key, gapId: "before:99" },
+          fetcherFacts,
+        ),
+      "gap-not-found",
+    );
+    expectPlanningError(
+      () =>
+        planReviewIntent(
+          {
+            ...state,
+            document: {
+              ...state.document,
+              resources: state.document.resources.filter(
+                (resource) => resource.id !== file.sourceResourceIds.new,
+              ),
+            },
+          },
+          { type: "expansion/toggle", fileKey: file.key, gapId },
+          fetcherFacts,
+        ),
+      "source-unavailable",
+    );
+    expectPlanningError(
+      () => planReviewIntent(state, { type: "expansion/toggle", fileKey: file.key, gapId }),
+      "missing-fact",
+    );
+  });
+
+  test("collapses without effects and repairs only a proven hidden selection", () => {
+    const { state, file, gap, proof, line } = createExpandedLineState();
+    state.selection = {
+      fileKey: file.key,
+      hunkIndex: 1,
+      side: "new",
+      line,
+      contextDigest: reviewSourceLineContextDigest(
+        (state.sourceStatusByFileKey[file.key] as { kind: "loaded"; text: string }).text,
+        line,
+      ),
+    };
+    const plan = planReviewIntent(state, {
+      type: "expansion/toggle",
+      fileKey: file.key,
+      gapId: proof.gapId,
+    });
+    expect(plan.effects).toBeUndefined();
+    expect(plan.actions[0]).toMatchObject({
+      type: "expansion/toggle",
+      gap: { ...gap, expanded: false },
+    });
+    expect(plan.actions[1]).toMatchObject({
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 1,
+      side: "new",
+      line: file.hunks[1]!.additionStart,
+      contextDigest: expect.any(String),
+    });
+
+    const unrelated = planReviewIntent(
+      { ...state, selection: { fileKey: file.key, hunkIndex: 0 } },
+      { type: "expansion/toggle", fileKey: file.key, gapId: proof.gapId },
+    );
+    expect(unrelated.actions).toHaveLength(1);
+  });
+});
