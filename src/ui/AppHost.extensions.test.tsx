@@ -132,6 +132,9 @@ function writeProbeExtension(path: string, logPath: string) {
       `  hunk.on("session_reload", () => {\n` +
       `    appendFileSync(${JSON.stringify(logPath)}, "session_reload\\n");\n` +
       `  });\n` +
+      `  hunk.on("shutdown", () => {\n` +
+      `    appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n");\n` +
+      `  });\n` +
       `}\n`,
   );
 }
@@ -294,6 +297,93 @@ describe("reload keeps launch extension authority", () => {
 
         // The reload moved cwd and re-ran discovery; the hard off switch held.
         expect(readProbeLog(logPath)).toEqual([]);
+      },
+      broker.client,
+    );
+  });
+
+  test("a failed replacement keeps the visible extension instance running", async () => {
+    const repo = createTestRepo("hunk-apphost-failed-extension-reload-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeProbeExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+
+    const broker = createTestBrokerClient();
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        await expect(
+          broker.reload({ kind: "vcs", staged: false, range: "missing-ref", options: {} }, repo),
+        ).rejects.toThrow("could not resolve Git revision or range");
+        await pumpFrames(setup, 5);
+
+        const events = readProbeLog(logPath);
+        expect(events.filter((line) => line === "factory")).toHaveLength(2);
+        expect(events.filter((line) => line === "shutdown")).toHaveLength(1);
+        // The failed replacement is cleaned up after its factory runs; the
+        // original instance was not shut down before the replacement proved valid.
+        expect(events.indexOf("shutdown")).toBeGreaterThan(events.lastIndexOf("factory"));
+        expect(events.filter((line) => line === "startup")).toHaveLength(1);
+      },
+      broker.client,
+    );
+  });
+
+  test("serializes concurrent reloads so every replacement receives a full lifecycle", async () => {
+    const repo = createTestRepo("hunk-apphost-concurrent-extension-reload-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeProbeExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        const first = broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        const second = broker.reload(
+          { kind: "vcs", staged: false, options: {} },
+          join(repo, "sub"),
+        );
+        await Promise.all([first, second]);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "startup").length === 3,
+          "both serialized replacement instances to start",
+        );
+
+        const events = readProbeLog(logPath);
+        expect(events.filter((line) => line === "factory")).toHaveLength(3);
+        expect(events.filter((line) => line === "shutdown")).toHaveLength(2);
+        expect(events.filter((line) => line === "startup")).toHaveLength(3);
+        expect(events.filter((line) => line === "session_reload")).toHaveLength(2);
       },
       broker.client,
     );
@@ -462,7 +552,76 @@ describe("startup for extensions loaded mid-session", () => {
     expect(events).toContain("startup");
   });
 
-  test("does not fire a second time for an extension that already had it", async () => {
+  test("starts a replacement only after its mounted sidebar controls are ready", async () => {
+    const repo = createTestRepo("hunk-apphost-mounted-startup-");
+    const logPath = join(repo, "mounted.log");
+    const extPath = join(repo, "mounted.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";
+` +
+        `import { createElement } from "react";
+` +
+        `export default function (hunk) {
+` +
+        `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");
+` +
+        `  hunk.registerSidebarView({
+` +
+        `    id: "probe",
+` +
+        `    title: "Probe",
+` +
+        `    component: () => createElement("text", { content: "MOUNTED STARTUP SIDEBAR" }),
+` +
+        `  });
+` +
+        `  hunk.on("startup", (_payload, ctx) => {
+` +
+        `    ctx.sidebars.open("probe");
+` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "startup\\n");
+` +
+        `  });
+` +
+        `  hunk.on("shutdown", () => appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n"));
+` +
+        `}
+`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("MOUNTED STARTUP SIDEBAR"),
+          "the initial startup handler to open its mounted sidebar",
+        );
+
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () =>
+            readProbeLog(logPath).filter((line) => line === "startup").length === 2 &&
+            setup.captureCharFrame().includes("MOUNTED STARTUP SIDEBAR"),
+          "the replacement startup handler to receive mounted sidebar controls",
+        );
+      },
+      broker.client,
+    );
+  });
+
+  test("shuts down and starts each replacement extension instance", async () => {
     const repo = createTestRepo("hunk-apphost-startup-once-");
     const logPath = join(repo, "probe.log");
     const extPath = join(repo, "ext.ts");
@@ -493,11 +652,14 @@ describe("startup for extensions loaded mid-session", () => {
         "the refresh key to reload the session",
       );
 
-      // The reload re-ran the factory, but `startup` is a once-per-extension
-      // promise: this id already had it, so it is not delivered again.
+      // The old instance remains live until the replacement review succeeds,
+      // then shuts down before the mounted replacement receives startup.
       const events = readProbeLog(logPath);
       expect(events.filter((line) => line === "factory")).toHaveLength(2);
-      expect(events.filter((line) => line === "startup")).toHaveLength(1);
+      expect(events.filter((line) => line === "startup")).toHaveLength(2);
+      expect(events.lastIndexOf("factory")).toBeLessThan(events.indexOf("shutdown"));
+      expect(events.indexOf("shutdown")).toBeLessThan(events.lastIndexOf("startup"));
+      expect(events.lastIndexOf("startup")).toBeLessThan(events.indexOf("session_reload"));
     });
   });
 });

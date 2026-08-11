@@ -49,9 +49,13 @@ load issue and costs only that extension. The rules themselves are stated in
 Registrations (themes, file languages, VCS adapters, changeset transforms,
 sidebar views, commands, lifecycle/UI events, and inter-extension bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
-through `src/extensions/apply.ts` on both startup and reload. A factory that
-throws is rolled back to its pre-run registration counts
-(`runExtension.ts`); failures cost a warning, not the session.
+through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
+bootstrap retains the provisional candidate/config snapshot: a final pass that
+only appends repo candidates extends the same registry, while a changed prefix
+receives bounded `shutdown` before being rebuilt. Live registry replacement uses
+the same shutdown/startup lifecycle. A factory that throws is rolled back to its
+pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
+session.
 
 ## Host-served runtime modules
 

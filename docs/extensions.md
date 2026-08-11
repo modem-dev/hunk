@@ -188,7 +188,10 @@ writes to the extension and asks for consent.
 
 The factory receives one object. Registration calls are only valid while the
 factory is running; Hunk seals the object afterwards so a deferred callback
-cannot mutate the registry mid-session.
+cannot mutate the registry mid-session. Keep the factory registration-only:
+start watchers, processes, connections, and other long-lived resources from
+`startup`, and release them from `shutdown`. Extension-registry reloads create
+new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
@@ -326,7 +329,10 @@ config naming a backend this session loaded is honored as-is, however near a
 checkout some other adapter finds. A repository-local adapter can bootstrap a
 provider Hunk has never seen because `.hunk` itself establishes the project root;
 global, config-path, and `--extension` adapters also participate in a staged
-root/config pass before the review loads.
+root/config pass before the review loads. When the final root only adds repo
+candidates, Hunk extends the provisional registry instead of executing its
+already loaded factories again. If repo config changes an existing extension's
+factory config, Hunk sends that provisional instance `shutdown` before rebuilding it.
 
 #### Watch support
 
@@ -1267,20 +1273,20 @@ the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
 That means a `changeset_loaded` handler can reveal its extension's sidebar when
 it finds something worth showing — no keypress required.
 
-| Event                  | Payload                 | When                                                     |
-| ---------------------- | ----------------------- | -------------------------------------------------------- |
-| `startup`              | `{ cwd }`               | once, after the app mounts with its first changeset      |
-| `changeset_loaded`     | `{ changeset }`         | first load and every reload                              |
-| `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)     |
-| `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it |
-| `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
-| `theme_changed`        | `{ themeId }`           | when the user commits a new theme                        |
-| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes            |
-| `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check        |
-| `note_created`         | `{ note }`              | a user saves an inline review note                       |
-| `note_edited`          | `{ note }`              | an in-progress inline note's body changes                |
-| `session_reload`       | `{ changeset, reason }` | on every session reload                                  |
-| `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
+| Event                  | Payload                 | When                                                      |
+| ---------------------- | ----------------------- | --------------------------------------------------------- |
+| `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
+| `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
+| `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
+| `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
+| `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
+| `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
+| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
+| `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
+| `note_created`         | `{ note }`              | a user saves an inline review note                        |
+| `note_edited`          | `{ note }`              | an in-progress inline note's body changes                 |
+| `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
+| `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
@@ -1297,8 +1303,9 @@ these events, and a `session_reload` may remap or drop notes without one
 either. A list accumulated from these events is therefore "notes the user saved
 here this session", not a complete review record; present it as such.
 
-`shutdown` handlers get a short window (250ms) to finish before Hunk exits
-anyway, so treat it as best-effort flushing rather than guaranteed cleanup.
+`shutdown` handlers get a short window (250ms) to finish before Hunk replaces
+the extension registry or exits anyway, so make cleanup prompt and idempotent.
+The replacement instance receives `startup` after its review is mounted.
 
 ### `hunk.events`
 

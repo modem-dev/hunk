@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionsConfig } from "../core/types";
@@ -78,6 +78,83 @@ describe("extension startup", () => {
     expect(result.issues).toEqual([]);
     expect(result.loaded.map((entry) => entry.origin)).toEqual(["global"]);
     expect(result.registry.themes.map((entry) => entry.theme.id)).toEqual(["midnight"]);
+  });
+
+  test("extends a provisional pass without executing its unchanged factories again", async () => {
+    const root = createTempDir("hunk-startup-extend-");
+    const configHome = join(root, "config");
+    const repo = join(root, "repo");
+    mkdirSync(repo);
+    const logPath = join(root, "factories.log");
+    writeGlobalExtension(
+      configHome,
+      "global.ts",
+      `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  appendFileSync(${JSON.stringify(logPath)}, "global\\n");
+  hunk.events.emit("global:ready", {});
+}
+`,
+    );
+
+    const provisional = await loadStartupExtensions({
+      extensions: createExtensionsConfig(),
+      cwd: repo,
+      env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+      deferEventBusBinding: true,
+    });
+    const repoExtensions = join(repo, ".hunk", "extensions");
+    mkdirSync(repoExtensions, { recursive: true });
+    writeFileSync(
+      join(repoExtensions, "local.ts"),
+      `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  appendFileSync(${JSON.stringify(logPath)}, "local\\n");
+  hunk.events.on("global:ready", () => appendFileSync(${JSON.stringify(logPath)}, "event\\n"));
+}
+`,
+    );
+
+    const final = await loadStartupExtensions({
+      extensions: createExtensionsConfig(),
+      cwd: repo,
+      env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+      projectRoot: repo,
+      previousLoad: provisional,
+      hostOverrides: { resolveRepoTrustImpl: () => "trusted" },
+    });
+
+    expect(readFileSync(logPath, "utf8")).toBe("global\nlocal\nevent\n");
+    expect(final.loaded.map((extension) => extension.id)).toEqual(["global", "local"]);
+  });
+
+  test("shuts down a provisional pass before changed config requires rebuilding it", async () => {
+    const home = createTempDir("hunk-startup-rebuild-");
+    const logPath = join(home, "lifecycle.log");
+    writeGlobalExtension(
+      home,
+      "configured.ts",
+      `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  appendFileSync(${JSON.stringify(logPath)}, "factory:" + hunk.config.value + "\\n");
+  hunk.on("shutdown", () => appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n"));
+}
+`,
+    );
+
+    const provisional = await loadStartupExtensions({
+      extensions: createExtensionsConfig({ extensionConfigs: { configured: { value: 1 } } }),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+    await loadStartupExtensions({
+      extensions: createExtensionsConfig({ extensionConfigs: { configured: { value: 2 } } }),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      previousLoad: provisional,
+    });
+
+    expect(readFileSync(logPath, "utf8")).toBe("factory:1\nshutdown\nfactory:2\n");
   });
 
   test("maps load failures onto startup notices without dropping config notices", () => {

@@ -18,6 +18,10 @@ import {
 
 export interface LoadExtensionsOptions {
   candidates: readonly ExtensionCandidate[];
+  /** Full candidate order represented after this pass; defaults to `candidates`. */
+  allCandidates?: readonly ExtensionCandidate[];
+  /** Existing pass to extend when `candidates` contains only a newly discovered suffix. */
+  previousLoad?: ExtensionLoadResult;
   cwd: string;
   /** Per-extension `[extension.<id>]` config tables, keyed by extension id. */
   extensionConfigs?: Record<string, Record<string, unknown>>;
@@ -28,6 +32,8 @@ export interface LoadExtensionsOptions {
   notifications?: ExtensionNotificationHub;
   /** Repo root repo-local candidates belong to; discovered from `cwd` when omitted. */
   repoRoot?: string;
+  /** Keep factory bus events queued until a staged caller finishes appending candidates. */
+  deferEventBusBinding?: boolean;
   /** Product-owned ids user extension modules may not claim. */
   reservedExtensionIds?: ReadonlySet<string>;
   env?: NodeJS.ProcessEnv;
@@ -95,10 +101,11 @@ interface AcceptedCandidates {
 function acceptCandidateIds(
   candidates: readonly ExtensionCandidate[],
   reservedIds: ReadonlySet<string>,
+  initialClaims: ReadonlyMap<string, string> = new Map(),
 ): AcceptedCandidates {
   const accepted: ExtensionCandidate[] = [];
   const issues: ExtensionLoadIssue[] = [];
-  const claimedBy = new Map<string, string>();
+  const claimedBy = new Map(initialClaims);
 
   for (const candidate of candidates) {
     const refusal = describeIdRefusal(candidate, claimedBy, reservedIds);
@@ -119,6 +126,20 @@ function acceptCandidateIds(
   return { accepted, issues };
 }
 
+/** Return the ids a completed candidate prefix owns, including candidates that failed later. */
+function collectCandidateClaims(
+  candidates: readonly ExtensionCandidate[],
+  reservedIds: ReadonlySet<string>,
+) {
+  const claimedBy = new Map<string, string>();
+  for (const candidate of candidates) {
+    if (describeIdRefusal(candidate, claimedBy, reservedIds) === undefined) {
+      claimedBy.set(candidate.id, candidate.path);
+    }
+  }
+  return claimedBy;
+}
+
 /**
  * Load every discovered extension into one registry.
  *
@@ -131,21 +152,26 @@ function acceptCandidateIds(
 export async function loadExtensions(options: LoadExtensionsOptions): Promise<ExtensionLoadResult> {
   // Ids are settled before anything is imported, so a refused candidate never
   // gets a loader hook, let alone an evaluated module.
-  const { accepted, issues } = acceptCandidateIds(
+  const reservedIds = options.reservedExtensionIds ?? new Set<string>();
+  const previousCandidates = options.previousLoad?.loadState.candidates ?? [];
+  const { accepted, issues: candidateIssues } = acceptCandidateIds(
     options.candidates,
-    options.reservedExtensionIds ?? new Set(),
+    reservedIds,
+    collectCandidateClaims(previousCandidates, reservedIds),
   );
+  const issues = [...(options.previousLoad?.issues ?? []), ...candidateIssues];
   // Before any candidate is imported, so its `react` (and `hunkdiff/extension`)
   // imports resolve to the host's own instances rather than the filesystem.
   registerHostRuntimeModules(accepted.map((candidate) => candidate.path));
-  const registry = createEmptyExtensionRegistry();
+  const registry = options.previousLoad?.registry ?? createEmptyExtensionRegistry();
+  registry.eventBusPhase = "loading";
   const importModule = options.importExtensionModuleImpl ?? importExtensionModule;
   const resolveTrust = options.resolveRepoTrustImpl ?? resolveRepoTrust;
   const trustOptions: ExtensionTrustOptions = { env: options.env };
 
   let repoTrustState: ExtensionTrustState | undefined;
   let repoRoot = options.repoRoot;
-  let pendingTrustRepoRoot: string | undefined;
+  let pendingTrustRepoRoot = options.previousLoad?.pendingTrustRepoRoot;
 
   /** Resolve the repo trust state once per load pass, lazily. */
   const resolveRepoTrustState = () => {
@@ -199,15 +225,24 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
     });
   }
 
-  const notifications = options.notifications ?? createExtensionNotificationHub();
+  const notifications =
+    options.notifications ??
+    options.previousLoad?.notifications ??
+    createExtensionNotificationHub();
   const context = createExtensionContext(options.cwd, notifications.notify);
   // `registry.extensions` already holds exactly the extensions whose factories
   // completed, in load order, so the loaded list is a copy of it rather than a
   // second tally that could drift.
   const loaded = [...registry.extensions];
-  const result = pendingTrustRepoRoot
-    ? { registry, issues, loaded, context, notifications, pendingTrustRepoRoot }
-    : { registry, issues, loaded, context, notifications };
-  bindExtensionEventBus(result);
+  const loadState = {
+    candidates: [...(options.allCandidates ?? options.candidates)],
+    extensionConfigs: structuredClone(options.extensionConfigs ?? {}),
+  };
+  const result: ExtensionLoadResult = pendingTrustRepoRoot
+    ? { registry, issues, loaded, context, notifications, loadState, pendingTrustRepoRoot }
+    : { registry, issues, loaded, context, notifications, loadState };
+  if (!options.deferEventBusBinding) {
+    bindExtensionEventBus(result);
+  }
   return result;
 }
