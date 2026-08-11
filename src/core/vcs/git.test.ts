@@ -8,6 +8,7 @@ import {
   buildGitStashShowArgs,
   buildGitStatusArgs,
   listGitIgnoredDirectoryRoots,
+  listGitUntrackedFiles,
   parseGitIgnoredDirectoryRoots,
   resolveGitDiffEndpoints,
   parseGitNumstat,
@@ -137,6 +138,28 @@ describe("git command helpers", () => {
         repoRoot,
       ),
     ).toEqual([resolve(repoRoot, "dependencies"), resolve(repoRoot, "build/nested")]);
+  });
+
+  test("excludes hunk metadata from working-tree untracked files", () => {
+    const repoRoot = createTempRepo("hunk-untracked-metadata-");
+    const sourceDir = join(repoRoot, "src");
+    const hunkDir = join(repoRoot, ".hunk");
+    mkdirSync(sourceDir);
+    mkdirSync(hunkDir);
+    writeFileSync(join(sourceDir, "added.ts"), "export const added = true;\n");
+    writeFileSync(join(hunkDir, "agent-context.json"), '{"version":1,"files":[]}\n');
+
+    const untrackedFiles = listGitUntrackedFiles(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd: repoRoot, repoRoot },
+    );
+
+    expect(untrackedFiles).toContain(join("src", "added.ts"));
+    expect(untrackedFiles).not.toContain(join(".hunk", "agent-context.json"));
   });
 
   test("reports a friendly error when git is not installed or not on PATH", () => {

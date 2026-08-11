@@ -22,6 +22,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
+| `--no-agent-context`        | ignore any agent-context sidecar (disable auto-discovery)       |
 | `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
 | `--line-numbers`            | show line numbers                                               |
@@ -162,6 +163,51 @@ print the experimental STML authoring guide
 hunk markup guide
 ```
 
+## `hunk review`
+
+drive a repo-local review headlessly, for an editor client
+
+### Usage
+
+```bash
+hunk review export [target] [-- <pathspec...>] --json
+hunk review comment add --file <path> --side <old|new> --line <n> --body <text> --json
+hunk review comment reply --file <path> --id <id> --body <text> --json
+hunk review comment status --file <path> --id <id> --status <active|resolved> --json
+hunk review comment delete --file <path> --id <id> --json
+hunk review note reply --file <path> --note <id> --body <text> --json
+hunk review note status --file <path> --note <id> --status <active|resolved> --json
+hunk review viewed set --file <path> [--file <path>...] (--viewed | --unviewed) --json
+hunk review file source --file <path> --side <old|new> --json
+hunk review focus set [target] [--file <path> [--side <old|new>] [--line <n>]] --json
+hunk review focus get --json
+hunk review focus clear --json
+```
+
+### Command-specific options
+
+| Option                   | Description                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `--staged`               | show staged changes instead of the working tree                                                        |
+| `--cached`               | alias for --staged                                                                                     |
+| `--exclude-untracked`    | exclude untracked files from working tree reviews                                                      |
+| `--no-exclude-untracked` | include untracked files in working tree reviews Compatibility inverse; omitted from `--help`.          |
+| `--json`                 | emit structured JSON (the only supported format)                                                       |
+| `--source <source>`      | repo-backed source: diff, show, or stash-show (default: diff)                                          |
+| `--include-patch`        | export: include raw unified patch text per file                                                        |
+| `--repo <path>`          | repo root to operate on instead of the current directory                                               |
+| `--file <path>`          | repo-relative file the operation targets; repeatable for `viewed set`, which applies them in one write |
+| `--side <side>`          | comment add / file source: `old` or `new` diff side                                                    |
+| `--line <n>`             | comment add: line number on that side                                                                  |
+| `--body <text>`          | comment add/reply: comment body                                                                        |
+| `--stdin`                | comment add/reply: read the body from stdin instead                                                    |
+| `--author <name>`        | comment add/reply: author recorded on the comment                                                      |
+| `--id <id>`              | comment reply/status/delete: the comment id; for `reply`, the comment being answered                   |
+| `--note <id>`            | note reply/status: the agent note id, as the current review reports it                                 |
+| `--status <status>`      | comment status / note status: `active` or `resolved`                                                   |
+| `--viewed`               | viewed set: mark the named files viewed                                                                |
+| `--unviewed`             | viewed set: mark the named files unviewed                                                              |
+
 ## `hunk skill path`
 
 print a bundled Hunk skill path
@@ -287,6 +333,30 @@ hunk session navigate --repo . --file src/App.tsx --new-line 372
 hunk session navigate --repo . --file src/App.tsx --old-line 355
 hunk session navigate --repo . --next-comment
 hunk session navigate --repo . --prev-comment
+```
+
+### `hunk session viewed`
+
+mark one file viewed or unviewed in a live Hunk session
+
+```bash
+hunk session viewed (<session-id> | --repo <path>) --file <path> [--unset] [--json]
+```
+
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--file <path>` | diff file path as shown by Hunk                           |
+| `--repo <path>` | target the live session whose repo root matches this path |
+| `--unset`       | clear viewed state instead of setting it                  |
+| `--json`        | emit structured JSON                                      |
+
+**Positionals:** `[sessionId]`.
+
+**Examples:**
+
+```bash
+hunk session viewed --repo . --file src/App.tsx
+hunk session viewed --repo . --file src/App.tsx --unset
 ```
 
 ### `hunk session reload`

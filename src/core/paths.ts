@@ -1,5 +1,37 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import type { CliInput } from "./types";
+
+/** Name of hunk's repo-local metadata directory. */
+export const HUNK_DIR_NAME = ".hunk";
+/**
+ * Legacy bare agent-context filename.
+ *
+ * Still valid as an *explicit* or config path. Auto-discovery never uses this
+ * name alone — see `conventionalAgentContextPath` and SPEC REQ-AGENT-001.
+ */
+export const AGENT_CONTEXT_FILENAME = "agent-context.json";
+/** Hex length of the review-target id embedded in the conventional sidecar name. */
+export const AGENT_CONTEXT_TARGET_ID_LENGTH = 12;
+/** Conventional per-repo review-state filename inside `.hunk/`. */
+export const REVIEW_STATE_FILENAME = "review-state.json";
+/**
+ * Conventional per-repo review-comment filename inside `.hunk/`.
+ *
+ * Separate from `REVIEW_STATE_FILENAME` on purpose: viewed state is derived and resets on
+ * any doubt, while comments are authored and are never discarded. One file cannot carry
+ * both policies.
+ */
+export const REVIEW_COMMENTS_FILENAME = "review-comments.json";
+/**
+ * Conventional per-repo review-focus filename inside `.hunk/`.
+ *
+ * Where an agent points its human partner. Derived like `REVIEW_STATE_FILENAME` and unlike
+ * `REVIEW_COMMENTS_FILENAME`: a corrupt focus resets to none, because nothing here is
+ * authored — it says what to look at, never what is true about the code.
+ */
+export const REVIEW_FOCUS_FILENAME = "review-focus.json";
 
 /**
  * Skills Hunk ships, in the order `hunk skill path` lists them.
@@ -70,6 +102,96 @@ export function resolveCanonicalPath(path: string) {
       // Keep walking until we find an existing ancestor or hit the filesystem root.
     }
   }
+}
+
+/** Return whether a repo-root-relative path lives inside hunk's `.hunk/` metadata dir. */
+export function isHunkMetadataRelativePath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  return normalized === HUNK_DIR_NAME || normalized.startsWith(`${HUNK_DIR_NAME}/`);
+}
+
+/**
+ * Normalize pathspecs the way discovery hashes them: trim, drop empties, sort.
+ *
+ * Sorting is required so `-- path/a path/b` and `-- path/b path/a` name one sidecar.
+ */
+export function normalizeAgentContextPathspecs(pathspecs: readonly string[] | undefined): string[] {
+  if (!pathspecs || pathspecs.length === 0) {
+    return [];
+  }
+
+  return [...pathspecs]
+    .map((pathspec) => pathspec.trim())
+    .filter((pathspec) => pathspec.length > 0)
+    .sort();
+}
+
+/**
+ * Canonical string for the review target a CLI invocation asked for.
+ *
+ * Intent only — kind, expression/ref, and pathspecs — never resolved commit SHAs and never
+ * patch bytes. Same string for the same human command; branch tips may move without
+ * renaming the sidecar (matching review-focus target policy).
+ *
+ * Returns null for non-repo inputs (file/patch/difftool): those never auto-discover.
+ */
+export function canonicalizeAgentContextTarget(input: CliInput): string | null {
+  const pathspecs = normalizeAgentContextPathspecs(
+    "pathspecs" in input ? input.pathspecs : undefined,
+  );
+  const pathspecKey = pathspecs.join("\0");
+
+  if (input.kind === "vcs") {
+    if (input.staged) {
+      return ["staged", pathspecKey].join("\0");
+    }
+    if (input.range !== undefined && input.range.length > 0) {
+      return ["range", input.range, pathspecKey].join("\0");
+    }
+    return ["working-tree", pathspecKey].join("\0");
+  }
+
+  if (input.kind === "show") {
+    return ["show", input.ref ?? "", pathspecKey].join("\0");
+  }
+
+  if (input.kind === "stash-show") {
+    return ["stash-show", input.ref ?? ""].join("\0");
+  }
+
+  return null;
+}
+
+/**
+ * Short stable id for one review target, embedded in the conventional sidecar filename.
+ *
+ * Users never type this; Hunk derives it from the same CLI args that open the review.
+ */
+export function agentContextTargetId(input: CliInput): string | null {
+  const canonical = canonicalizeAgentContextTarget(input);
+  if (canonical === null) {
+    return null;
+  }
+
+  return createHash("sha256")
+    .update(canonical)
+    .digest("hex")
+    .slice(0, AGENT_CONTEXT_TARGET_ID_LENGTH);
+}
+
+/**
+ * Absolute path of the conventional auto-discovery sidecar for this review target.
+ *
+ * Form: `<repoRoot>/.hunk/agent-context.<targetId>.json`. Null when the input is not a
+ * repo-backed review target (no auto-discovery).
+ */
+export function conventionalAgentContextPath(repoRoot: string, input: CliInput): string | null {
+  const targetId = agentContextTargetId(input);
+  if (targetId === null) {
+    return null;
+  }
+
+  return join(repoRoot, HUNK_DIR_NAME, `agent-context.${targetId}.json`);
 }
 
 /** Resolve the base config directory Hunk should use for user-scoped files. */

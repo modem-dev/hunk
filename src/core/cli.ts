@@ -272,7 +272,8 @@ function buildCommonOptions(
     mode: options.mode,
     cursorLine: options.cursorLine,
     theme: options.theme,
-    agentContext: options.agentContext,
+    agentContext: typeof options.agentContext === "string" ? options.agentContext : undefined,
+    noAgentContext: argv.includes("--no-agent-context") ? true : undefined,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     experimental:
@@ -398,6 +399,7 @@ function renderCliHelp() {
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
+    "  --no-agent-context                      ignore any agent-context sidecar (disable auto-discovery)",
     "  --pager                                 use pager-style chrome",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",
     "  -x, --tab-width <columns>                tab stop width: 1-16 (default: 4)",

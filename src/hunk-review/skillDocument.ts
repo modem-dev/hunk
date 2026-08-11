@@ -197,6 +197,16 @@ const GUIDING_SECTION = [
   "- Don't comment on every hunk -- highlight what the user wouldn't spot themselves",
 ];
 
+const AGENT_CONTEXT_SECTION = [
+  "## Agent context sidecars",
+  "",
+  "At the end of a meaningful changeset, write notes to the **target-keyed** conventional path so bare `hunk diff` / range / show auto-load them with zero flags.",
+  "",
+  "Write `.hunk/agent-context.<targetId>.json` for the current review target (same args as the review command). When `hunk review export --json` is available, prefer its `agentContextPath` field. Never hard-code bare `.hunk/agent-context.json` for auto-discovery.",
+  "",
+  "Use range-based annotations with `oldRange` / `newRange`; the file order in the sidecar drives sidebar and review order. Explicit `--agent-context <path>` still loads any path, including a legacy bare name.",
+];
+
 /** Render the "Common errors" section from the shared agent error catalog. */
 function commonErrorsSection() {
   return [
@@ -219,6 +229,7 @@ export function renderHunkReviewSkill() {
     COMMENTS_SECTION,
     STML_SECTION,
     NEW_FILES_SECTION,
+    AGENT_CONTEXT_SECTION,
     GUIDING_SECTION,
     commonErrorsSection(),
   ];

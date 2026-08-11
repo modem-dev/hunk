@@ -148,6 +148,14 @@ Before writing markup, run `hunk markup guide` once — it has copy-paste patter
 hunk session reload --repo . -- diff --exclude-untracked
 ```
 
+## Agent context sidecars
+
+At the end of a meaningful changeset, write notes to the **target-keyed** conventional path so bare `hunk diff` / range / show auto-load them with zero flags.
+
+Write `.hunk/agent-context.<targetId>.json` for the current review target (same args as the review command). When `hunk review export --json` is available, prefer its `agentContextPath` field. Never hard-code bare `.hunk/agent-context.json` for auto-discovery.
+
+Use range-based annotations with `oldRange` / `newRange`; the file order in the sidecar drives sidebar and review order. Explicit `--agent-context <path>` still loads any path, including a legacy bare name.
+
 ## Guiding a review
 
 The user may ask you to walk them through a changeset or review code using Hunk. Start with `hunk session review --json` to understand the file/hunk structure without inflating agent context, then use `--include-patch` only for the files you truly need to read in raw diff form. Use `context` and `navigate` to line up the user's current view before adding comments.

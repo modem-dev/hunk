@@ -6,6 +6,7 @@ import {
   type ExtensionVcsShowInput,
 } from "../../extension-api/types";
 import { normalizePathForOS } from "../../lib/osPath";
+import { isHunkMetadataRelativePath } from "../paths";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -263,8 +264,11 @@ export function listSlUntrackedFiles(
   }
 
   const normalizedRepoRoot = repoRoot ?? resolveSlRepoRoot(input, { cwd, slExecutable });
-  return untrackedFiles.filter((filePath) =>
-    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  return untrackedFiles.filter(
+    (filePath) =>
+      // Hunk's own `.hunk/` metadata is review context, never review content.
+      !isHunkMetadataRelativePath(filePath) &&
+      isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
 }
 
