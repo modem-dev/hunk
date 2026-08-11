@@ -498,10 +498,14 @@ export class ReviewSessionRuntime {
   executeReviewIntent = (
     intent: ReviewIntent,
     preconditions: ReviewIntentPreconditions = { mode: "current" },
-  ): ReviewIntentExecution => this.executeReviewIntentInternal(intent, preconditions);
+  ): ReviewIntentExecution => {
+    if (this.disposed) throw new Error("Review session runtime is disposed.");
+    return this.executeReviewIntentInternal(intent, preconditions);
+  };
 
   /** Toggle one canonical collapsed gap and let the runtime own generation-safe source loading. */
   toggleSourceGap(fileKey: string, gapId: string) {
+    if (this.disposed) return Promise.reject(new Error("Review session runtime is disposed."));
     const state = this.snapshot.store.getSnapshot();
     return this.toggleSourceGapForState(
       fileKey,
@@ -1226,6 +1230,7 @@ export class ReviewSessionRuntime {
     preconditions: ReviewIntentPreconditions,
     options: { preflightActionResult?: boolean } = {},
   ): ReviewIntentExecution {
+    if (this.disposed) throw new Error("Review session runtime is disposed.");
     const store = this.snapshot.store;
     const before = store.getSnapshot();
     this.assertReviewIntentPreconditions(before, preconditions);

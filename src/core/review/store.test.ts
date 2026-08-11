@@ -5,10 +5,12 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { reviewSourceLineContextDigest } from "./anchors";
 import { projectReviewDocument } from "./document";
 import { reviewGapAddress } from "./expansion";
 import { projectReviewNote } from "./notes";
 import { reconcileReviewState, reviewLineAddress, reviewLineContextDigest } from "./reconcile";
+import type { ReviewStoredNote } from "./state";
 import { createReviewStore, prepareReviewState } from "./store";
 import type { DiffFile } from "../types";
 
@@ -620,6 +622,105 @@ describe("ReviewStore", () => {
     expect(store.getSnapshot().sourceStatusByFileKey[semantic.key]).toEqual({
       kind: "loaded",
       text: "materialized source\n",
+    });
+  });
+
+  test("preserves only proven expanded-note placement while keeping reload resolution stale", () => {
+    const before = lines("old one", "hidden two", "hidden three", "hidden four", "old five");
+    const after = lines("new one", "hidden two", "hidden three", "hidden four", "new five");
+    const changedSource = lines(
+      "new one",
+      "hidden two changed",
+      "hidden three",
+      "hidden four",
+      "new five",
+    );
+    const sourceFile = createTestDiffFile({
+      id: "expanded-note",
+      path: "expanded-note.ts",
+      before,
+      after,
+      context: 0,
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => after),
+        cacheKey: "source:expanded-note",
+      },
+    });
+    const seed = documentFor([sourceFile], "generation:seed");
+    const gap = reviewGapAddress(seed.files[0]!, "before:1")!;
+    const projection = (generation: string, sourceText: string) =>
+      projectReviewDocument(
+        { id: generation, sourceLabel: "repo:test", title: "Review", files: [sourceFile] },
+        {
+          generation,
+          sourceIdentity: "repo:test",
+          expandedContextByFileId: {
+            [sourceFile.id]: [
+              {
+                gapId: "before:1",
+                side: "new",
+                ...gap,
+                sourceText,
+              },
+            ],
+          },
+        },
+      ).document;
+    const first = projection("generation:one", after);
+    const semantic = first.files[0]!;
+    const line = gap.newRange[0];
+    const expandedNote = {
+      note: {
+        id: "user:expanded",
+        source: "user" as const,
+        origin: "user" as const,
+        originalSource: "user",
+        fileKey: semantic.key,
+        anchor: {
+          newRange: [line, line] as [number, number],
+          preferred: { side: "new" as const, line },
+          intersectingHunkIndices: [],
+          ownerHunkIndex: 1,
+        },
+        summary: "Expanded source rationale",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        editable: true,
+      },
+      contextDigest: reviewSourceLineContextDigest(after, line),
+      contextDigests: { new: reviewSourceLineContextDigest(after, line)! },
+      resolution: "active" as const,
+    };
+    const reconcileNote = (nextSource: string, note: ReviewStoredNote = expandedNote) => {
+      const store = createReviewStore(first);
+      store.dispatch({
+        type: "notes/add-user",
+        expectedGeneration: first.generation,
+        note,
+      });
+      store.dispatch({
+        type: "document/reconcile",
+        expectedGeneration: first.generation,
+        document: projection(`generation:${nextSource === after ? "same" : "changed"}`, nextSource),
+      });
+      return store.getSnapshot().userNotes[0]!;
+    };
+
+    expect(reconcileNote(after)).toMatchObject({
+      resolution: "stale",
+      note: { anchor: { intersectingHunkIndices: [], ownerHunkIndex: 1 } },
+    });
+    expect(reconcileNote(changedSource)).toMatchObject({
+      resolution: "stale",
+      note: { anchor: { intersectingHunkIndices: [], ownerHunkIndex: 1 } },
+    });
+    const {
+      contextDigest: _contextDigest,
+      contextDigests: _contextDigests,
+      ...ordinaryUnmatchedNote
+    } = expandedNote;
+    expect(reconcileNote(after, ordinaryUnmatchedNote)).toMatchObject({
+      resolution: "stale",
+      note: { anchor: { intersectingHunkIndices: [], ownerHunkIndex: 0 } },
     });
   });
 

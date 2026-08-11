@@ -1376,12 +1376,13 @@ the selection many times a second, and handlers only care where the user landed.
 `"daemon"` (an agent command through the session broker), or `"manual"` (the
 refresh key, or the reload after granting extension trust).
 
-`note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
-session. Review notes are session-local state, so there is no backlog to replay
-on startup — but comments added through agent session commands do not emit
-these events, and a `session_reload` may remap or drop notes without one
-either. A list accumulated from these events is therefore "notes the user saved
-here this session", not a complete review record; present it as such.
+`note_created` covers user notes saved in either the terminal or synchronized
+browser UI. `note_edited` covers in-progress terminal draft edits. Review notes
+are session-local state, so there is no backlog to replay on startup — but
+comments added through agent session commands do not emit these events, and a
+`session_reload` may remap or drop notes without one either. A list accumulated
+from these events is therefore "notes the user saved here this session", not a
+complete review record; present it as such.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk exits
 anyway, so treat it as best-effort flushing rather than guaranteed cleanup.

@@ -6,6 +6,7 @@ import {
   resolveReviewNoteAnchor,
   reviewLineAddress,
   reviewLineContextDigest,
+  reviewSourceLineContextDigest,
 } from "./anchors";
 import type { ReviewFileV1 } from "./types";
 
@@ -55,6 +56,14 @@ describe("canonical review line addresses", () => {
     expect(
       resolveReviewLineAddress(addition, { side: "new", line: 1, hunkIndex: -1 }),
     ).toBeUndefined();
+  });
+
+  test("normalizes CRLF and one trailing newline for full-source context digests", () => {
+    expect(reviewSourceLineContextDigest("one\r\ntwo\r\nthree\r\n", 2)).toBe(
+      reviewSourceLineContextDigest("one\ntwo\nthree", 2),
+    );
+    expect(reviewSourceLineContextDigest("one\n\nthree\n", 2)).toBeString();
+    expect(reviewSourceLineContextDigest("one\n", 2)).toBeUndefined();
   });
 
   test("maps absolute lines through compact partial patch arrays", () => {
@@ -128,6 +137,13 @@ describe("canonical review note anchors", () => {
       intersectingHunkIndices: [],
       ownerHunkIndex: 0,
     });
+    expect(
+      resolveReviewNoteAnchor(file, {
+        newRange: [500, 500],
+        preferred: { side: "new", line: 500 },
+        fallbackOwnerHunkIndex: 1,
+      }),
+    ).toMatchObject({ intersectingHunkIndices: [], ownerHunkIndex: 1 });
   });
 
   test("keeps hunkless permissive anchors at file scope", () => {

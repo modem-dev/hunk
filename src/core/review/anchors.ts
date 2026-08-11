@@ -26,6 +26,8 @@ export interface ReviewNoteAnchorInput {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;
   preferred?: { side: ReviewSide; line: number };
+  /** Explicit placement fallback for a validated address outside compact patch geometry. */
+  fallbackOwnerHunkIndex?: number;
 }
 
 /** Return the inclusive semantic range occupied by one hunk on one side. */
@@ -50,6 +52,23 @@ export function reviewLineAddress(file: ReviewFileV1, side: ReviewSide, line: nu
     return { hunkIndex, arrayIndex };
   }
   return undefined;
+}
+
+/** Normalize full source exactly as terminal expanded-context rendering does. */
+function normalizedReviewSourceLines(sourceText: string) {
+  const normalized = sourceText.replaceAll("\r\n", "\n");
+  const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
+  return trimmed.length === 0 ? [] : trimmed.split("\n");
+}
+
+/** Hash one backed line's five-line neighborhood from a materialized full source. */
+export function reviewSourceLineContextDigest(sourceText: string, line: number) {
+  if (!Number.isSafeInteger(line) || line <= 0) return undefined;
+  const lines = normalizedReviewSourceLines(sourceText);
+  const index = line - 1;
+  if (index >= lines.length) return undefined;
+  const neighborhood = [-2, -1, 0, 1, 2].map((delta) => lines[index + delta] ?? null);
+  return reviewDigest(JSON.stringify(neighborhood));
 }
 
 /** Hash a fixed hunk-local neighborhood for reload rematching. */
@@ -111,7 +130,7 @@ function rangesOverlap(left: ReviewLineRange, right: ReviewLineRange) {
  */
 export function resolveReviewNoteAnchor(
   file: ReviewFileV1,
-  { oldRange, newRange, preferred }: ReviewNoteAnchorInput,
+  { oldRange, newRange, preferred, fallbackOwnerHunkIndex }: ReviewNoteAnchorInput,
 ): ReviewRangeAnchorV1 {
   const intersectingHunkIndices = file.hunks.flatMap((hunk, index) => {
     const intersects =
@@ -134,10 +153,16 @@ export function resolveReviewNoteAnchor(
           : backedPreferredHunk === index,
       )
     : -1;
+  const validatedFallbackOwner =
+    fallbackOwnerHunkIndex !== undefined && file.hunks[fallbackOwnerHunkIndex]
+      ? fallbackOwnerHunkIndex
+      : undefined;
   const ownerHunkIndex =
     preferredOwner >= 0
       ? preferredOwner
-      : (intersectingHunkIndices[0] ?? (file.hunks.length > 0 ? 0 : undefined));
+      : (intersectingHunkIndices[0] ??
+        validatedFallbackOwner ??
+        (file.hunks.length > 0 ? 0 : undefined));
 
   return {
     ...(oldRange ? { oldRange: [...oldRange] as [number, number] } : {}),

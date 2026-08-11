@@ -82,6 +82,25 @@ describe("renderer-neutral review notes", () => {
     expect(annotationOwnerHunkIndex(annotation, file.metadata.hunks)).toBe(1);
   });
 
+  test("uses an explicit validated fallback owner only when ranges do not intersect", () => {
+    const file = createTestDiffFile({
+      before: lines("old-one", "two", "three", "four", "old-five"),
+      after: lines("new-one", "two", "three", "four", "new-five"),
+      context: 0,
+    });
+    const annotation = {
+      summary: "Expanded source",
+      newRange: [3, 3] as [number, number],
+      fallbackOwnerHunkIndex: 1,
+    };
+
+    expect(annotationIntersectingHunkIndices(annotation, file.metadata.hunks)).toEqual([]);
+    expect(annotationOwnerHunkIndex(annotation, file.metadata.hunks)).toBe(1);
+    expect(annotationVisibleHunkIndices(annotation, file.metadata.hunks)).toEqual([1]);
+    const invalidFallback = { ...annotation, fallbackOwnerHunkIndex: 99 };
+    expect(annotationOwnerHunkIndex(invalidFallback, file.metadata.hunks)).toBe(0);
+  });
+
   test("assigns range-less notes to the first hunk for rendering but not navigation", () => {
     const file = createTestDiffFile({ agent: true });
     const annotation = { summary: "Whole file" };

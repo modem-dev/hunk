@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import {
+  createTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../../test/helpers/diff-helpers";
+import { reviewSourceLineContextDigest } from "./anchors";
 import { projectReviewDocument } from "./document";
+import { reviewGapAddress } from "./expansion";
+import { reviewDigest } from "./identity";
 import {
   isLiveReviewNoteRemovable,
   planReviewIntent,
   ReviewIntentPlanningError,
+  type ReviewIntent,
   type ReviewIntentPlanningErrorCode,
 } from "./intents";
 import { createInitialReviewState, type ReviewState, type ReviewStoredNote } from "./state";
@@ -29,6 +37,50 @@ function createState() {
       context: 0,
     }),
   );
+}
+
+/** Build one state whose second hunk has current, materialized expanded source. */
+function createExpandedLineState() {
+  const before = lines("old one", "hidden two", "hidden three", "hidden four", "old five");
+  const after = lines("new one", "hidden two", "hidden three", "hidden four", "new five");
+  const source = createTestDiffFile({
+    before,
+    after,
+    context: 0,
+    sourceFetcher: {
+      ...createTestSourceFetcher(() => after),
+      cacheKey: "source:intents-expanded",
+    },
+  });
+  const state = createStateForSource(source);
+  const file = state.document.files[0]!;
+  const gapId = "before:1";
+  const address = reviewGapAddress(file, gapId)!;
+  const resourceId = file.sourceResourceIds.new!;
+  const descriptor = state.document.resources.find(
+    (resource) => resource.id === resourceId && resource.kind === "source",
+  )!;
+  if (descriptor.kind !== "source") throw new Error("Expected source descriptor.");
+  descriptor.byteLength = Buffer.byteLength(after, "utf8");
+  descriptor.digest = reviewDigest(after);
+  state.expandedGaps = [
+    {
+      fileKey: file.key,
+      gapId,
+      side: "new",
+      ...address,
+      sourceIdentity: descriptor.sourceIdentity,
+      expanded: true,
+    },
+  ];
+  state.sourceStatusByFileKey = { [file.key]: { kind: "loaded", text: after } };
+  return {
+    state,
+    file,
+    gap: state.expandedGaps[0]!,
+    proof: { gapId, sourceIdentity: descriptor.sourceIdentity },
+    line: address.newRange[0],
+  };
 }
 
 /** Return one backed target in the requested canonical hunk. */
@@ -145,6 +197,138 @@ describe("semantic user note intents", () => {
     const outcome = plan.outcome as Extract<typeof plan.outcome, { type: "note/created" }>;
     expect(outcome.note.contextDigest).toBeString();
     expect(outcome.note.contextDigests).toEqual({ new: outcome.note.contextDigest! });
+  });
+
+  test("creates source-backed notes only with current expanded-line proof", () => {
+    const { state, file, proof, line } = createExpandedLineState();
+    const plan = planReviewIntent(
+      state,
+      {
+        type: "note/create-user",
+        fileKey: file.key,
+        hunkIndex: 1,
+        side: "new",
+        line,
+        body: "expanded source note",
+        expandedLineProof: proof,
+      },
+      { noteId: "user:expanded", timestamp: "2026-01-01T00:00:00.000Z" },
+    );
+    const stored = requireCreatedOutcome(plan);
+    expect(stored.contextDigest).toBe(
+      reviewSourceLineContextDigest(
+        (state.sourceStatusByFileKey[file.key] as { kind: "loaded"; text: string }).text,
+        line,
+      ),
+    );
+    expect(stored.contextDigests).toEqual({ new: stored.contextDigest! });
+    expect(stored.note.anchor).toEqual({
+      newRange: [line, line],
+      preferred: { side: "new", line },
+      intersectingHunkIndices: [],
+      ownerHunkIndex: 1,
+    });
+  });
+
+  test("rejects missing, stale, collapsed, mismatched, and unloaded expanded-line proof", () => {
+    const fixture = createExpandedLineState();
+    const baseIntent: Extract<ReviewIntent, { type: "note/create-user"; consumeDraft?: false }> = {
+      type: "note/create-user",
+      fileKey: fixture.file.key,
+      hunkIndex: 1,
+      side: "new" as const,
+      line: fixture.line,
+      body: "expanded source note",
+      expandedLineProof: fixture.proof,
+    };
+    const facts = { noteId: "user:expanded", timestamp: "2026-01-01T00:00:00.000Z" };
+    const expectRejected = (state: ReviewState, intent = baseIntent) =>
+      expectPlanningError(() => planReviewIntent(state, intent, facts), "line-not-backed");
+
+    const { expandedLineProof: _proof, ...withoutProof } = baseIntent;
+    expectRejected(fixture.state, withoutProof);
+    expectRejected(fixture.state, {
+      ...baseIntent,
+      expandedLineProof: { ...fixture.proof, sourceIdentity: "source:stale" },
+    });
+    expectRejected({ ...fixture.state, expandedGaps: [] });
+    expectRejected({
+      ...fixture.state,
+      expandedGaps: [{ ...fixture.gap, expanded: false }],
+    });
+    expectRejected(fixture.state, { ...baseIntent, side: "old" });
+    expectPlanningError(
+      () => planReviewIntent(fixture.state, { ...baseIntent, hunkIndex: 0 }, facts),
+      "line-hunk-mismatch",
+    );
+    expectRejected({
+      ...fixture.state,
+      expandedGaps: [
+        {
+          ...fixture.gap,
+          newRange: [fixture.gap.newRange[0] + 1, fixture.gap.newRange[1]],
+        },
+      ],
+    });
+    expectRejected({
+      ...fixture.state,
+      sourceStatusByFileKey: { [fixture.file.key]: { kind: "loading" } },
+    });
+    expectRejected(fixture.state, { ...baseIntent, line: fixture.gap.newRange[1] + 1 });
+    expectRejected({
+      ...fixture.state,
+      document: {
+        ...fixture.state.document,
+        resources: fixture.state.document.resources.filter(
+          (resource) => resource.id !== fixture.file.sourceResourceIds.new,
+        ),
+      },
+    });
+    expectRejected({
+      ...fixture.state,
+      document: {
+        ...fixture.state.document,
+        resources: fixture.state.document.resources.map((resource) => {
+          if (resource.id !== fixture.file.sourceResourceIds.new || resource.kind !== "source") {
+            return resource;
+          }
+          const {
+            byteLength: _byteLength,
+            digest: _digest,
+            ...unmaterializedDescriptor
+          } = resource;
+          return unmaterializedDescriptor;
+        }),
+      },
+    });
+    expectRejected({
+      ...fixture.state,
+      document: {
+        ...fixture.state.document,
+        resources: fixture.state.document.resources.map((resource) =>
+          resource.id === fixture.file.sourceResourceIds.new
+            ? { ...resource, byteLength: resource.byteLength! + 1 }
+            : resource,
+        ),
+      },
+    });
+    expectRejected({
+      ...fixture.state,
+      document: {
+        ...fixture.state.document,
+        resources: fixture.state.document.resources.map((resource) =>
+          resource.id === fixture.file.sourceResourceIds.new
+            ? { ...resource, digest: reviewDigest("different source") }
+            : resource,
+        ),
+      },
+    });
+    expectRejected({
+      ...fixture.state,
+      sourceStatusByFileKey: {
+        [fixture.file.key]: { kind: "loaded", text: "different source" },
+      },
+    });
   });
 
   test("creates side-specific notes for addition-only and deletion-only hunks", () => {
@@ -604,6 +788,39 @@ describe("live-note compatibility intents", () => {
 });
 
 describe("semantic selection and shared state intents", () => {
+  test("plans proven expanded-source line selections with full-source evidence", () => {
+    const { state, file, proof, line } = createExpandedLineState();
+    const plan = planReviewIntent(state, {
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 1,
+      side: "new",
+      line,
+      expandedLineProof: proof,
+      reveal: true,
+    });
+    expect(plan.actions[0]).toMatchObject({
+      type: "selection/set-line",
+      fileKey: file.key,
+      hunkIndex: 1,
+      side: "new",
+      line,
+      contextDigest: expect.any(String),
+      reveal: true,
+    });
+    expectPlanningError(
+      () =>
+        planReviewIntent(state, {
+          type: "selection/set-line",
+          fileKey: file.key,
+          hunkIndex: 1,
+          side: "new",
+          line,
+        }),
+      "line-not-backed",
+    );
+  });
+
   test("plans exact hunk and line selections with canonical evidence", () => {
     const state = createState();
     const file = state.document.files[0]!;
@@ -646,6 +863,36 @@ describe("semantic selection and shared state intents", () => {
       type: "selection/select",
       selection: { ...target, contextDigest: expect.any(String) },
     });
+  });
+
+  test("keeps hunkless files selectable only at their canonical file-level index", () => {
+    const state = createState();
+    const file = { ...state.document.files[0]!, hunks: [] };
+    const hunkless = { ...state, document: { ...state.document, files: [file] } };
+
+    expect(
+      planReviewIntent(hunkless, {
+        type: "selection/select",
+        fileKey: file.key,
+        hunkIndex: 0,
+        reveal: { kind: "file-top" },
+      }).actions,
+    ).toEqual([
+      {
+        type: "selection/select",
+        selection: { fileKey: file.key, hunkIndex: 0 },
+        reveal: { kind: "file-top" },
+      },
+    ]);
+    expectPlanningError(
+      () =>
+        planReviewIntent(hunkless, {
+          type: "selection/select",
+          fileKey: file.key,
+          hunkIndex: 1,
+        }),
+      "hunk-not-found",
+    );
   });
 
   test("rejects missing hunk targets, unbacked lines, and cross-hunk claims", () => {

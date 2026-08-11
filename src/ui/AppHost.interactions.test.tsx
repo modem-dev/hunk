@@ -16,10 +16,12 @@ import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestSessionRegistration } from "../../test/helpers/session-daemon-fixtures";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
+const { createReviewSessionRuntime } = await import("../app/reviewSessionRuntime");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -3002,6 +3004,84 @@ describe("App interactions", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("failed nonempty draft saves retain note focus for editing and retry", async () => {
+    const bootstrap = createSingleFileBootstrap();
+    const runtime = createReviewSessionRuntime(bootstrap);
+    const executeReviewIntent = runtime.executeReviewIntent;
+    runtime.executeReviewIntent = (intent, options) => {
+      if (intent.type === "note/create-user") throw new Error("Test persistence rejection.");
+      return executeReviewIntent(intent, options);
+    };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} runtime={runtime} />, {
+      width: 180,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+        await setup.mockInput.typeText("Keep this draft");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+      expect(runtime.getSnapshot().store.getSnapshot().draftNote?.body).toBe("Keep this draft");
+
+      await act(async () => {
+        await setup.mockInput.typeText(" retry");
+      });
+      await flush(setup);
+      expect(runtime.getSnapshot().store.getSnapshot().draftNote?.body).toBe(
+        "Keep this draft retry",
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("terminal Ctrl-S emits one runtime-owned note_created event", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const events: Array<{ id: string; body: string }> = [];
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture",
+      handler: ({ note }) => {
+        events.push({ id: note.id, body: note.body });
+      },
+    });
+    const bootstrap = { ...createSingleFileBootstrap(), extensions };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("Runtime event once.");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+
+      expect(setup.captureCharFrame()).toContain("Your note");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ body: "Runtime event once." });
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

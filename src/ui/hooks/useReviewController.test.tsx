@@ -1,8 +1,10 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import { reviewGapAddress } from "../../core/review/expansion";
+import { reviewDigest } from "../../core/review/identity";
+import { planReviewIntent, type ReviewIntent } from "../../core/review/intents";
 import { projectReviewNote } from "../../core/review/notes";
 import { reviewLineContextDigest } from "../../core/review/reconcile";
 import type { DiffFile } from "../../core/types";
@@ -13,11 +15,19 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import { createTestReviewStore, replaceTestReviewStore } from "../../../test/helpers/review-store";
-import type { ReviewStoreOptions } from "../../core/review/store";
+import {
+  prepareReviewState,
+  type ReviewStore,
+  type ReviewStoreOptions,
+} from "../../core/review/store";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
 import { resolveTheme } from "../themes";
-import { useReviewController, type ReviewController } from "./useReviewController";
+import {
+  useReviewController,
+  type ReviewController,
+  type ReviewIntentDispatcher,
+} from "./useReviewController";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
 function createDiffFile(
@@ -106,6 +116,17 @@ function createExpandableAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
   );
 }
 
+/** Model a partial deleted-file patch whose compact hunk still has expandable old-side source. */
+function createDeletedSideExpandableAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  const file = createExpandableAlphaFile(sourceFetcher);
+  // A complete deletion exposes every old line in its patch. Marking this synthetic fixture partial
+  // models VCS adapters that intentionally provide only a compact deletion patch plus full source.
+  return {
+    ...file,
+    metadata: { ...file.metadata, type: "deleted" as const, isPartial: true },
+  };
+}
+
 /** Build one file with two independently expandable gaps. */
 function createTwoGapFile(sourceFetcher: DiffFile["sourceFetcher"]) {
   const beforeLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
@@ -135,6 +156,35 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 function expectValue<T>(value: T): NonNullable<T> {
   expect(value).toBeDefined();
   return value as NonNullable<T>;
+}
+
+/** Execute controller intents through the same pure plan and transactional store seam as runtime. */
+function useTestReviewIntentDispatcher(store: ReviewStore): ReviewIntentDispatcher {
+  const userNoteSequence = useRef(0);
+  return useCallback(
+    (intent: ReviewIntent) => {
+      const before = store.getSnapshot();
+      const pendingSequence =
+        intent.type === "note/create-user" ? userNoteSequence.current + 1 : undefined;
+      const timestamp = "2026-01-01T00:00:00.000Z";
+      const plan = planReviewIntent(before, intent, {
+        ...(pendingSequence === undefined
+          ? {}
+          : { noteId: `user:test-${pendingSequence}`, timestamp }),
+        ...(intent.type === "note/update-user" ? { timestamp } : {}),
+      });
+      const prepared = prepareReviewState(before, plan.actions);
+      const state = store.commitPrepared(before, prepared);
+      if (pendingSequence !== undefined) userNoteSequence.current = pendingSequence;
+      const createdId =
+        plan.outcome?.type === "note/created" ? plan.outcome.note.note.id : undefined;
+      const createdNote = createdId
+        ? state.userNotes.find((entry) => entry.note.id === createdId)
+        : undefined;
+      return { state, ...(createdNote ? { createdNote } : {}) };
+    },
+    [store],
+  );
 }
 
 function ReviewControllerHarness({
@@ -206,6 +256,10 @@ function ReviewControllerHarness({
         .then(
           (text) => {
             if (activeStore.current !== store) return;
+            if (text !== null) {
+              source.byteLength = Buffer.byteLength(text, "utf8");
+              source.digest = reviewDigest(text);
+            }
             store.dispatch({
               type: "expansion/set-source-status",
               expectedGeneration: snapshot.documentGeneration,
@@ -245,10 +299,12 @@ function ReviewControllerHarness({
     },
     [files, store],
   );
+  const dispatchReviewIntent = useTestReviewIntentDispatcher(store);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const controller = useReviewController({
     files,
     reviewStore: store,
+    dispatchReviewIntent,
     lineCursors,
     onMutationError,
     toggleSourceGap,
@@ -699,7 +755,25 @@ describe("useReviewController", () => {
       await flush(setup);
 
       expect(savedNoteId).toStartWith("user:");
-      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+      const savedController = expectValue(controllerRef.current);
+      expect(savedController.userNotesByFileId.alpha).toHaveLength(1);
+      expect(savedController.store.getSnapshot().userNotes[0]).toMatchObject({
+        note: {
+          id: savedNoteId,
+          source: "user",
+          origin: "user",
+          summary: "Please add a regression test.",
+          editable: true,
+          anchor: {
+            preferred: { side: "new", line: 1 },
+            ownerHunkIndex: 0,
+            intersectingHunkIndices: [0],
+          },
+        },
+        contextDigest: expect.any(String),
+        contextDigests: { new: expect.any(String) },
+        resolution: "active",
+      });
 
       await act(async () => {
         expectValue(controllerRef.current).removeUserNote(savedNoteId);
@@ -751,11 +825,30 @@ describe("useReviewController", () => {
     }
   });
 
+  test("surfaces authority rejection for missing persisted notes without mutation", async () => {
+    const errors: unknown[] = [];
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()], {
+      onMutationError: (error) => errors.push(error),
+    });
+
+    try {
+      await flush(setup);
+      const before = expectValue(controllerRef.current).store.getSnapshot();
+      await act(async () => {
+        expectValue(controllerRef.current).removeUserNote("user:missing");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).store.getSnapshot()).toBe(before);
+      expect(errors).toHaveLength(1);
+      expect((errors[0] as Error).message).toContain("No user note matches id user:missing");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("rapid duplicate saves persist exactly one user note with a unique id", async () => {
     const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
-    const fixedNow = 1_700_000_000_000;
-    const dateNowSpy = spyOn(Date, "now").mockReturnValue(fixedNow);
-
     try {
       await flush(setup);
 
@@ -775,7 +868,7 @@ describe("useReviewController", () => {
       });
       await flush(setup);
 
-      expect(savedIds.first).toBe(`user:${fixedNow}-1`);
+      expect(savedIds.first).toStartWith("user:");
       expect(savedIds.second).toBeUndefined();
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
 
@@ -794,11 +887,10 @@ describe("useReviewController", () => {
       });
       await flush(setup);
 
-      expect(savedIds.followUp).toBe(`user:${fixedNow}-2`);
+      expect(savedIds.followUp).toStartWith("user:");
       expect(savedIds.followUp).not.toBe(savedIds.first);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(2);
     } finally {
-      dateNowSpy.mockRestore();
       await act(async () => {
         setup.renderer.destroy();
       });
@@ -842,6 +934,231 @@ describe("useReviewController", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("selects and saves a draft on a proven expanded source line", async () => {
+    const source = lines(...Array.from({ length: 10 }, (_, index) => `line ${index + 1}`));
+    const fetcher = createTestSourceFetcher(() => source);
+    const { controllerRef, setup } = await renderReviewController([
+      createExpandableAlphaFile(fetcher),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:0"));
+      await flush(setup);
+
+      let controller = expectValue(controllerRef.current);
+      const cursor = expectValue(controller.lineCursor);
+      expect(cursor.expandedGapKey).toBe("before:0");
+      const semanticSelection = controller.store.getSnapshot().selection;
+      expect(semanticSelection).toMatchObject({
+        hunkIndex: 0,
+        side: "new",
+        line: cursor.target.line,
+        contextDigest: expect.any(String),
+      });
+
+      await act(async () => {
+        controller.startUserNote("alpha", 0, cursor.target, { preserveViewport: true });
+        expectValue(controllerRef.current).updateDraftNote("Expanded source rationale");
+      });
+      await flush(setup);
+      controller = expectValue(controllerRef.current);
+      const draft = expectValue(controller.draftNote);
+      expect(draft.expandedLineProof).toMatchObject({ gapId: "before:0" });
+
+      const result: { saved: ReturnType<ReviewController["saveDraftNote"]> } = { saved: null };
+      await act(async () => {
+        result.saved = expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+      expect(result.saved?.summary).toBe("Expanded source rationale");
+      expect(expectValue(controllerRef.current).store.getSnapshot().userNotes[0]).toMatchObject({
+        contextDigest: semanticSelection.contextDigest,
+        contextDigests: { new: semanticSelection.contextDigest },
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("saves later-gap notes with their proven hunk owner", async () => {
+    const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    sourceLines[9] = "line 10 changed";
+    sourceLines[39] = "line 40 changed";
+    const source = lines(...sourceLines);
+    const { controllerRef, setup } = await renderReviewController([
+      createTwoGapFile(createTestSourceFetcher(() => source)),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:1"));
+      await flush(setup);
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor).toMatchObject({ hunkIndex: 1, expandedGapKey: "before:1" });
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote("alpha", 1, cursor.target, {
+          preserveViewport: true,
+        });
+        expectValue(controllerRef.current).updateDraftNote("Later expanded rationale");
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+
+      expect(
+        expectValue(controllerRef.current).store.getSnapshot().userNotes[0]?.note.anchor,
+      ).toEqual({
+        newRange: [cursor.target.line, cursor.target.line],
+        preferred: { side: "new", line: cursor.target.line },
+        intersectingHunkIndices: [],
+        ownerHunkIndex: 1,
+      });
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha?.[0]).toMatchObject({
+        hunkIndex: 1,
+        summary: "Later expanded rationale",
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("adopts a measured cursor in the same hunk after an external gap collapse", async () => {
+    const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    sourceLines[9] = "line 10 changed";
+    sourceLines[39] = "line 40 changed";
+    const source = lines(...sourceLines);
+    const { controllerRef, setup } = await renderReviewController([
+      createTwoGapFile(createTestSourceFetcher(() => source)),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:1"));
+      await flush(setup);
+      let controller = expectValue(controllerRef.current);
+      const expandedCursor = expectValue(controller.lineCursor);
+      expect(expandedCursor).toMatchObject({ hunkIndex: 1, expandedGapKey: "before:1" });
+      const expandedState = controller.store.getSnapshot();
+      const gap = expandedState.expandedGaps.find(
+        (candidate) =>
+          candidate.fileKey === expandedState.selection.fileKey && candidate.gapId === "before:1",
+      )!;
+
+      await act(async () => {
+        controller.store.dispatch({
+          type: "expansion/toggle",
+          expectedGeneration: expandedState.documentGeneration,
+          gap: { ...gap, expanded: false },
+        });
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      const collapsedCursor = expectValue(controller.lineCursor);
+      expect(collapsedCursor.fileId).toBe("alpha");
+      expect(collapsedCursor.hunkIndex).toBe(1);
+      expect(collapsedCursor.expandedGapKey).toBeUndefined();
+      expect(collapsedCursor.stableKey).not.toBe(expandedCursor.stableKey);
+
+      await act(async () => controller.moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toMatchObject({
+        fileId: "alpha",
+        hunkIndex: 1,
+      });
+      expect(expectValue(controllerRef.current).store.getSnapshot().selection.hunkIndex).toBe(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("maps rendered expanded context to deleted-side source authority", async () => {
+    const source = lines(...Array.from({ length: 10 }, (_, index) => `line ${index + 1}`));
+    const fetcher = createTestSourceFetcher((side) => (side === "old" ? source : null));
+    const { controllerRef, setup } = await renderReviewController([
+      createDeletedSideExpandableAlphaFile(fetcher),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:0"));
+      await flush(setup);
+
+      let controller = expectValue(controllerRef.current);
+      const cursor = expectValue(controller.lineCursor);
+      expect(cursor.expandedGapKey).toBe("before:0");
+      expect(cursor.target.side).toBe("new");
+      expect(controller.store.getSnapshot().selection).toMatchObject({
+        hunkIndex: 0,
+        side: "old",
+        line: 1,
+        contextDigest: expect.any(String),
+      });
+
+      await act(async () => {
+        controller.startUserNote("alpha", 0, cursor.target, { preserveViewport: true });
+      });
+      await flush(setup);
+      controller = expectValue(controllerRef.current);
+      expect(controller.draftNote).toMatchObject({
+        side: "old",
+        line: 1,
+        oldRange: [1, 1],
+        expandedLineProof: { gapId: "before:0" },
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("retains an expanded-line draft when its proof is collapsed before save", async () => {
+    const errors: unknown[] = [];
+    const source = lines(...Array.from({ length: 10 }, (_, index) => `line ${index + 1}`));
+    const fetcher = createTestSourceFetcher(() => source);
+    const { controllerRef, setup } = await renderReviewController(
+      [createExpandableAlphaFile(fetcher)],
+      { onMutationError: (error) => errors.push(error) },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:0"));
+      await flush(setup);
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote("alpha", 0, cursor.target, {
+          preserveViewport: true,
+        });
+        expectValue(controllerRef.current).updateDraftNote("Keep this draft");
+      });
+      await flush(setup);
+      const before = expectValue(controllerRef.current).store.getSnapshot();
+      const draftBefore = before.draftNote;
+
+      await act(async () => expectValue(controllerRef.current).toggleGap("alpha", "before:0"));
+      await flush(setup);
+      const collapsed = expectValue(controllerRef.current).store.getSnapshot();
+      expect(collapsed.draftNote).toBe(draftBefore);
+
+      let saved: ReturnType<ReviewController["saveDraftNote"]> = null;
+      await act(async () => {
+        saved = expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+      expect(saved).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot()).toBe(collapsed);
+      expect(expectValue(controllerRef.current).store.getSnapshot().draftNote).toBe(draftBefore);
+      expect(errors).toHaveLength(1);
+      expect((errors[0] as Error).message).toContain("not backed by current canonical or expanded");
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

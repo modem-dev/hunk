@@ -87,8 +87,8 @@ export function annotationIntersectingHunkIndices(
  *
  * Dual-range notes prefer the first hunk intersecting their new-side range even when
  * its start is collapsed and the old range intersects another hunk. Range-less and
- * unmatched ranged notes fall back to the first hunk,
- * matching terminal placement at the first visible code row.
+ * unmatched ranged notes fall back to an explicitly validated projection owner when present,
+ * then the first hunk, matching terminal placement at the first visible code row.
  */
 export function annotationOwnerHunkIndex(
   annotation: AgentAnnotation,
@@ -108,7 +108,11 @@ export function annotationOwnerHunkIndex(
     });
     if (preferredIndex >= 0) return preferredIndex;
   }
-  return intersectingHunkIndices[0] ?? (hunks.length > 0 ? 0 : undefined);
+  const explicitFallback = (annotation as AgentAnnotation & { fallbackOwnerHunkIndex?: number })
+    .fallbackOwnerHunkIndex;
+  const validatedFallback =
+    explicitFallback !== undefined && hunks[explicitFallback] ? explicitFallback : undefined;
+  return intersectingHunkIndices[0] ?? validatedFallback ?? (hunks.length > 0 ? 0 : undefined);
 }
 
 /** Return intersection memberships, or the single fallback owner when there are none. */

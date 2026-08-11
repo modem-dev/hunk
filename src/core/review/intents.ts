@@ -1,6 +1,17 @@
 import type { ReviewAction } from "./actions";
-import { resolveReviewLineAddress, resolveReviewNoteAnchor } from "./anchors";
-import type { ReviewSemanticSelection, ReviewState, ReviewStoredNote } from "./state";
+import {
+  resolveReviewLineAddress,
+  resolveReviewNoteAnchor,
+  reviewSourceLineContextDigest,
+} from "./anchors";
+import { reviewGapAddress } from "./expansion";
+import { reviewDigest } from "./identity";
+import type {
+  ReviewExpandedLineProof,
+  ReviewSemanticSelection,
+  ReviewState,
+  ReviewStoredNote,
+} from "./state";
 import type { ReviewFileV1, ReviewSide } from "./types";
 
 export interface ReviewIntentFacts {
@@ -24,6 +35,7 @@ interface ExplicitUserNoteIntent {
   line: number;
   body: string;
   markup?: string;
+  expandedLineProof?: ReviewExpandedLineProof;
 }
 
 interface DraftUserNoteIntent {
@@ -41,7 +53,7 @@ export type ReviewIntent =
       type: "selection/select";
       fileKey: string;
       hunkIndex: number;
-      line?: { side: ReviewSide; line: number };
+      line?: { side: ReviewSide; line: number; expandedLineProof?: ReviewExpandedLineProof };
       reveal?: ReviewRevealRequest;
     }
   | {
@@ -50,6 +62,7 @@ export type ReviewIntent =
       hunkIndex: number;
       side: ReviewSide;
       line: number;
+      expandedLineProof?: ReviewExpandedLineProof;
       reveal?: boolean;
     }
   | { type: "filter/set"; filter: string }
@@ -145,19 +158,102 @@ function requireHunk(file: ReviewFileV1, hunkIndex: number) {
   }
 }
 
-/** Resolve a backed semantic line and distinguish an invalid hunk claim. */
-function requireLine(
+/** Compare one persisted inclusive range without accepting stale geometry. */
+function reviewRangesEqual(left: readonly [number, number], right: readonly [number, number]) {
+  return left[0] === right[0] && left[1] === right[1];
+}
+
+/** Resolve one process-local expanded-source proof against current semantic authority. */
+function resolveExpandedReviewLine(
+  state: ReviewState,
   file: ReviewFileV1,
-  target: { side: ReviewSide; line: number; hunkIndex: number },
+  target: {
+    side: ReviewSide;
+    line: number;
+    hunkIndex: number;
+    expandedLineProof: ReviewExpandedLineProof;
+  },
 ) {
-  const address = resolveReviewLineAddress(file, {
+  const gap = state.expandedGaps.find(
+    (candidate) =>
+      candidate.fileKey === file.key &&
+      candidate.gapId === target.expandedLineProof.gapId &&
+      candidate.sourceIdentity === target.expandedLineProof.sourceIdentity,
+  );
+  const gapMatch = /^(?:before|trailing):(\d+)$/.exec(target.expandedLineProof.gapId);
+  if (!gap || !gap.expanded || !gapMatch) return undefined;
+  if (Number(gapMatch[1]) !== target.hunkIndex) {
+    throw new ReviewIntentPlanningError(
+      "line-hunk-mismatch",
+      `Expanded review line belongs to hunk ${gapMatch[1]}, not ${target.hunkIndex}.`,
+    );
+  }
+  if (gap.side !== target.side) return undefined;
+  const address = reviewGapAddress(file, gap.gapId);
+  if (
+    !address ||
+    !reviewRangesEqual(gap.oldRange, address.oldRange) ||
+    !reviewRangesEqual(gap.newRange, address.newRange)
+  ) {
+    return undefined;
+  }
+  const range = target.side === "new" ? address.newRange : address.oldRange;
+  if (target.line < range[0] || target.line > range[1]) return undefined;
+  const resourceId = file.sourceResourceIds[target.side];
+  const descriptor = state.document.resources.find(
+    (resource) =>
+      resource.id === resourceId &&
+      resource.kind === "source" &&
+      resource.fileKey === file.key &&
+      resource.side === target.side &&
+      resource.sourceIdentity === gap.sourceIdentity,
+  );
+  if (!descriptor || descriptor.byteLength === undefined || descriptor.digest === undefined) {
+    return undefined;
+  }
+  const sourceStatus = state.sourceStatusByFileKey[file.key];
+  if (sourceStatus?.kind !== "loaded") return undefined;
+  if (
+    Buffer.byteLength(sourceStatus.text, "utf8") !== descriptor.byteLength ||
+    reviewDigest(sourceStatus.text) !== descriptor.digest
+  ) {
+    return undefined;
+  }
+  const contextDigest = reviewSourceLineContextDigest(sourceStatus.text, target.line);
+  if (!contextDigest) return undefined;
+  return {
     side: target.side,
     line: target.line,
-  });
+    hunkIndex: target.hunkIndex,
+    arrayIndex: target.line - 1,
+    contextDigest,
+  };
+}
+
+/** Resolve a backed semantic line and distinguish an invalid hunk claim. */
+function requireLine(
+  state: ReviewState,
+  file: ReviewFileV1,
+  target: {
+    side: ReviewSide;
+    line: number;
+    hunkIndex: number;
+    expandedLineProof?: ReviewExpandedLineProof;
+  },
+) {
+  const address = target.expandedLineProof
+    ? resolveExpandedReviewLine(state, file, {
+        ...target,
+        expandedLineProof: target.expandedLineProof,
+      })
+    : resolveReviewLineAddress(file, {
+        side: target.side,
+        line: target.line,
+      });
   if (!address) {
     throw new ReviewIntentPlanningError(
       "line-not-backed",
-      `Review line ${target.side}:${target.line} is not backed by canonical diff content.`,
+      `Review line ${target.side}:${target.line} is not backed by current canonical or expanded source content.`,
     );
   }
   if (address.hunkIndex !== target.hunkIndex) {
@@ -179,12 +275,13 @@ function createStoredUserNote(
     line: number;
     body: string;
     markup?: string;
+    expandedLineProof?: ReviewExpandedLineProof;
   },
   facts: ReviewIntentFacts,
 ) {
   const file = requireFile(state, target.fileKey);
   requireHunk(file, target.hunkIndex);
-  const address = requireLine(file, target);
+  const address = requireLine(state, file, target);
   const summary = target.body.trim();
   if (!summary) {
     throw new ReviewIntentPlanningError("empty-note-body", "A user note body is required.");
@@ -203,7 +300,12 @@ function createStoredUserNote(
       origin: "user" as const,
       originalSource: "user",
       fileKey: file.key,
-      anchor: resolveReviewNoteAnchor(file, { oldRange, newRange, preferred }),
+      anchor: resolveReviewNoteAnchor(file, {
+        oldRange,
+        newRange,
+        preferred,
+        ...(target.expandedLineProof ? { fallbackOwnerHunkIndex: target.hunkIndex } : {}),
+      }),
       summary,
       ...(markup !== undefined ? { markup } : {}),
       author: "user",
@@ -234,6 +336,7 @@ function planUserNoteCreation(
           side: draft.side,
           line: draft.line,
           body: draft.body,
+          ...(draft.expandedLineProof ? { expandedLineProof: draft.expandedLineProof } : {}),
         };
       })()
     : intent;
@@ -375,9 +478,12 @@ function planHunkSelection(
   intent: Extract<ReviewIntent, { type: "selection/select" }>,
 ): ReviewIntentPlan {
   const file = requireFile(state, intent.fileKey);
-  requireHunk(file, intent.hunkIndex);
+  // Hunkless files remain valid file-level selections at the reducer's canonical index zero.
+  if (file.hunks.length > 0 || intent.hunkIndex !== 0 || intent.line) {
+    requireHunk(file, intent.hunkIndex);
+  }
   const address = intent.line
-    ? requireLine(file, { ...intent.line, hunkIndex: intent.hunkIndex })
+    ? requireLine(state, file, { ...intent.line, hunkIndex: intent.hunkIndex })
     : undefined;
   const selection: ReviewSemanticSelection = {
     fileKey: file.key,
@@ -408,7 +514,7 @@ function planLineSelection(
 ): ReviewIntentPlan {
   const file = requireFile(state, intent.fileKey);
   requireHunk(file, intent.hunkIndex);
-  const address = requireLine(file, intent);
+  const address = requireLine(state, file, intent);
   return {
     actions: [
       {

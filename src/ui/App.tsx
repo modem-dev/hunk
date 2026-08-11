@@ -393,6 +393,7 @@ export function App({
   const review = useReviewController({
     files: reviewFiles,
     reviewStore,
+    dispatchReviewIntent: sessionRuntime.executeReviewIntent,
     lineCursors,
     onMutationError: showReviewMutationError,
     toggleSourceGap: toggleRuntimeSourceGap,
@@ -1202,8 +1203,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    const current = reviewStore.getSnapshot().showAgentNotes;
-    reviewStore.dispatch({ type: "notes/set-visibility", visible: !current });
+    review.setShowAgentNotes(!reviewStore.getSnapshot().showAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
@@ -1609,7 +1609,7 @@ export function App({
     setFocusArea((current) => (current === "note" ? "files" : current));
   }, []);
 
-  /** Convert a draft or saved UI note into the stable public event view. */
+  /** Convert a terminal draft into the stable public event view. */
   const toExtensionReviewNote = useCallback(
     (
       note: {
@@ -1636,17 +1636,12 @@ export function App({
     [],
   );
 
-  /** Save the active draft note and return focus to review navigation. */
+  /** Save the active draft note, retaining draft focus when persistence rejects its contents. */
   const saveDraftNote = useCallback(() => {
-    const draft = review.draftNote;
+    const hadNonemptyDraft = Boolean(review.draftNote?.body.trim());
     const saved = review.saveDraftNote();
-    if (saved && draft) {
-      emitExtensionEvent(extensions, "note_created", {
-        note: toExtensionReviewNote({ ...saved, fileId: draft.fileId }, false),
-      });
-    }
-    setFocusArea("files");
-  }, [extensions, review.draftNote, review.saveDraftNote, toExtensionReviewNote]);
+    if (saved || !hadNonemptyDraft) setFocusArea("files");
+  }, [review.draftNote, review.saveDraftNote]);
 
   /** Update a draft note and publish its current in-progress contents. */
   const updateDraftNote = useCallback(

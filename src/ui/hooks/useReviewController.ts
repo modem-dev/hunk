@@ -1,9 +1,9 @@
 /**
  * Terminal review-stream state projected from the runtime-owned semantic store.
  *
- * This hook owns renderer-local filtering, merged note presentation, selection,
- * drafts, cursor movement, and relative terminal navigation. Session commands
- * mutate the same store exclusively through ReviewSessionRuntime.
+ * This hook owns terminal projection, merged note presentation, local drafts,
+ * cursor movement, and relative navigation. Persisted semantic mutations route
+ * through the runtime authority before the hook observes the shared store.
  */
 import {
   useCallback,
@@ -15,11 +15,15 @@ import {
   useSyncExternalStore,
 } from "react";
 import { firstCommentTargetForHunk } from "../../core/liveComments";
-import { reviewLineContextDigest } from "../../core/review/reconcile";
-import { projectReviewNote } from "../../core/review/notes";
+import type { ReviewIntent } from "../../core/review/intents";
 import { isRenderableStoredReviewNote } from "../../core/review/state";
+import type {
+  ReviewExpandedLineProof,
+  ReviewState,
+  ReviewStoredNote,
+} from "../../core/review/state";
 import type { ReviewStore } from "../../core/review/store";
-import type { ReviewFileV1, ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNoteV1 } from "../../core/review/types";
 import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { LiveComment } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
@@ -66,6 +70,8 @@ export interface UserReviewNote extends AgentAnnotation {
   source: "user";
   filePath: string;
   hunkIndex: number;
+  /** Validated placement owner for source-backed lines outside compact hunk geometry. */
+  fallbackOwnerHunkIndex?: number;
   side: "old" | "new";
   line: number;
   summary: string;
@@ -83,6 +89,7 @@ export interface DraftReviewNote {
   line: number;
   oldRange?: [number, number];
   newRange?: [number, number];
+  expandedLineProof?: ReviewExpandedLineProof;
   body: string;
 }
 
@@ -91,6 +98,13 @@ export interface ReviewSelectionOptions {
   preserveViewport?: boolean;
   scrollToNote?: boolean;
 }
+
+export interface ReviewIntentDispatchResult {
+  createdNote?: ReviewStoredNote;
+}
+
+/** Narrow semantic authority consumed by the terminal controller. */
+export type ReviewIntentDispatcher = (intent: ReviewIntent) => ReviewIntentDispatchResult;
 
 export interface ReviewController {
   store: ReviewStore;
@@ -137,14 +151,68 @@ export interface ReviewController {
   updateDraftNote: (body: string) => void;
 }
 
+/** Resolve a renderer cursor to its authoritative side and source proof when expanded. */
+function semanticLineTargetForCursor(
+  cursor: LineCursor,
+  state: ReviewState,
+  keyByFileId: ReadonlyMap<string, string>,
+) {
+  const fileKey = keyByFileId.get(cursor.fileId);
+  const gap =
+    fileKey && cursor.expandedGapKey
+      ? state.expandedGaps.find(
+          (candidate) =>
+            candidate.fileKey === fileKey &&
+            candidate.gapId === cursor.expandedGapKey &&
+            candidate.expanded,
+        )
+      : undefined;
+  if (!gap) return { side: cursor.target.side, line: cursor.target.line };
+  const rendererRange = cursor.target.side === "new" ? gap.newRange : gap.oldRange;
+  const authoritativeRange = gap.side === "new" ? gap.newRange : gap.oldRange;
+  const offset = cursor.target.line - rendererRange[0];
+  if (offset < 0 || rendererRange[0] + offset > rendererRange[1]) {
+    return { side: cursor.target.side, line: cursor.target.line };
+  }
+  return {
+    side: gap.side,
+    line: authoritativeRange[0] + offset,
+    expandedLineProof: { gapId: gap.gapId, sourceIdentity: gap.sourceIdentity },
+  };
+}
+
+/** Resolve one authoritative selection back to the original measured renderer cursor. */
+function lineCursorAtSemanticTarget(
+  cursors: LineCursor[],
+  fileId: string,
+  hunkIndex: number,
+  target: UserNoteLineTarget,
+  state: ReviewState,
+  keyByFileId: ReadonlyMap<string, string>,
+) {
+  return (
+    cursors.find((cursor) => {
+      if (cursor.fileId !== fileId || cursor.hunkIndex !== hunkIndex) return false;
+      const semantic = semanticLineTargetForCursor(cursor, state, keyByFileId);
+      return semantic.side === target.side && semantic.line === target.line;
+    }) ?? firstLineCursorInHunk(cursors, fileId, hunkIndex)
+  );
+}
+
 /** Adapt one renderer-neutral mutable note back to the terminal annotation model. */
-function noteToTerminalAnnotation(note: ReviewNoteV1, filePath: string): LiveComment {
+function noteToTerminalAnnotation(
+  note: ReviewNoteV1,
+  filePath: string,
+): LiveComment & { fallbackOwnerHunkIndex?: number } {
   const preferred = note.anchor.preferred ?? { side: "new" as const, line: 1 };
   return {
     id: note.id,
     source: "mcp",
     filePath,
     hunkIndex: note.anchor.ownerHunkIndex ?? 0,
+    ...(note.anchor.ownerHunkIndex !== undefined
+      ? { fallbackOwnerHunkIndex: note.anchor.ownerHunkIndex }
+      : {}),
     side: preferred.side,
     line: preferred.line,
     ...(note.anchor.oldRange ? { oldRange: [...note.anchor.oldRange] as [number, number] } : {}),
@@ -157,26 +225,18 @@ function noteToTerminalAnnotation(note: ReviewNoteV1, filePath: string): LiveCom
   };
 }
 
-/** Capture independent reload evidence for every side range a mutable note declares. */
-function mutableNoteContextDigests(
-  file: ReviewFileV1,
-  ranges: Pick<AgentAnnotation, "oldRange" | "newRange">,
-) {
-  return {
-    ...(ranges.oldRange ? { old: reviewLineContextDigest(file, "old", ranges.oldRange[0]) } : {}),
-    ...(ranges.newRange ? { new: reviewLineContextDigest(file, "new", ranges.newRange[0]) } : {}),
-  };
-}
-
 export function useReviewController({
   files,
   reviewStore,
+  dispatchReviewIntent,
   lineCursors = EMPTY_LINE_CURSORS,
   onMutationError,
   toggleSourceGap,
 }: {
   files: DiffFile[];
   reviewStore: ReviewStore;
+  /** Runtime-owned synchronous semantic mutation authority. */
+  dispatchReviewIntent: ReviewIntentDispatcher;
   /**
    * Navigable lines in rendered order, published by the pane that measures the review stream.
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
@@ -218,16 +278,16 @@ export function useReviewController({
     () => new Map(document.files.map((file) => [file.runtimeId, file.key])),
     [document],
   );
-  const semanticFileByKey = useMemo(
-    () => new Map(document.files.map((file) => [file.key, file])),
-    [document],
-  );
+  const semanticLineCursor = lineCursor
+    ? semanticLineTargetForCursor(lineCursor, reviewSnapshot, keyByFileId)
+    : null;
   const lineCursorMatchesSelection =
     lineCursor !== null &&
+    semanticLineCursor !== null &&
     keyByFileId.get(lineCursor.fileId) === reviewSnapshot.selection.fileKey &&
     lineCursor.hunkIndex === reviewSnapshot.selection.hunkIndex &&
-    lineCursor.target.side === reviewSnapshot.selection.side &&
-    lineCursor.target.line === reviewSnapshot.selection.line;
+    semanticLineCursor.side === reviewSnapshot.selection.side &&
+    semanticLineCursor.line === reviewSnapshot.selection.line;
   if (lineCursorMatchesSelection) {
     renderedLineRevealTokenRef.current = reviewSnapshot.reveal.lineToken;
   }
@@ -273,8 +333,6 @@ export function useReviewController({
     }
     return result;
   }, [reviewSnapshot.userNotes, terminalFileByKey]);
-  // Monotonic suffix keeps human note ids unique inside one millisecond.
-  const userNoteSequenceRef = useRef(0);
   const draftNote = useMemo<DraftReviewNote | null>(() => {
     const draft = reviewSnapshot.draftNote;
     if (!draft) return null;
@@ -320,17 +378,40 @@ export function useReviewController({
   );
   const selectedHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
 
+  /** Execute one semantic mutation and surface synchronous authority rejection. */
+  const dispatchSemanticIntent = useCallback(
+    (intent: ReviewIntent) => {
+      try {
+        return dispatchReviewIntent(intent);
+      } catch (error) {
+        onMutationError?.(error);
+        return null;
+      }
+    },
+    [dispatchReviewIntent, onMutationError],
+  );
+
   /** Update authoritative semantic selection and reveal intent in one dispatch. */
   const selectHunk = useCallback(
     (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => {
       const fileKey = keyByFileId.get(fileId);
       if (!fileKey) return;
-      const current = store.getSnapshot().selection;
+      const snapshot = store.getSnapshot();
+      const current = snapshot.selection;
       const preserveAddress =
         options?.preserveViewport && current.fileKey === fileKey && current.hunkIndex === hunkIndex;
-      store.dispatch({
+      const currentCursor = lineCursorRef.current;
+      const preservedLine =
+        preserveAddress && currentCursor?.fileId === fileId && currentCursor.hunkIndex === hunkIndex
+          ? semanticLineTargetForCursor(currentCursor, snapshot, keyByFileId)
+          : preserveAddress && current.side && current.line !== undefined
+            ? { side: current.side, line: current.line }
+            : undefined;
+      dispatchSemanticIntent({
         type: "selection/select",
-        selection: preserveAddress ? { ...current, fileKey, hunkIndex } : { fileKey, hunkIndex },
+        fileKey,
+        hunkIndex,
+        ...(preservedLine ? { line: preservedLine } : {}),
         ...(!options?.preserveViewport
           ? {
               reveal: {
@@ -341,7 +422,7 @@ export function useReviewController({
           : {}),
       });
     },
-    [keyByFileId, store],
+    [dispatchSemanticIntent, keyByFileId, store],
   );
 
   /** Select one file and optionally one specific hunk within it. */
@@ -363,19 +444,19 @@ export function useReviewController({
     (next: LineCursor, options?: { reveal?: boolean }) => {
       adoptLineCursor(next);
       const fileKey = keyByFileId.get(next.fileId);
-      const semanticFile = fileKey ? semanticFileByKey.get(fileKey) : undefined;
-      if (!fileKey || !semanticFile) return;
-      store.dispatch({
+      if (!fileKey) return;
+      const target = semanticLineTargetForCursor(next, store.getSnapshot(), keyByFileId);
+      dispatchSemanticIntent({
         type: "selection/set-line",
         fileKey,
         hunkIndex: next.hunkIndex,
-        side: next.target.side,
-        line: next.target.line,
-        contextDigest: reviewLineContextDigest(semanticFile, next.target.side, next.target.line),
+        side: target.side,
+        line: target.line,
+        ...(target.expandedLineProof ? { expandedLineProof: target.expandedLineProof } : {}),
         reveal: options?.reveal,
       });
     },
-    [adoptLineCursor, keyByFileId, semanticFileByKey, store],
+    [adoptLineCursor, dispatchSemanticIntent, keyByFileId, store],
   );
 
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
@@ -432,10 +513,14 @@ export function useReviewController({
       // to the renderer's measured cursor and must never overwrite it from stale local state.
       adoptLineCursor(
         lineCursors.length > 0
-          ? lineCursorAt(lineCursors, selectedFileId, selectedHunkIndex, {
-              side: semanticSelection.side,
-              line: semanticSelection.line,
-            })
+          ? lineCursorAtSemanticTarget(
+              lineCursors,
+              selectedFileId,
+              selectedHunkIndex,
+              { side: semanticSelection.side, line: semanticSelection.line },
+              store.getSnapshot(),
+              keyByFileId,
+            )
           : null,
       );
       return;
@@ -458,6 +543,7 @@ export function useReviewController({
     reviewSnapshot.selection.side,
     selectedFileKey,
     selectedHunkIndex,
+    keyByFileId,
     store,
   ]);
 
@@ -566,14 +652,14 @@ export function useReviewController({
 
   /** Set the shared semantic file filter. */
   const setFilter = useCallback(
-    (value: string) => store.dispatch({ type: "filter/set", filter: value }),
-    [store],
+    (value: string) => void dispatchSemanticIntent({ type: "filter/set", filter: value }),
+    [dispatchSemanticIntent],
   );
 
   /** Set shared note-layer visibility. */
   const setShowAgentNotes = useCallback(
-    (visible: boolean) => store.dispatch({ type: "notes/set-visibility", visible }),
-    [store],
+    (visible: boolean) => void dispatchSemanticIntent({ type: "notes/set-visibility", visible }),
+    [dispatchSemanticIntent],
   );
 
   /** Clear the active file filter without touching the current selection. */
@@ -641,8 +727,10 @@ export function useReviewController({
         return null;
       }
 
-      const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
-      adoptLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
+      const rendererTarget = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      const rendererCursor = lineCursorAt(lineCursors, file.id, hunkIndex, rendererTarget);
+      adoptLineCursor(rendererCursor);
+      const target = semanticLineTargetForCursor(rendererCursor, store.getSnapshot(), keyByFileId);
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -652,6 +740,7 @@ export function useReviewController({
         line: target.line,
         oldRange: target.side === "old" ? [target.line, target.line] : undefined,
         newRange: target.side === "new" ? [target.line, target.line] : undefined,
+        ...(target.expandedLineProof ? { expandedLineProof: target.expandedLineProof } : {}),
         body: "",
       };
       store.dispatch({
@@ -665,6 +754,7 @@ export function useReviewController({
           line: draft.line,
           ...(draft.oldRange ? { oldRange: draft.oldRange } : {}),
           ...(draft.newRange ? { newRange: draft.newRange } : {}),
+          ...(draft.expandedLineProof ? { expandedLineProof: draft.expandedLineProof } : {}),
           body: "",
         },
       });
@@ -719,65 +809,28 @@ export function useReviewController({
       return null;
     }
 
-    const savedNote: UserReviewNote = {
-      id: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
+    const execution = dispatchSemanticIntent({ type: "note/create-user", consumeDraft: true });
+    const stored = execution?.createdNote;
+    if (!stored) return null;
+    const annotation = noteToTerminalAnnotation(stored.note, file.path);
+    return {
+      ...annotation,
       source: "user",
       filePath: file.path,
-      hunkIndex: semanticDraft.hunkIndex,
-      side: semanticDraft.side,
-      line: semanticDraft.line,
-      oldRange: semanticDraft.oldRange,
-      newRange: semanticDraft.newRange,
-      summary: body,
-      author: "user",
-      createdAt: new Date().toISOString(),
+      hunkIndex: stored.note.anchor.ownerHunkIndex ?? semanticDraft.hunkIndex,
+      side: stored.note.anchor.preferred?.side ?? semanticDraft.side,
+      line: stored.note.anchor.preferred?.line ?? semanticDraft.line,
+      author: stored.note.author ?? "user",
       editable: true,
     };
-    const semanticFile = semanticFileByKey.get(semanticDraft.fileKey)!;
-    const beforeCount = snapshot.userNotes.length;
-    try {
-      store.dispatch({
-        type: "draft/save",
-        expectedGeneration: snapshot.documentGeneration,
-        note: {
-          note: projectReviewNote({
-            annotation: savedNote,
-            fileKey: semanticDraft.fileKey,
-            hunks: file.metadata.hunks,
-            origin: "user",
-            editable: true,
-          }),
-          contextDigest: reviewLineContextDigest(
-            semanticFile,
-            semanticDraft.side,
-            semanticDraft.line,
-          ),
-          contextDigests: mutableNoteContextDigests(semanticFile, semanticDraft),
-          resolution: "active",
-        },
-      });
-    } catch (error) {
-      onMutationError?.(error);
-      return null;
-    }
-    const storedId = store.getSnapshot().userNotes[beforeCount]?.note.id;
-    return storedId && storedId !== savedNote.id ? { ...savedNote, id: storedId } : savedNote;
-  }, [onMutationError, semanticFileByKey, store, terminalFileByKey]);
+  }, [dispatchSemanticIntent, store, terminalFileByKey]);
 
-  /** Remove one in-memory user note by id. */
+  /** Remove one persisted user note through the shared semantic authority. */
   const removeUserNote = useCallback(
     (noteId: string) => {
-      const snapshot = store.getSnapshot();
-      if (!snapshot.userNotes.some((entry) => entry.note.id === noteId)) {
-        throw new Error(`No user note matches id ${noteId}.`);
-      }
-      store.dispatch({
-        type: "notes/remove-user",
-        expectedGeneration: snapshot.documentGeneration,
-        noteId,
-      });
+      void dispatchSemanticIntent({ type: "note/remove-user", noteId });
     },
-    [store],
+    [dispatchSemanticIntent],
   );
 
   return {
