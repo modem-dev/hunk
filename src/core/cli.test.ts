@@ -1619,6 +1619,19 @@ describe("parseCli extension management commands", () => {
     });
   });
 
+  test("accepts ext as an alias for extension", async () => {
+    expect(await parseCli(["bun", "hunk", "ext", "list"])).toEqual({
+      kind: "extension-manage",
+      action: "list",
+    });
+    expect(await parseCli(["bun", "hunk", "ext", "install", "acme/hunk-ext", "--yes"])).toEqual({
+      kind: "extension-manage",
+      action: "install",
+      source: "acme/hunk-ext",
+      yes: true,
+    });
+  });
+
   test("shows extension help for the bare command and rejects unknown subcommands", async () => {
     const parsed = await parseCli(["bun", "hunk", "extension"]);
     expect(parsed.kind).toBe("help");

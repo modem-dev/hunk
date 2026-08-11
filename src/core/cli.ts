@@ -197,6 +197,7 @@ export const CLI_REFERENCE_COMMANDS = {
       "hunk extension install git:<host>/<path>[@ref]",
       "hunk extension install <git-url or local path>[@ref]",
     ],
+    aliases: ["hunk ext install"],
     options: [
       {
         flag: "--yes",
@@ -208,16 +209,19 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "extension list",
     summary: "list extensions installed with `hunk extension install`",
     synopsis: ["hunk extension list"],
+    aliases: ["hunk ext list"],
   },
   "extension-update": {
     path: "extension update",
     summary: "re-clone managed extension installs from their recorded sources",
     synopsis: ["hunk extension update [name]"],
+    aliases: ["hunk ext update"],
   },
   "extension-remove": {
     path: "extension remove",
     summary: "remove one managed extension install",
     synopsis: ["hunk extension remove <name>"],
+    aliases: ["hunk ext remove"],
   },
   "daemon-serve": {
     path: "daemon serve",
@@ -1421,7 +1425,7 @@ const EXTENSION_MANAGE_HELP = [
   "  hunk extension update [name]",
   "  hunk extension remove <name>",
   "",
-  "Install and manage shared extensions.",
+  "Install and manage shared extensions. `hunk ext` is an alias for `hunk extension`.",
   "",
   "install  clone an extension repository into Hunk's managed install directory;",
   "         sources are <owner>/<repo>[@ref], git:<host>/<path>[@ref], a git URL,",
@@ -1645,6 +1649,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     case "skill":
       return parseSkillCommand(rest);
     case "extension":
+    case "ext":
       return parseExtensionCommand(rest);
     case "daemon":
     case "mcp":

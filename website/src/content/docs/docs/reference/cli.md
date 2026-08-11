@@ -184,6 +184,8 @@ hunk extension install git:<host>/<path>[@ref]
 hunk extension install <git-url or local path>[@ref]
 ```
 
+**Aliases:** `hunk ext install`.
+
 ### Command-specific options
 
 | Option  | Description                                           |
@@ -200,6 +202,8 @@ list extensions installed with `hunk extension install`
 hunk extension list
 ```
 
+**Aliases:** `hunk ext list`.
+
 ## `hunk extension update`
 
 re-clone managed extension installs from their recorded sources
@@ -210,6 +214,8 @@ re-clone managed extension installs from their recorded sources
 hunk extension update [name]
 ```
 
+**Aliases:** `hunk ext update`.
+
 ## `hunk extension remove`
 
 remove one managed extension install
@@ -219,6 +225,8 @@ remove one managed extension install
 ```bash
 hunk extension remove <name>
 ```
+
+**Aliases:** `hunk ext remove`.
 
 ## `hunk daemon serve`
 
