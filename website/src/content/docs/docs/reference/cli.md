@@ -20,6 +20,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | --------------------------- | --------------------------------------------------------------- |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
 | `--cursor-line <style>`     | current-line marker: row, number, off                           |
+| `--line-lens`               | show old/new current-line lens in split view                    |
+| `--no-line-lens`            | hide the current-line lens                                      |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |

@@ -41,8 +41,11 @@ agent_notes = false
 copy_decorations = false
 transparent_background = false
 cursor_line = "row"
+line_lens = false
 ```
 
 `transparent_background` lets the terminal paint Hunk surfaces; turn it off when exact theme surfaces matter more than matching terminal transparency.
 
 `cursor_line` chooses how the line you are on is marked: `row` highlights the whole row, `number` marks only its line number, and `off` removes the marker and returns `k` / `j` to scrolling the view one row at a time. Switch it mid-review from the View menu, or set `--cursor-line <style>` for a single run.
+
+`line_lens` pins the current split row at the bottom of the review pane with its old version above its new version, making word-level changes easier to compare without leaving the side-by-side overview. Enable it from the View menu or with `--line-lens`; it stays hidden in stacked layout and when the current-line marker is off.

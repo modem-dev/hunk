@@ -53,6 +53,7 @@ import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
 } from "../../diff/diffSectionGeometry";
+import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import { createReviewMouseWheelScrollAcceleration } from "../../lib/scrollAcceleration";
 import {
   buildFileSectionLayouts,
@@ -74,6 +75,7 @@ import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
+import { SplitLineLens } from "./SplitLineLens";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -225,6 +227,7 @@ export function DiffPane({
   screenTop = 0,
   showTopChrome,
   showAgentNotes,
+  showLineLens = false,
   showLineNumbers,
   showHunkHeaders,
   sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
@@ -282,6 +285,7 @@ export function DiffPane({
   screenTop?: number;
   showTopChrome?: boolean;
   showAgentNotes: boolean;
+  showLineLens?: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   sourceStatusByFileId?: Record<string, FileSourceStatus>;
@@ -321,6 +325,10 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
+  const [lineLensRowPlan, setLineLensRowPlan] = useState<{
+    fileId: string;
+    rowPlan: DiffSectionRowPlan;
+  } | null>(null);
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
@@ -952,6 +960,49 @@ export function DiffPane({
           } satisfies CursorHighlight),
     [cursorLine, renderedLineCursor],
   );
+
+  // The lens is fixed outside the scroll stream, so its height changes only the live viewport —
+  // never section geometry, windowing coordinates, or review navigation targets.
+  const splitLineLensFile = useMemo(() => {
+    if (
+      !showLineLens ||
+      layout !== "split" ||
+      cursorLine === "off" ||
+      !renderedLineCursor ||
+      pagerMode ||
+      renderer.height - screenTop < 8 ||
+      fileViewRenderPlans.has(renderedLineCursor.fileId)
+    ) {
+      return undefined;
+    }
+
+    const sectionIndex = fileSectionIndexById.get(renderedLineCursor.fileId);
+    return sectionIndex === undefined ? undefined : files[sectionIndex];
+  }, [
+    cursorLine,
+    fileSectionIndexById,
+    fileViewRenderPlans,
+    files,
+    layout,
+    pagerMode,
+    renderedLineCursor,
+    renderer.height,
+    screenTop,
+    showLineLens,
+  ]);
+
+  const lineLensRowPlanCallback = useMemo(() => {
+    if (!splitLineLensFile) {
+      return undefined;
+    }
+
+    const fileId = splitLineLensFile.id;
+    return (rowPlan: DiffSectionRowPlan) => {
+      setLineLensRowPlan((current) =>
+        current?.fileId === fileId && current.rowPlan === rowPlan ? current : { fileId, rowPlan },
+      );
+    };
+  }, [splitLineLensFile]);
 
   const copySelectedRowKeysByFile = useMemo(
     () =>
@@ -2130,113 +2181,134 @@ export function DiffPane({
               />
             </box>
           ) : null}
-          <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
-            <scrollbox
-              ref={scrollRef}
-              width="100%"
-              height="100%"
-              scrollY={true}
-              viewportCulling={true}
-              focused={pagerMode}
-              onMouseDown={beginCopySelection}
-              onMouseDrag={updateCopySelection}
-              onMouseDragEnd={endCopySelection}
-              onMouseScroll={handleMouseScroll}
-              onMouseUp={endCopySelection}
-              scrollAcceleration={mouseWheelScrollAcceleration}
-              rootOptions={{ backgroundColor: theme.panel }}
-              wrapperOptions={{ backgroundColor: theme.panel }}
-              viewportOptions={{ backgroundColor: theme.panel }}
-              contentOptions={{ backgroundColor: theme.panel }}
-              verticalScrollbarOptions={{ visible: false }}
-              horizontalScrollbarOptions={{ visible: false }}
-            >
-              <box
-                // Remount the diff content when width/layout/wrap mode changes so viewport culling
-                // recomputes against the new row geometry, while the outer scrollbox keeps its state.
-                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:tabs-${tabWidth}:${width}`}
-                style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+          <box style={{ width: "100%", flexGrow: 1, flexDirection: "column" }}>
+            <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
+              <scrollbox
+                ref={scrollRef}
+                width="100%"
+                height="100%"
+                scrollY={true}
+                viewportCulling={true}
+                focused={pagerMode}
+                onMouseDown={beginCopySelection}
+                onMouseDrag={updateCopySelection}
+                onMouseDragEnd={endCopySelection}
+                onMouseScroll={handleMouseScroll}
+                onMouseUp={endCopySelection}
+                scrollAcceleration={mouseWheelScrollAcceleration}
+                rootOptions={{ backgroundColor: theme.panel }}
+                wrapperOptions={{ backgroundColor: theme.panel }}
+                viewportOptions={{ backgroundColor: theme.panel }}
+                contentOptions={{ backgroundColor: theme.panel }}
+                verticalScrollbarOptions={{ visible: false }}
+                horizontalScrollbarOptions={{ visible: false }}
               >
-                {fileRenderItems.map((item) => {
-                  if (item.kind === "spacer") {
+                <box
+                  // Remount the diff content when width/layout/wrap mode changes so viewport culling
+                  // recomputes against the new row geometry, while the outer scrollbox keeps its state.
+                  key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:tabs-${tabWidth}:${width}`}
+                  style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+                >
+                  {fileRenderItems.map((item) => {
+                    if (item.kind === "spacer") {
+                      return (
+                        <box
+                          key={item.key}
+                          style={{
+                            width: "100%",
+                            height: item.height,
+                            backgroundColor: theme.panel,
+                          }}
+                        />
+                      );
+                    }
+
+                    const { sectionIndex: index } = item;
+                    const file = files[index];
+                    if (!file) {
+                      return null;
+                    }
+
                     return (
-                      <box
-                        key={item.key}
-                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
+                      <DiffSection
+                        key={file.id}
+                        codeHorizontalOffset={codeHorizontalOffset}
+                        expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                        file={file}
+                        fileView={fileViewRenderPlans.get(file.id)?.fileView}
+                        headerLabelWidth={headerLabelWidth}
+                        headerStatsWidth={headerStatsWidth}
+                        layout={layout}
+                        selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                        copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
+                        copySelectedSide={copySelectionSide}
+                        cursorHighlight={
+                          file.id === renderedLineCursor?.fileId ? cursorHighlight : undefined
+                        }
+                        shouldLoadHighlight={
+                          (!wrapLines || initialWrappedRenderWindowWarmed) &&
+                          highlightPrefetchFileIds.has(file.id)
+                        }
+                        sectionGeometry={sectionGeometry[index]}
+                        separatorWidth={separatorWidth}
+                        showHeader={shouldRenderInStreamFileHeader(index)}
+                        showSeparator={index > 0}
+                        showLineNumbers={showLineNumbers}
+                        showHunkHeaders={showHunkHeaders}
+                        sourceStatus={sourceStatusByFileId[file.id]}
+                        tabWidth={tabWidth}
+                        wrapLines={wrapLines}
+                        theme={theme}
+                        hoverActive={hoveredFileId === null || hoveredFileId === file.id}
+                        hoverClearSignal={
+                          addNoteHoverClearFileId === file.id ? addNoteHoverClearSignal : 0
+                        }
+                        viewWidth={diffContentWidth}
+                        visibleAgentNotes={
+                          visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
+                        }
+                        visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
+                        onHover={() => setHoveredFileForRowActions(file.id)}
+                        onMouseScroll={clearAddNoteHoverForScroll}
+                        onFileViewRowFailure={onFileViewRowFailure}
+                        onActiveAddNoteAffordanceChange={
+                          onActiveAddNoteAffordanceChange
+                            ? activeAddNoteAffordanceCallback(file.id)
+                            : undefined
+                        }
+                        onStartUserNoteAtHunk={
+                          reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
+                        }
+                        onRowPlanChange={
+                          file.id === splitLineLensFile?.id ? lineLensRowPlanCallback : undefined
+                        }
+                        onSelect={selectFileCallback(file.id)}
+                        onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
                       />
                     );
-                  }
-
-                  const { sectionIndex: index } = item;
-                  const file = files[index];
-                  if (!file) {
-                    return null;
-                  }
-
-                  return (
-                    <DiffSection
-                      key={file.id}
-                      codeHorizontalOffset={codeHorizontalOffset}
-                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
-                      file={file}
-                      fileView={fileViewRenderPlans.get(file.id)?.fileView}
-                      headerLabelWidth={headerLabelWidth}
-                      headerStatsWidth={headerStatsWidth}
-                      layout={layout}
-                      selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                      copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
-                      copySelectedSide={copySelectionSide}
-                      cursorHighlight={
-                        file.id === renderedLineCursor?.fileId ? cursorHighlight : undefined
-                      }
-                      shouldLoadHighlight={
-                        (!wrapLines || initialWrappedRenderWindowWarmed) &&
-                        highlightPrefetchFileIds.has(file.id)
-                      }
-                      sectionGeometry={sectionGeometry[index]}
-                      separatorWidth={separatorWidth}
-                      showHeader={shouldRenderInStreamFileHeader(index)}
-                      showSeparator={index > 0}
-                      showLineNumbers={showLineNumbers}
-                      showHunkHeaders={showHunkHeaders}
-                      sourceStatus={sourceStatusByFileId[file.id]}
-                      tabWidth={tabWidth}
-                      wrapLines={wrapLines}
-                      theme={theme}
-                      hoverActive={hoveredFileId === null || hoveredFileId === file.id}
-                      hoverClearSignal={
-                        addNoteHoverClearFileId === file.id ? addNoteHoverClearSignal : 0
-                      }
-                      viewWidth={diffContentWidth}
-                      visibleAgentNotes={
-                        visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
-                      }
-                      visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
-                      onHover={() => setHoveredFileForRowActions(file.id)}
-                      onMouseScroll={clearAddNoteHoverForScroll}
-                      onFileViewRowFailure={onFileViewRowFailure}
-                      onActiveAddNoteAffordanceChange={
-                        onActiveAddNoteAffordanceChange
-                          ? activeAddNoteAffordanceCallback(file.id)
-                          : undefined
-                      }
-                      onStartUserNoteAtHunk={
-                        reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
-                      }
-                      onSelect={selectFileCallback(file.id)}
-                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
-                    />
-                  );
-                })}
-              </box>
-            </scrollbox>
-            <VerticalScrollbar
-              ref={scrollbarRef}
-              scrollRef={scrollRef}
-              contentHeight={totalContentHeight}
-              height={scrollViewport.height}
-              theme={theme}
-            />
+                  })}
+                </box>
+              </scrollbox>
+              <VerticalScrollbar
+                ref={scrollbarRef}
+                scrollRef={scrollRef}
+                contentHeight={totalContentHeight}
+                height={scrollViewport.height}
+                theme={theme}
+              />
+            </box>
+            {splitLineLensFile &&
+            renderedLineCursor &&
+            lineLensRowPlan?.fileId === splitLineLensFile.id ? (
+              <SplitLineLens
+                codeHorizontalOffset={codeHorizontalOffset}
+                cursor={renderedLineCursor}
+                rowPlan={lineLensRowPlan.rowPlan}
+                showLineNumbers={showLineNumbers}
+                theme={theme}
+                width={diffContentWidth}
+              />
+            ) : null}
           </box>
         </box>
       ) : (

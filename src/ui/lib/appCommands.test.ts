@@ -41,6 +41,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    canToggleLineLens: true,
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
@@ -64,6 +65,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleGapForSelectedHunk: record("toggleGapForSelectedHunk"),
     toggleHelp: record("toggleHelp"),
     toggleHunkHeaders: record("toggleHunkHeaders"),
+    toggleLineLens: record("toggleLineLens"),
     toggleLineNumbers: record("toggleLineNumbers"),
     toggleLineWrap: record("toggleLineWrap"),
     toggleMenuBar: record("toggleMenuBar"),
@@ -245,6 +247,7 @@ describe("builtinCommandKeyDefaults", () => {
       "hunk.view.cursorLineOff",
       "hunk.view.cursorLineRow",
       "hunk.view.toggleCopyDecorations",
+      "hunk.view.toggleLineLens",
     ]);
   });
 });

@@ -246,6 +246,7 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [cursorLine, setCursorLine] = useState<CursorLine>(bootstrap.initialCursorLine ?? "row");
+  const [showLineLens, setShowLineLens] = useState(bootstrap.initialShowLineLens ?? false);
   const [lineCursorAlignmentRequest, setLineCursorAlignmentRequest] = useState<{
     id: number;
     alignment: CurrentLineAlignment;
@@ -322,6 +323,7 @@ export function App({
       showAgentNotes,
       copyDecorations,
       cursorLine,
+      showLineLens,
     }),
     [
       copyDecorations,
@@ -329,6 +331,7 @@ export function App({
       layoutMode,
       showAgentNotes,
       showHunkHeaders,
+      showLineLens,
       showLineNumbers,
       showMenuBar,
       themeId,
@@ -1199,6 +1202,11 @@ export function App({
     setShowLineNumbers((current) => !current);
   };
 
+  /** Toggle the old-above-new lens pinned beneath split diffs. */
+  const toggleLineLens = () => {
+    setShowLineLens((current) => !current);
+  };
+
   /** Toggle whether mouse selection copies review decorations or only file content. */
   const toggleCopyDecorations = () => {
     setCopyDecorations((current) => !current);
@@ -1750,6 +1758,8 @@ export function App({
       canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
       canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
       canRefreshCurrentInput,
+      canToggleLineLens:
+        showLineLens || (!pagerMode && resolvedLayout === "split" && cursorLine !== "off"),
       alignCurrentLine,
       applyFilePresentationToAllMatching,
       focusFilter,
@@ -1773,6 +1783,7 @@ export function App({
       toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
       toggleHelp,
       toggleHunkHeaders,
+      toggleLineLens,
       toggleLineNumbers,
       toggleLineWrap,
       toggleMenuBar,
@@ -1811,6 +1822,7 @@ export function App({
     showAgentNotes,
     showHelp,
     showHunkHeaders,
+    showLineLens,
     showLineNumbers,
     showMenuBar,
     wrapLines,
@@ -2081,6 +2093,7 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
+          showLineLens={showLineLens}
           sourceStatusByFileId={review.sourceStatusByFileId}
           tabWidth={tabWidth}
           wrapLines={wrapLines}

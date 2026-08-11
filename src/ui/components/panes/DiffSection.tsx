@@ -5,6 +5,7 @@ import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreD
 import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
@@ -48,6 +49,7 @@ interface DiffSectionProps {
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
 }
@@ -86,6 +88,7 @@ function DiffSectionComponent({
   onFileViewRowFailure,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
+  onRowPlanChange,
   onSelect,
   onToggleGap,
 }: DiffSectionProps) {
@@ -170,6 +173,7 @@ function DiffSectionComponent({
           onHover={onHover}
           onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
           onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+          onRowPlanChange={onRowPlanChange}
           onToggleGap={onToggleGap}
           selectedHunkIndex={selectedHunkIndex}
           sectionGeometry={sectionGeometry}
@@ -216,6 +220,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.onFileViewRowFailure === next.onFileViewRowFailure &&
     previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
     previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+    previous.onRowPlanChange === next.onRowPlanChange &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

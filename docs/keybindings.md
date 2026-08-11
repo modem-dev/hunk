@@ -82,6 +82,7 @@ The built-in commands and the keys they ship with:
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
 | `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
 | `hunk.view.toggleHunkHeaders`                  | Toggle hunk headers                            | `m`                          |
+| `hunk.view.toggleLineLens`                     | Toggle current-line lens                       | _(none)_                     |
 | `hunk.view.toggleLineNumbers`                  | Toggle line numbers                            | `l`                          |
 | `hunk.view.toggleLineWrap`                     | Toggle line wrapping                           | `w`                          |
 | `hunk.view.toggleMenuBar`                      | Toggle menu bar                                | `M`                          |

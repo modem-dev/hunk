@@ -44,6 +44,33 @@ describe("PTY current line", () => {
     }
   });
 
+  test("split mode pins the current row as old above new and stack mode hides it", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split", "--line-lens"],
+      cols: 140,
+      rows: 18,
+    });
+
+    try {
+      const split = await session.waitForText(/Current line · old above, new below/, {
+        timeout: 15_000,
+      });
+      const splitLines = split.split("\n");
+      const lensIndex = lineIndexOf(split, "Current line");
+      expect(splitLines[lensIndex + 1]).toContain("export const message = 'short';");
+      expect(splitLines[lensIndex + 2]).toContain("this is a very long wrapped line");
+
+      await session.press("2");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Current line"), 5_000);
+
+      await session.press("1");
+      await session.waitForText(/Current line · old above, new below/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("a held step key advances one line per press", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({

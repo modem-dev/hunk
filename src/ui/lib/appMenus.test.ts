@@ -22,6 +22,7 @@ const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> =
   showAgentNotes: true,
   showHelp: false,
   showHunkHeaders: false,
+  showLineLens: false,
   showLineNumbers: true,
   showMenuBar: true,
   wrapLines: true,
@@ -40,6 +41,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    canToggleLineLens: true,
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
@@ -62,6 +64,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     toggleGapForSelectedHunk: noop,
     toggleHelp: noop,
     toggleHunkHeaders: noop,
+    toggleLineLens: noop,
     toggleLineNumbers: noop,
     toggleLineWrap: noop,
     toggleMenuBar: noop,
@@ -112,6 +115,24 @@ describe("buildAppMenus", () => {
     expect(checkedFor("row")).toEqual(["Current line: full row"]);
     expect(checkedFor("number")).toEqual(["Current line: line number"]);
     expect(checkedFor("off")).toEqual(["Current line: off"]);
+
+    expect(
+      entry(
+        buildAppMenus({
+          commands,
+          ...MENU_STATE,
+          layoutMode: "split",
+          showLineLens: true,
+        }),
+        "view",
+        "Current-line lens",
+      ).checked,
+    ).toBe(true);
+
+    const disabledCommands = createTestCommands({ canToggleLineLens: false }).commands;
+    expect(
+      items(buildAppMenus({ commands: disabledCommands, ...MENU_STATE }).view),
+    ).not.toContainEqual(expect.objectContaining({ label: "Current-line lens" }));
   });
 
   test("labels, hints, and checked state come from the commands and app state", () => {

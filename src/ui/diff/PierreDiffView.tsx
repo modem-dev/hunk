@@ -11,7 +11,7 @@ import type { AppTheme } from "../themes";
 import { type FileSourceStatus } from "./expandCollapsedRows";
 import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
-import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
+import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import {
   diffMessage,
@@ -76,6 +76,7 @@ export function PierreDiffView({
   onHover,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
+  onRowPlanChange,
   onToggleGap,
   showLineNumbers = true,
   showHunkHeaders = true,
@@ -104,6 +105,7 @@ export function PierreDiffView({
   onHover?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan) => void;
   onToggleGap?: (gapKey: string) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
@@ -241,6 +243,10 @@ export function PierreDiffView({
       visibleAgentNotes,
     ],
   );
+  useEffect(() => {
+    onRowPlanChange?.(sectionRowPlan);
+  }, [onRowPlanChange, sectionRowPlan]);
+
   const plannedRows = sectionRowPlan.plannedRows;
   const lineNumberDigits = sectionRowPlan.lineNumberDigits;
   const fileHasSourceFetcher = Boolean(file?.sourceFetcher);

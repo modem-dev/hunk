@@ -514,5 +514,6 @@ export async function loadAppBootstrap(
     initialShowAgentNotes: input.options.agentNotes ?? false,
     initialCopyDecorations: input.options.copyDecorations ?? false,
     initialCursorLine: input.options.cursorLine ?? "row",
+    initialShowLineLens: input.options.lineLens ?? false,
   };
 }

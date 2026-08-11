@@ -47,6 +47,7 @@ function createCursorLineBootstrap(
       initialMode,
     }),
     initialCursorLine: cursorLine,
+    initialShowLineLens: true,
   };
 }
 
@@ -123,6 +124,7 @@ async function renderWrappedCursorLineApp(cursorLine: CursorLine) {
       initialWrapLines: true,
     }),
     initialCursorLine: cursorLine,
+    initialShowLineLens: true,
   };
   const setup = await testRender(<AppHost bootstrap={bootstrap as never} />, {
     width: 120,
@@ -223,6 +225,60 @@ describe("current line highlight", () => {
 
     try {
       expect(rowBackground(setup, "alpha = 1")).not.toEqual(rowBackground(setup, "gamma = 3"));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("pins the split row's old and new versions below the viewport", async () => {
+    const setup = await renderCursorLineApp("row", "split");
+
+    try {
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      await flush(setup);
+
+      const lines = setup.captureCharFrame().split("\n");
+      const lensIndex = lines.findIndex((line) => line.includes("Current line"));
+      expect(lensIndex).toBeGreaterThanOrEqual(0);
+      expect(lines[lensIndex + 1]).toContain("beta = 2;");
+      expect(lines[lensIndex + 2]).toContain("beta = 22222;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("hides the split-line lens without a current line or split layout", async () => {
+    const stack = await renderCursorLineApp("row", "stack");
+    const off = await renderCursorLineApp("off", "split");
+
+    try {
+      expect(stack.captureCharFrame()).not.toContain("Current line");
+      expect(off.captureCharFrame()).not.toContain("Current line");
+    } finally {
+      await act(async () => {
+        stack.renderer.destroy();
+        off.renderer.destroy();
+      });
+    }
+  });
+
+  test("hides the lens when it would consume the whole review viewport", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCursorLineBootstrap("row", "split") as never} />,
+      { width: 80, height: 8 },
+    );
+
+    try {
+      await flush(setup);
+      const frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Current line");
+      expect(frame).toContain("alpha = 1");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
