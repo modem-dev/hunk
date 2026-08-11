@@ -29,6 +29,10 @@ export interface CheckExtensionConsumerOptions {
   sources: ExtensionConsumerSource[];
   /** Resolution modes to compile under; both by default. */
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
+  /** Ambient type packages needed by consumer sources, empty by default. */
+  types?: readonly string[];
+  /** Explicit type roots used when consumer fixtures need repo dev dependencies. */
+  typeRoots?: readonly string[];
 }
 
 /** Module/moduleResolution pairs that have to accept the published declarations. */
@@ -77,6 +81,8 @@ function writeConsumerTsconfig(
   consumerRoot: string,
   mode: keyof typeof RESOLUTION_CONFIGS,
   sourceNames: string[],
+  types: readonly string[],
+  typeRoots?: readonly string[],
 ) {
   const configPath = path.join(consumerRoot, `tsconfig.${mode}.json`);
   writeFileSync(
@@ -92,7 +98,8 @@ function writeConsumerTsconfig(
           // The published declarations are the thing under test, so they are
           // checked rather than skipped.
           skipLibCheck: false,
-          types: [],
+          types,
+          ...(typeRoots ? { typeRoots } : {}),
         },
         include: sourceNames.map((name) => `src/${name}`),
       },
@@ -137,12 +144,20 @@ export function checkExtensionConsumerTypes(options: CheckExtensionConsumerOptio
     const srcDir = path.join(consumerRoot, "src");
     mkdirSync(srcDir, { recursive: true });
     for (const source of sources) {
-      writeFileSync(path.join(srcDir, source.name), source.text);
+      const sourcePath = path.join(srcDir, source.name);
+      mkdirSync(path.dirname(sourcePath), { recursive: true });
+      writeFileSync(sourcePath, source.text);
     }
 
     const sourceNames = sources.map((source) => source.name);
     for (const mode of modes) {
-      const configPath = writeConsumerTsconfig(consumerRoot, mode, sourceNames);
+      const configPath = writeConsumerTsconfig(
+        consumerRoot,
+        mode,
+        sourceNames,
+        options.types ?? [],
+        options.typeRoots,
+      );
       const proc = Bun.spawnSync(["bun", "x", "tsc", "-p", configPath], {
         cwd: repoRoot,
         stdin: "ignore",

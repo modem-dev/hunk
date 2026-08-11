@@ -1,0 +1,10 @@
+{
+  "name": "hunk-mercurial-vcs-extension",
+  "private": true,
+  "type": "module",
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

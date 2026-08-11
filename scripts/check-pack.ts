@@ -362,6 +362,12 @@ for (const removedType of [
 // see because it resolves TypeScript sources, not the shipped .d.ts tree.
 const docsMarkdown = readFileSync(path.join(repoRoot, "docs", "extensions.md"), "utf8");
 const docExamples = buildDocExamples(docsMarkdown);
+// Compile the actual installable VCS example, not a lookalike fixture. Keeping
+// its relative layout also proves the NodeNext `.js` source specifier resolves.
+const mercurialExampleSources = ["index.ts", "commands.ts"].map((fileName) => ({
+  name: `examples/extensions/mercurial/${fileName}`,
+  text: readFileSync(path.join(repoRoot, "examples", "extensions", "mercurial", fileName), "utf8"),
+}));
 
 const { modes } = checkExtensionConsumerTypes({
   repoRoot,
@@ -370,6 +376,14 @@ const { modes } = checkExtensionConsumerTypes({
     ...docExamples.map((example) => ({ name: example.name, text: example.text })),
   ],
 });
+// Keep standard-library ambient types out of the broad public-surface check
+// above, then compile the real example separately with the Node APIs it uses.
+checkExtensionConsumerTypes({
+  repoRoot,
+  types: ["bun"],
+  typeRoots: [path.join(repoRoot, "node_modules", "@types")],
+  sources: mercurialExampleSources,
+});
 
 console.log(
   `Verified npm pack output for ${pack.name}@${pack.version} (${pack.entryCount} files).`,
@@ -377,5 +391,6 @@ console.log(
 console.log(
   `Verified hunkdiff/extension typechecks for consumers using ${modes
     .map((mode) => `moduleResolution: "${mode}"`)
-    .join(" and ")}, ` + `across ${docExamples.length} docs/extensions.md examples.`,
+    .join(" and ")}, ` +
+    `across ${docExamples.length} docs/extensions.md examples and the Mercurial example sources.`,
 );

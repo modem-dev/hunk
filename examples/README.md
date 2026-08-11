@@ -25,6 +25,7 @@ Each folder tells a small review story and includes the exact command to run fro
 - [`extensions/inline-edit/`](extensions/inline-edit/) edits the file under review in place, composing a file-view mode, layout refresh, and host-mediated workspace writes.
 - [`extensions/jsx-file-view/`](extensions/jsx-file-view/) is the smallest hook-using fixed-row JSX proof of concept.
 - [`extensions/jsx-file-view-gallery/`](extensions/jsx-file-view-gallery/) runs three constrained-JSX presentations against checked-in TypeScript, CSS, and `package.json` diffs: an impact atlas, real color swatches, and highlighted dependency versions.
+- [`extensions/mercurial/`](extensions/mercurial/) is an installable Mercurial VCS adapter with deterministic patches, exact source reads, unknown-file review, and poll-only watch support.
 
 Extension examples are not bundled with Hunk. Each README shows how to try or install its folder explicitly.
 
