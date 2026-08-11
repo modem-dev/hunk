@@ -7,7 +7,7 @@
  */
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import { filterReviewFiles, mergeFileAnnotationsByFileId } from "./files";
-import { buildNoteOwnerHunkCursors, buildHunkCursors, type HunkCursor } from "./hunks";
+import { buildAnnotatedHunkCursors, buildHunkCursors, type HunkCursor } from "./hunks";
 
 export interface BuildReviewStreamStateOptions {
   files: DiffFile[];
@@ -35,7 +35,7 @@ export function buildReviewStreamState({
     allFiles,
     visibleFiles,
     hunkCursors: buildHunkCursors(visibleFiles),
-    annotatedHunkCursors: buildNoteOwnerHunkCursors(visibleFiles),
+    annotatedHunkCursors: buildAnnotatedHunkCursors(visibleFiles),
   };
 }
 

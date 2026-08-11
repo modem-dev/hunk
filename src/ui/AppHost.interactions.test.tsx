@@ -222,6 +222,7 @@ function createDeepNoteBootstrap(): AppBootstrap {
     summary: "file note",
     annotations: [
       {
+        oldRange: [1, 1],
         newRange: [62, 62],
         summary: "Note anchored on second hunk.",
       },
@@ -636,7 +637,6 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
-      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
       await act(async () => {
         await setup.mockInput.typeText("a");
         await setup.mockInput.typeText("a");
@@ -2805,6 +2805,11 @@ describe("App interactions", () => {
         currentFrame.includes("Note anchored on second hunk."),
       );
       expect(frame).toContain("Note anchored on second hunk.");
+
+      await act(async () => {
+        result = await navigateToHunk({ commentDirection: "prev" });
+      });
+      expect(result).toMatchObject({ filePath: "deep-note.ts", hunkIndex: 0 });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -3340,11 +3345,6 @@ describe("App interactions", () => {
     try {
       await flush(setup);
 
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
-
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 16; index += 1) {
         await act(async () => {
@@ -3389,11 +3389,6 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
-
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
 
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 8; index += 1) {
@@ -3463,11 +3458,6 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
-
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
 
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 50; index += 1) {

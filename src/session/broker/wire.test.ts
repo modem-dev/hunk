@@ -355,6 +355,33 @@ describe("hunk session wire parsing", () => {
     }
   });
 
+  test("accepts only pairwise-lazy canonical descriptors while patches remain complete", () => {
+    const lazy = createRegistration([createFile()]);
+    const canonical = lazy.info.reviewManifest.resources.find(
+      (resource) => resource.kind === "canonical-file",
+    )!;
+    delete canonical.byteLength;
+    delete canonical.digest;
+    expect(parseSessionRegistration(lazy)).not.toBeNull();
+
+    for (const missing of ["byteLength", "digest"] as const) {
+      const halfComplete = createRegistration([createFile()]);
+      const descriptor = halfComplete.info.reviewManifest.resources.find(
+        (resource) => resource.kind === "canonical-file",
+      )!;
+      delete descriptor[missing];
+      expect(parseSessionRegistration(halfComplete)).toBeNull();
+    }
+
+    const incompletePatch = createRegistration([createFile()]);
+    const patch = incompletePatch.info.reviewManifest.resources.find(
+      (resource) => resource.kind === "patch",
+    )! as { byteLength?: number; digest?: string };
+    delete patch.byteLength;
+    delete patch.digest;
+    expect(parseSessionRegistration(incompletePatch)).toBeNull();
+  });
+
   test("requires every declared digest to be exactly one SHA-256 hex value", () => {
     for (const digest of ["abc", "g".repeat(64), "0".repeat(63), `${"0".repeat(64)}00`]) {
       const registration = createRegistration([createFile()]);

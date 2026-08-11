@@ -21,6 +21,7 @@ import {
   MAX_REVIEW_PRODUCER_METADATA_BYTES,
   MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_RESOURCE_DESCRIPTORS,
+  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   ReviewProducerCapacityError,
   isReviewSha256Digest,
   type HunkReviewManifestV1,
@@ -71,6 +72,21 @@ export function createHunkReviewManifest(
     throw new ReviewProducerCapacityError("Review manifest has too many resource descriptors.");
   }
   for (const resource of document.resources) {
+    if ((resource.byteLength === undefined) !== (resource.digest === undefined)) {
+      throw new Error(`Review resource ${resource.id} has incomplete materialization metadata.`);
+    }
+    if (resource.kind === "patch" && resource.byteLength === undefined) {
+      throw new Error(`Review patch resource ${resource.id} must be materialized.`);
+    }
+    if (
+      resource.kind === "source" &&
+      resource.byteLength !== undefined &&
+      resource.byteLength > MAX_REVIEW_SOURCE_RESOURCE_BYTES
+    ) {
+      throw new ReviewProducerCapacityError(
+        `Review source resource ${resource.id} exceeds the source limit.`,
+      );
+    }
     if (resource.byteLength !== undefined && resource.byteLength > MAX_REVIEW_RESOURCE_BYTES) {
       throw new ReviewProducerCapacityError(
         `Review resource ${resource.id} exceeds the per-resource limit.`,

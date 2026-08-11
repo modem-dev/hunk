@@ -83,7 +83,7 @@ export function annotationIntersectingHunkIndices(
 }
 
 /**
- * Resolve the one owner used for navigation and terminal placement.
+ * Resolve the one owner used for terminal placement.
  *
  * Dual-range notes prefer the first hunk intersecting their new-side range even when
  * its start is collapsed and the old range intersects another hunk. Range-less and
@@ -128,7 +128,7 @@ export function getAnnotationsVisibleInHunk(file: DiffFile | undefined, hunk: Hu
   );
 }
 
-/** Return only the declared owner hunks used by annotated-note navigation. */
+/** Return one placement owner per annotation, including explicit fallback owners. */
 export function getAnnotationOwnerHunkIndices(file: DiffFile | undefined) {
   const owners = new Set<number>();
   if (!file?.agent) return owners;
@@ -138,6 +138,19 @@ export function getAnnotationOwnerHunkIndices(file: DiffFile | undefined) {
     if (owner !== undefined) owners.add(owner);
   }
   return owners;
+}
+
+/** Return every genuinely intersected hunk used by annotated-note navigation. */
+export function getAnnotationIntersectingHunkIndices(file: DiffFile | undefined) {
+  const intersections = new Set<number>();
+  if (!file?.agent) return intersections;
+
+  for (const annotation of file.agent.annotations) {
+    for (const hunkIndex of annotationIntersectingHunkIndices(annotation, file.metadata.hunks)) {
+      intersections.add(hunkIndex);
+    }
+  }
+  return intersections;
 }
 
 /** Build a stable fallback id when an annotation does not provide one. */

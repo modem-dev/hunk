@@ -531,6 +531,12 @@ export class BrowserReviewServer {
     auth: AuthSession,
   ) {
     try {
+      const rangeHeader = request.headers.get("range");
+      // Reject malformed range grammar before an authenticated request can force a full first-time
+      // producer materialization. Bounds that depend on actual size are checked after verification.
+      if (this.parseRange(rangeHeader, Number.MAX_SAFE_INTEGER) === "invalid") {
+        return new Response(null, { status: 416, headers: this.headers() });
+      }
       const { descriptor, bytes } = await this.state.getBrowserReviewResource(
         sessionId,
         generation,
@@ -539,7 +545,7 @@ export class BrowserReviewServer {
       if (!this.revalidateAuth(auth)) {
         return this.jsonError("Review authorization is missing or expired.", 401);
       }
-      const range = this.parseRange(request.headers.get("range"), bytes.byteLength);
+      const range = this.parseRange(rangeHeader, bytes.byteLength);
       if (range === "invalid") {
         return new Response(null, {
           status: 416,

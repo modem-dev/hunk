@@ -6,6 +6,7 @@ import { resolveExperimentalDiffFiles } from "../core/experimental";
 import { projectReviewDocument } from "../core/review/document";
 import { reviewGapAddress } from "../core/review/expansion";
 import { reviewDigest } from "../core/review/identity";
+import { encodeJsonStream, JsonStreamSizeError } from "../core/review/jsonStream";
 import { projectReviewNote } from "../core/review/notes";
 import { parseStml } from "../core/review/stml";
 import { reviewFileMatchesFilter } from "../core/review/selectors";
@@ -49,6 +50,7 @@ import {
   MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
+  ReviewProducerCapacityError,
   assertReviewProducerEnvelopeWithinBounds,
   parseApplyReviewActionInput,
   parseGetReviewSnapshotInput,
@@ -68,6 +70,7 @@ import {
 import type {
   HunkSessionBrokerClient,
   HunkSessionCommandResult,
+  HunkSessionRegistration,
   HunkSessionServerMessage,
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -156,8 +159,14 @@ type CachedSessionCommentResult =
 const MAX_SESSION_COMMENT_RESULTS = 256;
 const MAX_ENCODED_RESOURCE_CACHE_BYTES = MAX_REVIEW_RESOURCE_BYTES * 2;
 
+interface CachedEncodedResource {
+  bytes: Buffer;
+  byteLength: number;
+  digest: string;
+}
+
 interface EncodedResourceCache {
-  entries: Map<string, Buffer>;
+  entries: Map<string, CachedEncodedResource>;
   totalBytes: number;
 }
 
@@ -192,6 +201,13 @@ export class ReviewSessionRuntime {
   private extensionsCwd: string;
   private rendererFields: SessionRendererSnapshotFields = {};
   private lastBrokerPublicationKey: string | undefined;
+  private readonly preparedBrokerSnapshots = new WeakMap<
+    ReviewState,
+    {
+      publicationKey: string;
+      snapshot: ReturnType<typeof createSessionSnapshotFromReviewState>;
+    }
+  >();
   private watchController: WatchController | null = null;
   private storeSubscription: (() => void) | null = null;
   private reloadQueue: QueuedReload[] = [];
@@ -313,41 +329,17 @@ export class ReviewSessionRuntime {
     return { roots: [...this.reloadBounds.roots], defaultCwd: this.reloadBounds.defaultCwd };
   }
 
-  /** Materialize one active-generation resource string without retaining encoded duplicates. */
-  private materializeResourceText(projection: ReviewDocumentProjectionV1, resourceId: string) {
-    const descriptor = projection.document.resources.find((resource) => resource.id === resourceId);
-    if (!descriptor) throw new Error(`Unknown or retired review resource ${resourceId}.`);
-    const cached = projection.resourceContents[resourceId];
-    if (cached !== undefined) return cached;
-    if (descriptor.kind !== "canonical-file") return undefined;
-    if (
-      descriptor.byteLength === undefined ||
-      descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES ||
-      !descriptor.digest
-    ) {
-      throw new Error(`Canonical review resource ${resourceId} is outside resource bounds.`);
-    }
-    const file = projection.document.files.find(
-      (candidate) =>
-        candidate.key === descriptor.fileKey && candidate.canonicalResourceId === resourceId,
-    );
-    if (!file) throw new Error(`Canonical review resource ${resourceId} has no matching file.`);
-    // Descriptor measurement preflights the complete output, so this allocation is always bounded.
-    const text = JSON.stringify(file);
-    projection.resourceContents[resourceId] = text;
-    return text;
-  }
-
   /** Encode and verify one active resource once within its projection-scoped bounded LRU. */
   private resolveResourceBytes(projection: ReviewDocumentProjectionV1, resourceId: string) {
     const descriptor = projection.document.resources.find((resource) => resource.id === resourceId);
     if (
       !descriptor ||
-      descriptor.byteLength === undefined ||
-      descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES ||
-      !descriptor.digest
+      (descriptor.byteLength === undefined) !== (descriptor.digest === undefined)
     ) {
-      throw new Error(`Review resource ${resourceId} is outside materialized resource bounds.`);
+      throw new Error(`Review resource ${resourceId} has an invalid materialization descriptor.`);
+    }
+    if (descriptor.byteLength !== undefined && descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES) {
+      throw new Error(`Review resource ${resourceId} is outside resource bounds.`);
     }
     let cache = this.encodedResourceBytes.get(projection);
     if (!cache) {
@@ -360,16 +352,41 @@ export class ReviewSessionRuntime {
       cache.entries.set(resourceId, cached);
       return cached;
     }
-    const text = this.materializeResourceText(projection, resourceId);
-    if (text === undefined) throw new Error(`Review resource ${resourceId} is not materialized.`);
-    const bytes = Buffer.from(text, "utf8");
-    if (bytes.byteLength !== descriptor.byteLength || reviewDigest(bytes) !== descriptor.digest) {
-      if (descriptor.kind === "canonical-file") delete projection.resourceContents[resourceId];
-      throw new Error(`Review resource ${resourceId} failed integrity verification.`);
+
+    let encoded: CachedEncodedResource;
+    if (descriptor.kind === "canonical-file") {
+      const file = projection.document.files.find(
+        (candidate) =>
+          candidate.key === descriptor.fileKey && candidate.canonicalResourceId === resourceId,
+      );
+      if (!file) throw new Error(`Canonical review resource ${resourceId} has no matching file.`);
+      encoded = encodeJsonStream(file, MAX_REVIEW_RESOURCE_BYTES);
+      if (
+        descriptor.byteLength !== undefined &&
+        (encoded.byteLength !== descriptor.byteLength || encoded.digest !== descriptor.digest)
+      ) {
+        throw new Error(`Review resource ${resourceId} failed integrity verification.`);
+      }
+    } else {
+      if (
+        descriptor.byteLength === undefined ||
+        descriptor.byteLength > MAX_REVIEW_RESOURCE_BYTES ||
+        !descriptor.digest
+      ) {
+        throw new Error(`Review resource ${resourceId} is not materialized.`);
+      }
+      const text = projection.resourceContents[resourceId];
+      if (text === undefined) throw new Error(`Review resource ${resourceId} is not materialized.`);
+      const bytes = Buffer.from(text, "utf8");
+      if (bytes.byteLength !== descriptor.byteLength || reviewDigest(bytes) !== descriptor.digest) {
+        throw new Error(`Review resource ${resourceId} failed integrity verification.`);
+      }
+      encoded = { bytes, byteLength: bytes.byteLength, digest: descriptor.digest };
     }
+
     while (
       cache.entries.size > 0 &&
-      cache.totalBytes + bytes.byteLength > MAX_ENCODED_RESOURCE_CACHE_BYTES
+      cache.totalBytes + encoded.byteLength > MAX_ENCODED_RESOURCE_CACHE_BYTES
     ) {
       const oldestId = cache.entries.keys().next().value;
       if (oldestId === undefined) break;
@@ -377,18 +394,28 @@ export class ReviewSessionRuntime {
       cache.entries.delete(oldestId);
       cache.totalBytes -= retired.byteLength;
     }
-    cache.entries.set(resourceId, bytes);
-    cache.totalBytes += bytes.byteLength;
-    return bytes;
+    cache.entries.set(resourceId, encoded);
+    cache.totalBytes += encoded.byteLength;
+    return encoded;
   }
 
-  /** Resolve one verified materialized resource only from the active generation. */
+  /** Resolve one verified resource only from the active generation. */
   getResource(resourceId: string) {
     const { projection } = this.snapshot;
-    const text = this.materializeResourceText(projection, resourceId);
-    if (text === undefined) return undefined;
-    this.resolveResourceBytes(projection, resourceId);
-    return text;
+    const descriptor = projection.document.resources.find((resource) => resource.id === resourceId);
+    if (!descriptor) return undefined;
+    if (
+      descriptor.kind !== "canonical-file" &&
+      (descriptor.byteLength === undefined || descriptor.digest === undefined)
+    )
+      return undefined;
+    return this.resolveResourceBytes(projection, resourceId).bytes.toString("utf8");
+  }
+
+  /** Expose active-generation encoded cache occupancy for diagnostics and benchmarks. */
+  getEncodedResourceCacheStats() {
+    const cache = this.encodedResourceBytes.get(this.snapshot.projection);
+    return { entries: cache?.entries.size ?? 0, totalBytes: cache?.totalBytes ?? 0 };
   }
 
   /** Begin lifecycle events and watch observation after an adapter has mounted. */
@@ -724,6 +751,36 @@ export class ReviewSessionRuntime {
         { validateNextSnapshot: (next) => this.validateReviewStoreSnapshot(next) },
       );
     }
+    const nextState = store.getSnapshot();
+    const selectedSemanticFile = nextState.document.files.find(
+      (file) => file.key === nextState.selection.fileKey,
+    );
+    let nextSessionSnapshot: ReturnType<typeof createSessionSnapshotFromReviewState> | null = null;
+    let nextRegistration: HunkSessionRegistration | null = null;
+    let degradeToLocal = false;
+    if (this.hostClient) {
+      try {
+        nextSessionSnapshot = createSessionSnapshotFromReviewState(nextState, this.rendererFields);
+        nextRegistration = updateSessionRegistration(
+          this.hostClient.getRegistration(),
+          bootstrap,
+          projection.document,
+        );
+        assertSessionRegistrationEnvelopeWithinBounds(nextRegistration, nextSessionSnapshot);
+      } catch (error) {
+        if (
+          !(error instanceof ReviewProducerCapacityError) ||
+          bootstrap.input.options.web ||
+          reload.reason === "daemon"
+        )
+          throw error;
+        // A manual/watch reload must preserve the original terminal contract even when the new
+        // generation no longer fits optional broker metadata. Retire transport and continue local.
+        degradeToLocal = true;
+        nextSessionSnapshot = null;
+        nextRegistration = null;
+      }
+    }
     const nextSnapshot: ReviewSessionRuntimeSnapshot = {
       revision: previousSnapshot.revision + 1,
       bootstrap,
@@ -731,31 +788,22 @@ export class ReviewSessionRuntime {
       store,
       extensions: reload.extensions,
       trust: { pendingRepoRoot, promptRepoRoot },
-      notice: previousSnapshot.notice,
+      notice: degradeToLocal
+        ? "Session brokering is unavailable for this large review; reviewing locally."
+        : previousSnapshot.notice,
       remountVersion: previousSnapshot.remountVersion + (reload.options.resetApp === false ? 0 : 1),
     };
-    const nextSessionSnapshot = createSessionSnapshotFromReviewState(
-      store.getSnapshot(),
-      this.rendererFields,
-    );
-    const nextRegistration = this.hostClient
-      ? updateSessionRegistration(this.hostClient.getRegistration(), bootstrap, projection.document)
-      : null;
-    if (nextRegistration) {
-      assertSessionRegistrationEnvelopeWithinBounds(nextRegistration, nextSessionSnapshot);
-    }
-    const sessionId = nextRegistration?.sessionId ?? "local-session";
     const result = {
-      sessionId,
+      sessionId: nextRegistration?.sessionId ?? "local-session",
       inputKind: bootstrap.input.kind,
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
       fileCount: bootstrap.changeset.files.length,
-      selectedFilePath: nextSessionSnapshot.state.selectedFilePath,
-      selectedHunkIndex: nextSessionSnapshot.state.selectedHunkIndex,
+      selectedFilePath: selectedSemanticFile?.path,
+      selectedHunkIndex: nextState.selection.hunkIndex,
     } satisfies ReloadedSessionResult;
     this.assertCommandResultWithinBounds(result, "Reload result");
-    if (this.hostClient) {
+    if (this.hostClient && !degradeToLocal) {
       this.assertCommandResultWithinBounds(
         {
           kind: "review-snapshot",
@@ -770,6 +818,12 @@ export class ReviewSessionRuntime {
 
     // No active authority, registry, trust history, watch, or broker state changes before here.
     this.retireStoreAndCommandAuthority();
+    if (degradeToLocal) {
+      const retiredHost = this.hostClient;
+      this.hostClient = undefined;
+      this.lastBrokerPublicationKey = undefined;
+      void Promise.resolve(retiredHost?.stop?.()).catch(() => undefined);
+    }
     if (this.disposed) throw new Error("Review session runtime is disposed.");
     this.generationSequence = nextGenerationSequence;
     this.snapshot = nextSnapshot;
@@ -778,7 +832,7 @@ export class ReviewSessionRuntime {
     if (reload.reloadedExtensions && previousSnapshot.extensions !== reload.extensions) {
       this.closeExtensionResult(previousSnapshot.extensions);
     }
-    if (this.hostClient && nextRegistration) {
+    if (this.hostClient && nextRegistration && nextSessionSnapshot) {
       this.hostClient.replaceSession(nextRegistration, nextSessionSnapshot);
       this.lastBrokerPublicationKey = this.brokerPublicationKey(store.getSnapshot());
       this.hostClient.setBridge({
@@ -876,9 +930,12 @@ export class ReviewSessionRuntime {
     const state = store.getSnapshot();
     const key = this.brokerPublicationKey(state);
     if (key === this.lastBrokerPublicationKey) return;
-    this.hostClient.updateSnapshot(
-      createSessionSnapshotFromReviewState(state, this.rendererFields),
-    );
+    const prepared = this.preparedBrokerSnapshots.get(state);
+    const snapshot =
+      prepared?.publicationKey === key
+        ? prepared.snapshot
+        : createSessionSnapshotFromReviewState(state, this.rendererFields);
+    this.hostClient.updateSnapshot(snapshot);
     this.lastBrokerPublicationKey = key;
   }
 
@@ -949,23 +1006,28 @@ export class ReviewSessionRuntime {
     const descriptor = projection.document.resources.find(
       (resource) => resource.id === input.resourceId,
     );
-    let bytes: Buffer | undefined;
+    let encoded: CachedEncodedResource | undefined;
     try {
-      bytes = this.resolveResourceBytes(projection, input.resourceId);
-    } catch {
-      bytes = undefined;
+      encoded = this.resolveResourceBytes(projection, input.resourceId);
+    } catch (error) {
+      if (error instanceof JsonStreamSizeError) {
+        return this.reviewCommandError(
+          "resource-too-large",
+          `Review resource ${input.resourceId} exceeds the producer resource limit.`,
+        );
+      }
     }
-    if (!descriptor || descriptor.byteLength === undefined || !descriptor.digest || !bytes) {
+    if (!descriptor || !encoded) {
       return this.reviewCommandError(
         "unknown-resource",
-        `Review resource ${input.resourceId} has no bounded materialized descriptor.`,
+        `Review resource ${input.resourceId} has no bounded materialized content.`,
       );
     }
-    if (input.offset > descriptor.byteLength) {
+    if (input.offset > encoded.byteLength) {
       return this.reviewCommandError("invalid-range", "Resource offset is outside its content.");
     }
-    const end = Math.min(bytes.byteLength, input.offset + input.length);
-    const chunk = bytes.subarray(input.offset, end);
+    const end = Math.min(encoded.byteLength, input.offset + input.length);
+    const chunk = encoded.bytes.subarray(input.offset, end);
     return {
       kind: "review-resource",
       generation: input.generation,
@@ -975,9 +1037,9 @@ export class ReviewSessionRuntime {
       byteLength: chunk.byteLength,
       encoding: "base64",
       data: chunk.toString("base64"),
-      contentDigest: descriptor.digest,
-      contentSize: descriptor.byteLength,
-      eof: end === bytes.byteLength,
+      contentDigest: encoded.digest,
+      contentSize: encoded.byteLength,
+      eof: end === encoded.byteLength,
     };
   }
 
@@ -1009,13 +1071,20 @@ export class ReviewSessionRuntime {
     };
   }
 
-  /** Validate every prospective store revision against its broker snapshot envelope. */
+  /** Validate prospective revisions only while this runtime owns a broker producer. */
   private validateReviewStoreSnapshot(next: ReviewState) {
+    // A terminal review may deliberately disable brokering or fall back locally after its initial
+    // registration exceeds producer capacity. Broker bounds must never constrain that local UI.
+    if (!this.hostClient) return;
+    const publicationKey = this.brokerPublicationKey(next);
     const snapshot = createSessionSnapshotFromReviewState(next, this.rendererFields);
     assertReviewProducerEnvelopeWithinBounds(
       { type: "snapshot", snapshot },
       "Review snapshot update",
     );
+    // The published listener receives this exact state object synchronously after validation, so
+    // reuse its bounded projection rather than scanning note-heavy immutable metadata twice.
+    this.preparedBrokerSnapshots.set(next, { publicationKey, snapshot });
   }
 
   /** Preflight one producer command result with conservative websocket framing. */
@@ -1754,9 +1823,7 @@ export class ReviewSessionRuntime {
           ...state.liveNotes.map((entry) => entry.note),
           ...state.userNotes.map((entry) => entry.note),
         ].flatMap((note) =>
-          note.anchor.ownerHunkIndex === undefined
-            ? []
-            : [`${note.fileKey}\0${note.anchor.ownerHunkIndex}`],
+          note.anchor.intersectingHunkIndices.map((hunkIndex) => `${note.fileKey}\0${hunkIndex}`),
         ),
       );
       const annotated = visible.flatMap((file) =>

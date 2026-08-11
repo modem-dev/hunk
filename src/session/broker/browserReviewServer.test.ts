@@ -80,13 +80,17 @@ function createRegisteredState(
   capability = "capability-one",
   snapshot = createTestSessionSnapshot(),
   state = new HunkSessionBrokerState(),
+  lazyCanonical = false,
 ) {
   const socket = {
     send(text: string) {
       const message = JSON.parse(text) as any;
       if (message.command === "read_review_resource") {
-        const patch = "@@ -1,1 +1,1 @@";
-        const bytes = Buffer.from(patch);
+        const content =
+          message.input.resourceId === "resource:canonical:test:0"
+            ? '{"canonical":true}'
+            : "@@ -1,1 +1,1 @@";
+        const bytes = Buffer.from(content);
         const offset = message.input.offset;
         const chunk = bytes.subarray(offset, offset + message.input.length);
         queueMicrotask(() =>
@@ -96,13 +100,13 @@ function createRegisteredState(
             result: {
               kind: "review-resource",
               generation: "generation:test",
-              id: "resource:test:0",
-              resourceId: "resource:test:0",
+              id: message.input.resourceId,
+              resourceId: message.input.resourceId,
               offset,
               byteLength: chunk.byteLength,
               encoding: "base64",
               data: chunk.toString("base64"),
-              contentDigest: createHash("sha256").update(patch).digest("hex"),
+              contentDigest: createHash("sha256").update(content).digest("hex"),
               contentSize: bytes.byteLength,
               eof: offset + chunk.byteLength === bytes.byteLength,
             },
@@ -136,6 +140,13 @@ function createRegisteredState(
   };
   const registration = createTestSessionRegistration({ sessionId });
   registration.info.browserReviewCapabilityHash = capabilityHash(capability);
+  if (lazyCanonical) {
+    const canonical = registration.info.reviewManifest.resources.find(
+      (resource) => resource.kind === "canonical-file",
+    )!;
+    delete canonical.byteLength;
+    delete canonical.digest;
+  }
   expect(state.registerSession(socket, registration, snapshot)).toBe(true);
   return { state, socket, registration };
 }
@@ -375,6 +386,14 @@ describe("browser review server", () => {
     const server = new BrowserReviewServer(state);
     servers.push(server);
     const cookie = await authorize(server, "session-1", "capability-one");
+    const malformed = await server.handle(
+      request("/review-api/session-1/resources/generation%3Atest/resource%3Atest%3A0", {
+        headers: { cookie, range: "items=3-7" },
+      }),
+    );
+    expect(malformed?.status).toBe(416);
+    expect(state.getReviewResourceCacheEntryCount()).toBe(0);
+
     const ranged = await server.handle(
       request("/review-api/session-1/resources/generation%3Atest/resource%3Atest%3A0", {
         headers: { cookie, range: "bytes=3-7" },
@@ -393,6 +412,28 @@ describe("browser review server", () => {
       code: "stale-generation",
       currentGeneration: "generation:test",
     });
+  });
+
+  test("serves verified ranges when canonical size and digest begin lazy", async () => {
+    const { state } = createRegisteredState(
+      "session-1",
+      "capability-one",
+      createTestSessionSnapshot(),
+      new HunkSessionBrokerState(),
+      true,
+    );
+    const server = new BrowserReviewServer(state);
+    servers.push(server);
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const response = await server.handle(
+      request("/review-api/session-1/resources/generation%3Atest/resource%3Acanonical%3Atest%3A0", {
+        headers: { cookie, range: "bytes=2-5" },
+      }),
+    );
+    expect(response?.status).toBe(206);
+    expect(response?.headers.get("content-range")).toBe("bytes 2-5/18");
+    expect(await response?.text()).toBe("cano");
+    expect(state.getReviewResourceCacheEntryCount()).toBe(1);
   });
 
   test("maps cache-hit generation retirement races to a typed browser 409", async () => {

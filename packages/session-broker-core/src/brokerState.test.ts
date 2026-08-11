@@ -129,6 +129,35 @@ const testBrokerView: SessionBrokerViewAdapter<
   listComments: (_session, filter) => [{ id: "note-1", filePath: filter.filePath }],
 };
 
+class PreparsedTestBrokerState extends SessionBrokerState<
+  TestSessionInfo,
+  TestSessionState,
+  TestServerMessage,
+  TestCommandResult,
+  TestListedSession,
+  TestSelectedContext,
+  TestSessionReview,
+  TestCommentSummary
+> {
+  /** Expose the specialized-broker registration seam to this core contract test. */
+  registerParsed(
+    socket: { send(data: string): unknown },
+    registration: TestSessionRegistration,
+    snapshot: TestSessionSnapshot,
+  ) {
+    return this.registerParsedSession(socket, registration, snapshot);
+  }
+
+  /** Expose the specialized-broker snapshot seam to this core contract test. */
+  updateParsed(
+    socket: { send(data: string): unknown },
+    sessionId: string,
+    snapshot: TestSessionSnapshot,
+  ) {
+    return this.updateParsedSnapshot(socket, sessionId, snapshot);
+  }
+}
+
 function createState(
   limits: {
     globalPendingCommands?: number;
@@ -200,6 +229,27 @@ function createListedSession(overrides: Partial<TestListedSession> = {}): TestLi
 }
 
 describe("session broker state", () => {
+  test("retains pre-parsed specialized metadata without invoking app parsers again", () => {
+    const parseForbiddenView = {
+      ...testBrokerView,
+      parseRegistration: () => {
+        throw new Error("registration reparsed");
+      },
+      parseSnapshot: () => {
+        throw new Error("snapshot reparsed");
+      },
+    };
+    const state = new PreparsedTestBrokerState(parseForbiddenView);
+    const socket = { send() {} };
+    const registration = createRegistration();
+    const initial = createSnapshot();
+    const updated = createSnapshot({ selectedIndex: 1 });
+
+    expect(state.registerParsed(socket, registration, initial)).toBe(true);
+    expect(state.updateParsed(socket, registration.sessionId, updated)).toBe("updated");
+    expect(state.getSession({ sessionId: registration.sessionId }).snapshot).toBe(updated);
+  });
+
   test("resolves one target session by session id, session path, repo root, or sole-session fallback", () => {
     const one = [createListedSession()];
     const two = [

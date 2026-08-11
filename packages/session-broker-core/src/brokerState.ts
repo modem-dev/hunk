@@ -270,6 +270,15 @@ export class SessionBrokerState<
       return false;
     }
 
+    return this.registerParsedSession(socket, registration, snapshot);
+  }
+
+  /** Retain already parsed app metadata so specialized brokers can share one normalized graph. */
+  protected registerParsedSession(
+    socket: DaemonSessionSocket,
+    registration: SessionRegistration<Info>,
+    snapshot: SessionSnapshot<State>,
+  ) {
     const existing = this.sessions.get(registration.sessionId);
     // Session ids are capabilities owned by one live transport. A second socket cannot replace
     // an active producer; reconnect is allowed only after the old owner disconnects or expires.
@@ -317,17 +326,21 @@ export class SessionBrokerState<
     snapshotInput: unknown,
   ): UpdateSnapshotResult {
     const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      return "not-found";
-    }
-    if (entry.socket !== socket) {
-      return "not-owner";
-    }
-
+    if (!entry) return "not-found";
+    if (entry.socket !== socket) return "not-owner";
     const snapshot = this.view.parseSnapshot(snapshotInput);
-    if (!snapshot) {
-      return "invalid";
-    }
+    return snapshot ? this.updateParsedSnapshot(socket, sessionId, snapshot) : "invalid";
+  }
+
+  /** Update from one already parsed snapshot without retaining a duplicate normalized graph. */
+  protected updateParsedSnapshot(
+    socket: DaemonSessionSocket,
+    sessionId: string,
+    snapshot: SessionSnapshot<State>,
+  ): UpdateSnapshotResult {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) return "not-found";
+    if (entry.socket !== socket) return "not-owner";
     const metadataBytes = this.measureMetadataBytes(entry.registration, snapshot);
     const previousBytes = this.metadataBytesBySession.get(sessionId) ?? 0;
     if (

@@ -81,6 +81,18 @@ export class ReviewResourceCache {
     return this.reservationBytes(() => true);
   }
 
+  /** Evict matching completed LRU entries until their retained bytes fit one scope. */
+  private evictCompletedToFit(
+    predicate: (parts: string[]) => boolean,
+    maximumCompletedBytes: number,
+  ) {
+    while (this.entryBytes(predicate) > Math.max(0, maximumCompletedBytes)) {
+      const candidate = [...this.entries.keys()].find((key) => predicate(JSON.parse(key)));
+      if (!candidate) break;
+      this.entries.delete(candidate);
+    }
+  }
+
   /** Evict completed LRU entries until completed plus reserved resource slots fit. */
   private ensureDaemonResourceSlots(additionalSlots: number, protectedKey?: string) {
     while (
@@ -127,7 +139,7 @@ export class ReviewResourceCache {
     return this.reserveCapacity(sessionId, generation, descriptor.id, descriptor.byteLength, true);
   }
 
-  /** Reserve a strict maximum before materializing a source whose final size is unknown. */
+  /** Reserve a strict maximum before materializing a source or canonical resource. */
   reserveMaterialization(
     sessionId: string,
     generation: string,
@@ -136,7 +148,7 @@ export class ReviewResourceCache {
   ) {
     if (
       descriptor.generation !== generation ||
-      descriptor.kind !== "source" ||
+      (descriptor.kind !== "source" && descriptor.kind !== "canonical-file") ||
       !Number.isInteger(maximumByteLength) ||
       maximumByteLength < 0
     ) {
@@ -167,21 +179,28 @@ export class ReviewResourceCache {
     if (inFlight + byteLength > this.limits.inFlightBytes) {
       throw new Error("Review resource assemblies exceed the daemon in-flight limit.");
     }
-    const generationBytes =
-      this.entryBytes(
-        ([entrySession, entryGeneration]) =>
-          entrySession === sessionId && entryGeneration === generation,
-      ) +
-      this.reservationBytes(
-        (reservation) =>
-          reservation.sessionId === sessionId && reservation.generation === generation,
-      );
+    const generationEntry = ([entrySession, entryGeneration]: string[]) =>
+      entrySession === sessionId && entryGeneration === generation;
+    const generationReservations = this.reservationBytes(
+      (reservation) => reservation.sessionId === sessionId && reservation.generation === generation,
+    );
+    this.evictCompletedToFit(
+      generationEntry,
+      this.limits.perGenerationBytes - generationReservations - byteLength,
+    );
+    const generationBytes = this.entryBytes(generationEntry) + generationReservations;
     if (generationBytes + byteLength > this.limits.perGenerationBytes) {
       throw new Error(`Review generation ${generation} exceeds the generation cache limit.`);
     }
-    const sessionBytes =
-      this.entryBytes(([entrySession]) => entrySession === sessionId) +
-      this.reservationBytes((reservation) => reservation.sessionId === sessionId);
+    const sessionEntry = ([entrySession]: string[]) => entrySession === sessionId;
+    const sessionReservations = this.reservationBytes(
+      (reservation) => reservation.sessionId === sessionId,
+    );
+    this.evictCompletedToFit(
+      sessionEntry,
+      this.limits.perSessionBytes - sessionReservations - byteLength,
+    );
+    const sessionBytes = this.entryBytes(sessionEntry) + sessionReservations;
     if (sessionBytes + byteLength > this.limits.perSessionBytes) {
       throw new Error(`Review session ${sessionId} exceeds the session cache limit.`);
     }

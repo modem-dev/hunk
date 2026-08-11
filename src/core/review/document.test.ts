@@ -18,9 +18,33 @@ describe("review document projection", () => {
       fixture.changeset.files.map((file) => file.path),
     );
     expect(roundTripped.document.files.every((file) => !("sourceFetcher" in file))).toBe(true);
+    for (const [index, file] of projection.document.files.entries()) {
+      const runtimeFile = fixture.changeset.files[index]!;
+      expect(file.additionLines).toEqual(runtimeFile.metadata.additionLines);
+      expect(file.deletionLines).toEqual(runtimeFile.metadata.deletionLines);
+      expect(file.additionLines).not.toBe(runtimeFile.metadata.additionLines);
+      expect(file.deletionLines).not.toBe(runtimeFile.metadata.deletionLines);
+    }
     expect(buildReviewContentManifest(roundTripped)).toEqual(
       buildReviewContentManifest(projection),
     );
+  });
+
+  test("isolates lazy canonical content from extension-owned normalized arrays", () => {
+    const source = createTestDiffFile({ before: "one\n", after: "two\n" });
+    const projection = projectReviewDocument(
+      { id: "isolated", title: "isolated", sourceLabel: "repo", files: [source] },
+      { generation: "generation:isolated" },
+    );
+    const canonical = projection.document.files[0]!;
+    const originalAddition = canonical.additionLines[0];
+    const originalDeletion = canonical.deletionLines[0];
+
+    source.metadata.additionLines[0] = "extension mutation";
+    source.metadata.deletionLines[0] = "extension mutation";
+
+    expect(canonical.additionLines[0]).toBe(originalAddition);
+    expect(canonical.deletionLines[0]).toBe(originalDeletion);
   });
 
   test("keeps exact patches in generation-addressed resources", () => {
@@ -43,11 +67,12 @@ describe("review document projection", () => {
       const canonical = document.resources.find(
         (resource) => resource.id === file.canonicalResourceId,
       );
-      const serializedFile = JSON.stringify(file);
-      expect(canonical).toMatchObject({
+      expect(canonical).toEqual({
+        id: file.canonicalResourceId,
         kind: "canonical-file",
-        byteLength: Buffer.byteLength(serializedFile, "utf8"),
-        digest: reviewDigest(serializedFile),
+        generation: "generation:test-v1",
+        fileKey: file.key,
+        contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
       });
       expect(resourceContents[file.canonicalResourceId]).toBeUndefined();
     }
@@ -62,6 +87,24 @@ describe("review document projection", () => {
       side: "new",
       byteLength: 17,
     });
+  });
+
+  test("distinguishes semantic file content even when normalized patches match", () => {
+    const first = createTestDiffFile({ path: "same.ts", before: "one\n", after: "two\n" });
+    const second = createTestDiffFile({ path: "same.ts", before: "one\n", after: "three\n" });
+    first.patch = "";
+    second.patch = "";
+
+    const firstKey = projectReviewDocument(
+      { id: "first", title: "first", sourceLabel: "repo", files: [first] },
+      { sourceIdentity: "repo:stable" },
+    ).document.files[0]!.key;
+    const secondKey = projectReviewDocument(
+      { id: "second", title: "second", sourceLabel: "repo", files: [second] },
+      { sourceIdentity: "repo:stable" },
+    ).document.files[0]!.key;
+
+    expect(secondKey).not.toBe(firstKey);
   });
 
   test("keeps repeated paths as distinct stable entries with exact resources", () => {

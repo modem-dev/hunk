@@ -1,3 +1,4 @@
+import { createHash, type Hash } from "node:crypto";
 import type { AgentAnnotation, Changeset, DiffFile } from "../types";
 import {
   reviewDigest,
@@ -46,11 +47,13 @@ export interface ProjectReviewDocumentOptions {
 interface ReviewFileEntry {
   file: DiffFile;
   key: string;
+  patchDigest: string;
+  hunks: ReviewHunkV1[];
 }
 
 /** Return the UTF-8 size used by resource bounds and chunking. */
 function utf8ByteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength;
+  return Buffer.byteLength(value, "utf8");
 }
 
 /** Convert one Pierre hunk into an explicit JSON-safe semantic record. */
@@ -94,11 +97,34 @@ function projectHunk(file: DiffFile, index: number): ReviewHunkV1 {
   };
 }
 
-/** Hash the renderer-neutral diff facts that distinguish repeated path entries. */
-function reviewFileContentIdentity(file: DiffFile) {
-  return reviewDigest(
+/** Feed one unambiguous string sequence into a semantic identity without giant JSON buffers. */
+function updateIdentityStrings(hash: Hash, label: string, values: readonly string[]) {
+  hash.update(`${label}:${values.length}:`);
+  const pending: string[] = [];
+  let pendingCharacters = 0;
+  const flush = () => {
+    if (pending.length === 0) return;
+    hash.update(pending.join(""), "utf8");
+    pending.length = 0;
+    pendingCharacters = 0;
+  };
+  for (const value of values) {
+    // UTF-16 length plus a separator makes adjacent arbitrary strings unambiguous while batching
+    // hash updates avoids the per-line native-call cost on giant reviews.
+    const framed = `${value.length}:${value};`;
+    pending.push(framed);
+    pendingCharacters += framed.length;
+    if (pendingCharacters >= 64 * 1024) flush();
+  }
+  flush();
+}
+
+/** Hash every renderer-neutral file fact without allocating one complete duplicate JSON string. */
+function reviewFileContentIdentity(file: DiffFile, patchDigest: string, hunks: ReviewHunkV1[]) {
+  const hash = createHash("sha256");
+  hash.update(
     JSON.stringify({
-      patchDigest: reviewDigest(file.patch),
+      patchDigest,
       changeKind: file.metadata.type,
       language: file.language,
       stats: file.stats,
@@ -109,21 +135,24 @@ function reviewFileContentIdentity(file: DiffFile) {
         tooLarge: Boolean(file.isTooLarge),
         partial: Boolean(file.metadata.isPartial),
       },
-      additionLines: file.metadata.additionLines,
-      deletionLines: file.metadata.deletionLines,
-      lineMoveKinds: file.lineMoveKinds,
-      hunks: file.metadata.hunks.map((_hunk, index) => projectHunk(file, index)),
       sourceIdentity:
         file.sourceFetcher?.cacheKey ?? (file.sourceFetcher ? "available" : undefined),
     }),
   );
+  updateIdentityStrings(hash, "additions", file.metadata.additionLines);
+  updateIdentityStrings(hash, "deletions", file.metadata.deletionLines);
+  hash.update(JSON.stringify(hunks));
+  hash.update(JSON.stringify(file.lineMoveKinds ?? null));
+  return hash.digest("hex");
 }
 
 /** Allocate stable entry keys, using occurrence only for semantically identical copies. */
 function buildReviewFileEntries(files: readonly DiffFile[], sourceIdentity: string) {
   const duplicateCounts = new Map<string, number>();
   return files.map((file): ReviewFileEntry => {
-    const contentIdentity = reviewFileContentIdentity(file);
+    const patchDigest = reviewDigest(file.patch);
+    const hunks = file.metadata.hunks.map((_hunk, index) => projectHunk(file, index));
+    const contentIdentity = reviewFileContentIdentity(file, patchDigest, hunks);
     const duplicateKey = JSON.stringify([
       sourceIdentity,
       file.previousPath ?? "",
@@ -135,6 +164,8 @@ function buildReviewFileEntries(files: readonly DiffFile[], sourceIdentity: stri
 
     return {
       file,
+      patchDigest,
+      hunks,
       key: semanticFileEntryIdentity({
         sourceIdentity,
         path: file.path,
@@ -202,7 +233,7 @@ function projectReviewDocumentGeneration(
   const resourceContents: Record<string, string> = {};
   const usedNoteIds = new Set<string>();
 
-  const files = fileEntries.map(({ file, key: fileKey }): ReviewFileV1 => {
+  const files = fileEntries.map(({ file, key: fileKey, patchDigest, hunks }): ReviewFileV1 => {
     const patchResourceId = reviewResourceId(generation, fileKey, "patch");
     resources.push({
       id: patchResourceId,
@@ -211,7 +242,7 @@ function projectReviewDocumentGeneration(
       fileKey,
       contentType: "text/x-diff; charset=utf-8",
       byteLength: utf8ByteLength(file.patch),
-      digest: reviewDigest(file.patch),
+      digest: patchDigest,
     });
     resourceContents[patchResourceId] = file.patch;
 
@@ -293,6 +324,8 @@ function projectReviewDocumentGeneration(
       patchResourceId,
       canonicalResourceId,
       sourceResourceIds,
+      // Isolate authority from extension-owned normalized arrays so lazy canonical bytes cannot
+      // change under one generation if an extension retains and later mutates its returned model.
       additionLines: [...file.metadata.additionLines],
       deletionLines: [...file.metadata.deletionLines],
       ...(file.lineMoveKinds
@@ -303,21 +336,17 @@ function projectReviewDocumentGeneration(
             },
           }
         : {}),
-      hunks: file.metadata.hunks.map((_hunk, index) => projectHunk(file, index)),
+      hunks,
       notes,
       expandedContext,
     };
-    // Canonical file bytes are measured now for a complete immutable descriptor, but are
-    // materialized lazily by the runtime so terminal-only reviews do not retain duplicate JSON.
-    const canonicalMeasurement = measureJsonStream(reviewFile);
+    // Browser-only canonical bytes, size, and digest remain lazy until the producer is read.
     resources.push({
       id: canonicalResourceId,
       kind: "canonical-file",
       generation,
       fileKey,
       contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
-      byteLength: canonicalMeasurement.byteLength,
-      digest: canonicalMeasurement.digest,
     });
     return reviewFile;
   });
@@ -415,9 +444,9 @@ export function projectReviewDocument(
     "generation:semantic-seed",
     fileEntries,
   );
-  const generation = `generation:${reviewDigest(
-    JSON.stringify(generationSemanticContent(seedProjection)),
-  )}`;
+  const generation = `generation:${
+    measureJsonStream(generationSemanticContent(seedProjection)).digest
+  }`;
   return projectReviewDocumentGeneration(
     changeset,
     options,

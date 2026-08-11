@@ -120,13 +120,24 @@ describe("chunked review resources", () => {
     const file = projection.document.files[0]!;
     expect(projection.resourceContents[file.canonicalResourceId]).toBeUndefined();
 
-    const first = await connected.state.getBrowserReviewResource(
-      connected.registration.sessionId,
-      projection.document.generation,
-      file.canonicalResourceId,
-    );
+    const [first, concurrent] = await Promise.all([
+      connected.state.getBrowserReviewResource(
+        connected.registration.sessionId,
+        projection.document.generation,
+        file.canonicalResourceId,
+      ),
+      connected.state.getBrowserReviewResource(
+        connected.registration.sessionId,
+        projection.document.generation,
+        file.canonicalResourceId,
+      ),
+    ]);
+    expect(concurrent.bytes).toEqual(first.bytes);
     expect(JSON.parse(Buffer.from(first.bytes).toString("utf8"))).toEqual(file);
-    expect(projection.resourceContents[file.canonicalResourceId]).toBeDefined();
+    expect(first.descriptor).not.toHaveProperty("byteLength");
+    expect(first.descriptor).not.toHaveProperty("digest");
+    expect(projection.resourceContents[file.canonicalResourceId]).toBeUndefined();
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(1);
     const reads = connected.commandCounts.get("read_review_resource");
 
     const second = await connected.state.getBrowserReviewResource(

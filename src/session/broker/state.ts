@@ -18,6 +18,7 @@ import type {
   SessionReview,
 } from "../types";
 import {
+  MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
   type HunkReviewActionV1,
@@ -201,7 +202,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         return false;
       }
     }
-    const registered = super.registerSession(socket, registrationInput, snapshotInput);
+    const registered = this.registerParsedSession(socket, registration, snapshot);
     if (!registered) return false;
     if (previousSocket && previousSocket !== socket) this.sessionIdBySocket.delete(previousSocket);
     if (previousForSocket && previousForSocket !== registration.sessionId) {
@@ -261,7 +262,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     ) {
       return "invalid" as const;
     }
-    const result = super.updateSnapshot(socket, sessionId, snapshotInput);
+    const result = this.updateParsedSnapshot(socket, sessionId, snapshot);
     if (result === "updated") {
       this.stateRevisions.set(sessionId, snapshot.state.stateRevision);
       this.reviewSnapshots.set(sessionId, snapshot);
@@ -401,7 +402,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return this.resourceCache.getEntryCount();
   }
 
-  /** Deduplicate, verify, and cache one producer-materialized source for all browser ranges. */
+  /** Deduplicate, verify, and cache one producer-materialized resource for all consumers. */
   private async loadMaterializingReviewResource(
     sessionId: string,
     generation: string,
@@ -413,17 +414,20 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     const key = JSON.stringify([sessionId, generation, descriptor.id]);
     let active = this.resourceLoads.get(key);
     if (!active) {
+      const maximumByteLength =
+        descriptor.kind === "source" ? MAX_REVIEW_SOURCE_RESOURCE_BYTES : MAX_REVIEW_RESOURCE_BYTES;
       const reservation = this.resourceCache.reserveMaterialization(
         sessionId,
         generation,
         descriptor,
-        MAX_REVIEW_SOURCE_RESOURCE_BYTES,
+        maximumByteLength,
       );
       active = this.fetchMaterializingReviewResource(
         sessionId,
         generation,
         descriptor,
         reservation,
+        maximumByteLength,
       ).finally(() => {
         this.resourceCache.release(reservation);
         this.resourceLoads.delete(key);
@@ -440,12 +444,13 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     }
   }
 
-  /** Read one lazily materialized source while retaining generation and digest verification. */
+  /** Read one lazily materialized resource while retaining generation and digest verification. */
   private async fetchMaterializingReviewResource(
     sessionId: string,
     generation: string,
     descriptor: HunkSessionRegistration["info"]["reviewManifest"]["resources"][number],
     reservation: ReviewResourceReservation,
+    maximumByteLength: number,
   ) {
     const chunks: Uint8Array[] = [];
     let offset = 0;
@@ -466,7 +471,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
           offset,
           length: REVIEW_RESOURCE_CHUNK_BYTES,
         },
-        timeoutMessage: "Timed out reading expanded review source.",
+        timeoutMessage: "Timed out reading a materialized review resource.",
         timeoutMs: 30_000,
       });
       if (result.kind === "review-error")
@@ -480,7 +485,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         result.offset !== offset ||
         result.contentSize !== contentSize ||
         result.contentDigest !== contentDigest ||
-        contentSize > MAX_REVIEW_SOURCE_RESOURCE_BYTES ||
+        contentSize > maximumByteLength ||
         !/^[a-f\d]{64}$/i.test(contentDigest)
       ) {
         throw new Error(`Review resource ${descriptor.id} returned inconsistent metadata.`);

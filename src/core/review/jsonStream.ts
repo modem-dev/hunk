@@ -5,6 +5,10 @@ export interface JsonStreamMeasurement {
   digest: string;
 }
 
+export interface EncodedJsonStream extends JsonStreamMeasurement {
+  bytes: Buffer;
+}
+
 /** Raised as soon as deterministic JSON output exceeds its configured byte bound. */
 export class JsonStreamSizeError extends Error {
   constructor(readonly maxBytes: number) {
@@ -180,4 +184,50 @@ export function measureJsonStream(value: unknown, maxBytes = Number.POSITIVE_INF
   if (!emitted) throw new TypeError("JSON root value is not serializable.");
   flush();
   return { byteLength, digest: hash.digest("hex") } satisfies JsonStreamMeasurement;
+}
+
+/** Encode exact JSON.stringify UTF-8 bytes once while enforcing a strict pre-admission bound. */
+export function encodeJsonStream(value: unknown, maxBytes: number): EncodedJsonStream {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError("JSON byte limit must be a non-negative safe integer.");
+  }
+  const hash = createHash("sha256");
+  const chunks: Buffer[] = [];
+  const pending: string[] = [];
+  let pendingBytes = 0;
+  let byteLength = 0;
+  const flush = () => {
+    if (pending.length === 0) return;
+    const bytes = Buffer.from(pending.join(""), "utf8");
+    hash.update(bytes);
+    chunks.push(bytes);
+    pending.length = 0;
+    pendingBytes = 0;
+  };
+  const emitted = visitJsonChunks(
+    value,
+    "",
+    (chunk) => {
+      const chunkBytes = Buffer.byteLength(chunk, "utf8");
+      byteLength += chunkBytes;
+      if (byteLength > maxBytes) throw new JsonStreamSizeError(maxBytes);
+      if (pendingBytes + chunkBytes >= 64 * 1024) flush();
+      if (chunkBytes >= 64 * 1024) {
+        const bytes = Buffer.from(chunk, "utf8");
+        hash.update(bytes);
+        chunks.push(bytes);
+      } else {
+        pending.push(chunk);
+        pendingBytes += chunkBytes;
+      }
+    },
+    new Set(),
+  );
+  if (!emitted) throw new TypeError("JSON root value is not serializable.");
+  flush();
+  return {
+    bytes: Buffer.concat(chunks, byteLength),
+    byteLength,
+    digest: hash.digest("hex"),
+  };
 }

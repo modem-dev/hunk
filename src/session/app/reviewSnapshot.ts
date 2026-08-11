@@ -9,6 +9,7 @@ import {
 import {
   MAX_REVIEW_NOTE_BYTES,
   MAX_REVIEW_PRODUCER_METADATA_BYTES,
+  ReviewProducerCapacityError,
   type HunkReviewStateV1,
 } from "../reviewProtocol";
 import type { HunkSessionSnapshot } from "../types";
@@ -93,21 +94,29 @@ export function createSessionSnapshotFromReviewState(
     },
   };
   if (sessionSnapshot.state.liveComments.length > MAX_SNAPSHOT_LIVE_COMMENTS) {
-    throw new Error("Review snapshot exceeds the aggregate live comment limit.");
+    throw new ReviewProducerCapacityError(
+      "Review snapshot exceeds the aggregate live comment limit.",
+    );
   }
   if (
     sessionSnapshot.state.review.notes.length > MAX_SNAPSHOT_REVIEW_NOTES ||
     (sessionSnapshot.state.reviewNotes?.length ?? 0) > MAX_SNAPSHOT_REVIEW_NOTES
   ) {
-    throw new Error("Review snapshot exceeds the aggregate review note limit.");
+    throw new ReviewProducerCapacityError(
+      "Review snapshot exceeds the aggregate review note limit.",
+    );
   }
   for (const note of sessionSnapshot.state.review.notes) {
     if (utf8ByteLength(JSON.stringify(note)) > MAX_REVIEW_NOTE_BYTES) {
-      throw new Error(`Review note ${note.id} exceeds the producer note metadata limit.`);
+      throw new ReviewProducerCapacityError(
+        `Review note ${note.id} exceeds the producer note metadata limit.`,
+      );
     }
   }
   if (utf8ByteLength(JSON.stringify(sessionSnapshot)) > MAX_REVIEW_PRODUCER_METADATA_BYTES) {
-    throw new Error("Review snapshot exceeds the producer message metadata limit.");
+    throw new ReviewProducerCapacityError(
+      "Review snapshot exceeds the producer message metadata limit.",
+    );
   }
   return sessionSnapshot;
 }
