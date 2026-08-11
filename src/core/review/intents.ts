@@ -19,7 +19,24 @@ export interface ReviewIntentFacts {
   noteId?: string;
   /** Runtime-owned ISO timestamp for note creation or update. */
   timestamp?: string;
+  /** Opaque runtime identity for the exact source fetcher backing an expansion. */
+  sourceFetcherIdentity?: string;
 }
+
+export interface ReviewSourceLoadEffect {
+  type: "source/load";
+  generation: string;
+  fileKey: string;
+  side: ReviewSide;
+  gapId: string;
+  oldRange: readonly [number, number];
+  newRange: readonly [number, number];
+  sourceIdentity: string;
+  resourceId: string;
+  sourceFetcherIdentity: string;
+}
+
+export type ReviewIntentEffect = ReviewSourceLoadEffect;
 
 export interface ReviewRevealRequest {
   kind: "hunk" | "file-top" | "line";
@@ -66,7 +83,8 @@ export type ReviewIntent =
       reveal?: boolean;
     }
   | { type: "filter/set"; filter: string }
-  | { type: "notes/set-visibility"; visible: boolean };
+  | { type: "notes/set-visibility"; visible: boolean }
+  | { type: "expansion/toggle"; fileKey: string; gapId: string };
 
 export type ReviewIntentOutcome =
   | { type: "note/created"; note: ReviewStoredNote }
@@ -75,6 +93,8 @@ export type ReviewIntentOutcome =
 
 export interface ReviewIntentPlan {
   actions: readonly ReviewAction[];
+  /** Runtime-owned work started only after the complete action batch commits. */
+  effects?: readonly ReviewIntentEffect[];
   /** Concrete note operation result; state/no-op status comes from transactional execution. */
   outcome?: ReviewIntentOutcome;
 }
@@ -88,6 +108,8 @@ export type ReviewIntentPlanningErrorCode =
   | "draft-missing"
   | "note-not-found"
   | "note-not-editable"
+  | "gap-not-found"
+  | "source-unavailable"
   | "missing-fact";
 
 /** Typed semantic rejection raised before any review state is reduced or published. */
@@ -129,7 +151,10 @@ function reserveNoteId(state: ReviewState, baseId: string) {
 }
 
 /** Require one runtime-owned fact without letting core allocate time or identity. */
-function requireFact(value: string | undefined, label: "noteId" | "timestamp") {
+function requireFact(
+  value: string | undefined,
+  label: "noteId" | "timestamp" | "sourceFetcherIdentity",
+) {
   if (!value) {
     throw new ReviewIntentPlanningError("missing-fact", `Review intent requires ${label}.`);
   }
@@ -530,6 +555,148 @@ function planLineSelection(
   };
 }
 
+/** Resolve a canonical backed line in one hunk, preferring the expansion's source side. */
+function canonicalLineForHunk(file: ReviewFileV1, hunkIndex: number, preferredSide: ReviewSide) {
+  const hunk = file.hunks[hunkIndex];
+  if (!hunk) return undefined;
+  for (const side of [preferredSide, preferredSide === "new" ? "old" : "new"] as const) {
+    const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
+    const line = side === "new" ? hunk.additionStart : hunk.deletionStart;
+    if (count <= 0) continue;
+    const address = resolveReviewLineAddress(file, { side, line });
+    if (address?.hunkIndex === hunkIndex) return address;
+  }
+  return undefined;
+}
+
+/** Plan a canonical gap toggle and any post-commit source materialization effect. */
+function planExpansionToggle(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "expansion/toggle" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const file = requireFile(state, intent.fileKey);
+  const address = reviewGapAddress(file, intent.gapId);
+  const gapMatch = /^(?:before|trailing):(\d+)$/.exec(intent.gapId);
+  if (!address || !gapMatch) {
+    throw new ReviewIntentPlanningError(
+      "gap-not-found",
+      `The collapsed source gap ${intent.gapId} is invalid for ${file.path}.`,
+    );
+  }
+  const hunkIndex = Number(gapMatch[1]);
+  requireHunk(file, hunkIndex);
+  const side: ReviewSide = file.changeKind === "deleted" ? "old" : "new";
+  const resourceId = file.sourceResourceIds[side];
+  const descriptor = state.document.resources.find(
+    (resource) =>
+      resource.id === resourceId &&
+      resource.kind === "source" &&
+      resource.generation === state.documentGeneration &&
+      resource.fileKey === file.key &&
+      resource.side === side,
+  );
+  if (!descriptor || descriptor.kind !== "source") {
+    throw new ReviewIntentPlanningError(
+      "source-unavailable",
+      `Expanded ${side} source is unavailable for ${file.path}.`,
+    );
+  }
+  const current = state.expandedGaps.find(
+    (gap) => gap.fileKey === file.key && gap.gapId === intent.gapId,
+  );
+  const expanding = !current?.expanded;
+  const gap = {
+    fileKey: file.key,
+    gapId: intent.gapId,
+    side,
+    oldRange: [...address.oldRange] as [number, number],
+    newRange: [...address.newRange] as [number, number],
+    sourceIdentity: descriptor.sourceIdentity,
+    expanded: expanding,
+  };
+  const actions: ReviewAction[] = [
+    { type: "expansion/toggle", expectedGeneration: state.documentGeneration, gap },
+  ];
+
+  if (!expanding) {
+    const selection = state.selection;
+    if (
+      current?.expanded &&
+      current.side === side &&
+      current.sourceIdentity === descriptor.sourceIdentity &&
+      reviewRangesEqual(current.oldRange, address.oldRange) &&
+      reviewRangesEqual(current.newRange, address.newRange) &&
+      selection.fileKey === file.key &&
+      selection.hunkIndex === hunkIndex &&
+      selection.side === side &&
+      selection.line !== undefined
+    ) {
+      const proven = resolveExpandedReviewLine(state, file, {
+        side,
+        line: selection.line,
+        hunkIndex,
+        expandedLineProof: { gapId: intent.gapId, sourceIdentity: descriptor.sourceIdentity },
+      });
+      if (proven && proven.contextDigest === selection.contextDigest) {
+        const replacement = canonicalLineForHunk(file, hunkIndex, side);
+        if (replacement) {
+          actions.push({
+            type: "selection/set-line",
+            fileKey: file.key,
+            hunkIndex,
+            side: replacement.side,
+            line: replacement.line,
+            contextDigest: replacement.contextDigest,
+          });
+        }
+      }
+    }
+    return { actions };
+  }
+
+  const status = state.sourceStatusByFileKey[file.key];
+  if (status?.kind === "loaded") {
+    if (
+      descriptor.byteLength === undefined ||
+      descriptor.digest === undefined ||
+      Buffer.byteLength(status.text, "utf8") !== descriptor.byteLength ||
+      reviewDigest(status.text) !== descriptor.digest
+    ) {
+      throw new ReviewIntentPlanningError(
+        "source-unavailable",
+        `Expanded ${side} source authority is inconsistent for ${file.path}.`,
+      );
+    }
+    return { actions };
+  }
+  if (status?.kind === "loading") return { actions };
+  const sourceFetcherIdentity = requireFact(facts.sourceFetcherIdentity, "sourceFetcherIdentity");
+  actions.push({
+    type: "expansion/set-source-status",
+    expectedGeneration: state.documentGeneration,
+    fileKey: file.key,
+    status: { kind: "loading" },
+  });
+  return {
+    actions,
+    effects: [
+      {
+        type: "source/load",
+        generation: state.documentGeneration,
+        fileKey: file.key,
+        side,
+        gapId: intent.gapId,
+        oldRange: [...address.oldRange] as [number, number],
+        newRange: [...address.newRange] as [number, number],
+        sourceIdentity: descriptor.sourceIdentity,
+        resourceId: descriptor.id,
+        sourceFetcherIdentity,
+      },
+    ],
+  };
+}
+
 /** Convert one renderer-neutral semantic intent into ordered internal reducer actions. */
 export function planReviewIntent(
   state: ReviewState,
@@ -557,5 +724,7 @@ export function planReviewIntent(
       return {
         actions: [{ type: "notes/set-visibility", visible: intent.visible }],
       };
+    case "expansion/toggle":
+      return planExpansionToggle(state, intent, facts);
   }
 }

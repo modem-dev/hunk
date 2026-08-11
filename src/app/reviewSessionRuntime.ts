@@ -4,13 +4,14 @@ import { buildLiveComment, findDiffFileByPath, resolveCommentTarget } from "../c
 import { resolveConfiguredCliInput } from "../core/config";
 import { resolveExperimentalDiffFiles } from "../core/experimental";
 import { projectReviewDocument } from "../core/review/document";
-import { reviewGapAddress } from "../core/review/expansion";
 import { reviewDigest } from "../core/review/identity";
 import {
   planReviewIntent,
   ReviewIntentPlanningError,
   type ReviewIntent,
+  type ReviewIntentEffect,
   type ReviewIntentFacts,
+  type ReviewSourceLoadEffect,
 } from "../core/review/intents";
 import { encodeJsonStream, JsonStreamSizeError } from "../core/review/jsonStream";
 import { projectReviewNote } from "../core/review/notes";
@@ -32,7 +33,7 @@ import type {
   ReviewSourceResourceDescriptorV1,
 } from "../core/review/types";
 import { resolveRuntimeCliInput } from "../core/terminal";
-import type { AppBootstrap, CliInput } from "../core/types";
+import type { AppBootstrap, CliInput, DiffFile } from "../core/types";
 import { createUnknownVcsNotice, reportExtensionApplyIssues } from "../extensions/apply";
 import {
   emitExtensionEvent,
@@ -142,6 +143,8 @@ export interface ReviewIntentExecution {
   state: ReviewState;
   changed: boolean;
   createdNote?: ReviewStoredNote;
+  /** Runtime effects begin after commit; browser compatibility callers may await completion. */
+  effectCompletion?: Promise<void>;
 }
 
 export interface ReviewSessionRuntimeOptions {
@@ -252,6 +255,8 @@ export class ReviewSessionRuntime {
   private readonly sessionCommentIds = new Map<string, string>();
   private readonly sessionCommentResults = new Map<string, CachedSessionCommentResult>();
   private readonly sourceLoads = new Map<string, Promise<void>>();
+  private readonly sourceFetcherIdentities = new WeakMap<object, string>();
+  private sourceFetcherIdentitySequence = 0;
   /** Generation projections own bounded encoded bytes without widening the protocol model. */
   private readonly encodedResourceBytes = new WeakMap<
     ReviewDocumentProjectionV1,
@@ -503,16 +508,15 @@ export class ReviewSessionRuntime {
     return this.executeReviewIntentInternal(intent, preconditions);
   };
 
-  /** Toggle one canonical collapsed gap and let the runtime own generation-safe source loading. */
+  /** Compatibility wrapper that awaits runtime-owned materialization after the initial commit. */
   toggleSourceGap(fileKey: string, gapId: string) {
     if (this.disposed) return Promise.reject(new Error("Review session runtime is disposed."));
-    const state = this.snapshot.store.getSnapshot();
-    return this.toggleSourceGapForState(
-      fileKey,
-      gapId,
-      state.documentGeneration,
-      state.stateRevision,
-    );
+    try {
+      const execution = this.executeReviewIntent({ type: "expansion/toggle", fileKey, gapId });
+      return execution.effectCompletion ?? Promise.resolve();
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   /** Dismiss the current trust question without persisting a decision. */
@@ -1181,11 +1185,26 @@ export class ReviewSessionRuntime {
     }
   }
 
+  /** Return one opaque process-local identity for an exact source-fetcher object. */
+  private sourceFetcherIdentity(fetcher: NonNullable<DiffFile["sourceFetcher"]>) {
+    const existing = this.sourceFetcherIdentities.get(fetcher);
+    if (existing) return existing;
+    const identity = `fetcher:${++this.sourceFetcherIdentitySequence}`;
+    this.sourceFetcherIdentities.set(fetcher, identity);
+    return identity;
+  }
+
   /** Prepare renderer-neutral facts without consuming identity until a commit succeeds. */
   private reviewIntentFacts(intent: ReviewIntent): {
     facts: ReviewIntentFacts;
     pendingUserNoteSequence?: number;
   } {
+    if (intent.type === "expansion/toggle") {
+      const fetcher = this.reviewFilePair(intent.fileKey)?.file.sourceFetcher;
+      return {
+        facts: fetcher ? { sourceFetcherIdentity: this.sourceFetcherIdentity(fetcher) } : {},
+      };
+    }
     if (intent.type !== "note/create-user" && intent.type !== "note/update-user") {
       return { facts: {} };
     }
@@ -1222,6 +1241,166 @@ export class ReviewSessionRuntime {
         draft: false,
       },
     });
+  }
+
+  /** Revalidate every identity captured by one source-load effect against current authority. */
+  private sourceEffectAuthority(
+    effect: ReviewSourceLoadEffect,
+    fetcher?: NonNullable<DiffFile["sourceFetcher"]>,
+  ) {
+    if (this.disposed) return undefined;
+    const state = this.snapshot.store.getSnapshot();
+    if (state.documentGeneration !== effect.generation) return undefined;
+    const pair = this.reviewFilePair(effect.fileKey);
+    const currentFetcher = pair?.file.sourceFetcher;
+    if (
+      !pair ||
+      !currentFetcher ||
+      (fetcher !== undefined && currentFetcher !== fetcher) ||
+      this.sourceFetcherIdentities.get(currentFetcher) !== effect.sourceFetcherIdentity
+    ) {
+      return undefined;
+    }
+    const descriptor = this.snapshot.projection.document.resources.find(
+      (resource) =>
+        resource.id === effect.resourceId &&
+        resource.kind === "source" &&
+        resource.generation === effect.generation &&
+        resource.fileKey === effect.fileKey &&
+        resource.side === effect.side &&
+        resource.sourceIdentity === effect.sourceIdentity,
+    ) as ReviewSourceResourceDescriptorV1 | undefined;
+    const gap = state.expandedGaps.find(
+      (candidate) =>
+        candidate.fileKey === effect.fileKey &&
+        candidate.gapId === effect.gapId &&
+        candidate.side === effect.side &&
+        candidate.sourceIdentity === effect.sourceIdentity &&
+        candidate.oldRange[0] === effect.oldRange[0] &&
+        candidate.oldRange[1] === effect.oldRange[1] &&
+        candidate.newRange[0] === effect.newRange[0] &&
+        candidate.newRange[1] === effect.newRange[1],
+    );
+    return descriptor && gap ? { pair, fetcher: currentFetcher, descriptor } : undefined;
+  }
+
+  /** Publish an effect status only while its generation and backing authority remain exact. */
+  private commitSourceEffectStatus(
+    effect: ReviewSourceLoadEffect,
+    fetcher: NonNullable<DiffFile["sourceFetcher"]>,
+    status: ReviewState["sourceStatusByFileKey"][string],
+  ) {
+    if (!this.sourceEffectAuthority(effect, fetcher)) return false;
+    this.commitReviewActions([
+      {
+        type: "expansion/set-source-status",
+        expectedGeneration: effect.generation,
+        fileKey: effect.fileKey,
+        status,
+      },
+    ]);
+    return true;
+  }
+
+  /** Materialize one source resource and publish completion without leaking retired bytes. */
+  private startSourceLoadEffect(effect: ReviewSourceLoadEffect) {
+    const authority = this.sourceEffectAuthority(effect);
+    if (!authority) return Promise.resolve();
+    const { fetcher } = authority;
+    const loadKey = `${effect.generation}\0${effect.fileKey}\0${effect.side}`;
+    const existing = this.sourceLoads.get(loadKey);
+    if (existing) return existing;
+
+    let source: ReturnType<typeof fetcher.getFullText>;
+    try {
+      source = fetcher.getFullText(effect.side);
+    } catch (error) {
+      source = Promise.reject(error);
+    }
+    const load = Promise.resolve(source)
+      .then((text) => {
+        const current = this.sourceEffectAuthority(effect, fetcher);
+        if (!current) return;
+        if (text === null) {
+          this.commitSourceEffectStatus(effect, fetcher, { kind: "error" });
+          return;
+        }
+        const byteLength = Buffer.byteLength(text, "utf8");
+        if (byteLength > MAX_REVIEW_SOURCE_RESOURCE_BYTES) {
+          throw new SourceTextTooLargeError(MAX_REVIEW_SOURCE_RESOURCE_BYTES);
+        }
+        const { descriptor } = current;
+        const contents = this.snapshot.projection.resourceContents;
+        const hadByteLength = descriptor.byteLength !== undefined;
+        const previousByteLength = descriptor.byteLength;
+        const hadDigest = descriptor.digest !== undefined;
+        const previousDigest = descriptor.digest;
+        const hadContent = Object.hasOwn(contents, descriptor.id);
+        const previousContent = contents[descriptor.id];
+        descriptor.byteLength = byteLength;
+        descriptor.digest = reviewDigest(text);
+        contents[descriptor.id] = text;
+        const rollback = () => {
+          if (hadByteLength) descriptor.byteLength = previousByteLength;
+          else delete descriptor.byteLength;
+          if (hadDigest) descriptor.digest = previousDigest;
+          else delete descriptor.digest;
+          if (hadContent) contents[descriptor.id] = previousContent!;
+          else delete contents[descriptor.id];
+        };
+        try {
+          if (!this.commitSourceEffectStatus(effect, fetcher, { kind: "loaded", text })) {
+            rollback();
+          }
+        } catch (error) {
+          rollback();
+          throw error;
+        }
+      })
+      .catch((error: unknown) => {
+        if (!this.sourceEffectAuthority(effect, fetcher)) return;
+        if (!(error instanceof SourceTextTooLargeError)) {
+          const pair = this.reviewFilePair(effect.fileKey);
+          console.error(
+            `hunk: failed to load ${effect.side} source for ${pair?.file.path ?? effect.fileKey} (${pair?.file.id ?? effect.fileKey}).`,
+            error,
+          );
+        }
+        try {
+          this.commitSourceEffectStatus(effect, fetcher, {
+            kind: "error",
+            ...(error instanceof SourceTextTooLargeError ? { reason: "too-large" as const } : {}),
+          });
+        } catch (statusError) {
+          console.error("hunk: failed to publish expanded source error state.", statusError);
+        }
+      })
+      .finally(() => {
+        if (this.sourceLoads.get(loadKey) === load) this.sourceLoads.delete(loadKey);
+      });
+    this.sourceLoads.set(loadKey, load);
+    return load;
+  }
+
+  /** Start only typed runtime effects after their complete semantic batch has committed. */
+  private startReviewIntentEffects(effects: readonly ReviewIntentEffect[] | undefined) {
+    if (!effects?.length) return undefined;
+    return Promise.all(effects.map((effect) => this.startSourceLoadEffect(effect))).then(
+      () => undefined,
+    );
+  }
+
+  /** Reuse an owned in-flight source load when another gap joins the same source authority. */
+  private pendingExpansionEffectCompletion(intent: ReviewIntent, state: ReviewState) {
+    if (intent.type !== "expansion/toggle") return undefined;
+    const gap = state.expandedGaps.find(
+      (candidate) =>
+        candidate.fileKey === intent.fileKey &&
+        candidate.gapId === intent.gapId &&
+        candidate.expanded,
+    );
+    if (!gap || state.sourceStatusByFileKey[intent.fileKey]?.kind !== "loading") return undefined;
+    return this.sourceLoads.get(`${state.documentGeneration}\0${intent.fileKey}\0${gap.side}`);
   }
 
   /** Plan, preflight, and commit one semantic intent before running post-commit effects. */
@@ -1265,11 +1444,15 @@ export class ReviewSessionRuntime {
       : undefined;
     if (createdNote) this.emitCreatedUserNote(createdNote);
     if (intent.type === "note/remove-live") this.releaseSessionCommentIdentity(intent.noteId);
+    const effectCompletion =
+      this.startReviewIntentEffects(plan.effects) ??
+      this.pendingExpansionEffectCompletion(intent, state);
     return {
       before,
       state,
       changed: true,
       ...(createdNote ? { createdNote } : {}),
+      ...(effectCompletion ? { effectCompletion } : {}),
     };
   }
 
@@ -1335,130 +1518,13 @@ export class ReviewSessionRuntime {
       case "notes/remove-live":
         return { type: "note/remove-live", noteId: action.noteId };
       case "expansion/toggle":
+        return action;
       case "session/reload":
       case "trust/decide":
         return "runtime";
       default:
         return assertNever(action, "browser review action");
     }
-  }
-
-  /** Toggle and materialize one generation-addressed source capability exactly once. */
-  private async toggleSourceGapForState(
-    fileKey: string,
-    gapId: string,
-    expectedGeneration: string,
-    expectedRevision: number,
-  ) {
-    const state = this.snapshot.store.getSnapshot();
-    if (state.documentGeneration !== expectedGeneration) throw new Error("stale-generation");
-    if (state.stateRevision !== expectedRevision) throw new Error("stale-revision");
-    const pair = this.reviewFilePair(fileKey);
-    if (!pair?.file.sourceFetcher) throw new Error("Expanded source is unavailable for this file.");
-    const address = reviewGapAddress(pair.semantic, gapId);
-    const side = pair.file.metadata.type === "deleted" ? "old" : "new";
-    const resourceId = pair.semantic.sourceResourceIds[side];
-    const descriptor = this.snapshot.projection.document.resources.find(
-      (resource) => resource.id === resourceId && resource.kind === "source",
-    ) as ReviewSourceResourceDescriptorV1 | undefined;
-    if (!address || !descriptor) throw new Error("The collapsed source gap is invalid.");
-    const expanding = !state.expandedGaps.some(
-      (gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded,
-    );
-    this.commitReviewActions([
-      {
-        type: "expansion/toggle",
-        expectedGeneration,
-        gap: {
-          fileKey,
-          gapId,
-          side,
-          ...address,
-          sourceIdentity: descriptor.sourceIdentity,
-          expanded: expanding,
-        },
-      },
-    ]);
-    if (!expanding) return;
-    const status = this.snapshot.store.getSnapshot().sourceStatusByFileKey[fileKey];
-    if (status?.kind === "loaded" || status?.kind === "loading") return;
-    this.commitReviewActions([
-      {
-        type: "expansion/set-source-status",
-        expectedGeneration,
-        fileKey,
-        status: { kind: "loading" },
-      },
-    ]);
-    const loadKey = `${expectedGeneration}\0${fileKey}\0${side}`;
-    let load = this.sourceLoads.get(loadKey);
-    if (!load) {
-      const fetcher = pair.file.sourceFetcher;
-      load = fetcher
-        .getFullText(side)
-        .then((text) => {
-          if (
-            this.disposed ||
-            this.snapshot.store.getSnapshot().documentGeneration !== expectedGeneration ||
-            this.reviewFilePair(fileKey)?.file.sourceFetcher !== fetcher
-          )
-            return;
-          if (text === null) {
-            this.commitReviewActions([
-              {
-                type: "expansion/set-source-status",
-                expectedGeneration,
-                fileKey,
-                status: { kind: "error" },
-              },
-            ]);
-            return;
-          }
-          const bytes = Buffer.byteLength(text, "utf8");
-          if (bytes > MAX_REVIEW_SOURCE_RESOURCE_BYTES)
-            throw new SourceTextTooLargeError(MAX_REVIEW_SOURCE_RESOURCE_BYTES);
-          descriptor.byteLength = bytes;
-          descriptor.digest = reviewDigest(text);
-          this.snapshot.projection.resourceContents[descriptor.id] = text;
-          this.commitReviewActions([
-            {
-              type: "expansion/set-source-status",
-              expectedGeneration,
-              fileKey,
-              status: { kind: "loaded", text },
-            },
-          ]);
-        })
-        .catch((error: unknown) => {
-          if (
-            this.disposed ||
-            this.snapshot.store.getSnapshot().documentGeneration !== expectedGeneration
-          )
-            return;
-          if (!(error instanceof SourceTextTooLargeError)) {
-            console.error(
-              `hunk: failed to load ${side} source for ${pair.file.path} (${pair.file.id}).`,
-              error,
-            );
-          }
-          this.commitReviewActions([
-            {
-              type: "expansion/set-source-status",
-              expectedGeneration,
-              fileKey,
-              status: {
-                kind: "error",
-                ...(error instanceof SourceTextTooLargeError
-                  ? { reason: "too-large" as const }
-                  : {}),
-              },
-            },
-          ]);
-        })
-        .finally(() => this.sourceLoads.delete(loadKey));
-      this.sourceLoads.set(loadKey, load);
-    }
-    await load;
   }
 
   /** Apply only a strictly validated generation- and revision-guarded semantic action. */
@@ -1506,7 +1572,7 @@ export class ReviewSessionRuntime {
     try {
       const intent = this.browserActionIntent(action);
       if (intent !== "runtime") {
-        this.executeReviewIntentInternal(
+        const execution = this.executeReviewIntentInternal(
           intent,
           selectionAction
             ? { mode: "generation", expectedGeneration: input.generation }
@@ -1517,16 +1583,9 @@ export class ReviewSessionRuntime {
               },
           { preflightActionResult: true },
         );
+        await execution.effectCompletion;
       } else {
         switch (action.type) {
-          case "expansion/toggle":
-            await this.toggleSourceGapForState(
-              action.fileKey,
-              action.gapId,
-              input.generation,
-              before.stateRevision,
-            );
-            break;
           case "session/reload":
             if (!canReloadInput(this.snapshot.bootstrap.input))
               throw new Error("This review cannot be reloaded.");

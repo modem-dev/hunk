@@ -419,11 +419,6 @@ export function App({
     },
     [extensions],
   );
-  const toggleRuntimeSourceGap = useCallback(
-    (fileKey: string, gapId: string) =>
-      void sessionRuntime.toggleSourceGap(fileKey, gapId).catch(showReviewMutationError),
-    [sessionRuntime, showReviewMutationError],
-  );
   const review = useReviewController({
     files: reviewFiles,
     reviewStore,
