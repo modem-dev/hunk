@@ -177,7 +177,9 @@ Most extension bugs are one of these:
   (`"!"`, not `"shift+1"`).
 - **Keyboard modes are grammar, not behavior.** Keep pending sequences and
   numeric prefixes in the extension, then call one public `ctx.commands.execute`
-  after resolving an action. `vim-navigation` is the complete counted example.
+  after resolving an action. `vim-navigation` demonstrates counts, Ctrl chords,
+  and a `:` key passed to a registered command whose host input dialog temporarily
+  outranks the still-active mode.
 - **`ctx.commands` invokes Hunk, not other extensions.** Probe with
   `isEnabled("hunk.review.nextHunk")`, then call `execute(id, { count })` for an
   explicitly public built-in. Counts are positive whole numbers up to 10,000,

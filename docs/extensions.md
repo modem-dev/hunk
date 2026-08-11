@@ -1035,7 +1035,8 @@ Multi-key grammar and numeric prefixes belong to the extension. Resolve a count,
 then call `ctx.commands.execute(id, { count })` once so the host applies movement
 atomically. See the dependency-free
 [`vim-navigation`](../examples/extensions/vim-navigation/) example for `j`/`k`,
-`gg`/`G`, hunk movement, alignment, and capped counts.
+`gg`/`G`, hunk movement, alignment, capped counts, Ctrl chords, and a focused
+`:` command line composed from a registered command plus `ctx.dialogs.input()`.
 
 ### `hunk.registerCommand(command, handler)`
 

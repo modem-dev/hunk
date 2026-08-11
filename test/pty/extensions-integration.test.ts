@@ -402,7 +402,7 @@ describe("PTY extensions", () => {
     }
   });
 
-  test("the real Vim navigation example routes counted and multi-key commands", async () => {
+  test("the real Vim navigation example routes counts, command-line input, and Ctrl chords", async () => {
     const configHome = harness.createIsolatedConfigHome();
     // Enough changed rows that top/bottom navigation has an observable viewport effect.
     const fixture = harness.createPinnedHeaderRepoFixture();
@@ -463,7 +463,58 @@ describe("PTY extensions", () => {
       const centered = await session.text({ immediate: true });
       expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
 
-      // Both absolute forms visibly move between the two long files.
+      // `:` passes into the registered command, whose focused host dialog owns even mode keys.
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("j-owned");
+      await session.waitForText(/j-owned/, { timeout: 20_000 });
+      await session.press("escape");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Vim command (:)") && /Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("bottom");
+      await session.press("enter");
+      const commandBottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(commandBottom).toContain("second.ts");
+
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("top");
+      await session.press("enter");
+      const commandTop = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("first.ts") &&
+          text.includes("export const line01 = 1;") &&
+          !text.includes("second.ts"),
+        20_000,
+      );
+      expect(commandTop).toContain("first.ts");
+
+      await session.press(["ctrl", "d"]);
+      const controlDown = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && !text.includes("export const line01 = 1;"),
+        20_000,
+      );
+      expect(controlDown).toContain("first.ts");
+      await session.press(["ctrl", "u"]);
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const line01 = 1;"),
+        20_000,
+      );
+
+      // Both normal-mode absolute forms visibly move between the two long files.
       await session.press(["shift", "g"]);
       const bottom = await harness.waitForSnapshot(
         session,
