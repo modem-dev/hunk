@@ -53,6 +53,7 @@ describe("PTY watch mode", () => {
 
     try {
       await session.waitForText(/watchedValue = 'initial change'/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
       await session.press("c");
       await session.type("Keep this draft while the agent writes.");
       await session.waitForText(/Keep this draft while the agent writes\./, { timeout: 5_000 });
