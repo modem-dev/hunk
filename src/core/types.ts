@@ -352,6 +352,40 @@ export interface MarkupGuideCommandInput {
   kind: "markup-guide";
 }
 
+export interface ExtensionInstallCommandInput {
+  kind: "extension-manage";
+  action: "install";
+  /** Install source spec: owner/repo, git:host/path, a git URL, or a local path. */
+  source: string;
+  /** Skip the interactive confirmation (required when stdin is not a TTY). */
+  yes: boolean;
+}
+
+export interface ExtensionListCommandInput {
+  kind: "extension-manage";
+  action: "list";
+}
+
+export interface ExtensionUpdateCommandInput {
+  kind: "extension-manage";
+  action: "update";
+  /** One managed install to update; every managed install when omitted. */
+  name?: string;
+}
+
+export interface ExtensionRemoveCommandInput {
+  kind: "extension-manage";
+  action: "remove";
+  name: string;
+}
+
+/** `hunk extension ...` managed-install commands. */
+export type ExtensionManageCommandInput =
+  | ExtensionInstallCommandInput
+  | ExtensionListCommandInput
+  | ExtensionUpdateCommandInput
+  | ExtensionRemoveCommandInput;
+
 export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
@@ -359,7 +393,8 @@ export type ParsedCliInput =
   | DaemonServeCommandInput
   | SessionCommandInput
   | MarkupRenderCommandInput
-  | MarkupGuideCommandInput;
+  | MarkupGuideCommandInput
+  | ExtensionManageCommandInput;
 
 export interface ReloadContext {
   cwd: string;

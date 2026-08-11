@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { resolveGlobalExtensionsDir } from "../core/paths";
+import { INSTALLED_EXTENSIONS_DIR_NAME, resolveGlobalExtensionsDir } from "../core/paths";
 import { findProjectRootCandidate } from "../core/projectRoot";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 
@@ -239,6 +239,52 @@ function scanExtensionsDir(dir: string): DiscoveredExtensionEntry[] {
 }
 
 /**
+ * Resolve one directory the way explicit paths and managed installs share.
+ *
+ * A directory that is itself a folder extension expands to just its declared
+ * entries; anything else is a container of extensions and gets scanned. This is
+ * also the shape `hunk extension install` validates a cloned repository
+ * against, so "what would load" has exactly one definition.
+ */
+export function resolveExtensionContainerEntries(dir: string): DiscoveredExtensionEntry[] {
+  const folderEntries = resolveFolderExtensionEntries(dir);
+  return folderEntries.length > 0 ? folderEntries : scanExtensionsDir(dir);
+}
+
+/**
+ * Report whether one directory would load at least one extension entry.
+ *
+ * The installer asks this before recording a clone, so a repository that is
+ * not an extension at all fails the install instead of installing as noise.
+ */
+export function directoryContainsExtensionEntries(dir: string) {
+  return resolveExtensionContainerEntries(dir).length > 0;
+}
+
+/**
+ * Scan the managed install root: one repository clone per subdirectory.
+ *
+ * Each clone resolves like an explicit directory path — as a folder extension
+ * when it declares itself one, otherwise as a container of entry files — so a
+ * repository shares one layout contract between `--extension <path>` during
+ * development and `hunk extension install` after publishing. Non-directories
+ * (the records file) are skipped.
+ */
+function scanInstalledExtensionsRoot(root: string): DiscoveredExtensionEntry[] {
+  const entries: DiscoveredExtensionEntry[] = [];
+
+  for (const entry of readSortedDirEntries(root)) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    entries.push(...resolveExtensionContainerEntries(join(root, entry.name)));
+  }
+
+  return entries;
+}
+
+/**
  * Expand a leading `~` to the user's home directory.
  *
  * Config files are hand-written and documented with `~/dev/...` paths, but TOML
@@ -280,8 +326,7 @@ function expandExplicitPath(path: string, cwd: string): DiscoveredExtensionEntry
     return [toStandaloneEntry(resolvedPath)];
   }
 
-  const folderEntries = resolveFolderExtensionEntries(resolvedPath);
-  return folderEntries.length > 0 ? folderEntries : scanExtensionsDir(resolvedPath);
+  return resolveExtensionContainerEntries(resolvedPath);
 }
 
 /**
@@ -309,7 +354,17 @@ export function discoverExtensions(options: DiscoverExtensionsOptions = {}): Ext
     },
     {
       origin: "global",
-      entries: globalExtensionsDir ? scanExtensionsDir(globalExtensionsDir) : [],
+      entries: globalExtensionsDir
+        ? [
+            ...scanExtensionsDir(globalExtensionsDir),
+            // Managed installs live one level deeper so `hunk extension
+            // install` owns a directory hand-copied extensions never collide
+            // with; they load with the same global origin and trust posture.
+            ...scanInstalledExtensionsRoot(
+              join(globalExtensionsDir, INSTALLED_EXTENSIONS_DIR_NAME),
+            ),
+          ]
+        : [],
     },
     {
       origin: "repo",

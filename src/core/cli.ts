@@ -5,6 +5,7 @@ import type {
   CliInput,
   CommonOptions,
   CursorLine,
+  ExtensionManageCommandInput,
   HelpCommandInput,
   LayoutMode,
   PagerCommandInput,
@@ -187,6 +188,36 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "skill path",
     summary: "print a bundled Hunk skill path",
     synopsis: ["hunk skill path [name]"],
+  },
+  "extension-install": {
+    path: "extension install",
+    summary: "install a shared extension from a git repository",
+    synopsis: [
+      "hunk extension install <owner>/<repo>[@ref]",
+      "hunk extension install git:<host>/<path>[@ref]",
+      "hunk extension install <git-url or local path>[@ref]",
+    ],
+    options: [
+      {
+        flag: "--yes",
+        description: "skip the confirmation prompt (required without a TTY)",
+      },
+    ],
+  },
+  "extension-list": {
+    path: "extension list",
+    summary: "list extensions installed with `hunk extension install`",
+    synopsis: ["hunk extension list"],
+  },
+  "extension-update": {
+    path: "extension update",
+    summary: "re-clone managed extension installs from their recorded sources",
+    synopsis: ["hunk extension update [name]"],
+  },
+  "extension-remove": {
+    path: "extension remove",
+    summary: "remove one managed extension install",
+    synopsis: ["hunk extension remove <name>"],
   },
   "daemon-serve": {
     path: "daemon serve",
@@ -386,6 +417,7 @@ function renderCliHelp() {
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
     "  hunk markup guide                       print the experimental STML authoring guide",
     "  hunk skill path [name]                  print a bundled Hunk skill path",
+    "  hunk extension <subcommand>             install and manage shared extensions",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
@@ -807,7 +839,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "pager" ||
     input.kind === "daemon-serve" ||
     input.kind === "markup-render" ||
-    input.kind === "markup-guide"
+    input.kind === "markup-guide" ||
+    input.kind === "extension-manage"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -1381,6 +1414,108 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
   };
 }
 
+const EXTENSION_MANAGE_HELP = [
+  "Usage:",
+  "  hunk extension install <source> [--yes]",
+  "  hunk extension list",
+  "  hunk extension update [name]",
+  "  hunk extension remove <name>",
+  "",
+  "Install and manage shared extensions.",
+  "",
+  "install  clone an extension repository into Hunk's managed install directory;",
+  "         sources are <owner>/<repo>[@ref], git:<host>/<path>[@ref], a git URL,",
+  "         or a local path. Installed extensions run with your full user",
+  "         permissions — only install repositories you trust.",
+  "list     show every managed install with its version, commit, and source",
+  "update   re-clone one managed install (or all of them) from its source",
+  "remove   delete one managed install and its record",
+  "",
+  "Find community extensions by browsing the hunk-extension topic on GitHub:",
+  "https://github.com/topics/hunk-extension",
+  "",
+].join("\n");
+
+/** Parse `hunk extension ...` managed-install commands. */
+async function parseExtensionCommand(
+  tokens: string[],
+): Promise<ExtensionManageCommandInput | HelpCommandInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return { kind: "help", text: EXTENSION_MANAGE_HELP };
+  }
+
+  if (subcommand === "install") {
+    const command = createCliReferenceCommand("extension-install").argument(
+      "<source>",
+      "owner/repo[@ref], git:host/path[@ref], a git URL, or a local path",
+    );
+
+    let parsedSource = "";
+    let parsedOptions: { yes?: boolean } = {};
+    command.action((source: string, options: { yes?: boolean }) => {
+      parsedSource = source;
+      parsedOptions = options;
+    });
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+    return {
+      kind: "extension-manage",
+      action: "install",
+      source: parsedSource,
+      yes: parsedOptions.yes ?? false,
+    };
+  }
+
+  if (subcommand === "list") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: EXTENSION_MANAGE_HELP };
+    }
+    if (rest.length > 0) {
+      throw new Error("`hunk extension list` does not accept additional arguments.");
+    }
+    return { kind: "extension-manage", action: "list" };
+  }
+
+  if (subcommand === "update") {
+    const command = createCliReferenceCommand("extension-update").argument("[name]");
+
+    let parsedName: string | undefined;
+    command.action((name: string | undefined) => {
+      parsedName = name;
+    });
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+    return { kind: "extension-manage", action: "update", name: parsedName };
+  }
+
+  if (subcommand === "remove" || subcommand === "rm" || subcommand === "uninstall") {
+    const command = createCliReferenceCommand("extension-remove").argument("<name>");
+
+    let parsedName = "";
+    command.action((name: string) => {
+      parsedName = name;
+    });
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+    return { kind: "extension-manage", action: "remove", name: parsedName };
+  }
+
+  throw new Error("Supported extension subcommands are install, list, update, and remove.");
+}
+
 /** Parse `hunk daemon serve` as the canonical local daemon entrypoint. */
 async function parseDaemonCommand(tokens: string[]): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
@@ -1509,6 +1644,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseMarkupCommand(rest);
     case "skill":
       return parseSkillCommand(rest);
+    case "extension":
+      return parseExtensionCommand(rest);
     case "daemon":
     case "mcp":
       return parseDaemonCommand(rest);

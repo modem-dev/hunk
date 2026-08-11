@@ -1564,3 +1564,78 @@ describe("parseCli extension flags", () => {
     expect(parsed.text).toContain("--no-extensions");
   });
 });
+
+describe("parseCli extension management commands", () => {
+  test("parses install with its source and confirmation flag", async () => {
+    const parsed = await parseCli(["bun", "hunk", "extension", "install", "acme/hunk-ext@v1"]);
+    expect(parsed).toEqual({
+      kind: "extension-manage",
+      action: "install",
+      source: "acme/hunk-ext@v1",
+      yes: false,
+    });
+
+    const confirmed = await parseCli([
+      "bun",
+      "hunk",
+      "extension",
+      "install",
+      "acme/hunk-ext",
+      "--yes",
+    ]);
+    expect(confirmed).toEqual({
+      kind: "extension-manage",
+      action: "install",
+      source: "acme/hunk-ext",
+      yes: true,
+    });
+  });
+
+  test("parses list, update, and remove with their targets", async () => {
+    expect(await parseCli(["bun", "hunk", "extension", "list"])).toEqual({
+      kind: "extension-manage",
+      action: "list",
+    });
+    expect(await parseCli(["bun", "hunk", "extension", "update"])).toEqual({
+      kind: "extension-manage",
+      action: "update",
+      name: undefined,
+    });
+    expect(await parseCli(["bun", "hunk", "extension", "update", "hunk-ext"])).toEqual({
+      kind: "extension-manage",
+      action: "update",
+      name: "hunk-ext",
+    });
+    expect(await parseCli(["bun", "hunk", "extension", "remove", "hunk-ext"])).toEqual({
+      kind: "extension-manage",
+      action: "remove",
+      name: "hunk-ext",
+    });
+    // Familiar spellings from other package managers resolve to remove.
+    expect(await parseCli(["bun", "hunk", "extension", "uninstall", "hunk-ext"])).toEqual({
+      kind: "extension-manage",
+      action: "remove",
+      name: "hunk-ext",
+    });
+  });
+
+  test("shows extension help for the bare command and rejects unknown subcommands", async () => {
+    const parsed = await parseCli(["bun", "hunk", "extension"]);
+    expect(parsed.kind).toBe("help");
+    if (parsed.kind === "help") {
+      expect(parsed.text).toContain("hunk extension install <source>");
+      expect(parsed.text).toContain("only install repositories you trust");
+      expect(parsed.text).toContain("hunk-extension");
+    }
+
+    expect(parseCli(["bun", "hunk", "extension", "publish"])).rejects.toThrow(
+      /Supported extension subcommands/,
+    );
+  });
+
+  test("session reload refuses to nest an extension management command", async () => {
+    expect(
+      parseCli(["bun", "hunk", "session", "reload", "abc123", "--", "extension", "list"]),
+    ).rejects.toThrow(/review command/);
+  });
+});

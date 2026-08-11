@@ -22,6 +22,7 @@ import {
 import type { AppBootstrap } from "./types";
 import type {
   CliInput,
+  ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
   SessionCommandInput,
@@ -63,6 +64,10 @@ export type StartupPlan =
     }
   | {
       kind: "markup-guide";
+    }
+  | {
+      kind: "extension-manage";
+      input: ExtensionManageCommandInput;
     }
   | {
       kind: "app";
@@ -160,6 +165,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "markup-guide") {
     return {
       kind: "markup-guide",
+    };
+  }
+
+  if (parsedCliInput.kind === "extension-manage") {
+    return {
+      kind: "extension-manage",
+      input: parsedCliInput,
     };
   }
 

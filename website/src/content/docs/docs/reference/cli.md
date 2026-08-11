@@ -172,6 +172,54 @@ print a bundled Hunk skill path
 hunk skill path [name]
 ```
 
+## `hunk extension install`
+
+install a shared extension from a git repository
+
+### Usage
+
+```bash
+hunk extension install <owner>/<repo>[@ref]
+hunk extension install git:<host>/<path>[@ref]
+hunk extension install <git-url or local path>[@ref]
+```
+
+### Command-specific options
+
+| Option  | Description                                           |
+| ------- | ----------------------------------------------------- |
+| `--yes` | skip the confirmation prompt (required without a TTY) |
+
+## `hunk extension list`
+
+list extensions installed with `hunk extension install`
+
+### Usage
+
+```bash
+hunk extension list
+```
+
+## `hunk extension update`
+
+re-clone managed extension installs from their recorded sources
+
+### Usage
+
+```bash
+hunk extension update [name]
+```
+
+## `hunk extension remove`
+
+remove one managed extension install
+
+### Usage
+
+```bash
+hunk extension remove <name>
+```
+
 ## `hunk daemon serve`
 
 run the local Hunk session daemon and websocket session broker
