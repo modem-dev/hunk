@@ -198,7 +198,7 @@ const registerBundledSidebar: ExtensionFactory = (hunk) => {
     id: BUNDLED_SIDEBAR_VIEW_ID,
     title: "Files",
     placement: "left",
-    thickness: { preferred: 34, min: 22 },
+    width: { preferred: 34, min: 22 },
     defaultOpen: true,
     component: BuiltInSidebarView,
   });

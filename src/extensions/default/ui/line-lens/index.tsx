@@ -28,7 +28,7 @@ const registerBundledLineLens: ExtensionFactory = (hunk) => {
     id: "line-lens",
     title: "Current-line lens",
     placement: "bottom",
-    thickness: { preferred: 3, min: 3, max: 3 },
+    height: { preferred: 3, min: 3, max: 3 },
     defaultOpen: false,
     currentLine: true,
     available: ({ currentLine }) => currentLine !== null,

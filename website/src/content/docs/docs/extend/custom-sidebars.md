@@ -43,7 +43,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Beyond `id` and `component`, a pane may declare a `title`, a `placement` of `"left"` (default), `"right"`, `"top"`, or `"bottom"`, axis-neutral `thickness` (`preferred`, optional `min`/`max`), `defaultOpen: true`, or `replaces: "hunk:files"` to change the initial file-navigation default. Equal minimum and maximum thickness make a fixed pane. Omitted thickness defaults to 34 preferred / 22 minimum columns on the sides and 8 / 3 rows at the top or bottom. Top/bottom panes span the central review column and stay outside review-stream geometry.
+Beyond `id` and `component`, a pane may declare a `title`, a `placement` of `"left"` (default), `"right"`, `"top"`, or `"bottom"`, `defaultOpen: true`, or `replaces: "hunk:files"` to change the initial file-navigation default. Left/right panes use `width` (`preferred`, optional `min`/`max`) in terminal columns; top/bottom panes use `height` in rows. Equal minimum and maximum values make a fixed pane. Omitted width defaults to 34 preferred / 22 minimum columns, while omitted height defaults to 8 / 3 rows. `ExtensionPane` is a union of `ExtensionVerticalPane` and `ExtensionHorizontalPane`, so TypeScript rejects dimensions that do not match the placement. Top/bottom panes span the central review column and stay outside review-stream geometry.
 
 API v4 keeps `registerSidebarView`, `ExtensionSidebar*`, `ctx.sidebars`, and `replacesDefault` as deprecated aliases during a compatibility window. They normalize immediately into this same pane registry and layout path.
 

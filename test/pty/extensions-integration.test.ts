@@ -94,7 +94,7 @@ export default function (hunk) {
       id: placement,
       placement,
       defaultOpen: false,
-      thickness: { preferred: 2, min: 2, max: 2 },
+      height: { preferred: 2, min: 2, max: 2 },
       component: (props) => createElement("text", {
         content: "PANE " + placement.toUpperCase() + " " + props.width + "x" + props.height,
         style: { fg: props.theme.text, bg: props.theme.panel },

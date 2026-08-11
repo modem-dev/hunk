@@ -70,7 +70,7 @@ Pane registration is additive on `left`, `right`, `top`, and `bottom`.
 reconciliation, synchronous availability/quarantine, and the single rectangle
 plan for panes, dividers, and residual review bounds. Left/right consume
 columns; top/bottom consume rows only from the central review column. The
-review stream never includes pane thickness in section coordinates.
+review stream never includes pane width or height in section coordinates.
 
 `src/ui/components/panes/ExtensionPane.tsx` mounts one registration inside its
 exact host-owned rectangle with frozen file views, guarded actions, opted-in

@@ -940,8 +940,8 @@ export interface ExtensionPaneKeybindings {
 /** A terminal edge where a host-owned pane can be docked. */
 export type ExtensionPanePlacement = "left" | "right" | "top" | "bottom";
 
-/** Axis-neutral requested pane size: columns at the sides, rows at the top/bottom. */
-export interface ExtensionPaneThickness {
+/** Requested pane width or height along its docked edge. */
+export interface ExtensionPaneSize {
   preferred: number;
   min?: number;
   max?: number;
@@ -981,15 +981,11 @@ export interface ExtensionPaneProps {
 /** A React/OpenTUI component mounted inside an exact host-owned rectangle. */
 export type ExtensionPaneComponent = (props: ExtensionPaneProps) => unknown;
 
-/** A docked pane contributed by an extension. */
-export interface ExtensionPane {
+/** Fields shared by panes on every terminal edge. */
+interface ExtensionPaneBase {
   /** Identifies the pane within its extension; `<extensionId>:<id>` globally. */
   id: string;
   title?: string;
-  /** Defaults to `"left"`. */
-  placement?: ExtensionPanePlacement;
-  /** Defaults to `34`/`22` columns at the sides and `8`/`3` rows at the top/bottom. */
-  thickness?: ExtensionPaneThickness;
   defaultOpen?: boolean;
   /** Start in place of this pane. Replacement changes initial defaults only. */
   replaces?: string;
@@ -999,6 +995,26 @@ export interface ExtensionPane {
   available?(context: ExtensionPaneAvailabilityContext): boolean;
   component: ExtensionPaneComponent;
 }
+
+/** A left/right pane sized explicitly in terminal columns. */
+export interface ExtensionVerticalPane extends ExtensionPaneBase {
+  /** Defaults to `"left"`. */
+  placement?: "left" | "right";
+  /** Defaults to 34 preferred and 22 minimum columns. */
+  width?: ExtensionPaneSize;
+  height?: never;
+}
+
+/** A top/bottom pane sized explicitly in terminal rows. */
+export interface ExtensionHorizontalPane extends ExtensionPaneBase {
+  placement: "top" | "bottom";
+  /** Defaults to 8 preferred and 3 minimum rows. */
+  height?: ExtensionPaneSize;
+  width?: never;
+}
+
+/** A docked pane contributed by an extension. */
+export type ExtensionPane = ExtensionVerticalPane | ExtensionHorizontalPane;
 
 /** @deprecated Use ExtensionPaneKeybindings. */
 export type ExtensionSidebarKeybindings = ExtensionPaneKeybindings;

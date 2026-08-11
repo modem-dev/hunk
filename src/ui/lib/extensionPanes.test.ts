@@ -1,4 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type {
+  ExtensionPaneAvailabilityContext,
+  ExtensionPaneComponent,
+  ExtensionPanePlacement,
+  ExtensionPaneSize,
+} from "../../extension-api/types";
 import type { RegisteredPane } from "../../extensions/types";
 import { createEmptyExtensionLoadResult } from "../../extensions/types";
 import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../../extensions/extensionIds";
@@ -11,12 +17,27 @@ import {
   type SessionPane,
 } from "./extensionPanes";
 
+type TestPaneOverrides = Partial<{
+  title: string;
+  placement: ExtensionPanePlacement;
+  width: ExtensionPaneSize;
+  height: ExtensionPaneSize;
+  defaultOpen: boolean;
+  replaces: string;
+  currentLine: boolean;
+  available: (context: ExtensionPaneAvailabilityContext) => boolean;
+  component: ExtensionPaneComponent;
+}>;
+
 function registeredPane(
   extensionId: string,
   id: string,
-  pane: Partial<RegisteredPane["pane"]> = {},
+  pane: TestPaneOverrides = {},
 ): RegisteredPane {
-  return { extensionId, pane: { id, component: () => null, ...pane } };
+  return {
+    extensionId,
+    pane: { id, component: () => null, ...pane } as RegisteredPane["pane"],
+  };
 }
 function loadResultWith(panes: RegisteredPane[]) {
   const result = createEmptyExtensionLoadResult();
@@ -88,7 +109,9 @@ describe("extension panes", () => {
       defaultOpen: true,
       registered: registeredPane(key.split(":")[0]!, key.split(":")[1]!, {
         placement,
-        thickness: { preferred: size, min: size, max: size },
+        ...(placement === "left" || placement === "right"
+          ? { width: { preferred: size, min: size, max: size } }
+          : { height: { preferred: size, min: size, max: size } }),
       }),
     });
     const panes = [
@@ -121,7 +144,7 @@ describe("extension panes", () => {
     let available = false;
     const registered = registeredPane("a", "detail", {
       placement: "bottom",
-      thickness: { preferred: 3, min: 3, max: 3 },
+      height: { preferred: 3, min: 3, max: 3 },
       currentLine: true,
       available: ({ currentLine }) => available && currentLine !== null,
     });
@@ -187,10 +210,10 @@ describe("extension panes", () => {
     ]);
   });
 
-  test("uses axis-neutral size overrides and reserves a divider only for resizable panes", () => {
+  test("uses explicit height overrides and reserves a divider only for resizable panes", () => {
     const registered = registeredPane("a", "top", {
       placement: "top",
-      thickness: { preferred: 4, min: 2, max: 8 },
+      height: { preferred: 4, min: 2, max: 8 },
     });
     const panes = buildSessionPanes(loadResultWith([registered]));
     const plan = planExtensionPanes({
@@ -219,7 +242,7 @@ describe("extension panes", () => {
       defaultOpen: true,
       registered: registeredPane("a", id, {
         placement: "left",
-        thickness: { preferred: 30, min: 20 },
+        width: { preferred: 30, min: 20 },
       }),
     }));
     const plan = planExtensionPanes({

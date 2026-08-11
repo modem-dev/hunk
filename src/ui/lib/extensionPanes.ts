@@ -6,7 +6,7 @@ import type {
   ExtensionPaneAvailabilityContext,
   ExtensionPanePlacement,
 } from "../../extension-api/types";
-import { defaultExtensionPaneThickness } from "../../extensions/panes";
+import { extensionPaneSize } from "../../extensions/panes";
 import type { ExtensionLoadResult, RegisteredPane } from "../../extensions/types";
 
 /** One pane offered to a review session. */
@@ -161,8 +161,8 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
   let bottom = Math.max(0, options.bodyHeight);
   const planned = new Map<string, PlannedPane>();
 
-  const thickness = (pane: SessionPane) => {
-    const spec = pane.registered.pane.thickness ?? defaultExtensionPaneThickness(pane.placement);
+  const sizeSpec = (pane: SessionPane) => {
+    const spec = extensionPaneSize(pane.registered.pane, pane.placement);
     const min = spec.min ?? 1;
     const max = spec.max ?? Number.MAX_SAFE_INTEGER;
     return { preferred: options.sizes[pane.key] ?? spec.preferred, min, max, fixed: min === max };
@@ -171,7 +171,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
   for (const pane of accepted.filter(
     (pane) => pane.placement === "left" || pane.placement === "right",
   )) {
-    const spec = thickness(pane);
+    const spec = sizeSpec(pane);
     const dividerSize = spec.fixed ? 0 : 1;
     const remaining = right - left - options.minReviewWidth - dividerSize;
     const width = Math.min(Math.max(spec.preferred, spec.min), spec.max, remaining);
@@ -199,7 +199,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
   for (const pane of accepted.filter(
     (pane) => pane.placement === "top" || pane.placement === "bottom",
   )) {
-    const spec = thickness(pane);
+    const spec = sizeSpec(pane);
     const dividerSize = spec.fixed ? 0 : 1;
     const remaining = bottom - top - options.minReviewHeight - dividerSize;
     const height = Math.min(Math.max(spec.preferred, spec.min), spec.max, remaining);

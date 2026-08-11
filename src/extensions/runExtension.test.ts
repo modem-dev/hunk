@@ -102,7 +102,7 @@ describe("runExtensionFactory", () => {
 });
 
 describe("registerPane", () => {
-  test("collects every placement with normalized thickness", () => {
+  test("collects every placement with normalized width or height", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
     runExtensionFactory({
@@ -110,18 +110,23 @@ describe("registerPane", () => {
       registry,
       issues,
       factory: (hunk) => {
-        for (const placement of ["left", "right", "top", "bottom"] as const) {
-          hunk.registerPane({
-            id: placement,
-            placement,
-            thickness: { preferred: 3, min: 2, max: 4 },
-            component: () => null,
-          });
+        const size = { preferred: 3, min: 2, max: 4 };
+        for (const placement of ["left", "right"] as const) {
+          hunk.registerPane({ id: placement, placement, width: size, component: () => null });
+        }
+        for (const placement of ["top", "bottom"] as const) {
+          hunk.registerPane({ id: placement, placement, height: size, component: () => null });
         }
       },
     });
     expect(issues).toEqual([]);
-    expect(registry.panes.map(({ pane }) => [pane.id, pane.placement, pane.thickness])).toEqual([
+    expect(
+      registry.panes.map(({ pane }) => [
+        pane.id,
+        pane.placement,
+        pane.placement === "left" || pane.placement === "right" ? pane.width : pane.height,
+      ]),
+    ).toEqual([
       ["left", "left", { preferred: 3, min: 2, max: 4 }],
       ["right", "right", { preferred: 3, min: 2, max: 4 }],
       ["top", "top", { preferred: 3, min: 2, max: 4 }],
@@ -129,7 +134,7 @@ describe("registerPane", () => {
     ]);
   });
 
-  test("uses placement-aware defaults on each thickness axis", () => {
+  test("uses placement-aware defaults for width and height", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
     runExtensionFactory({
@@ -143,10 +148,16 @@ describe("registerPane", () => {
     });
 
     expect(issues).toEqual([]);
-    expect(registry.panes.map(({ pane }) => pane.thickness)).toEqual([
-      { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
-      { preferred: 8, min: 3, max: Number.MAX_SAFE_INTEGER },
-    ]);
+    expect(registry.panes[0]?.pane.width).toEqual({
+      preferred: 34,
+      min: 22,
+      max: Number.MAX_SAFE_INTEGER,
+    });
+    expect(registry.panes[1]?.pane.height).toEqual({
+      preferred: 8,
+      min: 3,
+      max: Number.MAX_SAFE_INTEGER,
+    });
   });
 
   test("validates opt-ins, replacement keys, and synchronous availability callbacks", () => {
@@ -169,21 +180,23 @@ describe("registerPane", () => {
     }
   });
 
-  test("rejects invalid placements, thickness values, and bounds", () => {
+  test("rejects invalid placements, dimensions, and bounds", () => {
     const invalidPanes = [
       { id: "", component: () => null },
       { id: "component", component: null },
       { id: "placement", placement: "center", component: () => null },
-      { id: "zero", thickness: { preferred: 0 }, component: () => null },
-      { id: "fraction", thickness: { preferred: 1.5 }, component: () => null },
-      { id: "infinite", thickness: { preferred: Number.POSITIVE_INFINITY }, component: () => null },
+      { id: "zero", width: { preferred: 0 }, component: () => null },
+      { id: "fraction", width: { preferred: 1.5 }, component: () => null },
+      { id: "infinite", width: { preferred: Number.POSITIVE_INFINITY }, component: () => null },
       {
         id: "unsafe",
-        thickness: { preferred: Number.MAX_SAFE_INTEGER + 1 },
+        width: { preferred: Number.MAX_SAFE_INTEGER + 1 },
         component: () => null,
       },
-      { id: "bounds", thickness: { preferred: 3, min: 4 }, component: () => null },
-      { id: "maximum", thickness: { preferred: 4, max: 3 }, component: () => null },
+      { id: "bounds", width: { preferred: 3, min: 4 }, component: () => null },
+      { id: "maximum", width: { preferred: 4, max: 3 }, component: () => null },
+      { id: "side-height", placement: "right", height: { preferred: 4 }, component: () => null },
+      { id: "top-width", placement: "top", width: { preferred: 4 }, component: () => null },
     ];
 
     for (const pane of invalidPanes) {
@@ -240,7 +253,7 @@ describe("registerSidebarView", () => {
         pane: {
           id: "tree",
           placement: "left",
-          thickness: { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
+          width: { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
           component,
         },
       },

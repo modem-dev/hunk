@@ -525,7 +525,7 @@ export default function (hunk: HunkExtensionAPI) {
     id: "status",
     title: "Review status",
     placement: "bottom",
-    thickness: { preferred: 2, min: 2, max: 2 },
+    height: { preferred: 2, min: 2, max: 2 },
     defaultOpen: true,
     component: ReviewStatus,
   });
@@ -537,12 +537,15 @@ export default function (hunk: HunkExtensionAPI) {
 
 Beyond `id` and `component`, a pane may declare a `title`, a `placement` of
 `"left"` (default), `"right"`, `"top"`, or `"bottom"`, and `defaultOpen: true`.
-`thickness: { preferred, min?, max? }` controls columns on the sides and rows
-at the top/bottom; all values are positive integers and equal min/max makes the
-pane fixed. Omitted thickness defaults to 34 preferred / 22 minimum columns on
-the sides and 8 / 3 rows at the top or bottom. `replaces: "hunk:files"`
-changes initial defaults without removing
-the files pane. `available(context)` is a synchronous frame policy: an open but
+Left/right panes declare `width: { preferred, min?, max? }` in terminal columns;
+top/bottom panes declare `height: { preferred, min?, max? }` in rows. All values
+are positive integers, and equal min/max makes the pane fixed. Omitted width
+defaults to 34 preferred / 22 minimum columns; omitted height defaults to 8 / 3
+rows. The exported `ExtensionVerticalPane` and `ExtensionHorizontalPane` types
+form the `ExtensionPane` union, so TypeScript rejects `height` on left/right
+panes and `width` on top/bottom panes. `replaces: "hunk:files"` changes initial
+defaults without removing the files pane. `available(context)` is a synchronous
+frame policy: an open but
 unavailable pane retains its logical open preference. Set `currentLine: true`
 only when the pane needs the opaque `currentLine.render("old" | "new", width)`
 host painter; unrelated panes receive stable `null` and do not repaint on each

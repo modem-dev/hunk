@@ -10,7 +10,7 @@ describe("bundled UI registry", () => {
       placement: "bottom",
       defaultOpen: false,
       currentLine: true,
-      thickness: { preferred: 3, min: 3, max: 3 },
+      height: { preferred: 3, min: 3, max: 3 },
     });
   });
 });

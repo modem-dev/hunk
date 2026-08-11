@@ -33,7 +33,7 @@ export default function registerPaneLayout(hunk: HunkExtensionAPI) {
     id: "side",
     title: "Pane example · side",
     placement: "right",
-    thickness: { preferred: 28, min: 18, max: 44 },
+    width: { preferred: 28, min: 18, max: 44 },
     component: EdgePane,
   });
   for (const placement of ["top", "bottom"] as const) {
@@ -41,7 +41,7 @@ export default function registerPaneLayout(hunk: HunkExtensionAPI) {
       id: placement,
       title: `Pane example · ${placement}`,
       placement,
-      thickness: { preferred: 2, min: 2, max: 2 },
+      height: { preferred: 2, min: 2, max: 2 },
       component: EdgePane,
     });
   }

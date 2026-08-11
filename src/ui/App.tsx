@@ -111,7 +111,7 @@ import {
 } from "./lib/extensionPanes";
 import type { ExtensionPanePlacement } from "../extension-api/types";
 import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../extensions/extensionIds";
-import { defaultExtensionPaneThickness } from "../extensions/panes";
+import { extensionPaneSize } from "../extensions/panes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import {
   normalizeWorkspaceWriteRequest,
@@ -1932,9 +1932,7 @@ export function App({
   const beginPaneResize = (planned: PlannedPane) => (event: TuiMouseEvent) => {
     if (event.button !== MouseButton.LEFT) return;
     const vertical = planned.pane.placement === "left" || planned.pane.placement === "right";
-    const spec =
-      planned.pane.registered.pane.thickness ??
-      defaultExtensionPaneThickness(planned.pane.placement);
+    const spec = extensionPaneSize(planned.pane.registered.pane, planned.pane.placement);
     const currentSize = vertical ? planned.bounds.width : planned.bounds.height;
     closeMenu();
     setPaneResize({

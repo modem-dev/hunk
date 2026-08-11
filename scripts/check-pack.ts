@@ -31,8 +31,11 @@ import type {
   ExtensionKeyboardModeControls,
   ExtensionKeyboardModeKeyResult,
   ExtensionPaintTheme,
+  ExtensionHorizontalPane,
   ExtensionPaneProps,
+  ExtensionPaneSize,
   ExtensionReviewSelection,
+  ExtensionVerticalPane,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
@@ -61,9 +64,25 @@ export default function (hunk: HunkExtensionAPI) {
     props.currentLine?.render("new", props.width);
     return null;
   };
-  for (const placement of ["left", "right", "top", "bottom"] as const) {
-    hunk.registerPane({ id: placement, placement, thickness: { preferred: 3, min: 2, max: 4 },
-      currentLine: placement === "bottom", component: pane });
+  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4 };
+  for (const placement of ["left", "right"] as const) {
+    const verticalPane: ExtensionVerticalPane = {
+      id: placement,
+      placement,
+      width: paneSize,
+      component: pane,
+    };
+    hunk.registerPane(verticalPane);
+  }
+  for (const placement of ["top", "bottom"] as const) {
+    const horizontalPane: ExtensionHorizontalPane = {
+      id: placement,
+      placement,
+      height: paneSize,
+      currentLine: placement === "bottom",
+      component: pane,
+    };
+    hunk.registerPane(horizontalPane);
   }
   hunk.registerSidebarView({
     id: "legacy",

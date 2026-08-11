@@ -50,7 +50,7 @@ function createTopPaneResizeBootstrap(): AppBootstrap {
       id: "top",
       placement: "top",
       defaultOpen: true,
-      thickness: { preferred: 4, min: 2, max: 8 },
+      height: { preferred: 4, min: 2, max: 8 },
       component: ({ width, height }) => <text content={`TOP PANE ${width}x${height}`} />,
     },
   });

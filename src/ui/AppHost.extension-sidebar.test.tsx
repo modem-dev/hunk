@@ -490,7 +490,7 @@ describe("extension sidebar views", () => {
         `  hunk.registerPane({\n` +
         `    id: "two-files",\n` +
         `    placement: "bottom",\n` +
-        `    thickness: { preferred: 1, min: 1, max: 1 },\n` +
+        `    height: { preferred: 1, min: 1, max: 1 },\n` +
         `    defaultOpen: true,\n` +
         `    available: ({ files }) => files.length === 2,\n` +
         `    component: () => createElement("text", { content: "TWO FILE PANE" }),\n` +

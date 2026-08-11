@@ -16,7 +16,7 @@ import { ExtensionPaneHost } from "./ExtensionPane";
 function registeredView(component: (props: ExtensionPaneProps) => ReactNode) {
   return {
     extensionId: "probe",
-    pane: { id: "probe-view", placement: "left", thickness: { preferred: 34, min: 22 }, component },
+    pane: { id: "probe-view", placement: "left", width: { preferred: 34, min: 22 }, component },
   } as unknown as RegisteredPane;
 }
 
@@ -132,7 +132,7 @@ describe("ExtensionPaneHost failure recovery", () => {
       pane: {
         id: "files",
         placement: "left",
-        thickness: { preferred: 34, min: 22 },
+        width: { preferred: 34, min: 22 },
         component: () => {
           throw new Error("files exploded");
         },

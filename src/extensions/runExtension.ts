@@ -24,7 +24,7 @@ import { toUserFacingError } from "../core/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
-import { defaultExtensionPaneThickness } from "./panes";
+import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
 
 /**
  * Running one extension factory into the shared registry.
@@ -370,16 +370,21 @@ export function createExtensionApi(
           `registerPane placement must be "left", "right", "top", or "bottom", got "${String(placement)}".`,
         );
       }
-      const thickness = pane.thickness ?? defaultExtensionPaneThickness(placement);
-      const min = thickness.min ?? 1;
-      const max = thickness.max ?? Number.MAX_SAFE_INTEGER;
-      for (const [name, value] of Object.entries({ preferred: thickness.preferred, min, max })) {
+      const dimension = isVerticalPanePlacement(placement) ? "width" : "height";
+      const wrongDimension = dimension === "width" ? "height" : "width";
+      if (pane[wrongDimension] !== undefined) {
+        throw new Error(`registerPane ${placement} panes use ${dimension}, not ${wrongDimension}.`);
+      }
+      const size = extensionPaneSize(pane, placement);
+      const min = size.min ?? 1;
+      const max = size.max ?? Number.MAX_SAFE_INTEGER;
+      for (const [name, value] of Object.entries({ preferred: size.preferred, min, max })) {
         if (!Number.isSafeInteger(value) || value <= 0) {
-          throw new Error(`registerPane thickness.${name} must be a positive safe integer.`);
+          throw new Error(`registerPane ${dimension}.${name} must be a positive safe integer.`);
         }
       }
-      if (min > thickness.preferred || thickness.preferred > max) {
-        throw new Error("registerPane thickness must satisfy min <= preferred <= max.");
+      if (min > size.preferred || size.preferred > max) {
+        throw new Error(`registerPane ${dimension} must satisfy min <= preferred <= max.`);
       }
       if (pane.available !== undefined && typeof pane.available !== "function") {
         throw new Error("registerPane available must be a function.");
@@ -394,9 +399,16 @@ export function createExtensionApi(
         }
       }
 
+      const normalizedSize = { preferred: size.preferred, min, max };
       registry.panes.push({
         extensionId: metadata.id,
-        pane: { ...pane, placement, thickness: { preferred: thickness.preferred, min, max } },
+        pane: {
+          ...pane,
+          placement,
+          ...(dimension === "width"
+            ? { width: normalizedSize, height: undefined }
+            : { height: normalizedSize, width: undefined }),
+        } as ExtensionPane,
       });
     },
     registerSidebarView(view: ExtensionSidebarView) {
@@ -411,7 +423,7 @@ export function createExtensionApi(
         id: view.id,
         ...(view.title ? { title: view.title } : {}),
         placement: view.placement ?? "left",
-        thickness: { preferred: 34, min: 22 },
+        width: defaultExtensionPaneSize("left"),
         defaultOpen: view.defaultOpen,
         replaces: view.replacesDefault ? "hunk:files" : undefined,
         component: view.component as unknown as ExtensionPane["component"],
