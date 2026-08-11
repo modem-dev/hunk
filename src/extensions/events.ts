@@ -393,7 +393,7 @@ export function emitExtensionCustomEvent(
   event: string,
   rawPayload: unknown,
 ) {
-  if (!result) {
+  if (!result || result.registry.eventBusPhase === "closed") {
     return;
   }
 
@@ -518,4 +518,18 @@ export async function emitExtensionEventBounded<Event extends ExtensionEventName
   if (timer) {
     clearTimeout(timer);
   }
+}
+
+/** Shut down one retired extension runtime and sever its custom-event bus. */
+export async function retireExtensionLoadResult(
+  result: ExtensionLoadResult | undefined,
+): Promise<void> {
+  if (!result || result.registry.eventBusPhase === "closed") {
+    return;
+  }
+
+  await emitExtensionEventBounded(result, "shutdown", {});
+  result.registry.emitCustomEvent = undefined;
+  result.registry.eventBusPhase = "closed";
+  result.registry.pendingCustomEvents.length = 0;
 }

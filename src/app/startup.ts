@@ -1,10 +1,7 @@
+import { resolveConfiguredExtensions } from "./extensionBootstrap";
 import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
 import { getBundledVcsCatalog } from "./vcsCatalog";
-import {
-  createExtensionApplyNotices,
-  createUnknownVcsNotice,
-  resolveExtensionVcsAdapters,
-} from "../extensions/apply";
+import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/default/vcs";
 import {
   createExtensionLoadNotices,
@@ -13,8 +10,6 @@ import {
 } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/config";
 import { HunkUserError } from "../core/errors";
-import { findProjectRootCandidate } from "../core/projectRoot";
-import { extendVcsCatalog } from "../core/vcs";
 import { loadAppBootstrap } from "../core/loaders";
 import { looksLikePatchInput } from "../core/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/themeDetection";
@@ -279,43 +274,22 @@ export async function prepareStartupPlan(
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and
-  // changeset transforms to the loading pipeline. Failures never reach here: the host
-  // isolates them into issues that become startup notices below.
-  let extensionResult = await loadStartupExtensionsImpl({
-    extensions: configured.extensions,
-    cwd: startupCwd,
-    env,
-    cliExtensionPaths: cliInput.options.extensionPaths,
-    projectRoot: configured.projectRoot,
-    reservedExtensionIds: baseVcsCatalog.reservedIds,
-  });
-
-  // Global, config-path, and CLI adapters can recognize repositories the bundled
-  // catalog cannot. Once those factories have registered, settle the project root
-  // again and load that repository's config/extensions before the final review.
-  const provisionalAdapters = resolveExtensionVcsAdapters(
-    extensionResult.registry,
-    baseVcsCatalog,
-  ).adapters;
-  const provisionalCatalog = extendVcsCatalog(baseVcsCatalog, provisionalAdapters);
-  const extensionProjectRoot = findProjectRootCandidate(startupCwd, provisionalCatalog);
-  if (provisionalAdapters.length > 0 && extensionProjectRoot !== configured.projectRoot) {
-    configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
+  // changeset transforms to the loading pipeline. External adapters may settle a root the
+  // bundled catalog could not; the shared resolver then appends newly discovered repo
+  // candidates without executing the provisional factory prefix twice.
+  const resolvedExtensions = await resolveConfiguredExtensions(
+    {
+      runtimeInput: runtimeCliInput,
+      configured,
       cwd: startupCwd,
       env,
-      vcsCatalog: provisionalCatalog,
-    });
-    cliInput = configured.input;
-    extensionResult = await loadStartupExtensionsImpl({
-      extensions: configured.extensions,
-      cwd: startupCwd,
-      env,
-      cliExtensionPaths: cliInput.options.extensionPaths,
-      projectRoot: configured.projectRoot,
-      reservedExtensionIds: baseVcsCatalog.reservedIds,
-      notifications: extensionResult.notifications,
-    });
-  }
+      baseVcsCatalog,
+    },
+    { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
+  );
+  configured = resolvedExtensions.configured;
+  cliInput = configured.input;
+  const extensionResult = resolvedExtensions.extensions;
 
   let preparedSession: SessionBootstrapResult;
   try {

@@ -226,6 +226,13 @@ export interface ExtensionLoadIssue {
 }
 
 /** Result of one extension load pass. */
+export interface ExtensionLoadState {
+  /** Full discovery order used to build this registry, including refused candidates. */
+  candidates: readonly ExtensionCandidate[];
+  /** Config snapshot factories in this registry were created against. */
+  extensionConfigs: Record<string, Record<string, unknown>>;
+}
+
 export interface ExtensionLoadResult {
   registry: ExtensionRegistry;
   issues: ExtensionLoadIssue[];
@@ -245,6 +252,8 @@ export interface ExtensionLoadResult {
    * the same hub instead of orphaning the UI's subscription.
    */
   notifications: ExtensionNotificationHub;
+  /** Internal inputs retained so a staged pass can append newly discovered candidates safely. */
+  loadState: ExtensionLoadState;
   /**
    * Repo root holding repo-local extensions that have no trust decision yet.
    * Set only when such extensions exist and were therefore skipped, so the UI
@@ -326,5 +335,6 @@ export function createEmptyExtensionLoadResult(
     loaded: [],
     context: createExtensionContext(cwd, notifications.notify),
     notifications,
+    loadState: { candidates: [], extensionConfigs: {} },
   };
 }

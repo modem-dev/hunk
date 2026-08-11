@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareStartupPlan } from "./startup";
@@ -29,12 +29,14 @@ describe("external VCS startup bootstrap", () => {
     mkdirSync(join(repo, ".custom"));
     mkdirSync(nested, { recursive: true });
     const extensionPath = join(repo, "custom-vcs.ts");
+    const factoryLogPath = join(repo, "factory.log");
     writeFileSync(
       extensionPath,
       `
         import { dirname, join } from "node:path";
-        import { existsSync } from "node:fs";
+        import { appendFileSync, existsSync } from "node:fs";
         export default function (hunk) {
+          appendFileSync(${JSON.stringify(factoryLogPath)}, "factory\\n");
           hunk.registerVcsAdapter({
             id: "custom",
             name: "Custom VCS",
@@ -94,5 +96,6 @@ describe("external VCS startup bootstrap", () => {
     expect(plan.bootstrap.reloadContext.repoRoot).toBe(repo);
     expect(plan.bootstrap.input.options.vcs).toBe("custom");
     expect(plan.bootstrap.changeset.title).toBe("Custom working copy");
+    expect(readFileSync(factoryLogPath, "utf8")).toBe("factory\n");
   });
 });

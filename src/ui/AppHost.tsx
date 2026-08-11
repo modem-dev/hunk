@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { resolveConfiguredCliInput } from "../core/config";
@@ -6,13 +7,17 @@ import { resolveRuntimeCliInput } from "../core/terminal";
 import type { StartupNotice } from "../core/startupNotice";
 import type { AppBootstrap, CliInput } from "../core/types";
 import type { ExtensionLoadResult } from "../extensions/types";
-import { createUnknownVcsNotice, reportExtensionApplyIssues } from "../extensions/apply";
+import {
+  createUnknownVcsNotice,
+  reportExtensionApplyIssues,
+  resolveExtensionVcsAdapters,
+} from "../extensions/apply";
 import {
   emitExtensionEvent,
   emitExtensionEventBounded,
-  emitExtensionEventToExtensions,
+  retireExtensionLoadResult,
 } from "../extensions/events";
-import { loadStartupExtensions } from "../extensions/startup";
+import { extendVcsCatalog } from "../core/vcs";
 import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
@@ -77,32 +82,46 @@ export function AppHost({
   // from the bounds' cwd so it compares against the same resolved form reloads
   // produce, and a same-directory reload is not mistaken for a move.
   const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
+  const initialExtensionStartupPendingRef = useRef(true);
+  const reloadTailRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingReplacementLifecycleRef = useRef<{
+    extensions: ExtensionLoadResult;
+    cwd: string;
+    changeset: AppBootstrap["changeset"];
+    reason: NonNullable<ReloadSessionOptions["reason"]>;
+    resolveMounted: () => void;
+  } | null>(null);
   const startupNoticeText = useStartupNotices({
     enabled: !activeBootstrap.input.options.pager,
     notices: activeBootstrap.startupNotices,
     resolver: startupNoticeResolver,
   });
 
-  // Extensions that have already received `startup`. The event is a per-extension
-  // promise, not a per-session one, so a pass that loads extensions later — the
-  // trust grant, or a reload into another repository — owes `startup` to exactly
-  // the ones that missed it, and owes nothing to the ones that already had it.
-  const startedExtensionIdsRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     // Child effects run before the parent's, so by the time this fires the review
-    // UI is mounted with its first changeset — which is what `startup` promises.
-    const extensions = extensionsRef.current;
-    for (const { id } of extensions?.loaded ?? []) {
-      startedExtensionIdsRef.current.add(id);
+    // UI has rendered the matching bootstrap and installed live extension controls.
+    if (initialExtensionStartupPendingRef.current) {
+      initialExtensionStartupPendingRef.current = false;
+      emitExtensionEvent(extensionsRef.current, "startup", {
+        cwd: initialBootstrap.reloadContext.cwd,
+      });
+      return;
     }
 
-    emitExtensionEvent(extensions, "startup", {
-      cwd: initialBootstrap.reloadContext.cwd,
+    const pending = pendingReplacementLifecycleRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingReplacementLifecycleRef.current = null;
+    emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+    emitExtensionEvent(pending.extensions, "session_reload", {
+      changeset: pending.changeset,
+      reason: pending.reason,
     });
-  }, [initialBootstrap.reloadContext.cwd]);
+    pending.resolveMounted();
+  }, [activeBootstrap, initialBootstrap.reloadContext.cwd]);
 
-  const reloadSession = useCallback(
+  const performReloadSession = useCallback(
     async (nextInput: CliInput, options?: ReloadSessionOptions) => {
       // Re-run the same startup normalization pipeline used on first launch so reloads honor
       // runtime defaults and config layering instead of assuming `nextInput` is already final.
@@ -121,77 +140,92 @@ export function AppHost({
         sourcePath: options?.sourcePath,
       });
       const baseVcsCatalog = getBundledVcsCatalog();
-      const configured = resolveConfiguredCliInput(runtimeInput, {
+      const currentExtensions = extensionsRef.current;
+      const currentAdapters = currentExtensions
+        ? resolveExtensionVcsAdapters(currentExtensions.registry, baseVcsCatalog).adapters
+        : [];
+      const discoveryCatalog = extendVcsCatalog(baseVcsCatalog, currentAdapters);
+      let configured = resolveConfiguredCliInput(runtimeInput, {
         cwd,
-        vcsCatalog: baseVcsCatalog,
+        vcsCatalog: discoveryCatalog,
       });
-
-      // Extensions loaded before this pass; used below to tell newly loaded ones apart.
-      const previouslyLoadedIds = new Set(
-        (extensionsRef.current?.loaded ?? []).map((extension) => extension.id),
-      );
-      let reloadedExtensions = false;
+      let replacementExtensions: ExtensionLoadResult | undefined;
 
       if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
-        // A reloaded extension set owns a fresh ephemeral bus. Detach the old
-        // registry first so delayed callbacks from a retired extension cannot
-        // keep publishing into listeners that no longer belong to this session.
-        if (extensionsRef.current) {
-          extensionsRef.current.registry.emitCustomEvent = undefined;
-          extensionsRef.current.registry.eventBusPhase = "closed";
-          extensionsRef.current.registry.pendingCustomEvents.length = 0;
-        }
-        // Reuse the session's notification hub so the mounted toast surface keeps
-        // receiving `ctx.notify` from the extensions this pass loads.
-        extensionsRef.current = await loadStartupExtensions({
-          extensions: configured.extensions,
+        const resolvedExtensions = await resolveConfiguredExtensions({
+          runtimeInput,
+          configured,
           cwd,
-          cliExtensionPaths: configured.input.options.extensionPaths,
-          notifications: extensionsRef.current?.notifications,
-          projectRoot: configured.projectRoot,
-          reservedExtensionIds: baseVcsCatalog.reservedIds,
+          baseVcsCatalog,
+          discoveryCatalog,
+          // Reuse the session hub so the mounted toast surface keeps receiving notifications.
+          notifications: currentExtensions?.notifications,
         });
+        configured = resolvedExtensions.configured;
+        replacementExtensions = resolvedExtensions.extensions;
+      }
+
+      const extensions = replacementExtensions ?? currentExtensions;
+      const preparedReload = await (async () => {
+        try {
+          const {
+            applied,
+            bootstrap: nextBootstrap,
+            input: reloadInput,
+            sessionVcs,
+          } = await loadConfiguredSessionBootstrap({
+            configured,
+            cwd,
+            extensions,
+            loadAtCwd: true,
+            baseVcsCatalog,
+          });
+          if (extensions) {
+            reportExtensionApplyIssues(applied.issues, extensions.context);
+          }
+          nextBootstrap.startupNotices =
+            sessionVcs.unknownVcsId !== undefined
+              ? [
+                  ...(configured.startupNotices ?? []),
+                  // Names the backend the reload really used, detection override included.
+                  createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadInput.options.vcs)),
+                ]
+              : configured.startupNotices;
+          const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
+
+          let sessionId = "local-session";
+          if (hostClient) {
+            // Keep the daemon-facing registration aligned with the review about to mount.
+            const nextRegistration = updateSessionRegistration(
+              hostClient.getRegistration(),
+              nextBootstrap,
+            );
+            sessionId = nextRegistration.sessionId;
+            hostClient.replaceSession(nextRegistration, nextSnapshot);
+          }
+          return { nextBootstrap, nextSnapshot, sessionId };
+        } catch (error) {
+          await retireExtensionLoadResult(replacementExtensions);
+          throw error;
+        }
+      })();
+      const { nextBootstrap, nextSnapshot, sessionId } = preparedReload;
+
+      let replacementMounted: Promise<void> | undefined;
+      if (replacementExtensions) {
+        // Only retire the visible runtime after its replacement review is known-good.
+        await retireExtensionLoadResult(currentExtensions);
+        extensionsRef.current = replacementExtensions;
         extensionsCwdRef.current = cwd;
-        reloadedExtensions = true;
-      }
-
-      const extensions = extensionsRef.current;
-      const {
-        applied,
-        bootstrap: nextBootstrap,
-        input: reloadInput,
-        sessionVcs,
-      } = await loadConfiguredSessionBootstrap({
-        configured,
-        cwd,
-        extensions,
-        loadAtCwd: true,
-        baseVcsCatalog,
-      });
-      if (extensions) {
-        reportExtensionApplyIssues(applied.issues, extensions.context);
-      }
-      nextBootstrap.startupNotices =
-        sessionVcs.unknownVcsId !== undefined
-          ? [
-              ...(configured.startupNotices ?? []),
-              // Names the backend the reload really used, detection override included.
-              createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadInput.options.vcs)),
-            ]
-          : configured.startupNotices;
-      const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
-
-      let sessionId = "local-session";
-      if (hostClient) {
-        // Keep the daemon-facing session registration in sync with whatever the UI is about to
-        // show. Replacing both registration and snapshot here means external session commands see
-        // the new source, title, and selection baseline immediately after reload.
-        const nextRegistration = updateSessionRegistration(
-          hostClient.getRegistration(),
-          nextBootstrap,
-        );
-        sessionId = nextRegistration.sessionId;
-        hostClient.replaceSession(nextRegistration, nextSnapshot);
+        replacementMounted = new Promise<void>((resolveMounted) => {
+          pendingReplacementLifecycleRef.current = {
+            extensions: replacementExtensions,
+            cwd,
+            changeset: nextBootstrap.changeset,
+            reason: options?.reason ?? "daemon",
+            resolveMounted,
+          };
+        });
       }
 
       setActiveBootstrap(nextBootstrap);
@@ -201,30 +235,16 @@ export function AppHost({
         setAppVersion((current) => current + 1);
       }
 
-      if (reloadedExtensions) {
-        // Extensions this pass loaded for the first time — after a trust grant, or
-        // after moving into another repository — never saw the mount emit, so they
-        // get `startup` now that the review UI is showing their changeset. Ordered
-        // before `session_reload` so an extension's own lifecycle stays in sequence.
-        const newlyLoadedIds = new Set(
-          (extensions?.loaded ?? [])
-            .map((extension) => extension.id)
-            .filter(
-              (id) => !previouslyLoadedIds.has(id) && !startedExtensionIdsRef.current.has(id),
-            ),
-        );
-
-        for (const id of newlyLoadedIds) {
-          startedExtensionIdsRef.current.add(id);
-        }
-
-        emitExtensionEventToExtensions(extensions, "startup", { cwd }, newlyLoadedIds);
+      if (!replacementExtensions) {
+        emitExtensionEvent(extensions, "session_reload", {
+          changeset: nextBootstrap.changeset,
+          reason: options?.reason ?? "daemon",
+        });
+      } else {
+        // Keep the reload queue held until React commits the matching App and
+        // the replacement receives startup/session_reload through live controls.
+        await replacementMounted;
       }
-
-      emitExtensionEvent(extensions, "session_reload", {
-        changeset: nextBootstrap.changeset,
-        reason: options?.reason ?? "daemon",
-      });
 
       return {
         sessionId,
@@ -243,6 +263,19 @@ export function AppHost({
       launchExtensionPaths,
       sessionFileBounds,
     ],
+  );
+
+  /** Serialize broker, watch, workspace, and manual reloads around extension replacement. */
+  const reloadSession = useCallback(
+    (nextInput: CliInput, options?: ReloadSessionOptions) => {
+      const pending = reloadTailRef.current.then(() => performReloadSession(nextInput, options));
+      reloadTailRef.current = pending.then(
+        () => undefined,
+        () => undefined,
+      );
+      return pending;
+    },
+    [performReloadSession],
   );
 
   /** Give `shutdown` handlers a bounded window, then leave regardless. */

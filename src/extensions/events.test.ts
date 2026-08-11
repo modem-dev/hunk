@@ -8,6 +8,7 @@ import {
   emitExtensionEventToExtensions,
   readMetadataHunkCount,
   readMetadataHunkSummaries,
+  retireExtensionLoadResult,
   toReadOnlyFileViews,
 } from "./events";
 import { createExtensionNotificationHub } from "./notifications";
@@ -190,6 +191,34 @@ describe("extension event dispatch", () => {
 });
 
 describe("extension event bus", () => {
+  test("drops emissions from contexts retained after their registry retires", async () => {
+    let retainedContext: Parameters<ExtensionEventHandler<"startup">>[1] | undefined;
+    let deliveries = 0;
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "sender",
+        event: "startup",
+        handler: (_payload, context) => {
+          retainedContext = context;
+        },
+      },
+    ]);
+    result.registry.customEventHandlers.push({
+      extensionId: "receiver",
+      event: "probe",
+      handler: () => {
+        deliveries += 1;
+      },
+    });
+    bindExtensionEventBus(result);
+    emitExtensionEvent(result, "startup", { cwd: "/repo" });
+
+    await retireExtensionLoadResult(result);
+    retainedContext?.events.emit("probe", {});
+
+    expect(deliveries).toBe(0);
+  });
+
   test("delivers a namespaced event to every listener and isolates failures", async () => {
     const seen: string[] = [];
     const { result, notices } = createTestLoadResult();
