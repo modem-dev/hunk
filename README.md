@@ -233,7 +233,8 @@ export default function (hunk: HunkExtensionAPI) {
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
 and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
-include [review triage](examples/extensions/review-triage/), an optional
+include [review triage](examples/extensions/review-triage/), a
+[current-line lens pane](examples/extensions/current-line-lens/), an optional
 [rendered Markdown file view](examples/extensions/rendered-markdown/), and a
 [Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 

@@ -117,7 +117,7 @@ import {
   type PlannedPane,
 } from "./lib/extensionPanes";
 import type { ExtensionPanePlacement } from "../extension-api/types";
-import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../extensions/extensionIds";
+import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { extensionPaneSize } from "../extensions/panes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import {
@@ -283,10 +283,7 @@ export function App({
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensions = bootstrap.extensions;
-  const sessionPanes = useMemo(
-    () => buildSessionPanes(extensions, { lineLensDefaultOpen: bootstrap.initialShowLineLens }),
-    [bootstrap.initialShowLineLens, extensions],
-  );
+  const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
   const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
   useEffect(
     () => setPaneOpenState((current) => reconcilePaneOpenState(sessionPanes, current)),
@@ -296,7 +293,6 @@ export function App({
   sessionPanesRef.current = sessionPanes;
   const paneOpenStateRef = useRef(paneOpenState);
   paneOpenStateRef.current = paneOpenState;
-  const showLineLens = paneOpenState.open.includes(HUNK_LINE_LENS_PANE_KEY);
   const currentLinePaintRequested = sessionPanes.some(
     (pane) => paneOpenState.open.includes(pane.key) && pane.registered.pane.currentLine === true,
   );
@@ -360,7 +356,6 @@ export function App({
       showAgentNotes,
       copyDecorations,
       cursorLine,
-      showLineLens,
     }),
     [
       copyDecorations,
@@ -368,7 +363,6 @@ export function App({
       layoutMode,
       showAgentNotes,
       showHunkHeaders,
-      showLineLens,
       showLineNumbers,
       showMenuBar,
       themeId,
@@ -1283,11 +1277,6 @@ export function App({
     setShowLineNumbers((current) => !current);
   };
 
-  /** Toggle the old-above-new lens pinned beneath split diffs. */
-  const toggleLineLens = () => {
-    setPaneOpen(HUNK_LINE_LENS_PANE_KEY, "toggle");
-  };
-
   /** Toggle whether mouse selection copies review decorations or only file content. */
   const toggleCopyDecorations = () => {
     setCopyDecorations((current) => !current);
@@ -1839,8 +1828,6 @@ export function App({
       canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
       canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
       canRefreshCurrentInput,
-      canToggleLineLens:
-        showLineLens || (!pagerMode && resolvedLayout === "split" && cursorLine !== "off"),
       alignCurrentLine,
       applyFilePresentationToAllMatching,
       focusFilter,
@@ -1864,7 +1851,6 @@ export function App({
       toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
       toggleHelp,
       toggleHunkHeaders,
-      toggleLineLens,
       toggleLineNumbers,
       toggleLineWrap,
       toggleMenuBar,
@@ -1903,7 +1889,6 @@ export function App({
     showAgentNotes,
     showHelp,
     showHunkHeaders,
-    showLineLens,
     showLineNumbers,
     showMenuBar,
     wrapLines,

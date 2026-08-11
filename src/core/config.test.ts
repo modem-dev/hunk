@@ -80,7 +80,6 @@ describe("config persistence", () => {
         showAgentNotes: true,
         copyDecorations: true,
         cursorLine: "row",
-        showLineLens: true,
       },
       { env: { HOME: home } },
     );
@@ -98,7 +97,6 @@ describe("config persistence", () => {
         "agent_notes = true",
         "copy_decorations = true",
         'cursor_line = "row"',
-        "line_lens = true",
         "",
         "[custom_theme]",
         'label = "Keep me"',
@@ -138,7 +136,6 @@ describe("config persistence", () => {
       showAgentNotes: true,
       copyDecorations: false,
       cursorLine: "row",
-      showLineLens: false,
     } as const;
 
     expect(diffPersistedViewPreferences(initial, { ...initial })).toEqual([]);
@@ -244,27 +241,6 @@ describe("config resolution", () => {
       env: { HOME: home },
     });
     expect(fromFlag.input.options.cursorLine).toBe("off");
-  });
-
-  test("reads the line lens from config and lets CLI flags outrank it", () => {
-    const home = createTempDir("hunk-config-home-");
-    const repo = createTempDir("hunk-config-repo-");
-    createRepo(repo);
-
-    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
-    writeFileSync(join(home, ".config", "hunk", "config.toml"), "line_lens = true");
-
-    const fromConfig = resolveConfiguredCliInput(createPatchPagerInput(), {
-      cwd: repo,
-      env: { HOME: home },
-    });
-    expect(fromConfig.input.options.lineLens).toBe(true);
-
-    const fromFlag = resolveConfiguredCliInput(createPatchPagerInput({ lineLens: false }), {
-      cwd: repo,
-      env: { HOME: home },
-    });
-    expect(fromFlag.input.options.lineLens).toBe(false);
   });
 
   test("falls back to the built-in current-line style when config names an unknown one", () => {
@@ -1026,7 +1002,6 @@ describe("config resolution", () => {
         "hunk_headers = false",
         "agent_notes = true",
         "copy_decorations = false",
-        "line_lens = true",
       ].join("\n"),
     );
 
@@ -1055,7 +1030,6 @@ describe("config resolution", () => {
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);
-    expect(bootstrap.initialShowLineLens).toBe(true);
   });
 
   test("loadAppBootstrap carries the configured custom theme into the UI bootstrap", async () => {

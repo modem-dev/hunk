@@ -85,7 +85,6 @@ export interface BuildAppCommandsOptions {
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
   canRefreshCurrentInput: boolean;
-  canToggleLineLens: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
@@ -110,7 +109,6 @@ export interface BuildAppCommandsOptions {
   toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
-  toggleLineLens: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleMenuBar: () => void;
@@ -166,7 +164,6 @@ const PUBLIC_EXTENSION_COMMAND_IDS = new Set([
   "hunk.view.openThemeSelector",
   "hunk.view.toggleAgentNotes",
   "hunk.view.toggleLineNumbers",
-  "hunk.view.toggleLineLens",
   "hunk.view.toggleLineWrap",
   "hunk.view.toggleMenuBar",
   "hunk.view.toggleHunkHeaders",
@@ -312,14 +309,6 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       defaultKeys: [],
       isEnabled: () => options.canAlignCurrentLine,
       run: () => options.alignCurrentLine("bottom"),
-    },
-    {
-      id: "hunk.view.toggleLineLens",
-      title: "Toggle current-line lens",
-      defaultKeys: [],
-      isEnabled: () => options.canToggleLineLens,
-      run: () => options.toggleLineLens(),
-      closesMenu: true,
     },
     {
       id: "hunk.view.cursorLineRow",
@@ -543,7 +532,6 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
-    canToggleLineLens: false,
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
@@ -566,7 +554,6 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     toggleGapForSelectedHunk: noop,
     toggleHelp: noop,
     toggleHunkHeaders: noop,
-    toggleLineLens: noop,
     toggleLineNumbers: noop,
     toggleLineWrap: noop,
     toggleMenuBar: noop,

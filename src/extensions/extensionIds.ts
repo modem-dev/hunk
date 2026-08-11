@@ -23,8 +23,6 @@
 export const HUNK_VENDOR_EXTENSION_ID = "hunk";
 /** Stable key of the bundled files pane. */
 export const HUNK_FILES_PANE_KEY = "hunk:files";
-/** Stable key of the bundled current-line lens pane. */
-export const HUNK_LINE_LENS_PANE_KEY = "hunk:line-lens";
 
 /**
  * Characters an extension id may be spelled with.

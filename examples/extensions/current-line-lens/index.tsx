@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ExtensionFactory, ExtensionPaneProps } from "../../../types";
+import type { ExtensionPaneProps, HunkExtensionAPI } from "hunkdiff/extension";
 
 const LENS_LABEL = "─ Current line · old above, new below ";
 
@@ -10,7 +10,7 @@ function lineLensRule(width: number) {
 }
 
 /** Render the selected split row's old/new sides in a fixed bottom pane. */
-export function BuiltInLineLens({ currentLine, theme, width }: ExtensionPaneProps): ReactNode {
+export function CurrentLineLens({ currentLine, theme, width }: ExtensionPaneProps): ReactNode {
   if (!currentLine) return null;
   const rule = lineLensRule(width);
   return (
@@ -22,18 +22,20 @@ export function BuiltInLineLens({ currentLine, theme, width }: ExtensionPaneProp
   );
 }
 
-/** Register Hunk's optional line lens through the same public pane API as user extensions. */
-const registerBundledLineLens: ExtensionFactory = (hunk) => {
+/** Register an optional old-above-new current-line lens as a public extension. */
+export default function registerCurrentLineLens(hunk: HunkExtensionAPI) {
   hunk.registerPane({
     id: "line-lens",
-    title: "Current-line lens",
+    title: "Current-line lens example",
     placement: "bottom",
     height: { preferred: 3, min: 3, max: 3 },
-    defaultOpen: false,
+    defaultOpen: true,
     currentLine: true,
     available: ({ currentLine }) => currentLine !== null,
-    component: BuiltInLineLens,
+    component: CurrentLineLens,
   });
-};
 
-export default registerBundledLineLens;
+  hunk.registerCommand({ id: "toggle", title: "Toggle current-line lens example" }, (ctx) =>
+    ctx.panes.toggle("line-lens"),
+  );
+}

@@ -1,6 +1,6 @@
 import { paneKey, resolveExtensionPanes } from "../../extensions/apply";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
-import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../../extensions/extensionIds";
+import { HUNK_FILES_PANE_KEY } from "../../extensions/extensionIds";
 import type {
   ExtensionCurrentLinePaint,
   ExtensionPaneAvailabilityContext,
@@ -24,10 +24,7 @@ export interface SessionPane {
 }
 
 /** Compose bundled UI panes before user panes, preserving stable keys and replacement defaults. */
-export function buildSessionPanes(
-  extensions: ExtensionLoadResult | undefined,
-  options: { lineLensDefaultOpen?: boolean } = {},
-): SessionPane[] {
+export function buildSessionPanes(extensions: ExtensionLoadResult | undefined): SessionPane[] {
   const bundled = resolveExtensionPanes(getBundledUIRegistry()).panes;
   const user = extensions ? resolveExtensionPanes(extensions.registry).panes : [];
   const all = [...bundled, ...user];
@@ -35,7 +32,6 @@ export function buildSessionPanes(
   return all.map((registered) => {
     const key = paneKey(registered);
     const pane = registered.pane;
-    const explicitLensDefault = key === HUNK_LINE_LENS_PANE_KEY && options.lineLensDefaultOpen;
     return {
       key,
       registered,
@@ -43,11 +39,7 @@ export function buildSessionPanes(
       title: pane.title ?? pane.id,
       defaultOpen:
         !replacements.has(key) &&
-        (key === HUNK_FILES_PANE_KEY
-          ? true
-          : explicitLensDefault === true ||
-            pane.defaultOpen === true ||
-            pane.replaces !== undefined),
+        (key === HUNK_FILES_PANE_KEY || pane.defaultOpen === true || pane.replaces !== undefined),
     };
   });
 }

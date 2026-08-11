@@ -88,7 +88,6 @@ export interface Changeset {
 export interface CommonOptions {
   mode?: LayoutMode;
   cursorLine?: CursorLine;
-  lineLens?: boolean;
   vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
@@ -151,7 +150,6 @@ export interface PersistedViewPreferences {
   showAgentNotes: boolean;
   copyDecorations: boolean;
   cursorLine: CursorLine;
-  showLineLens: boolean;
 }
 
 export interface HelpCommandInput {
@@ -396,7 +394,6 @@ export interface AppBootstrap {
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;
-  initialShowLineLens?: boolean;
   startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */

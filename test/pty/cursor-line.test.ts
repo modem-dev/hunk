@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPtyHarness, lineIndexOf, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
+const CURRENT_LINE_LENS_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/current-line-lens", import.meta.url)),
+);
 
 /** Give PTY-backed startup and redraws enough headroom for slower CI machines. */
 setDefaultTimeout(20_000);
@@ -44,10 +49,18 @@ describe("PTY current line", () => {
     }
   });
 
-  test("split mode pins the current row as old above new and stack mode hides it", async () => {
+  test("the current-line lens example pins old above new and hides in stack mode", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split", "--line-lens"],
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--extension",
+        CURRENT_LINE_LENS_EXTENSION,
+      ],
       cols: 140,
       rows: 18,
     });
@@ -74,7 +87,15 @@ describe("PTY current line", () => {
   test("stepping updates lens content without moving its fixed rectangle", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split", "--line-lens"],
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--extension",
+        CURRENT_LINE_LENS_EXTENSION,
+      ],
       cols: 140,
       rows: 18,
     });

@@ -7,7 +7,7 @@ import type {
 } from "../../extension-api/types";
 import type { RegisteredPane } from "../../extensions/types";
 import { createEmptyExtensionLoadResult } from "../../extensions/types";
-import { HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY } from "../../extensions/extensionIds";
+import { HUNK_FILES_PANE_KEY } from "../../extensions/extensionIds";
 import {
   buildSessionPanes,
   initialPaneOpenState,
@@ -46,10 +46,10 @@ function loadResultWith(panes: RegisteredPane[]) {
 }
 
 describe("extension panes", () => {
-  test("offers bundled files and line lens before user panes", () => {
+  test("offers the bundled files pane before user panes", () => {
     const panes = buildSessionPanes(undefined);
-    expect(panes.map((pane) => pane.key)).toEqual([HUNK_FILES_PANE_KEY, HUNK_LINE_LENS_PANE_KEY]);
-    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true, false]);
+    expect(panes.map((pane) => pane.key)).toEqual([HUNK_FILES_PANE_KEY]);
+    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true]);
   });
 
   test("a replacement changes only the initial bundled files default", () => {
@@ -58,7 +58,6 @@ describe("extension panes", () => {
     );
     expect(panes.map((pane) => [pane.key, pane.defaultOpen])).toEqual([
       [HUNK_FILES_PANE_KEY, false],
-      [HUNK_LINE_LENS_PANE_KEY, false],
       ["meta:files", true],
     ]);
   });

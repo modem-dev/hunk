@@ -546,12 +546,12 @@ form the `ExtensionPane` union, so TypeScript rejects `height` on left/right
 panes and `width` on top/bottom panes. `replaces: "hunk:files"` starts the
 replacement open and the files pane closed, taking precedence over
 `defaultOpen`; it changes initial defaults without removing the files pane.
-`available(context)` is a synchronous
-frame policy: an open but
-unavailable pane retains its logical open preference. Set `currentLine: true`
-only when the pane needs the opaque `currentLine.render("old" | "new", width)`
-host painter; unrelated panes receive stable `null` and do not repaint on each
-line move.
+`available(context)` is a synchronous frame policy: an open but unavailable pane
+retains its logical open preference. Set `currentLine: true` only when the pane
+needs the opaque `currentLine.render("old" | "new", width)` host painter;
+unrelated panes receive stable `null` and do not repaint on each line move. See
+`examples/extensions/current-line-lens/` for an installable lens built entirely
+on this public capability; it is an example, not bundled Hunk UI.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -1498,6 +1498,9 @@ The examples directory contains several user-installable folder extensions:
 - [`examples/extensions/pane-layout/`](../examples/extensions/pane-layout/)
   demonstrates a resizable side pane, fixed top/bottom panes, exact host-owned
   dimensions, and one `ctx.panes` command controlling all three.
+- [`examples/extensions/current-line-lens/`](../examples/extensions/current-line-lens/)
+  opts a fixed bottom pane into opaque current-line paint and renders old above
+  new without relying on private renderer or cursor types.
 - [`examples/extensions/review-triage/`](../examples/extensions/review-triage/)
   is a session-local hunk triage board combining a pane, commands, dialogs,
   lifecycle listeners, and the extension event bus. Its API evaluation and

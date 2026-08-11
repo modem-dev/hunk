@@ -44,7 +44,6 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   showAgentNotes: false,
   copyDecorations: false,
   cursorLine: "row",
-  showLineLens: false,
 };
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
@@ -61,7 +60,6 @@ const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   { configKey: "agent_notes", value: (preferences) => preferences.showAgentNotes },
   { configKey: "copy_decorations", value: (preferences) => preferences.copyDecorations },
   { configKey: "cursor_line", value: (preferences) => preferences.cursorLine },
-  { configKey: "line_lens", value: (preferences) => preferences.showLineLens },
 ];
 
 interface ConfigResolutionOptions {
@@ -229,15 +227,6 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.cursorLine,
     description:
       "Mark the current line as a full-row highlight or on its line number. `off` restores plain `j`/`k` scrolling.",
-  },
-  {
-    key: "line_lens",
-    property: "lineLens",
-    type: "boolean",
-    accepted: "`true` or `false`",
-    runtimeDefault: DEFAULT_VIEW_PREFERENCES.showLineLens,
-    description:
-      "Pin the current split row's old and new versions at the bottom of the review pane.",
   },
   {
     key: "vcs",
@@ -884,7 +873,6 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     ...base,
     mode: overrides.mode ?? base.mode,
     cursorLine: overrides.cursorLine ?? base.cursorLine,
-    lineLens: overrides.lineLens ?? base.lineLens,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
     agentContext: overrides.agentContext ?? base.agentContext,

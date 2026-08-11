@@ -70,8 +70,6 @@ export const COMMON_REVIEW_OPTIONS = [
     description: "current-line marker: row, number, off",
     parse: "cursorLine",
   },
-  { flag: "--line-lens", description: "show old/new current-line lens in split view" },
-  { flag: "--no-line-lens", description: "hide the current-line lens" },
   { flag: "--theme <theme>", description: "named theme override" },
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
@@ -273,7 +271,6 @@ function buildCommonOptions(
   return {
     mode: options.mode,
     cursorLine: options.cursorLine,
-    lineLens: resolveBooleanFlag(argv, "--line-lens", "--no-line-lens"),
     theme: options.theme,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,

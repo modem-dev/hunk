@@ -45,7 +45,6 @@ export interface BuildAppMenusOptions {
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
-  showLineLens: boolean;
   showLineNumbers: boolean;
   showMenuBar: boolean;
   wrapLines: boolean;
@@ -136,7 +135,6 @@ export function buildAppMenus({
   showAgentNotes,
   showHelp,
   showHunkHeaders,
-  showLineLens,
   showLineNumbers,
   showMenuBar,
   wrapLines,
@@ -176,11 +174,6 @@ export function buildAppMenus({
         commandId: "hunk.view.toggleCopyDecorations",
         label: "Copy decorations",
         checked: copyDecorations,
-      },
-      {
-        commandId: "hunk.view.toggleLineLens",
-        label: "Current-line lens",
-        checked: showLineLens,
       },
       {
         commandId: "hunk.view.cursorLineRow",

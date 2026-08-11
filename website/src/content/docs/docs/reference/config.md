@@ -40,16 +40,6 @@ Mark the current line as a full-row highlight or on its line number. `off` resto
 
 ---
 
-**`line_lens`**
-
-Pin the current split row's old and new versions at the bottom of the review pane.
-
-- **Type:** boolean
-- **Accepted:** `true` or `false`
-- **Built-in default:** `false`
-
----
-
 **`vcs`**
 
 Select the version-control adapter explicitly. An explicit id outranks detection; an id no loaded backend owns falls back to detection with a startup notice.

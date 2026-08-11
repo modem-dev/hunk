@@ -20,13 +20,15 @@ object and registry collection (`src/extensions/runExtension.ts`):
   and loaded synchronously _from VCS adapter resolution_
   (`default/vcs/index.ts`), so backends exist during config resolution — that
   load path must stay renderer-free. `default/ui/index.ts` is deliberately not
-  part of that list: it synchronously loads the bundled files and line-lens
-  panes through `runExtensionFactory` only where the app resolves UI panes.
+  part of that list: it synchronously loads the bundled files pane through
+  `runExtensionFactory` only where the app resolves UI panes.
 
-There are zero core-registered VCS adapters and no private pane registry: Git,
-the built-in file navigation, and the current-line lens register through the
-public `registerVcsAdapter` and `registerPane` paths. That dogfooding keeps the
-published data, actions, sizing, availability, and paint capabilities honest.
+There are zero core-registered VCS adapters and no private pane registry: Git
+and the built-in file navigation register through the public
+`registerVcsAdapter` and `registerPane` paths. The installable current-line lens
+in `examples/extensions/current-line-lens/` exercises optional pane paint
+without becoming bundled product UI. Together those paths keep the published
+data, actions, sizing, availability, and paint capabilities honest.
 
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.
