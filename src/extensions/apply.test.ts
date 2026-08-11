@@ -18,6 +18,7 @@ import {
   resolveDetectedVcsIdWithExtensions,
   resolveExtensionCommands,
   resolveExtensionFileViews,
+  resolveExtensionKeyboardModes,
   resolveExtensionSidebarViews,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
@@ -192,6 +193,31 @@ describe("extension file views", () => {
 
     expect(views).toEqual([{ extensionId: "first", view: plain }]);
     expect(issues[0]?.message).toContain('duplicate file view "first:plain"');
+  });
+});
+
+describe("extension keyboard modes", () => {
+  test("keeps the first duplicate qualified identity", () => {
+    const result = createEmptyExtensionLoadResult();
+    const normal = { id: "normal", title: "Normal", onKey: () => "handled" as const };
+    result.registry.keyboardModes.push(
+      { extensionId: "vim", mode: normal },
+      { extensionId: "other", mode: normal },
+      { extensionId: "vim", mode: { ...normal, title: "Later" } },
+    );
+
+    const { modes, issues } = resolveExtensionKeyboardModes(result.registry);
+
+    expect(modes.map((entry) => `${entry.extensionId}:${entry.mode.id}`)).toEqual([
+      "vim:normal",
+      "other:normal",
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "vim",
+        message: 'Skipped duplicate keyboard mode "vim:normal" from extension vim',
+      },
+    ]);
   });
 });
 

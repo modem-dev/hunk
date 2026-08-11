@@ -36,7 +36,11 @@ import type {
 } from "../core/types";
 import { canReloadInput } from "../core/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import { resolveExtensionCommands, resolveExtensionFileViews } from "../extensions/apply";
+import {
+  resolveExtensionCommands,
+  resolveExtensionFileViews,
+  resolveExtensionKeyboardModes,
+} from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
   emitExtensionEvent,
@@ -91,6 +95,7 @@ import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
+import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
 import { createExtensionSidebarKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
   buildSessionSidebarViews,
@@ -400,6 +405,10 @@ export function App({
     () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
     [extensions],
   );
+  const sessionKeyboardModes = useMemo(
+    () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
+    [extensions],
+  );
   // The one conversion of the visible review files into the frozen views every
   // extension surface sees: sidebar props and command-handler selection both
   // read from this list, so they can never describe the review differently.
@@ -516,10 +525,25 @@ export function App({
       sessionNoticeTimeoutRef.current = null;
     }, 4000);
   }, []);
-  const notifyFileViewMode = useCallback(
+  const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
   );
+  const {
+    activeModeTitle: keyboardModeTitle,
+    createControls: createKeyboardModeControls,
+    exitMode: exitKeyboardMode,
+    isModeActive: isKeyboardModeActive,
+    modeStatusHint: keyboardModeHint,
+    sendModeKey: sendKeyboardModeKey,
+  } = useKeyboardModeController({
+    commands: extensionCommandControls,
+    cwd: extensions?.context.cwd ?? process.cwd(),
+    modes: sessionKeyboardModes,
+    notify: notifyExtensionMode,
+    registry: extensions?.registry,
+    showNotice: showSessionNotice,
+  });
 
   const {
     applyBulkTarget: applyFilePresentationToAllMatching,
@@ -543,7 +567,7 @@ export function App({
     getExtensionSelection,
     showNotice: showSessionNotice,
     cwd: extensions?.context.cwd ?? process.cwd(),
-    notify: notifyFileViewMode,
+    notify: notifyExtensionMode,
     reviewGeneration: bootstrap,
   });
 
@@ -810,6 +834,7 @@ export function App({
       const ctx: ExtensionCommandContext = {
         cwd: extensions?.context.cwd ?? process.cwd(),
         commands: extensionCommandControls,
+        keyboardModes: createKeyboardModeControls(registered.extensionId, extensions?.registry),
         notify: (message, type) => extensions?.context.notify(message, type),
         sidebars: createSidebarControls(registered.extensionId),
         fileViews: createFileViewControls(registered.extensionId),
@@ -857,6 +882,7 @@ export function App({
     [
       createExtensionDialogs,
       createFileViewControls,
+      createKeyboardModeControls,
       createSidebarControls,
       extensionCommandControls,
       createWorkspaceControls,
@@ -1698,6 +1724,14 @@ export function App({
     fileViewApplyAllLabel: selectedFileViewBulkTarget
       ? `Apply “${selectedFileViewBulkTarget.title}” to all matching files`
       : undefined,
+    keyboardModeExitEntry: keyboardModeTitle
+      ? {
+          kind: "item",
+          label: `Exit ${keyboardModeTitle}`,
+          commandId: "hunk.extensions.exitKeyboardMode",
+          action: exitKeyboardMode,
+        }
+      : undefined,
     copyDecorations,
     layoutMode,
     renderSidebar,
@@ -1746,6 +1780,9 @@ export function App({
     isFileViewModeActive,
     exitFileViewMode,
     sendFileViewModeKey,
+    isKeyboardModeActive,
+    exitKeyboardMode,
+    sendKeyboardModeKey,
     focusArea,
     moveMenuItem,
     moveThemeSelector,
@@ -2048,10 +2085,17 @@ export function App({
 
       {focusArea === "filter" ||
       Boolean(review.filter) ||
-      Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint) ? (
+      Boolean(
+        sessionNoticeText ??
+        transientNoticeText ??
+        noticeText ??
+        fileViewModeHint ??
+        keyboardModeHint,
+      ) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
+          modeText={keyboardModeHint ?? undefined}
           noticeText={
             sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
           }
@@ -2060,6 +2104,7 @@ export function App({
           onCloseMenu={closeMenu}
           onFilterInput={review.setFilter}
           onFilterSubmit={focusFiles}
+          onExitMode={exitKeyboardMode}
         />
       ) : null}
 

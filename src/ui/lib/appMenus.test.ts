@@ -256,11 +256,30 @@ describe("the Extensions menu", () => {
     return buildAppMenus({ commands, extensionCommands, ...MENU_STATE });
   }
 
-  test("is absent when no extension registered a command", () => {
+  test("is absent when no extension command or active keyboard mode needs it", () => {
     const { commands } = createTestCommands();
 
     expect(buildAppMenus({ commands, ...MENU_STATE }).extensions).toBeUndefined();
     expect(menusWithExtensions([]).extensions).toBeUndefined();
+  });
+
+  test("offers the host-owned keyboard-mode exit even without extension commands", () => {
+    const { commands } = createTestCommands();
+    const exits: string[] = [];
+    const menus = buildAppMenus({
+      commands,
+      ...MENU_STATE,
+      keyboardModeExitEntry: {
+        kind: "item",
+        label: "Exit Vim navigation",
+        commandId: "hunk.extensions.exitKeyboardMode",
+        action: () => exits.push("exit"),
+      },
+    });
+
+    expect(items(menus.extensions).map((item) => item.label)).toEqual(["Exit Vim navigation"]);
+    entry(menus, "extensions", "Exit Vim navigation").action();
+    expect(exits).toEqual(["exit"]);
   });
 
   test("lists every registered command with its title and current key", () => {

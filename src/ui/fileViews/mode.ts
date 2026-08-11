@@ -6,12 +6,11 @@ import type {
   ExtensionKeyEvent,
 } from "../../extension-api/types";
 import type { RegisteredFileView } from "../../extensions/types";
+import {
+  deliverSynchronousExtensionModeKey,
+  runSynchronousExtensionModeLifecycle,
+} from "../lib/synchronousExtensionCallback";
 import { registeredFileViewKey, resolveFileViewSelectionTarget } from "./state";
-
-/** Read an error's message without assuming extensions throw `Error` instances. */
-function describeError(error: unknown) {
-  return error instanceof Error ? error.message || error.name : String(error);
-}
 
 /**
  * The one interactive file-view mode a session can have running.
@@ -169,10 +168,10 @@ export function fileViewModeStatusHint(active: ActiveFileViewMode): string {
 }
 
 /** Attribute one mode failure to the extension and the action that raised it. */
-function formatFileViewModeFailure(active: ActiveFileViewMode, action: string, error: unknown) {
+function formatFileViewModeFailure(active: ActiveFileViewMode, action: string, detail: string) {
   return (
     `Extension ${active.extensionId} file view "${active.viewId}" mode ` +
-    `failed ${action} • ${describeError(error)}`
+    `failed ${action} • ${detail}`
   );
 }
 
@@ -189,15 +188,12 @@ export function runFileViewModeLifecycle(
   notify: (message: string) => void,
 ): boolean {
   const callback = active.mode[phase];
-  if (!callback) return true;
-
-  try {
-    callback.call(active.mode, active.ctx);
-    return true;
-  } catch (error) {
-    notify(formatFileViewModeFailure(active, phase, error));
-    return false;
-  }
+  return runSynchronousExtensionModeLifecycle(
+    callback ? () => callback.call(active.mode, active.ctx) : undefined,
+    phase,
+    (action, detail) => formatFileViewModeFailure(active, action, detail),
+    notify,
+  );
 }
 
 /**
@@ -214,13 +210,9 @@ export function deliverFileViewModeKey(
   key: ExtensionKeyEvent,
   notify: (message: string) => void,
 ): ExtensionFileViewModeKeyResult {
-  let result: ExtensionFileViewModeKeyResult;
-  try {
-    result = active.mode.onKey.call(active.mode, key, active.ctx);
-  } catch (error) {
-    notify(formatFileViewModeFailure(active, "onKey", error));
-    return "exit";
-  }
-
-  return result === "handled" || result === "exit" ? result : "pass";
+  return deliverSynchronousExtensionModeKey(
+    () => active.mode.onKey.call(active.mode, key, active.ctx),
+    (action, detail) => formatFileViewModeFailure(active, action, detail),
+    notify,
+  );
 }

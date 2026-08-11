@@ -2,6 +2,8 @@
 
 Hunk is a review-first terminal diff viewer for agent-authored changesets, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
+**[hunk.dev](https://hunk.dev)** · [Documentation](https://hunk.dev/docs/)
+
 [![CI status](https://img.shields.io/github/actions/workflow/status/modem-dev/hunk/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/modem-dev/hunk/actions/workflows/ci.yml?branch=main)
 [![Latest release](https://img.shields.io/github/v/release/modem-dev/hunk?style=for-the-badge)](https://github.com/modem-dev/hunk/releases)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -251,8 +253,9 @@ export default function (hunk: HunkExtensionAPI) {
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
 and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
-include [review triage](examples/extensions/review-triage/) and an optional
-[rendered Markdown file view](examples/extensions/rendered-markdown/).
+include [review triage](examples/extensions/review-triage/), an optional
+[rendered Markdown file view](examples/extensions/rendered-markdown/), and a
+[Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 
 ### OpenTUI component
 

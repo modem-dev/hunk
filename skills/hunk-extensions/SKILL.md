@@ -75,8 +75,8 @@ dependency-free.
 The **id** is the file stem, or the folder name for a folder extension — unless
 its manifest declares several entries, in which case each entry is its own
 extension named by its own stem (numeric suffix on collision). The id is the
-namespace it owns: commands are `<id>.<commandId>`, sidebar views
-`<id>:<viewId>`, config `[extension.<id>]`. Ids match
+namespace it owns: commands are `<id>.<commandId>`, sidebar views and keyboard
+modes are `<id>:<localId>`, config `[extension.<id>]`. Ids match
 `/^[A-Za-z0-9][A-Za-z0-9_-]*$/`; `hunk`, `git`, `jj`, and `sl` are reserved. A
 bad or duplicate id is skipped with a startup notice.
 
@@ -89,12 +89,13 @@ bad or duplicate id is skipped with a startup notice.
 | Support another VCS (`git`/`jj`/`sl` are reserved)      | `hunk.registerVcsAdapter(adapter)`           |
 | Add a navigation/list/status pane beside the review     | `hunk.registerSidebarView(view)`             |
 | Present a file as something other than a raw diff       | `hunk.registerFileView(view)` (experimental) |
+| Interpret review keys as a temporary global mode        | `hunk.registerKeyboardMode(mode)`            |
 | Bind a key / add an Extensions-menu entry               | `hunk.registerCommand(command, handler)`     |
 | Hide, reorder, retitle files before review              | `hunk.transformChangeset(fn)`                |
 | React to loads, selection, viewed files, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                             | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `3`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `4`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -110,7 +111,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 - **Command handlers** get `ctx.sidebars`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.selection` (a snapshot of file + hunk index),
   `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.commands`
-  (`isEnabled`/`execute` for public semantic `hunk.*` commands), `ctx.dialogs`
+  (`isEnabled`/`execute` for public semantic `hunk.*` commands),
+  `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.dialogs`
   (`confirm`/`select`/`input`, queued and attributed), and `ctx.workspace`
   (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
 - **Sidebar components** get props: `files` (frozen, filtered, review order, each
@@ -120,10 +122,18 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (`selectFile`, `selectHunk`, `notify`).
 - **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
   `readDocument(side)`.
-- **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey` must
-  answer **synchronously** — its return value (`"handled"`/`"pass"`/`"exit"`) is
-  the routing decision, so kick off async work and report it later through
-  `notify` or `refresh`. Escape is host-owned and never reaches `onKey`.
+- **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey`,
+  `onEnter`, and `onExit` must answer **synchronously** — `onKey`'s return value
+  (`"handled"`/`"pass"`/`"exit"`) is the routing decision, so kick off async work
+  and report it later through `notify` or `refresh`. A passed key reaches any
+  active session keyboard mode before ordinary Hunk routing. Escape is host-owned
+  and never reaches `onKey`.
+- **Session keyboard-mode handlers** get only `ctx.commands` and activation-scoped
+  `ctx.keyboardModes` beyond the standard context. Those controls become inert on
+  exit, and lifecycle callbacks cannot change keyboard ownership. Keys are frozen
+  snapshots; dialogs, focused inputs, and file-view modes outrank them. When the
+  session mode owns input, Escape exits it; the status badge and Extensions menu
+  are unconditional host-owned exits.
 
 Event payloads, sidebar props, and a command's selection all hand you frozen
 `ExtensionDiffFile` / `ExtensionDiffHunk` views. A changeset transform is the
@@ -165,6 +175,11 @@ Most extension bugs are one of these:
 - **Chords are defaults.** Users remap by command id in `[keybindings]`; built-ins
   win conflicts, refused one chord at a time. Bind the character shift produces
   (`"!"`, not `"shift+1"`).
+- **Keyboard modes are grammar, not behavior.** Keep pending sequences and
+  numeric prefixes in the extension, then call one public `ctx.commands.execute`
+  after resolving an action. `vim-navigation` demonstrates counts, Ctrl chords,
+  and a `:` key passed to a registered command whose host input dialog temporarily
+  outranks the still-active mode.
 - **`ctx.commands` invokes Hunk, not other extensions.** Probe with
   `isEnabled("hunk.review.nextHunk")`, then call `execute(id, { count })` for an
   explicitly public built-in. Counts are positive whole numbers up to 10,000,

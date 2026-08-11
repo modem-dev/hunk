@@ -69,6 +69,8 @@ export default defineConfig({
         { tag: "meta", attrs: { property: "og:type", content: "website" } },
         { tag: "meta", attrs: { property: "og:site_name", content: "Hunk documentation" } },
         { tag: "meta", attrs: { property: "og:image", content: "https://hunk.dev/og.png" } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "630" } },
         {
           tag: "meta",
           attrs: {
@@ -92,6 +94,7 @@ export default defineConfig({
       customCss: ["./src/styles/starlight.css"],
       components: {
         Footer: "./src/components/docs/DocsFooter.astro",
+        Head: "./src/components/docs/DocsHead.astro",
         Header: "./src/components/docs/DocsHeader.astro",
         MobileMenuFooter: "./src/components/docs/DocsMobileMenuFooter.astro",
         Sidebar: "./src/components/docs/DocsSidebar.astro",

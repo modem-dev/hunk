@@ -34,6 +34,8 @@ export interface BuildAppMenusOptions {
   extensionCommands?: readonly AppCommand[];
   /** Host-owned per-file presentation choices appended to View. */
   fileViewEntries?: readonly MenuEntry[];
+  /** Host-owned escape hatch shown while a session keyboard mode is active. */
+  keyboardModeExitEntry?: MenuEntry;
   /** Live label for the stable host command that applies the selected presentation changeset-wide. */
   fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
@@ -125,6 +127,7 @@ export function buildAppMenus({
   extensionCommands = [],
   fileViewEntries = [],
   fileViewApplyAllLabel,
+  keyboardModeExitEntry,
   copyDecorations,
   cursorLine,
   layoutMode,
@@ -212,7 +215,15 @@ export function buildAppMenus({
     specs.view.push(SEPARATOR);
   }
 
-  const extensions = toExtensionMenuEntries(commands, extensionCommands);
+  const extensionCommandEntries = toExtensionMenuEntries(commands, extensionCommands);
+  const extensions = keyboardModeExitEntry
+    ? [
+        keyboardModeExitEntry,
+        ...(extensionCommandEntries.length > 0
+          ? [{ kind: "separator" as const }, ...extensionCommandEntries]
+          : []),
+      ]
+    : extensionCommandEntries;
   const applyAllEntries = fileViewApplyAllLabel
     ? toMenuEntries(commands, [
         {

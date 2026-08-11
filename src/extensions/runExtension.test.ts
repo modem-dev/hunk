@@ -257,6 +257,70 @@ describe("registerFileView", () => {
   });
 });
 
+describe("registerKeyboardMode", () => {
+  test("collects a valid mode under its owning extension", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const mode = { id: "normal", title: "Vim normal", onKey: () => "handled" as const };
+
+    runExtensionFactory({
+      metadata: bundledMetadata("vim"),
+      registry,
+      issues,
+      factory: (hunk) => hunk.registerKeyboardMode(mode),
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.keyboardModes).toEqual([{ extensionId: "vim", mode }]);
+  });
+
+  test("validates the complete synchronous callback shape", () => {
+    const cases = [
+      [{ title: "Missing id", onKey: () => "handled" }, "non-empty id"],
+      [{ id: "normal", onKey: () => "handled" }, "non-empty title"],
+      [{ id: "normal", title: "Normal" }, "onKey() function"],
+      [
+        { id: "normal", title: "Normal", onKey: () => "handled", onEnter: true },
+        "onEnter must be a function",
+      ],
+      [
+        { id: "normal", title: "Normal", onKey: () => "handled", onExit: true },
+        "onExit must be a function",
+      ],
+    ] as const;
+
+    for (const [candidate, expected] of cases) {
+      const registry = createEmptyExtensionRegistry();
+      const issues: ExtensionLoadIssue[] = [];
+      runExtensionFactory({
+        metadata: bundledMetadata("broken-mode"),
+        registry,
+        issues,
+        factory: (hunk) => hunk.registerKeyboardMode(candidate as never),
+      });
+      expect(registry.keyboardModes).toEqual([]);
+      expect(issues[0]?.message).toContain(expected);
+    }
+  });
+
+  test("rolls a registered mode back when its factory later throws", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("half-mode"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerKeyboardMode({ id: "normal", title: "Normal", onKey: () => "pass" });
+        throw new Error("after mode");
+      },
+    });
+
+    expect(registry.keyboardModes).toEqual([]);
+    expect(issues[0]?.message).toBe("after mode");
+  });
+});
+
 describe("hunk.events", () => {
   test("registers a bus listener under its owning extension", () => {
     const registry = createEmptyExtensionRegistry();

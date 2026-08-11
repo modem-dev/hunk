@@ -105,9 +105,27 @@ scrolling, hunk bounds, and navigation remain host-owned.
 containment. The presentation controller stores the active mode and funnels all
 exit paths through one teardown, including re-entrant handoffs.
 
-Keyboard routing checks modes after focused inputs and before app commands.
-`"handled"` and `"exit"` consume the key; `"pass"` continues normal routing.
-Escape remains host-owned.
+Keyboard routing checks file-view modes after focused inputs and before session
+keyboard modes and app commands. `"handled"` and `"exit"` consume the key;
+`"pass"` continues normal routing. Escape remains host-owned.
+
+Session-wide modes registered through `registerKeyboardMode` are resolved with
+the same extension ownership and first-registration rules as other surfaces.
+`src/ui/keyboardModes/useKeyboardModeController.ts` owns the one active session
+mode, with eager ref state for input chunks, registry-generation authority,
+contained synchronous lifecycle callbacks, and one teardown used by Escape,
+status, menu, reload, and unmount. Mode controls are activation-scoped;
+`onEnter` and `onExit` cannot change ownership, while `onKey` may deliberately
+replace its activation without letting the outgoing callback defeat recovery or
+manipulate the replacement.
+`src/ui/lib/extensionKeyEvent.ts` freezes the method-free public key snapshot
+used by both session and file-view mode delivery, so OpenTUI events and their
+consumption methods never cross the extension boundary. Their shared
+`src/ui/lib/synchronousExtensionCallback.ts` path contains lifecycle failures,
+rejects thenables without leaving unhandled rejections, and normalizes key
+results; each mode module supplies only its context and attributed warnings. A
+focused file-view mode may overlap and temporarily outrank a session mode;
+leaving it resumes the session mode rather than destroying unrelated state.
 
 ## Command system
 
@@ -140,7 +158,8 @@ select and input are `ModalFrame` surfaces), and unmount calls `shutdown()` so
 every pending and queued dialog resolves its cancel value instead of leaving a
 handler awaiting forever. Key precedence in `useAppKeyboardShortcuts` places
 dialogs below Hunk's own app-critical prompts (repo trust, save-on-quit) and
-above menus, help, the theme selector, and the command table: an extension may
+above menus, help, the theme selector, focused inputs, file-view modes, session
+keyboard modes, and the command table: an extension may
 interrupt review navigation, never a decision about the session itself. The
 frame always carries an `ext <id>` attribution row — the toast marker — because
 the title is extension-authored and a prompt must not be able to impersonate

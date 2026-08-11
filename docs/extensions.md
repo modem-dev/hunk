@@ -196,8 +196,9 @@ cannot mutate the registry mid-session.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `3`). Branch on it if you want
-one file to support several Hunk versions.
+The API generation this Hunk speaks (currently `4`). Branch on it if you want
+one file to support several Hunk versions. Version 4 adds session-scoped
+keyboard modes; version 3 added public semantic command execution.
 
 ### `hunk.registerTheme(theme)`
 
@@ -942,20 +943,104 @@ hunk.registerCommand({ id: "outline-keys", title: "Outline keys", key: "f9" }, (
 ```
 
 `enterMode(viewId)` selects the view and starts its mode, returning `false` if it
-cannot. Only one mode runs at a time. `exitMode()` stops it;
+cannot. Only one file-view mode runs at a time. `exitMode()` stops it;
 `isModeActive(viewId)` checks it.
 
 `onKey` must return synchronously:
 
 - `"handled"` consumes the key.
-- `"pass"` leaves it for Hunk's commands and scrolling.
+- `"pass"` continues through any active session keyboard mode, then Hunk's
+  commands and focused scrolling.
 - `"exit"` consumes the key and stops the mode.
 
-Escape always exits and never reaches `onKey`. Hunk also exits when the selected
-file, active presentation, extensions, or review session changes. `onEnter` and
-`onExit` are optional lifecycle callbacks, and `onExit` runs exactly once per
-activation. A failing `onEnter` or `onKey` exits the mode; any callback failure
-warns without breaking the review.
+When the file-view mode is the highest-priority input owner, Escape exits it and
+never reaches `onKey`. Hunk also exits when the selected file, active presentation,
+extensions, or review session changes. Optional `onEnter` and `onExit` lifecycle
+callbacks must also return synchronously, and `onExit` runs exactly once per
+activation. A failing or asynchronous `onEnter` or `onKey` exits the mode; any
+callback failure warns without breaking the review.
+
+### Session keyboard modes
+
+Register a session-wide mode when an extension needs to interpret review keys
+without replacing a pane or exposing renderer internals. Registration is inert;
+a command deliberately enters the mode through its own scoped controls:
+
+```ts
+let pending = "";
+
+hunk.registerKeyboardMode({
+  id: "normal",
+  title: "Vim navigation",
+  onEnter: () => {
+    pending = "";
+  },
+  onExit: () => {
+    pending = "";
+  },
+  onKey: (key, ctx) => {
+    if (key.sequence === "g") {
+      if (pending === "g") {
+        pending = "";
+        ctx.commands.execute("hunk.review.jumpToTop");
+      } else {
+        pending = "g";
+      }
+      return "handled";
+    }
+
+    pending = "";
+    if (key.sequence !== "j") return "pass";
+    ctx.commands.execute("hunk.review.stepDown");
+    return "handled";
+  },
+});
+
+hunk.registerCommand({ id: "vim", title: "Toggle Vim navigation", key: "ctrl+v" }, (ctx) => {
+  if (ctx.keyboardModes.isActive("normal")) {
+    ctx.keyboardModes.exitMode();
+  } else {
+    ctx.keyboardModes.enterMode("normal");
+  }
+});
+```
+
+`ctx.keyboardModes.enterMode(id)` resolves only a mode registered by the same
+extension. `exitMode()` and `isActive(id?)` likewise act only on that extension's
+active mode, so one extension cannot inspect or stop another. Entering a mode
+replaces the previous session mode and runs its `onExit` first. While `onEnter` or
+`onExit` runs, `enterMode()` and `exitMode()` return `false`; lifecycle callbacks
+reset extension-owned state but cannot change keyboard ownership. Only one session
+keyboard mode runs at a time.
+
+`onKey` returns synchronously:
+
+- `"handled"` consumes the key.
+- `"pass"` continues through ordinary Hunk commands and focused scrolling.
+- `"exit"` consumes the key and leaves the mode.
+
+The context is intentionally small: `cwd`, `notify`, live public `commands`, and
+activation-scoped `keyboardModes`. Keys are frozen plain snapshots, not OpenTUI
+events. Async/throwing callbacks are contained and exit safely. When the session
+mode is the highest-priority active input owner, host-owned Escape exits without
+reaching `onKey`; the status badge and a host-owned **Extensions** menu item are
+clickable exits too. Controls handed to a mode are activation-scoped: after that
+activation exits, retained callbacks cannot inspect, stop, or replace a later mode.
+An active `onKey` may deliberately enter another mode from the same extension; its
+outgoing lifecycle callback cannot supersede that replacement.
+
+Dialogs, menus, focused filter/note inputs, and interactive file-view modes run
+before a session mode. A file-view mode may temporarily overlap it: the first
+Escape leaves the focused file-view mode, and the second leaves the resumed
+session mode. Ordinary content soft reloads preserve a session mode, while an
+extension reload, registry closure, or App teardown exits it exactly once.
+
+Multi-key grammar and numeric prefixes belong to the extension. Resolve a count,
+then call `ctx.commands.execute(id, { count })` once so the host applies movement
+atomically. See the dependency-free
+[`vim-navigation`](../examples/extensions/vim-navigation/) example for `j`/`k`,
+`gg`/`G`, hunk movement, alignment, capped counts, Ctrl chords, and a focused
+`:` command line composed from a registered command plus `ctx.dialogs.input()`.
 
 ### `hunk.registerCommand(command, handler)`
 
@@ -1074,6 +1159,9 @@ state without exposing scroll boxes, renderer refs, or coordinates. Both methods
 state, so they remain valid after an `await` or an ordinary content soft reload that retains the
 extension registry. Controls retained across an extension-registry reload or App remount return
 `false`.
+
+`ctx.keyboardModes` enters, exits, or probes the command's own registered
+session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)` and
 `selectHunk(fileId, hunkIndex)`, the same guarded navigation a sidebar's

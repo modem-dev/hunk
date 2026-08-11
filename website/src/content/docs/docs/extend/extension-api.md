@@ -1,13 +1,13 @@
 ---
 title: Extension API
-description: Register themes, file previews, transforms, commands, dialogs, and events through the extension API object.
+description: Register themes, file previews, keyboard modes, transforms, commands, dialogs, and events through the extension API object.
 ---
 
 The extension factory receives one API object. Registration calls are only valid while the factory is running; Hunk seals the object afterwards so a deferred callback cannot mutate the registry mid-session. This page indexes the whole object; larger registration calls are documented in depth on their own pages and summarized in place below.
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `3`). Branch on it if you want one file to support several Hunk versions. Version 3 adds live execution of public Hunk commands from extension command handlers.
+The API generation this Hunk speaks (currently `4`). Branch on it if you want one file to support several Hunk versions. Version 4 adds session-scoped keyboard modes; version 3 added live execution of public Hunk commands from extension command handlers.
 
 ## `hunk.registerTheme(theme)`
 
@@ -73,6 +73,31 @@ Each file carries an opaque `metadata` field — the parsed diff the renderer dr
 
 You never need `metadata` to know a file's hunks: the read-only views Hunk hands outward (event payloads, sidebar props, a command's selection) carry a `hunks` list of public summaries — `index`, the `@@` header, and the inclusive old/new line spans, in render order. Like `changeType`, it is derived at that boundary; a transform neither receives nor produces it.
 
+## `hunk.registerKeyboardMode(mode)`
+
+Register a session-wide, deliberately activated keyboard interpretation. Modes receive frozen plain key snapshots after dialogs, menus, focused inputs, and interactive file views, but before Hunk's ordinary command table.
+
+```ts
+hunk.registerKeyboardMode({
+  id: "normal",
+  title: "Vim navigation",
+  onKey(key, ctx) {
+    if (key.sequence !== "j") return "pass";
+    ctx.commands.execute("hunk.review.stepDown");
+    return "handled";
+  },
+});
+
+hunk.registerCommand({ id: "vim", title: "Toggle Vim navigation", key: "ctrl+v" }, (ctx) => {
+  if (ctx.keyboardModes.isActive("normal")) ctx.keyboardModes.exitMode();
+  else ctx.keyboardModes.enterMode("normal");
+});
+```
+
+`onKey` returns `"handled"`, `"pass"`, or `"exit"` synchronously. Optional `onEnter`/`onExit` callbacks reset extension-owned state such as counts and pending sequences; while either lifecycle callback runs, `enterMode()` and `exitMode()` return `false`. The context exposes only `cwd`, `notify`, public `commands`, and activation-scoped `keyboardModes` controls. Those controls become inert on exit, so retained callbacks cannot replace a later mode. When the session mode is the highest-priority input owner, host-owned Escape exits it; the persistent status badge and Extensions-menu exit are clickable too.
+
+One session mode runs at a time. Entering another runs the outgoing `onExit` first. Focused dialogs and file-view modes temporarily outrank, rather than destroy, a session mode. Content soft reloads preserve it; extension reload, registry closure, and App teardown retire it. See the complete [authoring guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#session-keyboard-modes) and [`vim-navigation` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/vim-navigation), which includes counts, Ctrl chords, and a focused `:` command line.
+
 ## `hunk.registerCommand(command, handler)`
 
 Register a named command, optionally bound to a key. Commands are the same mechanism Hunk's own shortcuts dispatch through — one table, one loop, built-ins first.
@@ -96,6 +121,7 @@ Registered commands are also listed in the menu bar's **Extensions** menu under 
 The handler fires when the key is pressed outside modal UI (dialogs, menus, and focused text inputs own their keys). It receives the standard context plus:
 
 - `ctx.commands.isEnabled(commandId)` / `execute(commandId, { count? })` — probes or invokes an explicitly public built-in `hunk.*` command through the same live table as keyboard and menu actions. Relative movement applies counts atomically; extension-owned and cross-extension commands return `false`.
+- `ctx.keyboardModes.enterMode(id)` / `exitMode()` / `isActive(id?)` — controls only keyboard modes registered by this command's owning extension.
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.

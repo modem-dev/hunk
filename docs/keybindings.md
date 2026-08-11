@@ -98,9 +98,19 @@ present, so remapping something changes what they advertise. Unbinding a menu
 command keeps its menu item and simply stops showing a key.
 
 Extension commands are named `<extensionId>.<commandId>` and remap the same way
-(see [docs/extensions.md](extensions.md)). Keys that belong to a dialog,
+(see [docs/extensions.md](extensions.md)). An explicitly activated extension
+keyboard mode is a routing layer rather than a second command table: it may
+consume a key, pass it to these resolved bindings, or consume it and exit. Its
+multi-key grammar and counts are extension-owned, but resolved actions should
+invoke these same public `hunk.*` commands.
+
+Routing precedence is host prompts and dialogs, menus/overlays, focused text
+inputs, an interactive file-view mode, a session extension keyboard mode, then
+the command table and focused review widget. Keys that belong to a dialog,
 menu, or focused text input — `Esc`, `Enter`, `Ctrl-S` while writing a note —
-are part of those widgets rather than commands, and are not remappable.
+are part of those widgets rather than commands, and are not remappable. Escape
+is also the reserved exit from each active extension mode, so an extension
+cannot trap the keyboard.
 
 `[keybindings]` is read from your user config only — never from a repository's
 `.hunk/config.toml`. Which keys do what is a property of your keyboard and your

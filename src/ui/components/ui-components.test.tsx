@@ -2795,6 +2795,78 @@ describe("UI components", () => {
     expect(frame).toContain("Update available: 9.9.9");
   });
 
+  test("StatusBar keeps the keyboard-mode badge visible beside notices and filter input", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const noticeFrame = await captureFrame(
+      <StatusBar
+        filter=""
+        filterFocused={false}
+        modeText="Vim navigation — ext vim:normal — Esc exits"
+        noticeText="Update available"
+        terminalWidth={80}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+        onExitMode={() => {}}
+      />,
+      80,
+      3,
+    );
+    const filterFrame = await captureFrame(
+      <StatusBar
+        filter="beta"
+        filterFocused={true}
+        modeText="Vim navigation — ext vim:normal — Esc exits"
+        terminalWidth={80}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+        onExitMode={() => {}}
+      />,
+      80,
+      3,
+    );
+
+    expect(noticeFrame).toContain("Update available");
+    expect(noticeFrame).toContain("Vim navigation");
+    expect(filterFrame).toContain("filter:");
+    expect(filterFrame).toContain("beta");
+    expect(filterFrame).toContain("Vim navigation");
+  });
+
+  test("StatusBar mode badge uses the host exit callback and stops the outer click", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    let exits = 0;
+    let stopped = 0;
+    const element = StatusBar({
+      filter: "",
+      filterFocused: false,
+      modeText: "Vim navigation",
+      terminalWidth: 80,
+      theme,
+      onCloseMenu: () => {},
+      onFilterInput: () => {},
+      onFilterSubmit: () => {},
+      onExitMode: () => {
+        exits += 1;
+      },
+    }) as unknown as {
+      props: {
+        children: readonly [unknown, { props: { onMouseUp: (event: unknown) => void } }];
+      };
+    };
+
+    element.props.children[1].props.onMouseUp({
+      stopPropagation() {
+        stopped += 1;
+      },
+    });
+    expect(exits).toBe(1);
+    expect(stopped).toBe(1);
+  });
+
   test("StatusBar keeps filter input precedence over a notice", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(

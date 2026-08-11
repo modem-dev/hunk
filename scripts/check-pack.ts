@@ -30,6 +30,8 @@ import type {
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
+  ExtensionKeyboardModeControls,
+  ExtensionKeyboardModeKeyResult,
   ExtensionPaintTheme,
   ExtensionReviewSelection,
   ExtensionVcsAdapter,
@@ -101,8 +103,18 @@ export default function (hunk: HunkExtensionAPI) {
       };
     },
   });
+  hunk.registerKeyboardMode({
+    id: "review-keys",
+    title: "Review keys",
+    onKey(key, ctx): ExtensionKeyboardModeKeyResult {
+      if (key.name !== "j") return "pass";
+      ctx.commands.execute("hunk.review.stepDown");
+      return "handled";
+    },
+  });
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
     const commandControls: ExtensionCommandControls = ctx.commands;
+    const modeControls: ExtensionKeyboardModeControls = ctx.keyboardModes;
     const execution: ExtensionCommandExecutionOptions = { count: 2 };
     if (commandControls.isEnabled("hunk.review.nextHunk")) {
       const executed: boolean = commandControls.execute("hunk.review.nextHunk", execution);
@@ -118,6 +130,10 @@ export default function (hunk: HunkExtensionAPI) {
       hunk.log(entered ? "mode running" : "mode refused");
     }
     ctx.fileViews.exitMode();
+    if (!modeControls.isActive("review-keys")) {
+      modeControls.enterMode("review-keys");
+    }
+    modeControls.exitMode();
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {

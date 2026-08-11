@@ -13,6 +13,7 @@ import {
   type ExtensionRegistry,
   type ExtensionSidebarView,
   type ExtensionFileView,
+  type ExtensionKeyboardMode,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
@@ -218,6 +219,7 @@ interface RegistrySnapshot {
   changesetTransforms: number;
   sidebarViews: number;
   fileViews: number;
+  keyboardModes: number;
   commands: number;
   eventHandlers: Record<string, number>;
   customEventHandlers: number;
@@ -238,6 +240,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     changesetTransforms: registry.changesetTransforms.length,
     sidebarViews: registry.sidebarViews.length,
     fileViews: registry.fileViews.length,
+    keyboardModes: registry.keyboardModes.length,
     commands: registry.commands.length,
     eventHandlers,
     customEventHandlers: registry.customEventHandlers.length,
@@ -258,6 +261,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.changesetTransforms.length = snapshot.changesetTransforms;
   registry.sidebarViews.length = snapshot.sidebarViews;
   registry.fileViews.length = snapshot.fileViews;
+  registry.keyboardModes.length = snapshot.keyboardModes;
   registry.commands.length = snapshot.commands;
   registry.customEventHandlers.length = snapshot.customEventHandlers;
   registry.pendingCustomEvents.length = snapshot.pendingCustomEvents;
@@ -383,6 +387,25 @@ export function createExtensionApi(
       }
 
       registry.fileViews.push({ extensionId: metadata.id, view });
+    },
+    registerKeyboardMode(mode: ExtensionKeyboardMode) {
+      assertOpen("registerKeyboardMode");
+      assertNonEmptyString(mode?.id, "registerKeyboardMode requires a mode with a non-empty id.");
+      assertNonEmptyString(
+        mode?.title,
+        "registerKeyboardMode requires a mode with a non-empty title.",
+      );
+      if (typeof mode.onKey !== "function") {
+        throw new Error("registerKeyboardMode requires an onKey() function.");
+      }
+      if (mode.onEnter !== undefined && typeof mode.onEnter !== "function") {
+        throw new Error("registerKeyboardMode onEnter must be a function when provided.");
+      }
+      if (mode.onExit !== undefined && typeof mode.onExit !== "function") {
+        throw new Error("registerKeyboardMode onExit must be a function when provided.");
+      }
+
+      registry.keyboardModes.push({ extensionId: metadata.id, mode });
     },
     registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler) {
       assertOpen("registerCommand");
