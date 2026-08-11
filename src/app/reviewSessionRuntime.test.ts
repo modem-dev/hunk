@@ -1,7 +1,12 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
-import { createTestDeferred, createTestDiffFile } from "../../test/helpers/diff-helpers";
+import {
+  createTestDeferred,
+  createTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../test/helpers/diff-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
 import type { HunkConfigResolution } from "../core/config";
 import { reviewGapAddress } from "../core/review/expansion";
@@ -899,6 +904,77 @@ describe("ReviewSessionRuntime", () => {
     disabled.dispose();
   });
 
+  test("creates equivalent canonical TUI and browser notes through one runtime sequence", async () => {
+    const fixed = new Date("2026-04-06T07:08:09.000Z");
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const createdEvents: string[] = [];
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture",
+      handler: ({ note }) => {
+        createdEvents.push(note.id);
+      },
+    });
+    const bootstrap = createBootstrap({ extensions });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      deps: { nowImpl: () => fixed },
+      hostClient: host.hostClient,
+    });
+    const store = runtime.getSnapshot().store;
+    const initial = store.getSnapshot();
+    const file = initial.document.files[0]!;
+    const line = file.hunks[0]!.additionStart;
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: initial.documentGeneration,
+      draft: {
+        id: "draft:tui",
+        fileKey: file.key,
+        hunkIndex: 0,
+        side: "new",
+        line,
+        newRange: [line, line],
+        body: "Shared note body",
+      },
+    });
+
+    const tui = runtime.executeReviewIntent({ type: "note/create-user", consumeDraft: true });
+    const afterTui = store.getSnapshot();
+    const browser = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-equivalent-note",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: afterTui.documentGeneration,
+        expectedStateRevision: afterTui.stateRevision,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: file.key,
+            hunkIndex: 0,
+            side: "new",
+            line,
+            body: "Shared note body",
+          },
+        },
+      },
+    });
+    expect(browser).toMatchObject({ kind: "review-action" });
+
+    const [tuiNote, browserNote] = store.getSnapshot().userNotes;
+    expect(tui.createdNote).toBe(tuiNote);
+    expect(tuiNote?.note.id).toBe(`user:${fixed.getTime()}-1`);
+    expect(browserNote?.note.id).toBe(`user:${fixed.getTime()}-2`);
+    const withoutIdentity = (entry: NonNullable<typeof tuiNote>) => ({
+      ...entry,
+      note: { ...entry.note, id: "<surface-independent>" },
+    });
+    expect(withoutIdentity(browserNote!)).toEqual(withoutIdentity(tuiNote!));
+    expect(createdEvents).toEqual([tuiNote!.note.id, browserNote!.note.id]);
+    runtime.dispose();
+  });
+
   test("emits browser-created user notes once after commit and isolates handler failures", async () => {
     const extensions = createEmptyExtensionLoadResult(process.cwd());
     const events: Array<{ id: string; body: string }> = [];
@@ -1098,6 +1174,59 @@ describe("ReviewSessionRuntime", () => {
     expect(store.getSnapshot()).toBe(before);
     expect(store.getSnapshot().stateRevision).toBe(before.stateRevision);
     expect(host.updated).toHaveLength(updatesBefore);
+    runtime.dispose();
+  });
+
+  test("emits a later expanded-gap note with the validated owning hunk", async () => {
+    const beforeLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[9] = "line 10 changed";
+    afterLines[39] = "line 40 changed";
+    const sourceText = lines(...afterLines);
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const events: Array<{ hunkIndex: number; body: string }> = [];
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture-expanded-owner",
+      handler: ({ note }) => {
+        events.push({ hunkIndex: note.hunkIndex, body: note.body });
+      },
+    });
+    const file = createTestDiffFile({
+      id: "expanded-owner",
+      path: "expanded-owner.ts",
+      before: lines(...beforeLines),
+      after: sourceText,
+      context: 3,
+      sourceFetcher: createTestSourceFetcher(() => sourceText),
+    });
+    const runtime = createReviewSessionRuntime(
+      createBootstrap({
+        changeset: { ...createBootstrap().changeset, files: [file] },
+        extensions,
+      }),
+    );
+    const semantic = runtime.getSnapshot().projection.document.files[0]!;
+
+    await runtime.toggleSourceGap(semantic.key, "before:1");
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const gap = state.expandedGaps.find(
+      (candidate) => candidate.fileKey === semantic.key && candidate.gapId === "before:1",
+    )!;
+    runtime.executeReviewIntent({
+      type: "note/create-user",
+      fileKey: semantic.key,
+      hunkIndex: 1,
+      side: gap.side,
+      line: gap.newRange[0],
+      body: "Later expanded rationale",
+      expandedLineProof: { gapId: gap.gapId, sourceIdentity: gap.sourceIdentity },
+    });
+
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes[0]?.note.anchor).toMatchObject({
+      intersectingHunkIndices: [],
+      ownerHunkIndex: 1,
+    });
+    expect(events).toEqual([{ hunkIndex: 1, body: "Later expanded rationale" }]);
     runtime.dispose();
   });
 
@@ -2357,8 +2486,21 @@ describe("ReviewSessionRuntime", () => {
 
   test("closes watch resources and rejects work after disposal", async () => {
     const watch = createWatchTestRuntime();
+    const before = lines(...Array.from({ length: 10 }, (_, index) => `line ${index + 1}`));
+    const afterLines = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`);
+    afterLines[4] = "line 5 changed";
+    const expandedFile = createTestDiffFile({
+      id: "disposed-expanded",
+      path: "disposed-expanded.ts",
+      before,
+      after: lines(...afterLines),
+      context: 0,
+      sourceFetcher: createTestSourceFetcher(() => lines(...afterLines)),
+    });
+    const base = createBootstrap();
     const bootstrap = createBootstrap({
       input: { kind: "vcs", staged: false, options: { watch: true } },
+      changeset: { ...base.changeset, files: [expandedFile] },
     });
     const runtime = createReviewSessionRuntime(bootstrap, {
       deps: createReloadDeps(),
@@ -2368,6 +2510,17 @@ describe("ReviewSessionRuntime", () => {
 
     runtime.dispose();
     expect(watch.sources[0]?.closeCount).toBe(1);
+    const store = runtime.getSnapshot().store;
+    const beforeRejectedAuthorities = store.getSnapshot();
+    expect(() => runtime.executeReviewIntent({ type: "filter/set", filter: "rejected" })).toThrow(
+      "Review session runtime is disposed.",
+    );
+    expect(store.getSnapshot()).toBe(beforeRejectedAuthorities);
+    await expect(
+      runtime.toggleSourceGap(beforeRejectedAuthorities.document.files[0]!.key, "before:0"),
+    ).rejects.toThrow("Review session runtime is disposed.");
+    expect(store.getSnapshot()).toBe(beforeRejectedAuthorities);
+    expect(store.getSnapshot().stateRevision).toBe(beforeRejectedAuthorities.stateRevision);
     await expect(runtime.reload("manual")).rejects.toThrow("disposed");
   });
 });

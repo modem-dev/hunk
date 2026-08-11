@@ -168,6 +168,28 @@ function rematchDeclaredRange(
   };
 }
 
+/** Retain only the validated placement provenance of a persisted expanded-source user note. */
+function expandedSourceOwnerFallback(
+  entry: ReviewStoredNote,
+  previousFile: ReviewFileV1 | undefined,
+) {
+  const preferred = entry.note.anchor.preferred;
+  const owner = entry.note.anchor.ownerHunkIndex;
+  if (
+    entry.note.origin !== "user" ||
+    !entry.contextDigest ||
+    !preferred ||
+    !previousFile ||
+    entry.note.anchor.intersectingHunkIndices.length > 0 ||
+    owner === undefined ||
+    !previousFile.hunks[owner] ||
+    reviewLineAddress(previousFile, preferred.side, preferred.line)
+  ) {
+    return undefined;
+  }
+  return owner;
+}
+
 /** Reconcile one mutable note while retaining unresolved notes explicitly. */
 function reconcileStoredNote(
   entry: ReviewStoredNote,
@@ -186,6 +208,7 @@ function reconcileStoredNote(
         } as ReviewFileV1)
       : undefined);
   const preferred = entry.note.anchor.preferred;
+  const fallbackOwnerHunkIndex = expandedSourceOwnerFallback(entry, currentFile);
   const retainedContextDigests = {
     ...(entry.contextDigests?.old
       ? { old: entry.contextDigests.old }
@@ -259,6 +282,7 @@ function reconcileStoredNote(
     preferred: nextPreferred,
     oldRange: oldResult.range,
     newRange: newResult.range,
+    ...(fallbackOwnerHunkIndex !== undefined ? { fallbackOwnerHunkIndex } : {}),
   });
   const verified =
     oldResult.verified &&

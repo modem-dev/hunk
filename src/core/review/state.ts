@@ -45,6 +45,11 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
   return entry.resolution !== "orphaned";
 }
 
+export interface ReviewExpandedLineProof {
+  gapId: string;
+  sourceIdentity: string;
+}
+
 export interface ReviewDraftNote {
   id: string;
   fileKey: string;
@@ -53,6 +58,8 @@ export interface ReviewDraftNote {
   line: number;
   oldRange?: [number, number];
   newRange?: [number, number];
+  /** Process-local proof that an otherwise collapsed source line is currently reviewable. */
+  expandedLineProof?: ReviewExpandedLineProof;
   body: string;
 }
 
