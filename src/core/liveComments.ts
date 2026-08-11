@@ -147,29 +147,3 @@ export function resolveCommentTarget(
     line: input.line,
   };
 }
-
-/** Convert one incoming session-daemon comment command into a live annotation. */
-export function buildLiveComment(
-  input: CommentTargetInput & { side: DiffSide; line: number },
-  commentId: string,
-  createdAt: string,
-  hunkIndex: number,
-): LiveComment {
-  return {
-    id: commentId,
-    source: "mcp",
-    author: input.author,
-    createdAt,
-    filePath: input.filePath,
-    hunkIndex,
-    side: input.side,
-    line: input.line,
-    summary: input.summary,
-    rationale: input.rationale,
-    markup: input.markup,
-    oldRange: input.side === "old" ? [input.line, input.line] : undefined,
-    newRange: input.side === "new" ? [input.line, input.line] : undefined,
-    tags: ["mcp"],
-    confidence: "high",
-  };
-}
