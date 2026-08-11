@@ -26,6 +26,7 @@ describe("PTY navigation", () => {
       });
       expect(initial).not.toContain("Maximum update depth exceeded");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("}");
       const alphaNote = await harness.waitForSnapshot(
         session,
@@ -69,6 +70,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line01 = 1001");
       expect(initial).not.toContain("line20 = 2000");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("}");
       const laterHunk = await harness.waitForSnapshot(
         session,
@@ -100,6 +102,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("]");
       const secondHunk = await harness.waitForSnapshot(
         session,
@@ -127,6 +130,7 @@ describe("PTY navigation", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
+      await harness.ensureKeyboardIsLive(session);
 
       let reachedShortFileMidHunk = false;
       for (let index = 0; index < 24; index += 1) {
@@ -178,6 +182,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("]");
       const secondHunk = await harness.waitForSnapshot(
         session,
@@ -253,6 +258,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
+      await harness.ensureKeyboardIsLive(session);
       for (let index = 0; index < 16; index += 1) {
         await session.press("down");
       }
