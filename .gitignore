@@ -42,8 +42,20 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 tmp
 .hunk/latest.json
 .hunk/config.toml
+.hunk/agent-context.json
+.hunk/review-state.json
+.hunk/review-comments.json
 .pi/
 autoresearch.jsonl
 autoresearch.ideas.md
 result
+
+# vscode extension package build + downloaded test editor
+editors/vscode/out
+editors/vscode/.vscode-test
+# `vsce package` output — built on demand, never committed.
+editors/vscode/*.vsix
+# The end-to-end suite turns the fixture workspace into a real repo for the run.
+editors/vscode/fixtures/workspace/.git
+editors/vscode/fixtures/workspace/.hunk
 .video-work/

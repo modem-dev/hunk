@@ -18,9 +18,10 @@ If no session exists, ask the user to launch Hunk in their terminal first.
 4. hunk session review --repo . --include-patch --json  # opt into raw diff text only when needed
 5. hunk session context --repo .                        # check current focus when needed
 6. hunk session navigate ...                            # move to the right place
-7. hunk session reload -- <command>                     # swap contents if needed
-8. hunk session comment add ...                         # leave one review note
-9. hunk session comment apply ...                       # apply many agent notes in one stdin batch
+7. hunk session viewed --repo . --file <path>           # mark a file covered
+8. hunk session reload -- <command>                     # swap contents if needed
+9. hunk session comment add ...                         # leave one review note
+10. hunk session comment apply ...                      # apply many agent notes in one stdin batch
 ```
 
 ## Session selection
@@ -79,6 +80,24 @@ hunk session navigate --repo . --prev-comment
 - `--hunk <n>` is 1-based
 - `--new-line` / `--old-line` are 1-based line numbers on that diff side
 - Use either `--next-comment` or `--prev-comment`, not both
+
+### Viewed files
+
+After covering a file, mark it viewed so the user and other agents can track review progress:
+
+```bash
+hunk session viewed (<session-id> | --repo <path>) --file <path> [--unset] [--json]
+```
+
+Examples:
+
+```bash
+hunk session viewed --repo . --file src/App.tsx
+hunk session viewed --repo . --file src/App.tsx --unset
+```
+
+Use `--unset` when the file needs another pass. JSON session snapshots expose
+`viewedFileCount` and `viewedFilePaths` for choosing the next unviewed file.
 
 ### Reload
 
@@ -147,6 +166,14 @@ Before writing markup, run `hunk markup guide` once — it has copy-paste patter
 ```bash
 hunk session reload --repo . -- diff --exclude-untracked
 ```
+
+## Agent context sidecars
+
+At the end of a meaningful changeset, write notes to the **target-keyed** conventional path so bare `hunk diff` / range / show auto-load them with zero flags.
+
+Write `.hunk/agent-context.<targetId>.json` for the current review target (same args as the review command). When `hunk review export --json` is available, prefer its `agentContextPath` field. Never hard-code bare `.hunk/agent-context.json` for auto-discovery.
+
+Use range-based annotations with `oldRange` / `newRange`; the file order in the sidecar drives sidebar and review order. Explicit `--agent-context <path>` still loads any path, including a legacy bare name.
 
 ## Guiding a review
 

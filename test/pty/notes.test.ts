@@ -36,26 +36,25 @@ describe("PTY notes", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
-      expect(initial).not.toContain("Adds bonus export.");
+      const shownByDefault = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      expect(shownByDefault).toContain("Highlights the follow-up addition for review.");
+      expect(shownByDefault).not.toContain("STML ACTIVE");
 
       await session.press("a");
-      const withNotes = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
-
-      expect(withNotes).toContain("Highlights the follow-up addition for review.");
-      expect(withNotes).not.toContain("STML ACTIVE");
-
-      await session.press("a");
-      const withoutNotes = await harness.waitForSnapshot(
+      const hidden = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("Adds bonus export."),
         5_000,
       );
+      expect(hidden).not.toContain("Adds bonus export.");
 
-      expect(withoutNotes).not.toContain("Adds bonus export.");
+      await session.press("a");
+      const shownAgain = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      expect(shownAgain).toContain("Adds bonus export.");
     } finally {
       session.close();
     }
@@ -80,7 +79,8 @@ describe("PTY notes", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("a");
+      // An explicit --agent-context shows notes at launch, so the markup body is already on
+      // screen; pressing "a" here would hide it.
       const withMarkup = await session.waitForText(/STML ACTIVE/, { timeout: 5_000 });
 
       expect(withMarkup).not.toContain("Highlights the follow-up addition for review.");

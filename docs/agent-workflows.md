@@ -50,6 +50,7 @@ hunk session review --repo . --json
 - `list` shows the active Hunk windows
 - `get --repo .` confirms which live session matches the current repo
 - `review --json` returns the loaded file and hunk structure without dumping the full raw patch
+- JSON session snapshots include `viewedFileCount` and `viewedFilePaths` for review progress
 
 Only add `--include-patch` when an agent truly needs raw unified diff text:
 
@@ -78,6 +79,18 @@ Notes:
 - always include `--` before the nested Hunk command in `reload`
 - `--hunk` is 1-based
 - `--next-comment` and `--prev-comment` are handy when an agent is walking the user through existing notes
+
+### Track viewed files
+
+Mark a file viewed after covering it, or clear the mark when it needs another pass:
+
+```bash
+hunk session viewed --repo . --file src/App.tsx
+hunk session viewed --repo . --file src/App.tsx --unset
+```
+
+The command updates the live window's sidebar and `viewed n/m` progress. Agents can read
+`viewedFileCount` and `viewedFilePaths` from JSON session snapshots to choose the next file.
 
 ### Add comments
 
@@ -131,6 +144,14 @@ For normal worktree use, prefer `--repo /path/to/worktree`. Reach for `--session
 ## Alternative workflow: load agent comments from a file
 
 Use `--agent-context` when you already have agent-written rationale or notes in a JSON sidecar file and want to render them beside the diff.
+
+### Auto-discovery
+
+At the end of a meaningful changeset, agents write notes to the **target-keyed** conventional path for that review: `<repoRoot>/.hunk/agent-context.<targetId>.json`. Write the target-keyed conventional path for this review; prefer `agentContextPath` from `hunk review export --json` when that command is available. Do not hard-code bare `.hunk/agent-context.json` for auto-discovery. Bare `hunk diff`, `hunk show`, and range reviews auto-load only the keyed file for **that** target when it exists; watch-mode reloads the same path.
+
+Precedence is `--no-agent-context` > `--agent-context <path>` > config `agent_context` > keyed conventional path. Config and explicit paths are strict opt-ins (and may still name a legacy bare file). The conventional keyed sidecar is best-effort and silently skipped when absent or malformed.
+
+The sidecar schema is range-based: annotations use 1-based inclusive `oldRange` / `newRange` tuples, not single `oldLine` / `newLine` fields.
 
 ```bash
 hunk diff --agent-context notes.json

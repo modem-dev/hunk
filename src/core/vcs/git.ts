@@ -8,6 +8,7 @@ import {
 } from "../../extension-api/types";
 import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "./largeFile";
 import { escapeUntrackedPatchPath } from "../patch/normalize";
+import { isHunkMetadataRelativePath } from "../paths";
 import { normalizePathForOS } from "../../lib/osPath";
 
 /**
@@ -712,8 +713,11 @@ export function listGitUntrackedFiles(
 
   const normalizedRepoRoot =
     repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks });
-  return untrackedFiles.filter((filePath) =>
-    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  return untrackedFiles.filter(
+    (filePath) =>
+      // Hunk's own `.hunk/` metadata is review context, never review content.
+      !isHunkMetadataRelativePath(filePath) &&
+      isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
 }
 
