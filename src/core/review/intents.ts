@@ -60,12 +60,47 @@ interface DraftUserNoteIntent {
   consumeDraft: true;
 }
 
+/** Runtime-resolved canonical input for one trusted live-agent note. */
+export interface ReviewLiveAgentNoteInput {
+  noteId: string;
+  fileKey: string;
+  hunkIndex: number;
+  side: ReviewSide;
+  line: number;
+  summary: string;
+  rationale?: string;
+  markup?: string;
+  author?: string;
+  createdAt: string;
+}
+
 export type ReviewIntent =
   | ExplicitUserNoteIntent
   | DraftUserNoteIntent
   | { type: "note/update-user"; noteId: string; body: string; markup?: string }
-  | { type: "note/remove-user"; noteId: string }
-  | { type: "note/remove-live"; noteId: string }
+  | {
+      type: "note/remove-user";
+      noteId: string;
+      /** Default surfaces enforce editability; trusted agents retain legacy mutable-note authority. */
+      policy?: "editable-only" | "trusted-agent";
+    }
+  | {
+      type: "note/remove-live";
+      noteId: string;
+      /** Browser compatibility is the default; trusted agents may remove any mutable live note. */
+      policy?: "browser-compatible" | "trusted-agent";
+    }
+  | {
+      type: "note/create-live-agent-batch";
+      notes: readonly ReviewLiveAgentNoteInput[];
+      reveal?: { fileKey: string; hunkIndex: number };
+    }
+  | {
+      type: "notes/clear-resolved";
+      liveNoteIds: readonly string[];
+      userNoteIds: readonly string[];
+      includeUser: boolean;
+    }
   | {
       type: "selection/select";
       fileKey: string;
@@ -437,7 +472,7 @@ function planUserNoteUpdate(
   };
 }
 
-/** Plan removal from the authoritative editable user-note collection. */
+/** Plan user-note removal through an explicit editable-only or trusted-agent policy. */
 function planUserNoteRemoval(
   state: ReviewState,
   intent: Extract<ReviewIntent, { type: "note/remove-user" }>,
@@ -449,7 +484,7 @@ function planUserNoteRemoval(
       `No user note matches id ${intent.noteId}.`,
     );
   }
-  if (!existing.note.editable) {
+  if (intent.policy !== "trusted-agent" && !existing.note.editable) {
     throw new ReviewIntentPlanningError(
       "note-not-editable",
       `User note ${intent.noteId} is not editable.`,
@@ -467,7 +502,7 @@ function planUserNoteRemoval(
   };
 }
 
-/** Plan removal through the named compatibility policy for live notes. */
+/** Plan removal through an explicit browser-compatible or trusted-agent policy. */
 function planLiveNoteRemoval(
   state: ReviewState,
   intent: Extract<ReviewIntent, { type: "note/remove-live" }>,
@@ -479,7 +514,7 @@ function planLiveNoteRemoval(
       `No live note matches id ${intent.noteId}.`,
     );
   }
-  if (!isLiveReviewNoteRemovable(existing)) {
+  if (intent.policy !== "trusted-agent" && !isLiveReviewNoteRemovable(existing)) {
     throw new ReviewIntentPlanningError(
       "note-not-editable",
       `Live note ${intent.noteId} cannot be removed.`,
@@ -494,6 +529,85 @@ function planLiveNoteRemoval(
       },
     ],
     outcome: { type: "note/removed", noteId: intent.noteId, source: "live" },
+  };
+}
+
+/** Construct one canonical live-agent note from a runtime-resolved strict target. */
+function createStoredLiveAgentNote(state: ReviewState, target: ReviewLiveAgentNoteInput) {
+  const file = requireFile(state, target.fileKey);
+  requireHunk(file, target.hunkIndex);
+  const address = requireLine(state, file, target);
+  const range = [address.line, address.line] as const;
+  const oldRange = address.side === "old" ? range : undefined;
+  const newRange = address.side === "new" ? range : undefined;
+  return {
+    note: {
+      id: target.noteId,
+      source: "agent" as const,
+      origin: "live-agent" as const,
+      originalSource: "mcp",
+      fileKey: file.key,
+      anchor: resolveReviewNoteAnchor(file, {
+        oldRange,
+        newRange,
+        preferred: { side: address.side, line: address.line },
+      }),
+      summary: target.summary,
+      ...(target.rationale !== undefined ? { rationale: target.rationale } : {}),
+      ...(target.markup !== undefined ? { markup: target.markup } : {}),
+      ...(target.author !== undefined ? { author: target.author } : {}),
+      createdAt: target.createdAt,
+      editable: false,
+      tags: ["mcp"],
+      confidence: "high" as const,
+    },
+    contextDigest: address.contextDigest,
+    contextDigests: { [address.side]: address.contextDigest },
+    resolution: "active" as const,
+  } satisfies ReviewStoredNote;
+}
+
+/** Validate and plan one atomic live-agent note batch and optional reveal. */
+function planLiveAgentNoteBatch(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "note/create-live-agent-batch" }>,
+): ReviewIntentPlan {
+  const notes = intent.notes.map((note) => createStoredLiveAgentNote(state, note));
+  const actions: ReviewAction[] = [];
+  if (notes.length > 0) {
+    actions.push({
+      type: "notes/add-live",
+      expectedGeneration: state.documentGeneration,
+      notes,
+    });
+  }
+  if (intent.reveal) {
+    const selection = planHunkSelection(state, {
+      type: "selection/select",
+      fileKey: intent.reveal.fileKey,
+      hunkIndex: intent.reveal.hunkIndex,
+      reveal: { kind: "hunk", scrollToNote: true },
+    });
+    actions.push({ type: "notes/set-visibility", visible: true }, ...selection.actions);
+  }
+  return { actions };
+}
+
+/** Plan an exact resolved-ID clear without re-resolving transport path scope in core. */
+function planResolvedNoteClear(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/clear-resolved" }>,
+): ReviewIntentPlan {
+  return {
+    actions: [
+      {
+        type: "notes/clear-live",
+        expectedGeneration: state.documentGeneration,
+        noteIds: [...new Set(intent.liveNoteIds)],
+        userNoteIds: [...new Set(intent.userNoteIds)],
+        includeUser: intent.includeUser,
+      },
+    ],
   };
 }
 
@@ -712,6 +826,10 @@ export function planReviewIntent(
       return planUserNoteRemoval(state, intent);
     case "note/remove-live":
       return planLiveNoteRemoval(state, intent);
+    case "note/create-live-agent-batch":
+      return planLiveAgentNoteBatch(state, intent);
+    case "notes/clear-resolved":
+      return planResolvedNoteClear(state, intent);
     case "selection/select":
       return planHunkSelection(state, intent);
     case "selection/set-line":

@@ -1,6 +1,6 @@
 import { canReloadInput } from "../core/inputReload";
 import { SourceTextTooLargeError } from "../core/fileSource";
-import { buildLiveComment, findDiffFileByPath, resolveCommentTarget } from "../core/liveComments";
+import { findDiffFileByPath, resolveCommentTarget } from "../core/liveComments";
 import { resolveConfiguredCliInput } from "../core/config";
 import { resolveExperimentalDiffFiles } from "../core/experimental";
 import { projectReviewDocument } from "../core/review/document";
@@ -11,13 +11,13 @@ import {
   type ReviewIntent,
   type ReviewIntentEffect,
   type ReviewIntentFacts,
+  type ReviewLiveAgentNoteInput,
   type ReviewSourceLoadEffect,
 } from "../core/review/intents";
 import { encodeJsonStream, JsonStreamSizeError } from "../core/review/jsonStream";
-import { projectReviewNote } from "../core/review/notes";
 import { parseStml } from "../core/review/stml";
 import { reviewFileMatchesFilter } from "../core/review/selectors";
-import { reconcileReviewState, reviewLineContextDigest } from "../core/review/reconcile";
+import { reconcileReviewState } from "../core/review/reconcile";
 import { reviewInputSourceIdentity } from "../core/review/sourceIdentity";
 import {
   createReviewStore,
@@ -1100,17 +1100,6 @@ export class ReviewSessionRuntime {
     return semantic && file ? { semantic, file } : null;
   }
 
-  /** Retain independent reload evidence for every side range of one mutable note. */
-  private mutableNoteDigests(
-    file: ReviewFileV1,
-    ranges: { oldRange?: readonly [number, number]; newRange?: readonly [number, number] },
-  ) {
-    return {
-      ...(ranges.oldRange ? { old: reviewLineContextDigest(file, "old", ranges.oldRange[0]) } : {}),
-      ...(ranges.newRange ? { new: reviewLineContextDigest(file, "new", ranges.newRange[0]) } : {}),
-    };
-  }
-
   /** Validate prospective revisions only while this runtime owns a broker producer. */
   private validateReviewStoreSnapshot(next: ReviewState) {
     // A terminal review may deliberately disable brokering or fall back locally after its initial
@@ -1444,6 +1433,9 @@ export class ReviewSessionRuntime {
       : undefined;
     if (createdNote) this.emitCreatedUserNote(createdNote);
     if (intent.type === "note/remove-live") this.releaseSessionCommentIdentity(intent.noteId);
+    if (intent.type === "notes/clear-resolved") {
+      for (const noteId of intent.liveNoteIds) this.releaseSessionCommentIdentity(noteId);
+    }
     const effectCompletion =
       this.startReviewIntentEffects(plan.effects) ??
       this.pendingExpansionEffectCompletion(intent, state);
@@ -1738,26 +1730,21 @@ export class ReviewSessionRuntime {
     const semantic = this.snapshot.projection.document.files.find(
       (candidate) => candidate.runtimeId === file.id,
     )!;
-    const annotation = buildLiveComment(
-      { ...input, side: target.side, line: target.line },
-      commentId,
+    const noteInput: ReviewLiveAgentNoteInput = {
+      noteId: commentId,
+      fileKey: semantic.key,
+      hunkIndex: target.hunkIndex,
+      side: target.side,
+      line: target.line,
+      summary: input.summary,
+      ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
+      ...(input.markup !== undefined ? { markup: input.markup } : {}),
+      ...(input.author !== undefined ? { author: input.author } : {}),
       createdAt,
-      target.hunkIndex,
-    );
-    const note: ReviewStoredNote = {
-      note: projectReviewNote({
-        annotation,
-        fileKey: semantic.key,
-        hunks: file.metadata.hunks,
-        origin: "live-agent",
-      }),
-      contextDigest: reviewLineContextDigest(semantic, target.side, target.line),
-      contextDigests: this.mutableNoteDigests(semantic, annotation),
-      resolution: "active",
     };
     return {
       semantic,
-      note,
+      noteInput,
       result: {
         commentId,
         fileId: file.id,
@@ -1778,7 +1765,11 @@ export class ReviewSessionRuntime {
     const allocated = this.allocateSessionCommentId(requestIdentity);
     let prepared: ReturnType<ReviewSessionRuntime["prepareSessionComment"]>;
     try {
-      prepared = this.prepareSessionComment(input, allocated.commentId, new Date().toISOString());
+      prepared = this.prepareSessionComment(
+        input,
+        allocated.commentId,
+        this.deps.nowImpl().toISOString(),
+      );
     } catch (error) {
       if (allocated.allocated) this.sessionCommentIds.delete(requestIdentity);
       throw error;
@@ -1787,26 +1778,28 @@ export class ReviewSessionRuntime {
       .getSnapshot()
       .liveNotes.find((entry) => entry.note.id === allocated.commentId);
     if (existing) return prepared.result;
-    const before = this.snapshot.store.getSnapshot();
-    const actions: ReviewAction[] = [
-      {
-        type: "notes/add-live",
-        expectedGeneration: before.documentGeneration,
-        notes: [prepared.note],
-      },
-    ];
-    if (input.reveal) {
-      actions.push(
-        { type: "notes/set-visibility", visible: true },
-        {
-          type: "selection/select",
-          selection: { fileKey: prepared.semantic.key, hunkIndex: prepared.result.hunkIndex },
-          reveal: { kind: "hunk", scrollToNote: true },
-        },
-      );
+    const intent: ReviewIntent = {
+      type: "note/create-live-agent-batch",
+      notes: [prepared.noteInput],
+      ...(input.reveal
+        ? {
+            reveal: {
+              fileKey: prepared.semantic.key,
+              hunkIndex: prepared.result.hunkIndex,
+            },
+          }
+        : {}),
+    };
+    try {
+      // Canonical target validation is still preparation: rejected targets release fresh IDs.
+      planReviewIntent(this.snapshot.store.getSnapshot(), intent);
+    } catch (error) {
+      if (allocated.allocated) this.sessionCommentIds.delete(requestIdentity);
+      throw error;
     }
+    // Legacy result/preflight failures occur after preparation and deliberately retain the ID.
     this.assertCommandResultWithinBounds(prepared.result, "Comment result");
-    this.commitReviewActions(actions);
+    this.executeReviewIntentInternal(intent, { mode: "current" });
     return prepared.result;
   }
 
@@ -1818,6 +1811,13 @@ export class ReviewSessionRuntime {
     const visible = state.document.files.filter((file) =>
       reviewFileMatchesFilter(file, state.filter),
     );
+    const lineOnlyTarget =
+      input.hunkIndex === undefined &&
+      input.commentDirection === undefined &&
+      input.side !== undefined &&
+      input.line !== undefined
+        ? { side: input.side, line: input.line }
+        : undefined;
     let semantic: ReviewFileV1 | undefined;
     let hunkIndex = input.hunkIndex;
     if (input.commentDirection) {
@@ -1877,16 +1877,19 @@ export class ReviewSessionRuntime {
     if (!semantic || hunkIndex === undefined || hunkIndex < 0 || !semantic.hunks[hunkIndex]) {
       throw new Error("No diff hunk matches the requested target.");
     }
-    this.commitReviewActions([
+    this.executeReviewIntentInternal(
       {
         type: "selection/select",
-        selection: { fileKey: semantic.key, hunkIndex },
+        fileKey: semantic.key,
+        hunkIndex,
+        ...(lineOnlyTarget ? { line: lineOnlyTarget } : {}),
         reveal: {
           kind: input.line === undefined ? "hunk" : "line",
           scrollToNote: Boolean(input.commentDirection),
         },
       },
-    ]);
+      { mode: "current" },
+    );
     const file = this.snapshot.bootstrap.changeset.files.find(
       (candidate) => candidate.id === semantic!.runtimeId,
     )!;
@@ -1962,7 +1965,7 @@ export class ReviewSessionRuntime {
       case "comment_batch": {
         const cached = this.getSessionCommentResult("comment_batch", message.requestId);
         if (cached) return cached as AppliedCommentBatchResult;
-        const createdAt = new Date().toISOString();
+        const createdAt = this.deps.nowImpl().toISOString();
         const allocated: Array<{
           requestIdentity: string;
           commentId: string;
@@ -1989,31 +1992,35 @@ export class ReviewSessionRuntime {
         }
         const before = this.snapshot.store.getSnapshot();
         const existingIds = new Set(before.liveNotes.map((entry) => entry.note.id));
-        const additions = prepared.filter((entry) => !existingIds.has(entry.note.note.id));
-        const actions: ReviewAction[] = [];
-        if (additions.length > 0) {
-          actions.push({
-            type: "notes/add-live",
-            expectedGeneration: before.documentGeneration,
-            notes: additions.map((entry) => entry.note),
-          });
-        }
+        const additions = prepared.filter((entry) => !existingIds.has(entry.noteInput.noteId));
         const first = prepared[0];
-        if (message.input.revealMode === "first" && first) {
-          actions.push(
-            { type: "notes/set-visibility", visible: true },
-            {
-              type: "selection/select",
-              selection: { fileKey: first.semantic.key, hunkIndex: first.result.hunkIndex },
-              reveal: { kind: "hunk", scrollToNote: true },
-            },
-          );
+        const intent: ReviewIntent = {
+          type: "note/create-live-agent-batch",
+          notes: additions.map((entry) => entry.noteInput),
+          ...(message.input.revealMode === "first" && first
+            ? {
+                reveal: {
+                  fileKey: first.semantic.key,
+                  hunkIndex: first.result.hunkIndex,
+                },
+              }
+            : {}),
+        };
+        try {
+          // Validate every canonical target while failures still belong to preparation.
+          planReviewIntent(this.snapshot.store.getSnapshot(), intent);
+        } catch (error) {
+          for (const id of allocated) {
+            if (id.allocated) this.sessionCommentIds.delete(id.requestIdentity);
+          }
+          throw error;
         }
+        // Preserve legacy post-preparation identity retention for bounds/preflight failures.
         this.assertCommandResultWithinBounds(
           { applied: prepared.map((entry) => entry.result) },
           "Comment batch result",
         );
-        this.commitReviewActions(actions);
+        this.executeReviewIntentInternal(intent, { mode: "current" });
         const result = {
           applied: prepared.map((entry) => entry.result),
         } satisfies AppliedCommentBatchResult;
@@ -2033,14 +2040,20 @@ export class ReviewSessionRuntime {
         const user = state.userNotes.some((entry) => entry.note.id === message.input.commentId);
         if (!live && !user)
           throw new Error(`No mutable note matches id ${message.input.commentId}.`);
-        this.commitReviewActions([
-          {
-            type: live ? "notes/remove-live" : "notes/remove-user",
-            expectedGeneration: state.documentGeneration,
-            noteId: message.input.commentId,
-          },
-        ]);
-        if (live) this.releaseSessionCommentIdentity(message.input.commentId);
+        this.executeReviewIntentInternal(
+          live
+            ? {
+                type: "note/remove-live",
+                noteId: message.input.commentId,
+                policy: "trusted-agent",
+              }
+            : {
+                type: "note/remove-user",
+                noteId: message.input.commentId,
+                policy: "trusted-agent",
+              },
+          { mode: "current" },
+        );
         const next = this.snapshot.store.getSnapshot();
         return {
           commentId: message.input.commentId,
@@ -2077,18 +2090,15 @@ export class ReviewSessionRuntime {
         if (message.input.filePath && !file && live.length === 0 && user.length === 0) {
           throw new Error(`No diff file matches ${message.input.filePath}.`);
         }
-        this.commitReviewActions([
+        this.executeReviewIntentInternal(
           {
-            type: "notes/clear-live",
-            expectedGeneration: state.documentGeneration,
-            ...(message.input.filePath ? { noteIds: live.map((entry) => entry.note.id) } : {}),
-            ...(message.input.filePath && message.input.includeUser
-              ? { userNoteIds: user.map((entry) => entry.note.id) }
-              : {}),
-            includeUser: message.input.includeUser,
+            type: "notes/clear-resolved",
+            liveNoteIds: live.map((entry) => entry.note.id),
+            userNoteIds: message.input.includeUser ? user.map((entry) => entry.note.id) : [],
+            includeUser: Boolean(message.input.includeUser),
           },
-        ]);
-        for (const entry of live) this.releaseSessionCommentIdentity(entry.note.id);
+          { mode: "current" },
+        );
         const next = this.snapshot.store.getSnapshot();
         return {
           removedCount: live.length + (message.input.includeUser ? user.length : 0),

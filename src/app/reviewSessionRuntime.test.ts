@@ -1596,10 +1596,22 @@ describe("ReviewSessionRuntime", () => {
     deletionRuntime.dispose();
   });
 
-  test("routes legacy agent comments directly and publishes each exactly once", async () => {
-    const bootstrap = createBootstrap();
+  test("routes legacy agent comments through canonical intents without user-note events", async () => {
+    const createdAt = new Date("2026-05-06T07:08:09.000Z");
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const createdEvents: string[] = [];
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture-agent-events",
+      handler: ({ note }) => {
+        createdEvents.push(note.id);
+      },
+    });
+    const bootstrap = createBootstrap({ extensions });
     const host = createHeadlessHostClient(bootstrap);
-    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: { nowImpl: () => createdAt },
+    });
     const result = await host.dispatchCommand({
       type: "command",
       requestId: "agent-comment",
@@ -1613,8 +1625,265 @@ describe("ReviewSessionRuntime", () => {
       },
     });
     expect(result).toMatchObject({ commentId: "mcp:agent-comment" });
-    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(1);
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toEqual([
+      {
+        note: {
+          id: "mcp:agent-comment",
+          source: "agent",
+          origin: "live-agent",
+          originalSource: "mcp",
+          fileKey: expect.any(String),
+          anchor: {
+            newRange: [1, 1],
+            preferred: { side: "new", line: 1 },
+            intersectingHunkIndices: [0],
+            ownerHunkIndex: 0,
+          },
+          summary: "Agent rationale",
+          createdAt: createdAt.toISOString(),
+          editable: false,
+          tags: ["mcp"],
+          confidence: "high",
+        },
+        contextDigest: expect.any(String),
+        contextDigests: { new: expect.any(String) },
+        resolution: "active",
+      },
+    ]);
+    expect(createdEvents).toEqual([]);
     expect(host.updated.at(-1)?.state.liveComments).toHaveLength(1);
+    runtime.dispose();
+  });
+
+  test("rejects planner-invalid agent targets without state, publication, identity, or cache", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const updatesBefore = host.updated.length;
+    // Runtime path resolution remains terminal-backed, while canonical planning must reject
+    // a target whose terminal model no longer matches the immutable generation projection.
+    bootstrap.changeset.files[0]!.metadata.hunks[0]!.additionStart = 999;
+
+    await expect(
+      host.dispatchCommand({
+        type: "command",
+        requestId: "planner-invalid-agent",
+        command: "comment",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          filePath: "alpha.ts",
+          hunkIndex: 0,
+          summary: "Must reject",
+          reveal: false,
+        },
+      }),
+    ).rejects.toThrow("not backed");
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+    expect(host.updated).toHaveLength(updatesBefore);
+    expect(
+      (runtime as unknown as { sessionCommentIds: Map<string, string> }).sessionCommentIds.has(
+        "planner-invalid-agent",
+      ),
+    ).toBe(false);
+    expect(
+      (runtime as unknown as { sessionCommentResults: Map<string, unknown> }).sessionCommentResults
+        .size,
+    ).toBe(0);
+    runtime.dispose();
+  });
+
+  test("retains mcp identities after post-preparation result-bound failures", async () => {
+    const base = createBootstrap();
+    const bootstrap = createBootstrap({
+      input: { ...base.input, options: { ...base.input.options, experimental: true } },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    runtime.setSessionRendererFields({
+      noteMarkupWidth: 40,
+      validateMarkup: () => ["x".repeat(9 * 1024 * 1024)],
+    });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const single = () =>
+      host.dispatchCommand({
+        type: "command",
+        requestId: "oversized-agent-result",
+        command: "comment",
+        input: {
+          sessionId,
+          filePath: "alpha.ts",
+          hunkIndex: 0,
+          summary: "Oversized feedback",
+          markup: "<box>feedback</box>",
+          reveal: false,
+        },
+      });
+    const batch = () =>
+      host.dispatchCommand({
+        type: "command",
+        requestId: "oversized-agent-batch-result",
+        command: "comment_batch",
+        input: {
+          sessionId,
+          comments: [
+            {
+              filePath: "alpha.ts",
+              hunkIndex: 0,
+              summary: "Oversized batch feedback",
+              markup: "<box>feedback</box>",
+            },
+          ],
+          revealMode: "none",
+        },
+      });
+
+    await expect(single()).rejects.toThrow(/limit/i);
+    const identities = (runtime as unknown as { sessionCommentIds: Map<string, string> })
+      .sessionCommentIds;
+    const cached = (runtime as unknown as { sessionCommentResults: Map<string, unknown> })
+      .sessionCommentResults;
+    expect(identities.get("oversized-agent-result")).toBe("mcp:oversized-agent-result");
+    await expect(single()).rejects.toThrow(/limit/i);
+    expect(identities.get("oversized-agent-result")).toBe("mcp:oversized-agent-result");
+
+    await expect(batch()).rejects.toThrow(/limit/i);
+    expect(identities.get("oversized-agent-batch-result:0")).toBe(
+      "mcp:oversized-agent-batch-result:0",
+    );
+    await expect(batch()).rejects.toThrow(/limit/i);
+    expect(identities.get("oversized-agent-batch-result:0")).toBe(
+      "mcp:oversized-agent-batch-result:0",
+    );
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(0);
+    expect(cached.size).toBe(0);
+    runtime.dispose();
+  });
+
+  test("stores canonical line evidence for agent navigation", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-line-navigation",
+      command: "navigate_to_hunk",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        filePath: "alpha.ts",
+        side: "new",
+        line: 1,
+      },
+    });
+    expect(result).toMatchObject({ filePath: "alpha.ts", hunkIndex: 0 });
+    expect(runtime.getSnapshot().store.getSnapshot().selection).toEqual({
+      fileKey: expect.any(String),
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      contextDigest: expect.any(String),
+    });
+    runtime.dispose();
+  });
+
+  test("keeps hunk and comment-direction precedence over forwarded line fields", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+
+    const hunkResult = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-mixed-hunk-navigation",
+      command: "navigate_to_hunk",
+      input: {
+        sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        side: "new",
+        line: 999,
+      },
+    });
+    expect(hunkResult).toMatchObject({ filePath: "alpha.ts", hunkIndex: 0 });
+    expect(runtime.getSnapshot().store.getSnapshot()).toMatchObject({
+      selection: { fileKey: expect.any(String), hunkIndex: 0 },
+      reveal: { kind: "line", scrollToNote: false },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().selection).not.toHaveProperty("side");
+    expect(runtime.getSnapshot().store.getSnapshot().selection).not.toHaveProperty("line");
+
+    await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-mixed-navigation-note",
+      command: "comment",
+      input: {
+        sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "Annotated target",
+        reveal: false,
+      },
+    });
+    const directionResult = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-mixed-comment-navigation",
+      command: "navigate_to_hunk",
+      input: {
+        sessionId,
+        commentDirection: "next",
+        side: "new",
+        line: 999,
+      },
+    });
+    expect(directionResult).toMatchObject({ filePath: "alpha.ts", hunkIndex: 0 });
+    expect(runtime.getSnapshot().store.getSnapshot()).toMatchObject({
+      selection: { fileKey: expect.any(String), hunkIndex: 0 },
+      reveal: { kind: "line", scrollToNote: true },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().selection).not.toHaveProperty("side");
+    expect(runtime.getSnapshot().store.getSnapshot().selection).not.toHaveProperty("line");
+    runtime.dispose();
+  });
+
+  test("clears resolved agent notes in one revision and releases their identities", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    for (const requestId of ["clear-agent-one", "clear-agent-two"]) {
+      await host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "comment",
+        input: {
+          sessionId,
+          filePath: "alpha.ts",
+          hunkIndex: 0,
+          summary: requestId,
+          reveal: false,
+        },
+      });
+    }
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const retainedIds = (runtime as unknown as { sessionCommentIds: Map<string, string> })
+      .sessionCommentIds;
+    expect(retainedIds.size).toBe(2);
+
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "clear-agent-notes",
+      command: "clear_comments",
+      input: { sessionId, includeUser: false },
+    });
+    expect(result).toMatchObject({
+      removedCount: 2,
+      removedLiveCommentCount: 2,
+      removedUserNoteCount: 0,
+    });
+    const after = runtime.getSnapshot().store.getSnapshot();
+    expect(after.stateRevision).toBe(before.stateRevision + 1);
+    expect(after.liveNotes).toHaveLength(0);
+    expect(retainedIds.size).toBe(0);
     runtime.dispose();
   });
 
@@ -1695,6 +1964,76 @@ describe("ReviewSessionRuntime", () => {
       error: { code: "invalid-action" },
     });
     expect(runtime.getSnapshot().store.getSnapshot()).toBe(lockedState);
+
+    const trustedRemoval = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-remove-locked-live",
+      command: "remove_comment",
+      input: { sessionId, commentId: locked.note.id },
+    });
+    expect(trustedRemoval).toMatchObject({
+      commentId: locked.note.id,
+      removed: true,
+      source: "agent",
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(0);
+    runtime.dispose();
+  });
+
+  test("rejects locked user removal in browsers while preserving trusted agent removal", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const initial = runtime.getSnapshot().store.getSnapshot();
+    const file = initial.document.files[0]!;
+    runtime.executeReviewIntent({
+      type: "note/create-user",
+      fileKey: file.key,
+      hunkIndex: 0,
+      side: "new",
+      line: file.hunks[0]!.additionStart,
+      body: "Locked user note",
+    });
+    const created = runtime.getSnapshot().store.getSnapshot();
+    const userNote = created.userNotes[0]!;
+    runtime.getSnapshot().store.dispatch({
+      type: "notes/update-user",
+      expectedGeneration: created.documentGeneration,
+      noteId: userNote.note.id,
+      note: { ...userNote, note: { ...userNote.note, editable: false } },
+    });
+
+    const locked = runtime.getSnapshot().store.getSnapshot();
+    const rejected = await host.dispatchCommand({
+      type: "command",
+      requestId: "browser-remove-locked-user",
+      command: "apply_review_action",
+      input: {
+        sessionId,
+        generation: locked.documentGeneration,
+        expectedStateRevision: locked.stateRevision,
+        action: { type: "notes/remove-user", noteId: userNote.note.id },
+      },
+    });
+    expect(rejected).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action" },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(locked);
+
+    const removed = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-remove-locked-user",
+      command: "remove_comment",
+      input: { sessionId, commentId: userNote.note.id },
+    });
+    expect(removed).toMatchObject({
+      commentId: userNote.note.id,
+      removed: true,
+      source: "user",
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes).toHaveLength(0);
     runtime.dispose();
   });
 
@@ -1835,7 +2174,11 @@ describe("ReviewSessionRuntime", () => {
       changeset: { ...createBootstrap().changeset, files: [file] },
     });
     const host = createHeadlessHostClient(bootstrap);
-    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const batchTimestamp = new Date("2026-06-07T08:09:10.000Z");
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: { nowImpl: () => batchTimestamp },
+    });
     const before = runtime.getSnapshot().store.getSnapshot();
     const batch = (requestId: string, comments: Array<Record<string, unknown>>) =>
       host.dispatchCommand({
@@ -1856,6 +2199,16 @@ describe("ReviewSessionRuntime", () => {
       ]),
     ).rejects.toThrow("No diff file matches missing.ts");
     expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+    expect([
+      ...(
+        runtime as unknown as { sessionCommentIds: Map<string, string> }
+      ).sessionCommentIds.keys(),
+    ]).not.toContain("invalid-batch:0");
+    expect([
+      ...(
+        runtime as unknown as { sessionCommentResults: Map<string, unknown> }
+      ).sessionCommentResults.keys(),
+    ]).not.toContain("comment_batch\0invalid-batch");
 
     const result = await batch("valid-batch", [
       { filePath: "alpha.ts", summary: "first", hunkIndex: 0 },
@@ -1867,6 +2220,11 @@ describe("ReviewSessionRuntime", () => {
     const committed = runtime.getSnapshot().store.getSnapshot();
     expect(committed.stateRevision).toBe(before.stateRevision + 1);
     expect(committed.liveNotes.map((entry) => entry.note.summary)).toEqual(["first", "second"]);
+    expect(committed.liveNotes.map((entry) => entry.note.createdAt)).toEqual([
+      batchTimestamp.toISOString(),
+      batchTimestamp.toISOString(),
+    ]);
+    expect(committed.liveNotes.every((entry) => entry.note.origin === "live-agent")).toBe(true);
     const retry = await batch("valid-batch", [
       { filePath: "alpha.ts", summary: "first", hunkIndex: 0 },
       { filePath: "alpha.ts", summary: "second", hunkIndex: 0 },
