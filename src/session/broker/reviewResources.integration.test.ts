@@ -414,6 +414,43 @@ describe("chunked review resources", () => {
       } as HunkSessionServerMessage);
       expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
     }
+    const unsupported = await connected.dispatch({
+      type: "command",
+      requestId: "unsupported-action",
+      command: "apply_review_action",
+      input: {
+        sessionId: connected.registration.sessionId,
+        generation,
+        action: { type: "future/action" },
+      },
+    } as unknown as HunkSessionServerMessage);
+    expect(unsupported).toMatchObject({
+      kind: "review-error",
+      error: { code: "unsupported-action" },
+    });
+    const oversized = await connected.dispatch({
+      type: "command",
+      requestId: "oversized-action",
+      command: "apply_review_action",
+      input: {
+        sessionId: connected.registration.sessionId,
+        generation,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: "file",
+            hunkIndex: 0,
+            side: "new",
+            line: 1,
+            body: "é".repeat(128 * 1024 + 1),
+          },
+        },
+      },
+    } as HunkSessionServerMessage);
+    expect(oversized).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action" },
+    });
     const missingGeneration = await connected.dispatch({
       type: "command",
       requestId: "missing-generation",

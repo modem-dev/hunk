@@ -3,7 +3,6 @@ import {
   parseGenerationIdentifier,
   utf8ByteLength,
 } from "@hunk/session-broker-core";
-import type { ReviewAction } from "../core/review/actions";
 import type {
   ReviewDocumentGeneration,
   ReviewNoteV1,
@@ -102,15 +101,37 @@ export interface HunkReviewUserNoteInputV1 {
   markup?: string;
 }
 
-/** Semantic renderer actions accepted by the authoritative source process. */
+export interface HunkReviewSelectionV1 {
+  fileKey: string | null;
+  hunkIndex: number;
+  side?: ReviewSide;
+  line?: number;
+  contextDigest?: string;
+}
+
+export interface HunkReviewRevealV1 {
+  kind: "hunk" | "file-top" | "line";
+  scrollToNote?: boolean;
+}
+
+/** Versioned wire actions accepted from browser review clients. */
 export type HunkReviewActionV1 =
-  | Extract<
-      ReviewAction,
-      | { type: "selection/select" }
-      | { type: "selection/set-line" }
-      | { type: "filter/set" }
-      | { type: "notes/set-visibility" }
-    >
+  | {
+      type: "selection/select";
+      selection: HunkReviewSelectionV1;
+      reveal?: HunkReviewRevealV1;
+    }
+  | {
+      type: "selection/set-line";
+      fileKey: string;
+      hunkIndex: number;
+      side: ReviewSide;
+      line: number;
+      contextDigest?: string;
+      reveal?: boolean;
+    }
+  | { type: "filter/set"; filter: string }
+  | { type: "notes/set-visibility"; visible: boolean }
   | { type: "notes/create-user"; note: HunkReviewUserNoteInputV1 }
   | { type: "notes/update-user"; noteId: string; body: string; markup?: string }
   | { type: "notes/remove-user"; noteId: string }
@@ -118,6 +139,8 @@ export type HunkReviewActionV1 =
   | { type: "expansion/toggle"; fileKey: string; gapId: string }
   | { type: "session/reload" }
   | { type: "trust/decide"; decision: "trusted" | "denied" };
+
+export type HunkReviewActionParseResult = HunkReviewActionV1 | "invalid" | "unsupported";
 
 export interface HunkReviewStateV1 {
   documentGeneration: ReviewDocumentGeneration;
@@ -208,6 +231,169 @@ export interface ReviewCommandErrorResult {
 /** Return whether a declared content digest is one canonical SHA-256 hex value. */
 export function isReviewSha256Digest(value: unknown): value is string {
   return typeof value === "string" && /^[a-f\d]{64}$/i.test(value);
+}
+
+/** Return whether one protocol object contains exactly the allowed fields. */
+function hasExactKeys(record: Record<string, unknown>, allowed: readonly string[]) {
+  const keys = Object.keys(record);
+  return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
+}
+
+/** Strictly parse one nested browser action while distinguishing unknown action versions. */
+export function parseHunkReviewActionV1(action: unknown): HunkReviewActionParseResult {
+  if (!action || typeof action !== "object" || Array.isArray(action)) return "invalid";
+  const candidate = action as Record<string, unknown>;
+  if (typeof candidate.type !== "string") return "invalid";
+  switch (candidate.type) {
+    case "filter/set":
+      return hasExactKeys(candidate, ["type", "filter"]) &&
+        typeof candidate.filter === "string" &&
+        candidate.filter.length <= 16_384
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "notes/set-visibility":
+      return hasExactKeys(candidate, ["type", "visible"]) && typeof candidate.visible === "boolean"
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "selection/select": {
+      if (
+        !hasExactKeys(candidate, [
+          "type",
+          "selection",
+          ...(candidate.reveal === undefined ? [] : ["reveal"]),
+        ])
+      )
+        return "invalid";
+      const selection = candidate.selection;
+      if (!selection || typeof selection !== "object" || Array.isArray(selection)) return "invalid";
+      const selected = selection as Record<string, unknown>;
+      const selectionKeys = [
+        "fileKey",
+        "hunkIndex",
+        ...(selected.side === undefined ? [] : ["side"]),
+        ...(selected.line === undefined ? [] : ["line"]),
+        ...(selected.contextDigest === undefined ? [] : ["contextDigest"]),
+      ];
+      if (
+        !hasExactKeys(selected, selectionKeys) ||
+        !(selected.fileKey === null || typeof selected.fileKey === "string") ||
+        !Number.isInteger(selected.hunkIndex) ||
+        (selected.hunkIndex as number) < 0 ||
+        (selected.side !== undefined && selected.side !== "old" && selected.side !== "new") ||
+        (selected.line !== undefined &&
+          (!Number.isInteger(selected.line) || (selected.line as number) <= 0)) ||
+        (selected.contextDigest !== undefined && typeof selected.contextDigest !== "string")
+      )
+        return "invalid";
+      if (candidate.reveal !== undefined) {
+        const reveal = candidate.reveal;
+        if (!reveal || typeof reveal !== "object" || Array.isArray(reveal)) return "invalid";
+        const revealed = reveal as Record<string, unknown>;
+        const revealKeys = [
+          "kind",
+          ...(revealed.scrollToNote === undefined ? [] : ["scrollToNote"]),
+        ];
+        if (
+          !hasExactKeys(revealed, revealKeys) ||
+          (revealed.kind !== "hunk" && revealed.kind !== "file-top" && revealed.kind !== "line") ||
+          (revealed.scrollToNote !== undefined && typeof revealed.scrollToNote !== "boolean")
+        )
+          return "invalid";
+      }
+      return candidate as unknown as HunkReviewActionV1;
+    }
+    case "selection/set-line": {
+      const keys = [
+        "type",
+        "fileKey",
+        "hunkIndex",
+        "side",
+        "line",
+        ...(candidate.contextDigest === undefined ? [] : ["contextDigest"]),
+        ...(candidate.reveal === undefined ? [] : ["reveal"]),
+      ];
+      return hasExactKeys(candidate, keys) &&
+        typeof candidate.fileKey === "string" &&
+        Number.isInteger(candidate.hunkIndex) &&
+        (candidate.hunkIndex as number) >= 0 &&
+        (candidate.side === "old" || candidate.side === "new") &&
+        Number.isInteger(candidate.line) &&
+        (candidate.line as number) > 0 &&
+        (candidate.contextDigest === undefined || typeof candidate.contextDigest === "string") &&
+        (candidate.reveal === undefined || typeof candidate.reveal === "boolean")
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    }
+    case "notes/create-user": {
+      const note = candidate.note;
+      if (
+        !hasExactKeys(candidate, ["type", "note"]) ||
+        !note ||
+        typeof note !== "object" ||
+        Array.isArray(note)
+      )
+        return "invalid";
+      const value = note as Record<string, unknown>;
+      return hasExactKeys(value, [
+        "fileKey",
+        "hunkIndex",
+        "side",
+        "line",
+        "body",
+        ...(value.markup === undefined ? [] : ["markup"]),
+      ]) &&
+        typeof value.fileKey === "string" &&
+        Number.isInteger(value.hunkIndex) &&
+        (value.hunkIndex as number) >= 0 &&
+        (value.side === "old" || value.side === "new") &&
+        Number.isInteger(value.line) &&
+        (value.line as number) > 0 &&
+        typeof value.body === "string" &&
+        utf8ByteLength(value.body) <= MAX_REVIEW_NOTE_BYTES &&
+        (value.markup === undefined ||
+          (typeof value.markup === "string" &&
+            utf8ByteLength(value.markup) <= MAX_REVIEW_NOTE_BYTES))
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    }
+    case "notes/update-user":
+      return hasExactKeys(candidate, [
+        "type",
+        "noteId",
+        "body",
+        ...(candidate.markup === undefined ? [] : ["markup"]),
+      ]) &&
+        typeof candidate.noteId === "string" &&
+        typeof candidate.body === "string" &&
+        utf8ByteLength(candidate.body) <= MAX_REVIEW_NOTE_BYTES &&
+        (candidate.markup === undefined ||
+          (typeof candidate.markup === "string" &&
+            utf8ByteLength(candidate.markup) <= MAX_REVIEW_NOTE_BYTES))
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "notes/remove-user":
+    case "notes/remove-live":
+      return hasExactKeys(candidate, ["type", "noteId"]) && typeof candidate.noteId === "string"
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "expansion/toggle":
+      return hasExactKeys(candidate, ["type", "fileKey", "gapId"]) &&
+        typeof candidate.fileKey === "string" &&
+        typeof candidate.gapId === "string"
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "session/reload":
+      return hasExactKeys(candidate, ["type"])
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    case "trust/decide":
+      return hasExactKeys(candidate, ["type", "decision"]) &&
+        (candidate.decision === "trusted" || candidate.decision === "denied")
+        ? (candidate as unknown as HunkReviewActionV1)
+        : "invalid";
+    default:
+      return "unsupported";
+  }
 }
 
 /** Parse one complete resource-read input without accepting omitted or unknown fields. */

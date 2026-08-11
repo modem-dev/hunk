@@ -54,6 +54,7 @@ import {
   assertReviewProducerEnvelopeWithinBounds,
   parseApplyReviewActionInput,
   parseGetReviewSnapshotInput,
+  parseHunkReviewActionV1,
   parseReadReviewResourceInput,
   type ApplyReviewActionInput,
   type GetReviewSnapshotInput,
@@ -1043,12 +1044,6 @@ export class ReviewSessionRuntime {
     };
   }
 
-  /** Return whether a JSON object has exactly the allowed keys for one action variant. */
-  private hasExactKeys(record: Record<string, unknown>, allowed: readonly string[]) {
-    const keys = Object.keys(record);
-    return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
-  }
-
   /** Resolve the active terminal file and semantic file through the generation projection. */
   private reviewFilePair(fileKey: string) {
     const semantic = this.snapshot.projection.document.files.find((file) => file.key === fileKey);
@@ -1324,168 +1319,6 @@ export class ReviewSessionRuntime {
     await load;
   }
 
-  /** Strictly validate every nested field of one advertised semantic action DTO. */
-  private parseReviewAction(action: unknown): HunkReviewActionV1 | "invalid" | "unsupported" {
-    if (!action || typeof action !== "object" || Array.isArray(action)) return "invalid";
-    const candidate = action as Record<string, unknown>;
-    if (typeof candidate.type !== "string") return "invalid";
-    switch (candidate.type) {
-      case "filter/set":
-        return this.hasExactKeys(candidate, ["type", "filter"]) &&
-          typeof candidate.filter === "string" &&
-          candidate.filter.length <= 16_384
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "notes/set-visibility":
-        return this.hasExactKeys(candidate, ["type", "visible"]) &&
-          typeof candidate.visible === "boolean"
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "selection/select": {
-        if (
-          !this.hasExactKeys(candidate, [
-            "type",
-            "selection",
-            ...(candidate.reveal === undefined ? [] : ["reveal"]),
-          ])
-        )
-          return "invalid";
-        const selection = candidate.selection;
-        if (!selection || typeof selection !== "object" || Array.isArray(selection))
-          return "invalid";
-        const selected = selection as Record<string, unknown>;
-        const selectionKeys = [
-          "fileKey",
-          "hunkIndex",
-          ...(selected.side === undefined ? [] : ["side"]),
-          ...(selected.line === undefined ? [] : ["line"]),
-          ...(selected.contextDigest === undefined ? [] : ["contextDigest"]),
-        ];
-        if (
-          !this.hasExactKeys(selected, selectionKeys) ||
-          !(selected.fileKey === null || typeof selected.fileKey === "string") ||
-          !Number.isInteger(selected.hunkIndex) ||
-          (selected.hunkIndex as number) < 0 ||
-          (selected.side !== undefined && selected.side !== "old" && selected.side !== "new") ||
-          (selected.line !== undefined &&
-            (!Number.isInteger(selected.line) || (selected.line as number) <= 0)) ||
-          (selected.contextDigest !== undefined && typeof selected.contextDigest !== "string")
-        )
-          return "invalid";
-        if (candidate.reveal !== undefined) {
-          const reveal = candidate.reveal;
-          if (!reveal || typeof reveal !== "object" || Array.isArray(reveal)) return "invalid";
-          const revealed = reveal as Record<string, unknown>;
-          const revealKeys = [
-            "kind",
-            ...(revealed.scrollToNote === undefined ? [] : ["scrollToNote"]),
-          ];
-          if (
-            !this.hasExactKeys(revealed, revealKeys) ||
-            (revealed.kind !== "hunk" &&
-              revealed.kind !== "file-top" &&
-              revealed.kind !== "line") ||
-            (revealed.scrollToNote !== undefined && typeof revealed.scrollToNote !== "boolean")
-          )
-            return "invalid";
-        }
-        return candidate as unknown as HunkReviewActionV1;
-      }
-      case "selection/set-line": {
-        const keys = [
-          "type",
-          "fileKey",
-          "hunkIndex",
-          "side",
-          "line",
-          ...(candidate.contextDigest === undefined ? [] : ["contextDigest"]),
-          ...(candidate.reveal === undefined ? [] : ["reveal"]),
-        ];
-        return this.hasExactKeys(candidate, keys) &&
-          typeof candidate.fileKey === "string" &&
-          Number.isInteger(candidate.hunkIndex) &&
-          (candidate.hunkIndex as number) >= 0 &&
-          (candidate.side === "old" || candidate.side === "new") &&
-          Number.isInteger(candidate.line) &&
-          (candidate.line as number) > 0 &&
-          (candidate.contextDigest === undefined || typeof candidate.contextDigest === "string") &&
-          (candidate.reveal === undefined || typeof candidate.reveal === "boolean")
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      }
-      case "notes/create-user": {
-        const note = candidate.note;
-        if (
-          !this.hasExactKeys(candidate, ["type", "note"]) ||
-          !note ||
-          typeof note !== "object" ||
-          Array.isArray(note)
-        )
-          return "invalid";
-        const value = note as Record<string, unknown>;
-        return this.hasExactKeys(value, [
-          "fileKey",
-          "hunkIndex",
-          "side",
-          "line",
-          "body",
-          ...(value.markup === undefined ? [] : ["markup"]),
-        ]) &&
-          typeof value.fileKey === "string" &&
-          Number.isInteger(value.hunkIndex) &&
-          (value.hunkIndex as number) >= 0 &&
-          (value.side === "old" || value.side === "new") &&
-          Number.isInteger(value.line) &&
-          (value.line as number) > 0 &&
-          typeof value.body === "string" &&
-          Buffer.byteLength(value.body, "utf8") <= 256 * 1024 &&
-          (value.markup === undefined ||
-            (typeof value.markup === "string" &&
-              Buffer.byteLength(value.markup, "utf8") <= 256 * 1024))
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      }
-      case "notes/update-user":
-        return this.hasExactKeys(candidate, [
-          "type",
-          "noteId",
-          "body",
-          ...(candidate.markup === undefined ? [] : ["markup"]),
-        ]) &&
-          typeof candidate.noteId === "string" &&
-          typeof candidate.body === "string" &&
-          Buffer.byteLength(candidate.body, "utf8") <= 256 * 1024 &&
-          (candidate.markup === undefined ||
-            (typeof candidate.markup === "string" &&
-              Buffer.byteLength(candidate.markup, "utf8") <= 256 * 1024))
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "notes/remove-user":
-      case "notes/remove-live":
-        return this.hasExactKeys(candidate, ["type", "noteId"]) &&
-          typeof candidate.noteId === "string"
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "expansion/toggle":
-        return this.hasExactKeys(candidate, ["type", "fileKey", "gapId"]) &&
-          typeof candidate.fileKey === "string" &&
-          typeof candidate.gapId === "string"
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "session/reload":
-        return this.hasExactKeys(candidate, ["type"])
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      case "trust/decide":
-        return this.hasExactKeys(candidate, ["type", "decision"]) &&
-          (candidate.decision === "trusted" || candidate.decision === "denied")
-          ? (candidate as unknown as HunkReviewActionV1)
-          : "invalid";
-      default:
-        return "unsupported";
-    }
-  }
-
   /** Apply only a strictly validated generation- and revision-guarded semantic action. */
   private async applyReviewAction(input: ApplyReviewActionInput): Promise<HunkReviewCommandResult> {
     if (typeof input.generation !== "string" || input.generation.length === 0) {
@@ -1493,7 +1326,7 @@ export class ReviewSessionRuntime {
     }
     const targetError = this.validateReviewCommandTarget(input.sessionId, input.generation);
     if (targetError) return targetError;
-    const action = this.parseReviewAction(input.action);
+    const action = parseHunkReviewActionV1(input.action);
     if (action === "unsupported") {
       return this.reviewCommandError("unsupported-action", "Review action is not supported.");
     }
