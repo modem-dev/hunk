@@ -16,7 +16,7 @@ export interface ReviewRangeAnchorV1 {
   preferred?: ReviewLineAddressV1;
   /** Every hunk whose old or new range intersects the note, in file order. */
   intersectingHunkIndices: number[];
-  /** The one hunk used for navigation and rendering ownership. */
+  /** The one hunk used for rendering ownership; navigation uses genuine intersections. */
   ownerHunkIndex?: number;
 }
 
@@ -107,8 +107,9 @@ export interface ReviewCanonicalFileResourceDescriptorV1 {
   generation: ReviewDocumentGeneration;
   fileKey: string;
   contentType: "application/vnd.hunk.review-file+json; charset=utf-8";
-  byteLength: number;
-  digest: string;
+  /** Omitted together until the producer lazily encodes this canonical file. */
+  byteLength?: number;
+  digest?: string;
 }
 
 export type ReviewResourceDescriptorV1 =

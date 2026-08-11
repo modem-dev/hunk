@@ -134,6 +134,21 @@ describe("browser canonical resource queue", () => {
     expect(requests).toBe(1);
   });
 
+  test("derives lazy canonical totals from verified daemon range responses", async () => {
+    const content = '{"canonical":true}';
+    globalThis.fetch = (async () =>
+      new Response(content, {
+        status: 206,
+        headers: { "content-range": `bytes 0-${content.length - 1}/${content.length}` },
+      })) as unknown as typeof fetch;
+    const client = new BrowserReviewApiClient("session");
+    client.replaceGeneration("generation:lazy");
+    const lazy = descriptor("generation:lazy");
+    delete lazy.byteLength;
+    delete lazy.digest;
+    expect(await client.resource("generation:lazy", lazy)).toBe(content);
+  });
+
   test("generation replacement aborts obsolete inflight and queued work", async () => {
     let aborted = 0;
     globalThis.fetch = ((_url: string | URL | Request, init?: RequestInit) =>
@@ -229,7 +244,7 @@ describe("browser canonical resource queue", () => {
     });
   });
 
-  test("never starts more than six large-review resources concurrently", async () => {
+  test("keeps lazy resource concurrency within daemon reservation capacity", async () => {
     let active = 0;
     let maximum = 0;
     globalThis.fetch = (async () => {
@@ -245,6 +260,6 @@ describe("browser canonical resource queue", () => {
       client.resource("generation:large", descriptor("generation:large", `canonical:${index}`)),
     );
     await Promise.all(pending);
-    expect(maximum).toBe(6);
+    expect(maximum).toBe(4);
   });
 });

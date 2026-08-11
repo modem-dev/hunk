@@ -6,6 +6,11 @@ import type {
 } from "./reviewProtocol";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "./types";
 
+const staticReviewNoteSummaryCache = new WeakMap<
+  ReviewNoteV1,
+  Map<string, SessionReviewNoteSummary>
+>();
+
 /** Project one canonical note into the legacy review-note compatibility shape. */
 function projectReviewNoteSummary(
   note: ReviewNoteV1,
@@ -25,6 +30,20 @@ function projectReviewNoteSummary(
     ...(note.updatedAt !== undefined ? { updatedAt: note.updatedAt } : {}),
     editable: note.editable,
   };
+}
+
+/** Reuse immutable manifest-note summaries without changing their file-local ordering. */
+function projectStaticReviewNoteSummary(
+  note: ReviewNoteV1,
+  file: Pick<HunkReviewManifestFileV1, "path">,
+) {
+  const byPath = staticReviewNoteSummaryCache.get(note) ?? new Map();
+  const cached = byPath.get(file.path);
+  if (cached) return cached;
+  const projected = projectReviewNoteSummary(note, file);
+  byPath.set(file.path, projected);
+  staticReviewNoteSummaryCache.set(note, byPath);
+  return projected;
 }
 
 /** Project one live-agent note into the legacy live-comment compatibility shape. */
@@ -62,7 +81,10 @@ export function projectReviewCompatibility(
   const reviewNotes: SessionReviewNoteSummary[] = [];
   const liveComments: SessionLiveCommentSummary[] = [];
   for (const file of files) {
-    for (const note of [...file.notes, ...(mutableByFile.get(file.key) ?? [])]) {
+    for (const note of file.notes) {
+      reviewNotes.push(projectStaticReviewNoteSummary(note, file));
+    }
+    for (const note of mutableByFile.get(file.key) ?? []) {
       reviewNotes.push(projectReviewNoteSummary(note, file));
     }
     for (const note of mutableByFile.get(file.key) ?? []) {

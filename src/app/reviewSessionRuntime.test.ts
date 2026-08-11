@@ -31,6 +31,25 @@ function createBootstrap(overrides: Partial<AppBootstrap> = {}) {
   };
 }
 
+/** Build static note metadata large enough to exceed one producer snapshot envelope. */
+function createNoteHeavyBootstrap() {
+  return createTestVcsAppBootstrap({
+    files: [
+      createTestDiffFile({
+        path: "alpha.ts",
+        agent: {
+          path: "alpha.ts",
+          annotations: Array.from({ length: 40 }, (_, index) => ({
+            newRange: [1, 1] as [number, number],
+            summary: `${index}:${"x".repeat(180 * 1024)}`,
+          })),
+        },
+      }),
+    ],
+    sourceLabel: process.cwd(),
+  });
+}
+
 /** Create a canonical reload seam that turns the requested theme into visible content. */
 function createReloadDeps(
   load?: (
@@ -84,6 +103,7 @@ function createHeadlessHostClient(bootstrap: AppBootstrap, onReplace?: () => voi
   let registration = createSessionRegistration(bootstrap);
   const updated: HunkSessionSnapshot[] = [];
   const replaced: HunkSessionSnapshot[] = [];
+  let stopCount = 0;
   const hostClient = {
     getRegistration: () => registration,
     updateSnapshot: (snapshot: HunkSessionSnapshot) => updated.push(snapshot),
@@ -95,10 +115,14 @@ function createHeadlessHostClient(bootstrap: AppBootstrap, onReplace?: () => voi
       registration = nextRegistration;
       replaced.push(snapshot);
     },
+    stop: async () => {
+      stopCount += 1;
+    },
   } as unknown as HunkSessionBrokerClient;
   return {
     hostClient,
     getBridge: () => bridge,
+    getStopCount: () => stopCount,
     dispatchCommand(message: HunkSessionServerMessage) {
       if (!bridge) throw new Error("Session command adapter is unavailable during cutover.");
       return bridge.dispatchCommand(message);
@@ -117,11 +141,19 @@ describe("ReviewSessionRuntime", () => {
     expect(snapshot.store.getSnapshot().document).toBe(snapshot.projection.document);
     const semanticFile = snapshot.projection.document.files[0]!;
     const patchId = semanticFile.patchResourceId;
+    expect(runtime.getEncodedResourceCacheStats()).toEqual({ entries: 0, totalBytes: 0 });
     expect(runtime.getResource(patchId)).toBe(snapshot.bootstrap.changeset.files[0]!.patch);
     expect(snapshot.projection.resourceContents[semanticFile.canonicalResourceId]).toBeUndefined();
     const canonical = runtime.getResource(semanticFile.canonicalResourceId);
     expect(JSON.parse(canonical!)).toEqual(semanticFile);
-    expect(snapshot.projection.resourceContents[semanticFile.canonicalResourceId]).toBe(canonical);
+    // Canonical JSON stays encoded only; terminal state never retains a duplicate full string.
+    expect(snapshot.projection.resourceContents[semanticFile.canonicalResourceId]).toBeUndefined();
+    expect(runtime.getEncodedResourceCacheStats()).toEqual({
+      entries: 2,
+      totalBytes:
+        Buffer.byteLength(snapshot.bootstrap.changeset.files[0]!.patch) +
+        Buffer.byteLength(canonical!),
+    });
     expect(runtime.getResource(semanticFile.canonicalResourceId)).toBe(canonical);
     expect(runtime.getReloadBounds().roots).toEqual([process.cwd()]);
     runtime.dispose();
@@ -220,6 +252,7 @@ describe("ReviewSessionRuntime", () => {
       },
     });
     oversizedDescriptor.byteLength = 32 * 1024 * 1024 + 1;
+    oversizedDescriptor.digest = "0".repeat(64);
     expect(() => oversizedRuntime.getResource(oversizedFile.canonicalResourceId)).toThrow(
       "outside resource bounds",
     );
@@ -233,6 +266,7 @@ describe("ReviewSessionRuntime", () => {
     const inconsistentDescriptor = inconsistentProjection.document.resources.find(
       (resource) => resource.id === inconsistentFile.canonicalResourceId,
     )!;
+    inconsistentDescriptor.byteLength = Buffer.byteLength(JSON.stringify(inconsistentFile));
     inconsistentDescriptor.digest = "0".repeat(64);
     expect(() => inconsistentRuntime.getResource(inconsistentFile.canonicalResourceId)).toThrow(
       "integrity verification",
@@ -241,6 +275,34 @@ describe("ReviewSessionRuntime", () => {
       inconsistentProjection.resourceContents[inconsistentFile.canonicalResourceId],
     ).toBeUndefined();
     inconsistentRuntime.dispose();
+  });
+
+  test("returns a typed failure when lazy canonical encoding exceeds its strict bound", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const projection = runtime.getSnapshot().projection;
+    const file = projection.document.files[0]!;
+    Object.defineProperty(file, "toJSON", {
+      configurable: true,
+      value: () => "x".repeat(32 * 1024 * 1024 + 1),
+    });
+
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "oversized-canonical",
+      command: "read_review_resource",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: projection.document.generation,
+        resourceId: file.canonicalResourceId,
+        offset: 0,
+        length: 256 * 1024,
+      },
+    });
+    expect(result).toMatchObject({ kind: "review-error", error: { code: "resource-too-large" } });
+    expect(runtime.getEncodedResourceCacheStats()).toEqual({ entries: 0, totalBytes: 0 });
+    runtime.dispose();
   });
 
   test("publishes headless store dispatches and retires old-store broker callbacks", async () => {
@@ -484,6 +546,23 @@ describe("ReviewSessionRuntime", () => {
     expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
     expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
     expect(host.updated).toHaveLength(updatesBefore);
+    runtime.dispose();
+  });
+
+  test("keeps attached note-heavy producers bounded and atomic", () => {
+    const bootstrap = createNoteHeavyBootstrap();
+    // Attach a valid producer seam directly so this test reaches next-snapshot validation rather
+    // than failing the intentionally oversized initial registration first.
+    const host = createHeadlessHostClient(createBootstrap());
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const store = runtime.getSnapshot().store;
+    const before = store.getSnapshot();
+
+    expect(() => store.dispatch({ type: "notes/set-visibility", visible: true })).toThrow(
+      /producer message metadata limit|websocket envelope limit/,
+    );
+    expect(store.getSnapshot()).toBe(before);
+    expect(host.updated).toHaveLength(0);
     runtime.dispose();
   });
 
@@ -997,12 +1076,40 @@ describe("ReviewSessionRuntime", () => {
     runtime.dispose();
   });
 
+  test("manual reload degrades an oversized replacement to unrestricted local review", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: createReloadDeps(async (input, cwd, extensions) => ({
+        ...createNoteHeavyBootstrap(),
+        input,
+        reloadContext: { cwd },
+        extensions,
+      })),
+    });
+
+    await expect(
+      runtime.reload("manual", reloadInput("note-heavy"), { resetApp: false }),
+    ).resolves.toMatchObject({ fileCount: 1 });
+    expect(host.replaced).toHaveLength(0);
+    expect(host.getStopCount()).toBe(1);
+    expect(host.getBridge()).toBeNull();
+    expect(runtime.getSnapshot().notice).toContain("reviewing locally");
+    const store = runtime.getSnapshot().store;
+    expect(() => store.dispatch({ type: "notes/set-visibility", visible: true })).not.toThrow();
+    expect(store.getSnapshot()).toMatchObject({ showAgentNotes: true });
+    runtime.dispose();
+  });
+
   test("manual reload atomically replaces bootstrap, resources, and reconciled store", async () => {
     const runtime = createReviewSessionRuntime(createBootstrap(), {
       deps: createReloadDeps(),
       rawInput: reloadInput("manual-title"),
     });
     const previous = runtime.getSnapshot();
+    const previousCanonicalId = previous.projection.document.files[0]!.canonicalResourceId;
+    expect(previous.projection.resourceContents[previousCanonicalId]).toBeUndefined();
     previous.store.dispatch({ type: "filter/set", filter: "alpha" });
 
     await runtime.reload("manual", reloadInput("manual-title"), { resetApp: false });
@@ -1013,6 +1120,13 @@ describe("ReviewSessionRuntime", () => {
     expect(next.store).not.toBe(previous.store);
     expect(next.store.getSnapshot().filter).toBe("alpha");
     expect(next.store.getSnapshot().document).toBe(next.projection.document);
+    const nextCanonicalId = next.projection.document.files[0]!.canonicalResourceId;
+    expect(next.projection.resourceContents[nextCanonicalId]).toBeUndefined();
+    expect(runtime.getResource(previousCanonicalId)).toBeUndefined();
+    expect(JSON.parse(runtime.getResource(nextCanonicalId)!)).toEqual(
+      next.projection.document.files[0],
+    );
+    expect(next.projection.resourceContents[nextCanonicalId]).toBeUndefined();
     runtime.dispose();
   });
 
@@ -1055,7 +1169,7 @@ describe("ReviewSessionRuntime", () => {
     expect(watch.sources).toHaveLength(1);
 
     await expect(
-      runtime.reload("manual", reloadInput("invalid"), {
+      runtime.reload("daemon", reloadInput("invalid"), {
         resetApp: false,
         reloadExtensions: true,
       }),

@@ -42,7 +42,54 @@ describe("ReviewResourceCache", () => {
     }
   });
 
-  test("enforces per-resource, generation, and session bounds", () => {
+  test("reserves strict maxima for incomplete source and canonical resources only", () => {
+    const cache = new ReviewResourceCache({ perResourceBytes: 32, inFlightBytes: 64 });
+    const canonical = descriptor("", {
+      kind: "canonical-file",
+      contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
+      byteLength: undefined,
+      digest: undefined,
+    });
+    const reservation = cache.reserveMaterialization("session-1", "generation-1", canonical, 16);
+    expect(reservation).toMatchObject({ byteLength: 16, exact: false });
+    cache.release(reservation);
+
+    expect(() =>
+      cache.reserveMaterialization(
+        "session-1",
+        "generation-1",
+        descriptor("", { byteLength: undefined, digest: undefined }),
+        16,
+      ),
+    ).toThrow("invalid");
+
+    const busy = new ReviewResourceCache({
+      perResourceBytes: 32,
+      perGenerationBytes: 128,
+      perSessionBytes: 256,
+      daemonBytes: 256,
+      inFlightBytes: 128,
+    });
+    busy.setComplete(
+      "session-1",
+      "generation-1",
+      descriptor("x", { byteLength: 1, digest: reviewDigest("x") }),
+      Buffer.from("x"),
+    );
+    const reservations = Array.from({ length: 4 }, (_, index) =>
+      busy.reserveMaterialization(
+        "session-1",
+        "generation-1",
+        { ...canonical, id: `canonical-${index}` },
+        32,
+      ),
+    );
+    expect(busy.getEntryCount()).toBe(0);
+    expect(busy.getReservationCount()).toBe(4);
+    for (const active of reservations) busy.release(active);
+  });
+
+  test("enforces per-resource bounds and evicts completed LRU entries within generation/session limits", () => {
     const bytes = Buffer.from("12345");
     expect(() =>
       new ReviewResourceCache({ perResourceBytes: 4 }).setComplete(
@@ -55,30 +102,30 @@ describe("ReviewResourceCache", () => {
 
     const generationCache = new ReviewResourceCache({ perGenerationBytes: 8 });
     generationCache.setComplete("session-1", "generation-1", descriptor("12345"), bytes);
-    expect(() =>
-      generationCache.setComplete(
-        "session-1",
-        "generation-1",
-        descriptor("6789", { id: "resource-2", byteLength: 4, digest: reviewDigest("6789") }),
-        Buffer.from("6789"),
-      ),
-    ).toThrow("generation cache");
+    generationCache.setComplete(
+      "session-1",
+      "generation-1",
+      descriptor("6789", { id: "resource-2", byteLength: 4, digest: reviewDigest("6789") }),
+      Buffer.from("6789"),
+    );
+    expect(generationCache.get("session-1", "generation-1", "resource-1")).toBeUndefined();
+    expect(generationCache.get("session-1", "generation-1", "resource-2")).toBeDefined();
 
     const sessionCache = new ReviewResourceCache({ perGenerationBytes: 10, perSessionBytes: 8 });
     sessionCache.setComplete("session-1", "generation-1", descriptor("12345"), bytes);
-    expect(() =>
-      sessionCache.setComplete(
-        "session-1",
-        "generation-2",
-        descriptor("6789", {
-          id: "resource-2",
-          generation: "generation-2",
-          byteLength: 4,
-          digest: reviewDigest("6789"),
-        }),
-        Buffer.from("6789"),
-      ),
-    ).toThrow("session cache");
+    sessionCache.setComplete(
+      "session-1",
+      "generation-2",
+      descriptor("6789", {
+        id: "resource-2",
+        generation: "generation-2",
+        byteLength: 4,
+        digest: reviewDigest("6789"),
+      }),
+      Buffer.from("6789"),
+    );
+    expect(sessionCache.get("session-1", "generation-1", "resource-1")).toBeUndefined();
+    expect(sessionCache.get("session-1", "generation-2", "resource-2")).toBeDefined();
   });
 
   test("enforces daemon-wide in-flight reservations and evicts complete resources by LRU", () => {

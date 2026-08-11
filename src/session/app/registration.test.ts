@@ -79,10 +79,12 @@ describe("session registration", () => {
       registration.info.reviewManifest.resources.find(
         (resource) => resource.kind === "canonical-file",
       ),
-    ).toMatchObject({
+    ).toEqual({
+      id: registration.info.reviewManifest.files[0]!.canonicalResourceId,
+      kind: "canonical-file",
+      generation: registration.info.reviewManifest.generation,
       fileKey: registration.info.reviewManifest.files[0]!.key,
-      byteLength: expect.any(Number),
-      digest: expect.any(String),
+      contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
     });
     expect(registration.info.files[0]?.hunks[0]).toMatchObject({
       index: 0,

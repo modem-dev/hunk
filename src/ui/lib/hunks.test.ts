@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
-import { buildNoteOwnerHunkCursors, findNextHunkCursor, type HunkCursor } from "./hunks";
+import { buildAnnotatedHunkCursors, findNextHunkCursor, type HunkCursor } from "./hunks";
 
 /** Build a minimal DiffFile with real Pierre-parsed hunks and optional annotations. */
 function createTestFile(
@@ -96,7 +96,7 @@ describe("annotated hunk navigation", () => {
     });
 
     expect(fileA.metadata.hunks.length).toBe(2);
-    const annotatedCursors = buildNoteOwnerHunkCursors([fileA, fileB]);
+    const annotatedCursors = buildAnnotatedHunkCursors([fileA, fileB]);
 
     // Alpha hunk 0 (line 1) has no annotation, so it should be skipped.
     expect(annotatedCursors).toEqual([
@@ -105,7 +105,7 @@ describe("annotated hunk navigation", () => {
     ]);
   });
 
-  test("navigates a dual-range note only through its preferred-side owner", () => {
+  test("navigates every hunk intersected by a dual-range note", () => {
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
       annotations: [
@@ -117,10 +117,13 @@ describe("annotated hunk navigation", () => {
       ],
     });
 
-    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
+    expect(buildAnnotatedHunkCursors([fileA])).toEqual([
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+    ]);
   });
 
-  test("navigates a partial preferred range instead of its old-side intersection", () => {
+  test("keeps old and partial preferred-side intersections in file order", () => {
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
       annotations: [
@@ -132,24 +135,27 @@ describe("annotated hunk navigation", () => {
       ],
     });
 
-    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
+    expect(buildAnnotatedHunkCursors([fileA])).toEqual([
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+    ]);
   });
 
   test("returns an empty list when no files have annotations", () => {
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, null);
     const fileB = createTestFile("beta", "beta.ts", beforeB, afterB, null);
 
-    expect(buildNoteOwnerHunkCursors([fileA, fileB])).toEqual([]);
+    expect(buildAnnotatedHunkCursors([fileA, fileB])).toEqual([]);
   });
 
-  test("uses the first-hunk owner for ranged annotations outside visible hunks", () => {
-    // Line 10 is in the gap between hunks, so terminal placement and navigation share the fallback.
+  test("does not turn an unmatched placement fallback into a navigation stop", () => {
+    // Line 10 is in the gap between hunks. Placement still owns hunk 0, but navigation has no hit.
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
       annotations: [{ newRange: [10, 10], summary: "Note in gap, no hunk overlap" }],
     });
 
-    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 0 }]);
+    expect(buildAnnotatedHunkCursors([fileA])).toEqual([]);
   });
 
   test("navigates forward and backward through annotated cursors only", () => {
@@ -163,7 +169,7 @@ describe("annotated hunk navigation", () => {
       annotations: [{ newRange: [1, 1], summary: "Note on beta" }],
     });
 
-    const annotatedCursors = buildNoteOwnerHunkCursors([fileA, fileB]);
+    const annotatedCursors = buildAnnotatedHunkCursors([fileA, fileB]);
 
     // Forward from alpha hunk 1 → beta hunk 0
     expect(findNextHunkCursor(annotatedCursors, "alpha", 1, 1)).toEqual({
@@ -195,7 +201,7 @@ describe("annotated hunk navigation", () => {
       annotations: [{ newRange: [17, 17], summary: "Note on hunk 1 only" }],
     });
 
-    const annotatedCursors = buildNoteOwnerHunkCursors([fileA]);
+    const annotatedCursors = buildAnnotatedHunkCursors([fileA]);
 
     // Current position is alpha hunk 0, which is not in the annotated list.
     // Forward should land on the first annotated cursor.

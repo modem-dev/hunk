@@ -79,33 +79,42 @@ const projection = runtime.getSnapshot().projection;
 const canonicalDescriptors = projection.document.resources.filter(
   (resource) => resource.kind === "canonical-file",
 );
-const canonicalBytes = canonicalDescriptors.reduce(
-  (sum, resource) => sum + (resource.byteLength ?? 0),
-  0,
-);
-const initialCanonicalCount = canonicalDescriptors.filter(
+const initialCanonicalMeasuredCount = canonicalDescriptors.filter(
+  (resource) => resource.byteLength !== undefined || resource.digest !== undefined,
+).length;
+const initialCanonicalMaterializedCount = canonicalDescriptors.filter(
   (resource) => projection.resourceContents[resource.id] !== undefined,
 ).length;
+if (initialCanonicalMeasuredCount !== 0 || initialCanonicalMaterializedCount !== 0) {
+  throw new Error("Terminal startup eagerly prepared canonical browser resources.");
+}
 const afterProjection = sample(options.gc);
 printSample("after_projection", afterProjection);
 
 const firstStart = performance.now();
-runtime.getResource(canonicalDescriptors[0]!.id);
-const firstMaterializeMs = performance.now() - firstStart;
+const firstEncoded = runtime.getResource(canonicalDescriptors[0]!.id)!;
+const firstEncodeMs = performance.now() - firstStart;
 const afterFirst = sample(options.gc);
-printSample("after_first_materialization", afterFirst);
+printSample("after_first_lazy_encode", afterFirst);
 
+let canonicalEncodedBytes = Buffer.byteLength(firstEncoded, "utf8");
 const allStart = performance.now();
-for (const descriptor of canonicalDescriptors) runtime.getResource(descriptor.id);
-const allMaterializeMs = performance.now() - allStart;
+for (const descriptor of canonicalDescriptors.slice(1)) {
+  canonicalEncodedBytes += Buffer.byteLength(runtime.getResource(descriptor.id)!, "utf8");
+}
+const allEncodeMs = performance.now() - allStart;
 const afterAll = sample(options.gc);
-printSample("after_all_materialization", afterAll);
+printSample("after_all_lazy_encode", afterAll);
 
 console.log(`METRIC projection_ms=${projectionMs.toFixed(2)}`);
-console.log(`METRIC first_materialization_ms=${firstMaterializeMs.toFixed(2)}`);
-console.log(`METRIC all_materialization_ms=${allMaterializeMs.toFixed(2)}`);
-console.log(`METRIC canonical_descriptor_bytes=${canonicalBytes}`);
-console.log(`METRIC initial_canonical_materialized_count=${initialCanonicalCount}`);
+console.log(`METRIC first_lazy_encode_ms=${firstEncodeMs.toFixed(2)}`);
+console.log(`METRIC remaining_lazy_encode_ms=${allEncodeMs.toFixed(2)}`);
+console.log(`METRIC canonical_encoded_bytes=${canonicalEncodedBytes}`);
+console.log(
+  `METRIC retained_encoded_cache_bytes=${runtime.getEncodedResourceCacheStats().totalBytes}`,
+);
+console.log(`METRIC initial_canonical_measured_count=${initialCanonicalMeasuredCount}`);
+console.log(`METRIC initial_canonical_materialized_count=${initialCanonicalMaterializedCount}`);
 console.log(
   `METRIC projection_rss_growth_bytes=${afterProjection.rssBytes - afterBootstrap.rssBytes}`,
 );
@@ -113,7 +122,7 @@ console.log(
   `METRIC projection_jsc_heap_growth_bytes=${afterProjection.heapBytes - afterBootstrap.heapBytes}`,
 );
 console.log(
-  `METRIC all_materialization_jsc_heap_growth_bytes=${afterAll.heapBytes - afterProjection.heapBytes}`,
+  `METRIC all_lazy_encode_jsc_heap_growth_bytes=${afterAll.heapBytes - afterProjection.heapBytes}`,
 );
 
 runtime.dispose();

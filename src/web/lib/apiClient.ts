@@ -276,7 +276,9 @@ export class BrowserReviewApiClient {
   }
 
   private pumpResourceQueue() {
-    while (this.resourceActive < 6 && this.resourceQueue.length > 0) {
+    // Lazy canonical resources reserve the strict 32 MiB maximum until their producer reports an
+    // exact size. Four requests fit the daemon's 128 MiB in-flight budget without transient 404s.
+    while (this.resourceActive < 4 && this.resourceQueue.length > 0) {
       this.resourceQueue.shift()!.run();
     }
   }

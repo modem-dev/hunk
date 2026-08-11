@@ -7,6 +7,7 @@ import {
   annotationIntersectingHunkIndices,
   annotationOwnerHunkIndex,
   annotationVisibleHunkIndices,
+  getAnnotationIntersectingHunkIndices,
   getAnnotationOwnerHunkIndices,
   getAnnotationsVisibleInHunk,
   projectReviewNote,
@@ -45,6 +46,7 @@ describe("renderer-neutral review notes", () => {
       agent: { path: file.path, annotations: [annotation] },
     };
     expect([...getAnnotationOwnerHunkIndices(annotatedFile)]).toEqual([1]);
+    expect([...getAnnotationIntersectingHunkIndices(annotatedFile)]).toEqual([0, 1]);
     expect(getAnnotationsVisibleInHunk(annotatedFile, file.metadata.hunks[0])).toEqual([
       annotation,
     ]);
@@ -80,7 +82,7 @@ describe("renderer-neutral review notes", () => {
     expect(annotationOwnerHunkIndex(annotation, file.metadata.hunks)).toBe(1);
   });
 
-  test("assigns range-less notes to the first hunk for rendering and navigation", () => {
+  test("assigns range-less notes to the first hunk for rendering but not navigation", () => {
     const file = createTestDiffFile({ agent: true });
     const annotation = { summary: "Whole file" };
     const annotatedFile = {
@@ -92,6 +94,7 @@ describe("renderer-neutral review notes", () => {
     expect(annotationIntersectingHunkIndices(annotation, file.metadata.hunks)).toEqual([]);
     expect(annotationVisibleHunkIndices(annotation, file.metadata.hunks)).toEqual([0]);
     expect([...getAnnotationOwnerHunkIndices(annotatedFile)]).toEqual([0]);
+    expect([...getAnnotationIntersectingHunkIndices(annotatedFile)]).toEqual([]);
     expect(getAnnotationsVisibleInHunk(annotatedFile, file.metadata.hunks[0])).toEqual([
       annotation,
     ]);
@@ -130,6 +133,7 @@ describe("renderer-neutral review notes", () => {
     expect(annotationVisibleHunkIndices(annotation, file.metadata.hunks)).toEqual([0]);
     expect(annotationOwnerHunkIndex(annotation, file.metadata.hunks)).toBe(0);
     expect([...getAnnotationOwnerHunkIndices(annotatedFile)]).toEqual([0]);
+    expect([...getAnnotationIntersectingHunkIndices(annotatedFile)]).toEqual([]);
     expect(getAnnotationsVisibleInHunk(annotatedFile, file.metadata.hunks[0])).toEqual([
       annotation,
     ]);

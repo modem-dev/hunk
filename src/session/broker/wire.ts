@@ -8,6 +8,7 @@ import {
   MAX_REVIEW_PRODUCER_METADATA_BYTES,
   MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_RESOURCE_DESCRIPTORS,
+  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   isReviewSha256Digest,
   type HunkReviewManifestV1,
   type HunkReviewStateV1,
@@ -492,8 +493,8 @@ function parseReviewResource(value: unknown): ReviewResourceDescriptorV1 | null 
         (kind === "patch"
           ? "text/x-diff; charset=utf-8"
           : "application/vnd.hunk.review-file+json; charset=utf-8") ||
-      byteLength === undefined ||
-      !digest
+      (byteLength === undefined) !== (digest === undefined) ||
+      (kind === "patch" && (byteLength === undefined || !digest))
     )
       return null;
     return kind === "patch"
@@ -503,8 +504,8 @@ function parseReviewResource(value: unknown): ReviewResourceDescriptorV1 | null 
           generation,
           fileKey,
           contentType: "text/x-diff; charset=utf-8",
-          byteLength,
-          digest,
+          byteLength: byteLength!,
+          digest: digest!,
         }
       : {
           id,
@@ -512,8 +513,7 @@ function parseReviewResource(value: unknown): ReviewResourceDescriptorV1 | null 
           generation,
           fileKey,
           contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
-          byteLength,
-          digest,
+          ...(byteLength !== undefined ? { byteLength, digest: digest! } : {}),
         };
   }
   const side = record.side === "old" || record.side === "new" ? record.side : null;
@@ -536,7 +536,8 @@ function parseReviewResource(value: unknown): ReviewResourceDescriptorV1 | null 
     !side ||
     !sourceIdentity ||
     record.contentType !== "text/plain; charset=utf-8" ||
-    (byteLength === undefined) !== (digest === undefined)
+    (byteLength === undefined) !== (digest === undefined) ||
+    (byteLength !== undefined && byteLength > MAX_REVIEW_SOURCE_RESOURCE_BYTES)
   )
     return null;
   return {

@@ -1329,15 +1329,17 @@ describe("useReviewController", () => {
     }
   });
 
-  test("seeds the current line at the selected hunk so the indicator is visible on launch", async () => {
+  test("seeds the current line without publishing semantic state on launch", async () => {
     const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
 
     try {
       await flush(setup);
 
-      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      const controller = expectValue(controllerRef.current);
+      const cursor = expectValue(controller.lineCursor);
       expect(cursor.fileId).toBe("alpha");
       expect(cursor.hunkIndex).toBe(0);
+      expect(controller.store.getSnapshot().stateRevision).toBe(0);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1352,6 +1354,7 @@ describe("useReviewController", () => {
       await flush(setup);
       const controller = expectValue(controllerRef.current);
       const initialRevealToken = controller.lineCursorRevealRequestId;
+      const beforeRevision = controller.store.getSnapshot().stateRevision;
       const fileKey = controller.store.getSnapshot().document.files[0]!.key;
       await act(async () => {
         controller.store.dispatch({
@@ -1379,6 +1382,9 @@ describe("useReviewController", () => {
       });
       expect(expectValue(controllerRef.current).lineCursorRevealRequestId).toBe(
         initialRevealToken + 1,
+      );
+      expect(expectValue(controllerRef.current).store.getSnapshot().stateRevision).toBe(
+        beforeRevision + 1,
       );
     } finally {
       await act(async () => setup.renderer.destroy());
@@ -1467,6 +1473,7 @@ describe("useReviewController", () => {
       );
       const expected = expectValue(expectedCursors[initialIndex + 4]);
       const initialToken = controller.store.getSnapshot().reveal.lineToken;
+      const initialRevision = controller.store.getSnapshot().stateRevision;
       await act(async () => controller.moveLineCursor(4));
       await flush(setup);
 
@@ -1479,6 +1486,7 @@ describe("useReviewController", () => {
         line: expected.target.line,
       });
       expect(state.reveal.lineToken).toBe(initialToken + 1);
+      expect(state.stateRevision).toBe(initialRevision + 1);
     } finally {
       await act(async () => setup.renderer.destroy());
     }
@@ -1492,6 +1500,7 @@ describe("useReviewController", () => {
       const controller = expectValue(controllerRef.current);
       expect(controller.selectedFile?.metadata.hunks).toHaveLength(3);
       const initialToken = controller.store.getSnapshot().reveal.hunkToken;
+      const initialRevision = controller.store.getSnapshot().stateRevision;
       await act(async () => controller.moveToHunk(2));
       await flush(setup);
 
@@ -1500,6 +1509,7 @@ describe("useReviewController", () => {
       expect(expectValue(next.lineCursor).hunkIndex).toBe(2);
       expect(next.store.getSnapshot().selection.hunkIndex).toBe(2);
       expect(next.store.getSnapshot().reveal.hunkToken).toBe(initialToken + 1);
+      expect(next.store.getSnapshot().stateRevision).toBe(initialRevision + 1);
     } finally {
       await act(async () => setup.renderer.destroy());
     }

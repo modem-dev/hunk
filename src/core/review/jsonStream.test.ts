@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reviewDigest } from "./identity";
-import { JsonStreamSizeError, measureJsonStream } from "./jsonStream";
+import { encodeJsonStream, JsonStreamSizeError, measureJsonStream } from "./jsonStream";
 
 const parityValues: unknown[] = [
   null,
@@ -29,10 +29,14 @@ const parityValues: unknown[] = [
 describe("measureJsonStream", () => {
   test.each(parityValues)("matches JSON.stringify bytes and digest for %#", (value) => {
     const serialized = JSON.stringify(value)!;
-    expect(measureJsonStream(value)).toEqual({
+    const expected = {
       byteLength: Buffer.byteLength(serialized, "utf8"),
       digest: reviewDigest(serialized),
-    });
+    };
+    expect(measureJsonStream(value)).toEqual(expected);
+    const encoded = encodeJsonStream(value, expected.byteLength);
+    expect({ byteLength: encoded.byteLength, digest: encoded.digest }).toEqual(expected);
+    expect(encoded.bytes.equals(Buffer.from(serialized, "utf8"))).toBe(true);
   });
 
   test("matches bounded streaming for large escaped and Unicode strings", () => {
@@ -104,11 +108,30 @@ describe("measureJsonStream", () => {
     }
   });
 
-  test("rejects unsupported roots, bigint, and cycles like JSON.stringify", () => {
-    expect(() => measureJsonStream(undefined)).toThrow("not serializable");
-    expect(() => measureJsonStream(1n)).toThrow(TypeError);
-    const cycle: { self?: unknown } = {};
-    cycle.self = cycle;
-    expect(() => measureJsonStream(cycle)).toThrow(TypeError);
+  test("encodes sparse Unicode and escaped large values within exact bounds", () => {
+    const sparse = Array<unknown>(4);
+    sparse[1] = `${'中文🧪\\"\n'.repeat(12_000)}\ud800`;
+    sparse[3] = { omitted: undefined, retained: true };
+    const serialized = JSON.stringify(sparse);
+    const byteLength = Buffer.byteLength(serialized, "utf8");
+    const encoded = encodeJsonStream(sparse, byteLength);
+    expect(encoded.bytes.toString("utf8")).toBe(serialized);
+    expect(encoded.digest).toBe(reviewDigest(serialized));
+    expect(() => encodeJsonStream(sparse, byteLength - 1)).toThrow(JsonStreamSizeError);
+  });
+
+  test("rejects unsupported roots, bigint, cycles, and invalid bounds like JSON.stringify", () => {
+    for (const serialize of [
+      measureJsonStream,
+      (value: unknown) => encodeJsonStream(value, 1024),
+    ]) {
+      expect(() => serialize(undefined)).toThrow("not serializable");
+      expect(() => serialize(1n)).toThrow(TypeError);
+      const cycle: { self?: unknown } = {};
+      cycle.self = cycle;
+      expect(() => serialize(cycle)).toThrow(TypeError);
+    }
+    expect(() => encodeJsonStream({}, -1)).toThrow(RangeError);
+    expect(() => encodeJsonStream({}, Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 });

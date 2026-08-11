@@ -23,6 +23,23 @@ function createOversizedInput(): ReviewSessionInput {
   return { bootstrap, rawInput: bootstrap.input, controllingTerminal: null };
 }
 
+/** Build a review whose static notes overflow both registration and mutable snapshot metadata. */
+function createOversizedNoteInput(): ReviewSessionInput {
+  const file = createTestDiffFile({
+    id: "oversized-notes",
+    path: "oversized-notes.ts",
+    agent: {
+      path: "oversized-notes.ts",
+      annotations: Array.from({ length: 40 }, (_, index) => ({
+        newRange: [1, 1] as [number, number],
+        summary: `${index}:${"x".repeat(180 * 1024)}`,
+      })),
+    },
+  });
+  const bootstrap = createTestVcsAppBootstrap({ files: [file] });
+  return { bootstrap, rawInput: bootstrap.input, controllingTerminal: null };
+}
+
 describe("review session outer cleanup", () => {
   test("attempts every owner while preserving an arbitrary first thrown value", async () => {
     const events: string[] = [];
@@ -72,6 +89,32 @@ describe("terminal review broker preparation", () => {
     expect(prepareTerminalReviewBroker(input, runtime, false)).toEqual({
       sessionNotice: "Session brokering is unavailable for this large review; reviewing locally.",
     });
+    runtime.dispose();
+  });
+
+  test("keeps note-heavy local fallback mutations outside producer bounds", () => {
+    const input = createOversizedNoteInput();
+    const runtime = createReviewSessionRuntime(input.bootstrap, { rawInput: input.rawInput });
+    expect(prepareTerminalReviewBroker(input, runtime, false)).toEqual({
+      sessionNotice: "Session brokering is unavailable for this large review; reviewing locally.",
+    });
+
+    const store = runtime.getSnapshot().store;
+    const before = store.getSnapshot();
+    expect(() => store.dispatch({ type: "notes/set-visibility", visible: true })).not.toThrow();
+    expect(store.getSnapshot()).toMatchObject({ showAgentNotes: true, stateRevision: 1 });
+    expect(store.getSnapshot()).not.toBe(before);
+    runtime.dispose();
+  });
+
+  test("keeps disabled note-heavy sessions fully local", () => {
+    const input = createOversizedNoteInput();
+    const runtime = createReviewSessionRuntime(input.bootstrap, { rawInput: input.rawInput });
+    expect(prepareTerminalReviewBroker(input, runtime, true)).toEqual({});
+
+    const store = runtime.getSnapshot().store;
+    expect(() => store.dispatch({ type: "filter/set", filter: "oversized" })).not.toThrow();
+    expect(store.getSnapshot()).toMatchObject({ filter: "oversized", stateRevision: 1 });
     runtime.dispose();
   });
 });

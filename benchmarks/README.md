@@ -60,7 +60,7 @@ bun run bench:competitors
 - `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
-- `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
+- `interaction-latency.ts` — preserves the release-comparable 6-press/8-scroll metrics, adds separately named 60-observation navigation and scrolling distributions whose nearest-rank p95 is distinct from an isolated maximum stall, and measures runtime/AppHost-to-first-frame startup plus RSS/heap ceilings after first frame and the legacy navigation slice.
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
 - `wrapped-cjk.ts` — reproduces issue #579 with 518 wrapped Japanese Markdown lines plus one pathological long logical line, includes renderer setup in first-frame latency, and measures immediate/coalesced frames from a real wheel burst.
 - `terminal-width.ts` — measures scalar-heavy CJK and emoji width calls plus the complex-cluster fallback against equivalent `string-width` reference paths, verifying identical width checksums.
@@ -68,7 +68,7 @@ bun run bench:competitors
 - `large-stream-profile.ts` — optional local profiler for the main pure planning stages behind the large split-stream benchmark.
 - `memory.ts` — optional local RSS/heap profiler after fixture loading, planning, first frame, and next-hunk navigation.
 - `geometry-memory.ts` — optional local retained-memory profiler for all-files section geometry, including JSC-native heap metrics and giant-file lazy planned-row materialization latency used by first copy selection.
-- `review-projection-memory.ts` — optional profiler for canonical review projection time and retained RSS/JSC heap before and after lazy first/all browser resource materialization; accepts `--file-count` and `--lines-per-file`.
+- `review-projection-memory.ts` — optional profiler for canonical review projection time and retained RSS/JSC heap before and after bounded lazy first/all browser resource encoding; verifies that terminal startup measures and materializes zero canonical resources and reports retained encoded-cache bytes; accepts `--file-count` and `--lines-per-file`.
 - `navigation-memory.ts` — optional local retained-memory profiler for repeated hunk navigation through a mounted review stream.
 - `resize-memory.ts` — optional local retained-memory profiler for repeated terminal-width changes through a mounted review stream; this targets geometry-cache retention across resize variants.
 - `competitors.ts` — optional local informational comparisons against `git diff --no-ext-diff`, `delta`, `difftastic`, and `diff-so-fancy` when installed.

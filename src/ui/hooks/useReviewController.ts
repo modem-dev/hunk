@@ -352,17 +352,16 @@ export function useReviewController({
     [selectHunk],
   );
 
-  /**
-   * Keep the current line on a row the review stream still renders.
-   *
-   * Seeding from the selected hunk makes the marker visible from launch, not just after the
-   * first keypress.
-   */
-  const applyLineCursor = useCallback(
-    (next: LineCursor | null, options?: { reveal?: boolean }) => {
-      lineCursorRef.current = next;
-      setLineCursor(next);
-      if (!next) return;
+  /** Adopt renderer cursor geometry without publishing a semantic state revision. */
+  const adoptLineCursor = useCallback((next: LineCursor | null) => {
+    lineCursorRef.current = next;
+    setLineCursor(next);
+  }, []);
+
+  /** Publish one user-driven semantic line selection while adopting its renderer cursor. */
+  const publishLineCursor = useCallback(
+    (next: LineCursor, options?: { reveal?: boolean }) => {
+      adoptLineCursor(next);
       const fileKey = keyByFileId.get(next.fileId);
       const semanticFile = fileKey ? semanticFileByKey.get(fileKey) : undefined;
       if (!fileKey || !semanticFile) return;
@@ -376,16 +375,13 @@ export function useReviewController({
         reveal: options?.reveal,
       });
     },
-    [keyByFileId, semanticFileByKey, store],
+    [adoptLineCursor, keyByFileId, semanticFileByKey, store],
   );
 
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
-    (cursor: LineCursor) => {
-      applyLineCursor(cursor, { reveal: true });
-      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
-    },
-    [applyLineCursor, selectHunk],
+    (cursor: LineCursor) => publishLineCursor(cursor, { reveal: true }),
+    [publishLineCursor],
   );
 
   const reconcileLineCursor = useCallback(() => {
@@ -434,7 +430,7 @@ export function useReviewController({
     ) {
       // External store dispatches own the semantic line. React only resolves that address
       // to the renderer's measured cursor and must never overwrite it from stale local state.
-      applyLineCursor(
+      adoptLineCursor(
         lineCursors.length > 0
           ? lineCursorAt(lineCursors, selectedFileId, selectedHunkIndex, {
               side: semanticSelection.side,
@@ -447,13 +443,13 @@ export function useReviewController({
 
     const resolved = resolveLineCursor(lineCursors, lineCursorRef.current);
     if (resolved?.fileId === selectedFileId && resolved?.hunkIndex === selectedHunkIndex) {
-      applyLineCursor(resolved);
+      adoptLineCursor(resolved);
       return;
     }
 
-    applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
+    adoptLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
   }, [
-    applyLineCursor,
+    adoptLineCursor,
     lineCursors,
     revealLineCursor,
     selectedFileId,
@@ -471,11 +467,8 @@ export function useReviewController({
 
   /** Adopt a current line the viewport already settled on, without scrolling back to it. */
   const anchorLineCursor = useCallback(
-    (cursor: LineCursor) => {
-      applyLineCursor(cursor);
-      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
-    },
-    [applyLineCursor, selectHunk],
+    (cursor: LineCursor) => publishLineCursor(cursor),
+    [publishLineCursor],
   );
 
   /** Move the current line one row through the visible review stream. */
@@ -649,7 +642,7 @@ export function useReviewController({
       }
 
       const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
-      applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
+      adoptLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -683,8 +676,8 @@ export function useReviewController({
       return draft;
     },
     [
+      adoptLineCursor,
       allFiles,
-      applyLineCursor,
       keyByFileId,
       lineCursors,
       selectHunk,

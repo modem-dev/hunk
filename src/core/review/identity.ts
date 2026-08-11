@@ -13,9 +13,27 @@ export interface SemanticFileEntryIdentityInput extends SemanticFileIdentityInpu
   duplicateIndex?: number;
 }
 
-/** Return a compact deterministic SHA-256 identity for serialization-safe review records. */
+/** Return a compact deterministic SHA-256 identity without one giant UTF-8 conversion buffer. */
 export function reviewDigest(value: string | Uint8Array) {
-  return createHash("sha256").update(value).digest("hex");
+  const hash = createHash("sha256");
+  if (typeof value !== "string" || value.length <= 64 * 1024) {
+    return hash.update(value).digest("hex");
+  }
+  for (let start = 0; start < value.length; ) {
+    let end = Math.min(value.length, start + 64 * 1024);
+    // Preserve a UTF-16 surrogate pair so chunked UTF-8 bytes exactly match one native update.
+    if (
+      end < value.length &&
+      value.charCodeAt(end - 1) >= 0xd800 &&
+      value.charCodeAt(end - 1) <= 0xdbff &&
+      value.charCodeAt(end) >= 0xdc00 &&
+      value.charCodeAt(end) <= 0xdfff
+    )
+      end -= 1;
+    hash.update(value.slice(start, end), "utf8");
+    start = end;
+  }
+  return hash.digest("hex");
 }
 
 /** Identify the logical source whose files make up one review document. */

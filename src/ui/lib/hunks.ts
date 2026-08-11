@@ -1,4 +1,4 @@
-import { getAnnotationOwnerHunkIndices } from "../../core/review/notes";
+import { getAnnotationIntersectingHunkIndices } from "../../core/review/notes";
 import type { DiffFile } from "../../core/types";
 
 export interface HunkCursor {
@@ -13,13 +13,13 @@ export function buildHunkCursors(files: DiffFile[]): HunkCursor[] {
   );
 }
 
-/** Flatten only note-owner hunks into a cursor list for comment navigation. */
-export function buildNoteOwnerHunkCursors(files: DiffFile[]): HunkCursor[] {
+/** Flatten every genuinely note-intersected hunk into one ordered navigation stream. */
+export function buildAnnotatedHunkCursors(files: DiffFile[]): HunkCursor[] {
   return files.flatMap((file) => {
-    const owners = getAnnotationOwnerHunkIndices(file);
+    const intersections = getAnnotationIntersectingHunkIndices(file);
     return file.metadata.hunks
       .map((_, hunkIndex) => ({ fileId: file.id, hunkIndex }))
-      .filter((cursor) => owners.has(cursor.hunkIndex));
+      .filter((cursor) => intersections.has(cursor.hunkIndex));
   });
 }
 

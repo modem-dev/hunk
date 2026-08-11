@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
+  reviewDigest,
   reviewResourceId,
   semanticFileEntryIdentity,
   semanticFileIdentity,
@@ -8,6 +10,11 @@ import {
 } from "./identity";
 
 describe("semantic review identity", () => {
+  test("chunked large-string hashing matches native UTF-8 bytes across surrogate boundaries", () => {
+    const value = `${"x".repeat(64 * 1024 - 1)}🧪${"中文".repeat(70_000)}\ud800`;
+    expect(reviewDigest(value)).toBe(createHash("sha256").update(value).digest("hex"));
+  });
+
   test("is stable across stream reorder and distinct across rename endpoints", () => {
     const input = {
       sourceIdentity: "repo:/work",
