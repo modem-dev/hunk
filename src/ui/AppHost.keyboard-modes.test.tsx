@@ -39,9 +39,10 @@ function createKeyboardModeExtension() {
       ctx.notify("SESSION REENTER " + ctx.keyboardModes.enterMode("normal"));
     },
     onKey: (key, ctx) => {
-      ctx.notify("SESSION KEY " + key.name);
-      if (key.name === "j") return "handled";
-      if (key.name === "x") return "exit";
+      const pressed = key.sequence || key.name;
+      ctx.notify("SESSION KEY " + pressed);
+      if (pressed === "j" || pressed === "?") return "handled";
+      if (pressed === "x") return "exit";
       return "pass";
     },
   });
@@ -57,8 +58,9 @@ function createKeyboardModeExtension() {
       onEnter: (ctx) => ctx.notify("FILE ENTER"),
       onExit: (ctx) => ctx.notify("FILE EXIT"),
       onKey: (key, ctx) => {
-        ctx.notify("FILE KEY " + key.name);
-        return "pass";
+        const pressed = key.sequence || key.name;
+        ctx.notify("FILE KEY " + pressed);
+        return pressed === "?" ? "handled" : "pass";
       },
     },
   });
@@ -172,6 +174,30 @@ describe("AppHost session keyboard modes", () => {
       await act(async () => setup.mockInput.pressTab());
       await act(async () => setup.mockInput.typeText("j"));
       expect(notices.filter((notice) => notice === "SESSION KEY j")).toHaveLength(jCount + 1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("routes open-menu accelerators before extension keyboard modes", async () => {
+    const { notices, setup } = await renderWithExtension();
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
+      await act(async () => setup.mockInput.pressKey("F8"));
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForFrame(
+        setup,
+        (frame) => frame.includes("FOCUSED VIEW") && frame.includes("Probe normal"),
+      );
+
+      await act(async () => setup.mockInput.pressKey("F10"));
+      await waitForFrame(setup, (frame) => frame.includes("Reload"));
+      await act(async () => setup.mockInput.typeText("?"));
+      const help = await waitForFrame(setup, (frame) => frame.includes("Controls help"));
+
+      expect(help).not.toContain("Reload");
+      expect(notices).not.toContain("FILE KEY ?");
+      expect(notices).not.toContain("SESSION KEY ?");
     } finally {
       await act(async () => setup.renderer.destroy());
     }

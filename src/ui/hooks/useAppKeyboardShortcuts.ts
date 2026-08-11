@@ -537,11 +537,22 @@ export function useAppKeyboardShortcuts({
     return "mine";
   };
 
+  /** Dispatch one command shortcut and honor its menu-closing policy. */
+  const dispatchCommandShortcut = (key: KeyEvent) => {
+    // Dispatch consumes on match (preventDefault inside the loop), so a key
+    // that runs a command never doubles as a scroll-box or input key.
+    const matched = dispatchAppCommand(commandsRef.current, key);
+    if (matched?.closesMenu) {
+      closeMenu();
+    }
+    return matched !== undefined;
+  };
+
   useKeyboard((key: KeyEvent) => {
-    // Precedence is the array order: app-critical prompts, extension dialogs,
-    // then menus and overlays, focused text inputs, a focused file-view mode,
-    // a session keyboard mode, and finally the command table below.
-    const owned = routeKeyOwnership(
+    // Route through the active menu first. Its navigation keys stay host-owned,
+    // while an advertised accelerator gets one direct trip to the command table
+    // before focused inputs or extension modes can claim it.
+    const surfaceOwned = routeKeyOwnership(
       [
         handleExtensionTrustPromptShortcut,
         handleSaveConfigPromptShortcut,
@@ -550,22 +561,23 @@ export function useAppKeyboardShortcuts({
         handleDialogShortcut,
         handleThemeSelectorShortcut,
         handleMenuShortcut,
-        handleFocusedInputShortcut,
-        handleFileViewModeShortcut,
-        handleKeyboardModeShortcut,
       ],
       key,
       consumeKey,
     );
-    if (owned) {
-      return;
-    }
+    if (surfaceOwned) return;
 
-    // Dispatch consumes on match (preventDefault inside the loop), so a key
-    // that runs a command never doubles as a scroll-box or input key.
-    const matched = dispatchAppCommand(commandsRef.current, key);
-    if (matched?.closesMenu) {
-      closeMenu();
-    }
+    if (activeMenuIdRef.current && dispatchCommandShortcut(key)) return;
+
+    // Without an open-menu command match, focused inputs and extension modes
+    // keep their ordinary precedence ahead of the command table.
+    const reviewOwned = routeKeyOwnership(
+      [handleFocusedInputShortcut, handleFileViewModeShortcut, handleKeyboardModeShortcut],
+      key,
+      consumeKey,
+    );
+    if (reviewOwned) return;
+
+    dispatchCommandShortcut(key);
   });
 }
