@@ -1,13 +1,16 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   isGeneratedPrereleasePreparation,
   isGeneratedReleasePath,
   validateGeneratedPrerelease,
   verifyPrReleaseNotes,
 } from "./verify-pr-release-notes";
+
+// Git process startup can be slow under a contended Windows CI runner.
+setDefaultTimeout(20_000);
 
 const tempRoots: string[] = [];
 const generatedPaths = [
