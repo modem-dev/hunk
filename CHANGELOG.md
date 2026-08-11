@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.1
+
+### Patch Changes
+
+- [`f0c2d88`](https://github.com/modem-dev/hunk/commit/f0c2d88bbc5cd6c98cb1174988466eda640fe12c) - Fix malformed `@@` hunk headers so each side's line range and count are emitted correctly.
+
+- [`85f441b`](https://github.com/modem-dev/hunk/commit/85f441b1474b02a00cc029c1e6db06287c0b571e) - Keep the top menu bar inside the same one-column margin as the rest of the app instead of painting its background into the outer gutter.
+
+- [`a890077`](https://github.com/modem-dev/hunk/commit/a89007730f46b7a809a457039c856f736e0d22be) - Keep Git's colors in non-diff `hunk pager` output for captured pager hosts, so LazyGit's branch log renders in its normal per-branch palette instead of a single color.
+
 ## 0.18.0
 
 ### Highlights
