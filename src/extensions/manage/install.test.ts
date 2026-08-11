@@ -270,3 +270,46 @@ describe("hunk extension command runner", () => {
     expect(refused.out.join("")).toContain("Install cancelled.");
   });
 });
+
+describe("install validation strictness", () => {
+  test("refuses a repository whose only entry is an incidental src/index.ts", () => {
+    // The shape of nearly every JavaScript project — and of pi extensions,
+    // whose manifests use a `pi` field instead of `hunk`.
+    const repo = join(createTempDir("hunk-manage-incidental-"), "pi-shaped");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    runFixtureGit(repo, ["init", "--quiet"]);
+    runFixtureGit(repo, ["config", "user.email", "test@example.com"]);
+    runFixtureGit(repo, ["config", "user.name", "Hunk Test"]);
+    writeFileSync(
+      join(repo, "package.json"),
+      JSON.stringify({ name: "pi-shaped", pi: { extensions: ["./src/index.ts"] } }),
+    );
+    writeFileSync(join(repo, "src", "index.ts"), "export default () => {};\n");
+    runFixtureGit(repo, ["add", "."]);
+    runFixtureGit(repo, ["commit", "--quiet", "-m", "initial"]);
+    const context = createTestContext();
+
+    expect(() => installExtension(context, parseExtensionInstallSource(repo))).toThrow(
+      /does not contain a Hunk extension/,
+    );
+  });
+
+  test("accepts a collection repository of subfolders with hunk manifests", () => {
+    const repo = join(createTempDir("hunk-manage-collection-"), "ext-pack");
+    mkdirSync(join(repo, "one"), { recursive: true });
+    runFixtureGit(repo, ["init", "--quiet"]);
+    runFixtureGit(repo, ["config", "user.email", "test@example.com"]);
+    runFixtureGit(repo, ["config", "user.name", "Hunk Test"]);
+    writeFileSync(
+      join(repo, "one", "package.json"),
+      JSON.stringify({ name: "one", hunk: { extensions: ["./entry.ts"] } }),
+    );
+    writeFileSync(join(repo, "one", "entry.ts"), "export default () => {};\n");
+    runFixtureGit(repo, ["add", "."]);
+    runFixtureGit(repo, ["commit", "--quiet", "-m", "initial"]);
+    const context = createTestContext();
+
+    const outcome = installExtension(context, parseExtensionInstallSource(repo));
+    expect(outcome.name).toBe("ext-pack");
+  });
+});

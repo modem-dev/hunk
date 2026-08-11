@@ -252,13 +252,29 @@ export function resolveExtensionContainerEntries(dir: string): DiscoveredExtensi
 }
 
 /**
- * Report whether one directory would load at least one extension entry.
+ * Report whether one directory deliberately publishes Hunk extension entries.
  *
- * The installer asks this before recording a clone, so a repository that is
- * not an extension at all fails the install instead of installing as noise.
+ * The installer asks this before recording a clone, and it is stricter than
+ * what discovery would load: only a root `hunk` manifest, a root `index.*`
+ * entry, top-level entry files, or a subfolder with its own `hunk` manifest
+ * count. The bare `index.*` fallback for subfolders is deliberately excluded —
+ * almost every JavaScript repository has a `src/index.ts`, and accepting that
+ * shape would install arbitrary repositories (a pi extension, a random
+ * library) as extensions that can only fail at load time.
  */
 export function directoryContainsExtensionEntries(dir: string) {
-  return resolveExtensionContainerEntries(dir).length > 0;
+  const manifest = readExtensionManifest(dir);
+  if ((manifest?.entryPaths?.length ?? 0) > 0 || findFolderExtensionIndex(dir)) {
+    return true;
+  }
+
+  return readSortedDirEntries(dir).some((entry) => {
+    if (entry.isDirectory()) {
+      return (readExtensionManifest(join(dir, entry.name))?.entryPaths?.length ?? 0) > 0;
+    }
+
+    return EXTENSION_ENTRY_SUFFIXES.some((suffix) => entry.name.endsWith(suffix));
+  });
 }
 
 /**
