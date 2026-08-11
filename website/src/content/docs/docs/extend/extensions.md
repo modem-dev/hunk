@@ -68,7 +68,7 @@ Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `gi
 
 ## Bundled extensions
 
-Hunk's own Git, Jujutsu, and Sapling backends and file-navigation pane are themselves extensions, registered through the same public API — which is what keeps that API honest. The repository's current-line lens is an installable example extension rather than bundled product UI. Bundled extensions differ from yours in three ways:
+Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
 
 - statically imported, so they load before config resolution picks the session's VCS
 - implicitly trusted, with no `[extension.<id>]` config table

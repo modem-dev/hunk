@@ -115,12 +115,9 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.dialogs`
   (`confirm`/`select`/`input`, queued and attributed), and `ctx.workspace`
   (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
-- **Pane components** get props: `files` (frozen, filtered, review order, each
-  with `hunks` summaries), `selectedFileId`, `selectedHunkIndex`, `placement`,
-  exact `width`/`height`, optional opaque `currentLine` paint, `theme` (hex
-  tokens plus an `appearance` flag — see `ExtensionPaintTheme`), `keybindings`
-  (ask by command id, never hard-code a chord), and `actions` (`selectFile`,
-  `selectHunk`, `notify`).
+- **Pane components** get frozen `files`, selection, placement, exact dimensions,
+  optional `currentLine` paint, semantic `theme`, resolved `keybindings`, and
+  guarded navigation/notification `actions`.
 - **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
   `readDocument(side)`.
 - **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey`,
@@ -146,11 +143,9 @@ through untouched.
 
 Most extension bugs are one of these:
 
-- **Registering a surface does not show it.** A pane starts closed unless
-  it declares `defaultOpen` (or `replaces: "hunk:files"`, which changes the
-  initial built-in file-list default). A file view never activates itself — raw diff is the
-  default and the user picks the view from the **View** menu. Ship a command that
-  toggles it and say which key, or correct code looks like it did nothing.
+- **Registering a surface does not show it.** Panes need `defaultOpen`,
+  `replaces: "hunk:files"`, or a command that opens them. File views remain raw
+  until selected from the **View** menu.
 - **A rejected file-view layout silently becomes raw diff.** `hunkRows` needs one
   in-bounds, inclusive entry per parsed hunk at the same array index, and
   `sourceRanges` may not overlap on a side; invalid, oversized, cancelled, and

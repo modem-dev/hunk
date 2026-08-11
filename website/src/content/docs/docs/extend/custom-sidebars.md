@@ -1,9 +1,9 @@
 ---
 title: Custom panes
-description: Render React panes on any terminal edge, with host-owned geometry, selection, scrolling, and event-driven state.
+description: Render React panes around Hunk's review stream.
 ---
 
-`hunk.registerPane(pane)` contributes a pane — your own React component, rendered inside Hunk's OpenTUI tree. Registration is additive: panes dock on the left, right, top, or bottom of the review stream, and any number can be open at once. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
+`hunk.registerPane(pane)` renders a React component on the left, right, top, or bottom of the review. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
 
 ```tsx
 // ~/.config/hunk/extensions/flat-sidebar.tsx
@@ -43,11 +43,11 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Beyond `id` and `component`, a pane may declare a `title`, a `placement` of `"left"` (default), `"right"`, `"top"`, or `"bottom"`, `defaultOpen: true`, or `replaces: "hunk:files"` to start the replacement open and file navigation closed. Replacement defaults take precedence over `defaultOpen`. Left/right panes use `width` (`preferred`, optional `min`/`max`) in terminal columns; top/bottom panes use `height` in rows. Equal minimum and maximum values make a fixed pane. Omitted width defaults to 34 preferred / 22 minimum columns, while omitted height defaults to 8 / 3 rows. `ExtensionPane` is a union of `ExtensionVerticalPane` and `ExtensionHorizontalPane`, so TypeScript rejects dimensions that do not match the placement. Top/bottom panes span the central review column and stay outside review-stream geometry.
+`placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes use `height`. Both accept `{ preferred, min?, max? }`, defaulting to `{ preferred: 34, min: 22 }` columns or `{ preferred: 8, min: 3 }` rows. Equal bounds make a fixed pane. Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace it (and override `defaultOpen`), or `available(context)` to hide it conditionally.
 
-Set `currentLine: true` only for panes that need Hunk's opaque selected-row painter. The repository's [`current-line-lens` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/current-line-lens) shows how to render old above new; the lens is an installable example, not bundled Hunk UI.
+Set `currentLine: true` to receive Hunk's opaque selected-row painter. The [`current-line-lens` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/current-line-lens) uses it and is not bundled with Hunk.
 
-API v4 keeps `registerSidebarView`, `ExtensionSidebar*`, `ctx.sidebars`, and `replacesDefault` as deprecated aliases during a compatibility window. They normalize immediately into this same pane registry and layout path.
+API-v3 sidebar names remain as deprecated aliases.
 
 Import `react` normally — Hunk serves its own React instance to extension files at import time, so hooks, context, and JSX all run on the reconciler drawing the rest of the app. **Never bundle or vendor a copy of React into an extension**: a second React means a second hooks dispatcher, and the component will fail to render. OpenTUI elements (`box`, `text`, `scrollbox`, ...) are plain intrinsic elements and need no import.
 
@@ -94,9 +94,9 @@ export function handlePaneKey(props: ExtensionPaneProps, key: ExtensionKeyEvent)
 
 ## The pane is Hunk's, the content is yours
 
-Hunk keeps owning pane arrangement — rectangles, resize dividers, responsive omission, and preserving minimum review bounds — and your component fills the pane it is given. A component that throws while rendering costs you the pane, not the user the session: the failure is reported as a toast naming your extension, and a failed files-pane replacement falls back to the bundled navigation without clearing its logical open preference.
+Hunk owns pane geometry, dividers, and responsive omission. Render failures are contained to the pane; a failed files-pane replacement restores file navigation.
 
-Props carry the exact host-owned `width` and `height`; fill that fixed rectangle without trying to measure or resize the parent after mount. Everything else about scrolling — scroll position and keeping a row visible — goes through the `<scrollbox>` itself, via a plain React ref. Hunk serves its own `@opentui/core` to extension files, so the renderable a ref hands you is the very instance the host renders with.
+Props carry the pane's exact `width` and `height`. Use a `<scrollbox>` ref for scroll position and selection following; Hunk serves the matching `@opentui/core` instance.
 
 ## Scrolling: the scrollbox ref contract
 

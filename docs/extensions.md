@@ -106,11 +106,10 @@ repository's own README.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation sidebar**. They live in
+and so is the **built-in file-navigation pane**. They live in
 `src/extensions/default/`, are compiled into the binary, and register through
 the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
-documents. There is no core-registered backend left, no private sidebar, and no
-private path into the review pipeline.
+documents. There is no private registration path.
 
 Git in particular is the reason: it is the backend that exercises every
 integration point there is — exact file sources, skipped-too-large placeholders,
@@ -131,7 +130,7 @@ being Hunk's own code:
 
 Failure isolation still applies to them. The ids `git`, `jj`, and `sl` are
 reserved as a result — see `registerVcsAdapter` below — and so is `hunk`, the
-id the bundled sidebar and every built-in command are named under.
+id the bundled files pane and every built-in command are named under.
 
 ## Trust
 
@@ -192,10 +191,8 @@ cannot mutate the registry mid-session.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Branch on it if you want
-one file to support several Hunk versions. Version 4 adds session-scoped
-keyboard modes and four-edge panes while keeping the API-v3 sidebar names as
-deprecated aliases; version 3 added public semantic command execution.
+The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard
+modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
 
 ### `hunk.registerTheme(theme)`
 
@@ -474,11 +471,8 @@ backends raise their failures exactly this way.
 
 ### `hunk.registerPane(pane)`
 
-Contribute a pane — your own React component, rendered inside an exact rectangle
-owned by Hunk. Registration is additive on all four edges: `left`, `right`,
-`top`, and `bottom`. Side panes consume columns; top/bottom panes consume rows
-from the central review column and never enter review-stream geometry. Pair a
-pane with `registerCommand` so a key opens it:
+Render a React component on the `left`, `right`, `top`, or `bottom` edge of the
+review. Pair it with `registerCommand` so a key opens it:
 
 ```tsx
 // ~/.config/hunk/extensions/flat-pane.tsx
@@ -505,15 +499,6 @@ function FlatPane({ files, selectedFileId, theme, actions }: ExtensionPaneProps)
   );
 }
 
-function ReviewStatus({ files, theme, width }: ExtensionPaneProps) {
-  return (
-    <box style={{ width, height: 2, flexDirection: "column", backgroundColor: theme.panel }}>
-      <text fg={theme.accent}>Review status</text>
-      <text fg={theme.muted}>{files.length} visible files</text>
-    </box>
-  );
-}
-
 export default function (hunk: HunkExtensionAPI) {
   hunk.registerPane({
     id: "flat",
@@ -521,37 +506,25 @@ export default function (hunk: HunkExtensionAPI) {
     placement: "right",
     component: FlatPane,
   });
-  hunk.registerPane({
-    id: "status",
-    title: "Review status",
-    placement: "bottom",
-    height: { preferred: 2, min: 2, max: 2 },
-    defaultOpen: true,
-    component: ReviewStatus,
-  });
   hunk.registerCommand({ id: "toggle-flat", title: "Toggle flat pane", key: "ctrl+f" }, (ctx) => {
     ctx.panes.toggle("flat");
   });
 }
 ```
 
-Beyond `id` and `component`, a pane may declare a `title`, a `placement` of
-`"left"` (default), `"right"`, `"top"`, or `"bottom"`, and `defaultOpen: true`.
-Left/right panes declare `width: { preferred, min?, max? }` in terminal columns;
-top/bottom panes declare `height: { preferred, min?, max? }` in rows. All values
-are positive integers, and equal min/max makes the pane fixed. Omitted width
-defaults to 34 preferred / 22 minimum columns; omitted height defaults to 8 / 3
-rows. The exported `ExtensionVerticalPane` and `ExtensionHorizontalPane` types
-form the `ExtensionPane` union, so TypeScript rejects `height` on left/right
-panes and `width` on top/bottom panes. `replaces: "hunk:files"` starts the
-replacement open and the files pane closed, taking precedence over
-`defaultOpen`; it changes initial defaults without removing the files pane.
-`available(context)` is a synchronous frame policy: an open but unavailable pane
-retains its logical open preference. Set `currentLine: true` only when the pane
-needs the opaque `currentLine.render("old" | "new", width)` host painter;
-unrelated panes receive stable `null` and do not repaint on each line move. See
-`examples/extensions/current-line-lens/` for an installable lens built entirely
-on this public capability; it is an example, not bundled Hunk UI.
+`placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes
+use `height`. Both accept `{ preferred, min?, max? }`; equal bounds make a fixed
+pane. Defaults are `{ preferred: 34, min: 22 }` columns and
+`{ preferred: 8, min: 3 }` rows.
+
+Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
+the initial files pane (and override `defaultOpen`), and `available(context)` to
+hide it conditionally.
+
+`currentLine: true` opts into the opaque `currentLine.render(side, width)`
+painter. The installable
+[`current-line-lens`](../examples/extensions/current-line-lens/) example uses
+this API; it is not bundled Hunk UI.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -575,14 +548,11 @@ The component receives fresh props as the app changes:
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
 | `actions`           | navigation and notifications the pane may trigger                                                                                                                         |
 
-API v4 generalizes the former sidebar surface. During the compatibility window,
-`registerSidebarView`, `ExtensionSidebar*`, `ctx.sidebars`, and
-`replacesDefault` remain deprecated aliases normalized immediately into the one
-pane registry. Migrate to `registerPane`, `ExtensionPane*`, `ctx.panes`, and
-`replaces: "hunk:files"`; no separate sidebar runtime remains.
+API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
+`ExtensionPane*`, `ctx.panes`, and `replaces: "hunk:files"` in new code.
 
 `actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route
-through the same review controller as the built-in sidebar and the keyboard
+through the same review controller as the built-in files pane and the keyboard
 shortcuts, so the review stream scrolls, selection updates, and the
 `selection_changed` event fires exactly as if the user had clicked a built-in
 row. `actions.notify(message, type?)` shows a toast attributed to your
@@ -605,7 +575,7 @@ behavior synchronized with the user's remaps and unbindings:
 ```ts
 import type { ExtensionKeyEvent, ExtensionPaneProps } from "hunkdiff/extension";
 
-export function handleSidebarKey(props: ExtensionPaneProps, key: ExtensionKeyEvent) {
+export function handlePaneKey(props: ExtensionPaneProps, key: ExtensionKeyEvent) {
   const nextFile = props.files[1];
   if (nextFile && props.keybindings.matches(key, "hunk.review.nextFile")) {
     // The user may have remapped this from `.` to another chord.
@@ -624,24 +594,17 @@ event argument is structural — OpenTUI's `KeyEvent` works directly.
 extension-local keys that intentionally are not commands. Prefer a named
 command whenever a shortcut should be user-remappable.
 
-Hunk keeps owning pane arrangement — rectangles, resize dividers, responsive
-omission, and minimum review bounds — and your component fills the pane it is
-given. A component that throws while rendering costs you the pane, not the user
-the session: the failure is reported as a toast naming your extension and that
-registration identity is quarantined until reload without clearing its logical
-open preference. If the failed pane replaced `hunk:files`, Hunk restores the
-bundled file navigation as a safe fallback.
+Hunk owns pane geometry, dividers, and responsive omission. Render failures are
+contained to that pane; a failed `hunk:files` replacement restores file
+navigation.
 
-Props carry the exact host-owned `width` and `height`; fill that fixed rectangle
-without trying to measure or resize the parent after mount. Everything else
-about scrolling — scroll position and keeping a row visible — goes through the
-`<scrollbox>` itself, via a plain React ref. Hunk serves its own
-`@opentui/core` to extension files, so the renderable a ref hands you is the
-very instance the host renders with.
+Props carry the pane's exact `width` and `height`. Use a `<scrollbox>` ref for
+scroll position and selection following; Hunk serves the matching
+`@opentui/core` instance to extensions.
 
 #### Scrolling: the scrollbox ref contract
 
-The one behavior a list sidebar always ends up needing is following the
+The one behavior a list pane always ends up needing is following the
 selection. Give your rows stable `id` props, hold a ref to the scrollbox, and
 scroll the selected row into view from an effect:
 
@@ -714,20 +677,15 @@ serves as its pre-first-layout viewport estimate).
 
 One honest caveat: this contract rides on OpenTUI's renderable API, served at
 whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself.
-The built-in sidebar exercising the exact same calls is the compatibility
-guarantee: a change that breaks your scroll code breaks Hunk's own sidebar
-first. Still, keep scroll handling small and behind your own helpers.
+The built-in files pane uses the same calls, so changes that break this contract
+break Hunk first. Keep scroll handling small and behind your own helpers.
 
-The built-in sidebar is itself a bundled extension
-(`src/extensions/default/ui/sidebar/`): it registers through this exact call,
-its component consumes exactly the props documented above, and its windowing
-and selection follow run on exactly the ref contract above — so it doubles as
-the reference implementation for everything a third-party sidebar can build,
-from grouping and stat badges down to scroll behavior.
+Its implementation lives in `src/extensions/default/ui/sidebar/` and serves as
+the reference for third-party panes.
 
-#### Sidebar state from events
+#### Pane state from events
 
-Lifecycle handlers run outside React, but a sidebar component only rerenders
+Lifecycle handlers run outside React, but a pane component only rerenders
 when React sees a change. The recipe that connects them is a module-local store
 read through `useSyncExternalStore`: the event handler updates the store, and
 any mounted component subscribed to it rerenders — while the store keeps
@@ -824,7 +782,7 @@ export default function (hunk: HunkExtensionAPI) {
 
 `layout` receives one readonly input containing `file`, `width`, `signal`,
 `changes`, and `readDocument`. `input.file` is the same frozen public
-`ExtensionDiffFile` sidebars receive. `input.changes` exposes typed added and
+`ExtensionDiffFile` panes receive. `input.changes` exposes typed added and
 removed ranges without Pierre metadata;
 complete old/new hunk ranges remain available through `input.file.hunks`.
 `readDocument("old" | "new")` is lazy and cached by Hunk; it resolves exact
@@ -1078,9 +1036,8 @@ atomically. See the dependency-free
 
 ### `hunk.registerCommand(command, handler)`
 
-Register a named command, optionally bound to a key. Commands are not a
-sidebar one-off: they are the same mechanism Hunk's own shortcuts dispatch
-through — one table, one loop, built-ins first.
+Register a named command, optionally bound to a key. Commands share Hunk's
+built-in dispatch table, with built-ins taking precedence.
 
 ```ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
@@ -1160,7 +1117,7 @@ hunk.registerCommand(
 ```
 
 `selection.file` is a frozen read-only view, identical to the entries in a
-sidebar's `files` prop. Hunk keeps the selection inside the visible files, so
+pane's `files` prop. Hunk keeps the selection inside the visible files, so
 it is `null` only when nothing is visible at all — a filter that matches no
 files. `selection.hunkIndex` is that file's
 selected hunk, and `null` whenever `file` is — or when the file has no hunks to
@@ -1199,10 +1156,10 @@ extension registry. Controls retained across an extension-registry reload or App
 session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)` and
-`selectHunk(fileId, hunkIndex)`, the same guarded navigation a sidebar's
+`selectHunk(fileId, hunkIndex)`, the same guarded navigation a pane's
 `actions` carry, routed through the same review controller — the stream
 scrolls, selection updates, and `selection_changed` fires exactly as if the
-user had clicked a sidebar row. Unlike `selection` it is live, not a snapshot:
+user had clicked a pane row. Unlike `selection` it is live, not a snapshot:
 a call acts on the review as it is at that moment, so a handler that awaits a
 dialog and then navigates still works. A file id the stream cannot currently
 show is refused with a warning rather than corrupting the selection, and a
@@ -1362,7 +1319,7 @@ hunk.transformChangeset((changeset) => ({
 ```
 
 The function may be async. Filtering and reordering `files` is fully supported —
-the sidebar and the review stream both follow whatever you return.
+the panes and review stream both follow whatever you return.
 
 Each file carries an opaque `metadata` field: it is the parsed diff the renderer
 draws from, so pass it through untouched (spreading a file preserves it). What
@@ -1373,7 +1330,7 @@ is skipped: the previous changeset carries forward and you get a warning naming
 your extension and the problem.
 
 You never need to reach into `metadata` to know what a file's hunks are: the
-read-only views Hunk hands outward (event payloads, sidebar props, a command's
+read-only views Hunk hands outward (event payloads, pane props, a command's
 selection) carry a `hunks` list of public summaries — `index`, the `@@` header,
 and the inclusive old/new line spans, in render order. Like `changeType`, it is
 derived from the metadata at that boundary, so a transform neither receives nor
@@ -1385,7 +1342,7 @@ the metadata actually parses to.
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks
 the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
 `ctx.panes`, the same open/close/toggle controls command handlers receive.
-That means a `changeset_loaded` handler can reveal its extension's sidebar when
+That means a `changeset_loaded` handler can reveal its extension's pane when
 it finds something worth showing — no keypress required.
 
 | Event                  | Payload                 | When                                                     |
@@ -1493,19 +1450,13 @@ to the terminal, because the TUI owns the screen.
 
 ## A complete example
 
-The examples directory contains several user-installable folder extensions:
+Installable examples include:
 
-- [`examples/extensions/pane-layout/`](../examples/extensions/pane-layout/)
-  demonstrates a resizable side pane, fixed top/bottom panes, exact host-owned
-  dimensions, and one `ctx.panes` command controlling all three.
-- [`examples/extensions/current-line-lens/`](../examples/extensions/current-line-lens/)
-  opts a fixed bottom pane into opaque current-line paint and renders old above
-  new without relying on private renderer or cursor types.
-- [`examples/extensions/review-triage/`](../examples/extensions/review-triage/)
-  is a session-local hunk triage board combining a pane, commands, dialogs,
-  lifecycle listeners, and the extension event bus. Its API evaluation and
-  follow-up opportunities are recorded in
-  [Extension API field notes](extension-api-evaluation.md).
+- [`pane-layout`](../examples/extensions/pane-layout/) for all four placements.
+- [`current-line-lens`](../examples/extensions/current-line-lens/) for opaque
+  selected-row paint.
+- [`review-triage`](../examples/extensions/review-triage/) for panes, commands,
+  dialogs, lifecycle events, and the event bus.
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
   parses Markdown into generic host-owned file-view rows. Its README shows how
   to run it from the checkout or copy it into the global extensions directory.

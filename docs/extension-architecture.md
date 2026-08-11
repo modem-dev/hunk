@@ -23,12 +23,8 @@ object and registry collection (`src/extensions/runExtension.ts`):
   part of that list: it synchronously loads the bundled files pane through
   `runExtensionFactory` only where the app resolves UI panes.
 
-There are zero core-registered VCS adapters and no private pane registry: Git
-and the built-in file navigation register through the public
-`registerVcsAdapter` and `registerPane` paths. The installable current-line lens
-in `examples/extensions/current-line-lens/` exercises optional pane paint
-without becoming bundled product UI. Together those paths keep the published
-data, actions, sizing, availability, and paint capabilities honest.
+Git and the built-in file navigation use the public `registerVcsAdapter` and
+`registerPane` paths. The current-line lens remains an installable example.
 
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.
@@ -47,7 +43,7 @@ load issue and costs only that extension. The rules themselves are stated in
 ## One registry, one apply path
 
 Registrations (themes, file languages, VCS adapters, changeset transforms,
-panes, commands, lifecycle/UI events, and inter-extension bus listeners) collect into one
+panes, commands, lifecycle/UI events, and bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. A factory that
 throws is rolled back to its pre-run registration counts
@@ -67,20 +63,15 @@ commands never pay OpenTUI's native-library extraction).
 
 ## Four-edge pane system
 
-Pane registration is additive on `left`, `right`, `top`, and `bottom`.
-`src/ui/lib/extensionPanes.ts` owns session composition, logical open-state
-reconciliation, synchronous availability/quarantine, and the single rectangle
-plan for panes, dividers, and residual review bounds. Left/right consume
-columns; top/bottom consume rows only from the central review column. The
-review stream never includes pane width or height in section coordinates.
+`src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
+plan for panes, dividers, and review bounds. Left/right panes consume columns;
+top/bottom panes consume rows from the central review column, outside review
+stream coordinates.
 
-`src/ui/components/panes/ExtensionPane.tsx` mounts one registration inside its
-exact host-owned rectangle with frozen file views, guarded actions, opted-in
-opaque current-line paint, and an error boundary scoped to registration
-identity. `DiffPane` privately resolves the existing cursor against the exact
-accepted Pierre row plan and exposes only a host painter—never Pierre rows,
-spans, plans, or cursor keys. Deprecated sidebar declarations and controls
-normalize immediately into this one registry and layout path.
+`src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions and
+failure containment. `DiffPane` exposes optional current-line paint without
+publishing Pierre rows, plans, cursor keys, or caches. Deprecated sidebar APIs
+normalize into this same registry and layout path.
 
 ## File-view system
 
@@ -141,13 +132,9 @@ commands. Extension
 `registerCommand` entries join the same table via
 `src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
 chord at a time and detected by probing matchers with a synthesized event
-(`src/lib/commandKeys.ts`). Command handlers receive pane open/close
-controls, which is how a registered key opens an extension's pane, plus a
-`selection` snapshot resolved by `src/ui/lib/extensionSelection.ts` from the
-same frozen file views the panes render — one conversion feeding both
-surfaces, so a command and a pane can never disagree about what is selected.
-App reads the snapshot through a ref when a command fires, keeping the dispatch
-table stable as the review moves.
+(`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
+`src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
+panes render. App reads it through a ref so the dispatch table stays stable.
 
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
