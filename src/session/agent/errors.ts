@@ -42,6 +42,17 @@ export function noDiffFileMatchesMessage(filePath: string) {
   return `No diff file matches ${filePath}.`;
 }
 
+/**
+ * Raw diff text could not be read back from the live session that published it.
+ *
+ * `review --include-patch` reads patch bodies as review resources rather than from the
+ * registration, so this is what an agent sees when the session reloaded mid-read, went
+ * away, or served content that failed verification.
+ */
+export function reviewResourceUnavailableMessage(filePath: string) {
+  return `Could not read the raw diff for ${filePath} from the live session.`;
+}
+
 /** One skill-documented error: the quoted message (or prefix) plus the remedy agents should try. */
 export interface AgentErrorDoc {
   /**
@@ -96,6 +107,11 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
   {
     quote: "Specify either --next-comment or --prev-comment, not both.",
     remedy: "choose one comment-navigation direction.",
+  },
+  {
+    quote: "Could not read the raw diff for ...",
+    remedy:
+      "the session reloaded or closed while `--include-patch` was reading it. Re-run `review`; drop `--include-patch` if you only need file and hunk structure.",
   },
 ];
 
