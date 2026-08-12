@@ -157,6 +157,7 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
     ...(file.agent?.summary !== undefined ? { agentSummary: file.agent.summary } : {}),
     stats: identityInput.stats,
     flags: identityInput.flags,
+    patch: file.patch,
     splitLineCount: file.metadata.splitLineCount,
     unifiedLineCount: file.metadata.unifiedLineCount,
     // Copied, not referenced: an extension that retains and later mutates the model it
