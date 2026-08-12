@@ -35,12 +35,20 @@ function hasExplicitTransport(location: string) {
 
 /** Return whether one location is a local filesystem path. */
 function isLocalPath(location: string) {
+  // Both separators for the relative forms, so Windows `.\dev\ext` works too.
   return (
     isAbsolute(location) ||
     location.startsWith("./") ||
     location.startsWith("../") ||
+    location.startsWith(".\\") ||
+    location.startsWith("..\\") ||
     location.startsWith("~")
   );
+}
+
+/** Index of the last path separator, counting both `/` and Windows `\`. */
+function lastSeparatorIndex(location: string) {
+  return Math.max(location.lastIndexOf("/"), location.lastIndexOf("\\"));
 }
 
 /**
@@ -51,7 +59,7 @@ function isLocalPath(location: string) {
  */
 function splitRefSuffix(location: string): { location: string; ref?: string } {
   const atIndex = location.lastIndexOf("@");
-  if (atIndex <= 0 || atIndex < location.lastIndexOf("/")) {
+  if (atIndex <= 0 || atIndex < lastSeparatorIndex(location)) {
     return { location };
   }
 
@@ -65,9 +73,11 @@ function splitRefSuffix(location: string): { location: string; ref?: string } {
 
 /** Derive the repository name from one clone location. */
 function deriveRepositoryName(location: string) {
-  const trimmed = location.replace(/\/+$/, "");
-  // scp-like locations separate the path with ":", URLs and paths with "/".
-  const lastSegment = trimmed.split(/[/:]/).at(-1) ?? "";
+  const trimmed = location.replace(/[/\\]+$/, "");
+  // scp-like locations separate the path with ":", URLs and POSIX paths with
+  // "/", and Windows local paths with "\" (their drive colon splits too, which
+  // is fine — the repository name is always the last segment).
+  const lastSegment = trimmed.split(/[/\\:]/).at(-1) ?? "";
   return lastSegment.endsWith(".git") ? lastSegment.slice(0, -4) : lastSegment;
 }
 

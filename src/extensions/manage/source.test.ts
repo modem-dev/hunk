@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseExtensionInstallSource } from "./source";
 
@@ -47,9 +47,12 @@ describe("extension install source parsing", () => {
     expect(parsed.ref).toBe("v2");
   });
 
-  test("accepts a local path source", () => {
-    const parsed = parseExtensionInstallSource("/tmp/fixtures/hunk-ext");
-    expect(parsed.cloneUrl).toBe("/tmp/fixtures/hunk-ext");
+  test("accepts a platform-native absolute path source", () => {
+    // Built with join so the case exercises real separators on every platform —
+    // backslashes on Windows, slashes elsewhere.
+    const localPath = join(tmpdir(), "fixtures", "hunk-ext");
+    const parsed = parseExtensionInstallSource(localPath);
+    expect(parsed.cloneUrl).toBe(resolve(localPath));
     expect(parsed.name).toBe("hunk-ext");
   });
 
