@@ -233,6 +233,46 @@ here so the extraction happens before the duplication exists. Design detail in
   Excluded from the browser until an explicit per-command allowlist exists in the registration
   capability list. This is a scope boundary, not a missing feature.
 
+## G. Other preemptive seams (same class as F)
+
+Further capabilities where the terminal (or multi-client operation itself) has semantics the
+prototype browser never grew; recorded so the shared primitive exists before a second
+implementation does.
+
+- **G1. View defaults and option classification.** Terminal view options resolve through the
+  layered defaults chain (built-ins → user config → repo `.hunk/config.toml` → command
+  sections → CLI flags); the prototype browser hardcodes its own defaults (dark theme, layout)
+  and has no persistence at all. Two decisions to make once: (a) which options are shared
+  review state vs per-client view state — `showAgentNotes` and filter are already shared,
+  layout/wrap/theme are per-client — recorded as an explicit classification on the option
+  schema, not implied by where code happens to read them; (b) whether the browser receives the
+  host's resolved view defaults as its starting point (it should — the host already computed
+  them) with per-client overrides persisted client-side. Phase 5.
+- **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
+  but wire actions carry no actor/client identity — with a terminal, a browser, and agents
+  attached to one session, nothing distinguishes who moved the selection or wrote a note, and
+  B11 (viewport-driven selection) already showed the two clients fighting over shared
+  selection. Decide the model once: actions carry a client/actor tag; selection is either
+  shared-with-follow-mode or per-client-with-optional-follow (product decision); note
+  authorship defaults from the actor. Wire fields in Phase 3, policy before Phase 5 PR 2.
+- **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
+  capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
+  will need one: browser deep links and back/forward history, a terminal "copy link" command,
+  and agent surfaces already addressing targets by file/hunk. One serialize/parse address
+  grammar over semantic keys (`fileKey`/`hunkIndex`/side/line/noteId — never array indices or
+  rendered rows) in `core/review`, used everywhere an address crosses a boundary. Core
+  primitive in Phase 1; browser adoption Phase 5; opener fragments Phase 6.
+- **G4. User-facing error catalog.** The repo already solves this once for agents:
+  `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
+  contract tests. The browser has no equivalent — action rejections (`invalid-action`,
+  `stale-generation`, resource integrity failures) would surface as ad-hoc strings invented in
+  `src/web`, drifting from what the terminal shows for the same failure. One error-code →
+  user-message catalog beside the wire protocol, consumed by both clients (and reused by the
+  agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
+- **G5. Undo, if it ever arrives.** Note editing today has no undo. If it is added, the
+  history/undo semantics belong in the shared reducer (which client undoes what, across
+  actors), never in one client's keyboard handler. Recorded as a placement rule, not work.
+
 ## Verification hooks
 
 - The seam boundary tests (`scripts/source-boundaries.test.ts`) keep deleted copies deleted.
