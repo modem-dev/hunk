@@ -388,6 +388,11 @@ implementation does.
   grammar over semantic keys (`fileKey`/`hunkIndex`/side/line/noteId — never array indices or
   rendered rows) in `core/review`, used everywhere an address crosses a boundary. Core
   primitive in Phase 1; browser adoption Phase 5; opener fragments Phase 6.
+  _Repaid (Phase 1 PR 3, core primitive)_: `core/review/address.ts` serializes and parses the
+  four address kinds over percent-encoded semantic identifiers, with round-trip coverage for keys
+  carrying separators, percent signs, and non-ASCII characters, and strict rejection of anything
+  outside the grammar. No consumers yet, by design — browser deep links are Phase 5 and opener
+  fragments Phase 6, which is when this finding closes.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,
