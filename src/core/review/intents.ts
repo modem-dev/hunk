@@ -11,6 +11,8 @@
  */
 import type { ReviewAction } from "./actions";
 import { reviewLineAnchor } from "./anchors";
+import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
+import { reviewDefaultHunkLineTarget } from "./geometry";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
   planReviewSelectionMove,
@@ -20,6 +22,7 @@ import {
   type ReviewSelectionScope,
 } from "./navigation";
 import {
+  isReviewGapExpanded,
   isReviewNoteWithinClearScope,
   selectNormalizedSelection,
   selectReviewFileByKey,
@@ -27,16 +30,25 @@ import {
 } from "./selectors";
 import {
   REVIEW_VIEWPORT_ANCHOR_REVEAL,
+  type ReviewDraftNote,
   type ReviewRevealRequest,
   type ReviewState,
   type ReviewStoredNote,
 } from "./state";
 import type { ReviewStore } from "./store";
-import type { ReviewFileV1 } from "./types";
+import type { ReviewFileV1, ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
 
 export interface ReviewIntentFacts {
   /** Caller-allocated identity for a newly persisted note. */
   noteId?: string;
+  /**
+   * Caller-allocated identity for a newly started draft.
+   *
+   * Separate from `noteId` because a draft outlives none of it: the draft is addressable
+   * while it is being written — a renderer reveals it, an agent may report it — and the
+   * note it becomes is allocated only when it is saved.
+   */
+  draftId?: string;
   /** Caller-owned ISO timestamp for note creation. */
   timestamp?: string;
   /**
@@ -59,11 +71,21 @@ export type ReviewIntent =
   | { type: "selection/anchor"; fileKey: string; hunkIndex: number }
   | { type: "filter/set"; filter: string }
   | { type: "notes/set-visibility"; visible: boolean }
+  /** Open a draft at one hunk, defaulting to the line a whole-hunk note hangs from. */
+  | {
+      type: "notes/start-draft";
+      fileKey: string;
+      hunkIndex: number;
+      target?: ReviewLineAddressV1;
+      reveal?: ReviewRevealRequest;
+    }
   /** Persist the active draft; a blank body retires the draft instead. */
   | { type: "notes/create-user"; consumeDraft: true }
   | { type: "notes/remove-user"; noteId: string }
   | { type: "notes/remove-live"; noteId: string }
-  | { type: "notes/clear"; fileKey?: string; includeUser?: boolean };
+  | { type: "notes/clear"; fileKey?: string; includeUser?: boolean }
+  /** Flip one addressable collapsed gap between collapsed and expanded. */
+  | { type: "expansion/toggle"; fileKey: string; gapId: string };
 
 export interface ReviewSelectionChangedOutcome {
   type: "selection/changed";
@@ -90,11 +112,39 @@ export interface ReviewNotesClearedOutcome {
   remainingUserCount: number;
 }
 
+export interface ReviewDraftStartedOutcome {
+  type: "notes/draft-started";
+  draft: ReviewDraftNote;
+}
+
+/**
+ * What a gap toggle settled on, and everything a caller needs to fill it.
+ *
+ * The resolved address travels with the outcome rather than being looked up again: the
+ * side whose source text fills the gap, both per-side ranges, and the identity of the
+ * content behind them. A caller that re-derived any of those could expand a different
+ * range than the one the review just recorded as expanded.
+ */
+export interface ReviewExpansionToggledOutcome {
+  type: "expansion/toggled";
+  fileKey: string;
+  gapId: string;
+  expanded: boolean;
+  side: ReviewSide;
+  oldRange: ReviewLineRange;
+  newRange: ReviewLineRange;
+  lineCount: number;
+  /** Absent when the file has no expandable source behind it. */
+  sourceIdentity?: string;
+}
+
 export type ReviewIntentOutcome =
   | ReviewSelectionChangedOutcome
+  | ReviewDraftStartedOutcome
   | ReviewNoteCreatedOutcome
   | ReviewNoteRemovedOutcome
-  | ReviewNotesClearedOutcome;
+  | ReviewNotesClearedOutcome
+  | ReviewExpansionToggledOutcome;
 
 /**
  * What each intent reports back.
@@ -111,10 +161,12 @@ export interface ReviewIntentOutcomeByType {
   "selection/anchor": undefined;
   "filter/set": undefined;
   "notes/set-visibility": undefined;
+  "notes/start-draft": ReviewDraftStartedOutcome;
   "notes/create-user": ReviewNoteCreatedOutcome | undefined;
   "notes/remove-user": ReviewNoteRemovedOutcome;
   "notes/remove-live": ReviewNoteRemovedOutcome;
   "notes/clear": ReviewNotesClearedOutcome;
+  "expansion/toggle": ReviewExpansionToggledOutcome;
 }
 
 export interface ReviewIntentPlan {
@@ -126,6 +178,7 @@ export interface ReviewIntentPlan {
 export type ReviewIntentPlanningErrorCode =
   | "file-not-found"
   | "hunk-not-found"
+  | "gap-not-found"
   | "draft-missing"
   | "note-not-found"
   | "missing-fact";
@@ -153,7 +206,7 @@ export function isBlankReviewNoteBody(body: string) {
 }
 
 /** Require one caller-owned fact without letting core allocate identity or time. */
-function requireFact(value: string | undefined, label: "noteId" | "timestamp") {
+function requireFact(value: string | undefined, label: "noteId" | "draftId" | "timestamp") {
   if (!value) {
     throw new ReviewIntentPlanningError("missing-fact", `Review intent requires ${label}.`);
   }
@@ -225,6 +278,85 @@ function planSelectionMove(
   // A refused move publishes nothing at all: no selection change, and no reveal token
   // bump that would scroll a viewport for a key press that went nowhere.
   return target ? planSelection(target.fileKey, target.hunkIndex, target.reveal) : { actions: [] };
+}
+
+/**
+ * The reveal a freshly opened draft asks for by default.
+ *
+ * Starting a note is a deliberate move to the place the note is about, and the note card
+ * is what the reviewer needs on screen — not the hunk header above it. Callers adopting a
+ * position they already scrolled to pass `REVIEW_VIEWPORT_ANCHOR_REVEAL` instead.
+ */
+export const REVIEW_DRAFT_START_REVEAL: ReviewRevealRequest = Object.freeze({
+  anchor: "hunk",
+  scrollToNote: true,
+});
+
+/** Plan opening one draft note, with the caller owning its identity. */
+function planDraftStart(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/start-draft" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const file = requireFile(state, intent.fileKey);
+  requireHunk(file, intent.hunkIndex);
+  const hunk = file.hunks[intent.hunkIndex]!;
+  // Where a note about the whole hunk belongs is one shared answer; a caller that
+  // measured a specific line the reviewer put a cursor on overrides it.
+  const target = intent.target ?? reviewDefaultHunkLineTarget(hunk);
+  const draft: ReviewDraftNote = {
+    id: requireFact(facts.draftId, "draftId"),
+    fileKey: file.key,
+    hunkIndex: intent.hunkIndex,
+    side: target.side,
+    line: target.line,
+    body: "",
+  };
+  return {
+    actions: [
+      { type: "draft/start", draft },
+      {
+        type: "selection/select",
+        fileKey: file.key,
+        hunkIndex: intent.hunkIndex,
+        reveal: intent.reveal ?? REVIEW_DRAFT_START_REVEAL,
+      },
+    ],
+    outcome: { type: "notes/draft-started", draft },
+  };
+}
+
+/** Plan flipping one collapsed gap, resolving the address it names. */
+function planExpansionToggle(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "expansion/toggle" }>,
+): ReviewIntentPlan {
+  const file = requireFile(state, intent.fileKey);
+  // Validated against the same addressing every renderer draws and every note-line check
+  // accepts, so a gap a surface can offer is exactly a gap this intent can expand (A1).
+  const address = reviewGapAddress(reviewGapSourceForFile(file), intent.gapId);
+  if (!address) {
+    throw new ReviewIntentPlanningError(
+      "gap-not-found",
+      `Review gap ${intent.gapId} does not exist in ${file.path}.`,
+    );
+  }
+
+  const expanded = !isReviewGapExpanded(state, file.key, intent.gapId);
+  return {
+    actions: [{ type: "expansion/toggle", fileKey: file.key, gapId: intent.gapId, expanded }],
+    outcome: {
+      type: "expansion/toggled",
+      fileKey: file.key,
+      gapId: intent.gapId,
+      expanded,
+      side: reviewExpansionSide(file.changeKind),
+      oldRange: address.oldRange,
+      newRange: address.newRange,
+      lineCount: address.lineCount,
+      ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
+    },
+  };
 }
 
 /** Plan persistence of the active draft as one user note. */
@@ -359,6 +491,10 @@ export function planReviewIntent(
       return { actions: [{ type: "filter/set", filter: intent.filter }] };
     case "notes/set-visibility":
       return { actions: [{ type: "notes/set-visibility", visible: intent.visible }] };
+    case "notes/start-draft":
+      return planDraftStart(state, intent, facts);
+    case "expansion/toggle":
+      return planExpansionToggle(state, intent);
     case "notes/create-user":
       return planUserNoteCreation(state, facts);
     case "notes/remove-user":

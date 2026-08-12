@@ -75,12 +75,21 @@ function createSingleHunkFile() {
 }
 
 /** Build the small one-hunk alpha fixture used by source-loading tests. */
+/**
+ * The alpha fixture: twelve lines with the eighth changed.
+ *
+ * Long enough that the parsed hunk leaves collapsed context on both sides of it, so the
+ * file offers the real `before:0` and `trailing:0` gaps an expansion test can address.
+ */
 function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  const beforeLines = Array.from({ length: 12 }, (_unused, index) => `export const alpha${index + 1} = ${index + 1};`);
+  const afterLines = [...beforeLines];
+  afterLines[7] = "export const alpha8 = 800;";
   return createDiffFile(
     "alpha",
     "alpha.ts",
-    "export const alpha = 1;\n",
-    "export const alpha = 2;\n",
+    lines(...beforeLines),
+    lines(...afterLines),
     null,
     sourceFetcher,
   );
@@ -93,11 +102,17 @@ function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
  * reload test has to change the file rather than only hand it a new fetcher object.
  */
 function createReloadedAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  const beforeLines = Array.from(
+    { length: 12 },
+    (_unused, index) => `export const alpha${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[7] = "export const alpha8 = 900;";
   return createDiffFile(
     "alpha",
     "alpha.ts",
-    "export const alpha = 1;\n",
-    "export const alpha = 3;\n",
+    lines(...beforeLines),
+    lines(...afterLines),
     null,
     sourceFetcher,
   );
@@ -621,7 +636,7 @@ describe("useReviewController", () => {
           {
             filePath: "alpha.ts",
             side: "new",
-            line: 1,
+            line: 8,
             summary: "Plain fallback",
             markup: "<badge>hidden</badge>",
           },
@@ -1290,7 +1305,10 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap requests old-side source for deleted files", async () => {
+  // Intent: a fully deleted file's single hunk covers the whole file, so it has no
+  // collapsed context anywhere — and a toggle is now validated against the same addressing
+  // the renderer draws gaps from, rather than expanding a gap nobody could have clicked.
+  test("toggleGap has nothing to expand on a fully deleted file", async () => {
     const trackedFetcher = createTestSourceFetcher((side) => (side === "old" ? "removed\n" : null));
 
     const { controllerRef, setup } = await renderReviewController([
@@ -1301,16 +1319,14 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("removed", "trailing:0");
+        expect(() =>
+          expectValue(controllerRef.current).toggleGap("removed", "trailing:0"),
+        ).toThrow("does not exist");
       });
       await flush(setup);
 
-      expect(trackedFetcher.calls).toEqual(["old"]);
-      const status = expectValue(controllerRef.current).sourceStatusByFileId["removed"];
-      expect(status?.kind).toBe("loaded");
-      if (status?.kind === "loaded") {
-        expect(status.text).toBe("removed\n");
-      }
+      expect(trackedFetcher.calls).toEqual([]);
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["removed"]).toBeUndefined();
     } finally {
       await act(async () => {
         setup.renderer.destroy();

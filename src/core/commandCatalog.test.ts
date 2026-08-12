@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createTestReviewState } from "../../test/helpers/review-store-helpers";
 import {
   APP_COMMAND_CATALOG,
   appCommandCatalogEntry,
@@ -55,7 +56,7 @@ describe("app command catalog", () => {
   });
 
   test("lowers navigation commands to the move their scope and direction declare", () => {
-    const state = { showAgentNotes: false };
+    const state = createTestReviewState();
 
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.review.nextHunk"), { count: 1, state }),
@@ -75,19 +76,19 @@ describe("app command catalog", () => {
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.view.toggleAgentNotes"), {
         count: 1,
-        state: { showAgentNotes: false },
+        state: createTestReviewState(),
       }),
     ).toEqual({ type: "notes/set-visibility", visible: true });
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.view.toggleAgentNotes"), {
         count: 1,
-        state: { showAgentNotes: true },
+        state: createTestReviewState(["alpha"], { showAgentNotes: true }),
       }),
     ).toEqual({ type: "notes/set-visibility", visible: false });
   });
 
   test("lowers nothing for commands that resolve outside the review model", () => {
-    const state = { showAgentNotes: false };
+    const state = createTestReviewState();
 
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.view.toggleSidebar"), { count: 1, state }),
@@ -95,8 +96,50 @@ describe("app command catalog", () => {
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.app.quit"), { count: 1, state }),
     ).toBeUndefined();
+  });
+
+  test("lowers a new note at the current selection, with an optional measured line", () => {
+    const state = createTestReviewState();
+
     expect(
-      lowerAppCommandToReviewIntent(entry("hunk.review.toggleHunkGap"), { count: 1, state }),
+      lowerAppCommandToReviewIntent(entry("hunk.review.startNote"), { count: 1, state }),
+    ).toEqual({ type: "notes/start-draft", fileKey: "alpha", hunkIndex: 0 });
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.startNote"), {
+        count: 1,
+        state,
+        noteTarget: { side: "old", line: 4 },
+      }),
+    ).toEqual({
+      type: "notes/start-draft",
+      fileKey: "alpha",
+      hunkIndex: 0,
+      target: { side: "old", line: 4 },
+    });
+  });
+
+  test("lowers the gap toggle to the gap the shared policy reaches", () => {
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.toggleHunkGap"), {
+        count: 1,
+        state: createTestReviewState([{ key: "alpha", sourceIdentity: "source:alpha" }]),
+      }),
+    ).toEqual({ type: "expansion/toggle", fileKey: "alpha", gapId: "before:1" });
+  });
+
+  // Intent: an effect with no target is a no-op everywhere rather than one client's guess.
+  test("lowers nothing when a semantic effect has nothing to act on", () => {
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.toggleHunkGap"), {
+        count: 1,
+        state: createTestReviewState(),
+      }),
+    ).toBeUndefined();
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.startNote"), {
+        count: 1,
+        state: createTestReviewState([]),
+      }),
     ).toBeUndefined();
   });
 });
