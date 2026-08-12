@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { buildReviewAnnotationIndex } from "../../core/review/annotations";
 import { createTestAgentFileContext, createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import {
-  buildReviewAnnotationIndex,
   buildReviewStreamState,
   buildSelectedHunkSummary,
   resolveReviewNavigationTarget,

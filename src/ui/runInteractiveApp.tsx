@@ -10,6 +10,7 @@ import { shutdownSession } from "../core/shutdown";
 import { shouldUseMouseForApp, type ControllingTerminal } from "../core/terminal";
 import type { AppBootstrap } from "../core/types";
 import { resolveStartupUpdateNotice } from "../core/updateNotice";
+import { ReviewProducer } from "../app/review/producer";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
@@ -33,12 +34,23 @@ export async function runInteractiveApp({
   bootstrap,
   controllingTerminal,
 }: InteractiveAppInput): Promise<void> {
+  // One producer owns this review's generations for the life of the process: the
+  // registration and the first snapshot are projections of its first publication, and every
+  // reload publishes the next one through the same object.
+  const reviewProducer = new ReviewProducer({
+    files: bootstrap.changeset.files,
+    sourceLabel: bootstrap.changeset.sourceLabel,
+  });
+  const publication = reviewProducer.getPublication();
   const hostClient = new SessionBrokerClient<
     HunkSessionInfo,
     HunkSessionState,
     HunkSessionServerMessage,
     HunkSessionCommandResult
-  >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
+  >(
+    createSessionRegistration(bootstrap, publication),
+    createInitialSessionSnapshot(bootstrap, publication),
+  );
   hostClient.start();
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
@@ -89,6 +101,7 @@ export async function runInteractiveApp({
       bootstrap={bootstrap}
       hostClient={hostClient}
       onQuit={shutdown}
+      reviewProducer={reviewProducer}
       startupNoticeResolver={resolveStartupUpdateNotice}
     />,
   );
