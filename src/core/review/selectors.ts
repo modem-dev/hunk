@@ -7,6 +7,12 @@
  * state, and the ones that encode a rule rather than a lookup say so by name.
  */
 import { normalizeDiffPath } from "../diffPaths";
+import {
+  reviewGapId,
+  reviewGapSourceForFile,
+  reviewLeadingGap,
+  reviewTrailingGap,
+} from "./expansion";
 import { reviewCanonicalHunkLine } from "./geometry";
 import type { ReviewNavigationFile } from "./navigation";
 import {
@@ -234,6 +240,44 @@ export function isReviewGapExpanded(
   return state.expandedGaps.some(
     (gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded,
   );
+}
+
+/** One collapsed gap, addressed the way an expansion intent names it. */
+export interface ReviewGapTarget {
+  fileKey: string;
+  gapId: string;
+}
+
+/**
+ * The gap a "toggle unchanged context" command acts on.
+ *
+ * Named policy, because "the nearest gap" has to mean the same thing wherever the command
+ * is invoked from: the selected hunk's own leading gap first, then the leading gap of each
+ * later hunk, and finally the file's trailing gap. Undefined means the selection reaches
+ * no gap at all — a file with no collapsed context, or one whose content has no expandable
+ * source behind it, which is a semantic fact (`sourceIdentity`) rather than a renderer's
+ * knowledge of its fetcher.
+ */
+export function selectReviewGapForSelection(
+  state: Pick<ReviewState, "document" | "filter" | "selection">,
+): ReviewGapTarget | undefined {
+  const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+  const file = selectReviewFileByKey(state, fileKey);
+  if (!file || file.sourceIdentity === undefined || file.hunks.length === 0) {
+    return undefined;
+  }
+
+  const gapSource = reviewGapSourceForFile(file);
+  for (let index = hunkIndex; index < file.hunks.length; index += 1) {
+    if (reviewLeadingGap(gapSource, index)) {
+      return { fileKey: file.key, gapId: reviewGapId("before", index) };
+    }
+  }
+
+  const trailing = reviewTrailingGap(gapSource);
+  return trailing
+    ? { fileKey: file.key, gapId: reviewGapId("trailing", trailing.hunkIndex) }
+    : undefined;
 }
 
 /** Select the expanded gap ids of every file that currently has any. */

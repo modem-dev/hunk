@@ -32,17 +32,15 @@ import {
   type ReviewIntentFacts,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
-import { reviewExpansionSide, reviewTrailingGap } from "../../core/review/expansion";
-import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
-  isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
   selectNormalizedSelection,
+  selectReviewGapForSelection,
 } from "../../core/review/selectors";
-import type { ReviewDraftNote, ReviewRevealRequest } from "../../core/review/state";
+import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
@@ -60,7 +58,6 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
-import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 
 import {
   EMPTY_LINE_CURSORS,
@@ -83,8 +80,8 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewProjection";
+import { buildReviewAnnotationIndex } from "../../core/review/annotations";
 import {
-  buildReviewAnnotationIndex,
   buildReviewStreamState,
   buildSelectedHunkSummary,
   resolveReviewNavigationTarget,
@@ -614,10 +611,14 @@ export function useReviewController({
 
       const restorePointKey = `${fileId}:${gapKey}`;
       const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const expanding = !isReviewGapExpanded(store.getSnapshot(), fileKey, gapKey);
-      if (expanding) {
-        if (lineCursorRef.current) {
-          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
+      const cursorBeforeToggle = lineCursorRef.current;
+      // The intent decides whether this is an expand or a collapse and reports the side
+      // whose source fills the gap; the line-cursor bookkeeping below is the terminal's
+      // own, and reads that decision rather than predicting it.
+      const toggled = runIntent({ type: "expansion/toggle", fileKey, gapId: gapKey });
+      if (toggled.expanded) {
+        if (cursorBeforeToggle) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
         }
         pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
       } else {
@@ -626,8 +627,6 @@ export function useReviewController({
           ? { kind: "restore", cursor: restorePoint }
           : null;
       }
-
-      store.dispatch({ type: "expansion/toggle", fileKey, gapId: gapKey, expanded: expanding });
 
       // The fetcher caches its own resolved text; we mirror it into review state as a
       // tagged status so the UI can distinguish loading, loaded, and error states. Skip
@@ -638,7 +637,7 @@ export function useReviewController({
         return;
       }
 
-      const side = reviewExpansionSide(file.metadata.type);
+      const { side } = toggled;
       const request = {
         fetcher: file.sourceFetcher,
         requestId: nextSourceLoadRequestIdRef.current,
@@ -694,25 +693,19 @@ export function useReviewController({
           setSettledStatus({ kind: "error", reason });
         });
     },
-    [allFiles, keyByFileId, store],
+    [allFiles, keyByFileId, runIntent, store],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */
   const toggleSelectedHunkGap = useCallback(() => {
-    const file = selectedFile;
-    if (!file?.sourceFetcher) {
-      return;
+    // Which gap "toggle unchanged context" reaches is the shared policy, not a terminal
+    // rule: the same command fired from anywhere else must land on the same gap.
+    const target = selectReviewGapForSelection(store.getSnapshot());
+    const file = target ? fileByKey.get(target.fileKey) : undefined;
+    if (target && file) {
+      toggleGap(file.id, target.gapId);
     }
-
-    const target = selectGapForKeyboardToggle(
-      file.metadata.hunks,
-      selectedHunkIndex,
-      reviewTrailingGap(file.metadata) !== undefined,
-    );
-    if (target) {
-      toggleGap(file.id, target);
-    }
-  }, [selectedFile, selectedHunkIndex, toggleGap]);
+  }, [fileByKey, store, toggleGap]);
 
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
@@ -960,22 +953,23 @@ export function useReviewController({
         return null;
       }
 
-      const target = requestedTarget ?? reviewDefaultHunkLineTarget(hunk);
-      applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
-      const draft: ReviewDraftNote = {
-        id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
-        fileKey,
-        hunkIndex,
-        side: target.side,
-        line: target.line,
-        body: "",
-      };
-      store.dispatch({ type: "draft/start", draft });
-      if (options?.preserveViewport) {
-        anchorSelection(file.id, hunkIndex);
-      } else {
-        selectHunk(file.id, hunkIndex, { scrollToNote: true });
-      }
+      // The draft's identity is the caller's to own, and where a whole-hunk note lands is
+      // the shared default; a measured cursor target overrides it.
+      const { draft } = runIntent(
+        {
+          type: "notes/start-draft",
+          fileKey,
+          hunkIndex,
+          ...(requestedTarget ? { target: requestedTarget } : {}),
+          // Adopting a position the viewport already settled on is the shared anchor
+          // policy, so the draft asks for no reveal at all in that case.
+          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
+        },
+        { draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}` },
+      );
+      applyLineCursor(
+        lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
+      );
       return storedDraftToDraftNote(draft, file);
     },
     [
@@ -983,10 +977,9 @@ export function useReviewController({
       applyLineCursor,
       keyByFileId,
       lineCursors,
-      selectHunk,
+      runIntent,
       selectedFile?.id,
       selectedHunkIndex,
-      store,
     ],
   );
 
