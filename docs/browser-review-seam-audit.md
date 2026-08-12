@@ -237,6 +237,18 @@ path suffixes, expansion retention, git-status badges).
   triple-equality, plus a fifth copy in web `App.tsx` compensating for the first being
   stricter than the broker. Fix: `core/review/generationOrder.ts` exporting the invariant and
   `classifySnapshot`/`classifyState` → `accepted|stale|gap`, consumed by all five sites.
+  _Repaid (Phase 2, producer site)_: `core/review/generationOrder.ts` states the invariant
+  once — a generation carries a producer id and a sequence that advances by exactly one, and
+  revisions strictly increase but need not be contiguous — and `classifyReviewPublication`
+  answers `accepted | stale | gap`. `assertReviewPublicationAdvance` is the producer's own
+  side of it, checked before any generation is swapped in. Two decisions worth stating:
+  revision skips are legal (the prototype client's contiguous `+1` rule is the bug, not the
+  contract), and a republication carrying no new semantic position — a renderer width changed
+  and nothing about the review did — classifies as a replay, so the broker's "accept equal
+  revisions for width-only refreshes" case becomes a publication-key decision at the producer
+  rather than a looser comparison. Fixtures live in
+  `test/review-conformance/orderingFixtures.ts` and cover both the classification and the
+  transitions a real producer emits. Broker and browser sites close in Phases 3 and 5.
 - **C2. Chunk assembly + verification — 4 copies, 2 in one file.** Web `apiClient.ts` range
   loop; broker `state.ts` materializing and pre-sized loops (which already disagree on
   progress/eof rules); SSE reassembly in `mirror.ts`. Three in-flight dedupe key formats;
@@ -244,6 +256,15 @@ path suffixes, expansion retention, git-status badges).
   `core/review/resourceAssembly.ts` (`ChunkAssembler` with expected size/digest, bounded
   progress, verified finalize) plus one keyed single-flight helper; HTTP Range/abort, broker
   reservations, and concurrency tuning stay at the edges.
+  _Repaid (Phase 2, producer site)_: `core/review/resources.ts` owns resource addressing, the
+  chunk bound both ends validate against, and the failure vocabulary;
+  `src/app/review/resourceStore.ts` produces and serves the bytes. Single flight is
+  structural rather than a cache bolted on — a read reaches the underlying reader only
+  through the in-flight map — and bulk loads run under an explicit concurrency limit instead
+  of an unbounded `Promise.all`, which is the pair of defects the original review found.
+  Digest comparison normalizes both operands (`reviewDigestsEqual`). The reader half — chunk
+  reassembly against an expected size and digest — lands with the broker in Phase 3 and
+  consumes the same module.
 - **C3. Epoch/supersede/trailing-retry — 2 parallel machines.** Runtime reload queue
   (`reloadEpochSequence`/`supersededReloads`) vs web snapshot recovery
   (`recoveryEpoch`/trailing while-loop), plus three unrelated anti-spin timing constants. Fix:
@@ -268,6 +289,12 @@ path suffixes, expansion retention, git-status badges).
   client pre-checks size, and the server's action-body cap is smaller than the largest
   "valid" note. Fix: one `reviewNoteWithinBounds` used by wire, broker, producer, and both
   composers.
+  _Repaid (Phase 2, core and producer sites)_: `core/review/noteBounds.ts` measures the whole
+  note in the unit a transport pays — its serialized bytes, through the platform-free
+  `utf8ByteLength` — and `MAX_REVIEW_NOTE_BYTES` sits beside it. Fixtures
+  `test/review-conformance/noteBounds.ts` pin the boundary the two prototype rules disagreed
+  at, including a note whose summary, rationale, and markup each fit while the note itself is
+  three times the bound. Wire and composer sites adopt it in Phases 3 and 5.
 - **D2. Empty-body policy — 5 declarations.** Core intents (throws), terminal (cancels
   draft — a deliberate UX difference worth keeping explicit), web in three places. Fix: one
   `isBlankReviewNoteBody` predicate.
@@ -286,6 +313,14 @@ path suffixes, expansion retention, git-status badges).
   canonical hunk _content_ to manifest hunks. Fix: one order-independent
   `assertCanonicalFileMatchesManifest` in core; producer self-check reuses it.
   (`contentManifest.ts` is legitimately different — a parity-test snapshot, not a validator.)
+  _Repaid (Phase 2, core and producer sites)_: `core/review/canonicalFile.ts` carries no field
+  list of its own — it projects the candidate file into a content manifest entry and compares
+  that by value at every level, so the list cannot drift from what the model says a file is,
+  key order never participates, and hunk content is checked alongside the geometry derived
+  from it. The manifest gained the content that requires (patch text, hunk blocks, source
+  identity) and stays a snapshot rather than becoming the validator. The producer self-checks
+  with it before serving any canonical file, and the conformance harness runs that check over
+  every fixture. The browser and broker copies go when those tiers land.
 - **D5. Validator/constant hygiene.** `isReviewSha256Digest` exists but is bypassed by five
   inline regexes with case-sensitivity drift; raw `createHash("sha256")` at seven sites
   instead of `reviewDigest`; `hasExactKeys` private while the pattern is inlined ~10×;
@@ -296,6 +331,16 @@ path suffixes, expansion retention, git-status badges).
   from each other. Also name the intentionally stricter `resolution === "active"` filter
   (`isActiveStoredReviewNote`) beside `isRenderableStoredReviewNote`, and comment why
   `parseReviewState` notes intentionally skip manifest-geometry matching.
+  _Repaid (Phase 2, core and producer sites)_: `core/review/validation.ts` owns the digest
+  vocabulary and the exact-key check the producer validates with and the wire protocol will.
+  `isReviewSha256Digest` accepts only the canonical lowercase form — the case-insensitive
+  variant is what let a writer and a reader disagree — with `normalizeReviewDigest` for values
+  arriving from outside and `reviewDigestsEqual` normalizing _both_ operands. Hashing itself is
+  an injected `ReviewDigestFn` rather than inline `createHash` calls; the producer supplies
+  Node's at the edge (`src/app/review/digest.ts`), which is also what repaid the shared model's
+  last node-debt entry. Resource bounds are constants in `core/review/resources.ts` that the
+  producer imports rather than restates. Wire constants, the action-envelope parser, and the
+  two note-filter namings are Phase 3.
 
 ## E. Presentation helpers
 
@@ -343,13 +388,19 @@ here so the extraction happens before the duplication exists. Design detail in
   commands have no intent to lower to yet — starting a note needs caller-owned draft identity,
   and gap expansion is the Phase 2 `expansion/toggle` intent — and are listed by name in
   `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT`, so the gap is a decision rather than an oversight.
-  Residual (found in review): `lowerAppCommandToReviewIntent` has no production caller yet —
-  the terminal's navigation handlers read the catalog's declared scope/direction but build
-  their intents inline, and `toggleAgentNotes` reads no catalog data at all, so the lowering
-  and the terminal closures can diverge with only `commandCatalog.test.ts` noticing half the
-  drift. Closes when the lowering gains its second consumer (the Phase 5 palette / wire
-  command path); until then any change to a declared review effect must update both sites,
-  and a review-effect parity check is the missing test.
+  _Closed (Phase 2)_: both landed. `notes/start-draft` takes caller-owned draft identity and
+  an optional client-measured line, falling back to the shared whole-hunk default;
+  `expansion/toggle` resolves through `reviewGapAddress` and reports the side, ranges, and
+  source identity a caller needs to fill the gap. Which gap the command reaches is
+  `selectReviewGapForSelection` in core, replacing the terminal's `selectGapForKeyboardToggle`.
+  `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT` is now empty, and every semantic command lowers to
+  an intent a remote client could fire.
+  Residual (found in review): `lowerAppCommandToReviewIntent` still has no production caller —
+  the terminal's handlers read the catalog's declared scope/direction but build their intents
+  inline, so the lowering and the terminal closures can diverge with only
+  `commandCatalog.test.ts` noticing half the drift. Closes when the lowering gains its second
+  consumer (the Phase 5 palette / wire command path); until then any change to a declared
+  review effect must update both sites, and a review-effect parity check is the missing test.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
