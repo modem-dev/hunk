@@ -236,6 +236,10 @@ jobs:
     if: github.event_name == 'push'
     permissions:
       contents: write
+      # Required by actions/attest-build-provenance: `id-token` mints the Sigstore
+      # OIDC token and `attestations` writes the bundle to GitHub's attestation store.
+      id-token: write
+      attestations: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -274,6 +278,15 @@ jobs:
             tar -C "$(dirname "$directory")" -czf "dist/release/github/${package_name}.tar.gz" "$package_name"
           done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -name 'hunkdiff-*' -print0 | sort -z)
           find dist/release/github -maxdepth 1 -type f | sort
+
+      # Attest the archives before they are uploaded so the provenance covers
+      # exactly the bytes published as release assets. The subject glob is kept
+      # identical to the upload glob below so nothing can ship unattested.
+      # mise/aqua verifies these through GitHub Artifact Attestations on install.
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/release/github/*
 
       - name: Create or update GitHub release
         env:

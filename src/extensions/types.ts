@@ -11,7 +11,7 @@ import type {
   ExtensionFileView,
   ExtensionKeyboardMode,
   ExtensionNotifyType,
-  ExtensionSidebarView,
+  ExtensionPane,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -64,6 +64,19 @@ export type {
   ExtensionReviewNote,
   ExtensionNotifyType,
   ExtensionPaintTheme,
+  ExtensionPane,
+  ExtensionPaneActions,
+  ExtensionPaneAvailabilityContext,
+  ExtensionPaneComponent,
+  ExtensionPaneControls,
+  ExtensionPaneKeybindings,
+  ExtensionPanePlacement,
+  ExtensionPaneProps,
+  ExtensionPaneTheme,
+  ExtensionPaneSize,
+  ExtensionHorizontalPane,
+  ExtensionVerticalPane,
+  ExtensionCurrentLinePaint,
   ExtensionSelectOptions,
   ExtensionSidebarActions,
   ExtensionSidebarComponent,
@@ -131,9 +144,9 @@ export interface RegisteredChangesetTransform {
   transform: ChangesetTransform;
 }
 
-export interface RegisteredSidebarView {
+export interface RegisteredPane {
   extensionId: string;
-  view: ExtensionSidebarView;
+  pane: ExtensionPane;
 }
 
 /** A host-rendered alternative file presentation registered by one extension. */
@@ -189,7 +202,7 @@ export interface ExtensionRegistry {
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
-  sidebarViews: RegisteredSidebarView[];
+  panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
   keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
@@ -264,7 +277,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],
-    sidebarViews: [],
+    panes: [],
     fileViews: [],
     keyboardModes: [],
     commands: [],

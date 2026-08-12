@@ -1,9 +1,9 @@
 ---
 title: Install
-description: Install Hunk with npm, Homebrew, or Nix and verify the CLI.
+description: Install Hunk with npm, Homebrew, mise, or Nix and verify the CLI.
 ---
 
-Hunk runs on macOS, Linux, and Windows. npm installs require Node.js 18 or newer; Homebrew and Nix installs are self-contained binaries. Git is recommended for the most common review workflows.
+Hunk runs on macOS, Linux, and Windows. npm installs require Node.js 18 or newer; Homebrew, mise, and Nix installs are self-contained binaries. Git is recommended for the most common review workflows.
 
 ## npm
 
@@ -30,6 +30,17 @@ brew uninstall modem-dev/tap/hunk
 brew install hunk
 ```
 
+## mise
+
+[mise](https://mise.jdx.dev) knows Hunk by the short name `hunk` (alias `hunkdiff`) and installs the prebuilt binary on macOS and Linux:
+
+```bash
+mise use -g hunk
+hunk --version
+```
+
+Hunk also ships as a default tool in [Omarchy](https://omarchy.org), which installs it through mise.
+
 ## Nix
 
 The repository exports a `default` package from `flake.nix`. From a clone of Hunk:
@@ -47,6 +58,6 @@ See the repository's `nix/README.md` for Home Manager and development-shell deta
 hunk --help
 ```
 
-You should see `Usage: hunk <command> [options]`. If the shell cannot find Hunk, ensure your global npm or Homebrew binary directory is on `PATH`, then open a new shell.
+You should see `Usage: hunk <command> [options]`. If the shell cannot find Hunk, ensure your global npm, Homebrew, or mise binary directory is on `PATH`, then open a new shell.
 
 Next, [review your first working tree](/docs/start/quick-start/).

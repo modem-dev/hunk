@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createExtensionSidebarKeybindings,
+  createExtensionPaneKeybindings,
   formatKeyChord,
   resolveCommandKeys,
   type CommandKeyDefaults,
@@ -135,10 +135,10 @@ describe("resolveCommandKeys", () => {
   });
 });
 
-describe("extension sidebar keybindings", () => {
+describe("extension pane keybindings", () => {
   test("matches resolved commands and exposes their effective chords", () => {
     const { keys } = resolve({ "hunk.review.nextHunk": "ctrl+n", "hunk.app.quit": false });
-    const keybindings = createExtensionSidebarKeybindings(keys);
+    const keybindings = createExtensionPaneKeybindings(keys);
 
     expect(keybindings.getKeys("hunk.review.nextHunk")).toEqual(["ctrl+n"]);
     expect(keybindings.matches({ name: "n", ctrl: true }, "hunk.review.nextHunk")).toBe(true);
@@ -150,7 +150,7 @@ describe("extension sidebar keybindings", () => {
 
   test("treats unknown command ids as unbound", () => {
     const { keys } = resolveCommandKeys({ defaults: DEFAULTS });
-    const keybindings = createExtensionSidebarKeybindings(keys);
+    const keybindings = createExtensionPaneKeybindings(keys);
 
     expect(keybindings.getKeys("missing.command")).toEqual([]);
     expect(keybindings.matches({ name: "q" }, "missing.command")).toBe(false);
