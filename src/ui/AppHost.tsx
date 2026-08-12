@@ -212,9 +212,13 @@ export function AppHost({
       const { nextBootstrap, nextSnapshot, sessionId } = preparedReload;
 
       let replacementMounted: Promise<void> | undefined;
+      let currentExtensionsRetired: Promise<void> | undefined;
       if (replacementExtensions) {
         // Only retire the visible runtime after its replacement review is known-good.
-        await retireExtensionLoadResult(currentExtensions);
+        // Revocation is synchronous so mounted controls and modes become inert
+        // before shutdown starts; React then tears them down on this state update.
+        // `retireExtensionLoadResult` revokes synchronously before its first await.
+        currentExtensionsRetired = retireExtensionLoadResult(currentExtensions);
         extensionsRef.current = replacementExtensions;
         extensionsCwdRef.current = cwd;
         replacementMounted = new Promise<void>((resolveMounted) => {
@@ -243,7 +247,7 @@ export function AppHost({
       } else {
         // Keep the reload queue held until React commits the matching App and
         // the replacement receives startup/session_reload through live controls.
-        await replacementMounted;
+        await Promise.all([replacementMounted, currentExtensionsRetired]);
       }
 
       return {

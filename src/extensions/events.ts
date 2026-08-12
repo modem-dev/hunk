@@ -492,16 +492,25 @@ export async function emitExtensionEventBounded<Event extends ExtensionEventName
   }
 }
 
-/** Shut down one retired extension runtime and sever its custom-event bus. */
+/** Revoke one runtime's UI/event authority before asynchronous teardown begins. */
+export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefined) {
+  if (!result || result.registry.eventBusPhase === "closed") {
+    return false;
+  }
+
+  result.registry.emitCustomEvent = undefined;
+  result.registry.eventBusPhase = "closed";
+  result.registry.pendingCustomEvents.length = 0;
+  return true;
+}
+
+/** Shut down one retired extension runtime after synchronously revoking its authority. */
 export async function retireExtensionLoadResult(
   result: ExtensionLoadResult | undefined,
 ): Promise<void> {
-  if (!result || result.registry.eventBusPhase === "closed") {
+  if (!revokeExtensionLoadResult(result)) {
     return;
   }
 
   await emitExtensionEventBounded(result, "shutdown", {});
-  result.registry.emitCustomEvent = undefined;
-  result.registry.eventBusPhase = "closed";
-  result.registry.pendingCustomEvents.length = 0;
 }

@@ -190,7 +190,7 @@ describe("extension event dispatch", () => {
 });
 
 describe("extension event bus", () => {
-  test("drops emissions from contexts retained after their registry retires", async () => {
+  test("revokes retained contexts before an asynchronous shutdown settles", async () => {
     let retainedContext: Parameters<ExtensionEventHandler<"startup">>[1] | undefined;
     let deliveries = 0;
     const { result } = createTestLoadResult([
@@ -209,13 +209,21 @@ describe("extension event bus", () => {
         deliveries += 1;
       },
     });
+    let releaseShutdown!: () => void;
+    result.registry.eventHandlers.shutdown.push({
+      extensionId: "sender",
+      handler: () => new Promise<void>((resolve) => (releaseShutdown = resolve)),
+    });
     bindExtensionEventBus(result);
     emitExtensionEvent(result, "startup", { cwd: "/repo" });
 
-    await retireExtensionLoadResult(result);
+    const retirement = retireExtensionLoadResult(result);
+    expect(result.registry.eventBusPhase).toBe("closed");
     retainedContext?.events.emit("probe", {});
-
     expect(deliveries).toBe(0);
+
+    releaseShutdown();
+    await retirement;
   });
 
   test("delivers a namespaced event to every listener and isolates failures", async () => {
