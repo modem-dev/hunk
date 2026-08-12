@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { createTestReviewDocument } from "../../../test/helpers/review-store-helpers";
 import { createInitialReviewState, isRenderableStoredReviewNote } from "./state";
 import type { ReviewStoredNote } from "./state";
-import type { ReviewDocumentV1 } from "./types";
 
 /** Build one minimal review document with the given file keys. */
-function testDocument(...keys: string[]): ReviewDocumentV1 {
-  return {
-    files: keys.map((key) => ({ key, runtimeId: key, path: `${key}.ts`, hunkCount: 1 })),
-  };
+function testDocument(...keys: string[]) {
+  return createTestReviewDocument(keys);
 }
 
 /** Build one stored note carrying only what the visibility policy reads. */

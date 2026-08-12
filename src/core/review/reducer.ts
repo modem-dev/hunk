@@ -71,7 +71,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!file) {
         return state;
       }
-      const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunkCount - 1));
+      const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunks.length - 1));
       const selectionChanged =
         file.key !== state.selection.fileKey || hunkIndex !== state.selection.hunkIndex;
       const reveal = action.reveal
