@@ -30,13 +30,13 @@ remains open, and where the plan puts it:
 - **F browser bindings** — F1–F3's browser halves (palette, keymap resolution onto DOM
   events). F4 stays a scope boundary, not work.
 - **G1, G2 policy** — view-option classification and persistence, and the multi-client
-  selection and authorship policy. G2's *wire fields* are done (see G2); what a receiver
+  selection and authorship policy. G2's _wire fields_ are done (see G2); what a receiver
   should do with an actor tag is the decision, due before Phase 5 PR 2.
 - **G3 adoption** — the address grammar exists with no consumers; browser deep links
   (Phase 5) and opener fragments (Phase 6) close it.
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-One residual this run created rather than inherited: remote note *composition* has no
+One residual this run created rather than inherited: remote note _composition_ has no
 draft-body intent yet, recorded under B12.
 
 ## A. Diff geometry
@@ -241,7 +241,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   actions that can name a line (`notes/start-draft`'s target, and `notes/create-user`'s
   precondition on the draft it is saving), refusing evidence that accompanies no line, and
   `src/session/app/reviewCommands.ts` checks it before planning. Where the resulting note hangs
-  is deliberately *not* decided there: it goes through `reviewLineAnchor`'s fallback owner
+  is deliberately _not_ decided there: it goes through `reviewLineAnchor`'s fallback owner
   exactly as a terminal note does, which `reviewCommands.test.ts` pins by asserting an empty
   intersection set and the declared owner. Fixtures `start-draft-on-an-expanded-line`,
   `create-user-note-at-an-expanded-line`, and `start-draft-with-a-proof-about-nothing` in
@@ -267,7 +267,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   listed fails to typecheck, and a listed name that is not an intent fails too.
   `HUNK_REVIEW_ACTION_TYPES` is that list minus `WIRE_UNREACHABLE_REVIEW_INTENT_TYPES`, which
   is empty and says why: a semantic intent resolves at the producer and is broadcast to every
-  attached surface, so every one of them belongs to every surface. The wire *type* is derived
+  attached surface, so every one of them belongs to every surface. The wire _type_ is derived
   the same way — `HunkReviewActionV1` is `ReviewIntent` with the two wire-only fields added to
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
@@ -276,7 +276,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   every exclusion names a real intent once, and that every type in the vocabulary really
   reaches a parser. Round-trip fixtures for all twelve actions live in
   `test/review-conformance/wireFixtures.ts`, registered as the `review wire protocol` consumer.
-  Residual: remote note *composition* is not expressible yet. The vocabulary has no
+  Residual: remote note _composition_ is not expressible yet. The vocabulary has no
   draft-body intent, so a remote client can open a draft and save it but not type into it;
   adding one is Phase 5's note-editing work, and until then the gap is a named absence rather
   than a forgotten action.
