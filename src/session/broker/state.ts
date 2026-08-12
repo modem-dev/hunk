@@ -56,10 +56,9 @@ import {
 import { nodeReviewDigest } from "../../app/review/digest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  type HunkReviewActionAppliedV1,
+  type HunkReviewActionResultV1,
   type HunkReviewActionV1,
   type HunkReviewActorV1,
-  type HunkReviewFailureV1,
   type HunkReviewResourceReadResultV1,
 } from "../reviewProtocol";
 import {
@@ -313,12 +312,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     generation: string,
     action: HunkReviewActionV1,
     options: { actor?: HunkReviewActorV1; expectedStateRevision?: number } = {},
-  ): Promise<HunkReviewActionAppliedV1 | HunkReviewFailureV1> {
+  ): Promise<HunkReviewActionResultV1> {
     this.assertGenerationActive(sessionId, generation);
-    return this.dispatchCommand<
-      HunkReviewActionAppliedV1 | HunkReviewFailureV1,
-      "apply_review_action"
-    >({
+    return this.dispatchCommand<HunkReviewActionResultV1, "apply_review_action">({
       selector: { sessionId },
       command: "apply_review_action",
       input: {

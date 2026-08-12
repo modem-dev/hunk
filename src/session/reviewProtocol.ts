@@ -230,6 +230,9 @@ export interface HunkReviewActionAppliedV1 {
   stateRevision: number;
 }
 
+/** Everything a producer may answer one action with. */
+export type HunkReviewActionResultV1 = HunkReviewActionAppliedV1 | HunkReviewFailureV1;
+
 /**
  * Every way a review command can be refused.
  *
@@ -254,10 +257,7 @@ export interface HunkReviewFailureV1 {
 }
 
 /** Everything a producer may answer a review command with. */
-export type HunkReviewResultV1 =
-  | HunkReviewActionAppliedV1
-  | HunkReviewResourceReadResultV1
-  | HunkReviewFailureV1;
+export type HunkReviewResultV1 = HunkReviewActionResultV1 | HunkReviewResourceReadResultV1;
 
 // -- Parsing ----------------------------------------------------------------------------
 

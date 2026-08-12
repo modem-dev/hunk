@@ -29,8 +29,8 @@ import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1, ReviewLineAddressV1 } from "../../core/review/types";
 import {
   toReviewIntent,
-  type HunkReviewActionAppliedV1,
   type HunkReviewActionEnvelopeV1,
+  type HunkReviewActionResultV1,
   type HunkReviewActionV1,
   type HunkReviewExpandedLineProofV1,
   type HunkReviewFailureCodeV1,
@@ -38,8 +38,6 @@ import {
   type HunkReviewResourceReadEnvelopeV1,
   type HunkReviewResourceReadResultV1,
 } from "../reviewProtocol";
-
-export type HunkReviewActionResultV1 = HunkReviewActionAppliedV1 | HunkReviewFailureV1;
 
 /** Build one failure carrying the generation the producer is actually serving. */
 function fail(
