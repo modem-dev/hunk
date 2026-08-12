@@ -11,6 +11,7 @@
 // against the active AppTheme happens at render time in resolveStmlColor, so
 // measurement never needs a theme.
 
+import { stmlTagRole } from "../../../core/review/stml";
 import { measureTextWidth, sliceTextByWidth } from "../text";
 import { decodeStmlEntities, parseStml, type StmlElement, type StmlNode } from "./parse";
 
@@ -175,23 +176,18 @@ function attrStyle(attrs: Record<string, string>): StmlStyle {
 }
 
 function inlineStyle(tag: string, attrs: Record<string, string>): StmlStyle {
-  switch (tag) {
-    case "b":
+  switch (stmlTagRole(tag)) {
     case "strong":
       return { bold: true };
-    case "i":
-    case "em":
+    case "emphasis":
       return { italic: true };
-    case "u":
+    case "underline":
       return { underline: true };
-    case "s":
     case "strike":
-    case "del":
       return { strike: true };
-    case "dim":
     case "muted":
       return { dim: true };
-    case "kbd":
+    case "key":
       return { bg: "subtle", fg: "heading" };
     case "badge":
       return {
@@ -199,7 +195,6 @@ function inlineStyle(tag: string, attrs: Record<string, string>): StmlStyle {
         fg: attrs.fg ?? "badge-text",
         bold: true,
       };
-    case "a":
     case "link":
       return { fg: "accent", underline: true };
     default:
@@ -227,11 +222,12 @@ function inlineSpans(node: StmlNode, style: StmlStyle): StmlSpan[] {
     const text = collapseWs(decodeStmlEntities(node.value));
     return text === "" ? [] : [{ ...style, text }];
   }
-  if (node.tag === "br") {
+  const role = stmlTagRole(node.tag);
+  if (role === "line-break") {
     return [{ ...style, text: "\n" }];
   }
   const next = mergeStyle(style, inlineStyle(node.tag, node.attrs));
-  const padded = node.tag === "badge" || node.tag === "kbd";
+  const padded = role === "badge" || role === "key";
   const out: StmlSpan[] = [];
   if (padded) {
     out.push({ ...next, text: " " });
@@ -631,14 +627,11 @@ function layoutBlock(
   errors: LayoutErrors,
 ): StmlLine[] {
   const tag = el.tag;
-  switch (tag) {
-    case "box":
-    case "card":
-    case "col":
-    case "column":
-    case "stack":
-    case "section": {
-      const isCard = tag === "card";
+  const role = stmlTagRole(tag);
+  switch (role) {
+    case "container":
+    case "card": {
+      const isCard = role === "card";
       const border =
         "border" in el.attrs ? truthyAttr(el.attrs.border) : isCard || "border-style" in el.attrs;
       const { chars, unknown } = borderChars(
@@ -672,24 +665,19 @@ function layoutBlock(
     case "row":
       return layoutRow(el, width, style, errors);
 
-    case "text":
-    case "p":
+    case "paragraph":
       return wrapSpans(
         el.children.flatMap((child) => inlineSpans(child, mergeStyle(style, attrStyle(el.attrs)))),
         width,
       );
 
-    case "h":
-    case "h1":
-    case "h2":
-    case "h3":
     case "heading":
     case "title": {
       const base = mergeStyle(style, {
         bold: true,
         fg: el.attrs.fg ?? el.attrs.color ?? "heading",
       });
-      if (tag === "h1" || tag === "title") {
+      if (role === "title") {
         base.underline = true;
       }
       return wrapSpans(
@@ -698,8 +686,6 @@ function layoutBlock(
       );
     }
 
-    case "hr":
-    case "rule":
     case "divider":
       return [
         {
@@ -707,21 +693,19 @@ function layoutBlock(
         },
       ];
 
-    case "spacer":
-    case "space": {
+    case "spacer": {
       const size = Math.max(1, Math.min(20, numAttr(el.attrs.size) ?? 1));
       return Array.from({ length: size }, () => ({ spans: [{ text: "" }] }));
     }
 
     case "list":
-    case "ul":
-    case "ol": {
-      const ordered = tag === "ol";
+    case "ordered-list": {
+      const ordered = role === "ordered-list";
       const marker = el.attrs.marker ?? "•";
       const lines: StmlLine[] = [];
       let index = 1;
       for (const child of el.children) {
-        if (child.type !== "element" || (child.tag !== "item" && child.tag !== "li")) {
+        if (child.type !== "element" || stmlTagRole(child.tag) !== "list-item") {
           continue;
         }
         const prefix = ordered ? `${index++}. ` : `${marker} `;
@@ -730,12 +714,10 @@ function layoutBlock(
       return lines;
     }
 
-    case "item":
-    case "li":
+    case "list-item":
       return bulletLines("• ", el.children, width, style, errors);
 
-    case "code":
-    case "pre": {
+    case "code": {
       const { chars } = borderChars(el.attrs["border-style"], "single");
       const codeStyle: StmlStyle = { ...style, fg: el.attrs.fg ?? style.fg };
       const codeWidth = Math.max(1, width - 4);

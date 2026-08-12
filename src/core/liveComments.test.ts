@@ -4,10 +4,9 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
-  firstCommentTargetForHunk,
-  hunkLineRange,
   resolveCommentTarget,
 } from "./liveComments";
+import { reviewHunkRanges } from "./review/geometry";
 
 function createExampleDiffFile() {
   return createTestDiffFile({
@@ -40,25 +39,6 @@ describe("live comment helpers", () => {
     expect(findHunkIndexForLine(file, "old", 1)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 2)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 40)).toBe(-1);
-  });
-
-  test("prefers a later addition over an earlier deletion-only chunk for hunk targets", () => {
-    const target = firstCommentTargetForHunk({
-      additionStart: 20,
-      additionLines: 1,
-      deletionStart: 20,
-      deletionLines: 1,
-      hunkContent: [
-        { type: "change", deletions: 1, additions: 0 },
-        { type: "context", lines: 2 },
-        { type: "change", deletions: 0, additions: 1 },
-      ],
-    } as Parameters<typeof firstCommentTargetForHunk>[0]);
-
-    expect(target).toEqual({
-      side: "new",
-      line: 22,
-    });
   });
 
   test("resolves hunk-wide comment targets to one stable line", () => {
@@ -123,21 +103,11 @@ describe("live comment helpers", () => {
     });
   });
 
-  test("computes inclusive single-line hunk ranges", () => {
-    const file = createExampleDiffFile();
-    const range = hunkLineRange(file.metadata.hunks[0]!);
-
-    expect(range.oldRange[0]).toBeLessThanOrEqual(1);
-    expect(range.oldRange[1]).toBeGreaterThanOrEqual(2);
-    expect(range.newRange[0]).toBeLessThanOrEqual(1);
-    expect(range.newRange[1]).toBeGreaterThanOrEqual(2);
-  });
-
   // Regression: a hunk with one addition surrounded by lots of context used to report
   // newRange = [start, start] (additions-only), so a comment anchored past the leading
   // context fell outside the hunk's range, annotationOverlapsHunk returned false, and
   // the hunk silently disappeared from getAnnotatedHunkIndices / annotated-cursor lists.
-  // Fix: hunkLineRange uses additionCount/deletionCount (header total, includes context)
+  // Fix: reviewHunkRange uses additionCount/deletionCount (header total, includes context)
   // instead of additionLines/deletionLines (just '+' / '-' counts).
   test("includes context lines when one hunk has many context rows around few changes", () => {
     // 12 leading + 1 added + many trailing context lines on the new side.
@@ -157,7 +127,7 @@ describe("live comment helpers", () => {
     const hunk = file.metadata.hunks[0]!;
     expect(hunk.additionLines).toBe(1);
 
-    const range = hunkLineRange(hunk);
+    const range = reviewHunkRanges(hunk);
 
     // The range must cover the inserted line at position 13 — additions-only bounds
     // would put newEnd at additionStart and miss it.

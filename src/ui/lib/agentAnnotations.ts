@@ -1,6 +1,6 @@
 import type { Hunk } from "@pierre/diffs";
 import type { AgentAnnotation, DiffFile, ReviewNoteSource } from "../../core/types";
-import { hunkLineRange } from "../../core/liveComments";
+import { reviewHunkRanges } from "../../core/review/geometry";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
@@ -50,7 +50,7 @@ function overlap(rangeA: [number, number], rangeB: [number, number]) {
 
 /** Check whether an annotation belongs to the visible span of a hunk. */
 function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
-  const hunkRange = hunkLineRange(hunk);
+  const hunkRange = reviewHunkRanges(hunk);
 
   if (annotation.newRange && overlap(annotation.newRange, hunkRange.newRange)) {
     return true;

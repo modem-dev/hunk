@@ -5,7 +5,7 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import type { DiffFile, LayoutMode } from "../../core/types";
-import { gapKey } from "../diff/expandCollapsedRows";
+import { reviewGapId } from "../../core/review/expansion";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { resolveTheme } from "../themes";
 import {
@@ -155,7 +155,7 @@ describe("buildLineCursors", () => {
       120,
       true,
       false,
-      new Set([gapKey("before", 0)]),
+      new Set([reviewGapId("before", 0)]),
       { kind: "loaded", text: source },
     );
 

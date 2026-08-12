@@ -7,7 +7,8 @@ import {
   resolveSplitPaneWidths,
   resolveStackCellGeometry,
 } from "./codeColumns";
-import { gapKey } from "./expandCollapsedRows";
+import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../../core/review/document";
+import { reviewGapId } from "../../core/review/expansion";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -1460,29 +1461,25 @@ function renderWrappedStackCellLine(
   );
 }
 
+/** Review-stream wording for each shared reason a file renders no diff rows. */
+export const DIFF_MESSAGES: Record<ReviewEmptyDiffReason, string> = {
+  "rename-only": "No textual hunks. This change only renames the file.",
+  binary: "Binary file skipped",
+  "too-large": "File too large to render automatically.",
+  "new-file": "No textual hunks. The file is marked as new.",
+  "deleted-file": "No textual hunks. The file is marked as deleted.",
+  "no-hunks": "No textual hunks to render for this file.",
+};
+
 /** Explain why a file still appears in the review stream even when it has no textual hunks. */
 export function diffMessage(file: DiffFile) {
-  if (file.metadata.type === "rename-pure") {
-    return "No textual hunks. This change only renames the file.";
-  }
-
-  if (file.isBinary) {
-    return "Binary file skipped";
-  }
-
-  if (file.isTooLarge) {
-    return "File too large to render automatically.";
-  }
-
-  if (file.metadata.type === "new") {
-    return "No textual hunks. The file is marked as new.";
-  }
-
-  if (file.metadata.type === "deleted") {
-    return "No textual hunks. The file is marked as deleted.";
-  }
-
-  return "No textual hunks to render for this file.";
+  return DIFF_MESSAGES[
+    reviewEmptyDiffReason({
+      changeKind: file.metadata.type,
+      binary: Boolean(file.isBinary),
+      tooLarge: Boolean(file.isTooLarge),
+    })
+  ];
 }
 
 /** Build the rendered label text for one collapsed gap row. */
@@ -1524,7 +1521,7 @@ function renderHeaderRow(
   const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
   const handleCollapsedClick =
     row.type === "collapsed" && onToggleGap
-      ? () => onToggleGap(gapKey(row.position, row.hunkIndex))
+      ? () => onToggleGap(reviewGapId(row.position, row.hunkIndex))
       : undefined;
 
   if (badges.length === 0) {

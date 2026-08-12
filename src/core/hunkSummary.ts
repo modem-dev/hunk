@@ -1,7 +1,7 @@
 import type { Hunk } from "@pierre/diffs";
 import type { ExtensionDiffHunk } from "../extension-api/types";
 import { formatHunkHeader } from "./hunkHeader";
-import { hunkLineRange } from "./liveComments";
+import { reviewHunkRanges } from "./review/geometry";
 
 /** Report whether one hunk carries the numeric header fields ranges derive from. */
 function hasLineNumbers(hunk: Hunk) {
@@ -34,6 +34,6 @@ export function summarizeHunk(hunk: Hunk, index: number): ExtensionDiffHunk {
     // Public summaries are commonly embedded in terminal-safe extension rows, so keep this
     // boundary single-line without changing the raw header formatter used by Hunk itself.
     header: formattedHeader.replace(/[\r\n]+/g, " ").trimEnd(),
-    ...(rangesDerivable ? hunkLineRange(hunk) : {}),
+    ...(rangesDerivable ? reviewHunkRanges(hunk) : {}),
   };
 }
