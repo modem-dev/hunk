@@ -80,7 +80,8 @@ Gate: CLI contract tests, offline-asset check, real terminal + browser smoke run
 A file-level audit of the prototype found roughly thirty duplicated derivations across the
 terminal, browser, agent runtime, and broker — the seam is wider than the review model and wire
 schema. Each rebuild phase lands the primitives below and deletes the per-consumer copies it
-replaces:
+replaces. This section is the summary; the per-finding work-list with sites and observed
+divergences is `browser-review-seam-audit.md`, and extraction PRs check findings off there:
 
 - **Diff geometry** (`core/review`, Phase 1 PR 2): per-side hunk ranges (`reviewHunkRange` —
   the prototype has four implementations, one wrong), gap addressing (`reviewGapAddress` — the
@@ -94,7 +95,10 @@ replaces:
   three times: terminal, agent runtime, and the browser was set to become a third), file-jump
   (`selection/select-file`), selection normalization and fallback, reveal-target resolution,
   active-note selection, notes-by-hunk grouping (owner-index based, not range containment), one
-  filter matcher shared by stream and tree, and one viewport-anchor policy.
+  filter matcher shared by stream and tree, one note-visibility predicate, and one
+  viewport-anchor policy. The wire vocabulary is derived from `ReviewIntent` instead of
+  hand-restated, and gains the `expandedLineProof` field the browser needs for expanded-line
+  selection parity.
 - **Ordering and transfer** (`core/review` + protocol, Phases 3–4): one generation/state-
   revision acceptance state machine (the prototype has five with differing rules), one chunk
   assembly/verification helper (four copies, two inside one file), one epoch/supersede queue,
@@ -106,7 +110,8 @@ replaces:
   calculator (producer, broker, and browser each re-derive it, the broker's copy dropping the
   fallback branch), an order-independent canonical-file/manifest consistency check, shared
   digest validators and exact-key helpers, and no re-declared wire constants.
-- **Presentation helpers** (Phase 5): file stat badges and change-kind decorations.
+- **Presentation helpers** (Phase 5): file stat badges and change-kind decorations, plus the
+  browser importing shared language registration for side effects.
 
 Deliberately renderer-specific — do not unify: terminal row building, cell measurement, and row
 windowing; browser IntersectionObserver windowing and DOM reveal mechanics; STML layout; platform
