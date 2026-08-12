@@ -1,3 +1,5 @@
+import type { ReviewProducer } from "../../app/review/producer";
+import type { HunkReviewFailureV1, HunkReviewResourceReadResultV1 } from "../reviewProtocol";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -8,6 +10,7 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../types";
+import { applySessionReviewAction, readSessionReviewResource } from "./reviewCommands";
 
 export interface HunkSessionBridgeHandlers {
   addLiveComment: (
@@ -36,6 +39,24 @@ export interface HunkSessionBridgeHandlers {
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /**
+   * The producer serving this session's review, when one is mounted.
+   *
+   * Optional because a headless mount may bridge comment commands without ever
+   * publishing a generation; a review command then answers with the same refusal a
+   * caller would get for a review that has moved on, rather than throwing.
+   */
+  reviewProducer?: ReviewProducer;
+}
+
+/** The refusal a review command gets when this session serves no published review. */
+function noReviewProducer(): HunkReviewFailureV1 {
+  return {
+    ok: false,
+    code: "stale-generation",
+    message: "This session is not serving a published review.",
+    currentGeneration: "",
+  };
 }
 
 /** Build the app-facing bridge handler the generic broker client calls into for Hunk commands. */
@@ -80,6 +101,17 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           return handlers.clearLiveComments(message.input.filePath, {
             includeUser: message.input.includeUser,
           });
+        case "read_review_resource": {
+          const producer = handlers.reviewProducer;
+          const result: HunkReviewResourceReadResultV1 = producer
+            ? await readSessionReviewResource(producer, message.input)
+            : noReviewProducer();
+          return result;
+        }
+        case "apply_review_action": {
+          const producer = handlers.reviewProducer;
+          return producer ? applySessionReviewAction(producer, message.input) : noReviewProducer();
+        }
       }
     },
   };

@@ -10,6 +10,7 @@ import {
   SESSION_BROKER_REGISTRATION_VERSION,
   resolveSessionTerminalMetadata,
 } from "@hunk/session-broker-core";
+import type { HunkReviewResourceCatalogV1 } from "../reviewProtocol";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "../types";
 
 /** Resolve the TTY device path for the current process, if available. */
@@ -39,6 +40,12 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
  * session surface is a consumer of the published review like any other, so what an agent
  * reads through `hunk session` and what a later client reads over the wire come from the
  * same generation instead of from two readings of the same changeset.
+ *
+ * Patch text is deliberately absent. It is published as a resource instead, read on
+ * demand in bounded verified chunks, so the daemon holds one patch at a time rather than
+ * every patch of every live session for as long as those sessions are open — and a review
+ * whose patches exceed the registration budget registers normally instead of failing to
+ * appear at all.
  */
 function buildSessionFiles(publication: ReviewPublication): SessionReviewFile[] {
   return publication.document.files.map((file) => ({
@@ -48,11 +55,21 @@ function buildSessionFiles(publication: ReviewPublication): SessionReviewFile[] 
     additions: file.stats.additions,
     deletions: file.stats.deletions,
     hunkCount: file.hunks.length,
-    patch: file.patch,
     // The same derivation the extension API's file views use, so the two
     // external views of a review never disagree on a hunk's header or spans.
     hunks: file.hunks.map((hunk, index) => summarizeHunk(hunk, index)),
   }));
+}
+
+/** Describe the generation and the resources it offers, for the broker's review mirror. */
+function buildReviewCatalog(publication: ReviewPublication): HunkReviewResourceCatalogV1 {
+  return {
+    generation: publication.generation,
+    fileKeysByRuntimeId: Object.fromEntries(
+      publication.document.files.map((file) => [file.runtimeId, file.key]),
+    ),
+    resources: [...publication.resources],
+  };
 }
 
 /** Build the broker-facing envelope for one live Hunk review session. */
@@ -76,6 +93,7 @@ export function createSessionRegistration(
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(publication),
+      reviewCatalog: buildReviewCatalog(publication),
     },
   };
 }
@@ -96,6 +114,7 @@ export function updateSessionRegistration(
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(publication),
+      reviewCatalog: buildReviewCatalog(publication),
     },
   };
 }
@@ -122,6 +141,9 @@ export function createInitialSessionSnapshot(
       liveComments: [],
       reviewNoteCount: 0,
       reviewNotes: [],
+      // A fresh generation starts at the store's own first revision; every later snapshot
+      // reports where the review has since moved so the mirror can order them.
+      reviewPublication: { generation: publication.generation, stateRevision: 0 },
     },
   };
 }

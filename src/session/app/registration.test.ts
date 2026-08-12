@@ -48,7 +48,8 @@ function publish(bootstrap: AppBootstrap) {
 }
 
 describe("session registration", () => {
-  // Intent: registration preserves daemon-facing repo, file, patch, and hunk metadata.
+  // Intent: registration preserves daemon-facing repo, file, and hunk metadata, and
+  // advertises the generation's resources instead of embedding patch bodies.
   test("createSessionRegistration exports review files with hunks and repo-root selection", () => {
     const registration = createSessionRegistration(createBootstrap(), publish(createBootstrap()));
 
@@ -70,7 +71,6 @@ describe("session registration", () => {
             additions: 1,
             deletions: 1,
             hunkCount: 1,
-            patch: "@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;\n",
           },
         ],
       },
@@ -125,6 +125,7 @@ describe("session registration", () => {
       sourceLabel: "change.patch",
       experimentalFeatures: [],
       files: [],
+      reviewCatalog: { generation: "generation:test:0", fileKeysByRuntimeId: {}, resources: [] },
     });
   });
 
@@ -153,6 +154,7 @@ describe("session registration", () => {
       liveComments: [],
       reviewNoteCount: 0,
       reviewNotes: [],
+      reviewPublication: { generation: "generation:test:0", stateRevision: 0 },
     });
   });
 
@@ -175,6 +177,28 @@ describe("session registration", () => {
       liveComments: [],
       reviewNoteCount: 0,
       reviewNotes: [],
+      reviewPublication: { generation: "generation:test:0", stateRevision: 0 },
     });
+  });
+
+  // Intent: the daemon can address every resource of the generation it mirrors, and can
+  // map the renderer file ids the session surface uses onto the semantic keys resources
+  // are addressed by.
+  test("createSessionRegistration advertises the generation's resource catalog", () => {
+    const bootstrap = createBootstrap();
+    const publication = publish(bootstrap);
+    const registration = createSessionRegistration(bootstrap, publication);
+    const catalog = registration.info.reviewCatalog;
+    const fileKey = publication.document.files[0]!.key;
+
+    expect(catalog?.generation).toBe("generation:test:0");
+    expect(catalog?.fileKeysByRuntimeId).toEqual({ "file-1": fileKey });
+    expect(catalog?.resources.map((resource) => resource.kind).sort()).toEqual([
+      "canonical-file",
+      "patch",
+    ]);
+    expect(
+      catalog?.resources.every((resource) => resource.generation === "generation:test:0"),
+    ).toBe(true);
   });
 });

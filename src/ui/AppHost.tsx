@@ -319,6 +319,7 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
       onReloadSession={reloadSession}
+      reviewProducer={producer}
       watchRuntime={watchRuntime}
     />
   );
