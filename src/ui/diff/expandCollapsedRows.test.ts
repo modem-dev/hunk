@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reviewGapId } from "../../core/review/expansion";
-import { expandCollapsedRows, selectGapForKeyboardToggle } from "./expandCollapsedRows";
+import { expandCollapsedRows } from "./expandCollapsedRows";
 import type { DiffRow } from "./pierre";
 
 function makeCollapsedRow(
@@ -372,38 +372,5 @@ describe("expandCollapsedRows", () => {
       throw new Error("expected first row to be collapsed");
     }
     expect(collapsed.text.toLowerCase()).toContain("could not load");
-  });
-});
-
-describe("selectGapForKeyboardToggle", () => {
-  test("returns the leading gap of the selected hunk when one exists", () => {
-    const hunks = [{ collapsedBefore: 3 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBe(reviewGapId("before", 0));
-  });
-
-  test("falls forward to the next hunk's leading gap when the selected hunk has none", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 5 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBe(reviewGapId("before", 1));
-  });
-
-  test("falls back to the trailing gap when no later leading gap exists", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, true)).toBe(reviewGapId("trailing", 1));
-  });
-
-  test("returns null when no leading or trailing gap is reachable", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBeNull();
-  });
-
-  test("returns null for an empty hunk list", () => {
-    expect(selectGapForKeyboardToggle([], 0, false)).toBeNull();
-  });
-
-  test("clamps a stale selectedHunkIndex into the valid range", () => {
-    const hunks = [{ collapsedBefore: 4 }, { collapsedBefore: 0 }];
-    // Stale index 99 clamps to the last hunk (1); that hunk has no leading gap,
-    // so the trailing gap is the only reachable target.
-    expect(selectGapForKeyboardToggle(hunks, 99, true)).toBe(reviewGapId("trailing", 1));
   });
 });

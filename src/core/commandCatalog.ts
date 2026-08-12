@@ -27,7 +27,9 @@
  */
 import type { ReviewIntent } from "./review/intents";
 import type { ReviewSelectionScope } from "./review/navigation";
+import { selectNormalizedSelection, selectReviewGapForSelection } from "./review/selectors";
 import type { ReviewState } from "./review/state";
+import type { ReviewLineAddressV1 } from "./review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
@@ -44,7 +46,11 @@ export type AppCommandCategory = "app" | "review" | "view";
  */
 export type AppCommandReviewEffect =
   | { kind: "selection/move"; scope: ReviewSelectionScope; direction: 1 | -1 }
-  | { kind: "notes/toggle-visibility" };
+  | { kind: "notes/toggle-visibility" }
+  /** Open a draft at the current selection; the client may supply a measured line. */
+  | { kind: "notes/start-draft" }
+  /** Flip the gap the shared policy says this selection reaches. */
+  | { kind: "expansion/toggle-selected-gap" };
 
 export interface AppCommandCatalogEntry {
   /** Stable identifier, `hunk.<category>.<name>` for every built-in. */
@@ -137,6 +143,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["c"],
     locus: "semantic",
+    review: { kind: "notes/start-draft" },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -381,6 +388,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["z"],
     locus: "semantic",
+    review: { kind: "expansion/toggle-selected-gap" },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -488,17 +496,13 @@ export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_CO
 /**
  * Semantic commands whose review effect is not modelled as an intent yet.
  *
- * Named rather than implied: both change the review for every attached surface and belong
- * at the producer, but neither has an intent to lower to today — starting a note needs a
- * caller-owned draft identity and a resolved line target, and gap expansion is the
- * `expansion/toggle` intent staged for the producer-runtime phase. Until those land, the
- * terminal keeps resolving them locally, and this list is what keeps that a decision
- * instead of an oversight.
+ * Empty, and meant to stay that way: the last two entries — starting a note and toggling
+ * gap expansion — became the `notes/start-draft` and `expansion/toggle` intents in the
+ * producer-runtime phase, so every semantic command now lowers to something every attached
+ * surface can resolve. The list survives as the place a deliberate exception would be
+ * named, rather than being left implicit in a command with no declared effect.
  */
-export const SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT: readonly AppCommandId[] = [
-  "hunk.review.startNote",
-  "hunk.review.toggleHunkGap",
-];
+export const SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT: readonly AppCommandId[] = [];
 
 /** Look one command up by id. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
@@ -509,8 +513,20 @@ export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | und
 export interface AppCommandLoweringContext {
   /** Host-normalized positive repeat count. */
   count: number;
-  /** Current review state, for commands whose effect depends on what it already says. */
-  state: Pick<ReviewState, "showAgentNotes">;
+  /**
+   * Current review state. Some effects are relative to what the review already says —
+   * which note layer is showing, where the selection is, which gap that selection reaches
+   * — so the lowering reads state rather than each client restating those rules.
+   */
+  state: ReviewState;
+  /**
+   * A line the invoking client measured for a new note.
+   *
+   * The one renderer-owned fact in this lowering: only the surface that drew the review
+   * knows which line the reviewer's cursor was on. Omitted, the note lands on the shared
+   * default for the whole hunk.
+   */
+  noteTarget?: ReviewLineAddressV1;
 }
 
 /**
@@ -518,12 +534,13 @@ export interface AppCommandLoweringContext {
  *
  * The single constructor every surface goes through: a keyboard chord, a browser palette
  * entry, and an agent command that name the same id produce the same intent. Undefined
- * means the command has no declared review effect — it is client-local, host-only, or one
- * of the semantic commands still listed above.
+ * means the command has no declared review effect — it is client-local or host-only — or
+ * that its effect has no target right now: no selection to write a note at, no gap within
+ * reach of one. A command that resolves to nothing does nothing, in every client.
  */
 export function lowerAppCommandToReviewIntent(
   entry: AppCommandCatalogEntry,
-  { count, state }: AppCommandLoweringContext,
+  { count, state, noteTarget }: AppCommandLoweringContext,
 ): ReviewIntent | undefined {
   switch (entry.review?.kind) {
     case "selection/move":
@@ -534,6 +551,21 @@ export function lowerAppCommandToReviewIntent(
       };
     case "notes/toggle-visibility":
       return { type: "notes/set-visibility", visible: !state.showAgentNotes };
+    case "notes/start-draft": {
+      const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+      return fileKey === null
+        ? undefined
+        : {
+            type: "notes/start-draft",
+            fileKey,
+            hunkIndex,
+            ...(noteTarget ? { target: noteTarget } : {}),
+          };
+    }
+    case "expansion/toggle-selected-gap": {
+      const target = selectReviewGapForSelection(state);
+      return target ? { type: "expansion/toggle", ...target } : undefined;
+    }
     case undefined:
       return undefined;
   }
