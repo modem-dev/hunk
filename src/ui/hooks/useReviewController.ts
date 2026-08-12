@@ -158,6 +158,16 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  /**
+   * The semantic review store this controller owns.
+   *
+   * Exposed so the host can attach it to the producer that publishes this review: a
+   * brokered action and a key press must plan against the same state, not against two
+   * stores that happen to hold the same content.
+   */
+  store: ReviewStore;
+  /** The store's monotonic revision, reported to anyone ordering this review's publications. */
+  stateRevision: number;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -234,6 +244,7 @@ export function useReviewController({
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
   noteGeometry,
+  sourceLabel = "",
   stmlEnabled = false,
 }: {
   files: DiffFile[];
@@ -244,6 +255,15 @@ export function useReviewController({
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
    */
   lineCursors?: LineCursor[];
+  /**
+   * Identity of the review's input as a whole.
+   *
+   * Part of every semantic file key, so the document this controller projects addresses
+   * files exactly as the producer's published generation does. Without it the two would
+   * key the same review differently and an action addressed by one could not be planned
+   * against the other.
+   */
+  sourceLabel?: string;
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
   /**
@@ -253,7 +273,10 @@ export function useReviewController({
    */
   noteGeometry?: { current: AgentNoteGeometrySnapshot | null };
 }): ReviewController {
-  const document = useMemo(() => projectReviewDocument(files), [files]);
+  const document = useMemo(
+    () => projectReviewDocument(files, { sourceLabel }),
+    [files, sourceLabel],
+  );
   const [store] = useState(() =>
     createReviewStore(document, { showAgentNotes: initialShowAgentNotes }),
   );
@@ -1115,6 +1138,8 @@ export function useReviewController({
 
   return {
     allFiles,
+    store,
+    stateRevision: state.stateRevision,
     draftNote,
     expandedGapsByFileId,
     filter,

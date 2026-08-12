@@ -58,6 +58,7 @@ import type {
   RegisteredCommand,
   RegisteredPane,
 } from "../extensions/types";
+import type { ReviewProducer } from "../app/review/producer";
 import type {
   HunkSessionBrokerClient,
   ReloadedSessionResult,
@@ -206,6 +207,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  reviewProducer,
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
@@ -216,6 +218,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** The producer publishing this review's generations, when the host mounted one. */
+  reviewProducer?: ReviewProducer;
   watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
@@ -238,8 +242,16 @@ export function App({
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
     noteGeometry: noteGeometryRef,
+    sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
   });
+  // The producer plans brokered actions against the store this controller owns, so a
+  // remote action and a key press reach the same state through the same intent path.
+  // Attached before any command can arrive: the session bridge is installed by a later
+  // effect, so nothing can be dispatched into the producer until this has run.
+  useEffect(() => {
+    reviewProducer?.attachStore(review.store);
+  }, [review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -1139,8 +1151,10 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
+    reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
+    reviewStateRevision: review.stateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,

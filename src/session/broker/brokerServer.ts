@@ -239,8 +239,10 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
         response = { context: state.getSelectedContext(input.selector) };
         break;
       case "review": {
+        // Patch bodies are read back from the publishing session as review resources, so
+        // this is the one session action whose projection is asynchronous.
         response = {
-          review: state.getSessionReview(input.selector, {
+          review: await state.getSessionReviewWithResources(input.selector, {
             includePatch: input.includePatch,
             includeNotes: input.includeNotes,
           }),
