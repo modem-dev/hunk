@@ -8,6 +8,7 @@ import {
   NO_ACTIVE_SESSIONS_MESSAGE,
   noDiffFileMatchesMessage,
   RELOAD_SEPARATOR_MESSAGE,
+  reviewResourceUnavailableMessage,
 } from "./errors";
 import {
   COMMENT_DIRECTION_CONSTRAINT,
@@ -66,6 +67,7 @@ describe("agent error messages", () => {
       constraintViolationMessage(NAVIGATE_TARGET_CONSTRAINT),
       constraintViolationMessage(COMMENT_TARGET_CONSTRAINT),
       constraintViolationMessage(COMMENT_DIRECTION_CONSTRAINT),
+      reviewResourceUnavailableMessage("src/App.tsx"),
     ];
 
     // Quotes match messages by prefix rather than array position, so reordering
