@@ -15,6 +15,7 @@
  * text so pager pipelines keep working.
  */
 import { loadAppBootstrap } from "../core/loaders";
+import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type { CommonOptions, DiffFile, NamedCustomThemeConfig } from "../core/types";
 import {
@@ -286,6 +287,33 @@ function fileStatusLabel(file: DiffFile) {
   }
 }
 
+/**
+ * Static-pager wording for each shared reason a file renders no diff rows.
+ *
+ * Terser than the review stream's: a captured pager pane has one line to spend, so the
+ * change-kind reasons collapse into one sentence. The reason itself is shared, so no
+ * surface can decide a file is binary while another calls the same file a rename (A8).
+ */
+const STATIC_DIFF_MESSAGES: Record<ReviewEmptyDiffReason, string> = {
+  "rename-only": "No textual changes.",
+  binary: "Binary file.",
+  "too-large": "Skipped because the file is too large to render.",
+  "new-file": "No textual changes.",
+  "deleted-file": "No textual changes.",
+  "no-hunks": "No textual changes.",
+};
+
+/** Explain one file with nothing to render, in static pager wording. */
+function staticEmptyDiffMessage(file: DiffFile) {
+  return STATIC_DIFF_MESSAGES[
+    reviewEmptyDiffReason({
+      changeKind: file.metadata.type,
+      binary: Boolean(file.isBinary),
+      tooLarge: Boolean(file.isTooLarge),
+    })
+  ];
+}
+
 /** Use an arrow label for renamed files so static output keeps important path metadata. */
 function fileDisplayPath(file: DiffFile) {
   const previousPath = file.previousPath ?? file.metadata.prevName;
@@ -337,12 +365,7 @@ async function renderStaticFile(
   const header = `${colorText(fileDisplayPath(file), theme.text)} ${status} ${stats}`;
 
   if (rows.length === 0) {
-    const message = file.isTooLarge
-      ? "  Skipped because the file is too large to render."
-      : file.isBinary
-        ? "  Binary file."
-        : "  No textual changes.";
-    return [header, colorText(message, theme.muted)].join("\n");
+    return [header, colorText(`  ${staticEmptyDiffMessage(file)}`, theme.muted)].join("\n");
   }
 
   return [

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { CliInput, DiffFile } from "../../core/types";
-import { hunkLineRange } from "../../core/liveComments";
+import { reviewHunkRanges } from "../../core/review/geometry";
 import { createHunkSessionBridge } from "../../session/app/bridge";
 import type {
   HunkSessionBrokerClient,
@@ -88,7 +88,7 @@ export function useHunkSessionBridge({
   }, [bridge, hostClient]);
 
   useEffect(() => {
-    const selectedRange = selectedHunk ? hunkLineRange(selectedHunk) : undefined;
+    const selectedRange = selectedHunk ? reviewHunkRanges(selectedHunk) : undefined;
 
     hostClient?.updateSnapshot({
       updatedAt: new Date().toISOString(),

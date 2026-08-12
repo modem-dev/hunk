@@ -22,7 +22,6 @@ import {
 import {
   buildLiveComment,
   findDiffFileByPath,
-  firstCommentTargetForHunk,
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
@@ -32,6 +31,9 @@ import {
   type ReviewIntent,
   type ReviewIntentFacts,
 } from "../../core/review/intents";
+import { projectReviewDocument } from "../../core/review/document";
+import { reviewExpansionSide, reviewTrailingGap } from "../../core/review/expansion";
+import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
 import {
   isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
@@ -56,7 +58,7 @@ import type {
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
-import { trailingCollapsedLines } from "../diff/pierre";
+
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   EMPTY_LINE_CURSORS,
@@ -73,7 +75,6 @@ import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   groupStoredNotesByFileId,
   liveCommentToStoredNote,
-  projectReviewDocument,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
@@ -676,7 +677,7 @@ export function useReviewController({
         return;
       }
 
-      const side = file.metadata.type === "deleted" ? "old" : "new";
+      const side = reviewExpansionSide(file.metadata.type);
       const request = {
         fetcher: file.sourceFetcher,
         requestId: nextSourceLoadRequestIdRef.current,
@@ -745,7 +746,7 @@ export function useReviewController({
     const target = selectGapForKeyboardToggle(
       file.metadata.hunks,
       selectedHunkIndex,
-      trailingCollapsedLines(file.metadata) > 0,
+      reviewTrailingGap(file.metadata) !== undefined,
     );
     if (target) {
       toggleGap(file.id, target);
@@ -839,7 +840,7 @@ export function useReviewController({
       );
       store.dispatch({
         type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey)],
+        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks)],
       });
 
       if (options?.reveal ?? false) {
@@ -883,7 +884,9 @@ export function useReviewController({
       if (prepared.length > 0) {
         store.dispatch({
           type: "notes/add-live",
-          notes: prepared.map((entry) => liveCommentToStoredNote(entry.liveComment, entry.fileKey)),
+          notes: prepared.map((entry) =>
+            liveCommentToStoredNote(entry.liveComment, entry.fileKey, entry.file.metadata.hunks),
+          ),
         });
       }
 
@@ -978,7 +981,7 @@ export function useReviewController({
         return null;
       }
 
-      const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      const target = requestedTarget ?? reviewDefaultHunkLineTarget(hunk);
       applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
       const draft: ReviewDraftNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,

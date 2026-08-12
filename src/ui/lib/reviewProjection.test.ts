@@ -1,17 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { buildLiveComment } from "../../core/liveComments";
-import { reviewLineAnchor } from "../../core/review/state";
+import { reviewLineAnchor } from "../../core/review/anchors";
+import type { ReviewHunkSpan } from "../../core/review/geometry";
 import type { ReviewNoteV1 } from "../../core/review/types";
-import type { DiffFile } from "../../core/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import {
   groupStoredNotesByFileId,
   liveCommentToStoredNote,
-  projectReviewDocument,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
 } from "./reviewProjection";
+
+/** Hunk spans placing new line 4 — the test live comment's line — in hunk 2. */
+const testHunks: ReviewHunkSpan[] = [
+  { additionStart: 1, additionCount: 1, deletionStart: 1, deletionCount: 1 },
+  { additionStart: 2, additionCount: 1, deletionStart: 2, deletionCount: 1 },
+  { additionStart: 4, additionCount: 1, deletionStart: 4, deletionCount: 1 },
+];
 
 /** Build one diff file with a real parsed hunk and an optional source fetcher. */
 function testFile(id: string, fetcher?: ReturnType<typeof createTestSourceFetcher>) {
@@ -42,46 +48,12 @@ function testLiveComment() {
   );
 }
 
-describe("projectReviewDocument", () => {
-  test("carries file identity and hunk count", () => {
-    const document = projectReviewDocument([testFile("alpha"), testFile("beta")]);
-
-    expect(document.files.map((file) => ({ key: file.key, path: file.path }))).toEqual([
-      { key: "alpha", path: "alpha.ts" },
-      { key: "beta", path: "beta.ts" },
-    ]);
-    expect(document.files[0]?.hunkCount).toBe(1);
-  });
-
-  test("gives a file without expandable source no source identity", () => {
-    expect(projectReviewDocument([testFile("alpha")]).files[0]?.sourceIdentity).toBeUndefined();
-  });
-
-  test("keeps one source identity per fetcher and changes it when the fetcher does", () => {
-    const fetcher = createTestSourceFetcher(() => "const alpha = 1;\n");
-    const identityOf = (file: DiffFile) => projectReviewDocument([file]).files[0]?.sourceIdentity;
-
-    const first = identityOf(testFile("alpha", fetcher));
-
-    expect(first).toBeDefined();
-    expect(identityOf(testFile("alpha", fetcher))).toBe(first);
-    expect(
-      identityOf(
-        testFile(
-          "alpha",
-          createTestSourceFetcher(() => "const beta = 2;\n"),
-        ),
-      ),
-    ).not.toBe(first);
-  });
-});
-
 describe("live comment round trip", () => {
   test("restores every field the review stream renders", () => {
     const comment = testLiveComment();
 
     const restored = storedNoteToLiveComment(
-      liveCommentToStoredNote(comment, "alpha").note,
+      liveCommentToStoredNote(comment, "alpha", testHunks).note,
       comment.filePath,
     );
 
@@ -89,7 +61,7 @@ describe("live comment round trip", () => {
   });
 
   test("classifies the note once, at the boundary", () => {
-    const stored = liveCommentToStoredNote(testLiveComment(), "alpha");
+    const stored = liveCommentToStoredNote(testLiveComment(), "alpha", testHunks);
 
     expect(stored.note.source).toBe("agent");
     expect(stored.note.originalSource).toBe("mcp");
@@ -104,7 +76,13 @@ describe("user note projection", () => {
       id: "user:1",
       source: "user",
       fileKey: "alpha",
-      anchor: reviewLineAnchor({ hunkIndex: 1, side: "old", line: 9 }),
+      anchor: reviewLineAnchor(
+        [
+          { additionStart: 1, additionCount: 1, deletionStart: 1, deletionCount: 1 },
+          { additionStart: 9, additionCount: 1, deletionStart: 9, deletionCount: 1 },
+        ],
+        { hunkIndex: 1, side: "old", line: 9 },
+      ),
       summary: "needs a test",
       createdAt: "2024-01-01T00:00:00.000Z",
       editable: true,
@@ -138,7 +116,7 @@ describe("draft projection", () => {
     expect(
       storedDraftToDraftNote(
         { id: "draft:1", fileKey: "alpha", hunkIndex: 0, side: "new", line: 3, body: "wip" },
-        { id: "alpha", path: "alpha.ts" },
+        testFile("alpha"),
       ),
     ).toEqual({
       id: "draft:1",
@@ -159,7 +137,7 @@ describe("groupStoredNotesByFileId", () => {
 
   test("keeps stored order within one file", () => {
     const notes = ["mcp:1", "mcp:2"].map((id) =>
-      liveCommentToStoredNote({ ...testLiveComment(), id }, "alpha"),
+      liveCommentToStoredNote({ ...testLiveComment(), id }, "alpha", testHunks),
     );
 
     expect(
@@ -170,9 +148,9 @@ describe("groupStoredNotesByFileId", () => {
   });
 
   test("drops notes whose file left the review, and orphaned anchors", () => {
-    const missingFile = liveCommentToStoredNote(testLiveComment(), "gone");
+    const missingFile = liveCommentToStoredNote(testLiveComment(), "gone", testHunks);
     const orphaned = {
-      ...liveCommentToStoredNote(testLiveComment(), "alpha"),
+      ...liveCommentToStoredNote(testLiveComment(), "alpha", testHunks),
       resolution: "orphaned" as const,
     };
 

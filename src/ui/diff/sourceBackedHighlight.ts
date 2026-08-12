@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import { rebaseReviewHunk } from "../../core/review/geometry";
 
 /** Metadata plus index maps for highlighting a partial diff against authoritative source text. */
 export interface SourceBackedHighlightPlan {
@@ -12,7 +13,13 @@ interface HighlightLineArrays<T> {
   additionLines: Array<T | undefined>;
 }
 
-/** Split normalized source into Pierre-compatible lines while retaining final newlines. */
+/**
+ * Split normalized source into Pierre-compatible lines while retaining final newlines.
+ *
+ * Deliberately not `normalizedReviewSourceLines`: that one addresses lines, dropping the
+ * separators, while the highlighter compares these lines against the patch's own line
+ * strings, which keep their trailing newline.
+ */
 function splitSourceLines(text: string) {
   const normalized = text.replaceAll("\r\n", "\n");
   const lines: string[] = [];
@@ -116,86 +123,55 @@ export function createSourceBackedHighlightPlan(
       valid = false;
     }
 
-    let deletionIndex = deletionStartIndex;
-    let additionIndex = additionStartIndex;
-    const hunkContent = hunk.hunkContent.map((content) => {
-      const adjusted = {
-        ...content,
-        additionLineIndex: additionIndex,
-        deletionLineIndex: deletionIndex,
-      };
+    // The shared rebase walks the hunk's blocks onto full-source origins; pairing each
+    // rebased block with its patch-local original is what the line maps are built from.
+    const rebased = rebaseReviewHunk(hunk, {
+      deletionLineIndex: deletionStartIndex,
+      additionLineIndex: additionStartIndex,
+    });
 
-      if (content.type === "context") {
-        for (let offset = 0; offset < content.lines; offset += 1) {
-          valid =
-            assignSourceLine(
-              deletionLineMap,
-              metadata.deletionLines,
-              fullDeletionLines,
-              content.deletionLineIndex + offset,
-              deletionIndex + offset,
-            ) && valid;
-          valid =
-            assignSourceLine(
-              additionLineMap,
-              metadata.additionLines,
-              fullAdditionLines,
-              content.additionLineIndex + offset,
-              additionIndex + offset,
-            ) && valid;
-        }
+    hunk.hunkContent.forEach((content, blockIndex) => {
+      const target = rebased.hunk.hunkContent[blockIndex]!;
+      const deletions = content.type === "context" ? content.lines : content.deletions;
+      const additions = content.type === "context" ? content.lines : content.additions;
 
-        deletionIndex += content.lines;
-        additionIndex += content.lines;
-      } else {
-        for (let offset = 0; offset < content.deletions; offset += 1) {
-          valid =
-            assignSourceLine(
-              deletionLineMap,
-              metadata.deletionLines,
-              fullDeletionLines,
-              content.deletionLineIndex + offset,
-              deletionIndex + offset,
-            ) && valid;
-        }
-        for (let offset = 0; offset < content.additions; offset += 1) {
-          valid =
-            assignSourceLine(
-              additionLineMap,
-              metadata.additionLines,
-              fullAdditionLines,
-              content.additionLineIndex + offset,
-              additionIndex + offset,
-            ) && valid;
-        }
-
-        deletionIndex += content.deletions;
-        additionIndex += content.additions;
+      for (let offset = 0; offset < deletions; offset += 1) {
+        valid =
+          assignSourceLine(
+            deletionLineMap,
+            metadata.deletionLines,
+            fullDeletionLines,
+            content.deletionLineIndex + offset,
+            target.deletionLineIndex + offset,
+          ) && valid;
       }
-
-      return adjusted;
+      for (let offset = 0; offset < additions; offset += 1) {
+        valid =
+          assignSourceLine(
+            additionLineMap,
+            metadata.additionLines,
+            fullAdditionLines,
+            content.additionLineIndex + offset,
+            target.additionLineIndex + offset,
+          ) && valid;
+      }
     });
 
     if (
-      deletionIndex - deletionStartIndex !== hunk.deletionCount ||
-      additionIndex - additionStartIndex !== hunk.additionCount ||
-      deletionIndex > fullDeletionLines.length ||
-      additionIndex > fullAdditionLines.length
+      rebased.deletionEndIndex - deletionStartIndex !== hunk.deletionCount ||
+      rebased.additionEndIndex - additionStartIndex !== hunk.additionCount ||
+      rebased.deletionEndIndex > fullDeletionLines.length ||
+      rebased.additionEndIndex > fullAdditionLines.length
     ) {
       valid = false;
     }
 
-    previousDeletionEnd = deletionIndex;
-    previousAdditionEnd = additionIndex;
-    finalDeletionEnd = deletionIndex;
-    finalAdditionEnd = additionIndex;
+    previousDeletionEnd = rebased.deletionEndIndex;
+    previousAdditionEnd = rebased.additionEndIndex;
+    finalDeletionEnd = rebased.deletionEndIndex;
+    finalAdditionEnd = rebased.additionEndIndex;
 
-    return {
-      ...hunk,
-      additionLineIndex: additionStartIndex,
-      deletionLineIndex: deletionStartIndex,
-      hunkContent,
-    };
+    return rebased.hunk;
   });
 
   if (!valid || !mapIsComplete(deletionLineMap) || !mapIsComplete(additionLineMap)) {

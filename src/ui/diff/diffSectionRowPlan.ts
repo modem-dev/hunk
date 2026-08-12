@@ -1,3 +1,4 @@
+import { reviewExpansionSide } from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -67,14 +68,13 @@ export function buildDiffSectionRowPlan({
   }
 
   const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth);
-  const expansionSide = file.metadata.type === "deleted" ? "old" : "new";
   const rows = expandCollapsedRows(baseRows, {
     layout,
     expandedKeys,
     sourceLineSpans,
     sourceStatus,
     tabWidth,
-    side: expansionSide,
+    side: reviewExpansionSide(file.metadata.type),
   });
 
   return {

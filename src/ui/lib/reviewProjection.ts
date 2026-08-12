@@ -6,21 +6,20 @@
  * This module is the one boundary where the two meet, so no component re-derives the
  * mapping inline and no note loses a field on the way across.
  *
- * Two identities here are transitional and deliberately named as such: a file's semantic
- * key is currently its runtime id, and a file's source identity is a process-local token
- * per source fetcher. Both become content-derived when the document projection lands.
+ * Projection of the document itself lives in `core/review/document`; what remains here is
+ * the terminal's own note and draft shapes, which no other surface renders.
  */
-import type { FileSourceFetcher } from "../../core/fileSource";
 import type { LiveComment } from "../../core/liveComments";
+import { reviewLineAnchor } from "../../core/review/anchors";
+import type { ReviewHunkSpan } from "../../core/review/geometry";
 import {
   isRenderableStoredReviewNote,
-  reviewLineAnchor,
   reviewNoteAnchorLine,
   reviewNoteOwnerHunkIndex,
   type ReviewDraftNote,
   type ReviewStoredNote,
 } from "../../core/review/state";
-import type { ReviewDocumentV1, ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNoteV1 } from "../../core/review/types";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import { reviewNoteSource } from "./agentAnnotations";
 
@@ -51,46 +50,6 @@ export interface DraftReviewNote {
   body: string;
 }
 
-/**
- * Process-local identity per source fetcher.
- *
- * Expansion state and loaded source text stay valid only while a file's source content
- * is unchanged, so a reload that hands the same file a new fetcher must retire them. The
- * fetcher object is the only identity available before content hashing exists.
- */
-const sourceIdentityByFetcher = new WeakMap<FileSourceFetcher, string>();
-let nextSourceIdentity = 1;
-
-/** Return the stable identity token for one file's source fetcher. */
-function sourceIdentityFor(fetcher: FileSourceFetcher | undefined) {
-  if (!fetcher) {
-    return undefined;
-  }
-  const existing = sourceIdentityByFetcher.get(fetcher);
-  if (existing) {
-    return existing;
-  }
-  const identity = `source:${nextSourceIdentity++}`;
-  sourceIdentityByFetcher.set(fetcher, identity);
-  return identity;
-}
-
-/** Project the terminal's diff files into the semantic document the review store holds. */
-export function projectReviewDocument(files: DiffFile[]): ReviewDocumentV1 {
-  return {
-    files: files.map((file) => {
-      const sourceIdentity = sourceIdentityFor(file.sourceFetcher);
-      return {
-        key: file.id,
-        runtimeId: file.id,
-        path: file.path,
-        hunkCount: file.metadata.hunks.length,
-        ...(sourceIdentity ? { sourceIdentity } : {}),
-      };
-    }),
-  };
-}
-
 /** Carry the annotation fields both note models share, in the terminal's shape. */
 function annotationFields(note: ReviewNoteV1) {
   return {
@@ -106,14 +65,18 @@ function annotationFields(note: ReviewNoteV1) {
 }
 
 /** Store one agent-authored live comment as a semantic review note. */
-export function liveCommentToStoredNote(comment: LiveComment, fileKey: string): ReviewStoredNote {
+export function liveCommentToStoredNote(
+  comment: LiveComment,
+  fileKey: string,
+  hunks: readonly ReviewHunkSpan[],
+): ReviewStoredNote {
   return {
     note: {
       id: comment.id,
       source: reviewNoteSource(comment),
       originalSource: comment.source,
       fileKey,
-      anchor: reviewLineAnchor(comment),
+      anchor: reviewLineAnchor(hunks, comment),
       summary: comment.summary,
       rationale: comment.rationale,
       markup: comment.markup,
@@ -165,11 +128,8 @@ export function storedNoteToUserNote(note: ReviewNoteV1, filePath: string): User
 }
 
 /** Render the semantic draft as the draft the diff pane places and edits. */
-export function storedDraftToDraftNote(
-  draft: ReviewDraftNote,
-  file: { id: string; path: string },
-): DraftReviewNote {
-  const anchor = reviewLineAnchor(draft);
+export function storedDraftToDraftNote(draft: ReviewDraftNote, file: DiffFile): DraftReviewNote {
+  const anchor = reviewLineAnchor(file.metadata.hunks, draft);
   return {
     id: draft.id,
     fileId: file.id,
