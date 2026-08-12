@@ -1,0 +1,30 @@
+/**
+ * The wire protocol as a conformance consumer.
+ *
+ * It answers the corpus by doing exactly what a producer does with an arriving action:
+ * parse it strictly, then lower it to the intent it derives from. Nothing about the
+ * expectations is captured from the parser — the fixtures state the intent by hand — so a
+ * wire type that drifted away from the semantics it carries fails here rather than at a
+ * client (`docs/browser-review-seam-audit.md`, B12/B10).
+ *
+ * It also runs the note-bounds corpus, because "may this note cross a boundary" is a wire
+ * question the prototype answered differently from the producer (D1).
+ */
+import {
+  isTransportableReviewNote,
+  parseHunkReviewAction,
+  toReviewIntent,
+} from "../../../src/session/reviewProtocol";
+import type { ReviewWireConsumer } from "../types";
+
+export const reviewWireConsumer: ReviewWireConsumer = {
+  name: "review wire protocol",
+  phase: "Phase 3",
+  parseAction(action) {
+    const parsed = parseHunkReviewAction(action);
+    return parsed.ok
+      ? { accepted: true, intent: toReviewIntent(parsed.value) }
+      : { accepted: false };
+  },
+  acceptsNote: isTransportableReviewNote,
+};
