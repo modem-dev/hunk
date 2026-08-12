@@ -51,4 +51,4 @@ hunk stash show
 hunk stash show stash@{2}
 ```
 
-Staging areas and stashes are Git-only. Hunk reports a focused error if these operations are requested under a VCS that does not support them.
+Staging areas and stashes are Git-only, so requesting them under another VCS fails with an error naming the unsupported operation.

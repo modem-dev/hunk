@@ -23,7 +23,7 @@ hunk diff before.ts after.ts --watch
 hunk patch changes.patch
 ```
 
-A file-backed patch can use watch mode. It remains tied to that file path.
+Because the patch is file-backed, it can use watch mode: the review stays tied to that path and reloads when the file changes.
 
 ## Read a patch from stdin
 

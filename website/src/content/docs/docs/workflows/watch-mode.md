@@ -11,7 +11,7 @@ Watch mode turns a review into a continuous view of a changing source.
 hunk diff --watch
 ```
 
-Hunk observes direct-file and Git-backed inputs for prompt refreshes and keeps periodic polling as a fallback. It polls Jujutsu and Sapling input.
+Hunk watches direct-file and Git-backed input and refreshes as soon as a change lands, with periodic polling as a fallback. Jujutsu and Sapling input relies on polling alone.
 
 Other reopenable inputs also work:
 

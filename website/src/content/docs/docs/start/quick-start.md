@@ -41,11 +41,13 @@ hunk show HEAD~1 -- src/ui README.md
 
 ## Keep the review fresh
 
+Watch mode keeps the review in sync as the input changes:
+
 ```bash
 hunk diff --watch
 ```
 
-Hunk reloads file- and Git-backed input while preserving the review experience. Watch mode is continuous; press `q` when finished.
+As files or the repository change, Hunk reloads the input and preserves your place in the review. It runs until you press `q`.
 
 ## Bring in an agent
 

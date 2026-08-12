@@ -8,7 +8,7 @@ Hunk reads TOML preferences from a user file and an optional repository file:
 - `~/.config/hunk/config.toml` (or the platform/XDG config location)
 - `.hunk/config.toml` at the repository root
 
-Repository settings override user settings. Command sections then override their layer's top-level values, pager sections apply to pager-style sessions, and explicit CLI flags win last.
+Repository settings override user settings. Within each layer, a command section overrides the top-level values and a pager section overlays pager-style sessions. Explicit CLI flags win last.
 
 ## Start with useful defaults
 
