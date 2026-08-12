@@ -10,7 +10,12 @@ import { createInitialReviewState } from "../../src/core/review/state";
 import { createReviewStore } from "../../src/core/review/store";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
-import { REVIEW_CONFORMANCE_CONSUMERS, REVIEW_NAVIGATION_CONSUMERS } from "./consumers";
+import {
+  REVIEW_CONFORMANCE_CONSUMERS,
+  REVIEW_NAVIGATION_CONSUMERS,
+  REVIEW_ORDERING_CONSUMERS,
+  REVIEW_WIRE_CONSUMERS,
+} from "./consumers";
 import { REVIEW_CONFORMANCE_FIXTURES } from "./fixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
@@ -19,6 +24,7 @@ import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
   REVIEW_PUBLICATION_ORDER_FIXTURES,
 } from "./orderingFixtures";
+import { REVIEW_WIRE_FIXTURES } from "./wireFixtures";
 
 /** Findings whose adversarial fixture must exist for the finding to count as repaid. */
 const REQUIRED_FINDINGS = [
@@ -33,6 +39,8 @@ const REQUIRED_FINDINGS = [
   "B3",
   "B4",
   "B6",
+  "B10",
+  "B12",
   "C1",
   "D1",
 ];
@@ -47,6 +55,13 @@ describe("review conformance corpus", () => {
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
     ]);
+    expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core publication ordering",
+      "broker review mirror",
+    ]);
+    expect(REVIEW_WIRE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "review wire protocol",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -55,6 +70,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_NAVIGATION_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_PUBLICATION_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_PRODUCER_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_BOUNDS_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -123,13 +139,34 @@ describe("review conformance: note bounds", () => {
   }
 });
 
-describe("review conformance: publication ordering", () => {
-  for (const fixture of REVIEW_PUBLICATION_ORDER_FIXTURES) {
-    test(`${fixture.id} is ${fixture.expected} (${fixture.findings.join(", ")})`, () => {
-      expect(classifyReviewPublication(fixture.current, fixture.incoming)).toBe(fixture.expected);
-    });
-  }
-});
+for (const consumer of REVIEW_ORDERING_CONSUMERS) {
+  describe(`review publication ordering: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_PUBLICATION_ORDER_FIXTURES) {
+      test(`${fixture.id} is ${fixture.expected} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.classify(fixture.current, fixture.incoming)).toBe(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_WIRE_CONSUMERS) {
+  describe(`review wire conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_WIRE_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.parseAction(fixture.action)).toEqual(fixture.expected);
+      });
+    }
+
+    // D1: the note-size corpus is a wire question too. The case every field passes and the
+    // whole note fails must be refused here, before it can be admitted and then poison the
+    // snapshot that publishes it.
+    for (const fixture of REVIEW_NOTE_BOUNDS_FIXTURES) {
+      test(`${fixture.id} is ${fixture.withinBounds ? "transportable" : "refused"} (D1)`, () => {
+        expect(consumer.acceptsNote(fixture.build())).toBe(fixture.withinBounds);
+      });
+    }
+  });
+}
 
 describe("review conformance: producer ordering", () => {
   for (const fixture of REVIEW_PRODUCER_ORDER_FIXTURES) {

@@ -16,7 +16,13 @@
  * - The projection is renderer-neutral. Anything only one consumer can produce — rows,
  *   widths, DOM — stays out, or the corpus stops being comparable.
  */
+import type {
+  ReviewPublicationAddress,
+  ReviewPublicationOrder,
+} from "../../src/core/review/generationOrder";
+import type { ReviewIntent } from "../../src/core/review/intents";
 import type { ReviewSelectionScope } from "../../src/core/review/navigation";
+import type { ReviewNoteV1 } from "../../src/core/review/types";
 import type { DiffFile } from "../../src/core/types";
 
 export interface ConformanceGap {
@@ -167,4 +173,55 @@ export interface ReviewNavigationConsumer {
   name: string;
   phase: string;
   project: (fixture: ReviewNavigationFixture) => ReviewNavigationProjection;
+}
+
+/**
+ * One consumer of the publication-ordering contract.
+ *
+ * Registered separately because ordering is a different question from geometry or
+ * navigation: given where a receiver is and what just arrived, what should it do? Every
+ * consumer answers it by asking `classifyReviewPublication`, and this registry is how the
+ * harness proves that rather than trusting it — a mirror with its own comparison would
+ * disagree with the classifier on the fixtures the audit's C1 finding contributed.
+ */
+export interface ReviewOrderingConsumer {
+  name: string;
+  phase: string;
+  classify: (
+    current: ReviewPublicationAddress,
+    incoming: ReviewPublicationAddress,
+  ) => ReviewPublicationOrder;
+}
+
+/** What one wire consumer made of an action a client sent. */
+export interface ReviewWireParseOutcome {
+  accepted: boolean;
+  /** The intent the action lowers to, when it was accepted. */
+  intent?: ReviewIntent;
+}
+
+/**
+ * One consumer of the wire schema.
+ *
+ * Two questions, both of which the prototype answered differently at different tiers: what
+ * an action means once parsed (B12/B10), and whether a note may cross a boundary at all
+ * (D1). A consumer joins by driving the code path it really uses.
+ */
+export interface ReviewWireConsumer {
+  name: string;
+  phase: string;
+  parseAction: (action: Record<string, unknown>) => ReviewWireParseOutcome;
+  acceptsNote: (note: ReviewNoteV1) => boolean;
+}
+
+/** One action a client sends, and what the wire should make of it. */
+export interface ReviewWireFixture {
+  id: string;
+  /** Audit finding ids this fixture guards, e.g. `B10`. */
+  findings: string[];
+  /** What makes this action worth stating, in one line. */
+  description: string;
+  action: Record<string, unknown>;
+  /** Hand-written from the semantics — never captured from the parser. */
+  expected: ReviewWireParseOutcome;
 }
