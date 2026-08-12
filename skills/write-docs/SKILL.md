@@ -109,6 +109,17 @@ little dry. Before writing, read two existing pages and match them.
   is Hunk, the command, or the reader. "Hunk reloads file-backed input."
   "Press `]` to jump to the next hunk." A sentence with two commas and an
   "and" usually wants to be two sentences.
+- **Frame before mechanics.** A guide section opens with one plain sentence
+  saying what the feature is for; the command comes second. "Watch mode keeps
+  the review in sync with the working tree:" then the code block. Facts
+  without a frame read like a changelog.
+- **Connect the sentences.** Carry cause and consequence with "as", "so",
+  "instead of", "which means". "As the files change, Hunk reloads the input
+  and preserves your place in the stream." Three isolated declaratives in a
+  row is a reference entry, not a guide — save that register for reference
+  pages and troubleshooting entries, where it belongs.
+- **Vary the rhythm.** All six-word sentences is as much a tell as all
+  thirty-word ones.
 - **Imperative for instructions, second person for context.** "Run `hunk
   diff`." "You do not manage sockets."
 - **Every claim is concrete.** Name the command, key, flag, file, default,
@@ -144,6 +155,10 @@ adding a fact.
   proves it ("reloads in under a second") or cut it.
 - **Throat-clearing openers**: "In this guide, we'll…", "Let's dive in",
   "Welcome to…". Start with the first true statement.
+- **Scene-setting vignettes**: "When the code is still moving — an agent
+  mid-task, a rebase in progress — watch mode…". Dramatized situations before
+  the point are the flowery failure in a newer costume. State the job plainly
+  and let the reader supply their own situation.
 - **Restating the heading as the first sentence.** Under "## Install with
   Homebrew", do not write "You can install Hunk with Homebrew." Write the
   command.
@@ -173,37 +188,51 @@ came for. Cut words, never facts.
 
 ## Example rewrites
 
+There are two ways to fail this rewrite, so the first example shows three
+stages: the slop, the over-correction, and the target.
+
 **Example 1**
 
-Before:
+Slop — the vocabulary is the problem, not the structure:
 
 > Hunk offers a powerful and flexible watch mode that allows you to
 > seamlessly keep your review up to date. Simply pass the `--watch` flag and
 > Hunk will automatically handle the rest!
 
-After:
+Over-corrected — the jargon is gone, but so is the flow. No sentence frames
+the feature, and the facts stand in a row like a changelog:
 
 > ```bash
 > hunk diff --watch
 > ```
 >
 > Hunk reloads file- and Git-backed input while preserving the review. Watch
-> mode is continuous; press `q` when finished. Stdin patches cannot be
-> replayed, so `--watch` is rejected for pager input.
+> mode is continuous; press `q` when finished.
+
+House style — same facts, framed and connected:
+
+> Watch mode keeps the review in sync with the working tree:
+>
+> ```bash
+> hunk diff --watch
+> ```
+>
+> As the files change, Hunk reloads the input and preserves your place in
+> the stream. It runs until you press `q`.
 
 **Example 2**
 
-Before:
+Slop:
 
 > It's worth noting that there are several different ways to configure Hunk,
 > each with its own advantages. You may want to consider which approach best
 > fits your workflow.
 
-After:
+House style:
 
-> Repository settings override user settings; CLI flags win last. Use the
-> user config for personal defaults and `.hunk/config.toml` for choices the
-> whole repository should share.
+> Hunk layers its settings so each scope has a job: the user config holds
+> your personal defaults, `.hunk/config.toml` holds what the whole
+> repository should share, and CLI flags override both for a single run.
 
 ## Before you finish
 
