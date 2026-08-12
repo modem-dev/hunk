@@ -7,7 +7,12 @@ import {
   type JobControlSuspendSupport,
 } from "../core/jobControl";
 import { shutdownSession } from "../core/shutdown";
-import { shouldUseMouseForApp, type ControllingTerminal } from "../core/terminal";
+import {
+  installTerminalDisconnectSupport,
+  shouldUseMouseForApp,
+  type ControllingTerminal,
+  type TerminalDisconnectSupport,
+} from "../core/terminal";
 import type { AppBootstrap } from "../core/types";
 import { resolveStartupUpdateNotice } from "../core/updateNotice";
 import {
@@ -42,8 +47,10 @@ export async function runInteractiveApp({
   hostClient.start();
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
+  // Resolve OpenTUI stdin explicitly (since OpenTUI fallbacks to process.stdin internally)
+  const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
   const renderer = await createCliRenderer({
-    stdin: controllingTerminal?.stdin,
+    stdin: rendererStdin,
     stdout: process.stdout,
     useMouse: shouldUseMouseForApp({
       hasControllingTerminal: Boolean(controllingTerminal),
@@ -56,10 +63,11 @@ export async function runInteractiveApp({
 
   const appRenderer = renderer;
   const root = createRoot(appRenderer);
-  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
+  let terminalDisconnectSupport: TerminalDisconnectSupport = { dispose: () => undefined };
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
   function shutdown() {
@@ -73,6 +81,7 @@ export async function runInteractiveApp({
     }
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
+    terminalDisconnectSupport.dispose();
     hostClient.stop();
     shutdownSession({ root, renderer: appRenderer });
   }
@@ -80,6 +89,8 @@ export async function runInteractiveApp({
   for (const signal of shutdownSignals) {
     process.once(signal, shutdown);
   }
+  // Istalled after the renderer so a disconnect closes a session cleanly, instead of racing renderer.
+  terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, shutdown);
   jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
   jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
