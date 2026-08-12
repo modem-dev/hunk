@@ -159,11 +159,11 @@ describe("shared review primitives seam", () => {
   // of these files with its listed builtin while migrating it to a platform-neutral
   // implementation (e.g. injected hashing), but a browser bundle must never import it until the
   // entry is repaid. This map may only shrink — never extend it for new code.
+  // Repaid in Phase 1 PR 2: `document.ts` and `identity.ts` landed platform-neutral (identity
+  // hashing is plain arithmetic), and source identity is part of `identity.ts` with no path
+  // handling at all, so those three entries are gone for good.
   const REVIEW_MODEL_NODE_DEBT = new Map<string, readonly string[]>([
-    ["src/core/review/document.ts", ["node:crypto"]],
-    ["src/core/review/identity.ts", ["node:crypto"]],
     ["src/core/review/jsonStream.ts", ["node:crypto"]],
-    ["src/core/review/sourceIdentity.ts", ["node:path"]],
   ]);
   // The browser client renders with React and Pierre only; everything else must come from the
   // shared review model, the wire protocol, or the browser-safe broker-core parsers.

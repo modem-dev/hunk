@@ -72,6 +72,7 @@ CLI input
   - `test/cli/` for black-box CLI contract coverage.
   - `test/session/` for daemon/session integration and end-to-end flows.
   - `test/pty/` for PTY-backed live UI integration tests.
+  - `test/review-conformance/` for the shared review model's golden fixtures and per-consumer conformance suites.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
 
 ## code comments

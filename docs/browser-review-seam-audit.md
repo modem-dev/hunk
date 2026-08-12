@@ -16,16 +16,27 @@ should delete the copies its primitive replaces and check off the finding here.
   and the trailing math diverges for zero-count sides; a note created on a terminal-expanded
   line can be rejected on reload because `intents.ts` validates against `reviewGapAddress`.
   Fix: terminal calls `reviewGapAddress`; delete its local math.
+  _Repaid (Phase 1 PR 2)_: `reviewLeadingGap`/`reviewGapAddress` in `core/review/expansion.ts`;
+  `pierre.ts` copies deleted; fixtures `pure-insertion-hunk` and `pure-deletion-hunk` in
+  `test/review-conformance/fixtures.ts`; core and terminal render planning both registered.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
   producer `src/session/app/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
   rejects (`gap-not-found`). Fix: one `reviewTrailingGap(file)` in core.
+  _Repaid (Phase 1 PR 2)_: `reviewTrailingGap` in `core/review/expansion.ts`;
+  `trailingCollapsedLines`/`trailingCollapsedRanges` deleted from `pierre.ts`. Residual, recorded
+  in that function: a last hunk with a zero-count side leaves the two line-array tails one apart,
+  so no trailing gap is offered even though the file has one. Every consumer now agrees on hiding
+  it; correcting the count changes terminal output and is staged separately.
 - **A3. Per-side hunk range — 4 implementations, one wrong.** `core/liveComments.ts`
   `hunkLineRange`, `core/review/anchors.ts` `reviewHunkRange` (correct), web
   `pierreDocument.ts` `sideRange` (uses changed-line counts `deletionLines`/`additionLines` as
   span lengths — wrong for hunks with leading context, misplacing notes in the browser), and
   `ReviewStream.tsx` re-filtering against manifest ranges. Fix: `reviewHunkRange` everywhere;
   collapse `hunkLineRange` into it.
+  _Repaid (Phase 1 PR 2)_: `reviewHunkRange`/`reviewHunkRanges` in `core/review/geometry.ts`;
+  `hunkLineRange` deleted and all six terminal/session sites converted; fixture
+  `hunk-with-leading-context`.
 - **A4. Source-line splitting for expanded context — 3 implementations, browser skips
   normalization.** Terminal `expandCollapsedRows.ts` `sliceLines` and core `anchors.ts`
   `normalizedReviewSourceLines` agree (CRLF-normalize, strip one trailing newline); web
@@ -33,29 +44,53 @@ should delete the copies its primitive replaces and check off the finding here.
   digests that can mismatch on reload. (`sourceBackedHighlight.ts` `splitSourceLines` is a
   legitimate fourth variant — Pierre's highlighter needs retained newlines; comment it.) Fix:
   export and adopt `normalizedReviewSourceLines`.
+  _Repaid (Phase 1 PR 2)_: `normalizedReviewSourceLines` in `core/review/geometry.ts`;
+  `expandCollapsedRows.ts` `sliceLines` deleted; `splitSourceLines` carries the comment saying why
+  it is legitimately different; fixtures `crlf-source` and `source-without-trailing-newline`.
 - **A5. Expansion side policy `deleted ? "old" : "new"` — 3 copies.** Core `intents.ts`
   (authoritative), terminal `diffSectionRowPlan.ts` (recomputed instead of reading `gap.side`),
   web `pierreDocument.ts` fallback ordering. Fix: thread `gap.side`; export
   `reviewExpansionSide(file)`.
+  _Repaid (Phase 1 PR 2)_: `reviewExpansionSide` in `core/review/expansion.ts`; both terminal
+  recomputations (`diffSectionRowPlan.ts`, `useReviewController.ts`) deleted.
 - **A6. Hunk content-index rebasing — 2 copies, opposite `isPartial` conclusions.** Web
   `pierreDocument.ts` `isolatePierreHunk` vs terminal `sourceBackedHighlight.ts` (~:108-199).
   Fix: one `rebaseReviewHunk(hunk, origins)` in core.
+  _Repaid (Phase 1 PR 2, terminal site)_: `rebaseReviewHunk` in `core/review/geometry.ts`, adopted
+  by `sourceBackedHighlight.ts`. It returns the per-side end indices so a caller can slice or
+  validate without re-walking; the browser's isolate-one-hunk use lands on it in Phase 5.
 - **A7. File split/unified line totals — web guesses.** `pierreDocument.ts` reconstructs
   `splitLineCount`/`unifiedLineCount` by reducing over hunks; terminal reads Pierre's
   authoritative values. Mis-sizes browser virtualization when the parser counts rows outside
   hunk spans. Fix: carry both on `ReviewFileV1`.
+  _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
+  `ReviewFileV1` by `core/review/document.ts`; the browser consumes them in Phase 5.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
   `renderRows.tsx` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
   `staticDiffPager.ts` (extra cases). Same file can explain itself differently per client.
   Fix: `reviewEmptyDiffReason(file)` in core.
+  _Repaid (Phase 1 PR 2)_: `reviewEmptyDiffReason` in `core/review/document.ts` with one canonical
+  precedence — what the change _is_ outranks how it is stored (`rename-only` -> `binary` ->
+  `too-large` -> `new-file` -> `deleted-file` -> `no-hunks`), the review stream's existing order.
+  `renderRows.tsx` and `staticDiffPager.ts` keep their own wording and share the reason; fixture
+  `binary-rename-with-no-rows`. The static pager's own order put storage first, so a renamed
+  binary or oversized rename now reports as a rename there too.
 - **A9. STML tag vocabulary — parse shared, tag semantics forked.** Terminal
   `ui/lib/stml/layout.ts` handles the full vocabulary; web `ReviewNote.tsx` handles a subset
   (everything else flattens to `<span>`) and accepts a `<tag>` alias the terminal lacks. Fix:
   `stmlTagRole(tag)` in `core/review/stml.ts`; both renderers switch on roles.
+  _Repaid (Phase 1 PR 2, terminal site)_: `core/review/stml.ts` owns the tag-to-role table;
+  `ui/lib/stml/layout.ts` switches on roles and `parse.ts` derives its void/raw-text tags from
+  them. The parser itself stays in `ui/lib/stml` for now — it sanitizes through
+  `lib/terminalText`, which core may not import — so relocating it is Phase 5 work, before the
+  browser can parse notes.
 - **A10. Default line target for a hunk note — 2 divergent rules.** Terminal
   `core/liveComments.ts` `firstCommentTargetForHunk` (first added line, else first deleted);
   web `App.tsx` (hunk's first line — usually context). Same action anchors to different lines
   per client. Fix: `reviewDefaultHunkLineTarget(hunk)` in core, used by both (and by reveal).
+  _Repaid (Phase 1 PR 2)_: `reviewDefaultHunkLineTarget` in `core/review/geometry.ts`;
+  `firstCommentTargetForHunk` deleted and both terminal callers converted; every geometry fixture
+  pins the target, `pure-deletion-hunk` and `hunk-with-leading-context` adversarially.
 - **A11. Language registration side effect missing in browser.** `core/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
@@ -169,6 +204,9 @@ path suffixes, expansion retention, git-status badges).
 - **D2. Empty-body policy — 5 declarations.** Core intents (throws), terminal (cancels
   draft — a deliberate UX difference worth keeping explicit), web in three places. Fix: one
   `isBlankReviewNoteBody` predicate.
+  _Repaid (Phase 1 PR 2, core and terminal sites)_: the predicate lives in
+  `core/review/intents.ts`, and `test/review-conformance/noteBodies.ts` pins the boundary cases
+  against both the predicate and the draft-persistence plan they drive.
 - **D3. Note-anchor ownership — 4 implementations.** Core `resolveReviewNoteAnchor`
   (authoritative, with fallback-owner support), `notes.ts` sibling over Pierre geometry,
   broker `wire.ts` re-derivation that omits the fallback branch (a legal expanded-gap note can
