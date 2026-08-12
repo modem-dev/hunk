@@ -275,6 +275,12 @@ implementation does.
 
 ## Verification hooks
 
+The per-phase verification ladder lives in `browser-review-rebuild.md` § "Per-phase seam
+verification". A finding here counts as repaid only when all four hold: duplicate copies
+deleted, their paths appended to the tombstone list in `scripts/source-boundaries.test.ts`,
+the finding's adversarial fixture landed in the conformance harness, and the consumer
+registered against that harness.
+
 - The seam boundary tests (`scripts/source-boundaries.test.ts`) keep deleted copies deleted.
 - Renderer parity tests (Phase 5 gate) drive shared fixtures through the terminal planner and
   browser projection and assert identical note placement, gap addressing, reveal targets, and

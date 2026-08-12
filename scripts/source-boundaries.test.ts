@@ -111,9 +111,24 @@ function privateProviderApiImports() {
   );
 }
 
+// Modules deleted because a shared review primitive replaced them (docs/browser-review-seam-
+// audit.md findings). Append-only: each seam-extraction PR adds the copies it deleted, tagged
+// with the finding id, and this gate keeps them deleted — a reappearing path means the
+// duplication came back. Entries are repo-relative with forward slashes.
+const EXTRACTED_DUPLICATE_TOMBSTONES: readonly string[] = [
+  // e.g. "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
+];
+
 describe("source architecture boundaries", () => {
   test("keeps UI rendering out of core", () => {
     expect(forbiddenImports(CORE_ROOT, join(SRC_ROOT, "ui"))).toEqual([]);
+  });
+
+  test("keeps extracted duplicate modules deleted", () => {
+    const resurrected = EXTRACTED_DUPLICATE_TOMBSTONES.filter((tombstone) =>
+      existsSync(join(REPO_ROOT, ...tombstone.split("/"))),
+    );
+    expect(resurrected).toEqual([]);
   });
 
   test("keeps extension composition out of core", () => {
