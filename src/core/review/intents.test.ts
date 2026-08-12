@@ -70,6 +70,152 @@ describe("selection intent", () => {
   });
 });
 
+describe("selection movement intent", () => {
+  const annotations = {
+    annotatedHunkIndicesByFileKey: new Map([["beta", new Set([1])]]),
+    annotatedFileKeys: new Set(["beta"]),
+  };
+
+  test("plans a move over the visible stream and reports where it landed", () => {
+    const state = { ...createTestReviewState(), selection: { fileKey: "alpha", hunkIndex: 1 } };
+
+    expect(planReviewIntent(state, { type: "selection/move", scope: "hunk", delta: 1 })).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "beta",
+          hunkIndex: 0,
+          reveal: { anchor: "file-top", scrollToNote: false },
+        },
+      ],
+      outcome: { type: "selection/changed", fileKey: "beta", hunkIndex: 0 },
+    });
+  });
+
+  test("publishes nothing when the scope refuses the move", () => {
+    const state = { ...createTestReviewState(), selection: { fileKey: "beta", hunkIndex: 1 } };
+
+    expect(planReviewIntent(state, { type: "selection/move", scope: "file", delta: 1 })).toEqual({
+      actions: [],
+    });
+  });
+
+  test("navigates only what the filter leaves visible", () => {
+    const state = {
+      ...createTestReviewState(),
+      filter: "alpha",
+      selection: { fileKey: "alpha", hunkIndex: 1 },
+    };
+
+    // Beta is filtered out, so the stream ends at alpha's last hunk.
+    expect(planReviewIntent(state, { type: "selection/move", scope: "hunk", delta: 1 })).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          reveal: { anchor: "hunk", scrollToNote: false },
+        },
+      ],
+      outcome: { type: "selection/changed", fileKey: "alpha", hunkIndex: 1 },
+    });
+  });
+
+  test("requires the annotation index for annotated navigation", () => {
+    const state = createTestReviewState();
+
+    expect(() =>
+      planReviewIntent(state, { type: "selection/move", scope: "annotated-hunk", delta: 1 }),
+    ).toThrow(ReviewIntentPlanningError);
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "annotated-hunk", delta: 1 },
+        { annotations },
+      ).actions,
+    ).toEqual([
+      {
+        type: "selection/select",
+        fileKey: "beta",
+        hunkIndex: 1,
+        reveal: { anchor: "hunk", scrollToNote: true },
+      },
+    ]);
+  });
+});
+
+describe("file jump intent", () => {
+  test("lands on the file's first hunk and reveals its header by default", () => {
+    expect(
+      planReviewIntent(createTestReviewState(), {
+        type: "selection/select-file",
+        fileKey: "beta",
+      }),
+    ).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "beta",
+          hunkIndex: 0,
+          reveal: { anchor: "file-top", scrollToNote: false },
+        },
+      ],
+      outcome: { type: "selection/changed", fileKey: "beta", hunkIndex: 0 },
+    });
+  });
+
+  test("accepts a caller's own reveal request", () => {
+    expect(
+      planReviewIntent(createTestReviewState(), {
+        type: "selection/select-file",
+        fileKey: "beta",
+        reveal: { anchor: "hunk", scrollToNote: false },
+      }).actions[0],
+    ).toEqual({
+      type: "selection/select",
+      fileKey: "beta",
+      hunkIndex: 0,
+      reveal: { anchor: "hunk", scrollToNote: false },
+    });
+  });
+
+  test("rejects a file the review does not contain", () => {
+    expect(() =>
+      planReviewIntent(createTestReviewState(), {
+        type: "selection/select-file",
+        fileKey: "missing",
+      }),
+    ).toThrow(ReviewIntentPlanningError);
+  });
+});
+
+describe("viewport anchor intent", () => {
+  // Intent: a viewport reporting where it settled must not scroll anybody, including itself.
+  test("moves the selection without bumping a reveal counter", () => {
+    const state = createTestReviewState();
+    const plan = planReviewIntent(state, {
+      type: "selection/anchor",
+      fileKey: "beta",
+      hunkIndex: 1,
+    });
+
+    expect(plan).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "beta",
+          hunkIndex: 1,
+          reveal: { anchor: "none", scrollToNote: false },
+        },
+      ],
+    });
+
+    const next = plan.actions.reduce(reduceReviewState, state);
+    expect(next.selection).toEqual({ fileKey: "beta", hunkIndex: 1 });
+    expect(next.reveal).toEqual({ fileTopToken: 0, hunkToken: 0, scrollToNote: false });
+  });
+});
+
 describe("user note creation", () => {
   test("anchors the note to the draft's line and hunk", () => {
     const plan = planReviewIntent(

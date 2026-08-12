@@ -123,7 +123,7 @@ function privateProviderApiImports() {
 // with the finding id, and this gate keeps them deleted — a reappearing path means the
 // duplication came back. Entries are repo-relative with forward slashes.
 const EXTRACTED_DUPLICATE_TOMBSTONES: readonly string[] = [
-  // e.g. "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
+  "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
 ];
 
 // Function-level deletions the file tombstones cannot see: each entry bans one named

@@ -11,8 +11,26 @@
  */
 import type { ReviewAction } from "./actions";
 import { reviewLineAnchor } from "./anchors";
-import { isReviewNoteWithinClearScope, selectReviewFileByKey } from "./selectors";
-import { type ReviewRevealRequest, type ReviewState, type ReviewStoredNote } from "./state";
+import {
+  EMPTY_REVIEW_ANNOTATION_INDEX,
+  planReviewSelectionMove,
+  REVIEW_FILE_JUMP_HUNK_INDEX,
+  REVIEW_FILE_JUMP_REVEAL,
+  type ReviewAnnotationIndex,
+  type ReviewSelectionScope,
+} from "./navigation";
+import {
+  isReviewNoteWithinClearScope,
+  selectNormalizedSelection,
+  selectReviewFileByKey,
+  selectReviewNavigationFiles,
+} from "./selectors";
+import {
+  REVIEW_VIEWPORT_ANCHOR_REVEAL,
+  type ReviewRevealRequest,
+  type ReviewState,
+  type ReviewStoredNote,
+} from "./state";
 import type { ReviewStore } from "./store";
 import type { ReviewFileV1 } from "./types";
 
@@ -21,10 +39,24 @@ export interface ReviewIntentFacts {
   noteId?: string;
   /** Caller-owned ISO timestamp for note creation. */
   timestamp?: string;
+  /**
+   * Which files and hunks currently carry notes, for annotated navigation.
+   *
+   * A caller-owned fact like the two above: notes reach a review from sources the
+   * semantic document does not carry, and only the consumer that merged them knows the
+   * full set.
+   */
+  annotations?: ReviewAnnotationIndex;
 }
 
 export type ReviewIntent =
   | { type: "selection/select"; fileKey: string; hunkIndex: number; reveal: ReviewRevealRequest }
+  /** Step the selection through one navigable scope; the scope decides wrap and reveal. */
+  | { type: "selection/move"; scope: ReviewSelectionScope; delta: number }
+  /** Jump to one file, landing on its first hunk. */
+  | { type: "selection/select-file"; fileKey: string; reveal?: ReviewRevealRequest }
+  /** Adopt the position a renderer's viewport settled on, without moving any viewport. */
+  | { type: "selection/anchor"; fileKey: string; hunkIndex: number }
   | { type: "filter/set"; filter: string }
   | { type: "notes/set-visibility"; visible: boolean }
   /** Persist the active draft; a blank body retires the draft instead. */
@@ -32,6 +64,12 @@ export type ReviewIntent =
   | { type: "notes/remove-user"; noteId: string }
   | { type: "notes/remove-live"; noteId: string }
   | { type: "notes/clear"; fileKey?: string; includeUser?: boolean };
+
+export interface ReviewSelectionChangedOutcome {
+  type: "selection/changed";
+  fileKey: string;
+  hunkIndex: number;
+}
 
 export interface ReviewNoteCreatedOutcome {
   type: "notes/created";
@@ -53,6 +91,7 @@ export interface ReviewNotesClearedOutcome {
 }
 
 export type ReviewIntentOutcome =
+  | ReviewSelectionChangedOutcome
   | ReviewNoteCreatedOutcome
   | ReviewNoteRemovedOutcome
   | ReviewNotesClearedOutcome;
@@ -66,6 +105,10 @@ export type ReviewIntentOutcome =
  */
 export interface ReviewIntentOutcomeByType {
   "selection/select": undefined;
+  /** Absent when the scope refused the move and left the selection alone. */
+  "selection/move": ReviewSelectionChangedOutcome | undefined;
+  "selection/select-file": ReviewSelectionChangedOutcome;
+  "selection/anchor": undefined;
   "filter/set": undefined;
   "notes/set-visibility": undefined;
   "notes/create-user": ReviewNoteCreatedOutcome | undefined;
@@ -137,6 +180,51 @@ function requireHunk(file: ReviewFileV1, hunkIndex: number) {
       `Review hunk ${hunkIndex} does not exist in ${file.path}.`,
     );
   }
+}
+
+/** Lower one resolved selection target into the action that commits it. */
+function planSelection(
+  fileKey: string,
+  hunkIndex: number,
+  reveal: ReviewRevealRequest,
+): ReviewIntentPlan {
+  return {
+    actions: [{ type: "selection/select", fileKey, hunkIndex, reveal }],
+    outcome: { type: "selection/changed", fileKey, hunkIndex },
+  };
+}
+
+/**
+ * Plan one relative selection move over the currently visible stream.
+ *
+ * Navigation walks what the reviewer can see: a filtered-out file is not a step away, and
+ * the selection it starts from is the normalized one, so a move from a vanished file
+ * begins where the review actually is.
+ */
+function planSelectionMove(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "selection/move" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const annotated = intent.scope === "annotated-hunk" || intent.scope === "annotated-file";
+  if (annotated && !facts.annotations) {
+    throw new ReviewIntentPlanningError(
+      "missing-fact",
+      `Review intent requires annotations for ${intent.scope} navigation.`,
+    );
+  }
+
+  const target = planReviewSelectionMove(
+    {
+      files: selectReviewNavigationFiles(state),
+      annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
+    },
+    selectNormalizedSelection(state),
+    { scope: intent.scope, delta: intent.delta },
+  );
+  // A refused move publishes nothing at all: no selection change, and no reveal token
+  // bump that would scroll a viewport for a key press that went nowhere.
+  return target ? planSelection(target.fileKey, target.hunkIndex, target.reveal) : { actions: [] };
 }
 
 /** Plan persistence of the active draft as one user note. */
@@ -238,6 +326,31 @@ export function planReviewIntent(
             fileKey: file.key,
             hunkIndex: intent.hunkIndex,
             reveal: intent.reveal,
+          },
+        ],
+      };
+    }
+    case "selection/move":
+      return planSelectionMove(state, intent, facts);
+    case "selection/select-file": {
+      // The file-jump rule, owned here rather than restated per surface: selecting a file
+      // means its first hunk, and the reveal defaults to the file's own header.
+      const file = requireFile(state, intent.fileKey);
+      return planSelection(
+        file.key,
+        REVIEW_FILE_JUMP_HUNK_INDEX,
+        intent.reveal ?? REVIEW_FILE_JUMP_REVEAL,
+      );
+    }
+    case "selection/anchor": {
+      const file = requireFile(state, intent.fileKey);
+      return {
+        actions: [
+          {
+            type: "selection/select",
+            fileKey: file.key,
+            hunkIndex: intent.hunkIndex,
+            reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
           },
         ],
       };
