@@ -201,6 +201,38 @@ path suffixes, expansion retention, git-status badges).
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.
 
+## F. Commands and keybindings (preemptive — the prototype browser had none)
+
+The prototype browser client shipped no command system, so these are not observed duplications
+like A–E; they are the copies the browser _would_ grow the moment shortcuts are added, recorded
+here so the extraction happens before the duplication exists. Design detail in
+`browser-review-rebuild.md` § "Commands and keyboard shortcuts in the browser".
+
+- **F1. Command catalog fused with terminal binding and effects.** `src/ui/lib/appCommands.ts`
+  couples identity (id, title, chords), binding (terminal `KeyEvent` matchers), and effect
+  (closures over live App state) in one table; menus (`ui/lib/appMenus.ts`) and the help
+  dialog render from it, so a browser palette or help screen would have to restate the list.
+  Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
+  locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
+  adds its own, both render menus/help/palette from the catalog.
+- **F2. Semantic command effects are closures instead of intent dispatches.** The ~15
+  review-semantic commands (hunk/file/annotated navigation, start note, toggle gap, toggle
+  agent notes, filter) run as App closures; a browser implementation would re-derive each
+  behavior — the exact drift class of B1/B3/B6. Fix: lower semantic commands to
+  `ReviewIntent`s (the Phase 1 store refactor is the same work); the browser fires them
+  through the existing apply-action path, and the agent runtime's `hunk session` surface
+  becomes a third consumer of the same lowering.
+- **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
+  `[keybindings]`), but resolution against defaults and conflict handling lives with the
+  terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
+  user keybindings against the catalog once; each client maps resolved chords to its own event
+  type and masks platform-reserved chords (browser `Cmd+W` etc.).
+- **F4. Host-only and extension commands — do not expose, by design.** Quit, source refresh,
+  edit-in-`$EDITOR`, agent-skill helpers, and all extension commands execute host-side (with
+  dialog access); browser invocation is remote code execution into the terminal session.
+  Excluded from the browser until an explicit per-command allowlist exists in the registration
+  capability list. This is a scope boundary, not a missing feature.
+
 ## Verification hooks
 
 - The seam boundary tests (`scripts/source-boundaries.test.ts`) keep deleted copies deleted.
@@ -209,3 +241,6 @@ path suffixes, expansion retention, git-status badges).
   default note targets — the drift class import gates cannot catch.
 - `contentManifest.ts` should additionally cover derived geometry (A1–A4) so parity snapshots
   fail when a renderer re-derives instead of consuming core.
+- Command parity (F1–F3): help/menu/palette listings in both clients render from the shared
+  catalog in tests, so a command added to one client without catalog registration fails rather
+  than forking the vocabulary.
