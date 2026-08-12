@@ -7,7 +7,7 @@ import type {
   ExtensionKeyEvent,
 } from "../../extensions/types";
 import type { MenuId } from "../components/chrome/menu";
-import { dispatchAppCommand, type AppCommand } from "../lib/appCommands";
+import { dispatchAppCommand, executeAppCommand, type AppCommand } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
@@ -444,7 +444,11 @@ export function useAppKeyboardShortcuts({
       // Deliberately no modifier check: Shift+Tab toggles focus exactly like
       // Tab, in both its CSI-u and legacy backtab encodings.
       if (key.name === "tab") {
-        toggleFocusArea();
+        // Keep this text-input escape hatch on the named command path so
+        // extensions observe the same semantic action as a Tab from the file list.
+        if (!executeAppCommand(commandsRef.current, "hunk.app.toggleFocusArea")) {
+          toggleFocusArea();
+        }
         return "mine";
       }
 

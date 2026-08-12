@@ -80,6 +80,7 @@ describe("createExtensionDialogQueue", () => {
     expect(queue.current()).toMatchObject({
       kind: "confirm",
       extensionId: "carrier",
+      showAttribution: true,
       bodyLines: ["one", "two"],
       confirmLabel: "ok",
       cancelLabel: "cancel",
@@ -88,6 +89,19 @@ describe("createExtensionDialogQueue", () => {
     queue.cancel(queue.current()!.id);
     void dialogs.confirm({ title: "Delete?", confirmLabel: "delete", cancelLabel: "keep" });
     expect(queue.current()).toMatchObject({ confirmLabel: "delete", cancelLabel: "keep" });
+  });
+
+  test("can omit attribution only when the host marks the dialog as native UI", () => {
+    const queue = createExtensionDialogQueue();
+    const dialogs = queue.createDialogs("bundled-guide", { showAttribution: false });
+
+    void dialogs.confirm({ title: "Welcome" });
+
+    expect(queue.current()).toMatchObject({
+      extensionId: "bundled-guide",
+      showAttribution: false,
+      title: "Welcome",
+    });
   });
 
   test("strips terminal escapes out of extension-authored text", () => {

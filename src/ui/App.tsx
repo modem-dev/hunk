@@ -693,6 +693,21 @@ export function App({
     [extensions, setPaneOpen],
   );
 
+  /** Build live, guarded review navigation for one extension-owned handler. */
+  const createExtensionNavigation = useCallback(
+    (extensionId: string) =>
+      createGuardedReviewNavigation({
+        extensionId,
+        getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
+        isLive: () => appAliveForNavigationRef.current,
+        notify: (message, type) => extensions?.context.notify(message, type),
+        onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
+        onSelectHunk: (fileId, hunkIndex) =>
+          extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
+      }),
+    [extensions],
+  );
+
   /**
    * Reveal the sidebar area, assigned each render once the responsive layout
    * is known (the controls above are created before it is computed).
@@ -709,7 +724,7 @@ export function App({
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
-    createDialogs: createExtensionDialogs,
+    createDialogs: createQueuedExtensionDialogs,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
     pickOption: setExtensionDialogSelectedIndex,
@@ -717,6 +732,17 @@ export function App({
     selectedIndex: extensionDialogSelectedIndex,
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
+
+  /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
+  const createExtensionDialogs = useCallback(
+    (extensionId: string) => {
+      const bundled = extensions?.registry.extensions.some(
+        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
+      );
+      return createQueuedExtensionDialogs(extensionId, { showAttribution: !bundled });
+    },
+    [createQueuedExtensionDialogs, extensions],
+  );
 
   /** Build host-mediated reviewed-document read and write controls for one extension command. */
   const createWorkspaceControls = useCallback(
@@ -820,8 +846,8 @@ export function App({
     [createExtensionDialogs],
   );
 
-  // Lifecycle and bus listeners receive the same pane controls as commands,
-  // so an extension can react to loaded content by revealing its own pane.
+  // Lifecycle and bus listeners receive the same pane, navigation, and dialog
+  // controls as commands, so onboarding can stay entirely in the public API.
   if (extensions) {
     extensions.eventContextProvider = (extensionId): ExtensionEventContext => {
       const panes = createPaneControls(extensionId);
@@ -830,6 +856,8 @@ export function App({
         notify: (message, type) => extensions.context.notify(message, type),
         panes,
         sidebars: panes,
+        navigation: createExtensionNavigation(extensionId),
+        dialogs: createExtensionDialogs(extensionId),
         events: {
           emit(event, payload) {
             emitExtensionCustomEvent(extensions, event, payload);
@@ -875,19 +903,7 @@ export function App({
         // the same focus/jump callbacks a sidebar row click runs, so a handler
         // that awaits a dialog before navigating still acts on the current
         // review — validated, clamped, and warned exactly like sidebar actions.
-        navigation: createGuardedReviewNavigation({
-          extensionId: registered.extensionId,
-          getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
-          // Extensions outlive App remounts, so the notify sink stays valid
-          // even after this instance dies and `isLive` starts refusing calls.
-          isLive: () => appAliveForNavigationRef.current,
-          notify: (message, type) => extensions?.context.notify(message, type),
-          onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
-          onSelectHunk: (fileId, hunkIndex) =>
-            extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
-          onRevealLine: (fileId, side, line) =>
-            extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
-        }),
+        navigation: createExtensionNavigation(registered.extensionId),
       };
 
       try {
@@ -904,6 +920,7 @@ export function App({
     // do not rebuild on every `[`/`]` press.
     [
       createExtensionDialogs,
+      createExtensionNavigation,
       createFileViewControls,
       createKeyboardModeControls,
       createLineHighlightControls,
@@ -1701,8 +1718,12 @@ export function App({
 
   /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
   const requestQuit = useCallback(() => {
+    const transientViewPreferences = extensions?.registry.sessionOptions.some(
+      ({ options }) => options.viewPreferences === "transient",
+    );
     if (
       !pagerMode &&
+      !transientViewPreferences &&
       bootstrap.input.options.promptSaveViewPreferences !== false &&
       hasUnsavedViewPreferences
     ) {
@@ -1714,6 +1735,7 @@ export function App({
     onQuit();
   }, [
     bootstrap.input.options.promptSaveViewPreferences,
+    extensions,
     hasUnsavedViewPreferences,
     onQuit,
     pagerMode,
@@ -1915,7 +1937,13 @@ export function App({
       triggerRefreshCurrentInput,
     }),
     ...extensionAppCommands.commands,
-  ];
+  ].map((command) => ({
+    ...command,
+    run: (...args: Parameters<typeof command.run>) => {
+      command.run(...args);
+      emitExtensionEvent(extensions, "command_executed", { commandId: command.id });
+    },
+  }));
   extensionHostCommandsRef.current = appCommands;
 
   // Menus name commands rather than repeating them: every item's key hint and

@@ -12,7 +12,7 @@ import {
   type MenuEntry,
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
+import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
   cellRangeToCharRange,
@@ -21,6 +21,7 @@ import {
   measureTextWidth,
   padText,
   sliceTextByWidth,
+  wrapText,
   wrapTextByWidth,
 } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";

@@ -8,8 +8,10 @@ import type {
 import type { Hunk } from "@pierre/diffs";
 import type {
   ExtensionDiffHunk,
+  ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
+  ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
 import { summarizeHunk } from "../core/hunkSummary";
@@ -308,6 +310,42 @@ function unavailablePaneControls(
   };
 }
 
+/** Navigation controls used before the mounted app can safely move a review. */
+function unavailableReviewNavigation(
+  result: ExtensionLoadResult,
+  extensionId: string,
+): ExtensionReviewNavigation {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot navigate the review before the app is ready`,
+      "warning",
+    );
+  return { selectFile: unavailable, selectHunk: unavailable };
+}
+
+/** Dialog controls used before the mounted app has installed its modal queue. */
+function unavailableDialogs(result: ExtensionLoadResult, extensionId: string): ExtensionDialogs {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot open a dialog before the app is ready`,
+      "warning",
+    );
+  return {
+    confirm: async () => {
+      unavailable();
+      return false;
+    },
+    select: async () => {
+      unavailable();
+      return null;
+    },
+    input: async () => {
+      unavailable();
+      return null;
+    },
+  };
+}
+
 /** Build the runtime event context for one owning extension. */
 function createEventContext(
   result: ExtensionLoadResult,
@@ -324,6 +362,8 @@ function createEventContext(
     ...result.context,
     panes,
     sidebars: panes,
+    navigation: unavailableReviewNavigation(result, extensionId),
+    dialogs: unavailableDialogs(result, extensionId),
     events: {
       emit(event, payload) {
         emitExtensionCustomEvent(result, event, payload);

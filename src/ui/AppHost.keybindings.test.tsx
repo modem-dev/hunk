@@ -10,6 +10,7 @@ import { resolveConfiguredCliInput } from "../core/config";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/changesetLoaders";
 import type { AppBootstrap } from "../core/types";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AppHost } from "./AppHost";
 
 /**
@@ -174,6 +175,56 @@ describe("user keybindings", () => {
       });
       await flush(setup);
       expect(quits()).toBe(1);
+    });
+  });
+
+  test("emits command_executed after keyboard dispatch", async () => {
+    const repo = createTestRepo("hunk-keybindings-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      await flush(setup);
+      expect(seen).toContain("hunk.review.stepDown");
+    });
+  });
+
+  test("emits command_executed when Tab leaves the focused file filter", async () => {
+    const repo = createTestRepo("hunk-keybindings-focused-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      seen.length = 0;
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.app.toggleFocusArea"]);
     });
   });
 });

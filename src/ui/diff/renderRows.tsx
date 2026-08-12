@@ -32,7 +32,7 @@ import {
 } from "./rowStyle";
 import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
-import { wrapText } from "../lib/agentPopover";
+import { wrapText } from "../lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import {
   isPrintableAsciiText,

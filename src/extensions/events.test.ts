@@ -63,6 +63,24 @@ describe("extension event dispatch", () => {
     expect(seen).toEqual(["first:/repo:/repo", "second"]);
   });
 
+  test("reports named command execution with an immutable payload", () => {
+    let seen: { commandId: string } | undefined;
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "coach",
+        event: "command_executed",
+        handler: (payload) => {
+          seen = payload as { commandId: string };
+        },
+      },
+    ]);
+
+    emitExtensionEvent(result, "command_executed", { commandId: "hunk.review.nextHunk" });
+
+    expect(seen).toEqual({ commandId: "hunk.review.nextHunk" });
+    expect(Object.isFrozen(seen)).toBe(true);
+  });
+
   test("isolates a throwing handler and keeps dispatching the rest", () => {
     const seen: string[] = [];
     const { result, notices } = createTestLoadResult([
@@ -172,6 +190,12 @@ describe("extension event dispatch", () => {
         notify: () => {},
         panes,
         sidebars: panes,
+        navigation: { selectFile: () => {}, selectHunk: () => {} },
+        dialogs: {
+          confirm: async () => false,
+          select: async () => null,
+          input: async () => null,
+        },
         events: { emit: () => {} },
       };
     };
