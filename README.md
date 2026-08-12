@@ -264,6 +264,12 @@ Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/ope
 
 See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 
+### Static renderer
+
+`hunkdiff/static` renders an existing unified patch as colored ANSI text without starting Hunk's interactive application. It is useful for terminal hosts that already have patch text and need stack or split presentation.
+
+See [docs/static-renderer.md](docs/static-renderer.md) for the API and options.
+
 ## Examples
 
 Ready-to-run demo diffs live in [`examples/`](examples/README.md).

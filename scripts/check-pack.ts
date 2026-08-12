@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { checkExtensionConsumerTypes } from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
 import { npmCommand } from "./script-helpers";
@@ -323,6 +324,9 @@ const requiredPaths = [
   "dist/npm/extension/index.js",
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
+  "dist/npm/static/index.d.ts",
+  "dist/npm/static/index.js",
+  "dist/npm/static/types.d.ts",
   "README.md",
   "LICENSE",
   "package.json",
@@ -336,6 +340,48 @@ for (const path of requiredPaths) {
   if (!publishedPaths.has(path)) {
     throw new Error(`Expected npm package to include ${path}.`);
   }
+}
+
+const staticEntry = path.join(repoRoot, "dist", "npm", "static", "index.js");
+const staticSmoke = Bun.spawnSync(
+  [
+    "node",
+    "--input-type=module",
+    "--eval",
+    `
+      const { renderStaticDiff } = await import(${JSON.stringify(pathToFileURL(staticEntry).href)});
+      const output = await renderStaticDiff(
+        "diff --git a/a.ts b/a.ts\\n--- a/a.ts\\n+++ b/a.ts\\n@@ -1 +1 @@\\n-const value = 1;\\n+const value = 2;\\n",
+        { width: 80 },
+      );
+      const plain = output.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g, "");
+      if (!plain.includes("a.ts modified +1 -1")) {
+        throw new Error("The published static renderer did not render a patch.");
+      }
+      const wideOutput = await renderStaticDiff(
+        "diff --git a/a.txt b/a.txt\\n--- a/a.txt\\n+++ b/a.txt\\n@@ -1 +1 @@\\n-ｶﾞ\\tx\\n+ｶﾞ\\ty\\n",
+        { layout: "split", lineNumbers: false, width: 40 },
+      );
+      const wideLine = wideOutput
+        .replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g, "")
+        .split("\\n")
+        .find((line) => line.includes("ｶﾞ"));
+      if (!wideLine || wideLine.indexOf("▌", 1) !== 20) {
+        throw new Error("The static renderer misaligned halfwidth Katakana.");
+      }
+    `,
+  ],
+  {
+    cwd: repoRoot,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  },
+);
+if (staticSmoke.exitCode !== 0) {
+  const output = Buffer.from(staticSmoke.stderr).toString("utf8").trim();
+  throw new Error(`The published static renderer failed under Node.\n${output}`);
 }
 
 const forbiddenPrefixes = [

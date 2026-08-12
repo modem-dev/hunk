@@ -14,9 +14,10 @@
  * here. If the static renderer cannot parse or render safely, callers fall back to the original patch
  * text so pager pipelines keep working.
  */
-import { loadAppBootstrap } from "../core/loaders";
+import { normalizePatchChangeset } from "../core/patch/changeset";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type { CommonOptions, DiffFile, NamedCustomThemeConfig } from "../core/types";
+import type { StaticDiffOptions } from "../static/types.js";
 import {
   buildSplitRows,
   buildStackRows,
@@ -384,6 +385,41 @@ function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
   );
 }
 
+/** Render normalized diff files through Hunk's static ANSI presentation pipeline. */
+async function renderStaticFiles(
+  files: DiffFile[],
+  options: CommonOptions,
+  theme: AppTheme,
+  width: number,
+) {
+  if (files.length === 0) {
+    throw new Error("No diff files could be parsed.");
+  }
+
+  const rendered = await Promise.all(
+    files.map((file) => renderStaticFile(file, theme, options, width)),
+  );
+  return `${rendered.join("\n\n")}\n`;
+}
+
+/** Render a unified patch as ANSI text without starting Hunk's interactive application. */
+export async function renderStaticDiff(text: string, options: StaticDiffOptions = {}) {
+  const changeset = normalizePatchChangeset(text, "Static diff", "static", null);
+  const commonOptions: CommonOptions = {
+    hunkHeaders: options.hunkHeaders,
+    lineNumbers: options.lineNumbers,
+    mode: options.layout,
+    tabWidth: options.tabWidth,
+    theme: options.theme,
+    transparentBackground: options.transparentBackground,
+  };
+  const theme = commonOptions.transparentBackground
+    ? withTransparentSurfaces(resolveTheme(commonOptions.theme, null))
+    : resolveTheme(commonOptions.theme, null);
+  const width = resolveStaticWidth({ terminalColumns: options.width });
+  return renderStaticFiles(changeset.files, commonOptions, theme, width);
+}
+
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
 export async function renderStaticDiffPager(
   text: string,
@@ -391,6 +427,7 @@ export async function renderStaticDiffPager(
   deps: StaticDiffPagerDeps = { stderr: process.stderr },
 ) {
   try {
+    const { loadAppBootstrap } = await import("../core/loaders");
     const bootstrap = await loadAppBootstrap({
       kind: "patch",
       file: "-",
@@ -405,16 +442,7 @@ export async function renderStaticDiffPager(
       ? withTransparentSurfaces(resolvedTheme)
       : resolvedTheme;
     const width = resolveStaticWidth(deps);
-    const rendered = await Promise.all(
-      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
-    );
-
-    if (rendered.length === 0) {
-      warnFallback(deps, "no files rendered");
-      return sanitizeTerminalText(text);
-    }
-
-    return `${rendered.join("\n\n")}\n`;
+    return await renderStaticFiles(bootstrap.changeset.files, options, theme, width);
   } catch (error) {
     warnFallback(deps, fallbackMessage(error));
     return sanitizeTerminalText(text);
