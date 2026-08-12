@@ -59,6 +59,13 @@ interface HunkDaemonSocket {
   send(data: string): unknown;
 }
 
+/**
+ * Bounded fan-out for reconstructing opt-in patch bodies. Matches the browser client's
+ * resource-queue concurrency so both consumers draw on the daemon's 64-resource /
+ * 128 MiB in-flight budget the same way while removing per-file round-trip serialization.
+ */
+const SESSION_PATCH_LOAD_CONCURRENCY = 4;
+
 export class ReviewGenerationConflictError extends Error {
   readonly code = "stale-generation" as const;
 
@@ -373,20 +380,44 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     const registration = this.registrations.get(review.sessionId);
     if (!registration) throw new Error("The targeted session is no longer connected.");
     const manifest = registration.info.reviewManifest;
-    const patches = new Map<string, string>();
-    for (const file of manifest.files) {
+    // Resolve every descriptor first so a manifest inconsistency fails before any producer round trip.
+    const entries = manifest.files.map((file) => {
       const descriptor = manifest.resources.find(
         (resource) => resource.id === file.patchResourceId,
       );
       if (!descriptor)
         throw new Error(`Review manifest references unknown resource ${file.patchResourceId}.`);
-      const bytes = await this.loadReviewResource(
-        review.sessionId,
-        manifest.generation,
-        descriptor,
-      );
-      patches.set(file.runtimeId, new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    }
+      return { runtimeId: file.runtimeId, descriptor };
+    });
+    // Producer round trips dominate reconstruction latency, so pull a shared work queue with a
+    // bounded worker pool instead of awaiting one file at a time; one failure drains the queue.
+    const patches = new Map<string, string>();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let nextEntryIndex = 0;
+    let loadFailed = false;
+    const loadNextPatch = async () => {
+      while (!loadFailed && nextEntryIndex < entries.length) {
+        const entry = entries[nextEntryIndex]!;
+        nextEntryIndex += 1;
+        try {
+          const bytes = await this.loadReviewResource(
+            review.sessionId,
+            manifest.generation,
+            entry.descriptor,
+          );
+          patches.set(entry.runtimeId, decoder.decode(bytes));
+        } catch (error) {
+          loadFailed = true;
+          throw error;
+        }
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(SESSION_PATCH_LOAD_CONCURRENCY, entries.length) },
+        loadNextPatch,
+      ),
+    );
     if (this.registrations.get(review.sessionId)?.info.documentGeneration !== manifest.generation) {
       throw new Error(`Review generation ${manifest.generation} retired during reconstruction.`);
     }

@@ -37,6 +37,8 @@ function connectRuntime(
   bootstrap: AppBootstrap,
   mutateRegistration?: (registration: ReturnType<typeof createSessionRegistration>) => void,
   state = new HunkSessionBrokerState(),
+  // Observe one dispatched command and optionally delay its result delivery to expose overlap.
+  onCommand?: (message: HunkSessionServerMessage) => (() => Promise<void> | void) | undefined,
 ) {
   const runtime = createReviewSessionRuntime(bootstrap);
   const runtimeSnapshot = runtime.getSnapshot();
@@ -61,16 +63,21 @@ function connectRuntime(
     send(data: string) {
       const message = JSON.parse(data) as HunkSessionServerMessage;
       commandCounts.set(message.command, (commandCounts.get(message.command) ?? 0) + 1);
+      const settleCommand = onCommand?.(message);
       if (!bridge) throw new Error("Expected runtime bridge.");
       void bridge.dispatchCommand(message).then(
-        (result) =>
-          state.handleCommandResult(socket, { requestId: message.requestId, ok: true, result }),
-        (error) =>
+        async (result) => {
+          await settleCommand?.();
+          state.handleCommandResult(socket, { requestId: message.requestId, ok: true, result });
+        },
+        async (error) => {
+          await settleCommand?.();
           state.handleCommandResult(socket, {
             requestId: message.requestId,
             ok: false,
             error: error instanceof Error ? error.message : String(error),
-          }),
+          });
+        },
       );
     },
   };
@@ -111,6 +118,42 @@ describe("chunked review resources", () => {
 
     connected.state.unregisterSocket(connected.socket);
     expect(connected.state.getReviewResourceCacheEntryCount()).toBe(0);
+    connected.runtime.dispose();
+  });
+
+  test("reconstructs opt-in patches through a bounded parallel worker pool, not serially", async () => {
+    const bootstrap = bootstrapWithPatch("unused");
+    bootstrap.changeset.files = Array.from({ length: 6 }, (_, index) => ({
+      ...createTestDiffFile({
+        id: `file-${index}`,
+        path: `file-${index}.txt`,
+        before: `old ${index}\n`,
+        after: `new ${index}\n`,
+      }),
+      patch: `@@ -1 +1 @@\n-old ${index}\n+new ${index}\n`,
+    }));
+    let inFlightReads = 0;
+    let maxInFlightReads = 0;
+    const connected = connectRuntime(bootstrap, undefined, undefined, (message) => {
+      if (message.command !== "read_review_resource") return undefined;
+      inFlightReads += 1;
+      maxInFlightReads = Math.max(maxInFlightReads, inFlightReads);
+      return async () => {
+        // Hold every producer response open briefly so serialized loads could never overlap.
+        await Bun.sleep(5);
+        inFlightReads -= 1;
+      };
+    });
+
+    const review = await connected.state.getSessionReviewWithResources(
+      { sessionId: connected.registration.sessionId },
+      { includePatch: true },
+    );
+    expect(review.files.map((file) => file.patch)).toEqual(
+      bootstrap.changeset.files.map((file) => file.patch),
+    );
+    // Six single-chunk patches through a pool of four workers must saturate the pool exactly.
+    expect(maxInFlightReads).toBe(4);
     connected.runtime.dispose();
   });
 
