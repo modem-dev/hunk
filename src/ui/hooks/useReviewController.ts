@@ -178,10 +178,6 @@ export interface ReviewController {
   moveLineCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
-  moveToAnnotatedFile: (delta: number) => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToFile: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
@@ -744,18 +740,6 @@ export function useReviewController({
     }
   }, [selectedFile, selectedHunkIndex, toggleGap]);
 
-  /** Named scopes the keyboard binds today, each one step of the shared walk. */
-  const moveToHunk = useCallback((delta: number) => moveSelection("hunk", delta), [moveSelection]);
-  const moveToFile = useCallback((delta: number) => moveSelection("file", delta), [moveSelection]);
-  const moveToAnnotatedHunk = useCallback(
-    (delta: number) => moveSelection("annotated-hunk", delta),
-    [moveSelection],
-  );
-  const moveToAnnotatedFile = useCallback(
-    (delta: number) => moveSelection("annotated-file", delta),
-    [moveSelection],
-  );
-
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
    *
@@ -1189,10 +1173,6 @@ export function useReviewController({
     clearLiveComments,
     moveLineCursor,
     moveSelection,
-    moveToAnnotatedFile,
-    moveToAnnotatedHunk,
-    moveToFile,
-    moveToHunk,
     navigateToLocation,
     removeLiveComment,
     removeUserNote,

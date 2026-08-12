@@ -43,10 +43,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
-    moveToAnnotatedFile: record("moveToAnnotatedFile"),
-    moveToAnnotatedHunk: noop,
-    moveToFile: noop,
-    moveToHunk: noop,
+    moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),
@@ -194,8 +191,8 @@ describe("buildAppMenus", () => {
       "toggleSidebar",
       "toggleCopyDecorations",
       "openAgentSkill",
-      "moveToAnnotatedFile:1",
-      "moveToAnnotatedFile:-1",
+      "moveSelection:annotated-file,1",
+      "moveSelection:annotated-file,-1",
     ]);
   });
 

@@ -338,7 +338,7 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(1);
+        expectValue(controllerRef.current).moveSelection("file", 1);
       });
       await flush(setup);
 
@@ -348,7 +348,7 @@ describe("useReviewController", () => {
       expect(controller.selectedFileTopAlignRequestId).toBe(1);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(1);
+        expectValue(controllerRef.current).moveSelection("file", 1);
       });
       await flush(setup);
 
@@ -357,7 +357,7 @@ describe("useReviewController", () => {
       expect(controller.selectedFileTopAlignRequestId).toBe(2);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(1);
+        expectValue(controllerRef.current).moveSelection("file", 1);
       });
       await flush(setup);
 
@@ -366,7 +366,7 @@ describe("useReviewController", () => {
       expect(controller.selectedFileTopAlignRequestId).toBe(2);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(-1);
+        expectValue(controllerRef.current).moveSelection("file", -1);
       });
       await flush(setup);
 
@@ -375,7 +375,7 @@ describe("useReviewController", () => {
       expect(controller.selectedFileTopAlignRequestId).toBe(3);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(-1);
+        expectValue(controllerRef.current).moveSelection("file", -1);
       });
       await flush(setup);
 
@@ -384,7 +384,7 @@ describe("useReviewController", () => {
       expect(controller.selectedFileTopAlignRequestId).toBe(4);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(-1);
+        expectValue(controllerRef.current).moveSelection("file", -1);
       });
       await flush(setup);
 
@@ -411,7 +411,7 @@ describe("useReviewController", () => {
       const initialAlignRequest = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToFile(3);
+        expectValue(controllerRef.current).moveSelection("file", 3);
       });
       await flush(setup);
 
@@ -459,7 +459,7 @@ describe("useReviewController", () => {
       ).toEqual(["Check beta rename"]);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToAnnotatedHunk(1);
+        expectValue(controllerRef.current).moveSelection("annotated-hunk", 1);
       });
       await flush(setup);
 
@@ -1666,7 +1666,7 @@ describe("useReviewController", () => {
       const initialRequestId = expectValue(controllerRef.current).selectedHunkRevealRequestId;
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToHunk(2);
+        expectValue(controllerRef.current).moveSelection("hunk", 2);
       });
       await flush(setup);
 
@@ -1690,7 +1690,7 @@ describe("useReviewController", () => {
       expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(0);
 
       await act(async () => {
-        expectValue(controllerRef.current).moveToHunk(1);
+        expectValue(controllerRef.current).moveSelection("hunk", 1);
       });
       await flush(setup);
 

@@ -45,6 +45,7 @@ CLI input
 - Keep split and stack views terminal-native and driven from the same normalized diff model.
 - Preserve mouse + keyboard parity for primary actions.
 - Keep the chrome restrained: top menu bar, minimal borders, no redundant metadata headers.
+- Command identity is shared data: `src/core/commandCatalog.ts` owns every built-in command's id, title, category, default chords, and resolution locus (`semantic` / `client-local` / `host-only`). Key matching and handlers stay with each client, menus and help render from the catalog through the client's table, and semantic commands lower to `ReviewIntent`s. Add a command by adding a catalog entry, not by growing one client's table.
 - Shared review primitives are a hard seam: the semantic review model (`src/core/review/`) and its wire protocol (`src/session/reviewProtocol.ts`) are what every review consumer — terminal UI, session runtime, browser client — builds on. Both stay renderer-free and platform-neutral; `scripts/source-boundaries.test.ts` gates their imports, and its debt lists may only shrink. The staged plan for building on this seam is `docs/browser-review-rebuild.md`.
 
 ## component guidance
