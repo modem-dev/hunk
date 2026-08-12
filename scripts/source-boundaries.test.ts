@@ -205,9 +205,12 @@ describe("shared review primitives seam", () => {
   // Repaid in Phase 1 PR 2: `document.ts` and `identity.ts` landed platform-neutral (identity
   // hashing is plain arithmetic), and source identity is part of `identity.ts` with no path
   // handling at all, so those three entries are gone for good.
-  const REVIEW_MODEL_NODE_DEBT = new Map<string, readonly string[]>([
-    ["src/core/review/jsonStream.ts", ["node:crypto"]],
-  ]);
+  // Repaid in Phase 2: the last entry, `jsonStream.ts`, is gone. Serializing and hashing a
+  // review resource needs a platform encoder, so that work lives in the producer tier
+  // (`src/app/review/`) instead, and core takes hashing as an injected `ReviewDigestFn`
+  // (`core/review/validation.ts`) — it names the algorithm, validates the digest shape, and
+  // compares two values without ever computing one. The map is now empty and stays that way.
+  const REVIEW_MODEL_NODE_DEBT = new Map<string, readonly string[]>();
   // The browser client renders with React and Pierre only; everything else must come from the
   // shared review model, the wire protocol, or the browser-safe broker-core parsers.
   const WEB_CLIENT_EXTERNALS = new Set([
