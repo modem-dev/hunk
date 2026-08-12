@@ -1,4 +1,6 @@
 import { canReloadInput } from "../core/inputReload";
+import { resolveConfiguredExtensions } from "./extensionBootstrap";
+import { getBundledVcsCatalog } from "./vcsCatalog";
 import { SourceTextTooLargeError } from "../core/fileSource";
 import { findDiffFileByPath, resolveCommentTarget } from "../core/liveComments";
 import { resolveConfiguredCliInput } from "../core/config";
@@ -38,7 +40,7 @@ import { createUnknownVcsNotice, reportExtensionApplyIssues } from "../extension
 import {
   emitExtensionEvent,
   emitExtensionEventBounded,
-  emitExtensionEventToExtensions,
+  retireExtensionLoadResult,
 } from "../extensions/events";
 import { loadStartupExtensions } from "../extensions/startup";
 import { writeExtensionTrust, type ExtensionTrustDecision } from "../extensions/trust";
@@ -230,7 +232,6 @@ export class ReviewSessionRuntime {
   private readonly launchExtensionPaths: string[] | undefined;
   private readonly offeredTrustRepoRoots = new Set<string>();
   private readonly startedExtensionIds = new Set<string>();
-  private readonly closedExtensionResults = new WeakSet<ExtensionLoadResult>();
   private readonly preparingExtensionResults = new Map<number, ExtensionLoadResult>();
   private extensionsCwd: string;
   private rendererFields: SessionRendererSnapshotFields = {};
@@ -291,7 +292,8 @@ export class ReviewSessionRuntime {
     this.reloadBounds = createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd });
     this.extensionsCwd = this.reloadBounds.defaultCwd;
     const projection = projectBootstrap(bootstrap, "generation:runtime:0");
-    const pendingRepoRoot = bootstrap.extensions?.pendingTrustRepoRoot ?? null;
+    const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
+    const pendingRepoRoot = extensions?.pendingTrustRepoRoot ?? null;
     const promptRepoRoot = bootstrap.input.options.pager ? null : pendingRepoRoot;
     const store = createReviewStore(projection.document, {
       showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
@@ -304,7 +306,7 @@ export class ReviewSessionRuntime {
       bootstrap,
       projection,
       store,
-      extensions: bootstrap.extensions,
+      extensions,
       trust: { pendingRepoRoot, promptRepoRoot },
       notice: null,
       remountVersion: 0,
@@ -484,7 +486,13 @@ export class ReviewSessionRuntime {
       options.reloadExtensions !== true &&
       (this.activeReload?.options.reloadExtensions === true ||
         this.reloadQueue.some((request) => request.options.reloadExtensions === true));
-    if (!requiredExtensionReloadPending) this.latestRequestedEpoch = epoch;
+    // Extension replacement has a visible lifecycle: every discovered registry must receive
+    // shutdown/startup in order. Plain content reloads still coalesce to the newest request.
+    const hasLiveExtensions = (this.snapshot.extensions?.loaded.length ?? 0) > 0;
+    const isFirstQueuedReload = !this.activeReload && this.reloadQueue.length === 0;
+    if (!requiredExtensionReloadPending && (!hasLiveExtensions || isFirstQueuedReload)) {
+      this.latestRequestedEpoch = epoch;
+    }
     return new Promise((resolve, reject) => {
       this.reloadQueue.push({
         epoch,
@@ -612,9 +620,9 @@ export class ReviewSessionRuntime {
     this.reloadQueue = [];
     this.supersededReloads = [];
     this.retireStoreAndCommandAuthority();
-    this.closeExtensionResult(this.snapshot.extensions);
+    void retireExtensionLoadResult(this.snapshot.extensions);
     for (const extensions of this.preparingExtensionResults.values()) {
-      this.closeExtensionResult(extensions);
+      void retireExtensionLoadResult(extensions);
     }
     this.listeners.clear();
   }
@@ -635,23 +643,23 @@ export class ReviewSessionRuntime {
         try {
           prepared = await this.prepareReload(request);
           if (this.disposed) {
-            if (prepared.reloadedExtensions) this.closeExtensionResult(prepared.extensions);
+            if (prepared.reloadedExtensions) await retireExtensionLoadResult(prepared.extensions);
             this.rejectReload(request, new Error("Review session runtime is disposed."));
             continue;
           }
           if (request.epoch !== this.latestRequestedEpoch) {
-            if (prepared.reloadedExtensions) this.closeExtensionResult(prepared.extensions);
+            if (prepared.reloadedExtensions) await retireExtensionLoadResult(prepared.extensions);
             this.supersededReloads.push(request);
             continue;
           }
-          const result = this.publishReload(prepared);
+          const result = await this.publishReload(prepared);
           this.resolveReload(request, result);
           for (const superseded of this.supersededReloads.splice(0)) {
             this.resolveReload(superseded, result);
           }
         } catch (error) {
           if (prepared?.reloadedExtensions && prepared.extensions !== this.snapshot.extensions) {
-            this.closeExtensionResult(prepared.extensions);
+            await retireExtensionLoadResult(prepared.extensions);
           }
           if (request.epoch !== this.latestRequestedEpoch) {
             this.supersededReloads.push(request);
@@ -700,7 +708,11 @@ export class ReviewSessionRuntime {
     const { cwd } = validateSessionReloadWithinBounds(this.reloadBounds, runtimeInput, {
       sourcePath: request.options.sourcePath,
     });
-    const configured = this.deps.resolveConfiguredCliInputImpl(runtimeInput, { cwd });
+    const baseVcsCatalog = getBundledVcsCatalog();
+    const initialConfigured = this.deps.resolveConfiguredCliInputImpl(runtimeInput, {
+      cwd,
+      vcsCatalog: baseVcsCatalog,
+    });
     const activeExtensions = this.snapshot.extensions;
     const previouslyLoadedIds = new Set(
       (activeExtensions?.loaded ?? []).map((extension) => extension.id),
@@ -708,20 +720,29 @@ export class ReviewSessionRuntime {
     const reloadedExtensions = Boolean(
       request.options.reloadExtensions || cwd !== this.extensionsCwd,
     );
-    const extensions = reloadedExtensions
-      ? await this.deps.loadStartupExtensionsImpl({
-          extensions: configured.extensions,
-          cwd,
-          cliExtensionPaths: configured.input.options.extensionPaths,
-          notifications: activeExtensions?.notifications,
-        })
-      : activeExtensions;
+    const resolvedExtensions = reloadedExtensions
+      ? await resolveConfiguredExtensions(
+          {
+            runtimeInput,
+            configured: initialConfigured,
+            cwd,
+            baseVcsCatalog,
+            notifications: activeExtensions?.notifications,
+          },
+          {
+            resolveConfiguredCliInputImpl: this.deps.resolveConfiguredCliInputImpl,
+            loadStartupExtensionsImpl: this.deps.loadStartupExtensionsImpl,
+          },
+        )
+      : undefined;
+    const configured = resolvedExtensions?.configured ?? initialConfigured;
+    const extensions = resolvedExtensions?.extensions ?? activeExtensions;
     if (reloadedExtensions && extensions) {
       // Discovery transfers a fresh registry to runtime ownership before transforms begin. A
       // transform may never settle, so dispose must not need to wait for prepareReload to return.
       this.preparingExtensionResults.set(request.epoch, extensions);
       if (this.disposed) {
-        this.closeExtensionResult(extensions);
+        await retireExtensionLoadResult(extensions);
         throw new Error("Review session runtime is disposed.");
       }
     }
@@ -732,9 +753,10 @@ export class ReviewSessionRuntime {
         cwd,
         extensions,
         loadAtCwd: true,
+        baseVcsCatalog,
       });
     } catch (error) {
-      if (reloadedExtensions) this.closeExtensionResult(extensions);
+      if (reloadedExtensions) await retireExtensionLoadResult(extensions);
       throw error;
     }
     prepared.bootstrap.startupNotices =
@@ -761,7 +783,7 @@ export class ReviewSessionRuntime {
   }
 
   /** Preflight a complete candidate before atomically replacing the live session generation. */
-  private publishReload(reload: PreparedReload): ReloadedSessionResult {
+  private async publishReload(reload: PreparedReload): Promise<ReloadedSessionResult> {
     const { applied } = reload.prepared;
     const bootstrap: AppBootstrap = {
       ...reload.prepared.bootstrap,
@@ -876,7 +898,7 @@ export class ReviewSessionRuntime {
     if (reload.reloadedExtensions) this.extensionsCwd = reload.cwd;
     if (promptRepoRoot) this.offeredTrustRepoRoots.add(promptRepoRoot);
     if (reload.reloadedExtensions && previousSnapshot.extensions !== reload.extensions) {
-      this.closeExtensionResult(previousSnapshot.extensions);
+      await retireExtensionLoadResult(previousSnapshot.extensions);
     }
     if (this.hostClient && nextRegistration && nextSessionSnapshot) {
       this.hostClient.replaceSession(nextRegistration, nextSessionSnapshot);
@@ -898,18 +920,13 @@ export class ReviewSessionRuntime {
     if (this.disposed) return result;
 
     if (reload.reloadedExtensions) {
-      const newlyLoadedIds = new Set(
-        (reload.extensions?.loaded ?? [])
-          .map((extension) => extension.id)
-          .filter((id) => !reload.previouslyLoadedIds.has(id) && !this.startedExtensionIds.has(id)),
-      );
-      for (const id of newlyLoadedIds) this.startedExtensionIds.add(id);
-      emitExtensionEventToExtensions(
-        reload.extensions,
-        "startup",
-        { cwd: reload.cwd },
-        newlyLoadedIds,
-      );
+      // Let the terminal adapter commit the replacement bootstrap and install its live extension
+      // controls before lifecycle handlers run. A replacement has a fresh registry even when its
+      // extension ids match the retired instance, so every one gets its own startup event.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (this.disposed) return result;
+      for (const { id } of reload.extensions?.loaded ?? []) this.startedExtensionIds.add(id);
+      emitExtensionEvent(reload.extensions, "startup", { cwd: reload.cwd });
       if (this.disposed) return result;
     }
     emitExtensionEvent(reload.extensions, "session_reload", {
@@ -954,15 +971,6 @@ export class ReviewSessionRuntime {
       bootstrap.input.kind === "stash-show"
       ? bootstrap.changeset.sourceLabel
       : undefined;
-  }
-
-  /** Close one retired extension registry exactly once. */
-  private closeExtensionResult(extensions: ExtensionLoadResult | undefined) {
-    if (!extensions || this.closedExtensionResults.has(extensions)) return;
-    this.closedExtensionResults.add(extensions);
-    extensions.registry.emitCustomEvent = undefined;
-    extensions.registry.eventBusPhase = "closed";
-    extensions.registry.pendingCustomEvents.length = 0;
   }
 
   /** Identify the externally visible semantic and renderer fields mirrored to the broker. */

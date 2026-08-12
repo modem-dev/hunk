@@ -95,11 +95,7 @@ export interface SessionBrokerViewAdapter<
 
 export type UpdateSnapshotResult = "updated" | "invalid" | "not-found" | "not-owner" | "capacity";
 
-export interface SessionTargetSelector {
-  sessionId?: string;
-  sessionPath?: string;
-  repoRoot?: string;
-}
+export type SessionTargetSelector = SessionTargetInput;
 
 function describeSessionChoices<ListedSession extends SessionBrokerListedSession>(
   sessions: ListedSession[],
@@ -139,11 +135,22 @@ export function resolveSessionTarget<ListedSession extends SessionBrokerListedSe
   }
 
   if (selector.repoRoot) {
-    const matches = sessions.filter((session) => matchesSessionSelector(session, selector));
-    if (matches.length === 0) {
+    const candidates = sessions
+      .map((session) => ({
+        session,
+        distance: repoSelectorDistance(session, selector.repoRoot!, selector.repoBoundary),
+      }))
+      .filter(
+        (entry): entry is { session: ListedSession; distance: number } => entry.distance !== null,
+      );
+    if (candidates.length === 0) {
       throw new Error(`No active session matches repoRoot ${selector.repoRoot}.`);
     }
 
+    const nearestDistance = Math.min(...candidates.map((entry) => entry.distance));
+    const matches = candidates
+      .filter((entry) => entry.distance === nearestDistance)
+      .map((entry) => entry.session);
     if (matches.length > 1) {
       throw new Error(
         `Multiple active sessions match repoRoot ${selector.repoRoot}; specify sessionId instead. ` +

@@ -23,6 +23,7 @@ import type {
 import { createSessionRegistration } from "../session/app/registration";
 import type { SessionBootstrapResult } from "./sessionBootstrap";
 import { createReviewSessionRuntime, type ReviewSessionRuntimeDeps } from "./reviewSessionRuntime";
+import { getBundledVcsCatalog } from "./vcsCatalog";
 
 /** Build a renderer-neutral bootstrap whose source stays inside the test process cwd. */
 function createBootstrap(overrides: Partial<AppBootstrap> = {}) {
@@ -86,7 +87,7 @@ function createReloadDeps(
             extensions,
           };
       return {
-        applied: { vcsAdapters: [], issues: [] },
+        applied: { vcsAdapters: [], vcsCatalog: getBundledVcsCatalog(), issues: [] },
         bootstrap,
         input,
         sessionThemes: { themes: [], notices: [] },

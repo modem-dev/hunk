@@ -10,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { BUNDLED_SKILL_NAMES } from "../src/core/paths";
 import { stagePrebuiltArtifact } from "./build-prebuilt-artifact";
 import { binaryFilenameForSpec, getHostPlatformPackageSpec } from "./prebuilt-package-helpers";
 
@@ -23,7 +24,6 @@ function createTestRepo() {
   const binaryName = binaryFilenameForSpec(spec);
 
   mkdirSync(path.join(repoRoot, "dist"), { recursive: true });
-  mkdirSync(path.join(repoRoot, "skills", "hunk-review"), { recursive: true });
   mkdirSync(path.join(repoRoot, "src", "browser"), { recursive: true });
   cpSync(
     path.resolve(import.meta.dir, "../src/browser/assets"),
@@ -40,7 +40,10 @@ function createTestRepo() {
   writeFileSync(path.join(repoRoot, "dist", binaryName), "#!/bin/sh\necho hunk\n", {
     mode: 0o600,
   });
-  writeFileSync(path.join(repoRoot, "skills", "hunk-review", "SKILL.md"), "# Hunk review\n");
+  for (const skillName of BUNDLED_SKILL_NAMES) {
+    mkdirSync(path.join(repoRoot, "skills", skillName), { recursive: true });
+    writeFileSync(path.join(repoRoot, "skills", skillName, "SKILL.md"), `# ${skillName}\n`);
+  }
 
   return { repoRoot, spec, binaryName };
 }
@@ -67,14 +70,16 @@ describe("stagePrebuiltArtifact", () => {
     expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow("Missing skills directory");
   });
 
-  test("rejects missing bundled Hunk review skill with an actionable error", () => {
+  test("rejects a missing bundled skill with an actionable error", () => {
     const { repoRoot } = createTestRepo();
     rmSync(path.join(repoRoot, "skills", "hunk-review", "SKILL.md"), { force: true });
 
-    expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow("Missing bundled Hunk review skill");
+    expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow(
+      "Missing bundled Hunk hunk-review skill",
+    );
   });
 
-  test("includes the bundled skill next to standalone release binaries", () => {
+  test("includes every bundled skill next to standalone release binaries", () => {
     const { repoRoot, spec, binaryName } = createTestRepo();
     const outputRoot = path.join(tempRoot!, "artifacts");
 
@@ -83,7 +88,9 @@ describe("stagePrebuiltArtifact", () => {
     expect(outputDir).toBe(path.join(outputRoot, spec.packageName));
     expect(existsSync(path.join(outputDir, binaryName))).toBe(true);
     expect(existsSync(path.join(outputDir, "metadata.json"))).toBe(true);
-    expect(existsSync(path.join(outputDir, "skills", "hunk-review", "SKILL.md"))).toBe(true);
+    for (const skillName of BUNDLED_SKILL_NAMES) {
+      expect(existsSync(path.join(outputDir, "skills", skillName, "SKILL.md"))).toBe(true);
+    }
 
     if (process.platform !== "win32") {
       expect(statSync(path.join(outputDir, binaryName)).mode & 0o111).not.toBe(0);

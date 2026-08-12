@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState } from "react";
+import { createReviewSessionRuntime } from "../app/reviewSessionRuntime";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import type { AppBootstrap } from "../app/types";
@@ -33,6 +34,7 @@ describe("extension command control authority", () => {
   test("retires captured controls only when a soft reload replaces the extension registry", async () => {
     let capturedControls: ExtensionCommandControls | null = null;
     const initial = createBootstrap();
+    const runtime = createReviewSessionRuntime(initial);
     initial.extensions!.registry.commands.push({
       extensionId: "probe",
       command: { id: "capture", title: "Capture controls", key: "y" },
@@ -48,6 +50,8 @@ describe("extension command control authority", () => {
       return (
         <App
           bootstrap={bootstrap}
+          reviewStore={runtime.getSnapshot().store}
+          sessionRuntime={runtime}
           onReloadSession={async () => ({
             sessionId: "test",
             inputKind: bootstrap.input.kind,
@@ -98,6 +102,7 @@ describe("extension command control authority", () => {
       expect(capturedControls!.isEnabled("hunk.review.nextHunk")).toBe(false);
       expect(capturedControls!.execute("hunk.review.nextHunk")).toBe(false);
     } finally {
+      runtime.dispose();
       await act(async () => {
         setup.renderer.destroy();
       });

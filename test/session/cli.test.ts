@@ -311,7 +311,7 @@ sessionDescribe("session CLI integration", () => {
       ["export const value = 1;"],
       ["export const value = 2;"],
     );
-    const session = spawnHunkSession(fixture, { port });
+    const session = spawnHunkSession(fixture, port);
 
     try {
       const listed = await waitUntil("registered patch-producing session", () => {

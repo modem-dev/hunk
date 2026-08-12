@@ -52,6 +52,7 @@ import type {
   ExtensionNotifyType,
   ExtensionReviewNote,
   ExtensionPaneControls,
+  ExtensionLoadResult,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
@@ -296,7 +297,7 @@ export function App({
   } | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const extensions = bootstrap.extensions;
+  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
   const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
   useEffect(
@@ -425,9 +426,6 @@ export function App({
     dispatchReviewIntent: sessionRuntime.executeReviewIntent,
     lineCursors,
     onMutationError: showReviewMutationError,
-    noteGeometry: noteGeometryRef,
-    stmlEnabled,
-    toggleSourceGap: toggleRuntimeSourceGap,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

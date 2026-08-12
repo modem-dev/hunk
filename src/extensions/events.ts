@@ -343,6 +343,7 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
   result: ExtensionLoadResult,
   event: Event,
   rawPayload: ExtensionEventPayloads[Event],
+  extensionIds?: ReadonlySet<string>,
 ): Promise<void>[] {
   const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
@@ -354,6 +355,10 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
   const payload = toHandlerPayload(rawPayload);
 
   for (const { extensionId, handler } of handlers) {
+    if (extensionIds && !extensionIds.has(extensionId)) {
+      continue;
+    }
+
     /** Turn one handler failure into a warning instead of an app-level error. */
     const report = (error: unknown) => {
       result.context.notify(
@@ -455,6 +460,20 @@ export function emitExtensionEvent<Event extends ExtensionEventName>(
   }
 
   runExtensionEventHandlers(result, event, payload);
+}
+
+/** Emit a lifecycle event only to extensions that have not received it yet. */
+export function emitExtensionEventToExtensions<Event extends ExtensionEventName>(
+  result: ExtensionLoadResult | undefined,
+  event: Event,
+  payload: ExtensionEventPayloads[Event],
+  extensionIds: ReadonlySet<string>,
+) {
+  if (!result || extensionIds.size === 0) {
+    return;
+  }
+
+  runExtensionEventHandlers(result, event, payload, extensionIds);
 }
 
 /**
