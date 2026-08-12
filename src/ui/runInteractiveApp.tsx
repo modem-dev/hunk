@@ -7,7 +7,12 @@ import {
   type JobControlSuspendSupport,
 } from "../core/process/jobControl";
 import { shutdownSession } from "../core/process/shutdown";
-import { shouldUseMouseForApp, type ControllingTerminal } from "../core/process/terminal";
+import {
+  installTerminalDisconnectSupport,
+  shouldUseMouseForApp,
+  type ControllingTerminal,
+  type TerminalDisconnectSupport,
+} from "../core/process/terminal";
 import type { AppBootstrap } from "../core/bootstrap";
 import { resolveStartupUpdateNotice } from "../core/process/updateNotice";
 import { ReviewProducer } from "../app/review/producer";
@@ -55,8 +60,10 @@ export async function runInteractiveApp({
   hostClient.start();
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
+  // Resolve OpenTUI stdin explicitly (since OpenTUI fallbacks to process.stdin internally)
+  const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
   const renderer = await createCliRenderer({
-    stdin: controllingTerminal?.stdin,
+    stdin: rendererStdin,
     stdout: process.stdout,
     useMouse: shouldUseMouseForApp({
       hasControllingTerminal: Boolean(controllingTerminal),
@@ -69,11 +76,12 @@ export async function runInteractiveApp({
 
   const appRenderer = renderer;
   const root = createRoot(appRenderer);
-  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
   const externalQuitController = new AbortController();
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
+  let terminalDisconnectSupport: TerminalDisconnectSupport = { dispose: () => undefined };
 
   /** Ask AppHost to retire extension authority before tearing down the terminal. */
   function requestQuit() {
@@ -92,6 +100,7 @@ export async function runInteractiveApp({
     }
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
+    terminalDisconnectSupport.dispose();
     hostClient.stop();
     // Release the syntax worker here rather than from the executable entrypoint: this function
     // returns once the app is mounted, so an entrypoint-side dispose would fire before the first
@@ -103,6 +112,8 @@ export async function runInteractiveApp({
   for (const signal of shutdownSignals) {
     process.once(signal, requestQuit);
   }
+  // Install after the renderer so a disconnect closes the live session instead of racing startup.
+  terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, requestQuit);
   jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, requestQuit);
   jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 

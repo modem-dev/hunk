@@ -44,6 +44,59 @@ export interface ControllingTerminal {
   close: () => void;
 }
 
+type TerminalDisconnectEvent = "close" | "end" | "error";
+
+export interface TerminalInputEvents {
+  isTTY?: boolean;
+  destroyed?: boolean;
+  readableEnded?: boolean;
+  on: (event: TerminalDisconnectEvent, listener: (...args: unknown[]) => void) => unknown;
+  off: (event: TerminalDisconnectEvent, listener: (...args: unknown[]) => void) => unknown;
+}
+
+export interface TerminalDisconnectSupport {
+  dispose: () => void;
+}
+
+/** Shut the app down when its renderer input is closed or revoked by the terminal host. */
+export function installTerminalDisconnectSupport(
+  input: TerminalInputEvents,
+  onDisconnect: () => void,
+): TerminalDisconnectSupport {
+  if (input.isTTY !== true) {
+    return { dispose: () => undefined };
+  }
+
+  const events: TerminalDisconnectEvent[] = ["close", "end", "error"];
+  let disposed = false;
+
+  const disconnect = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    onDisconnect();
+  };
+
+  for (const event of events) {
+    input.on(event, disconnect);
+  }
+
+  // Stream ended before listeners handle disconnect
+  if (input.destroyed || input.readableEnded) {
+    queueMicrotask(disconnect);
+  }
+
+  return {
+    dispose: () => {
+      disposed = true;
+      for (const event of events) {
+        input.off(event, disconnect);
+      }
+    },
+  };
+}
+
 /** Minimal terminal construction hooks so tests can cover `/dev/tty` attach behavior. */
 export interface ControllingTerminalDeps {
   openSync: typeof fs.openSync;
