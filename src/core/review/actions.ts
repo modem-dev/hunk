@@ -1,5 +1,5 @@
 /**
- * The reducer's vocabulary of decided state transitions.
+ * Declares the actions the reducer executes — decided state transitions only.
  *
  * An action states what changes, not whether it should: lifecycle code and intent plans
  * decide that first. `reduceReviewState` applies one without further validation beyond

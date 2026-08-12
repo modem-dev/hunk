@@ -1,10 +1,10 @@
 /**
- * Derivations over review state that more than one consumer needs.
+ * Answers the questions about review state that more than one consumer asks.
  *
- * Selectors are the counterpart to the reducer: state changes go through one place, and
- * so do the questions asked about it, so two consumers cannot answer "is this gap
- * expanded" or "what does this clear touch" differently. They stay pure functions of
- * state, and the ones that encode a rule rather than a lookup say so by name.
+ * State changes go through the reducer; shared questions go through here, so two
+ * consumers cannot answer "is this gap expanded" or "what does this clear touch"
+ * differently. Selectors stay pure functions of state, and the ones that encode a rule
+ * rather than a lookup say so by name.
  */
 import type { ReviewState, ReviewStoredNote } from "./state";
 import type { ReviewDocumentV1, ReviewFileV1 } from "./types";

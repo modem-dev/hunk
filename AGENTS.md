@@ -77,6 +77,10 @@ CLI input
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.
+- Write header comments in active voice: the first sentence says what the module or function
+  does ("Applies one action to the review state and returns the next state."), followed by its
+  invariants. Avoid passive or self-important framing ("The one place where…", "the single
+  source of truth for…") — name the behavior, not the architecture's opinion of itself.
 - Add inline comments for intent, invariants, or tricky behavior that would not be obvious to a fresh reader.
 - Skip comments that only narrate what the code already says.
 

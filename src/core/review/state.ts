@@ -1,15 +1,15 @@
 /**
- * The authoritative semantic state of one live review, and the policies that read it.
+ * Holds the semantic state of one live review, plus the policies that read it.
  *
  * Every review consumer — terminal UI, session runtime, browser client — observes this
- * one shape instead of keeping its own selection, filter, note, and expansion state. It
- * stays renderer-free: no rendered rows, no measured geometry, no framework state.
- * Renderer-local concerns (measured line cursors, scroll offsets, pane sizes) stay with
- * the renderer that measures them.
+ * shape instead of keeping its own selection, filter, note, and expansion state. It
+ * carries no renderer state: no rendered rows, no measured geometry, no framework
+ * objects. Renderer-local concerns (measured line cursors, scroll offsets, pane sizes)
+ * stay with the renderer that measures them.
  *
- * Policies that interpret a stored value rather than change it live here too, next to
- * the shape they read, so "which notes are visible" or "where does a note hang" has one
- * named answer rather than an inline conditional per consumer.
+ * Policies that interpret a stored value rather than change it live beside the shape
+ * they read, so "which notes are visible" or "where does a note hang" gets one named
+ * answer instead of an inline conditional per consumer.
  */
 import type {
   ReviewDocumentV1,

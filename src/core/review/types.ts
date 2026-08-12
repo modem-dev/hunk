@@ -1,9 +1,7 @@
 /**
- * The value vocabulary of the shared review model.
- *
- * These are the shapes every review consumer agrees on: files addressed by a stable key
- * rather than by renderer identity, and notes anchored to line ranges rather than to
- * rendered rows. Nothing here describes how a review is drawn or transported.
+ * Declares the value shapes every review consumer shares: files addressed by a stable
+ * key rather than by renderer identity, and notes anchored to line ranges rather than
+ * to rendered rows. Says nothing about how a review is drawn or transported.
  *
  * The document shapes carry only what the review store itself reads. The document
  * projection phase widens them with hunk geometry, canonical resources, and content

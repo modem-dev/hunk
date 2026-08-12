@@ -1,10 +1,10 @@
 /**
- * The terminal's projection of the shared review model.
+ * Converts between the terminal's diff model and the shared review model.
  *
  * The store in `src/core/review` addresses files by semantic key and notes by line
  * anchor; the terminal addresses files by runtime id and renders notes as annotations.
- * This module is the one boundary where the two meet, so no component re-derives the
- * mapping inline and no note loses a field on the way across.
+ * Every crossing between the two goes through this module, so no component re-derives
+ * the mapping inline and no note loses a field on the way across.
  *
  * Two identities here are transitional and deliberately named as such: a file's semantic
  * key is currently its runtime id, and a file's source identity is a process-local token

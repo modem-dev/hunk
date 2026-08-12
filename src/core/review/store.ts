@@ -1,10 +1,10 @@
 /**
- * A synchronous observable holder for the semantic review state.
+ * Holds review state and notifies subscribers when it changes.
  *
- * Deliberately framework-free: `getSnapshot` / `subscribe` / `dispatch` is the whole
- * contract — enough for a React subscription, for a session runtime holding a review
- * outside any renderer, and for a future wire adapter that mirrors changes to a client.
- * Dispatch is synchronous so a caller can read the result of its own mutation before
+ * Stays framework-free: `getSnapshot` / `subscribe` / `dispatch` is the whole contract —
+ * enough for a React subscription, for a session runtime holding a review outside any
+ * renderer, and for a future wire adapter that mirrors changes to a client. Dispatch
+ * runs synchronously so a caller can read the result of its own mutation before
  * returning; agent-facing commands answer with the state they just produced.
  */
 import type { ReviewAction } from "./actions";

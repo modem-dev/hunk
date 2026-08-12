@@ -1,11 +1,10 @@
 /**
- * Semantic intents: what a reviewer asked for, decided once, for every surface.
+ * Validates what a reviewer asked for and lowers it into reducer actions.
  *
- * An intent is validated and lowered into reducer actions here, so the terminal, the
- * session runtime, and a future browser client cannot disagree about what "save this
- * note" means. Planning is pure — identity and time arrive as caller-supplied facts —
- * and it either produces a complete plan or throws a typed rejection before any state
- * is published.
+ * Every surface submits the same intents, so the terminal, the session runtime, and a
+ * future browser client cannot disagree about what "save this note" means. Planning is
+ * pure — identity and time arrive as caller-supplied facts — and either produces a
+ * complete plan or throws a typed rejection before any state is published.
  *
  * The intent vocabulary grows with the phases that need it: navigation intents and the
  * live-agent note lifecycle still resolve at their current owners.

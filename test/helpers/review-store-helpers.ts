@@ -1,8 +1,8 @@
 /**
- * Builders for renderer-neutral review state used by the review store's unit tests.
+ * Builds renderer-neutral review state for the review store's unit tests.
  *
- * They stay minimal on purpose: a test states only the facts it cares about, so a later
- * phase widening the document shape does not rewrite every expectation.
+ * Builders stay minimal on purpose: a test states only the facts it cares about, so a
+ * later phase widening the document shape does not rewrite every expectation.
  */
 import {
   createInitialReviewState,

@@ -1,10 +1,9 @@
 /**
- * The one place semantic review state changes.
+ * Applies one action to the review state and returns the next state.
  *
- * Pure and synchronous: every transition is a function of the previous state and one
- * action, and an action that changes nothing returns the same object so observers can
- * compare by identity. No timestamps, no identifiers, no I/O — those are runtime facts
- * the caller supplies on the action.
+ * Runs synchronously with no I/O. An action that changes nothing returns the
+ * previous state object, so observers can skip work with an identity check.
+ * Timestamps and ids never originate here — callers put them on the action.
  */
 import type { ReviewAction } from "./actions";
 import {
