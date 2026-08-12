@@ -45,6 +45,7 @@ CLI input
 - Keep split and stack views terminal-native and driven from the same normalized diff model.
 - Preserve mouse + keyboard parity for primary actions.
 - Keep the chrome restrained: top menu bar, minimal borders, no redundant metadata headers.
+- Shared review primitives are a hard seam: the semantic review model (`src/core/review/`) and its wire protocol (`src/session/reviewProtocol.ts`) are what every review consumer — terminal UI, session runtime, browser client — builds on. Both stay renderer-free and platform-neutral; `scripts/source-boundaries.test.ts` gates their imports, and its debt lists may only shrink. The staged plan for building on this seam is `docs/browser-review-rebuild.md`.
 
 ## component guidance
 
