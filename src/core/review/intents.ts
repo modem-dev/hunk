@@ -11,13 +11,9 @@
  * live-agent note lifecycle still resolve at their current owners.
  */
 import type { ReviewAction } from "./actions";
+import { reviewLineAnchor } from "./anchors";
 import { isReviewNoteWithinClearScope, selectReviewFileByKey } from "./selectors";
-import {
-  reviewLineAnchor,
-  type ReviewRevealRequest,
-  type ReviewState,
-  type ReviewStoredNote,
-} from "./state";
+import { type ReviewRevealRequest, type ReviewState, type ReviewStoredNote } from "./state";
 import type { ReviewStore } from "./store";
 import type { ReviewFileV1 } from "./types";
 
@@ -136,7 +132,7 @@ function requireFile(state: ReviewState, fileKey: string): ReviewFileV1 {
 
 /** Require one exact hunk instead of relying on selection clamping. */
 function requireHunk(file: ReviewFileV1, hunkIndex: number) {
-  if (!Number.isSafeInteger(hunkIndex) || hunkIndex < 0 || hunkIndex >= file.hunkCount) {
+  if (!Number.isSafeInteger(hunkIndex) || hunkIndex < 0 || hunkIndex >= file.hunks.length) {
     throw new ReviewIntentPlanningError(
       "hunk-not-found",
       `Review hunk ${hunkIndex} does not exist in ${file.path}.`,
@@ -162,7 +158,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
       source: "user",
       originalSource: "user",
       fileKey: file.key,
-      anchor: reviewLineAnchor(draft),
+      anchor: reviewLineAnchor(file.hunks, draft),
       summary: draft.body.trim(),
       author: "user",
       createdAt: requireFact(facts.timestamp, "timestamp"),
