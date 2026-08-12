@@ -24,7 +24,7 @@ import type {
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
-import type { DraftReviewNote } from "../../hooks/useReviewController";
+import type { DraftReviewNote } from "../../lib/reviewProjection";
 import {
   alwaysShowReviewNote,
   reviewNoteSource,

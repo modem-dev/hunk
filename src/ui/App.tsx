@@ -229,6 +229,20 @@ export function App({
     () => resolveExperimentalDiffFiles(bootstrap.changeset.files, bootstrap.input.options),
     [bootstrap.changeset.files, bootstrap.input.options.experimental],
   );
+  // App computes layout geometry below this hook call, so the controller reads
+  // the current values through a ref instead of a render-time parameter.
+  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const review = useReviewController({
+    files: reviewFiles,
+    initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+    lineCursors,
+    noteGeometry: noteGeometryRef,
+    stmlEnabled,
+  });
+  // Note-layer visibility is shared review state, so it lives in the review store
+  // alongside the notes it governs rather than in local app state.
+  const showAgentNotes = review.showAgentNotes;
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -248,7 +262,6 @@ export function App({
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -395,16 +408,6 @@ export function App({
       ? `~${path.slice(process.env.HOME.length)}`
       : path;
   }, [bootstrap.viewPreferencesConfigPath]);
-  // App computes layout geometry below this hook call, so the controller reads
-  // the current values through a ref instead of a render-time parameter.
-  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
-  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const review = useReviewController({
-    files: reviewFiles,
-    lineCursors,
-    noteGeometry: noteGeometryRef,
-    stmlEnabled,
-  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -531,8 +534,8 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
+    review.setShowAgentNotes(true);
+  }, [review.setShowAgentNotes]);
 
   const showSessionNotice = useCallback((message: string) => {
     setSessionNoticeText(message);
@@ -1271,7 +1274,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
+    review.setShowAgentNotes(!showAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
