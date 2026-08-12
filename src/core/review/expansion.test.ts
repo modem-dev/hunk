@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { createTestReviewFile } from "../../../test/helpers/review-store-helpers";
 import {
   parseReviewGapId,
+  resolveReviewExpandedLine,
   reviewExpansionSide,
   reviewGapAddress,
   reviewGapId,
@@ -276,5 +278,37 @@ describe("reviewExpansionSide", () => {
     for (const kind of ["change", "new", "rename-pure", "rename-changed"] as const) {
       expect(reviewExpansionSide(kind)).toBe("new");
     }
+  });
+});
+
+describe("resolveReviewExpandedLine", () => {
+  const file = createTestReviewFile({ key: "alpha", sourceIdentity: "src:1" });
+  const claim = { gapId: "before:1", side: "new" as const, line: 5, sourceIdentity: "src:1" };
+
+  // Intent: a line the patch never showed is addressable exactly while its gap is.
+  test("accepts a line inside the gap it names", () => {
+    expect(resolveReviewExpandedLine(file, claim)?.hunkIndex).toBe(1);
+    // The gap covers lines 2..10 on both sides; its ends are inside it.
+    expect(resolveReviewExpandedLine(file, { ...claim, line: 2 })).toBeDefined();
+    expect(resolveReviewExpandedLine(file, { ...claim, line: 10 })).toBeDefined();
+  });
+
+  test("rejects a line outside the gap it names", () => {
+    expect(resolveReviewExpandedLine(file, { ...claim, line: 1 })).toBeUndefined();
+    expect(resolveReviewExpandedLine(file, { ...claim, line: 11 })).toBeUndefined();
+  });
+
+  test("rejects a gap the file does not have", () => {
+    expect(resolveReviewExpandedLine(file, { ...claim, gapId: "before:0" })).toBeUndefined();
+    expect(resolveReviewExpandedLine(file, { ...claim, gapId: "nonsense" })).toBeUndefined();
+  });
+
+  // Intent: the same gap over replaced source text is a different set of lines, so a claim
+  // about the old content must not resolve against the new.
+  test("rejects a claim about source the file no longer has", () => {
+    expect(resolveReviewExpandedLine(file, { ...claim, sourceIdentity: "src:2" })).toBeUndefined();
+    expect(
+      resolveReviewExpandedLine(createTestReviewFile({ key: "alpha" }), claim),
+    ).toBeUndefined();
   });
 });

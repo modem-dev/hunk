@@ -87,6 +87,42 @@ export type ReviewIntent =
   /** Flip one addressable collapsed gap between collapsed and expanded. */
   | { type: "expansion/toggle"; fileKey: string; gapId: string };
 
+/**
+ * Every intent type, as a value rather than only as a type.
+ *
+ * The wire vocabulary is derived from this list instead of restated beside it: the
+ * prototype hand-copied the action union into three more places, so an intent added to
+ * one was silently unreachable from the others (`docs/browser-review-seam-audit.md`,
+ * B12). The assertion below makes the list total — adding a member to `ReviewIntent`
+ * without naming it here fails to typecheck — and `src/session/reviewProtocol.ts`
+ * subtracts a named exclusion list from it rather than writing its own.
+ */
+export const REVIEW_INTENT_TYPES = [
+  "selection/select",
+  "selection/move",
+  "selection/select-file",
+  "selection/anchor",
+  "filter/set",
+  "notes/set-visibility",
+  "notes/start-draft",
+  "notes/create-user",
+  "notes/remove-user",
+  "notes/remove-live",
+  "notes/clear",
+  "expansion/toggle",
+] as const satisfies readonly ReviewIntent["type"][];
+
+export type ReviewIntentType = (typeof REVIEW_INTENT_TYPES)[number];
+
+// Totality in the other direction: `satisfies` above proves every listed name is a real
+// intent, and this proves every real intent is listed. A missing member resolves to a
+// string literal here instead of `never`, which is not assignable to `never`.
+const _everyReviewIntentIsListed: never = undefined as unknown as Exclude<
+  ReviewIntent["type"],
+  ReviewIntentType
+>;
+void _everyReviewIntentIsListed;
+
 export interface ReviewSelectionChangedOutcome {
   type: "selection/changed";
   fileKey: string;

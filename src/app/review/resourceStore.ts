@@ -24,6 +24,7 @@ import {
   isReviewResourceRange,
   MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,
+  REVIEW_RESOURCE_LOAD_CONCURRENCY,
   type ReviewResourceChunkV1,
   type ReviewResourceDescriptorV1,
   type ReviewResourceErrorCode,
@@ -38,9 +39,6 @@ import {
   reviewPublicationResource,
   type ReviewPublication,
 } from "./publication";
-
-/** How many resources one bulk load produces at a time. */
-export const REVIEW_RESOURCE_LOAD_CONCURRENCY = 4;
 
 /** How many materialized bytes one generation retains before evicting its oldest. */
 export const MAX_REVIEW_RESOURCE_CACHE_BYTES = 64 * 1024 * 1024;
