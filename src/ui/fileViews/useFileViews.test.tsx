@@ -3,7 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, createElement, useState } from "react";
 import { createTestDiffFile, createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import type { RegisteredFileView } from "../../extensions/types";
-import { registeredFileViewKey } from "./state";
+import { bumpFileViewEpoch, registeredFileViewKey, type FileViewEpochState } from "./state";
 import {
   FILE_VIEW_LAYOUT_CACHE_MAX_ENTRIES,
   FILE_VIEW_LAYOUT_RESIZE_DEBOUNCE_MS,
@@ -702,6 +702,295 @@ describe("file-view layout cache identity", () => {
       expect([matchesCalls, layoutCalls]).toEqual([2, 2]);
       expect(latest.get(file.id)?.registrationIdentity).not.toBe(first?.registrationIdentity);
       expect(latest.get(file.id)?.layoutGeneration).not.toBe(first?.layoutGeneration);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+});
+
+describe("file-view layout invalidation", () => {
+  test("re-runs matches and layout for the same file and width after a refresh", async () => {
+    let matchesCalls = 0;
+    let generation = 0;
+    const view = createTestView(({ file: inputFile }) => ({
+      rows: [{ id: "row", spans: [{ text: `generation ${generation}` }] }],
+      hunkRows: (inputFile.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }));
+    view.view.matches = () => {
+      matchesCalls += 1;
+      return true;
+    };
+    const key = registeredFileViewKey(view);
+    const selections = { [file.id]: key };
+    const views = [view];
+    let refresh = () => {};
+    let latest: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+
+    function Harness() {
+      const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map());
+      refresh = () => setEpochs((current) => bumpFileViewEpoch(current, key));
+      latest = useFileViewLayouts({
+        files,
+        selections,
+        views,
+        width: 80,
+        epochs,
+        onIssue: ignoreIssue,
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    const settleAt = async (expected: string) => {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+        if (latest.get(file.id)?.layout.rows[0]?.spans[0]?.text === expected) return;
+      }
+      throw new Error(`layout did not settle at "${expected}"`);
+    };
+
+    try {
+      await settleAt("generation 0");
+      const first = latest.get(file.id);
+      expect(matchesCalls).toBe(1);
+
+      generation = 1;
+      await act(async () => {
+        refresh();
+        await setup.renderOnce();
+      });
+      await settleAt("generation 1");
+      // The refreshed pass re-consults the extension rather than reusing the cached tree.
+      expect(matchesCalls).toBe(2);
+      expect(latest.get(file.id)?.layoutGeneration).not.toBe(first?.layoutGeneration);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keeps the previous layout visible until the refreshed layout resolves", async () => {
+    let layoutCalls = 0;
+    let resolveRefreshed:
+      | ((layout: ReturnType<RegisteredFileView["view"]["layout"]>) => void)
+      | undefined;
+    const view = createTestView(({ file: inputFile }) => {
+      layoutCalls += 1;
+      if (layoutCalls > 1) {
+        return new Promise((resolve) => {
+          resolveRefreshed = resolve;
+        });
+      }
+      return {
+        rows: [{ id: "row", spans: [{ text: "before refresh" }] }],
+        hunkRows: (inputFile.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+      };
+    });
+    const key = registeredFileViewKey(view);
+    const selections = { [file.id]: key };
+    const views = [view];
+    let refresh = () => {};
+    let latest: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+
+    function Harness() {
+      const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map());
+      refresh = () => setEpochs((current) => bumpFileViewEpoch(current, key));
+      latest = useFileViewLayouts({
+        files,
+        selections,
+        views,
+        width: 80,
+        epochs,
+        onIssue: ignoreIssue,
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    const rowText = () => latest.get(file.id)?.layout.rows[0]?.spans[0]?.text;
+
+    try {
+      for (let attempt = 0; attempt < 20 && latest.size === 0; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+      }
+      expect(rowText()).toBe("before refresh");
+
+      await act(async () => {
+        refresh();
+        await setup.renderOnce();
+      });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+        // Never a flash back to raw diff while the replacement is still pending.
+        expect(rowText()).toBe("before refresh");
+      }
+      expect(resolveRefreshed).toBeDefined();
+
+      resolveRefreshed?.({
+        rows: [{ id: "row", spans: [{ text: "after refresh" }] }],
+        hunkRows: file.metadata.hunks.map(() => ({ startRow: 0, endRow: 0 })),
+      });
+      for (let attempt = 0; attempt < 20 && rowText() !== "after refresh"; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+      }
+      expect(rowText()).toBe("after refresh");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("does no work for an unselected view and re-prepares it when selected again", async () => {
+    let layoutCalls = 0;
+    const view = createTestView(({ file: inputFile }) => {
+      layoutCalls += 1;
+      return {
+        rows: [{ id: "row", spans: [{ text: `layout ${layoutCalls}` }] }],
+        hunkRows: (inputFile.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+      };
+    });
+    const key = registeredFileViewKey(view);
+    const views = [view];
+    // Stable identities: the hook keys its preparation effect on the selections object itself.
+    const selectedSelections = { [file.id]: key };
+    const rawSelections: Record<string, string> = {};
+    let selectView = (_selected: boolean) => {};
+    let refresh = () => {};
+    let latest: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+
+    function Harness() {
+      const [selected, setSelected] = useState(true);
+      const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map());
+      selectView = setSelected;
+      refresh = () => setEpochs((current) => bumpFileViewEpoch(current, key));
+      latest = useFileViewLayouts({
+        files,
+        selections: selected ? selectedSelections : rawSelections,
+        views,
+        width: 80,
+        epochs,
+        onIssue: ignoreIssue,
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    const settle = async () => {
+      for (let attempt = 0; attempt < 20 && latest.size === 0; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+      }
+    };
+
+    try {
+      await settle();
+      expect(layoutCalls).toBe(1);
+
+      await act(async () => {
+        selectView(false);
+        await setup.renderOnce();
+      });
+      await act(async () => {
+        refresh();
+        await setup.renderOnce();
+        await Promise.resolve();
+      });
+      // Raw diff everywhere: an invalidated view that nothing presents costs no extension work.
+      expect(layoutCalls).toBe(1);
+
+      await act(async () => {
+        selectView(true);
+        await setup.renderOnce();
+      });
+      await settle();
+      expect(layoutCalls).toBe(2);
+      expect(latest.get(file.id)?.layout.rows[0]?.spans[0]?.text).toBe("layout 2");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("re-lays out only the named file for a scoped refresh and both for a view-wide one", async () => {
+    const other = createTestDiffFile({
+      id: "sibling",
+      path: "sibling.ts",
+      before: "old\n",
+      after: "new\n",
+    });
+    const bothFiles = [file, other];
+    const layoutCalls = new Map<string, number>();
+    const view = createTestView(({ file: inputFile }) => {
+      const calls = (layoutCalls.get(inputFile.id) ?? 0) + 1;
+      layoutCalls.set(inputFile.id, calls);
+      return {
+        rows: [{ id: "row", spans: [{ text: `${inputFile.id} layout ${calls}` }] }],
+        hunkRows: (inputFile.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+      };
+    });
+    const key = registeredFileViewKey(view);
+    // One view presenting every matching file, as the bulk "apply to all matching files" action leaves it.
+    const selections = { [file.id]: key, [other.id]: key };
+    const views = [view];
+    let refresh = (_fileId?: string) => {};
+    let latest: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+
+    function Harness() {
+      const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map());
+      refresh = (fileId) => setEpochs((current) => bumpFileViewEpoch(current, key, fileId));
+      latest = useFileViewLayouts({
+        files: bothFiles,
+        selections,
+        views,
+        width: 80,
+        epochs,
+        onIssue: ignoreIssue,
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    const settleAt = async (fileId: string, expected: string) => {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+        if (latest.get(fileId)?.layout.rows[0]?.spans[0]?.text === expected) return;
+      }
+      throw new Error(`layout for ${fileId} did not settle at "${expected}"`);
+    };
+
+    try {
+      await settleAt(file.id, "request layout 1");
+      await settleAt(other.id, "sibling layout 1");
+
+      await act(async () => {
+        refresh(file.id);
+        await setup.renderOnce();
+      });
+      await settleAt(file.id, "request layout 2");
+      // The sibling's prepared tree is still retained under its own unchanged epoch.
+      expect(layoutCalls.get(other.id)).toBe(1);
+      expect(latest.get(other.id)?.layout.rows[0]?.spans[0]?.text).toBe("sibling layout 1");
+
+      await act(async () => {
+        refresh();
+        await setup.renderOnce();
+      });
+      await settleAt(file.id, "request layout 3");
+      await settleAt(other.id, "sibling layout 2");
     } finally {
       await act(async () => setup.renderer.destroy());
     }

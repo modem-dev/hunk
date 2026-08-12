@@ -18,7 +18,8 @@ import {
   resolveDetectedVcsIdWithExtensions,
   resolveExtensionCommands,
   resolveExtensionFileViews,
-  resolveExtensionSidebarViews,
+  resolveExtensionKeyboardModes,
+  resolveExtensionPanes,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -141,39 +142,39 @@ describe("extension VCS adapters", () => {
   });
 });
 
-describe("extension sidebar views", () => {
-  test("resolves no views from an empty registry", () => {
+describe("extension panes", () => {
+  test("resolves no panes from an empty registry", () => {
     const result = createEmptyExtensionLoadResult();
 
-    const { views, issues } = resolveExtensionSidebarViews(result.registry);
+    const { panes, issues } = resolveExtensionPanes(result.registry);
 
-    expect(views).toEqual([]);
+    expect(panes).toEqual([]);
     expect(issues).toEqual([]);
   });
 
-  test("keeps every distinct view and reports duplicate keys", () => {
+  test("keeps every distinct pane and reports duplicate keys", () => {
     const result = createEmptyExtensionLoadResult();
     const tree = { id: "tree", component: () => null };
     const flat = { id: "flat", component: () => null };
     const treeAgain = { id: "tree", component: () => null };
-    result.registry.sidebarViews.push(
-      { extensionId: "alpha", view: tree },
-      { extensionId: "beta", view: flat },
-      { extensionId: "alpha", view: treeAgain },
+    result.registry.panes.push(
+      { extensionId: "alpha", pane: tree },
+      { extensionId: "beta", pane: flat },
+      { extensionId: "alpha", pane: treeAgain },
     );
 
-    const { views, issues } = resolveExtensionSidebarViews(result.registry);
+    const { panes, issues } = resolveExtensionPanes(result.registry);
 
-    // Registration is additive: distinct views from any extension coexist,
+    // Registration is additive: distinct panes from any extension coexist,
     // and only an identity collision is refused.
-    expect(views).toEqual([
-      { extensionId: "alpha", view: tree },
-      { extensionId: "beta", view: flat },
+    expect(panes).toEqual([
+      { extensionId: "alpha", pane: tree },
+      { extensionId: "beta", pane: flat },
     ]);
     expect(issues).toEqual([
       {
         extensionId: "alpha",
-        message: 'Skipped duplicate sidebar view "alpha:tree" from extension alpha',
+        message: 'Skipped duplicate pane "alpha:tree" from extension alpha',
       },
     ]);
   });
@@ -192,6 +193,31 @@ describe("extension file views", () => {
 
     expect(views).toEqual([{ extensionId: "first", view: plain }]);
     expect(issues[0]?.message).toContain('duplicate file view "first:plain"');
+  });
+});
+
+describe("extension keyboard modes", () => {
+  test("keeps the first duplicate qualified identity", () => {
+    const result = createEmptyExtensionLoadResult();
+    const normal = { id: "normal", title: "Normal", onKey: () => "handled" as const };
+    result.registry.keyboardModes.push(
+      { extensionId: "vim", mode: normal },
+      { extensionId: "other", mode: normal },
+      { extensionId: "vim", mode: { ...normal, title: "Later" } },
+    );
+
+    const { modes, issues } = resolveExtensionKeyboardModes(result.registry);
+
+    expect(modes.map((entry) => `${entry.extensionId}:${entry.mode.id}`)).toEqual([
+      "vim:normal",
+      "other:normal",
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "vim",
+        message: 'Skipped duplicate keyboard mode "vim:normal" from extension vim',
+      },
+    ]);
   });
 });
 

@@ -146,32 +146,42 @@ describe("extension event dispatch", () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
-  test("gives lifecycle handlers live sidebar controls for their owning extension", () => {
+  test("gives lifecycle handlers live pane controls and one deprecated alias", () => {
     const opened: string[] = [];
+    let aliasesSame = false;
     const { result } = createTestLoadResult([
       {
         extensionId: "summary",
         event: "changeset_loaded",
-        handler: (_payload, ctx) => ctx.sidebars.open("summary"),
+        handler: (_payload, ctx) => {
+          aliasesSame = ctx.panes === ctx.sidebars;
+          ctx.panes.open("summary");
+          ctx.sidebars.open("legacy");
+        },
       },
     ]);
-    result.eventContextProvider = (extensionId) => ({
-      cwd: "/repo",
-      notify: () => {},
-      sidebars: {
-        open: (viewId) => opened.push(`${extensionId}:${viewId}`),
+    result.eventContextProvider = (extensionId) => {
+      const panes = {
+        open: (viewId: string) => opened.push(`${extensionId}:${viewId}`),
         close: () => {},
         toggle: () => {},
         isOpen: () => false,
-      },
-      events: { emit: () => {} },
-    });
+      };
+      return {
+        cwd: "/repo",
+        notify: () => {},
+        panes,
+        sidebars: panes,
+        events: { emit: () => {} },
+      };
+    };
 
     emitExtensionEvent(result, "changeset_loaded", {
       changeset: { id: "c", sourceLabel: "repo", title: "t", files: [] },
     });
 
-    expect(opened).toEqual(["summary:summary"]);
+    expect(aliasesSame).toBe(true);
+    expect(opened).toEqual(["summary:summary", "summary:legacy"]);
   });
 
   test("is a no-op when the session has no extensions", () => {

@@ -4,6 +4,7 @@ import { Command, Option } from "commander";
 import type {
   CliInput,
   CommonOptions,
+  CursorLine,
   HelpCommandInput,
   LayoutMode,
   PagerCommandInput,
@@ -11,7 +12,12 @@ import type {
   SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "./types";
-import { resolveBundledHunkReviewSkillPath } from "./paths";
+import {
+  BUNDLED_SKILL_NAMES,
+  resolveBundledSkillName,
+  resolveBundledSkillPath,
+  type BundledSkillName,
+} from "./paths";
 import {
   type AgentCommandConstraint,
   type AgentCommandSpec,
@@ -38,7 +44,7 @@ import { resolveCliVersion } from "./version";
 export interface CliReferenceOption {
   readonly flag: string;
   readonly description: string;
-  readonly parse?: "layout" | "positiveInt" | "tabWidth" | "collect";
+  readonly parse?: "layout" | "cursorLine" | "positiveInt" | "tabWidth" | "collect";
   readonly defaultValue?: string;
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
@@ -59,6 +65,11 @@ export interface CliReferenceCommand {
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
   { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
+  {
+    flag: "--cursor-line <style>",
+    description: "current-line marker: row, number, off",
+    parse: "cursorLine",
+  },
   { flag: "--theme <theme>", description: "named theme override" },
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
@@ -175,8 +186,8 @@ export const CLI_REFERENCE_COMMANDS = {
   },
   "skill-path": {
     path: "skill path",
-    summary: "print the bundled Hunk review skill path",
-    synopsis: ["hunk skill path"],
+    summary: "print a bundled Hunk skill path",
+    synopsis: ["hunk skill path [name]"],
   },
   "daemon-serve": {
     path: "daemon serve",
@@ -193,6 +204,15 @@ function parseLayoutMode(value: string): LayoutMode {
   }
 
   throw new Error(`Invalid layout mode: ${value}`);
+}
+
+/** Validate one requested current-line style from CLI input. */
+function parseCursorLine(value: string): CursorLine {
+  if (value === "row" || value === "number" || value === "off") {
+    return value;
+  }
+
+  throw new Error(`Invalid cursor line style: ${value}`);
 }
 
 /** Parse one required positive integer CLI value. */
@@ -236,6 +256,7 @@ function collectRepeatedValue(value: string, previous: string[] = []) {
 function buildCommonOptions(
   options: {
     mode?: LayoutMode;
+    cursorLine?: CursorLine;
     theme?: string;
     agentContext?: string;
     pager?: boolean;
@@ -249,6 +270,7 @@ function buildCommonOptions(
 ): CommonOptions {
   return {
     mode: options.mode,
+    cursorLine: options.cursorLine,
     theme: options.theme,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
@@ -281,6 +303,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
   const commanderOption = new Option(option.flag, option.description);
   if (option.parse === "layout") {
     commanderOption.argParser(parseLayoutMode);
+  } else if (option.parse === "cursorLine") {
+    commanderOption.argParser(parseCursorLine);
   } else if (option.parse === "positiveInt") {
     commanderOption.argParser(parsePositiveInt);
   } else if (option.parse === "tabWidth") {
@@ -323,18 +347,22 @@ function renderCliVersion() {
   return `${resolveCliVersion()}\n`;
 }
 
-/** Render the bundled Hunk review skill path for shell usage. */
-function renderHunkReviewSkillPath() {
-  return `${resolveBundledHunkReviewSkillPath()}\n`;
+/** Render one bundled skill path for shell usage. */
+function renderBundledSkillPath(name?: BundledSkillName) {
+  return `${resolveBundledSkillPath(name)}\n`;
 }
 
 /** Build the `hunk skill` help text. */
 function renderSkillHelp() {
   return [
-    "Usage: hunk skill path",
+    "Usage: hunk skill path [name]",
     "",
-    "Print the bundled Hunk review skill path.",
+    "Print a bundled Hunk skill path.",
     "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+    "",
+    "Skills:",
+    `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
+    `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
     "",
   ].join("\n");
 }
@@ -358,7 +386,7 @@ function renderCliHelp() {
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
     "  hunk markup guide                       print the experimental STML authoring guide",
-    "  hunk skill path                         print the bundled Hunk review skill path",
+    "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
@@ -1343,13 +1371,25 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
     };
   }
 
-  if (rest.length > 0) {
-    throw new Error("`hunk skill path` does not accept additional arguments.");
+  if (rest.length > 1) {
+    throw new Error("`hunk skill path` accepts at most one skill name.");
+  }
+
+  const [requestedName] = rest;
+  if (requestedName === undefined) {
+    return { kind: "help", text: renderBundledSkillPath() };
+  }
+
+  const name = resolveBundledSkillName(requestedName);
+  if (!name) {
+    throw new Error(
+      `Unknown skill "${requestedName}". Bundled skills are ${BUNDLED_SKILL_NAMES.join(" and ")}.`,
+    );
   }
 
   return {
     kind: "help",
-    text: renderHunkReviewSkillPath(),
+    text: renderBundledSkillPath(name),
   };
 }
 

@@ -13,6 +13,7 @@ import {
   diffRailMarker,
   dimRailColor,
   neutralRailColor,
+  cursorLineHighlightBg,
   selectionHighlightBg,
   splitCellPalette,
   splitGutterText,
@@ -38,6 +39,35 @@ import {
   wrapSanitizedTextByWidth,
 } from "../lib/text";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
+import type { CursorLine } from "../../core/types";
+
+export interface CursorHighlight {
+  /** The render plan anchor of the row the cursor rests on, shared with reveal lookups. */
+  stableKey: string;
+  style: Exclude<CursorLine, "off">;
+  /** Which half of a split row the cursor sits on, and where a note would anchor. */
+  side: "old" | "new";
+}
+
+/** Report whether one planned row carries the anchor the cursor rests on. */
+export function plannedRowMatchesCursor(
+  row: { stableKey: string; stableAliasKeys?: readonly string[] },
+  cursor: CursorHighlight | undefined,
+) {
+  return (
+    cursor !== undefined &&
+    (row.stableKey === cursor.stableKey || row.stableAliasKeys?.includes(cursor.stableKey) === true)
+  );
+}
+
+interface RowHighlight {
+  bg: (baseBg: string) => string;
+  /** Global columns to blend; absent blends the gutter alone. */
+  colRange?: CopySelectedRowRange;
+}
+
+/** Column span covering a row's whole content column, in the global columns selection uses. */
+const FULL_ROW_COL_RANGE: CopySelectedRowRange = { startCol: 0, endCol: Number.MAX_SAFE_INTEGER };
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -242,15 +272,18 @@ function styledTextFromSpanNodes(nodes: ReactNode[]) {
   return new StyledText(chunks);
 }
 
-/** Append an unselected fixed-width inline span plan directly to StyledText chunks. */
+/** Append a fixed-width inline span plan directly to StyledText chunks. */
 function appendFixedInlineChunks(
   chunks: TextChunk[],
   spans: RenderSpan[],
   width: number,
   fallbackColor: string,
   fallbackBg: string,
+  highlightBg?: (baseBg: string) => string,
 ) {
   const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, 0, width);
+  const renderedBackground = (background: string) =>
+    highlightBg ? highlightBg(background) : background;
   const paddingAmount = Math.max(0, width - usedWidth);
   const lastSpan = trimmed.at(-1);
   let paddingMerged = false;
@@ -269,7 +302,7 @@ function appendFixedInlineChunks(
       __isChunk: true,
       text: span.text,
       fg: styledTextColor(span.fg ?? fallbackColor),
-      bg: styledTextColor(span.bg ?? fallbackBg),
+      bg: styledTextColor(renderedBackground(span.bg ?? fallbackBg)),
     });
   }
   if (!paddingMerged && paddingAmount > 0) {
@@ -277,12 +310,17 @@ function appendFixedInlineChunks(
       __isChunk: true,
       text: " ".repeat(paddingAmount),
       fg: styledTextColor(fallbackColor),
-      bg: styledTextColor(fallbackBg),
+      bg: styledTextColor(renderedBackground(fallbackBg)),
     });
   }
 }
 
-/** Append one unselected wrapped cell without constructing intermediate React span elements. */
+/** Report whether a wrapped highlight can paint existing chunks without slicing token spans. */
+function isChunkCompatibleWrappedHighlight(highlight: RowHighlight | undefined) {
+  return !highlight?.colRange || highlight.colRange === FULL_ROW_COL_RANGE;
+}
+
+/** Append one wrapped cell without constructing intermediate React span elements. */
 function appendWrappedCellChunks(
   chunks: TextChunk[],
   line: WrappedCellLine,
@@ -290,19 +328,23 @@ function appendWrappedCellChunks(
   contentWidth: number,
   theme: AppTheme,
   prefix: { text: string; fg: string; bg: string },
+  highlight?: RowHighlight,
 ) {
+  const renderedBackground = (background: string) =>
+    highlight ? highlight.bg(background) : background;
+  const contentHighlightBg = highlight?.colRange === FULL_ROW_COL_RANGE ? highlight.bg : undefined;
   chunks.push(
     {
       __isChunk: true,
       text: prefix.text,
       fg: styledTextColor(prefix.fg),
-      bg: styledTextColor(prefix.bg),
+      bg: styledTextColor(renderedBackground(prefix.bg)),
     },
     {
       __isChunk: true,
       text: line.gutterText,
       fg: styledTextColor(palette.numberColor),
-      bg: styledTextColor(palette.gutterBg),
+      bg: styledTextColor(renderedBackground(palette.gutterBg)),
     },
   );
   appendFixedInlineChunks(
@@ -311,6 +353,7 @@ function appendWrappedCellChunks(
     contentWidth,
     theme.syntaxColors.default,
     palette.contentBg,
+    contentHighlightBg,
   );
 }
 
@@ -327,7 +370,7 @@ function renderInlineSpans(
   fallbackBg: string,
   keyPrefix: string,
   horizontalOffset = 0,
-  selectionTheme?: AppTheme,
+  highlightBg?: (baseBg: string) => string,
   selectionColRange?: { start: number; end: number },
   spansAreSanitized = false,
 ) {
@@ -336,7 +379,19 @@ function renderInlineSpans(
     horizontalOffset,
     width,
   );
-  const needsBlending = selectionTheme && selectionColRange;
+  // A whole-row cursor covers this complete rendered window, so it can recolor each existing span
+  // directly. Treating it like a partial copy selection would remeasure and split every token — a
+  // particularly expensive duplicate width pass for long wrapped CJK lines.
+  const fullHighlightBg =
+    highlightBg &&
+    selectionColRange &&
+    selectionColRange.start <= 0 &&
+    selectionColRange.end >= width
+      ? highlightBg
+      : undefined;
+  const needsBlending = !fullHighlightBg && highlightBg && selectionColRange;
+  const renderedBackground = (background: string) =>
+    fullHighlightBg ? fullHighlightBg(background) : background;
   const paddingAmount = Math.max(0, width - usedWidth);
   let paddingMerged = false;
   const lastSpan = trimmed.at(-1);
@@ -364,7 +419,7 @@ function renderInlineSpans(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
           fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          bg={renderedBackground(span.bg ?? fallbackBg)}
         >
           {span.text}
         </span>,
@@ -430,7 +485,7 @@ function renderInlineSpans(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
           fg={span.fg ?? fallbackColor}
-          bg={selectionHighlightBg(span.bg ?? fallbackBg, selectionTheme)}
+          bg={highlightBg(span.bg ?? fallbackBg)}
         >
           {selected}
         </span>,
@@ -473,11 +528,7 @@ function renderInlineSpans(
         }
         if (inSel > 0) {
           elements.push(
-            <span
-              key={`${keyPrefix}:pad-sel`}
-              fg={fallbackColor}
-              bg={selectionHighlightBg(fallbackBg, selectionTheme)}
-            >
+            <span key={`${keyPrefix}:pad-sel`} fg={fallbackColor} bg={highlightBg(fallbackBg)}>
               {" ".repeat(inSel)}
             </span>,
           );
@@ -500,7 +551,7 @@ function renderInlineSpans(
   } else if (!paddingMerged && paddingAmount > 0) {
     // Keep a separate padding span when the final content style differs from the cell fallback.
     elements.push(
-      <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={fallbackBg}>
+      <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={renderedBackground(fallbackBg)}>
         {" ".repeat(paddingAmount)}
       </span>,
     );
@@ -1126,27 +1177,47 @@ function resolvePlainContentWidth(totalWidth: number, prefixWidth: number, gutte
 }
 
 /**
- * Apply the selection-highlight blend to a cell palette's gutter bg only.
+ * Apply a highlight blend to a cell palette's gutter bg only.
  *
  * The content bg is intentionally left untouched here so renderInlineSpans can apply the same
  * blend uniformly across every rendered span (including syntax-emphasis spans that supply their
  * own bg). Pre-blending contentBg would cause the fallback path to double-blend.
  */
-function applySelectionPalette<P extends { gutterBg: string; contentBg: string }>(
+function applyHighlightPalette<P extends { gutterBg: string; contentBg: string }>(
   palette: P,
-  theme: AppTheme,
+  highlightBg: (baseBg: string) => string,
 ): P {
   return {
     ...palette,
-    gutterBg: selectionHighlightBg(palette.gutterBg, theme),
+    gutterBg: highlightBg(palette.gutterBg),
   };
 }
 
-/** Apply the selection-highlight blend to a prefix descriptor. */
-function applySelectionPrefix<P extends { bg: string }>(prefix: P, theme: AppTheme): P {
+/**
+ * Choose which highlight paints one half of a row.
+ *
+ * An active drag outranks the resting cursor, so copy selection keeps its exact extent.
+ */
+function pickRowHighlight(
+  selection: RowHighlight,
+  cursor: RowHighlight | undefined,
+  hasSelection: boolean,
+  onCursor: boolean,
+) {
+  if (hasSelection) {
+    return selection;
+  }
+  return onCursor ? cursor : undefined;
+}
+
+/** Apply a highlight blend to a prefix descriptor. */
+function applyHighlightPrefix<P extends { bg: string }>(
+  prefix: P,
+  highlightBg: (baseBg: string) => string,
+): P {
   return {
     ...prefix,
-    bg: selectionHighlightBg(prefix.bg, theme),
+    bg: highlightBg(prefix.bg),
   };
 }
 
@@ -1164,13 +1235,12 @@ function renderSplitCell(
     fg: string;
     bg: string;
   },
-  selected = false,
-  selectionColRange?: CopySelectedRowRange,
+  highlight?: RowHighlight,
   paneOffset = 0,
 ) {
   const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
-  const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
+  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
     width,
@@ -1182,14 +1252,12 @@ function renderSplitCell(
 
   // Convert global selection column range to content-local range.
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
+  const colRange = highlight?.colRange;
   const localColRange =
-    selectionColRange && globalContentStart < selectionColRange.endCol
+    colRange && globalContentStart < colRange.endCol
       ? {
-          start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(
-            contentWidth,
-            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
-          ),
+          start: Math.max(0, colRange.startCol - globalContentStart),
+          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
         }
       : undefined;
 
@@ -1210,7 +1278,7 @@ function renderSplitCell(
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
-        selected ? theme : undefined,
+        highlight?.bg,
         localColRange,
       )}
     </>
@@ -1231,12 +1299,11 @@ function renderStackCell(
     fg: string;
     bg: string;
   },
-  selected = false,
-  selectionColRange?: CopySelectedRowRange,
+  highlight?: RowHighlight,
 ) {
   const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
-  const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
+  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,
@@ -1247,14 +1314,12 @@ function renderStackCell(
 
   // Convert global selection column range to content-local range.
   const globalContentStart = prefixWidth + gutterWidth;
+  const colRange = highlight?.colRange;
   const localColRange =
-    selectionColRange && globalContentStart < selectionColRange.endCol
+    colRange && globalContentStart < colRange.endCol
       ? {
-          start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(
-            contentWidth,
-            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
-          ),
+          start: Math.max(0, colRange.startCol - globalContentStart),
+          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
         }
       : undefined;
 
@@ -1275,7 +1340,7 @@ function renderStackCell(
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
-        selected ? theme : undefined,
+        highlight?.bg,
         localColRange,
       )}
     </>
@@ -1294,24 +1359,21 @@ function renderWrappedSplitCellLine(
     fg: string;
     bg: string;
   },
-  selected = false,
-  selectionColRange?: CopySelectedRowRange,
+  highlight?: RowHighlight,
   paneOffset = 0,
 ) {
-  const resolvedPalette = selected ? applySelectionPalette(palette, theme) : palette;
-  const resolvedPrefix = selected ? applySelectionPrefix(prefix, theme) : prefix;
+  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
+  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
+  const colRange = highlight?.colRange;
   const localColRange =
-    selectionColRange && globalContentStart < selectionColRange.endCol
+    colRange && globalContentStart < colRange.endCol
       ? {
-          start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(
-            contentWidth,
-            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
-          ),
+          start: Math.max(0, colRange.startCol - globalContentStart),
+          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
         }
       : undefined;
 
@@ -1334,7 +1396,7 @@ function renderWrappedSplitCellLine(
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,
-        selected ? theme : undefined,
+        highlight?.bg,
         localColRange,
         true,
       )}
@@ -1354,23 +1416,20 @@ function renderWrappedStackCellLine(
     fg: string;
     bg: string;
   },
-  selected = false,
-  selectionColRange?: CopySelectedRowRange,
+  highlight?: RowHighlight,
 ) {
-  const resolvedPalette = selected ? applySelectionPalette(palette, theme) : palette;
-  const resolvedPrefix = selected ? applySelectionPrefix(prefix, theme) : prefix;
+  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
+  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;
   const globalContentStart = prefixWidth + gutterWidth;
+  const colRange = highlight?.colRange;
   const localColRange =
-    selectionColRange && globalContentStart < selectionColRange.endCol
+    colRange && globalContentStart < colRange.endCol
       ? {
-          start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(
-            contentWidth,
-            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
-          ),
+          start: Math.max(0, colRange.startCol - globalContentStart),
+          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
         }
       : undefined;
 
@@ -1393,7 +1452,7 @@ function renderWrappedStackCellLine(
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,
-        selected ? theme : undefined,
+        highlight?.bg,
         localColRange,
         true,
       )}
@@ -1667,6 +1726,7 @@ function renderRow(
   selected: boolean,
   copySelectedRowRange: CopySelectedRowRange | undefined,
   copySelectedSide: "left" | "right" | undefined,
+  cursorHighlight: CursorHighlight | undefined,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
   showAddNoteBadge = false,
@@ -1682,6 +1742,40 @@ function renderRow(
   // selection represents.
   const hasLeftSelection = hasCopySelection && copySelectedSide !== "right";
   const hasRightSelection = hasCopySelection && copySelectedSide !== "left";
+
+  // A split context row shows the same source line on both halves, so marking one of them would
+  // read as half a row. Change rows keep the split, since the halves are different note targets.
+  const splitContextRow =
+    row.type === "split-line" && row.left.kind === "context" && row.right.kind === "context";
+  const onCursorRow = cursorHighlight !== undefined;
+  const selectionHighlight: RowHighlight = {
+    bg: (baseBg) => selectionHighlightBg(baseBg, theme),
+    colRange: copySelectedRowRange,
+  };
+  const cursorRowHighlight: RowHighlight | undefined = onCursorRow
+    ? {
+        bg: (baseBg) => cursorLineHighlightBg(baseBg, theme),
+        colRange: cursorHighlight.style === "row" ? FULL_ROW_COL_RANGE : undefined,
+      }
+    : undefined;
+  const leftHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
+    hasLeftSelection,
+    onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
+  );
+  const rightHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
+    hasRightSelection,
+    onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
+  );
+  const cellHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
+    hasCopySelection,
+    onCursorRow,
+  );
   let baseRow: ReactNode;
 
   if (row.type === "collapsed") {
@@ -1760,8 +1854,7 @@ function renderRow(
                 `${row.key}:left`,
                 codeHorizontalOffset,
                 leftPrefix,
-                hasLeftSelection,
-                hasLeftSelection ? copySelectedRowRange : undefined,
+                leftHighlight,
                 0,
               )}
               {renderSplitCell(
@@ -1773,8 +1866,7 @@ function renderRow(
                 `${row.key}:right`,
                 codeHorizontalOffset,
                 rightPrefix,
-                hasRightSelection,
-                hasRightSelection ? copySelectedRowRange : undefined,
+                rightHighlight,
                 leftWidth,
               )}
               {guideOnNewSide ? (
@@ -1836,7 +1928,10 @@ function renderRow(
 
             const showBadgeOnLine = showAddNoteBadge && index === 0;
             let styledRow: StyledText;
-            if (hasCopySelection) {
+            if (
+              !isChunkCompatibleWrappedHighlight(leftHighlight) ||
+              !isChunkCompatibleWrappedHighlight(rightHighlight)
+            ) {
               styledRow = styledTextFromSpanNodes([
                 renderWrappedSplitCellLine(
                   leftLine,
@@ -1845,8 +1940,7 @@ function renderRow(
                   theme,
                   `${row.key}:left:${index}`,
                   leftPrefix,
-                  hasLeftSelection,
-                  copySelectedRowRange,
+                  leftHighlight,
                   0,
                 ),
                 renderWrappedSplitCellLine(
@@ -1856,8 +1950,7 @@ function renderRow(
                   theme,
                   `${row.key}:right:${index}`,
                   rightPrefix,
-                  hasRightSelection,
-                  copySelectedRowRange,
+                  rightHighlight,
                   leftWidth,
                 ),
                 guideOnNewSide ? (
@@ -1875,6 +1968,7 @@ function renderRow(
                 leftContentWidth,
                 theme,
                 leftPrefix,
+                leftHighlight,
               );
               appendWrappedCellChunks(
                 chunks,
@@ -1883,6 +1977,7 @@ function renderRow(
                 rightContentWidth,
                 theme,
                 rightPrefix,
+                rightHighlight,
               );
               if (guideOnNewSide) {
                 chunks.push({
@@ -1975,8 +2070,7 @@ function renderRow(
                 `${row.key}:stack`,
                 codeHorizontalOffset,
                 prefix,
-                hasCopySelection,
-                hasCopySelection ? copySelectedRowRange : undefined,
+                cellHighlight,
               )}
               {guideOnNewSide ? (
                 <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
@@ -2014,23 +2108,44 @@ function renderRow(
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
           {layout.lines.map((line, index) => {
             const showBadgeOnLine = showAddNoteBadge && index === 0;
-            const styledRow = styledTextFromSpanNodes([
-              renderWrappedStackCellLine(
+            let styledRow: StyledText;
+            if (isChunkCompatibleWrappedHighlight(cellHighlight)) {
+              const chunks: TextChunk[] = [];
+              appendWrappedCellChunks(
+                chunks,
                 line,
                 layout.palette,
                 wrappedContentWidth,
                 theme,
-                `${row.key}:stack:${index}`,
                 prefix,
-                hasCopySelection,
-                hasCopySelection ? copySelectedRowRange : undefined,
-              ),
-              guideOnNewSide ? (
-                <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null,
-            ]);
+                cellHighlight,
+              );
+              if (guideOnNewSide) {
+                chunks.push({
+                  __isChunk: true,
+                  text: "│",
+                  fg: styledTextColor(theme.noteBorder),
+                });
+              }
+              styledRow = new StyledText(chunks);
+            } else {
+              styledRow = styledTextFromSpanNodes([
+                renderWrappedStackCellLine(
+                  line,
+                  layout.palette,
+                  wrappedContentWidth,
+                  theme,
+                  `${row.key}:stack:${index}`,
+                  prefix,
+                  cellHighlight,
+                ),
+                guideOnNewSide ? (
+                  <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                    │
+                  </span>
+                ) : null,
+              ]);
+            }
 
             return (
               <box
@@ -2088,6 +2203,7 @@ interface DiffRowViewProps {
   selected: boolean;
   copySelectedRowRange?: CopySelectedRowRange;
   copySelectedSide?: "left" | "right";
+  cursorHighlight?: CursorHighlight;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
   showAddNoteBadge?: boolean;
@@ -2116,6 +2232,7 @@ export const DiffRowView = memo(
     selected,
     copySelectedRowRange,
     copySelectedSide,
+    cursorHighlight,
     anchorId,
     noteGuideSide,
     showAddNoteBadge,
@@ -2135,6 +2252,7 @@ export const DiffRowView = memo(
       selected,
       copySelectedRowRange,
       copySelectedSide,
+      cursorHighlight,
       anchorId,
       noteGuideSide,
       showAddNoteBadge,
@@ -2156,6 +2274,7 @@ export const DiffRowView = memo(
       previous.selected === next.selected &&
       previous.copySelectedRowRange === next.copySelectedRowRange &&
       previous.copySelectedSide === next.copySelectedSide &&
+      previous.cursorHighlight === next.cursorHighlight &&
       previous.anchorId === next.anchorId &&
       previous.noteGuideSide === next.noteGuideSide &&
       previous.showAddNoteBadge === next.showAddNoteBadge &&

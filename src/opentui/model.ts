@@ -3,7 +3,7 @@ import { patchLooksBinary } from "../core/binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/diffPaths";
 import { countDiffStats } from "../core/diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
-import { normalizePatchText } from "../core/patch/normalize";
+import { normalizePatch } from "../core/patch/normalize";
 import type { DiffFile } from "../core/types";
 import type { HunkDiffFile, HunkDiffFileInput } from "./types";
 
@@ -12,11 +12,15 @@ const NORMALIZED_HUNK_DIFF_FILES = new WeakSet<HunkDiffFile>();
 /** Count visible additions and deletions from Pierre metadata. */
 export const countHunkDiffStats = countDiffStats;
 
-/** Build Hunk's public OpenTUI file model with normalized paths and default stats. */
-export function createHunkDiffFile(input: HunkDiffFileInput): HunkDiffFile {
-  const metadata = normalizeDiffMetadataPaths(input.metadata);
-  const path = normalizeDiffPath(input.path) ?? metadata.name;
-  const previousPath = normalizeDiffPath(input.previousPath) ?? metadata.prevName;
+/** Build one public file while optionally preserving paths decoded exactly from Git quoting. */
+function buildHunkDiffFile(input: HunkDiffFileInput, pathsAreExact: boolean): HunkDiffFile {
+  const metadata = pathsAreExact ? input.metadata : normalizeDiffMetadataPaths(input.metadata);
+  const path = pathsAreExact
+    ? (input.path ?? metadata.name)
+    : (normalizeDiffPath(input.path) ?? metadata.name);
+  const previousPath = pathsAreExact
+    ? (input.previousPath ?? metadata.prevName)
+    : (normalizeDiffPath(input.previousPath) ?? metadata.prevName);
   const normalized = {
     ...input,
     id: input.id,
@@ -28,6 +32,11 @@ export function createHunkDiffFile(input: HunkDiffFileInput): HunkDiffFile {
 
   NORMALIZED_HUNK_DIFF_FILES.add(normalized);
   return normalized;
+}
+
+/** Build Hunk's public OpenTUI file model with normalized paths and default stats. */
+export function createHunkDiffFile(input: HunkDiffFileInput): HunkDiffFile {
+  return buildHunkDiffFile(input, false);
 }
 
 /** Return an already-normalized public file as-is, or normalize a raw input shape. */
@@ -62,18 +71,26 @@ export function toInternalDiffFile(diff: HunkDiffFileInput): DiffFile {
 
 /** Parse unified diff text into Hunk's public OpenTUI file model. */
 export function createHunkDiffFilesFromPatch(patchText: string, sourceId = "patch") {
-  const normalizedPatchText = normalizePatchText(patchText);
-  const chunks = splitPatchIntoFileChunks(normalizedPatchText);
+  const normalizedPatch = normalizePatch(patchText);
+  const chunks = splitPatchIntoFileChunks(normalizedPatch.text);
 
-  return parsePatchFiles(normalizedPatchText, sourceId, true)
+  return parsePatchFiles(normalizedPatch.text, sourceId, true)
     .flatMap((entry) => entry.files)
-    .map((metadata, index) =>
-      createHunkDiffFile({
-        id: `${sourceId}:${index}:${normalizeDiffPath(metadata.name) ?? metadata.name}`,
-        metadata,
-        patch: findPatchChunk(metadata, chunks, index),
-      }),
-    );
+    .map((metadata, index) => {
+      const decodedPaths = normalizedPatch.filePaths[index];
+      const normalizedMetadata = decodedPaths
+        ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
+        : metadata;
+
+      return buildHunkDiffFile(
+        {
+          id: `${sourceId}:${index}:${normalizedMetadata.name}`,
+          metadata: normalizedMetadata,
+          patch: findPatchChunk(metadata, chunks, index),
+        },
+        Boolean(decodedPaths),
+      );
+    });
 }
 
 /** Adapt a list of public OpenTUI files into Hunk's internal review file model. */

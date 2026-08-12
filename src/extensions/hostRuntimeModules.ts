@@ -9,7 +9,7 @@ import { dirname } from "node:path";
  * repo-local extension inside a JavaScript project) would resolve to a *second*
  * React whose hooks dispatcher is not the one Hunk renders with. That identity
  * is what makes extension-authored components (hooks included) mountable
- * inside Hunk's own tree — see `registerSidebarView`.
+ * inside Hunk's own tree — see `registerPane`.
  *
  * The mechanism is deliberately scoped to extension source, because the obvious
  * one is not safe: claiming the bare `react` specifier process-wide with a

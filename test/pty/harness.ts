@@ -67,7 +67,8 @@ export function sleep(ms: number) {
  * sat on a fixed screen row.
  *
  * Positive means the content moved up (scrolled down); zero means the anchor
- * row did not move at all.
+ * row did not move at all. `press` already performs Tuistory's bounded idle
+ * wait, so another wait would only repeat the same readiness contract.
  */
 export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
   const before = (await session.text({ immediate: true })).split("\n");
@@ -77,7 +78,6 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   }
 
   await session.press(key);
-  await session.waitIdle({ timeout: 400 });
 
   const after = (await session.text({ immediate: true })).split("\n");
   const movedTo = after.findIndex((line) => line.trim() === anchor);
@@ -140,6 +140,21 @@ export function rightmostColumnOf(text: string, needle: string) {
       .filter((column) => column >= 0),
     -1,
   );
+}
+
+/**
+ * Expand one rendered row into its per-cell background colors.
+ *
+ * Chrome rows and body rows only line up visually when their gutter cells paint
+ * the same background, which plain text snapshots cannot show.
+ */
+export function rowCellBackgrounds(session: Session, row: number) {
+  const line = session.getTerminalData().lines[row];
+  if (!line) {
+    throw new Error(`rowCellBackgrounds: row ${row} is not on screen.`);
+  }
+
+  return line.spans.flatMap((span) => [...span.text].map(() => span.bg));
 }
 
 /** Locate a visible terminal row containing text so mouse tests can target rendered content. */
@@ -540,6 +555,62 @@ export function createPtyHarness() {
     return { dir };
   }
 
+  /** Build the long-path fixture used to verify narrow file-header layout. */
+  function createNarrowHeaderTestRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "packages/visual-studio-code-vscode/extension-postgres.ts",
+        before: "export const value = 1;\n",
+        after: "export const value = 2;\n",
+      },
+    ]);
+  }
+
+  /** Build a staged Unicode rename for exact Git path rendering coverage. */
+  function createUnicodePathRepoFixture() {
+    const dir = makeTempDir("hunk-tuistory-unicode-path-");
+    const previousPath = "国際化/日本語.txt";
+    const path = "国際化/한국어-🧪.txt";
+
+    runGit(["init"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    writeText(join(dir, previousPath), "shared\nold-only\nshared\n");
+    runGit(["add", "."], dir);
+    runGit(["commit", "-m", "initial"], dir);
+    runGit(["config", "core.quotePath", "false"], dir);
+    runGit(["mv", previousPath, path], dir);
+    writeText(join(dir, path), "shared\nnew-only\nshared\n");
+    runGit(["add", "."], dir);
+
+    return { dir, path, previousPath };
+  }
+
+  /** Build issue #664's Elixir heredoc edit in a real source-backed Git review. */
+  function createElixirHeredocRepoFixture() {
+    const before = `defmodule Repro do
+  @doc """
+  Line one.
+  Line two.
+  Line three.
+  Line four.
+  Line five.
+  """
+  def hello do
+    :world
+  end
+end
+`;
+
+    return createGitRepoFixture([
+      {
+        path: "repro.ex",
+        before,
+        after: before.replace("Line five.", "Line five, edited."),
+      },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -900,18 +971,21 @@ export function createPtyHarness() {
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createElixirHeredocRepoFixture,
     createIsolatedConfigHome,
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
     createMultiFilePagerPatchFixture,
     createMultiHunkFilePair,
+    createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
+    createUnicodePathRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,
     ensureKeyboardIsLive,

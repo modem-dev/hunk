@@ -72,6 +72,7 @@ assertPaths(metaPack, [
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
   "skills/hunk-review/SKILL.md",
+  "skills/hunk-extensions/SKILL.md",
   "README.md",
   "LICENSE",
   "package.json",

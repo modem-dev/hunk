@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { ScrollBoxRenderable, type Renderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
@@ -5,6 +8,7 @@ import { act } from "react";
 import type { AppBootstrap } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { loadStartupExtensions } from "../extensions/startup";
 
 mock.restore();
 
@@ -187,6 +191,90 @@ describe("UI key routing with a focused scroll box", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("an active file-view mode consumes what it handles and leaves what it passes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-key-routing-mode-"));
+    const extension = join(root, "scroll-mode");
+    mkdirSync(extension, { recursive: true });
+    writeFileSync(
+      join(extension, "package.json"),
+      JSON.stringify({ name: "scroll-mode", private: true, hunk: { extensions: ["./index.ts"] } }),
+    );
+    // Taller than the viewport, so the review scroll box has somewhere to go
+    // while the view is the file's presentation.
+    writeFileSync(
+      join(extension, "index.ts"),
+      `export default function (hunk) {
+  hunk.registerFileView({
+    id: "tall",
+    title: "Tall",
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: Array.from({ length: 200 }, (_, index) => ({
+        id: "row:" + index,
+        spans: [{ text: "TALL ROW " + (index + 1) }],
+      })),
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+    mode: { onKey: (key) => (key.name === "n" ? "handled" : "pass") },
+  });
+  hunk.registerCommand({ id: "toggle", title: "Toggle tall", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("tall"),
+  );
+  hunk.registerCommand({ id: "enter", title: "Enter tall mode", key: "f9" }, (ctx) =>
+    ctx.fileViews.enterMode("tall"),
+  );
+}
+`,
+    );
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+    });
+    const bootstrap = createScrollableBootstrap();
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("big.ts"), 12);
+      await act(async () => setup.mockInput.pressKey("F8"));
+      await waitForFrame(setup, (frame) => frame.includes("TALL ROW 1"), 20);
+
+      const scrollBox = findReviewScrollBox(setup.renderer.root);
+      if (!scrollBox) {
+        throw new Error("No scrollable review scroll box found in the rendered app.");
+      }
+
+      await act(async () => {
+        scrollBox.focus();
+        await setup.renderOnce();
+      });
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForFrame(setup, (frame) => frame.includes("mode — Esc exits"), 12);
+      const scrollTopBefore = scrollBox.scrollTop;
+
+      // "handled" must stop the key dead: neither the command bound to it nor
+      // the focused scroll box may act on a key the mode claimed.
+      await act(async () => setup.mockInput.typeText("n"));
+      await flush(setup);
+      expect(scrollBox.scrollTop).toBe(scrollTopBefore);
+
+      // "pass" leaves scrolling exactly as it is with no mode running.
+      await act(async () => setup.mockInput.typeText("j"));
+      await flush(setup);
+      expect(scrollBox.scrollTop).toBeGreaterThan(scrollTopBefore);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

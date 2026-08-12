@@ -33,6 +33,7 @@ describe("published source readers", () => {
     const requests: ExtensionVcsFileSourceRequest[] = [];
     const result = toInternalVcsPatchResult(
       baseResult({
+        sourceCacheKey: "snapshot-1",
         readFileSource: async (request) => {
           requests.push(request);
           return `${request.side} text`;
@@ -48,6 +49,7 @@ describe("published source readers", () => {
       isBinary: false,
     });
 
+    expect(fetcher?.cacheKey).toBe("snapshot-1");
     expect(await fetcher?.getFullText("old")).toBe("old text");
     expect(await fetcher?.getFullText("new")).toBe("new text");
     // Asking again is served from the cache the boundary owns, so an adapter

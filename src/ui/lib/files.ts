@@ -3,7 +3,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/diffPaths";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import { readMetadataChangeType } from "../../extensions/events";
-import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { formatTerminalPath } from "../../lib/terminalText";
 
 export interface FileListEntry {
   kind: "file";
@@ -47,9 +47,9 @@ export type SidebarEntry = FileListEntry | FileGroupEntry;
 
 /** Build the filename-first label shown inside one sidebar row. */
 function sidebarFileName(file: SidebarFileSource) {
-  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
   const previousPath = file.previousPath
-    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    ? formatTerminalPath(normalizeDiffPath(file.previousPath) ?? file.previousPath)
     : undefined;
 
   if (!previousPath || previousPath === path) {
@@ -147,7 +147,7 @@ export function buildSidebarEntries(files: readonly SidebarFileSource[]): Sideba
   let activeGroup: string | undefined;
 
   files.forEach((file, index) => {
-    const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+    const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
     const group = dirname(path);
 
     if (group !== activeGroup) {
@@ -191,9 +191,9 @@ export function fileLabelParts(file: DiffFile | undefined): {
     return { filename: "No file selected", stateLabel: null };
   }
 
-  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
   const previousPath = file.previousPath
-    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    ? formatTerminalPath(normalizeDiffPath(file.previousPath) ?? file.previousPath)
     : undefined;
   const baseLabel = previousPath && previousPath !== path ? `${previousPath} -> ${path}` : path;
 

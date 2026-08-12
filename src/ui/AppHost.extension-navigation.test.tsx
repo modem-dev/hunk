@@ -1,10 +1,11 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
@@ -19,9 +20,9 @@ import { AppHost } from "./AppHost";
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTestDirectory(dir);
   }
 });
 
@@ -31,7 +32,7 @@ function createTempDir(prefix: string) {
   return dir;
 }
 
-/** Create a Git checkout with two committed files carrying working-tree changes. */
+/** Create a Git checkout with three committed files carrying working-tree changes. */
 function createTestRepo(prefix: string) {
   const repo = createTempDir(prefix);
   execSync("git init && git config user.email test@test && git config user.name test", {
@@ -40,9 +41,11 @@ function createTestRepo(prefix: string) {
   });
   writeFileSync(join(repo, "alpha.txt"), "one\n");
   writeFileSync(join(repo, "beta.txt"), "one\n");
+  writeFileSync(join(repo, "gamma.txt"), "one\n");
   execSync("git add . && git commit -m init", { cwd: repo, stdio: "ignore" });
   writeFileSync(join(repo, "alpha.txt"), "one\ntwo\n");
   writeFileSync(join(repo, "beta.txt"), "one\ntwo\n");
+  writeFileSync(join(repo, "gamma.txt"), "one\ntwo\n");
   return repo;
 }
 
@@ -119,6 +122,54 @@ async function withAppHost(
 }
 
 describe("extension command navigation", () => {
+  test("public command controls execute counted navigation and refuse extension commands", async () => {
+    const repo = createTestRepo("hunk-ext-command-controls-");
+    const extDir = createTempDir("hunk-ext-command-controls-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `let fileIds = [];\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.on("changeset_loaded", ({ changeset }) => {\n` +
+        `    fileIds = changeset.files.map((file) => file.id);\n` +
+        `  });\n` +
+        `  hunk.on("selection_changed", ({ fileId, hunkIndex }) => {\n` +
+        `    const label = fileId === fileIds[2] ? "third" : "other";\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "selected " + label + " " + hunkIndex + "\\n");\n` +
+        `  });\n` +
+        `  hunk.registerCommand({ id: "probe", title: "Probe", key: "y" }, (ctx) => {\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "enabled " + ctx.commands.isEnabled("hunk.review.nextHunk") + "\\n");\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "own " + ctx.commands.execute("ext.probe") + "\\n");\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "move " + ctx.commands.execute("hunk.review.nextHunk", { count: 2 }) + "\\n");\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "align " + ctx.commands.execute("hunk.review.alignCurrentLineCenter") + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render",
+      );
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("selected third 0"),
+        "the counted command to land directly on the third hunk",
+      );
+
+      expect(readProbeLog(logPath)).toEqual(
+        expect.arrayContaining(["enabled true", "align true", "own false", "move true"]),
+      );
+    });
+  });
+
   test("a command handler jumps the review stream through ctx.navigation", async () => {
     const repo = createTestRepo("hunk-ext-nav-jump-");
     // Outside the repo, so the fixture and its log never join the review.

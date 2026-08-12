@@ -32,6 +32,36 @@ try {
   // Keep the call to action useful when the optional star count cannot be fetched.
 }
 
+// Structured data for search engines and answer engines: one canonical machine
+// -readable description of what Hunk is, where to install it, and who ships it.
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Hunk",
+  url: "https://hunk.dev/",
+  description,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "macOS, Linux, Windows",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  license: `${REPO}/blob/main/LICENSE`,
+  sameAs: [REPO, "https://www.npmjs.com/package/hunkdiff"],
+  softwareHelp: "https://hunk.dev/docs/",
+  author: {
+    "@type": "Organization",
+    name: "Modem",
+    url: "https://modem.dev",
+  },
+  publisher: {
+    "@type": "Organization",
+    name: "Modem",
+    url: "https://modem.dev",
+  },
+};
+
 const formattedStars =
   stars === null
     ? null
@@ -58,7 +88,10 @@ const formattedStars =
     <meta property="og:description" content={description} />
     <meta property="og:url" content="https://hunk.dev/" />
     <meta property="og:image" content="https://hunk.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="hunk — terminal diffs for humans & agents" />
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
@@ -67,6 +100,7 @@ const formattedStars =
     <link rel="icon" href="/icon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-icon.png" />
     <title>{title}</title>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(schema)}></script>
     <script is:inline defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
@@ -135,6 +169,7 @@ const formattedStars =
           <ul>
             <li><span class="t">npm</span><code>npm i -g hunkdiff</code></li>
             <li><span class="t">Homebrew</span><code>brew install hunk</code></li>
+            <li><span class="t">mise</span><code>mise use -g hunk</code></li>
             <li><span class="t">Nix</span><code>nix run github:modem-dev/hunk</code></li>
           </ul>
           <p class="req">

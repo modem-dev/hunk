@@ -4,15 +4,6 @@ import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } 
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 
-/** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
-export function canReloadInput(input: CliInput) {
-  if (input.options.agentContext === "-") {
-    return false;
-  }
-
-  return input.kind !== "patch" || Boolean(input.file && input.file !== "-");
-}
-
 /** Format one file stat into a stable signature fragment, or mark the path missing. */
 function statSignature(path: string) {
   if (!fs.existsSync(path)) {

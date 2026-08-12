@@ -1,10 +1,11 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
@@ -76,7 +77,7 @@ describe("reload stale highlight cache", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
-      rmSync(dir, { force: true, recursive: true });
+      await removeTestDirectory(dir);
     }
   });
 
@@ -131,7 +132,7 @@ describe("reload stale highlight cache", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
-      rmSync(dir, { force: true, recursive: true });
+      await removeTestDirectory(dir);
     }
   });
 });

@@ -28,10 +28,14 @@ interface VerticalScrollbarProps {
   theme: AppTheme;
   height: number;
   onActivity?: () => void;
+  hideDelayMs?: number;
 }
 
 export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScrollbarProps>(
-  function VerticalScrollbar({ scrollRef, contentHeight, theme, height, onActivity }, ref) {
+  function VerticalScrollbar(
+    { scrollRef, contentHeight, theme, height, onActivity, hideDelayMs = HIDE_DELAY_MS },
+    ref,
+  ) {
     const [isVisible, setIsVisible] = useState(false);
     const [isDraggingState, setIsDraggingState] = useState(false);
     const isDraggingRef = useRef(false);
@@ -48,9 +52,9 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
         if (!isDraggingRef.current) {
           setIsVisible(false);
         }
-      }, HIDE_DELAY_MS);
+      }, hideDelayMs);
       onActivity?.();
-    }, [onActivity]);
+    }, [hideDelayMs, onActivity]);
 
     useImperativeHandle(ref, () => ({ show }), [show]);
 
@@ -143,7 +147,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
       }
       hideTimeoutRef.current = setTimeout(() => {
         setIsVisible(false);
-      }, HIDE_DELAY_MS);
+      }, hideDelayMs);
       event?.preventDefault();
       event?.stopPropagation();
     };

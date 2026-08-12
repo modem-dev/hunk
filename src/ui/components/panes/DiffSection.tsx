@@ -2,15 +2,18 @@ import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { FileView, type FileViewRowFailure } from "./FileView";
+import { FileView } from "./FileView";
+import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
@@ -24,6 +27,7 @@ interface DiffSectionProps {
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorHighlight?: CursorHighlight;
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -45,6 +49,7 @@ interface DiffSectionProps {
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
 }
@@ -61,6 +66,7 @@ function DiffSectionComponent({
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorHighlight,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -82,6 +88,7 @@ function DiffSectionComponent({
   onFileViewRowFailure,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
+  onRowPlanChange,
   onSelect,
   onToggleGap,
 }: DiffSectionProps) {
@@ -137,6 +144,7 @@ function DiffSectionComponent({
               rowBoundsByStableKey: new Map(),
             }
           }
+          cursorHighlight={cursorHighlight}
           selectedHunkIndex={selectedHunkIndex}
           theme={theme}
           visibleBodyBounds={visibleBodyBounds}
@@ -156,6 +164,7 @@ function DiffSectionComponent({
           codeHorizontalOffset={codeHorizontalOffset}
           copySelectedRowRanges={copySelectedRowRanges}
           copySelectedSide={copySelectedSide}
+          cursorHighlight={cursorHighlight}
           theme={theme}
           width={viewWidth}
           visibleAgentNotes={visibleAgentNotes}
@@ -164,6 +173,7 @@ function DiffSectionComponent({
           onHover={onHover}
           onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
           onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+          onRowPlanChange={onRowPlanChange}
           onToggleGap={onToggleGap}
           selectedHunkIndex={selectedHunkIndex}
           sectionGeometry={sectionGeometry}
@@ -193,6 +203,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.cursorHighlight === next.cursorHighlight &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
@@ -209,6 +220,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.onFileViewRowFailure === next.onFileViewRowFailure &&
     previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
     previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+    previous.onRowPlanChange === next.onRowPlanChange &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

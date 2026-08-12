@@ -38,7 +38,11 @@ import {
   stackRailColor,
 } from "./diff/rowStyle";
 import { sliceTextByWidth } from "./lib/text";
-import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
+import {
+  formatTerminalPath,
+  sanitizeTerminalLine,
+  sanitizeTerminalText,
+} from "../lib/terminalText";
 import { resolveTheme, withTransparentSurfaces, type AppTheme } from "./themes";
 
 const DEFAULT_STATIC_WIDTH = 120;
@@ -286,8 +290,8 @@ function fileStatusLabel(file: DiffFile) {
 function fileDisplayPath(file: DiffFile) {
   const previousPath = file.previousPath ?? file.metadata.prevName;
   return previousPath && previousPath !== file.path
-    ? `${sanitizeTerminalLine(previousPath)} → ${sanitizeTerminalLine(file.path)}`
-    : sanitizeTerminalLine(file.path);
+    ? `${formatTerminalPath(previousPath)} → ${formatTerminalPath(file.path)}`
+    : formatTerminalPath(file.path);
 }
 
 function fileModeText(file: DiffFile) {

@@ -2,6 +2,8 @@
 
 Hunk is a review-first terminal diff viewer for agent-authored changesets, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
+**[hunk.dev](https://hunk.dev)** · [Documentation](https://hunk.dev/docs/)
+
 [![CI status](https://img.shields.io/github/actions/workflow/status/modem-dev/hunk/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/modem-dev/hunk/actions/workflows/ci.yml?branch=main)
 [![Latest release](https://img.shields.io/github/v/release/modem-dev/hunk?style=for-the-badge)](https://github.com/modem-dev/hunk/releases)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -42,13 +44,21 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
+Or with [mise](https://mise.jdx.dev) (macOS and Linux):
+
+```bash
+mise use -g hunk
+```
+
 Requirements:
 
-- Node.js 18+
 - macOS, Linux, or Windows
+- Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
+
+> Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
 ## Quick start
 
@@ -232,8 +242,9 @@ export default function (hunk: HunkExtensionAPI) {
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
 and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
-include [review triage](examples/extensions/review-triage/) and an optional
-[rendered Markdown file view](examples/extensions/rendered-markdown/).
+include [review triage](examples/extensions/review-triage/), an optional
+[rendered Markdown file view](examples/extensions/rendered-markdown/), and a
+[Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 
 ### OpenTUI component
 

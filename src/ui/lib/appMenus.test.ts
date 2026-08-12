@@ -16,6 +16,7 @@ import { resolveCommandKeys } from "./keymap";
 /** The app-state half of the menu options, so tests only state what they exercise. */
 const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> = {
   copyDecorations: true,
+  cursorLine: "row" as const,
   layoutMode: "stack",
   renderSidebar: false,
   showAgentNotes: true,
@@ -36,8 +37,10 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     };
   const noop = () => {};
   const commands = buildAppCommands({
+    canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
     moveToAnnotatedFile: record("moveToAnnotatedFile"),
@@ -49,6 +52,8 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     requestQuit: record("requestQuit"),
     scrollCodeHorizontally: noop,
     scrollDiff: noop,
+    selectCursorLine: noop,
+    stepDiffLine: noop,
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
@@ -96,6 +101,19 @@ function registeredCommand(
 }
 
 describe("buildAppMenus", () => {
+  test("the current-line entries check the active style", () => {
+    const { commands } = createTestCommands();
+
+    const checkedFor = (cursorLine: BuildAppMenusOptions["cursorLine"]) =>
+      items(buildAppMenus({ commands, ...MENU_STATE, cursorLine }).view)
+        .filter((item) => item.checked && item.label.startsWith("Current line:"))
+        .map((item) => item.label);
+
+    expect(checkedFor("row")).toEqual(["Current line: full row"]);
+    expect(checkedFor("number")).toEqual(["Current line: line number"]);
+    expect(checkedFor("off")).toEqual(["Current line: off"]);
+  });
+
   test("labels, hints, and checked state come from the commands and app state", () => {
     const { commands } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
@@ -123,6 +141,7 @@ describe("buildAppMenus", () => {
       "Line numbers",
       "Line wrapping",
       "Copy decorations",
+      "Current line: full row",
     ]);
     expect(items(menus.view).map((item) => item.label)).toContain("Themes…");
     expect(items(menus.agent).map((item) => item.label)).toEqual([
@@ -231,11 +250,30 @@ describe("the Extensions menu", () => {
     return buildAppMenus({ commands, extensionCommands, ...MENU_STATE });
   }
 
-  test("is absent when no extension registered a command", () => {
+  test("is absent when no extension command or active keyboard mode needs it", () => {
     const { commands } = createTestCommands();
 
     expect(buildAppMenus({ commands, ...MENU_STATE }).extensions).toBeUndefined();
     expect(menusWithExtensions([]).extensions).toBeUndefined();
+  });
+
+  test("offers the host-owned keyboard-mode exit even without extension commands", () => {
+    const { commands } = createTestCommands();
+    const exits: string[] = [];
+    const menus = buildAppMenus({
+      commands,
+      ...MENU_STATE,
+      keyboardModeExitEntry: {
+        kind: "item",
+        label: "Exit Vim navigation",
+        commandId: "hunk.extensions.exitKeyboardMode",
+        action: () => exits.push("exit"),
+      },
+    });
+
+    expect(items(menus.extensions).map((item) => item.label)).toEqual(["Exit Vim navigation"]);
+    entry(menus, "extensions", "Exit Vim navigation").action();
+    expect(exits).toEqual(["exit"]);
   });
 
   test("lists every registered command with its title and current key", () => {

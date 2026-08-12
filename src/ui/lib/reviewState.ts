@@ -18,19 +18,15 @@ import {
   type HunkCursor,
 } from "./hunks";
 
-export interface BuildReviewStateOptions {
+export interface BuildReviewStreamStateOptions {
   files: DiffFile[];
   liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
-  selectedFileId: string;
-  selectedHunkIndex: number;
 }
 
-export interface ReviewState {
+export interface ReviewStreamState {
   allFiles: DiffFile[];
   visibleFiles: DiffFile[];
-  selectedFile: DiffFile | undefined;
-  selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   hunkCursors: HunkCursor[];
   annotatedHunkCursors: HunkCursor[];
 }
@@ -41,23 +37,18 @@ export interface ReviewNavigationTarget {
   scrollToNote: boolean;
 }
 
-/** Build the derived review stream state from files, filter text, and selection. */
-export function buildReviewState({
+/** Build selection-independent review stream state from files and filter text. */
+export function buildReviewStreamState({
   files,
   liveCommentsByFileId,
   filterQuery,
-  selectedFileId,
-  selectedHunkIndex,
-}: BuildReviewStateOptions): ReviewState {
+}: BuildReviewStreamStateOptions): ReviewStreamState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
   const visibleFiles = filterReviewFiles(allFiles, filterQuery);
-  const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
   return {
     allFiles,
     visibleFiles,
-    selectedFile,
-    selectedHunk: selectedFile?.metadata.hunks[selectedHunkIndex],
     hunkCursors: buildHunkCursors(visibleFiles),
     annotatedHunkCursors: buildAnnotatedHunkCursors(visibleFiles),
   };
@@ -102,7 +93,9 @@ export function findNextAnnotatedFile(
 
   const currentIndex = annotatedFiles.findIndex((file) => file.id === currentFileId);
   const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
-  const nextIndex = (normalizedIndex + delta + annotatedFiles.length) % annotatedFiles.length;
+  const nextIndex =
+    (((normalizedIndex + delta) % annotatedFiles.length) + annotatedFiles.length) %
+    annotatedFiles.length;
   return annotatedFiles[nextIndex] ?? null;
 }
 

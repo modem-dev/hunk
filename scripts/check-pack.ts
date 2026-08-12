@@ -23,15 +23,24 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
+  ExtensionKeyboardModeControls,
+  ExtensionKeyboardModeKeyResult,
   ExtensionPaintTheme,
+  ExtensionHorizontalPane,
+  ExtensionPaneProps,
+  ExtensionPaneSize,
   ExtensionReviewSelection,
+  ExtensionVerticalPane,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
   ExtensionVcsPatchResult,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   NamedCustomThemeConfig,
 } from "hunkdiff/extension";
@@ -49,6 +58,40 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.registerTheme(theme);
   hunk.registerFileLanguage(".zig", "zig");
+
+  const pane = (props: ExtensionPaneProps) => {
+    hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);
+    props.currentLine?.render("new", props.width);
+    return null;
+  };
+  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4 };
+  for (const placement of ["left", "right"] as const) {
+    const verticalPane: ExtensionVerticalPane = {
+      id: placement,
+      placement,
+      width: paneSize,
+      component: pane,
+    };
+    hunk.registerPane(verticalPane);
+  }
+  for (const placement of ["top", "bottom"] as const) {
+    const horizontalPane: ExtensionHorizontalPane = {
+      id: placement,
+      placement,
+      height: paneSize,
+      currentLine: placement === "bottom",
+      component: pane,
+    };
+    hunk.registerPane(horizontalPane);
+  }
+  hunk.registerSidebarView({
+    id: "legacy",
+    placement: "right",
+    component: ({ files, width }) => {
+      hunk.log(\`legacy:\${files.length}:\${width}\`);
+      return null;
+    },
+  });
 
   const renderRow = (props: ExtensionFileViewRowComponentProps) => {
     const paintTheme: ExtensionPaintTheme = props.theme;
@@ -96,9 +139,59 @@ export default function (hunk: HunkExtensionAPI) {
       };
     },
   });
+  hunk.registerKeyboardMode({
+    id: "review-keys",
+    title: "Review keys",
+    onKey(key, ctx): ExtensionKeyboardModeKeyResult {
+      if (key.name !== "j") return "pass";
+      ctx.commands.execute("hunk.review.stepDown");
+      return "handled";
+    },
+  });
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
+    const commandControls: ExtensionCommandControls = ctx.commands;
+    const modeControls: ExtensionKeyboardModeControls = ctx.keyboardModes;
+    const execution: ExtensionCommandExecutionOptions = { count: 2 };
+    if (commandControls.isEnabled("hunk.review.nextHunk")) {
+      const executed: boolean = commandControls.execute("hunk.review.nextHunk", execution);
+      hunk.log(executed ? "moved" : "not moved");
+    }
+    // @ts-expect-error Count must be numeric.
+    commandControls.execute("hunk.review.nextHunk", { count: "two" });
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
+    ctx.fileViews.refresh("raw");
+    if (ctx.fileViews.isActive("raw") && !ctx.fileViews.isModeActive("raw")) {
+      const entered: boolean = ctx.fileViews.enterMode("raw");
+      hunk.log(entered ? "mode running" : "mode refused");
+    }
+    ctx.fileViews.exitMode();
+    if (!modeControls.isActive("review-keys")) {
+      modeControls.enterMode("review-keys");
+    }
+    modeControls.exitMode();
+    ctx.panes.toggle("bottom");
+    if (ctx.sidebars.isOpen("legacy")) ctx.sidebars.close("legacy");
+  });
+
+  hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      return;
+    }
+
+    // A read answers with the document or with nothing; a side outside the
+    // union is a compile error rather than a runtime surprise.
+    const current: string | null = await ctx.workspace.readDocument(file.id, "new");
+    // @ts-expect-error Only the two document sides can be read.
+    void ctx.workspace.readDocument(file.id, "both");
+
+    const written: ExtensionWorkspaceWriteResult = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: (current ?? "").toUpperCase(),
+    });
+    // The result is a discriminated union: \`detail\` exists only on refusals.
+    hunk.log(written.ok ? "written" : written.detail);
   });
 
   const adapter: ExtensionVcsAdapter = {
@@ -228,6 +321,10 @@ const requiredPaths = [
   "README.md",
   "LICENSE",
   "package.json",
+  // The bundled skills must survive the narrowed per-skill files entries —
+  // `hunk skill path [name]` resolves them at runtime.
+  "skills/hunk-review/SKILL.md",
+  "skills/hunk-extensions/SKILL.md",
 ];
 
 for (const path of requiredPaths) {
@@ -244,6 +341,8 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
+  // Maintainer-only release engineering; it references scripts/ which never ships.
+  "skills/launch-video/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 

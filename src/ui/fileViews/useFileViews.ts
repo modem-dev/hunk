@@ -12,7 +12,7 @@ import {
   validateFileViewSourceRanges,
   type ValidatedFileViewLayout,
 } from "./layout";
-import { registeredFileViewKey } from "./state";
+import { fileViewLayoutEpoch, registeredFileViewKey, type FileViewEpochState } from "./state";
 
 /** Bound asynchronous third-party layout work so raw diff never waits indefinitely. */
 export const FILE_VIEW_LAYOUT_TIMEOUT_MS = 1_500;
@@ -26,6 +26,7 @@ export const FILE_VIEW_LAYOUT_CACHE_MAX_ENTRIES = 64;
 export const FILE_VIEW_LAYOUT_ISSUE_MAX_ENTRIES = 256;
 
 const EMPTY_RESOLVED_FILE_VIEW_LAYOUTS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+const EMPTY_FILE_VIEW_EPOCHS: FileViewEpochState = new Map();
 
 export interface ResolvedFileViewLayout extends ValidatedFileViewLayout {
   key: string;
@@ -62,8 +63,13 @@ function recordBoundedIssue(keys: Set<string>, key: string) {
   return true;
 }
 
-/** Remove superseded widths for one registration before reading or preparing its current width. */
-function selectCacheWidthVariant(
+/**
+ * Remove superseded variants for one file/registration before reading or preparing the current one.
+ *
+ * A variant is one `(width, epoch)` combination of the same prepared tree, so this is what retires
+ * both a resized geometry and an epoch an extension has invalidated.
+ */
+function selectCacheVariant(
   entries: Map<string, CacheEntry>,
   cacheKey: string,
   file: DiffFile,
@@ -204,18 +210,25 @@ function hasSelectedFileViews(
  * Raw diff remains visible while preparation is pending or declines the file. A
  * cancellation never reaches an extension as an error toast: resizes, reloads,
  * and changing the selected view are normal control flow.
+ *
+ * `epochs` carries extension-requested invalidation: bumping a view's epoch makes every
+ * prepared tree of that view a stale cache variant, so the files presenting it re-prepare.
+ * A file-scoped bump moves the same retention key for one file only, leaving the rest of
+ * that view's presenting files on their prepared trees.
  */
 export function useFileViewLayouts({
   files,
   selections,
   views,
   width,
+  epochs = EMPTY_FILE_VIEW_EPOCHS,
   onIssue,
 }: {
   files: readonly DiffFile[];
   selections: Readonly<Record<string, string>>;
   views: readonly RegisteredFileView[];
   width: number;
+  epochs?: FileViewEpochState;
   onIssue: (message: string) => void;
 }) {
   const cache = useRef(new Map<string, CacheEntry>());
@@ -264,8 +277,8 @@ export function useFileViewLayouts({
       const registered = byKey.get(key);
       if (!registered) return;
 
-      const cacheKey = `${file.id}:${key}:${width}`;
-      const cached = selectCacheWidthVariant(cache.current, cacheKey, file, registered);
+      const cacheKey = `${file.id}:${key}:${width}:${fileViewLayoutEpoch(epochs, key, file.id)}`;
+      const cached = selectCacheVariant(cache.current, cacheKey, file, registered);
       // A valid registration-aware cache hit bypasses even matches(), whose extension code may be
       // expensive or stateful. A reload replaces the registration object and invalidates it.
       if (cached?.file === file && cached.registered === registered) {
@@ -360,7 +373,7 @@ export function useFileViewLayouts({
       if (startTimer) clearTimeout(startTimer);
       controller.abort();
     };
-  }, [files, hasSelectedViews, onIssue, selections, views, width]);
+  }, [epochs, files, hasSelectedViews, onIssue, selections, views, width]);
 
   return useMemo(() => {
     if (!hasSelectedViews) return EMPTY_RESOLVED_FILE_VIEW_LAYOUTS;
@@ -382,6 +395,9 @@ export function useFileViewLayouts({
     }
     // Effects clean up after render. Exact per-file filtering synchronously declines stale geometry
     // while preserving unaffected files across filtering and another file's selection change.
+    // Epoch is deliberately absent from this filter: an invalidated layout still describes the same
+    // file at the same width, so it stays on screen until its replacement resolves rather than
+    // flashing back to raw diff.
     return current.size > 0 ? current : EMPTY_RESOLVED_FILE_VIEW_LAYOUTS;
   }, [files, hasSelectedViews, resolved, selections, views, width]);
 }

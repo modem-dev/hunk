@@ -121,9 +121,38 @@ describe("file-view geometry", () => {
     });
 
     expect(geometry.fileViewRows).toBe(plan.rows);
-    expect(geometry.rowBounds.map((row) => row.height)).toEqual([noteHeight, 2]);
+    expect(geometry.rowBounds.map((row) => row.height)).toEqual([2, noteHeight]);
     expect(geometry.bodyHeight).toBe(noteHeight + 2);
-    expect(geometry.hunkAnchorRows.get(0)).toBe(noteHeight);
+    expect(geometry.hunkAnchorRows.get(0)).toBe(0);
     expect(geometry.hunkBounds.get(0)).toMatchObject({ top: 0, height: noteHeight + 2 });
+  });
+
+  test("indexes every navigable row under the source line the review stream reveals it by", () => {
+    const checked = validateFileViewLayout(
+      {
+        rows: [
+          {
+            id: "summary",
+            spans: [{ text: "hunk 1" }],
+            sourceRanges: [{ side: "new", range: [1, 1] }],
+          },
+          { id: "detail", spans: [{ text: "detail" }] },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 1 }],
+      },
+      1,
+      80,
+    );
+    if (!checked.valid) throw new Error(checked.issue);
+
+    const plan = buildFileViewRenderPlan(checked.value.layout, []);
+    const geometry = measureFileViewGeometry({
+      resolved: checked.value,
+      plannedRows: plan.rows,
+      width: 80,
+    });
+
+    expect(geometry.rowBoundsByStableKey.get("line:0:new:1")).toMatchObject({ top: 0 });
+    expect(geometry.rowBoundsByStableKey.get("file-view:summary")).toMatchObject({ top: 0 });
   });
 });

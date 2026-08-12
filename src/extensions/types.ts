@@ -9,8 +9,9 @@ import type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionFileView,
+  ExtensionKeyboardMode,
   ExtensionNotifyType,
-  ExtensionSidebarView,
+  ExtensionPane,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -27,6 +28,8 @@ export type {
   ExtensionChangeset,
   ExtensionCommand,
   ExtensionCommandContext,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionCommandHandler,
   ExtensionConfirmOptions,
   ExtensionContext,
@@ -44,15 +47,36 @@ export type {
   ExtensionFileViewControls,
   ExtensionFileViewInput,
   ExtensionFileViewLayout,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeContext,
+  ExtensionFileViewModeKeyResult,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
   ExtensionFileViewSpan,
   ExtensionFactory,
   ExtensionInputOptions,
+  ExtensionKeyEvent,
+  ExtensionKeyboardMode,
+  ExtensionKeyboardModeContext,
+  ExtensionKeyboardModeControls,
+  ExtensionKeyboardModeKeyResult,
   ExtensionReviewNote,
   ExtensionNotifyType,
   ExtensionPaintTheme,
+  ExtensionPane,
+  ExtensionPaneActions,
+  ExtensionPaneAvailabilityContext,
+  ExtensionPaneComponent,
+  ExtensionPaneControls,
+  ExtensionPaneKeybindings,
+  ExtensionPanePlacement,
+  ExtensionPaneProps,
+  ExtensionPaneTheme,
+  ExtensionPaneSize,
+  ExtensionHorizontalPane,
+  ExtensionVerticalPane,
+  ExtensionCurrentLinePaint,
   ExtensionSelectOptions,
   ExtensionSidebarActions,
   ExtensionSidebarComponent,
@@ -63,6 +87,9 @@ export type {
   ExtensionSidebarViewProps,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
+  ExtensionWorkspace,
+  ExtensionWorkspaceWriteRequest,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   HunkExtensionApiVersion,
   SessionReloadReason,
@@ -117,15 +144,21 @@ export interface RegisteredChangesetTransform {
   transform: ChangesetTransform;
 }
 
-export interface RegisteredSidebarView {
+export interface RegisteredPane {
   extensionId: string;
-  view: ExtensionSidebarView;
+  pane: ExtensionPane;
 }
 
 /** A host-rendered alternative file presentation registered by one extension. */
 export interface RegisteredFileView {
   extensionId: string;
   view: ExtensionFileView;
+}
+
+/** One session-scoped keyboard mode registered by an extension. */
+export interface RegisteredKeyboardMode {
+  extensionId: string;
+  mode: ExtensionKeyboardMode;
 }
 
 export interface RegisteredCommand {
@@ -169,8 +202,9 @@ export interface ExtensionRegistry {
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
-  sidebarViews: RegisteredSidebarView[];
+  panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
+  keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   customEventHandlers: RegisteredCustomEventHandler[];
@@ -243,8 +277,9 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],
-    sidebarViews: [],
+    panes: [],
     fileViews: [],
+    keyboardModes: [],
     commands: [],
     eventHandlers: {
       startup: [],

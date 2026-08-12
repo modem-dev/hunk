@@ -25,11 +25,11 @@ Every id starts with the name of whoever owns the command: Hunk's own commands l
 
 ## Chord grammar
 
-Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key: a character (`"y"`, `"["`), an uppercase letter for its shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`). `shift` applies to letters and named keys only — for a shifted symbol or digit, write the character shift produces (`"!"`, not `"shift+1"`), since that is what terminals report.
+Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key: a character (`"y"`, `"["`), an uppercase letter for its shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`). For shifted symbols or digits, write the resulting character (`"!"`, not `"shift+1"`). `ctrl+<letter>` also matches an unnamed bare control byte; named Tab and Enter events stay distinct.
 
 ## Find command ids
 
-The menus and the in-app help (`?`) always show the keys each command currently holds, so a remap changes what they advertise. The full table of built-in command ids and their default keys lives in [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) in the repository. Commands listed without a default key are menu items today; binding one gives it a shortcut like any other.
+The menus and the in-app help (`?`) show the keys for the commands they present, so a remap changes what they advertise. The full table of built-in command ids and their default keys lives in [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) in the repository. Commands listed without a default key remain callable by id and can be assigned a shortcut; some also appear in menus.
 
 Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter`, `Ctrl-S` while writing a note — belong to those widgets and are not remappable.
 

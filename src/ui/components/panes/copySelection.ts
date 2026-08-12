@@ -11,8 +11,8 @@ import {
   type DiffSectionRowBounds,
 } from "../../diff/diffSectionGeometry";
 import type { FileSectionLayout } from "../../lib/fileSectionLayout";
-import { fileLabelParts } from "../../lib/files";
-import { cellRangeToCharRange, fitText, measureTextWidth, sliceTextByWidth } from "../../lib/text";
+import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
+import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 export type CopySelectionPoint =
@@ -162,14 +162,9 @@ function renderFileHeaderCopyText({
   headerStatsWidth: number;
   width: number;
 }) {
-  const additionsText = `+${file.stats.additions}${file.statsTruncated ? "+" : ""}`;
-  const deletionsText = `-${file.stats.deletions}`;
-  const statsText = `${additionsText} ${deletionsText} `.padStart(headerStatsWidth);
-  const { filename, stateLabel } = fileLabelParts(file);
-  const label = `${fitText(
-    filename,
-    Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)),
-  )}${stateLabel ?? ""}`;
+  const statsText = fileHeaderStats(file).text.padStart(headerStatsWidth);
+  const { filename, stateLabel } = fitFileHeaderLabel(file, headerLabelWidth);
+  const label = `${filename}${stateLabel ?? ""}`;
   // The gap and clamp are measured in cells to mirror DiffFileHeaderRow's space-between flex
   // layout, so wide-character filenames keep the stats columns aligned with the screen.
   const availableGap = Math.max(1, width - 2 - measureTextWidth(label) - statsText.length);

@@ -15,6 +15,8 @@ const MAX_CACHE_ENTRIES = 40;
 
 const SHARED_HIGHLIGHTED_DIFF_CACHE = new Map<string, HighlightedDiffCode>();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
+const sourceFetcherIds = new WeakMap<NonNullable<DiffFile["sourceFetcher"]>, number>();
+let nextSourceFetcherId = 1;
 
 /** Evict the oldest entries when the cache exceeds MAX_CACHE_ENTRIES.
  *  Map iteration order is insertion order, so the first keys are the oldest. */
@@ -78,10 +80,29 @@ function patchFingerprint(file: DiffFile) {
   return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
 }
 
-/** Cache key that includes a content fingerprint so stale entries are never served
- *  after reload. Unchanged files keep their cache hit across reloads. */
-function buildCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}`;
+/** Identify the source snapshot provider used to recover grammar state for a partial diff. */
+function sourceFetcherFingerprint(file: DiffFile) {
+  if (!file.metadata.isPartial || !file.sourceFetcher) {
+    return "patch-only";
+  }
+
+  if (file.sourceFetcher.cacheKey !== undefined) {
+    return `source-cache:${file.sourceFetcher.cacheKey.length}:${file.sourceFetcher.cacheKey}`;
+  }
+
+  let id = sourceFetcherIds.get(file.sourceFetcher);
+  if (id === undefined) {
+    id = nextSourceFetcherId;
+    nextSourceFetcherId += 1;
+    sourceFetcherIds.set(file.sourceFetcher, id);
+  }
+
+  return `source:${id}`;
+}
+
+/** Cache key that includes patch and source-provider identity so reloads cannot reuse stale grammar state. */
+export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
 /** Only commit a highlight result if the promise is still the active one for that key.
@@ -105,7 +126,7 @@ function commitHighlightResult(
 function ensureHighlightedDiffLoaded(
   file: DiffFile,
   theme: AppTheme,
-  cacheKey = buildCacheKey(theme, file),
+  cacheKey = highlightedDiffCacheKey(theme, file),
 ) {
   const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(cacheKey);
   if (cached) {
@@ -174,7 +195,7 @@ export function useHighlightedDiff({
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
-  const appearanceCacheKey = file ? buildCacheKey(theme, file) : null;
+  const appearanceCacheKey = file ? highlightedDiffCacheKey(theme, file) : null;
 
   // Use a layout effect so a newly available cached result can replace the plain-text fallback
   // before the next diff paint whenever possible. That reduces flash/stutter as files enter view.

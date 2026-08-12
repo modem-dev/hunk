@@ -49,14 +49,19 @@ export function measureFileViewGeometry({
     const entry: DiffSectionRowBounds = {
       key: row.key,
       stableKey: row.stableKey,
-      stableKeys: [row.stableKey],
+      stableKeys:
+        row.kind === "file-view-row" && row.stableAliasKeys
+          ? [row.stableKey, ...row.stableAliasKeys]
+          : [row.stableKey],
       top: bodyHeight,
       height: plannedFileViewRowHeight(row, resolved, width),
     };
     rowBounds.push(entry);
     rowBoundsByKey.set(entry.key, entry);
-    if (!rowBoundsByStableKey.has(entry.stableKey)) {
-      rowBoundsByStableKey.set(entry.stableKey, entry);
+    for (const stableKey of entry.stableKeys) {
+      if (!rowBoundsByStableKey.has(stableKey)) {
+        rowBoundsByStableKey.set(stableKey, entry);
+      }
     }
     bodyHeight += entry.height;
   }

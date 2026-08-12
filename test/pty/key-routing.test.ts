@@ -264,7 +264,7 @@ describe("PTY key routing", () => {
   test("step keys still scroll exactly one row while a menu is open", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD"],
+      args: ["show", "HEAD", "--cursor-line", "off"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

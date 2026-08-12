@@ -145,6 +145,65 @@ describe("matchesKeyChord", () => {
     expect(matchesKeyChord(parsed("space"), keyEvent({ sequence: " " }))).toBe(true);
   });
 
+  test("ctrl+letter also matches the bare control character it is sent as", () => {
+    // Ctrl-S from a source that never decoded the byte: no ctrl flag, no name.
+    // Hunk's own parser decodes it (see the named-key case below); this is the
+    // compatibility net for synthetic and embedder-built events.
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013" }))).toBe(true);
+    // And with the flag set but still nothing named.
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013", ctrl: true }))).toBe(
+      true,
+    );
+    expect(matchesKeyChord(parsed("ctrl+a"), keyEvent({ sequence: "\u0001" }))).toBe(true);
+    expect(matchesKeyChord(parsed("ctrl+z"), keyEvent({ sequence: "\u001a" }))).toBe(true);
+    // A different letter's control byte is a different chord.
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0001" }))).toBe(false);
+    // The fallback never makes a control byte matchable as text.
+    expect(matchesKeyChord(parsed("s"), keyEvent({ sequence: "\u0013" }))).toBe(false);
+    expect(matchesKeyChord(parsed("s"), keyEvent({ name: "s", sequence: "s" }))).toBe(true);
+  });
+
+  test("a named key keeps its own identity against the control-character fallback", () => {
+    // Tab is 0x09 (ctrl+i) and Enter is 0x0d (ctrl+m): a source that decoded
+    // them told us which key it was, so those chords must not swallow them.
+    expect(matchesKeyChord(parsed("ctrl+i"), keyEvent({ name: "tab", sequence: "\u0009" }))).toBe(
+      false,
+    );
+    expect(matchesKeyChord(parsed("ctrl+m"), keyEvent({ name: "return", sequence: "\r" }))).toBe(
+      false,
+    );
+    expect(matchesKeyChord(parsed("tab"), keyEvent({ name: "tab", sequence: "\u0009" }))).toBe(
+      true,
+    );
+    expect(matchesKeyChord(parsed("enter"), keyEvent({ name: "return", sequence: "\r" }))).toBe(
+      true,
+    );
+    // Any name at all defers to name matching, not only the special ones.
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ name: "s", sequence: "\u0013" }))).toBe(
+      false,
+    );
+    expect(
+      matchesKeyChord(parsed("ctrl+s"), keyEvent({ name: "s", sequence: "\u0013", ctrl: true })),
+    ).toBe(true);
+  });
+
+  test("a control character never stands in for a chord carrying other modifiers", () => {
+    // A C0 byte carries no modifier of its own, so it cannot be shift+ or meta+.
+    expect(matchesKeyChord(parsed("ctrl+shift+s"), keyEvent({ sequence: "\u0013" }))).toBe(false);
+    expect(matchesKeyChord(parsed("ctrl+meta+s"), keyEvent({ sequence: "\u0013" }))).toBe(false);
+    expect(matchesKeyChord(parsed("ctrl+alt+s"), keyEvent({ sequence: "\u0013" }))).toBe(false);
+    // Nor can an event reporting other modifiers be the plain ctrl chord.
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013", shift: true }))).toBe(
+      false,
+    );
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013", meta: true }))).toBe(
+      false,
+    );
+    expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013", option: true }))).toBe(
+      false,
+    );
+  });
+
   test("shifted named keys require the shift flag", () => {
     const chord = parsed("shift+tab");
     expect(matchesKeyChord(chord, keyEvent({ name: "tab", shift: true }))).toBe(true);

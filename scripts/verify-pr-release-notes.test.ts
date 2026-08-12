@@ -199,6 +199,28 @@ describe("verifyPrReleaseNotes", () => {
     expect(existsSync(path.join(root, "status-call.json"))).toBe(false);
   });
 
+  test("routes a stable promotion that removes prerelease state through Changesets", async () => {
+    const { root } = createTestRepo();
+    writeGeneratedPrerelease(root);
+    const prereleaseBase = runGit(root, ["rev-parse", "HEAD"]);
+    const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    packageJson.version = "0.18.0";
+    writeJson(path.join(root, "package.json"), packageJson);
+    writeFileSync(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.18.0\n\n## 0.17.7\n");
+    rmSync(path.join(root, ".changeset", "pre.json"));
+    rmSync(path.join(root, ".changeset", "new-feature.md"));
+    writeFileSync(path.join(root, ".changeset", "stable-release.md"), "---\n---\n");
+    runGit(root, ["add", "-A"]);
+    runGit(root, ["commit", "--quiet", "-m", "prepare stable release"]);
+
+    await expect(verifyPrReleaseNotes(prereleaseBase, "HEAD", root)).resolves.toBe(
+      "changeset-status",
+    );
+    expect(JSON.parse(readFileSync(path.join(root, "status-call.json"), "utf8"))).toEqual([
+      `--since=${prereleaseBase}`,
+    ]);
+  });
+
   test("rejects an initial version older than the carried stable changelog", async () => {
     const { root, base } = createTestRepo();
     writeGeneratedPrerelease(root, "0.17.6");

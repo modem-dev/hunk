@@ -158,6 +158,7 @@ describe("expandCollapsedRows", () => {
     expect(first.right.lineNumber).toBe(1);
     expect(first.left.spans[0]?.text).toBe("alpha");
     expect(first.right.spans[0]?.text).toBe("alpha");
+    expect(first.expandedGapKey).toBe(gapKey("before", 0));
 
     const third = inserted[2];
     if (!third || third.type !== "split-line") {
@@ -188,6 +189,7 @@ describe("expandCollapsedRows", () => {
     expect(first.cell.oldLineNumber).toBe(2);
     expect(first.cell.newLineNumber).toBe(2);
     expect(first.cell.spans[0]?.text).toBe("beta");
+    expect(first.expandedGapKey).toBe(gapKey("before", 0));
   });
 
   test("changes the collapsed-row label to indicate expansion", () => {

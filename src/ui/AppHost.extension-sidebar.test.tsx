@@ -1,10 +1,11 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
@@ -19,9 +20,9 @@ import { AppHost } from "./AppHost";
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTestDirectory(dir);
   }
 });
 
@@ -473,8 +474,49 @@ describe("extension sidebar views", () => {
       );
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the built-in sidebar to reopen after the crash",
+      );
+    });
+  });
+
+  test("reevaluates pane availability when filtering changes visible files", async () => {
+    const repo = createTestRepo("hunk-ext-pane-availability-");
+    const extPath = join(createTempDir("hunk-ext-pane-availability-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "two-files",\n` +
+        `    placement: "bottom",\n` +
+        `    height: { preferred: 1, min: 1, max: 1 },\n` +
+        `    defaultOpen: true,\n` +
+        `    available: ({ files }) => files.length === 2,\n` +
+        `    component: () => createElement("text", { content: "TWO FILE PANE" }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("TWO FILE PANE"),
+        "the pane to be available for both visible files",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("/");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("alpha");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("TWO FILE PANE"),
+        "the pane availability policy to observe the filtered file list",
       );
     });
   });

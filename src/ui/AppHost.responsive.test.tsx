@@ -108,6 +108,26 @@ describe("responsive app", () => {
     expect(tight).not.toMatch(/▌.*▌/);
   });
 
+  test("narrow viewports keep file stats visible and mark truncated paths with three dots", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:narrow-header",
+      files: [
+        createTestDiffFile({
+          after: "export const value = 2;\n",
+          before: "export const value = 1;\n",
+          id: "narrow-header",
+          path: "packages/visual-studio-code-vscode/extension-postgres.ts",
+        }),
+      ],
+      initialMode: "auto",
+    });
+
+    const frame = await captureFrameForBootstrap(bootstrap, 40, 12);
+
+    expect(frame).toContain("packages/visual-studio-cod... +1 -1");
+    expect(frame).not.toContain("packages/visual-studio-code-.");
+  });
+
   test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 180,

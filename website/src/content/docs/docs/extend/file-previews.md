@@ -27,6 +27,8 @@ hunk.registerCommand({ id: "toggle-preview", title: "Toggle preview", key: "f8" 
 
 `ctx.fileViews.select("preview")` selects a view, `select(null)` returns to raw diff, and `isActive("preview")` reports the current selection. A bare id names the calling extension's view; `"other-extension:preview"` addresses another registered view. These controls intentionally target only the current file; applying a view across the changeset remains a host-owned View-menu action.
 
+`ctx.fileViews.refresh("preview")` invalidates that view's prepared layouts. Hunk treats `layout` as a pure derivation of `(file, width)` and reuses its result until one of those changes, so a view holding its own state — a fold, a toggled overlay — flips that state and then asks for the re-derivation. Refresh defaults to view-wide: every file presenting the view re-runs `matches` and `layout`, while files on raw diff or another view do no work. The rows already on screen stay visible until their replacement resolves, so a refresh never flashes back to raw diff. When the state that changed belongs to one file — a fold, a per-file edit buffer — pass `refresh("preview", { fileId })` so only that file re-lays out and the other presenting files keep their prepared rows. A `fileId` no reviewed file carries invalidates nothing.
+
 ## Register a view
 
 A view has an id, a title, a cheap file matcher, and a layout function:
@@ -168,6 +170,28 @@ Painter props contain only fixed geometry, selected-hunk state, row position, an
 Always provide useful `spans`. If the component throws, Hunk paints those spans inside the same fixed height. Components are non-focusable paint surfaces; registered commands are the supported keyboard path. Mouse delivery is cooperative, while wheel scrolling, dragging, and unhandled input remain host-owned.
 
 React hook state is temporary paint state. It is lost when windowing unmounts the row, a width change creates a new layout, the user switches presentations, or the extension/session reloads. Keep durable extension state outside the row component.
+
+## Interactive previews
+
+Add a `mode` when a preview needs keyboard input:
+
+```ts
+mode: {
+  onKey: (key, ctx) => {
+    if (key.name === "space") {
+      ctx.fileViews.refresh("preview");
+      return "handled";
+    }
+    return "pass";
+  },
+},
+```
+
+Start it from a command with `ctx.fileViews.enterMode("preview")`. Entering also selects the preview and returns whether the mode started. Only one interactive preview mode runs at a time; use `exitMode()` to stop it and `isModeActive("preview")` to check it. It may overlap a session keyboard mode, but receives keys first until it exits.
+
+`onKey` returns `"handled"` to consume a key, `"pass"` to continue through any active session keyboard mode and then normal Hunk routing, or `"exit"` to consume the key and stop. It must return synchronously. When the file-view mode is the highest-priority input owner, Escape is reserved by Hunk and exits it.
+
+Modes also exit when their file, presentation, extension, or review session changes. Optional `onEnter` and `onExit` callbacks track that lifecycle and must return synchronously; `onExit` runs exactly once per activation. A failing or asynchronous `onEnter` or `onKey` exits the mode, and any callback failure warns without breaking the review.
 
 ## Validation and fallback
 

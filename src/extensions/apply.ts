@@ -10,7 +10,8 @@ import type {
   ExtensionRegistry,
   RegisteredCommand,
   RegisteredFileView,
-  RegisteredSidebarView,
+  RegisteredKeyboardMode,
+  RegisteredPane,
 } from "./types";
 
 /**
@@ -121,47 +122,36 @@ export function registeredViewKey(registered: { extensionId: string; view: { id:
   return qualifiedViewKey(registered.extensionId, registered.view.id);
 }
 
-/** Derive the key one sidebar view is addressed by everywhere in the app. */
-export function sidebarViewKey(registered: RegisteredSidebarView) {
-  return registeredViewKey(registered);
+/** Derive the key one pane is addressed by everywhere in the app. */
+export function paneKey(registered: RegisteredPane) {
+  return qualifiedViewKey(registered.extensionId, registered.pane.id);
 }
 
-/** The sidebar views one session offers, plus the registrations skipped as duplicates. */
-export interface ResolvedExtensionSidebarViews {
-  views: RegisteredSidebarView[];
+/** The panes one session offers, plus registrations skipped as duplicates. */
+export interface ResolvedExtensionPanes {
+  panes: RegisteredPane[];
   issues: ExtensionApplyIssue[];
 }
 
-/**
- * Collect every sidebar view a session offers.
- *
- * Registration is additive — any number of views coexist beside the built-in
- * file navigation — so the only thing resolved here is identity: two
- * registrations sharing one `<extensionId>:<viewId>` key would make open/close
- * state ambiguous, so the first wins and the duplicate is reported.
- */
-export function resolveExtensionSidebarViews(
-  registry: ExtensionRegistry,
-): ResolvedExtensionSidebarViews {
-  const views: RegisteredSidebarView[] = [];
+/** Resolve pane identities while retaining registration order as priority. */
+export function resolveExtensionPanes(registry: ExtensionRegistry): ResolvedExtensionPanes {
+  const panes: RegisteredPane[] = [];
   const issues: ExtensionApplyIssue[] = [];
   const claimed = new Set<string>();
 
-  for (const registered of registry.sidebarViews) {
-    const key = sidebarViewKey(registered);
+  for (const registered of registry.panes) {
+    const key = paneKey(registered);
     if (claimed.has(key)) {
       issues.push({
         extensionId: registered.extensionId,
-        message: `Skipped duplicate sidebar view "${key}" from extension ${registered.extensionId}`,
+        message: `Skipped duplicate pane "${key}" from extension ${registered.extensionId}`,
       });
       continue;
     }
-
     claimed.add(key);
-    views.push(registered);
+    panes.push(registered);
   }
-
-  return { views, issues };
+  return { panes, issues };
 }
 
 /** Derive the key one file view is addressed by everywhere in the app. */
@@ -196,6 +186,42 @@ export function resolveExtensionFileViews(registry: ExtensionRegistry): Resolved
   }
 
   return { views, issues };
+}
+
+/** Derive the key one session keyboard mode is addressed by everywhere in the app. */
+export function keyboardModeKey(registered: RegisteredKeyboardMode) {
+  return qualifiedViewKey(registered.extensionId, registered.mode.id);
+}
+
+/** The session keyboard modes one session offers, plus duplicate diagnostics. */
+export interface ResolvedExtensionKeyboardModes {
+  modes: RegisteredKeyboardMode[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve session keyboard-mode identities with first registration winning. */
+export function resolveExtensionKeyboardModes(
+  registry: ExtensionRegistry,
+): ResolvedExtensionKeyboardModes {
+  const modes: RegisteredKeyboardMode[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.keyboardModes) {
+    const key = keyboardModeKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate keyboard mode "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    modes.push(registered);
+  }
+
+  return { modes, issues };
 }
 
 /** The commands one session offers, plus the registrations skipped as duplicates. */
@@ -261,16 +287,18 @@ export function applyExtensionRegistrations(
   // Resolved again where the UI consumes them; consulted here so skipped
   // duplicate registrations surface through the same notice path as every
   // other refusal.
-  const sidebars = resolveExtensionSidebarViews(result.registry);
+  const panes = resolveExtensionPanes(result.registry);
   const fileViews = resolveExtensionFileViews(result.registry);
+  const keyboardModes = resolveExtensionKeyboardModes(result.registry);
   const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
     issues: [
       ...languageIssues,
       ...vcs.issues,
-      ...sidebars.issues,
+      ...panes.issues,
       ...fileViews.issues,
+      ...keyboardModes.issues,
       ...commands.issues,
     ],
   };

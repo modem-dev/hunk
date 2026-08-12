@@ -19,6 +19,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | Option                      | Description                                                     |
 | --------------------------- | --------------------------------------------------------------- |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
+| `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
@@ -163,12 +164,12 @@ hunk markup guide
 
 ## `hunk skill path`
 
-print the bundled Hunk review skill path
+print a bundled Hunk skill path
 
 ### Usage
 
 ```bash
-hunk skill path
+hunk skill path [name]
 ```
 
 ## `hunk daemon serve`

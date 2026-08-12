@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 2;
+export const HUNK_EXTENSION_API_VERSION = 4;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -162,7 +162,7 @@ export interface ExtensionDiffFile {
    * is what the renderer draws from. Carry it through untouched — spreading a
    * file (`{ ...file, path }`) preserves it. A file returned without usable
    * metadata is rejected, and the previous changeset is kept. On the read-only
-   * views Hunk hands outward (event payloads, sidebar props, a command's
+   * views Hunk hands outward (event payloads, pane props, a command's
    * selection) it is guarded like the rest of the view: reads pass through,
    * writes into it are refused.
    */
@@ -170,7 +170,7 @@ export interface ExtensionDiffFile {
   /**
    * How this file changed, using the same vocabulary VCS adapters report.
    *
-   * Present on the read-only views Hunk hands outward (event payloads, sidebar
+   * Present on the read-only views Hunk hands outward (event payloads, pane
    * props); a transform that synthesizes a file may omit it, and the file is
    * treated as an ordinary `"change"`.
    */
@@ -182,7 +182,7 @@ export interface ExtensionDiffFile {
    * order — empty for a file with nothing to select (binary, skipped).
    *
    * Like `changeType`, this is filled on the read-only views Hunk hands
-   * outward (event payloads, sidebar props, a command's selection). It is
+   * outward (event payloads, pane props, a command's selection). It is
    * derived from `metadata` at that boundary, so a transform neither receives
    * nor needs to produce it — a `hunks` value on a transform's returned file
    * is ignored in favor of what the metadata actually parses to.
@@ -209,6 +209,69 @@ export type ChangesetTransform = (
   changeset: ExtensionChangeset,
   ctx: ExtensionContext,
 ) => ExtensionChangeset | Promise<ExtensionChangeset>;
+
+/* -------------------------------------------------------------------------- */
+/* Terminal key events                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The parts of a terminal key event chord matching reads.
+ *
+ * Structural on purpose: any object carrying these fields works, including
+ * OpenTUI's `KeyEvent` and the synthetic events Hunk probes matchers with.
+ */
+export interface ExtensionKeyEvent {
+  /** Normalized key name, e.g. `"g"`, `"pageup"`, `"space"`. */
+  name?: string;
+  /** The characters the terminal reported, e.g. `"G"`, `"{"`. */
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  /** The alt/option modifier. */
+  option?: boolean;
+  shift?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Session keyboard modes                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** What a session keyboard mode did with one key. */
+export type ExtensionKeyboardModeKeyResult = "handled" | "pass" | "exit";
+
+/** Renderer-free capabilities available while a session keyboard mode runs. */
+export interface ExtensionKeyboardModeContext extends ExtensionContext {
+  /** Live access to explicitly public built-in Hunk commands. */
+  readonly commands: ExtensionCommandControls;
+  /**
+   * Controls scoped to this extension and activation.
+   *
+   * They become inert when the activation exits, so retained callbacks cannot inspect, stop, or
+   * replace a later mode. A deliberate replacement may be entered while `onKey` is running;
+   * ownership changes return `false` while `onEnter` or `onExit` is running.
+   */
+  readonly keyboardModes: ExtensionKeyboardModeControls;
+}
+
+/**
+ * One deliberately activated, session-scoped keyboard interpretation.
+ *
+ * Modes receive keys after host modal/focused surfaces and interactive file
+ * views, but before ordinary app commands. They are synchronous because their
+ * return value decides ownership of the current terminal key.
+ */
+export interface ExtensionKeyboardMode {
+  /** Identifies the mode within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  /** Human-readable label shown while the mode is active. */
+  title: string;
+  /** Decide whether to consume, pass, or consume-and-exit for one key. */
+  onKey(key: ExtensionKeyEvent, ctx: ExtensionKeyboardModeContext): ExtensionKeyboardModeKeyResult;
+  /** Runs once before the first key reaches the mode. Must return synchronously; cannot change ownership. */
+  onEnter?(ctx: ExtensionKeyboardModeContext): void;
+  /** Runs exactly once on every exit path. Must return synchronously; cannot change ownership. */
+  onExit?(ctx: ExtensionKeyboardModeContext): void;
+}
 
 /* -------------------------------------------------------------------------- */
 /* File views                                                                  */
@@ -308,6 +371,54 @@ export interface ExtensionFileViewInput {
   readDocument(side: ExtensionFileSide): Promise<string | null>;
 }
 
+/** What an interactive file view's key handler did with one key. */
+export type ExtensionFileViewModeKeyResult = "handled" | "pass" | "exit";
+
+/** What a mode key handler receives alongside each key. */
+export interface ExtensionFileViewModeContext extends ExtensionContext {
+  /** The file the view is presenting, as the mode's keys act on it. */
+  readonly file: ExtensionDiffFile;
+  /** Host-owned presentation controls, including `refresh` for redraws. */
+  readonly fileViews: ExtensionFileViewControls;
+}
+
+/**
+ * An opt-in interactive mode for one registered file view.
+ *
+ * A file view is otherwise a pure presentation: Hunk owns the keyboard, and a
+ * view that wants fold controls, a picker, or a cursor has no way to hear
+ * about a keypress. A mode is the opt-in — entered deliberately through
+ * `fileViews.enterMode`, never on its own — during which keys reach `onKey`
+ * before Hunk's command table. Modes are session-scoped: nothing persists.
+ *
+ * Only one file-view mode is active at a time. When it is the highest-priority
+ * input owner, Escape exits it; every exit path runs `onExit` exactly once.
+ */
+export interface ExtensionFileViewMode {
+  /**
+   * Decide what happens to one key, synchronously.
+   *
+   * The return value *is* the routing decision, so it cannot be awaited:
+   * `"handled"` consumes the key, `"pass"` declines it (routing then continues
+   * through any active session keyboard mode, the command table, and focused
+   * scrolling), and `"exit"` consumes the key and leaves the mode. Start async work here and
+   * report it afterwards through `ctx.notify` or `ctx.fileViews.refresh`.
+   *
+   * Every key the app's modal surfaces do not claim arrives — including plain
+   * printable characters, which would otherwise run whatever command is bound
+   * to them. When this mode owns input, Escape is the one exception: it is
+   * host-owned and exits the mode without ever reaching this handler.
+   *
+   * A throw is contained: Hunk warns naming the extension, exits the mode, and
+   * the review keeps working.
+   */
+  onKey(key: ExtensionKeyEvent, ctx: ExtensionFileViewModeContext): ExtensionFileViewModeKeyResult;
+  /** Runs once when the mode is entered, before any key reaches `onKey`. Must return synchronously. */
+  onEnter?(ctx: ExtensionFileViewModeContext): void;
+  /** Runs synchronously on every exit — key result, Escape, host auto-exit, or a contained throw. */
+  onExit?(ctx: ExtensionFileViewModeContext): void;
+}
+
 /** A host-rendered alternative presentation for an individual file in the review stream. */
 export interface ExtensionFileView {
   id: string;
@@ -317,6 +428,13 @@ export interface ExtensionFileView {
   layout(
     input: ExtensionFileViewInput,
   ): ExtensionFileViewLayout | null | Promise<ExtensionFileViewLayout | null>;
+  /**
+   * Opt this view into receiving keys while its mode is active.
+   *
+   * Registering a mode changes nothing on its own; a command must call
+   * `ctx.fileViews.enterMode(viewId)` to start it.
+   */
+  mode?: ExtensionFileViewMode;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -612,6 +730,14 @@ export interface ExtensionVcsPatchResult {
    */
   readFileSource?: ExtensionVcsFileSourceReader;
   /**
+   * Opaque stable identity for source state not already represented by each file's patch.
+   *
+   * Reuse a value across loads only when an equal per-file patch plus this key guarantees
+   * the same old/new source answers for that file. Hunk uses the combination to retain
+   * highlighted output; when omitted, every new reader is treated as a new snapshot.
+   */
+  sourceCacheKey?: string;
+  /**
    * Files to review beside `patchText`, in the order they should appear.
    *
    * Each entry is either its own one-file patch or a skipped placeholder.
@@ -713,7 +839,7 @@ export interface ExtensionVcsAdapter {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Sidebar views                                                               */
+/* Docked panes                                                                */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -748,8 +874,10 @@ export interface ExtensionPaintTheme {
   noteBorder: string;
 }
 
-/** Backward-compatible name for the shared extension painter theme. */
-export type ExtensionSidebarTheme = ExtensionPaintTheme;
+/** Theme exposed to extension-owned pane painters. */
+export type ExtensionPaneTheme = ExtensionPaintTheme;
+/** @deprecated Use ExtensionPaneTheme. */
+export type ExtensionSidebarTheme = ExtensionPaneTheme;
 
 /**
  * Navigation any extension surface can trigger, exactly as the built-in
@@ -772,25 +900,27 @@ export interface ExtensionReviewNavigation {
 }
 
 /**
- * What a custom sidebar component can trigger: review navigation plus a toast.
+ * What a custom pane component can trigger: review navigation plus a toast.
  *
  * Actions stay valid for as long as the component is mounted.
  */
-export interface ExtensionSidebarActions extends ExtensionReviewNavigation {
+export interface ExtensionPaneActions extends ExtensionReviewNavigation {
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
 }
+/** @deprecated Use ExtensionPaneActions. */
+export type ExtensionSidebarActions = ExtensionPaneActions;
 
 /**
- * The resolved command bindings available to a custom sidebar.
+ * The resolved command bindings available to a custom pane.
  *
- * This mirrors Pi's injected keybindings manager: sidebar components name a
+ * This mirrors Pi's injected keybindings manager: pane components name a
  * command instead of repeating its default chord, so their local key handling
  * follows the user's `[keybindings]` configuration. The command ids are the
  * same ids documented by Hunk (`"hunk.review.nextFile"`) and extensions
  * (`"<extensionId>.<commandId>"`).
  */
-export interface ExtensionSidebarKeybindings {
+export interface ExtensionPaneKeybindings {
   /** Report whether one terminal key event matches the command's current binding. */
   matches(
     key: {
@@ -807,64 +937,110 @@ export interface ExtensionSidebarKeybindings {
   getKeys(commandId: string): readonly string[];
 }
 
-/** Everything a custom sidebar component receives, refreshed as the app changes. */
-export interface ExtensionSidebarViewProps {
+/** A terminal edge where a host-owned pane can be docked. */
+export type ExtensionPanePlacement = "left" | "right" | "top" | "bottom";
+
+/** Requested pane width or height along its docked edge. */
+export interface ExtensionPaneSize {
+  preferred: number;
+  min?: number;
+  max?: number;
+}
+
+/** Opaque host renderer for the selected split row. */
+export interface ExtensionCurrentLinePaint {
+  /** Paint one side as a clipped, no-wrap terminal row. */
+  render(side: "old" | "new", width: number): unknown;
+}
+
+/** Immutable state used to decide whether an open pane is meaningful this frame. */
+export interface ExtensionPaneAvailabilityContext {
+  readonly placement: ExtensionPanePlacement;
+  readonly files: readonly ExtensionDiffFile[];
+  readonly selectedFileId: string | null;
+  readonly selectedHunkIndex: number | null;
+  readonly currentLine: ExtensionCurrentLinePaint | null;
+}
+
+/** Everything a custom pane component receives, refreshed as the app changes. */
+export interface ExtensionPaneProps {
+  readonly files: readonly ExtensionDiffFile[];
+  readonly selectedFileId: string | null;
+  readonly selectedHunkIndex: number | null;
+  readonly placement: ExtensionPanePlacement;
+  /** Exact host-owned component rectangle. */
+  readonly width: number;
+  readonly height: number;
+  readonly theme: ExtensionPaneTheme;
+  readonly keybindings: ExtensionPaneKeybindings;
+  readonly actions: ExtensionPaneActions;
+  /** Non-null only when the registration explicitly requested current-line paint. */
+  readonly currentLine: ExtensionCurrentLinePaint | null;
+}
+
+/** A React/OpenTUI component mounted inside an exact host-owned rectangle. */
+export type ExtensionPaneComponent = (props: ExtensionPaneProps) => unknown;
+
+/** Fields shared by panes on every terminal edge. */
+interface ExtensionPaneBase {
+  /** Identifies the pane within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  title?: string;
+  defaultOpen?: boolean;
   /**
-   * The reviewed files currently visible, in review-stream order.
-   *
-   * Read-only frozen views, filtered the way the built-in sidebar is: the
-   * app's file filter applies before the list reaches the component.
+   * Start open in place of this pane, which starts closed.
+   * Replacement initial defaults take precedence over `defaultOpen`.
    */
+  replaces?: string;
+  /** Opt into live current-line paint; unrelated panes receive stable null. */
+  currentLine?: boolean;
+  /** Synchronous frame-availability policy. */
+  available?(context: ExtensionPaneAvailabilityContext): boolean;
+  component: ExtensionPaneComponent;
+}
+
+/** A left/right pane sized explicitly in terminal columns. */
+export interface ExtensionVerticalPane extends ExtensionPaneBase {
+  /** Defaults to `"left"`. */
+  placement?: "left" | "right";
+  /** Defaults to 34 preferred and 22 minimum columns. */
+  width?: ExtensionPaneSize;
+  height?: never;
+}
+
+/** A top/bottom pane sized explicitly in terminal rows. */
+export interface ExtensionHorizontalPane extends ExtensionPaneBase {
+  placement: "top" | "bottom";
+  /** Defaults to 8 preferred and 3 minimum rows. */
+  height?: ExtensionPaneSize;
+  width?: never;
+}
+
+/** A docked pane contributed by an extension. */
+export type ExtensionPane = ExtensionVerticalPane | ExtensionHorizontalPane;
+
+/** @deprecated Use ExtensionPaneKeybindings. */
+export type ExtensionSidebarKeybindings = ExtensionPaneKeybindings;
+/** @deprecated Use ExtensionPanePlacement. */
+export type ExtensionSidebarPlacement = Extract<ExtensionPanePlacement, "left" | "right">;
+/** @deprecated Use ExtensionPaneProps. */
+export interface ExtensionSidebarViewProps {
   files: ExtensionDiffFile[];
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
-  /** Terminal columns the sidebar pane occupies; height comes from flex layout. */
   width: number;
   theme: ExtensionSidebarTheme;
-  /** Resolved command bindings; use these instead of hard-coding sidebar chords. */
   keybindings: ExtensionSidebarKeybindings;
   actions: ExtensionSidebarActions;
 }
-
-/**
- * A custom sidebar component.
- *
- * This is a plain React function component rendered inside Hunk's own tree —
- * import `react` normally (Hunk serves its own instance to extension files, so
- * hooks work; never bundle a copy of React into an extension) and return
- * OpenTUI elements (`box`, `text`, `scrollbox`, ...). The return type is
- * opaque here only because this module publishes no React types; annotate the
- * component with your own `@types/react` and it satisfies this shape.
- */
+/** @deprecated Use ExtensionPaneComponent. */
 export type ExtensionSidebarComponent = (props: ExtensionSidebarViewProps) => unknown;
-
-/** Which side of the review stream a sidebar pane sits on. */
-export type ExtensionSidebarPlacement = "left" | "right";
-
-/**
- * A sidebar view contributed by an extension.
- *
- * Registration is additive: every registered view exists alongside the
- * built-in file navigation, and any number can be open at once. A view opens
- * when `defaultOpen` asks for it, or when extension code opens it through the
- * sidebar controls — typically from a `registerCommand` handler bound to a
- * key.
- */
+/** @deprecated Use ExtensionPane. */
 export interface ExtensionSidebarView {
-  /** Identifies the view within its extension; `<extensionId>:<id>` globally. */
   id: string;
-  /** Human-readable name, for diagnostics and future menu listings. */
   title?: string;
-  /** Which side of the review stream the pane sits on. Defaults to `"left"`. */
   placement?: ExtensionSidebarPlacement;
-  /** Open this view when the session starts. Defaults to closed. */
   defaultOpen?: boolean;
-  /**
-   * Stand in for the built-in file navigation instead of joining it.
-   *
-   * Implies `defaultOpen`: the view starts open and the built-in `files`
-   * sidebar starts closed (the user or an extension can still reopen it).
-   */
   replacesDefault?: boolean;
   component: ExtensionSidebarComponent;
 }
@@ -910,21 +1086,61 @@ export interface ExtensionCommand {
   key?: string | readonly string[];
 }
 
-/** Open, close, and inspect sidebar views from a command handler. */
-export interface ExtensionSidebarControls {
+/** Options for invoking one public Hunk command from an extension command. */
+export interface ExtensionCommandExecutionOptions {
   /**
-   * Resolve one view: a bare id names this extension's own view, `"files"`
-   * names the built-in file navigation, and `"<extensionId>:<viewId>"`
-   * addresses any registered view explicitly.
+   * Positive whole-number magnitude for commands that support counted movement.
    *
-   * Opening a view (here, or via `toggle`) also reveals the sidebar area when
-   * the user has hidden it, so the open is never silent.
+   * Counts are applied atomically by the host rather than by repeatedly dispatching the command.
+   * Commands without count semantics run once. Values above 10,000 or outside the safe positive
+   * integer range are rejected as extension programming errors.
+   */
+  count?: number;
+}
+
+/** Inspect and invoke the public semantic commands owned by Hunk. */
+export interface ExtensionCommandControls {
+  /** Report whether one public `hunk.*` command exists and can run right now; malformed ids return false. */
+  isEnabled(commandId: string): boolean;
+  /**
+   * Invoke one enabled public `hunk.*` command through Hunk's normal command table.
+   *
+   * Returns `false` for unknown, disabled, non-public, extension-owned, or stale commands.
+   * Malformed ids, options, and counts are extension programming errors and throw.
+   */
+  execute(commandId: string, options?: ExtensionCommandExecutionOptions): boolean;
+}
+
+/**
+ * Enter, leave, and inspect this extension's registered session keyboard modes.
+ * Ownership-changing calls return `false` during `onEnter` and `onExit`.
+ */
+export interface ExtensionKeyboardModeControls {
+  /** Enter one owned mode from a command or `onKey`, replacing the active session mode. */
+  enterMode(modeId: string): boolean;
+  /** Leave this extension's active mode from a command or `onKey`. */
+  exitMode(): boolean;
+  /** Report whether this extension owns the active mode, optionally requiring one local id. */
+  isActive(modeId?: string): boolean;
+}
+
+/** Open, close, and inspect panes from a command handler. */
+export interface ExtensionPaneControls {
+  /**
+   * Resolve one pane: a bare id names this extension's own pane, `"files"`
+   * names the built-in file navigation, and `"<extensionId>:<paneId>"`
+   * addresses any registered pane explicitly.
+   *
+   * Opening a left/right pane (here, or via `toggle`) also reveals the sidebar
+   * area when the user has hidden it, so the open is never silent.
    */
   open(viewId: string): void;
   close(viewId: string): void;
   toggle(viewId: string): void;
   isOpen(viewId: string): boolean;
 }
+/** @deprecated Use ExtensionPaneControls. */
+export type ExtensionSidebarControls = ExtensionPaneControls;
 
 /** Select or inspect the active file presentation from an extension command. */
 export interface ExtensionFileViewControls {
@@ -934,6 +1150,78 @@ export interface ExtensionFileViewControls {
   toggle(viewId: string): void;
   /** Report whether this extension's view is active for the current file. */
   isActive(viewId: string): boolean;
+  /**
+   * Mark this view's prepared layouts stale so a stateful view can redraw.
+   *
+   * Hunk treats `layout` as a pure derivation of `(file, width)` and reuses a
+   * prepared result until one of those — or the registration itself — changes.
+   * A view that keeps its own state (a fold, a toggled overlay) has no such
+   * change to announce, so this is how it asks for a re-derivation.
+   *
+   * Every prepared layout of this view is invalidated at once, and each file
+   * currently presenting it re-runs `matches` and `layout`. Files on raw diff
+   * or on another view do no work. The previously prepared rows stay on screen
+   * until the replacement resolves, so a refresh never flashes back to raw
+   * diff; a re-layout that declines, throws, or times out falls back to raw
+   * exactly like any other failed layout, with the same single warning.
+   *
+   * Pass `{ fileId }` when the state that changed belongs to one file — a fold
+   * or an edit buffer the view keeps per file. Only that file's prepared layout
+   * for this view is invalidated; the other files presenting the view keep
+   * their rows and do no work, which matters because a view can be presenting
+   * every matching file in the changeset at once. A `fileId` no reviewed file
+   * carries invalidates nothing and warns about nothing: ids can race a reload.
+   *
+   * Bare ids address the calling extension's own view, `"<extensionId>:<viewId>"`
+   * addresses any registered one, and an unknown id warns and does nothing —
+   * the same resolution and refusal `select` uses.
+   */
+  refresh(viewId: string, options?: { fileId?: string }): void;
+  /**
+   * Make this view the selected file's presentation and give its mode the keys.
+   *
+   * One step: if the file is not already showing the view, entering selects it
+   * — the same state change `select` makes — so the rows the mode acts on are
+   * on screen from the moment it holds the keyboard. A command can bind a
+   * single key to "enter my editor" rather than asking for two presses.
+   *
+   * Succeeds — and returns `true` — unless something no selection could fix
+   * stops it, each warned by name and answered with `false`: the id resolves to
+   * nothing, no file is selected, the view does not `matches` the selected file
+   * (or its matcher throws), the file is one Hunk is keeping on raw diff, or the
+   * view declares no `mode`. That is exactly the containment `select` applies,
+   * so a command can offer the mode without duplicating the host's checks.
+   *
+   * The view's rows may still be preparing when the mode starts, exactly as
+   * after a `refresh`: the previous rows stay on screen until the layout
+   * resolves, and a layout that declines or fails falls back to raw diff.
+   *
+   * While the mode is active, keys the app's modal surfaces do not claim reach
+   * `onKey` before Hunk's command table. When the mode is the highest-priority
+   * input owner, Escape is host-owned: it exits the mode and never reaches the
+   * handler, so there is always a way out.
+   *
+   * Hunk also exits the mode by itself when the review moves out from under it
+   * — the selected file changes, the view stops being that file's presentation
+   * (selected or toggled away), a session reload replaces the review — or when
+   * `onEnter`/`onKey` throws. `onExit` runs on every one of those paths.
+   *
+   * One session runs one mode: entering while another mode is active exits that
+   * one first, so its `onExit` runs — exactly once, as on any other exit path —
+   * before the new mode's `onEnter`.
+   *
+   * Ids resolve exactly as `select` resolves them.
+   */
+  enterMode(viewId: string): boolean;
+  /**
+   * Leave the active mode, whichever view owns it.
+   *
+   * Global across file views because only one file-view mode is active at a
+   * time, and idempotent: calling it with no file-view mode active does nothing.
+   */
+  exitMode(): void;
+  /** Report whether this view's mode is the one currently active. */
+  isModeActive(viewId: string): boolean;
 }
 
 /**
@@ -946,7 +1234,7 @@ export interface ExtensionReviewSelection {
   /**
    * The selected file among the currently visible (filtered) files, or `null`.
    *
-   * The same frozen read-only view a sidebar component receives in its `files`
+   * The same frozen read-only view a pane component receives in its `files`
    * prop, so holding or mutating it cannot reach the review model. Hunk keeps
    * the selection inside the visible list — filtering away the selected file
    * immediately reselects the first visible one — so in practice this is
@@ -1021,9 +1309,142 @@ export interface ExtensionDialogs {
   input(options: ExtensionInputOptions): Promise<string | null>;
 }
 
+/** One whole-document replacement an extension asks the host to write. */
+export interface ExtensionWorkspaceWriteRequest {
+  /** The reviewed file to write, by its `ExtensionDiffFile.id`. */
+  fileId: string;
+  /** The complete replacement text for the file's new side. */
+  text: string;
+}
+
+/**
+ * How a write attempt settled.
+ *
+ * The three refusals are different kinds of answer, not degrees of failure:
+ * `"unavailable"` means the write was never possible for this review or this
+ * file, `"cancelled"` means the user was asked and said no, and `"failed"`
+ * means the filesystem refused the write Hunk actually attempted. Each carries
+ * a `detail` sentence fit to show a person.
+ */
+export type ExtensionWorkspaceWriteResult =
+  | { ok: true }
+  | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
+
+/**
+ * The reviewed files as whole documents, read and written through the host.
+ *
+ * Extension isolation is crash containment rather than a sandbox, so an
+ * extension can already reach `node:fs` and read or write wherever your shell
+ * can. This is the supported alternative, and what it buys is everything that a
+ * direct filesystem call skips: the target can only be a file the user is
+ * reviewing, named by review id rather than by path; a write asks the user
+ * first, in a prompt naming the extension doing the asking; and the review
+ * reloads afterwards so what you are looking at is what is on disk. An
+ * extension that reaches reviewed files any other way is outside the contract,
+ * and outside anything the user agreed to.
+ *
+ * The two halves are deliberately not symmetric, because they are not the same
+ * kind of act. Reading exposes exactly what the review already shows the user,
+ * so it is available in every review kind and never prompts. Writing changes
+ * the user's files, so it is working-tree only and always asks.
+ *
+ * Writes are available exactly when the session is reviewing the working tree —
+ * a `vcs` diff review with no revision range and without `--staged` — and can
+ * reload it. A revision show, a stash show, a range diff, a staged diff, patch
+ * input, and a file-pair diff have no working-tree document to replace, and
+ * every write against them resolves `"unavailable"`; so does a session whose
+ * review cannot be rebuilt after a write, which is one started with
+ * `--agent-context -`, since the reload every write promises could not happen.
+ * A file with no new side (deleted) and a file Hunk never read as text (binary,
+ * skipped for size) are `"unavailable"` for the same reason as the first group
+ * — there is no document to replace.
+ */
+export interface ExtensionWorkspace {
+  /**
+   * Read one exact full source document from a reviewed file.
+   *
+   * The document a file view gets from `ExtensionFileViewInput.readDocument`,
+   * reachable from a command handler: ask for the `"old"` or `"new"` side of a
+   * file in the current changeset and get its complete source text. Patch text
+   * is already at hand as `ExtensionDiffFile.patch` and is deliberately not
+   * this, because a patch is not an exact source file.
+   *
+   * Resolves `null`, rather than rejecting, for every way a read comes back
+   * empty-handed: no reviewed file carries that id, the side does not exist
+   * (the `"old"` side of an added file, the `"new"` side of a deletion), Hunk
+   * has no source to read for this file at all, the read failed, or the
+   * document is past the host's source-size cap. A probe is an ordinary
+   * question here, the same way `canWriteDocument` answers instead of throwing.
+   * The promise **rejects** only for a `side` that is neither `"old"` nor
+   * `"new"`, which is a bug in the extension rather than an answer.
+   *
+   * Unlike writes, reads work in every review kind — a revision show, a stash
+   * entry, a range diff, patch input — and never prompt. Reading the `"new"`
+   * side, transforming the text, and passing the result to `writeDocument` is
+   * the pairing this exists for.
+   */
+  readDocument(fileId: string, side: ExtensionFileSide): Promise<string | null>;
+  /**
+   * Whether `writeDocument` could currently succeed for this reviewed file.
+   *
+   * The affordance probe behind a menu entry or a mode indicator: the same
+   * review, file, and path checks a write makes, minus the dialog and the
+   * filesystem. It never prompts and never touches disk, so a `true` here still
+   * describes what the user could allow rather than what they have allowed, and
+   * a write can still come back `"cancelled"` or `"failed"`.
+   *
+   * Because it asks nothing of the filesystem, it is optimistic about what only
+   * the filesystem knows: a write additionally verifies its target at write
+   * time and refuses `"unavailable"` for a reviewed path that is a symlink,
+   * sits under a linked directory pointing out of the repository, or has left
+   * the working tree since the review was built. The action is never optimistic
+   * about those; only the affordance is.
+   */
+  canWriteDocument(fileId: string): boolean;
+  /**
+   * Replace one reviewed file's contents on disk, with the user's consent.
+   *
+   * Every write asks first. Hunk draws a confirm dialog through the same
+   * attributed, FIFO-queued modal system as `ctx.dialogs` — naming your
+   * extension and the file's path, and framing the write as the overwrite it
+   * is — so a write can no more present itself as Hunk's own than a dialog can.
+   * Declining, or pressing Escape, resolves `{ ok: false, reason: "cancelled" }`:
+   * a normal answer, never an exception.
+   *
+   * Before the prompt, Hunk verifies that the path it would write is the file
+   * the prompt names: a reviewed path that is a symlink, or that sits under a
+   * directory link leading out of the repository, resolves `"unavailable"`
+   * without asking, and so does one that has left the working tree since the
+   * review was built — a write recreates nothing the user deleted. Hunk checks
+   * again after consent, refusing a target deleted or replaced by an unsafe
+   * path while the prompt was open.
+   *
+   * On success Hunk reloads the session the same way the refresh key does, so
+   * the review an extension sees afterwards reflects what it wrote. That holds
+   * for every write that can happen: a session whose review could not be
+   * rebuilt refuses writes rather than accepting one it would then hide. The
+   * returned promise settles on the write itself, not on the reload — a handler
+   * that resumes immediately is looking at the changeset it was called with.
+   *
+   * A filesystem that refuses the write resolves `"failed"` with a
+   * human-readable `detail`. The promise **rejects** only for a malformed
+   * request — a missing or non-string `fileId` or `text` — which is a bug in
+   * the extension rather than an answer, and surfaces through the same warning
+   * path as any other handler failure.
+   */
+  writeDocument(request: ExtensionWorkspaceWriteRequest): Promise<ExtensionWorkspaceWriteResult>;
+}
+
 /** What a command handler receives when its key fires. */
 export interface ExtensionCommandContext extends ExtensionContext {
-  sidebars: ExtensionSidebarControls;
+  /** Live access to the public built-in command table. */
+  readonly commands: ExtensionCommandControls;
+  /** Session keyboard modes registered by this command's owning extension. */
+  readonly keyboardModes: ExtensionKeyboardModeControls;
+  /** Session panes registered by this command's owning extension. */
+  readonly panes: ExtensionPaneControls;
+  /** @deprecated Use panes. */
+  readonly sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
   fileViews: ExtensionFileViewControls;
   /**
@@ -1034,7 +1455,7 @@ export interface ExtensionCommandContext extends ExtensionContext {
    */
   readonly selection: ExtensionReviewSelection;
   /**
-   * Navigate the review stream, exactly as a sidebar's actions do.
+   * Navigate the review stream, exactly as a pane's actions do.
    *
    * Live rather than snapshot, the opposite of `selection`: a call acts on the
    * review as it is at that moment, validated against the currently visible
@@ -1049,6 +1470,14 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * several dialogs in sequence with work in between.
    */
   readonly dialogs: ExtensionDialogs;
+  /**
+   * Read reviewed files, and write them back to the working tree with the
+   * user's consent.
+   *
+   * Host-mediated on purpose: the file is named by review id, a write asks the
+   * user first, and the review reloads after a successful write.
+   */
+  readonly workspace: ExtensionWorkspace;
 }
 
 export type ExtensionCommandHandler = (ctx: ExtensionCommandContext) => void | Promise<void>;
@@ -1074,8 +1503,10 @@ export interface ExtensionEventBus {
   emit<Payload = unknown>(event: string, payload: Payload): void;
 }
 
-/** Context lifecycle and bus listeners receive, including live sidebar controls. */
+/** Context lifecycle and bus listeners receive, including live pane controls. */
 export interface ExtensionEventContext extends ExtensionContext {
+  panes: ExtensionPaneControls;
+  /** @deprecated Use panes. */
   sidebars: ExtensionSidebarControls;
   events: Pick<ExtensionEventBus, "emit">;
 }
@@ -1159,13 +1590,13 @@ export interface HunkExtensionAPI {
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
   /**
-   * Contribute a sidebar view beside (or in place of) the built-in one.
+   * Register a docked pane on any terminal edge.
    *
-   * Any number of views can be registered and open simultaneously, on either
-   * side of the review stream. A view that throws while rendering is closed
-   * with a warning naming the extension; the built-in file navigation is
-   * restored if nothing else is showing files.
+   * Any number can be open simultaneously. Hunk owns their exact rectangles,
+   * minimum review bounds, availability, and render-failure containment.
    */
+  registerPane(pane: ExtensionPane): void;
+  /** @deprecated Use registerPane. */
   registerSidebarView(view: ExtensionSidebarView): void;
   /**
    * Register a host-rendered alternative presentation for matching files.
@@ -1176,17 +1607,24 @@ export interface HunkExtensionAPI {
    */
   registerFileView(view: ExtensionFileView): void;
   /**
+   * Register one session-scoped keyboard interpretation.
+   *
+   * Registration alone changes nothing; a command deliberately enters it
+   * through `ctx.keyboardModes.enterMode()`.
+   */
+  registerKeyboardMode(mode: ExtensionKeyboardMode): void;
+  /**
    * Register one named command, optionally bound to a key,
    *
    * The handler runs when the key fires outside modal UI (dialogs, menus,
    * focused inputs own their keys first). Handlers receive the standard
-   * context plus sidebar controls, so a command can open the sidebar view its
-   * extension registered.
+   * context plus pane controls, so a command can open the pane its extension
+   * registered.
    */
   registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler): void;
   /** Rewrite every loaded changeset before review. */
   transformChangeset(fn: ChangesetTransform): void;
-  /** Subscribe to one Hunk lifecycle or UI event. Handlers receive sidebar controls. */
+  /** Subscribe to one Hunk lifecycle or UI event. Handlers receive pane controls. */
   on<Event extends ExtensionEventName>(event: Event, handler: ExtensionEventHandler<Event>): void;
   /** Publish or subscribe to a namespaced event shared with other loaded extensions. */
   readonly events: ExtensionEventBus;

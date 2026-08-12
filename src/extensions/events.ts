@@ -9,7 +9,7 @@ import type { Hunk } from "@pierre/diffs";
 import type {
   ExtensionDiffHunk,
   ExtensionEventContext,
-  ExtensionSidebarControls,
+  ExtensionPaneControls,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
 import { summarizeHunk } from "../core/hunkSummary";
@@ -288,14 +288,14 @@ function toHandlerPayload<Event extends ExtensionEventName>(
   }) as ExtensionEventPayloads[Event];
 }
 
-/** Sidebar controls used only before the mounted app has installed live controls. */
-function unavailableSidebarControls(
+/** Pane controls used only before the mounted app has installed live controls. */
+function unavailablePaneControls(
   result: ExtensionLoadResult,
   extensionId: string,
-): ExtensionSidebarControls {
+): ExtensionPaneControls {
   const unavailable = (method: string, viewId: string) => {
     result.context.notify(
-      `Extension ${extensionId} cannot ${method} sidebar view "${viewId}" before the app is ready`,
+      `Extension ${extensionId} cannot ${method} pane "${viewId}" before the app is ready`,
       "warning",
     );
   };
@@ -313,17 +313,23 @@ function createEventContext(
   result: ExtensionLoadResult,
   extensionId: string,
 ): ExtensionEventContext {
-  return (
-    result.eventContextProvider?.(extensionId) ?? {
-      ...result.context,
-      sidebars: unavailableSidebarControls(result, extensionId),
-      events: {
-        emit(event, payload) {
-          emitExtensionCustomEvent(result, event, payload);
-        },
+  const provided = result.eventContextProvider?.(extensionId);
+  if (provided) {
+    return provided;
+  }
+
+  // The deprecated name is an alias, not another control path.
+  const panes = unavailablePaneControls(result, extensionId);
+  return {
+    ...result.context,
+    panes,
+    sidebars: panes,
+    events: {
+      emit(event, payload) {
+        emitExtensionCustomEvent(result, event, payload);
       },
-    }
-  );
+    },
+  };
 }
 
 /**

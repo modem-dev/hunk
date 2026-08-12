@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/types";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -34,9 +34,12 @@ export interface BuildAppMenusOptions {
   extensionCommands?: readonly AppCommand[];
   /** Host-owned per-file presentation choices appended to View. */
   fileViewEntries?: readonly MenuEntry[];
+  /** Host-owned escape hatch shown while a session keyboard mode is active. */
+  keyboardModeExitEntry?: MenuEntry;
   /** Live label for the stable host command that applies the selected presentation changeset-wide. */
   fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
+  cursorLine: CursorLine;
   layoutMode: LayoutMode;
   renderSidebar: boolean;
   showAgentNotes: boolean;
@@ -124,7 +127,9 @@ export function buildAppMenus({
   extensionCommands = [],
   fileViewEntries = [],
   fileViewApplyAllLabel,
+  keyboardModeExitEntry,
   copyDecorations,
+  cursorLine,
   layoutMode,
   renderSidebar,
   showAgentNotes,
@@ -170,6 +175,21 @@ export function buildAppMenus({
         label: "Copy decorations",
         checked: copyDecorations,
       },
+      {
+        commandId: "hunk.view.cursorLineRow",
+        label: "Current line: full row",
+        checked: cursorLine === "row",
+      },
+      {
+        commandId: "hunk.view.cursorLineNumber",
+        label: "Current line: line number",
+        checked: cursorLine === "number",
+      },
+      {
+        commandId: "hunk.view.cursorLineOff",
+        label: "Current line: off",
+        checked: cursorLine === "off",
+      },
     ],
     navigate: [
       { commandId: "hunk.review.previousHunk" },
@@ -194,7 +214,15 @@ export function buildAppMenus({
     specs.view.push(SEPARATOR);
   }
 
-  const extensions = toExtensionMenuEntries(commands, extensionCommands);
+  const extensionCommandEntries = toExtensionMenuEntries(commands, extensionCommands);
+  const extensions = keyboardModeExitEntry
+    ? [
+        keyboardModeExitEntry,
+        ...(extensionCommandEntries.length > 0
+          ? [{ kind: "separator" as const }, ...extensionCommandEntries]
+          : []),
+      ]
+    : extensionCommandEntries;
   const applyAllEntries = fileViewApplyAllLabel
     ? toMenuEntries(commands, [
         {

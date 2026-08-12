@@ -9,6 +9,9 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
+import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
+import { resolveTheme } from "../themes";
 import { useReviewController, type ReviewController } from "./useReviewController";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
@@ -45,6 +48,20 @@ function createTwoHunkFile() {
   return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
 }
 
+/** Build one file with three separated hunks for counted navigation coverage. */
+function createThreeHunkFile() {
+  const beforeLines = Array.from(
+    { length: 30 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[0] = "export const line1 = 100;";
+  afterLines[14] = "export const line15 = 1500;";
+  afterLines[29] = "export const line30 = 3000;";
+
+  return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
+}
+
 /** Build the same file id with only one hunk so stale hunk indices must clamp. */
 function createSingleHunkFile() {
   const beforeLines = Array.from(
@@ -64,6 +81,22 @@ function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
     "alpha.ts",
     "export const alpha = 1;\n",
     "export const alpha = 2;\n",
+    null,
+    sourceFetcher,
+  );
+}
+
+/** Build one file with two independently expandable gaps. */
+function createTwoGapFile(sourceFetcher: DiffFile["sourceFetcher"]) {
+  const beforeLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+  const afterLines = [...beforeLines];
+  afterLines[9] = "line 10 changed";
+  afterLines[39] = "line 40 changed";
+  return createDiffFile(
+    "alpha",
+    "alpha.ts",
+    lines(...beforeLines),
+    lines(...afterLines),
     null,
     sourceFetcher,
   );
@@ -98,7 +131,32 @@ function ReviewControllerHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files, noteGeometry, stmlEnabled });
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
+  const visibleFiles = controller.visibleFiles;
+  const { expandedGapsByFileId, sourceStatusByFileId } = controller;
+
+  useEffect(() => {
+    setLineCursors(
+      buildLineCursors(
+        visibleFiles,
+        visibleFiles.map((file) =>
+          measureDiffSectionGeometry(
+            file,
+            "stack",
+            true,
+            resolveTheme("github-dark-default", null),
+            [],
+            0,
+            true,
+            false,
+            expandedGapsByFileId[file.id],
+            sourceStatusByFileId[file.id],
+          ),
+        ),
+      ),
+    );
+  }, [expandedGapsByFileId, sourceStatusByFileId, visibleFiles]);
 
   useEffect(() => {
     onController(controller);
@@ -210,6 +268,28 @@ describe("useReviewController", () => {
     }
   });
 
+  test("keeps review stream identities stable across selection-only navigation", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const initialVisibleFiles = expectValue(controllerRef.current).visibleFiles;
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedHunkIndex).toBe(1);
+      expect(controller.visibleFiles).toBe(initialVisibleFiles);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("moves through visible files with clamped file-header alignment", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(
@@ -294,6 +374,34 @@ describe("useReviewController", () => {
       controller = expectValue(controllerRef.current);
       expect(controller.selectedFile?.path).toBe("alpha.ts");
       expect(controller.selectedFileTopAlignRequestId).toBe(4);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves across several files in one counted selection request", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+      createDiffFile("gamma", "gamma.ts", "export const gamma = 1;\n", "export const gamma = 2;\n"),
+      createDiffFile("delta", "delta.ts", "export const delta = 1;\n", "export const delta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      const initialAlignRequest = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(3);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("delta.ts");
+      expect(expectValue(controllerRef.current).selectedFileTopAlignRequestId).toBe(
+        initialAlignRequest + 1,
+      );
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -897,6 +1005,43 @@ describe("useReviewController", () => {
     }
   });
 
+  test("the latest gap expansion receives the current line when one source load reveals two gaps", async () => {
+    const deferred = createTestDeferred<string | null>();
+    const sourceFetcher = createTestSourceFetcher(() => deferred.promise);
+    const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    sourceLines[9] = "line 10 changed";
+    sourceLines[39] = "line 40 changed";
+    const { controllerRef, setup } = await renderReviewController([
+      createTwoGapFile(sourceFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.metadata.hunks).toHaveLength(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).toggleGap("alpha", "before:1");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId.alpha?.kind).toBe("loading");
+      expect(sourceFetcher.calls).toEqual(["new"]);
+
+      deferred.resolve(lines(...sourceLines));
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.expandedGapsByFileId.alpha?.has("before:0")).toBe(true);
+      expect(controller.expandedGapsByFileId.alpha?.has("before:1")).toBe(true);
+      expect(expectValue(controller.lineCursor).expandedGapKey).toBe("before:1");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("toggleGap settles source status under React StrictMode", async () => {
     const deferred = createTestDeferred<string | null>();
     const fakeFetcher = createTestSourceFetcher(() => deferred.promise);
@@ -1299,6 +1444,272 @@ describe("useReviewController", () => {
       expect(String(loggedErrors[0]?.[0])).toContain("alpha");
     } finally {
       console.error = originalConsoleError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("seeds the current line at the selected hunk so the indicator is visible on launch", async () => {
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.fileId).toBe("alpha");
+      expect(cursor.hunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves the current line one row at a time and clamps at the top of the stream", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const first = expectValue(expectValue(controllerRef.current).lineCursor);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+      const second = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(second).not.toEqual(first);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("requests a reveal every time the current line moves", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const initialRequestId = expectValue(controllerRef.current).lineCursorRevealRequestId;
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursorRevealRequestId).toBe(
+        initialRequestId + 1,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves several rendered lines with one reveal request", async () => {
+    const file = createTwoHunkFile();
+    const expectedCursors = buildLineCursors(
+      [file],
+      [
+        measureDiffSectionGeometry(
+          file,
+          "stack",
+          true,
+          resolveTheme("github-dark-default", null),
+          [],
+          0,
+          true,
+          false,
+        ),
+      ],
+    );
+    const { controllerRef, setup } = await renderReviewController([file]);
+
+    try {
+      await flush(setup);
+      const initial = expectValue(expectValue(controllerRef.current).lineCursor);
+      const initialIndex = expectedCursors.findIndex(
+        (cursor) => cursor.stableKey === initial.stableKey && cursor.fileId === initial.fileId,
+      );
+      const expected = expectValue(expectedCursors[initialIndex + 4]);
+      const initialRequestId = expectValue(controllerRef.current).lineCursorRevealRequestId;
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(4);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(expected);
+      expect(expectValue(controllerRef.current).lineCursorRevealRequestId).toBe(
+        initialRequestId + 1,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("carries hunk selection along as the current line crosses a hunk boundary", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+
+      for (let step = 0; step < 40; step += 1) {
+        await act(async () => {
+          expectValue(controllerRef.current).moveLineCursor(1);
+        });
+      }
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.hunkIndex).toBe(1);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves the current line to the row a note is started on", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote("alpha", 1, { side: "new", line: 12 });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toEqual({
+        fileId: "alpha",
+        hunkIndex: 1,
+        stableKey: "line:1:new:12",
+        target: { side: "new", line: 12 },
+      });
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves across several hunks with one reveal request", async () => {
+    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.metadata.hunks).toHaveLength(3);
+      const initialRequestId = expectValue(controllerRef.current).selectedHunkRevealRequestId;
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToHunk(2);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(2);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(2);
+      expect(expectValue(controllerRef.current).selectedHunkRevealRequestId).toBe(
+        initialRequestId + 1,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("carries the current line along when hunk navigation moves the selection", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToHunk(1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("recovers the current line when a reload retires the hunk it was on", async () => {
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createTwoHunkFile(),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(1);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createSingleHunkFile()]);
+      });
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.fileId).toBe("alpha");
+      expect(cursor.hunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("re-seeds the current line into the file a filter leaves visible", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 2;\n",
+      ),
+    ]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("alpha");
+
+      await act(async () => {
+        expectValue(controllerRef.current).setFilter("beta");
+      });
+      await flush(setup);
+
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("beta");
+    } finally {
       await act(async () => {
         setup.renderer.destroy();
       });

@@ -18,7 +18,9 @@ export default function (hunk: HunkExtensionAPI) {
 
 **The API is experimental**: `hunkdiff/extension` may change in breaking ways between minor releases while it stabilizes. Breaking changes are called out in release notes, and `hunk.apiVersion` identifies the surface an extension was written against.
 
-What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom sidebars](/docs/extend/custom-sidebars/).
+What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom panes](/docs/extend/custom-sidebars/).
+
+Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bundled skill that maps these touchpoints for agents, the way `hunk skill path` does for reviewing.
 
 ## Where Hunk looks
 
@@ -59,14 +61,14 @@ The **id** is the file stem, or the folder name for `<name>/index.ts` and single
 
 - config: `[extension.<id>]`
 - commands: `<id>.<commandId>`
-- sidebar views: `<id>:<viewId>`
+- panes: `<id>:<paneId>`
 - file previews: `<id>:<viewId>`
 
 Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `git`, `jj`, and `sl` are reserved. An invalid id — or a second source offering an already-loaded id — is skipped with a startup notice.
 
 ## Bundled extensions
 
-Hunk's own Git, Jujutsu, and Sapling backends and the built-in file-navigation sidebar are themselves extensions, registered through the same public API — which is what keeps that API honest. They differ from yours in three ways:
+Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
 
 - statically imported, so they load before config resolution picks the session's VCS
 - implicitly trusted, with no `[extension.<id>]` config table
@@ -93,7 +95,7 @@ Decisions are stored per repository root in `~/.config/hunk/state.json`, keyed b
 
 A broken extension is contained, not fatal: a failed import, missing default export, or throwing factory is skipped and rolled back with a startup notice; a handler or transform that throws later becomes a warning naming the extension. Event handlers receive frozen changeset copies, so accidental mutation throws instead of corrupting the review.
 
-This is crash containment, not a sandbox — an extension can do anything your shell can.
+Extensions run with your shell permissions. For reviewed files, prefer [`ctx.workspace`](/docs/extend/extension-api/#workspace-documents); writes require consent and identify the extension and file.
 
 ## CLI flags and config
 

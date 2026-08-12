@@ -222,7 +222,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      for (let index = 0; index < 8; index += 1) {
+      for (let index = 0; index < 16; index += 1) {
         await session.press("down");
       }
 

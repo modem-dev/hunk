@@ -31,7 +31,7 @@ function note(
 }
 
 describe("file-view render plan", () => {
-  test("inserts notes before the uniquely bound preferred-side row", () => {
+  test("inserts notes after the uniquely bound preferred-side row", () => {
     const plan = buildFileViewRenderPlan(layout, [
       note("both", { oldRange: [3, 3], newRange: [6, 7] }),
     ]);
@@ -39,15 +39,53 @@ describe("file-view render plan", () => {
     expect(plan.unresolvedNoteIds).toEqual([]);
     expect(plan.rows.map((row) => `${row.kind}:${row.key}`)).toEqual([
       "file-view-row:file-view:old-summary",
-      "inline-note:inline-note:both:file-view:new-summary:0",
       "file-view-row:file-view:new-summary",
+      "inline-note:inline-note:both:file-view:new-summary:0",
     ]);
-    expect(plan.rows[1]).toMatchObject({
+    expect(plan.rows[2]).toMatchObject({
       kind: "inline-note",
       anchorRowIndex: 1,
       anchorSide: "new",
       hunkIndex: 0,
     });
+  });
+
+  test("anchors each row on the source line the raw diff addresses", () => {
+    const plan = buildFileViewRenderPlan(layout, []);
+
+    expect(
+      plan.rows.map((row) => (row.kind === "file-view-row" ? row.stableAliasKeys : [])),
+    ).toEqual([["line:0:old:2"], ["line:0:new:5"]]);
+  });
+
+  test("gives one source line to the first row that presents it", () => {
+    const repeated: ExtensionFileViewLayout = {
+      rows: [
+        { id: "first", spans: [{ text: "a" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
+        { id: "second", spans: [{ text: "b" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
+      ],
+      hunkRows: [{ startRow: 0, endRow: 1 }],
+    };
+    const plan = buildFileViewRenderPlan(repeated, []);
+
+    expect(
+      plan.rows.map((row) => (row.kind === "file-view-row" ? row.stableAliasKeys : [])),
+    ).toEqual([["line:0:new:5"], undefined]);
+  });
+
+  test("leaves rows outside one hunk unaddressable by line navigation", () => {
+    const spanningHunks: ExtensionFileViewLayout = {
+      ...layout,
+      hunkRows: [
+        { startRow: 0, endRow: 1 },
+        { startRow: 0, endRow: 1 },
+      ],
+    };
+    const plan = buildFileViewRenderPlan(spanningHunks, []);
+
+    expect(plan.rows.every((row) => row.kind !== "file-view-row" || !row.stableAliasKeys)).toBe(
+      true,
+    );
   });
 
   test("groups notes at one anchor in stable input order", () => {

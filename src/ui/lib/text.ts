@@ -459,8 +459,8 @@ export function cellRangeToCharRange(text: string, startCell: number, endCell: n
   return { startIndex, endIndex: Math.max(startIndex, endIndex) };
 }
 
-/** Clamp text to a fixed width using a plain-dot terminal fallback marker. */
-export function fitText(text: string, width: number) {
+/** Clamp text to a fixed width using a cell-aware overflow marker. */
+export function fitText(text: string, width: number, overflowMarker = ".") {
   const safeText = sanitizeTerminalLine(text);
   if (width <= 0) {
     return "";
@@ -470,11 +470,10 @@ export function fitText(text: string, width: number) {
     return safeText;
   }
 
-  if (width === 1) {
-    return ".";
-  }
-
-  return `${sliceTextByWidth(safeText, 0, width - 1).text}.`;
+  const safeMarker = sanitizeTerminalLine(overflowMarker);
+  const marker = sliceTextByWidth(safeMarker, 0, width);
+  const textWidth = Math.max(0, width - marker.width);
+  return `${sliceTextByWidth(safeText, 0, textWidth).text}${marker.text}`;
 }
 
 /** Clamp and then right-pad text to an exact width. */

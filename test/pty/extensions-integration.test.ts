@@ -2,11 +2,14 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
 
 const harness = createPtyHarness();
 const REVIEW_TRIAGE_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-triage", import.meta.url)),
+);
+const VIM_NAVIGATION_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
 );
 
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
@@ -84,6 +87,29 @@ export default function (hunk) {
  * dialog path: a registered key opens the modal, Enter resolves the handler's
  * awaited promise, and the answer comes back as a toast.
  */
+const FOUR_EDGE_PANE_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  for (const placement of ["top", "bottom"]) {
+    hunk.registerPane({
+      id: placement,
+      placement,
+      defaultOpen: false,
+      height: placement === "top"
+        ? { preferred: 2, min: 2, max: 5 }
+        : { preferred: 2, min: 2, max: 2 },
+      component: (props) => createElement("text", {
+        content: "PANE " + placement.toUpperCase() + " " + props.width + "x" + props.height,
+        style: { fg: props.theme.text, bg: props.theme.panel },
+      }),
+    });
+  }
+  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "y" }, (ctx) => {
+    ctx.panes.toggle("top");
+    ctx.panes.toggle("bottom");
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -299,6 +325,50 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("an extension can dock edge panes and resize through horizontal divider hit slop", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(FOUR_EDGE_PANE_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("y");
+      const frame = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("PANE TOP") && text.includes("PANE BOTTOM") && text.includes("alpha.ts"),
+        20_000,
+      );
+      expect(frame).toContain("PANE TOP 138x2");
+      expect(frame).toContain("PANE BOTTOM 138x2");
+
+      // The visible divider is on row 3. Start one row below it to prove the
+      // enlarged horizontal hit area wins over review-stream text selection.
+      await dragMouse(session, 70, 4, 70, 6);
+      await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
+
+      await session.press("y");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("PANE TOP") && !text.includes("PANE BOTTOM"),
+        20_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
   test("a command key opens an extension confirm dialog that enter resolves", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(DIALOG_EXTENSION_SOURCE);
@@ -359,7 +429,7 @@ describe("PTY extensions", () => {
       args: ["diff", "--mode", "stack", "--extension", REVIEW_TRIAGE_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
-      rows: 24,
+      rows: 30,
       env: { XDG_CONFIG_HOME: configHome },
     });
 
@@ -391,8 +461,154 @@ describe("PTY extensions", () => {
       expect(menu).not.toBeNull();
       expect(menu!).toMatch(/Toggle review triage\s+y/);
       expect(menu).toMatch(/Mark selected hunk…\s+x/);
+      expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");
       expect(menu).toContain("Clear triage decisions");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real Vim navigation example routes counts, command-line input, and Ctrl chords", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    // Enough changed rows that top/bottom navigation has an observable viewport effect.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", VIM_NAVIGATION_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && text.includes("Extensions"),
+        20_000,
+      );
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f6");
+      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+
+      // The host contributes a mouse-accessible exit independently of the extension command.
+      await session.clickAt(33, 0);
+      await session.waitForText(/Exit Vim navigation/, { timeout: 20_000 });
+      await session.click(/Exit Vim navigation/);
+      await harness.waitForSnapshot(
+        session,
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+      await session.press("f6");
+      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+
+      // A passed `c` exposes the host-owned current line through note placement,
+      // giving counted movement and alignment observable terminal effects.
+      await session.press("c");
+      const initialDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      const initialDraftRow = lineIndexOf(initialDraft, "Draft note");
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 20_000);
+
+      await session.press("1");
+      await session.press("0");
+      await session.press("j");
+      await session.press("c");
+      const countedDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      expect(lineIndexOf(countedDraft, "Draft note")).toBeGreaterThan(initialDraftRow);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 20_000);
+
+      await session.press("z");
+      await session.press("t");
+      const topAligned = await session.text({ immediate: true });
+      const topAlignedRow = lineIndexOf(topAligned, "export const line11 = 11;");
+
+      await session.press("z");
+      await session.press("z");
+      const centered = await session.text({ immediate: true });
+      expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
+
+      // `:` passes into the registered command, whose focused host dialog owns even mode keys.
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("j-owned");
+      await session.waitForText(/j-owned/, { timeout: 20_000 });
+      await session.press("escape");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Vim command (:)") && /Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("bottom");
+      await session.press("enter");
+      const commandBottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(commandBottom).toContain("second.ts");
+
+      await session.press(":");
+      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.type("top");
+      await session.press("enter");
+      const commandTop = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("first.ts") &&
+          text.includes("export const line01 = 1;") &&
+          !text.includes("second.ts"),
+        20_000,
+      );
+      expect(commandTop).toContain("first.ts");
+
+      await session.press(["ctrl", "d"]);
+      const controlDown = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && !text.includes("export const line01 = 1;"),
+        20_000,
+      );
+      expect(controlDown).toContain("first.ts");
+      await session.press(["ctrl", "u"]);
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const line01 = 1;"),
+        20_000,
+      );
+
+      // Both normal-mode absolute forms visibly move between the two long files.
+      await session.press(["shift", "g"]);
+      const bottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(bottom).toContain("second.ts");
+
+      await session.press("g");
+      await session.press("g");
+      const top = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && !text.includes("second.ts"),
+        20_000,
+      );
+      expect(top).toContain("first.ts");
+      const active = await session.waitForText(/Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
+      expect(active).toContain("Vim navigation");
+
+      await session.press("escape");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
     } finally {
       session.close();
     }

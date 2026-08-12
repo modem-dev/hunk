@@ -46,6 +46,17 @@ describe("hunk navigation", () => {
     expect(findNextHunkCursor(cursors, "alpha", 1, -1)).toEqual({ fileId: "alpha", hunkIndex: 0 });
   });
 
+  test("applies multi-step movement atomically and clamps at the target", () => {
+    expect(findNextHunkCursor(cursors, "alpha", 0, 2)).toEqual({
+      fileId: "beta",
+      hunkIndex: 0,
+    });
+    expect(findNextHunkCursor(cursors, "beta", 0, -2)).toEqual({
+      fileId: "alpha",
+      hunkIndex: 0,
+    });
+  });
+
   test("clamps at the ends of the review stream", () => {
     expect(findNextHunkCursor(cursors, "alpha", 0, -1)).toEqual({ fileId: "alpha", hunkIndex: 0 });
     expect(findNextHunkCursor(cursors, "beta", 0, 1)).toEqual({ fileId: "beta", hunkIndex: 0 });
@@ -192,6 +203,10 @@ describe("annotated hunk navigation", () => {
     expect(findNextHunkCursor(annotatedCursors, "beta", 0, -1, streamCursors)).toEqual({
       fileId: "alpha",
       hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "alpha", 0, 2, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 0,
     });
     expect(findNextHunkCursor(annotatedCursors, "alpha", 0, 1, streamCursors)).toEqual({
       fileId: "alpha",

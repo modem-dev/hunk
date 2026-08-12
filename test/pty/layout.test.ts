@@ -83,6 +83,29 @@ describe("PTY layout", () => {
     }
   });
 
+  test("renamed CJK and emoji paths render as Unicode in the sidebar and file header", async () => {
+    const fixture = harness.createUnicodePathRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--staged", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 16,
+    });
+
+    try {
+      const snapshot = await session.waitForText(/한국어-🧪\.txt/, {
+        timeout: 15_000,
+      });
+
+      expect(snapshot).toContain("国際化/");
+      expect(snapshot).toContain("日本語.txt");
+      expect(snapshot).toContain("한국어-🧪.txt");
+      expect(snapshot).not.toContain("\\345\\233\\275");
+    } finally {
+      session.close();
+    }
+  });
+
   test("the CLI tab width reaches interactive app rendering", async () => {
     const fixture = harness.createTabbedFilePair();
     const session = await harness.launchHunk({
@@ -186,6 +209,31 @@ describe("PTY layout", () => {
     }
   });
 
+  test("narrow terminals preserve stats and use three dots for truncated file paths", async () => {
+    const fixture = harness.createNarrowHeaderTestRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "auto"],
+      cwd: fixture.dir,
+      cols: 40,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("packages/visual-studio-cod... +1 -1"),
+        5_000,
+      );
+
+      expect(snapshot).not.toContain("packages/visual-studio-code-.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("auto layout responds to live terminal resize in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
@@ -266,7 +314,10 @@ describe("PTY layout", () => {
       session.resize({ cols: 140, rows: 24 });
       const tight = await harness.waitForSnapshot(
         session,
-        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) === 1,
+        (text) =>
+          /▌.*▌/.test(text) &&
+          harness.countMatches(text, /alpha\.ts/g) === 1 &&
+          text.includes("betaValue = 1"),
         5_000,
       );
 

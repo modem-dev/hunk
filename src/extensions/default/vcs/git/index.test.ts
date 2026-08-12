@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -14,6 +14,10 @@ import type {
 // through that contract too — including the capabilities Git is the only
 // bundled backend to use.
 const gitOperations: ExtensionVcsOperations = GitVcsAdapter.operations;
+
+// Hosted Windows runners can spend several seconds starting each real Git process.
+// Keep this integration-like adapter suite bounded without using Bun's five-second default.
+setDefaultTimeout(30_000);
 
 describe("GitVcsAdapter published surface", () => {
   test("implements every review operation the contract defines", () => {
@@ -102,12 +106,24 @@ describe("GitVcsAdapter", () => {
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
     expect(result.extraFiles?.map((file) => file.path)).toContain("untracked.txt");
+    expect(result.sourceCacheKey).toContain("git-source-v1");
+
+    const equivalentResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
+      cwd: repo,
+    });
+    expect(equivalentResult.sourceCacheKey).toBe(result.sourceCacheKey);
 
     const readSource = result.readFileSource;
     expect(readSource).toBeDefined();
     const trackedFile = { path: "tracked.txt", changeType: "change", isUntracked: false } as const;
     expect(await readSource?.({ ...trackedFile, side: "old" })).toBe("old\n");
     expect(await readSource?.({ ...trackedFile, side: "new" })).toBe("new\n");
+
+    git(repo, "add", "tracked.txt");
+    const changedIndexResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
+      cwd: repo,
+    });
+    expect(changedIndexResult.sourceCacheKey).not.toBe(result.sourceCacheKey);
 
     // The untracked file is reported as its own one-file patch rather than as a
     // path Hunk reads back, so Git's own binary detection and quoting decide
@@ -137,6 +153,7 @@ describe("GitVcsAdapter", () => {
     expect(showResult.title).toContain("show HEAD");
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(showResult.patchText).toContain("+two");
+    expect(showResult.sourceCacheKey).toContain("git-source-v1");
 
     const showFile = { path: "file.txt", changeType: "change", isUntracked: false } as const;
     expect(await showResult.readFileSource?.({ ...showFile, side: "old" })).toBe("one\n");
@@ -155,6 +172,7 @@ describe("GitVcsAdapter", () => {
 
     expect(stashResult.title).toContain("stash");
     expect(stashResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+    expect(stashResult.sourceCacheKey).toContain("git-source-v1");
     expect(stashResult.patchText).toContain("+three");
   });
 

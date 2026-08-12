@@ -170,14 +170,12 @@ export async function verifyPrReleaseNotes(
   root = repoRoot,
 ) {
   const changedPaths = readChangedPaths(baseRevision, headRevision, root);
-  if (!isGeneratedPrereleasePreparation(changedPaths)) {
+  const prePath = path.join(root, ".changeset", "pre.json");
+  if (!isGeneratedPrereleasePreparation(changedPaths) || !existsSync(prePath)) {
+    // A stable promotion removes prerelease state and must retain an empty changeset so the normal
+    // status gate can distinguish it from an unversioned metadata edit.
     runChangesetStatus(baseRevision, root);
     return "changeset-status" as const;
-  }
-
-  const prePath = path.join(root, ".changeset", "pre.json");
-  if (!existsSync(prePath)) {
-    throw new Error("Generated prerelease preparation removed .changeset/pre.json");
   }
 
   const [packageJson, pre, changelog] = await Promise.all([
