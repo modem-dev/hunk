@@ -107,6 +107,32 @@ export function reviewDefaultHunkLineTarget(
     : { side: "new", line: reviewHunkRange(hunk, "new")[0] };
 }
 
+/**
+ * The line one hunk is canonically addressed by, on a side that really has rows.
+ *
+ * Every hunk reports a range on both sides — a pure insertion still has an old-side
+ * position — so choosing a side by "does it have a range" always answers "new" and
+ * scrolls a pure-deletion hunk to a line the file does not contain
+ * (`docs/browser-review-seam-audit.md`, B6). The choice is made by row counts instead:
+ * the preferred side when it is backed, otherwise the other, and undefined when a hunk
+ * has rows on neither.
+ *
+ * This is the hunk's *position*, which is what a reveal scrolls to. Where a note about
+ * the whole hunk hangs is a different question, answered by `reviewDefaultHunkLineTarget`.
+ */
+export function reviewCanonicalHunkLine(
+  hunk: ReviewHunkSpan,
+  preferredSide: ReviewSide = "new",
+): ReviewLineAddressV1 | undefined {
+  for (const side of [preferredSide, preferredSide === "new" ? "old" : "new"] as const) {
+    const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
+    if (count > 0) {
+      return { side, line: side === "new" ? hunk.additionStart : hunk.deletionStart };
+    }
+  }
+  return undefined;
+}
+
 /** Zero-based array origins one hunk's content is re-based onto. */
 export interface ReviewHunkOrigins {
   deletionLineIndex: number;

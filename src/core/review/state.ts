@@ -30,6 +30,21 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
 }
 
 /**
+ * The one note-layer visibility rule.
+ *
+ * Hiding the note layer hides what the review was given, not what the reviewer wrote:
+ * their own notes are their working state and stay on screen. Stated once over the
+ * normalized source, so no surface can answer it from a raw producer label
+ * (`docs/browser-review-seam-audit.md`, B9).
+ */
+export function reviewNoteVisibleByPolicy(
+  note: Pick<ReviewNoteV1, "source">,
+  showAgentNotes: boolean,
+) {
+  return showAgentNotes || note.source === "user";
+}
+
+/**
  * Which hunk renders one note.
  *
  * Ownership is an explicit anchor field rather than a range-containment guess, so a note
@@ -79,6 +94,19 @@ export interface ReviewRevealIntent {
   hunkToken: number;
   scrollToNote: boolean;
 }
+
+/**
+ * The viewport-anchor policy: adopt what the viewport already settled on.
+ *
+ * A renderer that scrolls and then publishes the hunk it came to rest on is reporting
+ * where the reviewer is, not asking to be moved. Anchoring therefore requests no anchor
+ * and clears any note preference, so the counters stay put and no other attached surface
+ * is scrolled by this one's scrolling (`docs/browser-review-seam-audit.md`, B11).
+ */
+export const REVIEW_VIEWPORT_ANCHOR_REVEAL: ReviewRevealRequest = Object.freeze({
+  anchor: "none",
+  scrollToNote: false,
+});
 
 /** Advance the reveal counters one selection request asks for. */
 export function applyReviewRevealRequest(

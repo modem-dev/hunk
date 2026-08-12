@@ -1,23 +1,24 @@
 /**
  * Pure review-stream derivation helpers used by `useReviewController`.
  *
- * This module turns raw diff files plus live comments into the current visible
- * review state, sidebar entries, hunk cursors, and session-daemon navigation targets. It
- * stays side-effect free so selection and navigation rules can be shared and
- * tested without React state in the loop.
+ * This module turns raw diff files plus live comments into the current visible review
+ * state, the annotation index relative navigation plans against, and absolute
+ * session-daemon navigation targets. It stays side-effect free so selection and
+ * navigation rules can be tested without React state in the loop.
+ *
+ * Relative navigation itself lives in `core/review/navigation.ts`: what "next hunk" means
+ * is shared with every other review surface, and only the terminal-model facts it needs —
+ * which files and hunks carry notes — are derived here.
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
 import { reviewHunkRanges } from "../../core/review/geometry";
+import type { ReviewAnnotationIndex } from "../../core/review/navigation";
+import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
-import { filterReviewFiles, mergeFileAnnotationsByFileId } from "./files";
-import {
-  buildAnnotatedHunkCursors,
-  buildHunkCursors,
-  findNextHunkCursor,
-  type HunkCursor,
-} from "./hunks";
+import { getAnnotatedHunkIndices } from "./agentAnnotations";
+import { mergeFileAnnotationsByFileId } from "./files";
 
 export interface BuildReviewStreamStateOptions {
   files: DiffFile[];
@@ -28,14 +29,11 @@ export interface BuildReviewStreamStateOptions {
 export interface ReviewStreamState {
   allFiles: DiffFile[];
   visibleFiles: DiffFile[];
-  hunkCursors: HunkCursor[];
-  annotatedHunkCursors: HunkCursor[];
 }
 
 export interface ReviewNavigationTarget {
   file: DiffFile;
   hunkIndex: number;
-  scrollToNote: boolean;
 }
 
 /** Build selection-independent review stream state from files and filter text. */
@@ -45,27 +43,57 @@ export function buildReviewStreamState({
   filterQuery,
 }: BuildReviewStreamStateOptions): ReviewStreamState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
 
   return {
     allFiles,
-    visibleFiles,
-    hunkCursors: buildHunkCursors(visibleFiles),
-    annotatedHunkCursors: buildAnnotatedHunkCursors(visibleFiles),
+    // The shared matcher, not a terminal copy of it: sidebar, review stream, and every
+    // other surface must agree on what one query matches.
+    visibleFiles: allFiles.filter((file) =>
+      reviewFileMatchesFilter(
+        {
+          path: file.path,
+          ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
+          ...(file.agent?.summary !== undefined ? { agentSummary: file.agent.summary } : {}),
+        },
+        filterQuery,
+      ),
+    ),
   };
 }
 
-/** Resolve the selected file using the visible stream first, then the hidden current selection. */
-export function resolveSelectedFile(
-  allFiles: DiffFile[],
-  visibleFiles: DiffFile[],
-  selectedFileId: string,
-) {
-  return (
-    visibleFiles.find((file) => file.id === selectedFileId) ??
-    allFiles.find((file) => file.id === selectedFileId) ??
-    visibleFiles[0]
-  );
+/**
+ * Index which files and hunks currently carry notes, keyed by semantic file key.
+ *
+ * The terminal is where the review's note sources meet: a sidecar loaded with the
+ * changeset, live agent comments, and the reviewer's own notes are all merged onto the
+ * diff-file model before this runs. Annotated navigation plans against the result, so the
+ * set is derived once here and handed to the shared planner as a fact.
+ *
+ * File membership is deliberately broader than hunk membership: a file carrying review
+ * context but no note inside any hunk is still a stop on the annotated-file tour.
+ */
+export function buildReviewAnnotationIndex(
+  files: readonly DiffFile[],
+  keyByFileId: ReadonlyMap<string, string>,
+): ReviewAnnotationIndex {
+  const annotatedHunkIndicesByFileKey = new Map<string, ReadonlySet<number>>();
+  const annotatedFileKeys = new Set<string>();
+
+  for (const file of files) {
+    const fileKey = keyByFileId.get(file.id);
+    if (!fileKey) {
+      continue;
+    }
+    if (file.agent) {
+      annotatedFileKeys.add(fileKey);
+    }
+    const annotatedHunks = getAnnotatedHunkIndices(file);
+    if (annotatedHunks.size > 0) {
+      annotatedHunkIndicesByFileKey.set(fileKey, annotatedHunks);
+    }
+  }
+
+  return { annotatedHunkIndicesByFileKey, annotatedFileKeys };
 }
 
 /** Format the currently selected hunk for daemon snapshots and session command replies. */
@@ -81,67 +109,20 @@ export function buildSelectedHunkSummary(file: DiffFile, hunkIndex: number): Sel
       };
 }
 
-/** Find the next or previous annotated file in the current visible review stream. */
-export function findNextAnnotatedFile(
-  visibleFiles: DiffFile[],
-  currentFileId: string | undefined,
-  delta: number,
-) {
-  const annotatedFiles = visibleFiles.filter((file) => file.agent);
-  if (annotatedFiles.length === 0) {
-    return null;
-  }
-
-  const currentIndex = annotatedFiles.findIndex((file) => file.id === currentFileId);
-  const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
-  const nextIndex =
-    (((normalizedIndex + delta) % annotatedFiles.length) + annotatedFiles.length) %
-    annotatedFiles.length;
-  return annotatedFiles[nextIndex] ?? null;
-}
-
-/** Resolve one session-daemon navigation request against the review stream's current state. */
+/**
+ * Resolve one absolute session-daemon navigation request against the review stream.
+ *
+ * Absolute only — a path plus either a hunk index or a side and line. Relative requests
+ * (`--next-comment` / `--prev-comment`) are the same walk the keyboard performs and are
+ * planned through the shared `selection/move` intent instead of being resolved here.
+ */
 export function resolveReviewNavigationTarget({
   allFiles,
-  currentFileId,
-  currentHunkIndex,
   input,
-  visibleFiles,
 }: {
   allFiles: DiffFile[];
-  visibleFiles: DiffFile[];
-  currentFileId: string | undefined;
-  currentHunkIndex: number;
   input: NavigateToHunkToolInput;
 }): ReviewNavigationTarget {
-  if (input.commentDirection) {
-    const delta = input.commentDirection === "next" ? 1 : -1;
-    const hunkCursors = buildHunkCursors(visibleFiles);
-    const annotatedCursors = buildAnnotatedHunkCursors(visibleFiles);
-    const nextCursor = findNextHunkCursor(
-      annotatedCursors,
-      currentFileId,
-      currentHunkIndex,
-      delta,
-      hunkCursors,
-    );
-
-    if (!nextCursor) {
-      throw new Error("No annotated hunks found in the current review.");
-    }
-
-    const targetFile = visibleFiles.find((file) => file.id === nextCursor.fileId);
-    if (!targetFile) {
-      throw new Error("Resolved annotated hunk references an unknown file.");
-    }
-
-    return {
-      file: targetFile,
-      hunkIndex: nextCursor.hunkIndex,
-      scrollToNote: true,
-    };
-  }
-
   if (!input.filePath) {
     throw new Error("navigate requires --file when not using --next-comment or --prev-comment.");
   }
@@ -164,9 +145,5 @@ export function resolveReviewNavigationTarget({
     throw new Error(`No diff hunk in ${input.filePath} matches the requested target.`);
   }
 
-  return {
-    file,
-    hunkIndex,
-    scrollToNote: false,
-  };
+  return { file, hunkIndex };
 }

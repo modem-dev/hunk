@@ -38,11 +38,6 @@ export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource 
   return "ai";
 }
 
-/** Return whether a note should remain visible when the AI note layer is hidden. */
-export function alwaysShowReviewNote(annotation: AgentAnnotation) {
-  return reviewNoteSource(annotation) === "user";
-}
-
 /** Check whether two inclusive line ranges overlap. */
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];

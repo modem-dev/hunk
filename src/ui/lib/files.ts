@@ -121,26 +121,6 @@ export function mergeFileAnnotationsByFileId<T extends AgentAnnotation>(
   });
 }
 
-/** Apply the app's file filter query to the visible review stream. */
-export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] {
-  const trimmedQuery = query.trim().toLowerCase();
-  if (!trimmedQuery) {
-    return files;
-  }
-
-  return files.filter((file) => {
-    const haystack = [
-      normalizeDiffPath(file.path),
-      normalizeDiffPath(file.previousPath),
-      file.agent?.summary,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(trimmedQuery);
-  });
-}
-
 /** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: readonly SidebarFileSource[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { createTestReviewDocument } from "../../../test/helpers/review-store-helpers";
-import { createInitialReviewState, isRenderableStoredReviewNote } from "./state";
+import {
+  createInitialReviewState,
+  isRenderableStoredReviewNote,
+  reviewNoteVisibleByPolicy,
+} from "./state";
 import type { ReviewStoredNote } from "./state";
 
 /** Build one minimal review document with the given file keys. */
@@ -41,6 +45,19 @@ describe("createInitialReviewState", () => {
     expect(
       createInitialReviewState(testDocument("alpha"), { showAgentNotes: true }).showAgentNotes,
     ).toBe(true);
+  });
+});
+
+describe("reviewNoteVisibleByPolicy", () => {
+  test("keeps the reviewer's own notes when the agent layer is hidden", () => {
+    expect(reviewNoteVisibleByPolicy({ source: "user" }, false)).toBe(true);
+    expect(reviewNoteVisibleByPolicy({ source: "agent" }, false)).toBe(false);
+    expect(reviewNoteVisibleByPolicy({ source: "ai" }, false)).toBe(false);
+  });
+
+  test("shows every note when the layer is on", () => {
+    expect(reviewNoteVisibleByPolicy({ source: "agent" }, true)).toBe(true);
+    expect(reviewNoteVisibleByPolicy({ source: "ai" }, true)).toBe(true);
   });
 });
 
