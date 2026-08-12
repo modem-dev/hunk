@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
-import { createEmptyExtensionRegistry, type ExtensionLoadIssue } from "./types";
+import {
+  createEmptyExtensionRegistry,
+  HUNK_EXTENSION_API_VERSION,
+  type ExtensionLoadIssue,
+} from "./types";
 
 /** Build the metadata one bundled-style extension would load under. */
 function bundledMetadata(id: string) {
@@ -12,6 +16,7 @@ describe("runExtensionFactory", () => {
   test("applies a synchronous factory before returning, with nothing to await", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
+    let apiVersion: number | undefined;
 
     // The bundled tier depends on this: adapter resolution is synchronous, so a
     // static factory has to be fully applied by the time this call returns.
@@ -20,11 +25,13 @@ describe("runExtensionFactory", () => {
       registry,
       issues,
       factory: (hunk) => {
+        apiVersion = hunk.apiVersion;
         hunk.registerFileLanguage(".demo", "demo");
       },
     });
 
     expect(pending).toBeUndefined();
+    expect(apiVersion).toBe(HUNK_EXTENSION_API_VERSION);
     expect(issues).toEqual([]);
     expect(registry.extensions.map((extension) => extension.id)).toEqual(["demo"]);
     expect(registry.fileLanguages.map((entry) => entry.extension)).toEqual(["demo"]);
@@ -228,6 +235,43 @@ describe("registerPane", () => {
 
     expect(registry.panes).toEqual([]);
     expect(issues.map((issue) => issue.extensionId)).toEqual(["half-pane"]);
+  });
+});
+
+describe("configureSession", () => {
+  test("records transient view preferences under the owning extension", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("trainer"),
+      registry,
+      issues,
+      factory: (hunk) => hunk.configureSession({ viewPreferences: "transient" }),
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.sessionOptions).toEqual([
+      { extensionId: "trainer", options: { viewPreferences: "transient" } },
+    ]);
+  });
+
+  test("rejects unknown policy values and rolls back earlier requests", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-trainer"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.configureSession({ viewPreferences: "transient" });
+        hunk.configureSession({ viewPreferences: "forever" } as never);
+      },
+    });
+
+    expect(registry.sessionOptions).toEqual([]);
+    expect(issues[0]?.message).toContain('"default" or "transient"');
   });
 });
 

@@ -1292,12 +1292,12 @@ export interface ExtensionInputOptions {
 /**
  * Ask the user questions from a command handler, one modal at a time.
  *
- * Every dialog is drawn by Hunk, not by the extension, and carries an
- * attribution line naming the extension that raised it — a prompt cannot
- * present itself as Hunk asking. Only one dialog is on screen at a time:
+ * Every dialog is drawn by Hunk, not by the extension. Dialogs from installed
+ * extensions carry an attribution line naming their source, so a third-party
+ * prompt cannot present itself as Hunk asking; Hunk-owned bundled extensions
+ * omit that redundant marker. Only one dialog is on screen at a time:
  * concurrent requests queue in call order (FIFO), including across extensions,
- * so a second question waits for the first to be answered rather than
- * replacing it.
+ * so a second question waits for the first to be answered rather than replacing it.
  *
  * Escape always cancels, resolving the cancel value (`false`, or `null`).
  * Enter accepts: the confirm action, the highlighted option, or the typed text.
@@ -1448,6 +1448,18 @@ export interface ExtensionWorkspace {
   writeDocument(request: ExtensionWorkspaceWriteRequest): Promise<ExtensionWorkspaceWriteResult>;
 }
 
+/** Host-level behavior one extension may request for the current review session. */
+export interface ExtensionSessionOptions {
+  /**
+   * Treat view-setting changes as temporary practice or presentation state.
+   *
+   * When `"transient"`, Hunk never offers to write the session's final view
+   * settings into the user's config on quit. Any extension requesting
+   * transient behavior makes the shared session transient.
+   */
+  viewPreferences?: "default" | "transient";
+}
+
 /** What a command handler receives when its key fires. */
 export interface ExtensionCommandContext extends ExtensionContext {
   /** Live access to the public built-in command table. */
@@ -1516,11 +1528,15 @@ export interface ExtensionEventBus {
   emit<Payload = unknown>(event: string, payload: Payload): void;
 }
 
-/** Context lifecycle and bus listeners receive, including live pane controls. */
+/** Context lifecycle and bus listeners receive, including live host controls. */
 export interface ExtensionEventContext extends ExtensionContext {
   panes: ExtensionPaneControls;
   /** @deprecated Use panes. */
   sidebars: ExtensionSidebarControls;
+  /** Navigate the live review from lifecycle-driven guides and coordinators. */
+  readonly navigation: ExtensionReviewNavigation;
+  /** Ask attributed, FIFO-queued questions from lifecycle and bus handlers. */
+  readonly dialogs: ExtensionDialogs;
   events: Pick<ExtensionEventBus, "emit">;
 }
 
@@ -1557,6 +1573,8 @@ export interface ExtensionReviewNote {
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
+  /** A named built-in or extension command was invoked by key, menu, or another host surface. */
+  command_executed: { commandId: string };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
@@ -1596,6 +1614,8 @@ export type ExtensionEventHandler<Event extends ExtensionEventName = ExtensionEv
  */
 export interface HunkExtensionAPI {
   readonly apiVersion: HunkExtensionApiVersion;
+  /** Configure host-level behavior for the review session loading this extension. */
+  configureSession(options: ExtensionSessionOptions): void;
   /** Contribute one selectable theme. */
   registerTheme(theme: ExtensionThemeConfig): void;
   /** Map one file extension (with or without a leading dot) to a highlight language. */

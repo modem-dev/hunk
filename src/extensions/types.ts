@@ -12,6 +12,7 @@ import type {
   ExtensionKeyboardMode,
   ExtensionNotifyType,
   ExtensionPane,
+  ExtensionSessionOptions,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -85,6 +86,7 @@ export type {
   ExtensionSidebarTheme,
   ExtensionSidebarView,
   ExtensionSidebarViewProps,
+  ExtensionSessionOptions,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   ExtensionWorkspace,
@@ -173,6 +175,12 @@ export interface RegisteredCommand {
   handler: ExtensionCommandHandler;
 }
 
+/** One extension's host-level behavior request for the current session. */
+export interface RegisteredSessionOptions {
+  extensionId: string;
+  options: ExtensionSessionOptions;
+}
+
 export interface RegisteredEventHandler<Event extends ExtensionEventName = ExtensionEventName> {
   extensionId: string;
   handler: ExtensionEventHandler<Event>;
@@ -204,6 +212,7 @@ export type ExtensionEventHandlerMap = {
 /** Everything extensions registered, in load order, for the rest of the app to consume. */
 export interface ExtensionRegistry {
   extensions: ExtensionMetadata[];
+  sessionOptions: RegisteredSessionOptions[];
   themes: RegisteredTheme[];
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
@@ -288,6 +297,7 @@ export function deriveExtensionId(entryPath: string) {
 export function createEmptyExtensionRegistry(): ExtensionRegistry {
   return {
     extensions: [],
+    sessionOptions: [],
     themes: [],
     fileLanguages: [],
     vcsAdapters: [],
@@ -299,6 +309,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     eventHandlers: {
       startup: [],
       changeset_loaded: [],
+      command_executed: [],
       selection_changed: [],
       file_viewed: [],
       filter_changed: [],

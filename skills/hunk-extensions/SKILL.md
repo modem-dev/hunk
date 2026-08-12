@@ -93,20 +93,21 @@ bad or duplicate id is skipped with a startup notice.
 
 ## Pick the touchpoint
 
-| To do this                                              | Call                                         |
-| ------------------------------------------------------- | -------------------------------------------- |
-| Add a selectable color theme                            | `hunk.registerTheme(theme)`                  |
-| Highlight an unrecognized file extension                | `hunk.registerFileLanguage(ext, lang)`       |
-| Support another VCS (`git`/`jj`/`sl` are reserved)      | `hunk.registerVcsAdapter(adapter)`           |
-| Add a navigation/list/status pane beside the review     | `hunk.registerPane(pane)`                    |
-| Present a file as something other than a raw diff       | `hunk.registerFileView(view)` (experimental) |
-| Interpret review keys as a temporary global mode        | `hunk.registerKeyboardMode(mode)`            |
-| Bind a key / add an Extensions-menu entry               | `hunk.registerCommand(command, handler)`     |
-| Hide, reorder, retitle files before review              | `hunk.transformChangeset(fn)`                |
-| React to loads, selection, viewed files, notes, reloads | `hunk.on(event, handler)`                    |
-| Coordinate with another loaded extension                | `hunk.events.emit` / `hunk.events.on`        |
-| Read user-supplied settings                             | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `4`)            | `hunk.apiVersion`                            |
+| To do this                                               | Call                                         |
+| -------------------------------------------------------- | -------------------------------------------- |
+| Keep demo/training view settings temporary               | `hunk.configureSession(options)`             |
+| Add a selectable color theme                             | `hunk.registerTheme(theme)`                  |
+| Highlight an unrecognized file extension                 | `hunk.registerFileLanguage(ext, lang)`       |
+| Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`           |
+| Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                    |
+| Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
+| Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`            |
+| Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`     |
+| Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
+| React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
+| Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
+| Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
+| Branch on the API generation (currently `4`)             | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -118,7 +119,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 `matches` and `layout` get no context at all. Beyond that:
 
 - **Event and bus handlers** also get `ctx.panes` (open/close/toggle/isOpen on
-  any pane) and `ctx.events.emit`.
+  any pane), live `ctx.navigation`, attributed `ctx.dialogs`, and
+  `ctx.events.emit`. `ctx.sidebars` is a deprecated alias for `ctx.panes`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.selection` (a snapshot of file + hunk index),
   `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.commands`

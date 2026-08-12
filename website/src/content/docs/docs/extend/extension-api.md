@@ -7,7 +7,20 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
+The API generation this Hunk speaks (currently `4`). Branch on it if you want one file to support several Hunk versions. Version 4 adds keyboard modes, docked panes, session behavior, named-command observation, and live navigation/dialogs; API-v3 sidebar names remain as deprecated aliases.
+
+## `hunk.configureSession(options)`
+
+Request host behavior for the review session loading the extension. Training,
+demo, and presentation extensions can make their view-setting changes temporary:
+
+```ts
+hunk.configureSession({ viewPreferences: "transient" });
+```
+
+If any loaded extension requests this, Hunk skips the save-view-preferences
+prompt on quit instead of offering to write practice state into user config.
+The default is `"default"`.
 
 ## `hunk.registerTheme(theme)`
 
@@ -203,7 +216,7 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 });
 ```
 
-Hunk draws the dialog; your text fills the title, body, and choices, and the frame carries an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a prompt cannot present itself as Hunk asking.
+Hunk draws the dialog; your text fills the title, body, and choices. Dialogs from installed extensions carry an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a third-party prompt cannot present itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
 One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
@@ -235,12 +248,13 @@ Writes require a reloadable, unstaged working-tree review and a writable reviewe
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async and receive `ctx.panes`, `cwd`, and `notify`. `ctx.sidebars` is deprecated.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once, after the app mounts with its first changeset      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                              |
+| `command_executed`     | `{ commandId }`         | whenever a named built-in or extension command runs      |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)     |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
@@ -253,6 +267,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async and receive `ctx.pan
 | `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
 
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
+- `command_executed` reports stable command ids after invocation from a key, menu, or another host command surface. It follows remapped keys; widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not commands.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
 - `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes — an accumulated list is not a complete review record.
 - `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing.

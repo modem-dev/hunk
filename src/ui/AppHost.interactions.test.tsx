@@ -16,6 +16,7 @@ import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
@@ -1172,9 +1173,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("interaction coverage")) {
-          break;
-        }
       }
 
       expect(frame).toContain("interaction coverage");
@@ -1186,9 +1184,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("this is a very")) {
-          break;
-        }
       }
 
       expect(frame).toContain("this is a very");
@@ -3766,6 +3761,37 @@ describe("App interactions", () => {
 
       expect(quit).toHaveBeenCalledTimes(1);
       expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("transient extension sessions never offer to save practice view preferences", async () => {
+    const quit = mock(() => undefined);
+    const bootstrap = createSingleFileBootstrap();
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    extensions.registry.sessionOptions.push({
+      extensionId: "trainer",
+      options: { viewPreferences: "transient" },
+    });
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={quit} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("w");
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+
+      expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+      expect(quit).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

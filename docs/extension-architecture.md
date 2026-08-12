@@ -42,8 +42,9 @@ load issue and costs only that extension. The rules themselves are stated in
 
 ## One registry, one apply path
 
-Registrations (themes, file languages, VCS adapters, changeset transforms,
-panes, commands, lifecycle/UI events, and bus listeners) collect into one
+Registrations (session behavior, themes, file languages, VCS adapters,
+changeset transforms, panes, commands, lifecycle/UI events, and inter-extension
+bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
 bootstrap retains the provisional candidate/config snapshot: a final pass that
@@ -140,6 +141,11 @@ chord at a time and detected by probing matchers with a synthesized event
 `src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
 panes render. App reads it through a ref so the dispatch table stays stable.
 
+After any named command runs, App emits `command_executed` with its stable id. The event is
+attached around the assembled table, so keyboard dispatch, menus, and extension commands share
+one observation path; widget-owned modal keys remain outside the table and therefore outside the
+event.
+
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
 `src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
@@ -155,9 +161,19 @@ dialogs below Hunk's own app-critical prompts (repo trust, save-on-quit) and
 above menus, help, the theme selector, focused inputs, file-view modes, session
 keyboard modes, and the command table: an extension may
 interrupt review navigation, never a decision about the session itself. The
-frame always carries an `ext <id>` attribution row — the toast marker — because
-the title is extension-authored and a prompt must not be able to impersonate
-Hunk.
+frame carries an `ext <id>` attribution row — the toast marker — for every
+user-installed extension, because its title is extension-authored and a prompt
+must not be able to impersonate Hunk. The host derives the extension's trusted
+bundled origin from registry metadata and omits the redundant marker only for
+Hunk-owned bundled UI.
+
+Lifecycle and bus handlers receive that same attributed dialog queue plus the
+same guarded live navigation commands use. `App` installs both through the
+per-extension event-context provider; headless or pre-mount delivery resolves
+dialogs to their cancel values and refuses navigation with a warning. Session
+behavior requests are registry data too: `configureSession({ viewPreferences:
+"transient" })` makes practice and presentation view changes ephemeral without
+teaching `App` about any particular extension id.
 
 `src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains

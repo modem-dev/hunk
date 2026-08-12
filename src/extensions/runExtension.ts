@@ -13,6 +13,7 @@ import {
   type ExtensionRegistry,
   type ExtensionPane,
   type ExtensionSidebarView,
+  type ExtensionSessionOptions,
   type ExtensionFileView,
   type ExtensionKeyboardMode,
   type ExtensionThemeConfig,
@@ -215,6 +216,7 @@ interface ExtensionApiHandle {
 
 /** Registration counts captured before one extension runs, for failure rollback. */
 interface RegistrySnapshot {
+  sessionOptions: number;
   themes: number;
   fileLanguages: number;
   vcsAdapters: number;
@@ -236,6 +238,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
   }
 
   return {
+    sessionOptions: registry.sessionOptions.length,
     themes: registry.themes.length,
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
@@ -257,6 +260,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
  * not stay in the registry. Collected logs are kept as failure diagnostics.
  */
 function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapshot) {
+  registry.sessionOptions.length = snapshot.sessionOptions;
   registry.themes.length = snapshot.themes;
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
@@ -324,6 +328,21 @@ export function createExtensionApi(
     apiVersion: HUNK_EXTENSION_API_VERSION,
     config,
     events,
+    configureSession(options: ExtensionSessionOptions) {
+      assertOpen("configureSession");
+      if (!isPlainObject(options)) {
+        throw new Error("configureSession requires an options object.");
+      }
+      if (
+        options.viewPreferences !== undefined &&
+        options.viewPreferences !== "default" &&
+        options.viewPreferences !== "transient"
+      ) {
+        throw new Error('configureSession viewPreferences must be "default" or "transient".');
+      }
+
+      registry.sessionOptions.push({ extensionId: metadata.id, options: { ...options } });
+    },
     registerTheme(theme: ExtensionThemeConfig) {
       assertOpen("registerTheme");
       assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");

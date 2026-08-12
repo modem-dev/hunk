@@ -278,8 +278,26 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard
-modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
+The API generation this Hunk speaks (currently `4`). Branch on it if you want
+one file to support several Hunk versions. Version 4 adds keyboard modes,
+docked panes, session behavior, named-command observation, and live
+navigation/dialogs in event handlers; API-v3 sidebar names remain as deprecated
+aliases.
+
+### `hunk.configureSession(options)`
+
+Request host-level behavior for the review session loading the extension. Use
+`{ viewPreferences: "transient" }` for training, demos, and presentations that
+deliberately exercise view controls but must never offer to save their final
+practice state into the user's config. If any loaded extension requests it, the
+shared session skips the save-view-preferences prompt on quit.
+
+```ts
+hunk.configureSession({ viewPreferences: "transient" });
+```
+
+The default is `{ viewPreferences: "default" }`. Like every registration-time
+call, this must run synchronously while the factory is loading.
 
 ### `hunk.registerTheme(theme)`
 
@@ -1316,8 +1334,9 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 ```
 
 Hunk draws the dialog, not you: your text fills the title, body, and choices,
-and the frame carries an `ext <your-id>` attribution line — the same marker
-`notify` toasts use — so a prompt can never present itself as Hunk asking.
+and dialogs from installed extensions carry an `ext <your-id>` attribution line
+— the same marker `notify` toasts use — so a third-party prompt can never present
+itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
 One dialog is on screen at a time. Concurrent requests queue in call order,
 across extensions too, so a second question waits its turn instead of replacing
@@ -1437,14 +1456,19 @@ the metadata actually parses to.
 
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks
 the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
-`ctx.panes`, the same open/close/toggle controls command handlers receive.
-That means a `changeset_loaded` handler can reveal its extension's pane when
-it finds something worth showing — no keypress required.
+`ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs`, the same
+controls command handlers receive. `ctx.sidebars` is a deprecated alias for
+`ctx.panes`. That means a `startup` handler can present
+one focused welcome question and navigate to its first example, while a
+`changeset_loaded` handler can reveal a pane when it finds something worth
+showing — no keypress required. Dialog calls made before the mounted app is
+ready resolve to their cancel value with a warning rather than opening later.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
+| `command_executed`     | `{ commandId }`         | whenever a named built-in or extension command runs       |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
@@ -1459,6 +1483,11 @@ it finds something worth showing — no keypress required.
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
+
+`command_executed` reports the stable command id after its handler is invoked, whether the user
+reached it through a key, a menu, or another host-owned command surface. Listen for ids rather
+than key chords so behavior follows the user's live `[keybindings]` table. Modal widget keys such
+as Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not commands and do not emit it.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
 `"daemon"` (an agent command through the session broker), or `"manual"` (the
@@ -1480,8 +1509,10 @@ The replacement instance receives `startup` after its review is mounted.
 `hunk.events` is a small bus shared by every loaded extension. Use it to
 coordinate extensions without coupling them through a command or global state.
 Names are open-ended, so namespace them with your extension id. Listeners get
-the same `ctx.panes` controls as lifecycle handlers; delivery is fire-and-forget
-and one listener's failure is reported without stopping the others. Events an
+the same `ctx.panes`, `ctx.navigation`, and `ctx.dialogs` controls as lifecycle
+handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
+fire-and-forget and one listener's failure is reported without stopping the
+others. Events an
 extension emits while factories are loading are queued until every extension
 has had a chance to subscribe.
 

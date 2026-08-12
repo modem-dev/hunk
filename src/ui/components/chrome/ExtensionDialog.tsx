@@ -6,7 +6,7 @@ import type {
 } from "../../lib/extensionDialogs";
 import { extensionToastPrefix } from "../../lib/extensionNotifications";
 import { listWindowStart } from "../../lib/listWindow";
-import { fitText, padText } from "../../lib/text";
+import { fitText, padText, wrapText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ConfirmDialog, confirmDialogHeight } from "./ConfirmDialog";
 import { ModalFrame } from "./ModalFrame";
@@ -15,10 +15,10 @@ import { ModalFrame } from "./ModalFrame";
  * The modal surface behind `ctx.dialogs`.
  *
  * Every dialog is drawn by Hunk from host-controlled chrome, with the
- * extension's own text confined to the title, body, and choices — a prompt an
- * extension raises can never look like Hunk asking. The attribution row reuses
- * the same `ext` marker `notify` toasts carry, so "this came from an extension"
- * reads the same wherever extension output appears.
+ * extension's own text confined to the title, body, and choices. User-installed
+ * extensions receive an attribution row using the same `ext` marker `notify`
+ * toasts carry, so their prompts cannot look like Hunk asking. Bundled
+ * extensions are Hunk-owned UI and omit that redundant row.
  *
  * Keyboard handling deliberately lives in `useAppKeyboardShortcuts` beside
  * every other modal surface; this component owns mouse parity only.
@@ -89,6 +89,9 @@ export function ExtensionDialog({
 
   const width = dialogWidth(terminalWidth);
   const bodyWidth = Math.max(1, width - 4);
+  const wrappedBodyLines = request.bodyLines.flatMap((line) => wrapText(line, bodyWidth));
+  const attributionRows = request.showAttribution ? 1 : 0;
+  const attributionGapRows = request.showAttribution && wrappedBodyLines.length > 0 ? 1 : 0;
 
   return (
     <ConfirmDialog
@@ -96,7 +99,7 @@ export function ExtensionDialog({
         { keyLabel: "enter/y", label: request.confirmLabel, run: onAccept },
         { keyLabel: "esc/n", label: request.cancelLabel, run: onCancel },
       ]}
-      height={confirmDialogHeight(request.bodyLines.length > 0 ? request.bodyLines.length + 2 : 1)}
+      height={confirmDialogHeight(wrappedBodyLines.length + attributionRows + attributionGapRows)}
       terminalHeight={terminalHeight}
       terminalWidth={terminalWidth}
       theme={theme}
@@ -104,11 +107,13 @@ export function ExtensionDialog({
       width={width}
       onClose={onCancel}
     >
-      <box style={{ width: "100%", height: 1 }}>
-        <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
-      </box>
-      {request.bodyLines.length > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {request.bodyLines.map((line, index) => (
+      {request.showAttribution ? (
+        <box style={{ width: "100%", height: 1 }}>
+          <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
+        </box>
+      ) : null}
+      {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {wrappedBodyLines.map((line, index) => (
         // Body lines are positional prose, so their index is their identity.
         <box key={`${index}-${line}`} style={{ width: "100%", height: 1 }}>
           <text fg={theme.muted}>{fitText(line, bodyWidth)}</text>
@@ -139,9 +144,9 @@ function ExtensionSelectDialog({
   const width = dialogWidth(terminalWidth);
   const bodyWidth = Math.max(1, width - 4);
   const modalHeight = Math.min(Math.max(11, terminalHeight - 6), 24);
-  // ModalFrame chrome, plus this dialog's attribution, legend, spacer, and the
+  // ModalFrame chrome, plus the legend, spacer, optional attribution, and the
   // row that reports how many options fell outside the window.
-  const visibleRows = Math.max(3, modalHeight - 9);
+  const visibleRows = Math.max(3, modalHeight - (request.showAttribution ? 9 : 8));
   const start = listWindowStart(selectedIndex, request.options.length, visibleRows);
   const visibleOptions = request.options.slice(start, start + visibleRows);
   const markerWidth = 2;
@@ -157,9 +162,11 @@ function ExtensionSelectDialog({
       width={width}
       onClose={onCancel}
     >
-      <box style={{ width: "100%", height: 1 }}>
-        <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
-      </box>
+      {request.showAttribution ? (
+        <box style={{ width: "100%", height: 1 }}>
+          <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
+        </box>
+      ) : null}
       <box style={{ width: "100%", height: 1 }}>
         <text fg={theme.muted}>{fitText("↑/↓ move  Enter choose  Esc cancel", bodyWidth)}</text>
       </box>
@@ -220,8 +227,8 @@ function ExtensionInputDialog({
 }) {
   const width = dialogWidth(terminalWidth);
   const bodyWidth = Math.max(1, width - 4);
-  // ModalFrame chrome plus attribution, spacer, field, spacer, legend.
-  const modalHeight = 10;
+  // ModalFrame chrome plus field, spacer, legend, and optional attribution + spacer.
+  const modalHeight = request.showAttribution ? 10 : 8;
 
   return (
     <ModalFrame
@@ -233,10 +240,14 @@ function ExtensionInputDialog({
       width={width}
       onClose={onCancel}
     >
-      <box style={{ width: "100%", height: 1 }}>
-        <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
-      </box>
-      <box style={{ width: "100%", height: 1 }} />
+      {request.showAttribution ? (
+        <>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
+          </box>
+          <box style={{ width: "100%", height: 1 }} />
+        </>
+      ) : null}
       <box style={{ width: "100%", height: 1, backgroundColor: theme.panelAlt }}>
         {/* The field only edits text: Enter and Escape are answered by
             useAppKeyboardShortcuts, where every dialog's action keys live —
