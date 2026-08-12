@@ -5,6 +5,12 @@ stack of small, independently reviewable PRs. Each phase has a hard gate and sta
 previous one. The seam contract — shared primitives stay renderer-free and platform-neutral —
 is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only shrink.
 
+Each phase lists the audit findings it repays (`browser-review-seam-audit.md`, ids A1–G5). A
+finding whose duplicate sites span phases is checked off when its **last** site converts; until
+then it stays open with the converted sites noted. Phases 0–5 change no user-reachable
+behavior (the browser client has no entry point until Phase 6) and ship empty changesets;
+Phase 6 carries the `minor` changeset announcing the feature.
+
 ## Phase 0 — seam contract and guardrails (this doc)
 
 - Boundary gates for `src/core/review/` (the shared review model), `src/session/reviewProtocol.ts`
@@ -17,17 +23,27 @@ is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only sh
   VCS providers into `src/core/vcs/` and weakened this suite to compensate; that relocation must
   not ride along with any rebuild phase — extraction PRs land against the restored gates.
 
-## Phase 1 — review model + terminal adoption (two PRs)
+## Phase 1 — review model + terminal adoption (three PRs)
 
 1. **Review store**: `state / actions / reducer / store / intents / selectors` in
    `src/core/review/`, with `useReviewController` / `App` / `AppHost` refactored onto it in the
    same PR. Behavior-neutral; existing PTY integration tests must pass untouched.
-2. **Review document projection**: `document / identity / sourceIdentity / anchors /
-contentManifest / notes / expansion / reconcile / jsonStream`, adopted by the terminal.
-   Note-anchor ranges use full per-side extents (`*Count`), not changed-line counts (`*Lines`),
-   fixed once here in shared code.
+2. **Review document projection + diff geometry**: `document / identity / sourceIdentity /
+anchors / contentManifest / notes / expansion / reconcile / jsonStream` plus the geometry
+   primitives, adopted by the terminal — including switching the terminal's collapsed-gap math
+   to `reviewGapAddress` (A1) and note-anchor ranges to full per-side extents (A3). The
+   conformance harness (`test/review-conformance/`) and its first adversarial fixtures land
+   here; add the directory to the CLAUDE.md test-directory list in the same PR.
+3. **Navigation intents + command catalog**: `selection/move` / `selection/select-file` and
+   the shared navigation/reveal/note selectors; the agent runtime's `navigateSession` deleted
+   in favor of the shared walk; the command catalog split with semantic commands lowered to
+   intents; the semantic address grammar.
 
-Gate: `bun test`, `bun run test:integration`, seam boundary tests.
+Repays: A1–A10 (PR 2); B1–B9, B11, F1–F3, G3 core grammar (PR 3); D2 core and terminal sites.
+B-findings with browser sites stay open until Phase 5 consumes the selectors.
+Gate: ladder rungs 1–4 — tombstones appended for every deleted copy, terminal planner
+registered in the conformance harness, adversarial fixtures landed per repaid finding, and the
+existing PTY suite passing untouched.
 
 ## Phase 2 — producer runtime
 
@@ -35,45 +51,69 @@ Gate: `bun test`, `bun run test:integration`, seam boundary tests.
 serving the existing `hunk session` surface only. Resource read failures map to distinct error
 codes (integrity failures are never collapsed into `unknown-resource`).
 
-Gate: `test/session/` integration suite.
+Repays: D1 and D4 producer/snapshot sites (helpers land in core beside the model; remaining
+sites convert in Phase 3); D5 producer sites.
+Gate: producer registered in the conformance harness; existing `test/session/` suite passing
+untouched (rung 4).
 
 ## Phase 3 — wire protocol + broker mirror
 
 `reviewProtocol.ts`, broker `wire.ts` validation, broker review mirror, `reviewResourceCache`
 (bounded in-flight budget). Patch reconstruction for `hunk session review --include-patch` uses
 bounded-parallel loads from day one. Valuable without any web UI: agents get chunked,
-digest-verified, memory-bounded resource access.
+digest-verified, memory-bounded resource access. The wire vocabulary is derived from
+`ReviewIntent` (B12) and carries `expandedLineProof` (B10) and actor identity (G2) from its
+first version so the browser never needs a schema break.
 
-Gate: broker suites and `reviewResources.integration.test.ts`, including the parallel-load test.
+Repays: B10, B12, G2 wire fields; C1/C2 producer and broker sites (their browser sites close
+in Phase 5); D1/D3/D5 broker sites.
+Gate: broker suites join the conformance harness (wire round-trip + mirror against the shared
+fixtures, including the C1 ordering fixtures); `reviewResources.integration.test.ts` with the
+parallel-load test; vocabulary derivation checks active (rung 5).
 
 ## Phase 4 — HTTP surface, no client
 
 `browserReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
 Auth sessions renew (a review must be able to outlive the initial cookie TTL) and Range
-handling covers zero-length resources.
+handling covers zero-length resources. The SSE event contract lives in a shared
+`reviewEventProtocol` module from day one (C4), and the user-facing error catalog is created
+beside the stabilized error codes (G4).
 
-Gate: HTTP-contract tests; security review focused on this PR alone.
+Repays: C4 server side; G4 catalog creation.
+Gate: HTTP-contract tests against the shared event-protocol module; security review focused on
+this PR alone.
 
 ## Phase 5 — browser client (two PRs)
 
 1. **Read-only mirror**: `apiClient` / `mirror` / `pierreDocument` / review stream rendering a
-   snapshot with Pierre. No actions, no note editing.
-2. **Interactivity**: action dispatch through the broker, selection sync, note editing,
-   watch/reload generation swaps.
+   snapshot with Pierre — built on the shared geometry/selector/ordering primitives from day
+   one (no `sideRange`, no local acceptance rules, no bare `split("\n")`). No actions, no note
+   editing.
+2. **Interactivity**: action dispatch through the broker, selection sync (G2 policy decided
+   before this PR), note editing, watch/reload generation swaps, browser key bindings and the
+   command palette rendered from the shared catalog.
 
-Gate: browser test suite, split to match the two cuts; web seam boundary test; renderer parity
-tests — shared fixtures drive the terminal planner and the browser projection and must agree on
-note placement, gap addressing, reveal targets, and default note targets.
+Repays: A11, C3, C5, E1, G1; the browser sites of A/B/C/D findings left open in earlier
+phases; F browser bindings; G3/G4 browser adoption. E2 and the G2 selection policy must be
+decided (not necessarily built) before PR 2.
+Gate: browser projection joins the conformance harness — the same fixtures every other
+consumer runs, closing the renderer-parity loop (note placement, gap addressing, reveal
+targets, default note targets); web boundary gates and the browser-closure node-free gate
+active; command-parity check (both clients render command surfaces from the shared catalog).
 
 ## Phase 6 — entry points and packaging
 
 - `--web` / `--no-open` / `hunk session open` / `--tailscale` CLI wiring. The review URL is
   always recoverable from the terminal, and the opener preserves URL fragments on every
-  platform (no `rundll32`).
+  platform (no `rundll32`). Deep-link fragments use the shared address grammar (G3), never
+  ad-hoc strings.
 - Offline browser assets are generated at build/release time or diff-checked by a script gate,
   not hand-maintained compiled output.
 
-Gate: CLI contract tests, offline-asset check, real terminal + browser smoke run.
+Repays: G3 fragment adoption (closes G3).
+Gate: CLI contract tests, offline-asset check, real terminal + browser smoke run, and a final
+audit-doc sweep — every A–F finding checked off or explicitly re-scoped, G5 remaining as a
+placement rule.
 
 ## Seam inventory (prototype audit)
 
@@ -90,7 +130,7 @@ divergences is `browser-review-seam-audit.md`, and extraction PRs check findings
   CRLF normalization core digests depend on), per-file split/unified line totals carried on
   `ReviewFileV1` instead of recomputed, empty-diff reason, default hunk note target, and STML
   tag roles so both renderers share one tag vocabulary.
-- **Navigation semantics** (`core/review` intents/selectors, Phase 1): relative hunk/file
+- **Navigation semantics** (`core/review` intents/selectors, Phase 1 PR 3): relative hunk/file
   navigation with an explicit wrap policy (`selection/move` — the prototype implements the walk
   three times: terminal, agent runtime, and the browser was set to become a third), file-jump
   (`selection/select-file`), selection normalization and fallback, reveal-target resolution,
@@ -147,11 +187,11 @@ transporting them:
 - **Keymap**: chords keep the shared string vocabulary (`keymap.ts`); each client maps chords
   to its own event type and masks what its platform reserves (e.g. browser `Cmd+W`).
 
-Phasing: the catalog split and semantic lowering belong to Phase 1 — converting terminal `run`
-closures into intent dispatches is the same refactor that moves the terminal onto the shared
-store. Browser key bindings and the command palette land with Phase 5, gated by the shared
-catalog so the two clients cannot drift on what a command means. Brokered host-command
-invocation is explicitly out of scope until the allowlist design exists.
+Phasing: the catalog split and semantic lowering land in Phase 1 PR 3, alongside the
+navigation intents the semantic commands lower to. Browser key bindings and the command
+palette land with Phase 5, gated by the shared catalog so the two clients cannot drift on what
+a command means. Brokered host-command invocation is explicitly out of scope until the
+allowlist design exists.
 
 ## Per-phase seam verification
 
@@ -162,7 +202,7 @@ re-derive. Every phase therefore passes the same five-rung ladder, and each rung
    import containment, shrink-only debt lists, and the extracted-duplicate tombstone list.
    Repaying an audit finding means deleting the duplicate copies **and appending their paths to
    the tombstone list in the same PR**; a resurrected path fails CI forever after.
-2. **Conformance harness** (built in Phase 1, grows every phase — not deferred to Phase 5):
+2. **Conformance harness** (built in Phase 1 PR 2, grows every phase — not deferred to Phase 5):
    one golden fixture corpus under `test/review-conformance/`, with every consumer registering
    a suite against the _same_ fixtures as it lands — terminal render planning (Phase 1),
    producer projection (Phase 2), broker mirror and wire round-trip (Phase 3), HTTP surface

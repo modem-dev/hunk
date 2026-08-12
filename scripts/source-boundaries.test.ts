@@ -166,7 +166,7 @@ describe("shared review primitives seam", () => {
     ["src/core/review/sourceIdentity.ts", ["node:path"]],
   ]);
   // The browser client renders with React and Pierre only; everything else must come from the
-  // shared review model or the wire protocol.
+  // shared review model, the wire protocol, or the browser-safe broker-core parsers.
   const WEB_CLIENT_EXTERNALS = new Set([
     "react",
     "react-dom/client",
@@ -174,7 +174,28 @@ describe("shared review primitives seam", () => {
     "@pierre/diffs/react",
     "@pierre/trees",
     "@pierre/trees/react",
+    "@hunk/session-broker-core",
   ]);
+
+  /** Collect every module transitively reachable from the given files via relative imports. */
+  function reachableSourceFiles(rootFiles: readonly string[]) {
+    const visited = new Set<string>();
+    const queue = [...rootFiles];
+    while (queue.length > 0) {
+      const path = queue.pop()!;
+      if (visited.has(path) || !/\.tsx?$/.test(path) || !existsSync(path)) {
+        continue;
+      }
+      visited.add(path);
+      for (const specifier of importSpecifiers(path)) {
+        const target = resolveImport(path, specifier);
+        if (target) {
+          queue.push(target);
+        }
+      }
+    }
+    return visited;
+  }
 
   test("keeps the review model contained in core", () => {
     expect(escapingImports(REVIEW_MODEL_ROOT, [CORE_ROOT])).toEqual([]);
@@ -207,5 +228,18 @@ describe("shared review primitives seam", () => {
     expect(
       escapingImports(WEB_CLIENT_ROOT, [WEB_CLIENT_ROOT, REVIEW_MODEL_ROOT, REVIEW_PROTOCOL_PATH]),
     ).toEqual([]);
+  });
+
+  // Direct-import checks alone would let the browser reach a Node-only module through an
+  // intermediate re-export; walk the whole relative-import closure instead. This is what makes
+  // the node-debt map's "a browser bundle must never import these until repaid" clause
+  // mechanical rather than aspirational.
+  test("keeps the browser-reachable module closure free of platform runtimes", () => {
+    const violations = [...reachableSourceFiles(sourceFiles(WEB_CLIENT_ROOT))].flatMap((path) =>
+      importSpecifiers(path)
+        .filter((specifier) => specifier.startsWith("node:") || specifier.startsWith("bun:"))
+        .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+    );
+    expect(violations).toEqual([]);
   });
 });
