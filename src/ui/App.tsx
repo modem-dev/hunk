@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   diffPersistedViewPreferences,
@@ -22,7 +23,8 @@ import {
 } from "../core/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
-import { isVcsReviewInput } from "../core/vcs";
+import type { ReviewStore } from "../core/review/store";
+import type { ReviewSessionRuntime } from "../app/reviewSessionRuntime";
 import type {
   AppBootstrap,
   CliInput,
@@ -43,7 +45,6 @@ import {
   emitExtensionEvent,
   toReadOnlyFileViews,
 } from "../extensions/events";
-import { writeExtensionTrust } from "../extensions/trust";
 import type {
   ExtensionCommandContext,
   ExtensionEventContext,
@@ -51,18 +52,14 @@ import type {
   ExtensionNotifyType,
   ExtensionReviewNote,
   ExtensionPaneControls,
+  ExtensionLoadResult,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
-  ExtensionLoadResult,
   RegisteredCommand,
   RegisteredPane,
 } from "../extensions/types";
-import type {
-  HunkSessionBrokerClient,
-  ReloadedSessionResult,
-  ReloadSessionOptions,
-} from "../session/types";
+import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
@@ -80,11 +77,10 @@ import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
-import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
-import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
+import { useReviewController } from "./hooks/useReviewController";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
+import { validateStmlMarkup } from "./lib/stml/layout";
 import {
   buildAppCommands,
   builtinCommandKeyDefaults,
@@ -121,7 +117,6 @@ import {
 import type { ExtensionPanePlacement } from "../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { extensionPaneSize } from "../extensions/panes";
-import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import {
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
@@ -202,21 +197,34 @@ function withCurrentViewOptions(
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
-  hostClient,
   noticeText,
+  reviewStore,
+  sessionRuntime,
+  extensionTrustPromptRoot = null,
+  onCloseExtensionTrustPrompt = () => {},
+  onDenyRepoExtensions = () => {},
+  onSessionRendererFieldsChange,
+  onTrustRepoExtensions = () => {},
   onQuit = () => process.exit(0),
   onReloadSession,
-  watchRuntime,
 }: {
   bootstrap: AppBootstrap;
-  hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
+  reviewStore: ReviewStore;
+  sessionRuntime: ReviewSessionRuntime;
+  extensionTrustPromptRoot?: string | null;
+  onCloseExtensionTrustPrompt?: () => void;
+  onDenyRepoExtensions?: () => void;
+  onSessionRendererFieldsChange?: (fields: {
+    noteMarkupWidth?: number;
+    validateMarkup?: (markup: string, width: number) => string[];
+  }) => void;
+  onTrustRepoExtensions?: () => void;
   onQuit?: () => void;
   onReloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
-  watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -248,7 +256,12 @@ export function App({
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
+  const semanticReviewSnapshot = useSyncExternalStore(
+    reviewStore.subscribe,
+    reviewStore.getSnapshot,
+    reviewStore.getSnapshot,
+  );
+  const showAgentNotes = semanticReviewSnapshot.showAgentNotes;
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -311,14 +324,11 @@ export function App({
   const retainedCurrentLinePaneKeysRef = useRef<ReadonlySet<string>>(new Set());
   const [paneFailureEpoch, setPaneFailureEpoch] = useState(0);
   const paneAvailabilityQuarantineRef = useRef(new WeakSet());
-  const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
-  // Repo-local extensions were discovered but skipped for want of a trust
-  // decision. The prompt tracks the pending root reactively, because a session
-  // reload can point this app at a different repository without remounting.
-  const [extensionTrustPromptRoot, setExtensionTrustPromptRoot] = useState<string | null>(null);
-  const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
   const extensionTrustPromptOpen = extensionTrustPromptRoot !== null;
+  const closeExtensionTrustPrompt = onCloseExtensionTrustPrompt;
+  const denyRepoExtensions = onDenyRepoExtensions;
+  const trustRepoExtensions = onTrustRepoExtensions;
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customThemes),
@@ -395,15 +405,27 @@ export function App({
       ? `~${path.slice(process.env.HOME.length)}`
       : path;
   }, [bootstrap.viewPreferencesConfigPath]);
-  // App computes layout geometry below this hook call, so the controller reads
-  // the current values through a ref instead of a render-time parameter.
-  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  // App publishes current renderer geometry directly to the runtime command authority below.
+  const noteGeometryRef = useRef<{
+    layout: "split" | "stack";
+    width: number;
+  } | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const showReviewMutationError = useCallback(
+    (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : "The review change could not be saved.";
+      if (extensions) extensions.context.notify(message, "error");
+      else setSessionNoticeText(message);
+    },
+    [extensions],
+  );
   const review = useReviewController({
     files: reviewFiles,
+    reviewStore,
+    dispatchReviewIntent: sessionRuntime.executeReviewIntent,
     lineCursors,
-    noteGeometry: noteGeometryRef,
-    stmlEnabled,
+    onMutationError: showReviewMutationError,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -529,10 +551,6 @@ export function App({
     },
     [review.selectFile],
   );
-
-  const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
 
   const showSessionNotice = useCallback((message: string) => {
     setSessionNoticeText(message);
@@ -1115,6 +1133,12 @@ export function App({
     layout: resolvedLayout,
     width: diffContentWidth,
   });
+  useEffect(() => {
+    onSessionRendererFieldsChange?.({
+      noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
+      validateMarkup: stmlEnabled ? validateStmlMarkup : undefined,
+    });
+  }, [noteMarkupWidth, onSessionRendererFieldsChange, stmlEnabled]);
   const showFileViewWarning = useCallback(
     (message: string) => extensions?.context.notify(message, "warning"),
     [extensions],
@@ -1130,25 +1154,6 @@ export function App({
       onWarning: showFileViewWarning,
     });
 
-  useHunkSessionBridge({
-    addLiveComment: review.addLiveComment,
-    addLiveCommentBatch: review.addLiveCommentBatch,
-    clearLiveComments: review.clearLiveComments,
-    hostClient,
-    liveCommentCount: review.liveCommentCount,
-    liveCommentSummaries: review.liveCommentSummaries,
-    navigateToLocation: review.navigateToLocation,
-    noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
-    openAgentNotes,
-    reloadSession: onReloadSession,
-    removeLiveComment: review.removeLiveComment,
-    reviewNoteCount: review.reviewNoteCount,
-    reviewNoteSummaries: review.reviewNoteSummaries,
-    selectedFile,
-    selectedHunk: review.selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
-  });
   const maxVisibleLineNumber = useMemo(
     () =>
       filteredFiles.reduce(
@@ -1271,7 +1276,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
+    review.setShowAgentNotes(!reviewStore.getSnapshot().showAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
@@ -1423,7 +1428,6 @@ export function App({
   };
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
-  const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
   /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(
@@ -1445,7 +1449,12 @@ export function App({
       await onReloadSession(nextInput, {
         ...options,
         resetApp: false,
-        sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
+        sourcePath:
+          bootstrap.input.kind === "vcs" ||
+          bootstrap.input.kind === "show" ||
+          bootstrap.input.kind === "stash-show"
+            ? bootstrap.changeset.sourceLabel
+            : undefined,
       });
     },
     [
@@ -1473,99 +1482,13 @@ export function App({
   // editor, so it reloads through exactly the path the refresh key takes.
   reloadAfterWorkspaceWriteRef.current = triggerRefreshCurrentInput;
 
-  /** Reload because the watcher saw the reviewed source change on disk. */
-  const refreshWatchedInput = useCallback(
-    () => refreshCurrentInput({ reason: "watch" }),
-    [refreshCurrentInput],
-  );
-
-  /**
-   * Open the trust prompt whenever a repo root needs an answer it has not been asked for.
-   *
-   * Each root is marked as offered before the prompt opens, so dismissing with
-   * "not now" is not immediately re-prompted by this effect; only a genuinely
-   * different pending root asks again. When the pending root clears — the usual
-   * case being a trust grant followed by a reload — the prompt closes itself.
-   */
-  useEffect(() => {
-    const nextRoot = nextExtensionTrustPromptRoot({
-      enabled: !pagerMode,
-      pendingRepoRoot: pendingTrustRepoRoot,
-      offeredRepoRoots: offeredTrustRepoRootsRef.current,
-    });
-
-    if (nextRoot) {
-      offeredTrustRepoRootsRef.current.add(nextRoot);
-      setExtensionTrustPromptRoot(nextRoot);
-      return;
-    }
-
-    if (!pendingTrustRepoRoot) {
-      setExtensionTrustPromptRoot(null);
-    }
-  }, [pagerMode, pendingTrustRepoRoot]);
-
-  /** Dismiss the repo-extension trust prompt without recording a decision. */
-  const closeExtensionTrustPrompt = useCallback(() => {
-    setExtensionTrustPromptRoot(null);
-  }, []);
-
-  /**
-   * Record this repo as trusted, then reload so its extensions actually load.
-   *
-   * The reload goes through the normal session-reload path with extension
-   * loading re-run, which is what makes a freshly trusted transform or theme
-   * apply without restarting Hunk.
-   */
-  const trustRepoExtensions = useCallback(() => {
-    const repoRoot = extensionTrustPromptRoot;
-    setExtensionTrustPromptRoot(null);
-    if (!repoRoot) {
-      return;
-    }
-
-    try {
-      writeExtensionTrust(repoRoot, "trusted");
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to record the trust decision.",
-      );
-      return;
-    }
-
-    if (!canRefreshCurrentInput) {
-      // Stdin-backed reviews cannot be reopened, so trust applies next launch.
-      showSessionNotice("Trusted this repository • restart Hunk to load its extensions");
-      return;
-    }
-
-    void refreshCurrentInput({ reason: "manual", reloadExtensions: true }).catch(() => {
-      showSessionNotice("Failed to reload after trusting this repository's extensions.");
-    });
-  }, [canRefreshCurrentInput, extensionTrustPromptRoot, refreshCurrentInput, showSessionNotice]);
-
-  /** Record this repo as denied so Hunk stops offering to run its extensions. */
-  const denyRepoExtensions = useCallback(() => {
-    const repoRoot = extensionTrustPromptRoot;
-    setExtensionTrustPromptRoot(null);
-    if (!repoRoot) {
-      return;
-    }
-
-    try {
-      writeExtensionTrust(repoRoot, "denied");
-      showSessionNotice("Won't run this repository's extensions");
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to record the trust decision.",
-      );
-    }
-  }, [extensionTrustPromptRoot, showSessionNotice]);
-
   const triggerEditSelectedFile = useCallback(() => {
-    const basePath = isVcsReviewInput(bootstrap.input)
-      ? bootstrap.changeset.sourceLabel
-      : undefined;
+    const basePath =
+      bootstrap.input.kind === "vcs" ||
+      bootstrap.input.kind === "show" ||
+      bootstrap.input.kind === "stash-show"
+        ? bootstrap.changeset.sourceLabel
+        : undefined;
     const message = openSelectedFileInEditor({
       basePath,
       file: selectedFile,
@@ -1591,15 +1514,6 @@ export function App({
     showSessionNotice,
     triggerRefreshCurrentInput,
   ]);
-
-  useWatchedInput({
-    enabled: watchEnabled,
-    input: bootstrap.input,
-    onReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
-    refresh: refreshWatchedInput,
-    reloadContext: bootstrap.reloadContext,
-    runtime: watchRuntime,
-  });
 
   /** Save current view preferences to user config and then leave the app. */
   const saveViewPreferencesAndQuit = useCallback(() => {
@@ -1676,6 +1590,19 @@ export function App({
   const openAgentSkill = useCallback(() => {
     setShowAgentSkill(true);
   }, []);
+
+  /** Open the synchronized browser adapter and report local daemon/opener failures in chrome. */
+  const openBrowserReview = useCallback(() => {
+    void sessionRuntime
+      .openBrowserReview()
+      .then(() => showTransientNotice("Opened review in browser"))
+      .catch((error: unknown) =>
+        showTransientNotice(
+          error instanceof Error ? error.message : "Could not open the browser review.",
+          5000,
+        ),
+      );
+  }, [sessionRuntime, showTransientNotice]);
 
   /** Copy the agent skill prompt through the terminal clipboard integration. */
   const copyAgentSkillPrompt = useCallback(async () => {
@@ -1755,7 +1682,7 @@ export function App({
     setFocusArea((current) => (current === "note" ? "files" : current));
   }, []);
 
-  /** Convert a draft or saved UI note into the stable public event view. */
+  /** Convert a terminal draft into the stable public event view. */
   const toExtensionReviewNote = useCallback(
     (
       note: {
@@ -1782,17 +1709,12 @@ export function App({
     [],
   );
 
-  /** Save the active draft note and return focus to review navigation. */
+  /** Save the active draft note, retaining draft focus when persistence rejects its contents. */
   const saveDraftNote = useCallback(() => {
-    const draft = review.draftNote;
+    const hadNonemptyDraft = Boolean(review.draftNote?.body.trim());
     const saved = review.saveDraftNote();
-    if (saved && draft) {
-      emitExtensionEvent(extensions, "note_created", {
-        note: toExtensionReviewNote({ ...saved, fileId: draft.fileId }, false),
-      });
-    }
-    setFocusArea("files");
-  }, [extensions, review.draftNote, review.saveDraftNote, toExtensionReviewNote]);
+    if (saved || !hadNonemptyDraft) setFocusArea("files");
+  }, [review.draftNote, review.saveDraftNote]);
 
   /** Update a draft note and publish its current in-progress contents. */
   const updateDraftNote = useCallback(
@@ -1830,6 +1752,7 @@ export function App({
       moveToFile,
       moveToHunk: review.moveToHunk,
       openAgentSkill,
+      openBrowserReview,
       openThemeSelector,
       requestQuit,
       resolvedKeys: resolvedCommandKeys,

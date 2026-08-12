@@ -49,6 +49,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     moveToFile: record("moveToFile"),
     moveToHunk: record("moveToHunk"),
     openAgentSkill: record("openAgentSkill"),
+    openBrowserReview: record("openBrowserReview"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
     resolvedKeys,
@@ -221,7 +222,11 @@ describe("builtinCommandKeyDefaults", () => {
     const { commands } = createTestCommands();
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
-    expect(commands.every((command) => command.publicToExtensions)).toBe(true);
+    expect(
+      commands
+        .filter((command) => command.id !== "hunk.app.openBrowserReview")
+        .every((command) => command.publicToExtensions),
+    ).toBe(true);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",
@@ -235,6 +240,7 @@ describe("builtinCommandKeyDefaults", () => {
         .sort(),
     ).toEqual([
       "hunk.app.openAgentSkill",
+      "hunk.app.openBrowserReview",
       "hunk.review.alignCurrentLineBottom",
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",

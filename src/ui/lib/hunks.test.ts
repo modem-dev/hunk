@@ -105,6 +105,42 @@ describe("annotated hunk navigation", () => {
     ]);
   });
 
+  test("navigates every hunk intersected by a dual-range note", () => {
+    const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
+      path: "alpha.ts",
+      annotations: [
+        {
+          oldRange: [1, 1],
+          newRange: [17, 17],
+          summary: "Old side intersects hunk 0, preferred new side owns hunk 1",
+        },
+      ],
+    });
+
+    expect(buildAnnotatedHunkCursors([fileA])).toEqual([
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+    ]);
+  });
+
+  test("keeps old and partial preferred-side intersections in file order", () => {
+    const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
+      path: "alpha.ts",
+      annotations: [
+        {
+          oldRange: [1, 1],
+          newRange: [16, 17],
+          summary: "The new range starts in the gap but intersects hunk 1",
+        },
+      ],
+    });
+
+    expect(buildAnnotatedHunkCursors([fileA])).toEqual([
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+    ]);
+  });
+
   test("returns an empty list when no files have annotations", () => {
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, null);
     const fileB = createTestFile("beta", "beta.ts", beforeB, afterB, null);
@@ -112,8 +148,8 @@ describe("annotated hunk navigation", () => {
     expect(buildAnnotatedHunkCursors([fileA, fileB])).toEqual([]);
   });
 
-  test("skips files with agent context but no matching annotations", () => {
-    // Annotation range doesn't overlap any hunk (line 10 is in the gap between hunks).
+  test("does not turn an unmatched placement fallback into a navigation stop", () => {
+    // Line 10 is in the gap between hunks. Placement still owns hunk 0, but navigation has no hit.
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
       annotations: [{ newRange: [10, 10], summary: "Note in gap, no hunk overlap" }],

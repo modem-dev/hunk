@@ -72,7 +72,8 @@ export type StartupPlan =
   | {
       kind: "app";
       bootstrap: AppBootstrap;
-      cliInput: CliInput;
+      /** Invocation after terminal normalization but before config resolution. */
+      rawInput: CliInput;
       controllingTerminal: ControllingTerminal | null;
     };
 
@@ -191,9 +192,7 @@ export async function prepareStartupPlan(
       };
       const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
-        {
-          vcsCatalog: baseVcsCatalog,
-        },
+        { vcsCatalog: baseVcsCatalog },
       );
       const staticPlan = {
         kind: "static-diff-pager" as const,
@@ -227,36 +226,53 @@ export async function prepareStartupPlan(
       };
     }
 
-    if (!stdoutIsTTY) {
+    // Browser review owns patch-like pager input even without a terminal. Plain pager input above
+    // keeps its existing fallback because it has no semantic review document to render.
+    if (parsedCliInput.options.web) {
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    } else if (!stdoutIsTTY) {
       return passthroughPlan;
     }
 
-    if (env.TERM === "dumb" && !capturedPagerHost) {
+    if (!parsedCliInput.options.web && env.TERM === "dumb" && !capturedPagerHost) {
       return passthroughPlan;
     }
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
-    if (capturedPagerHost) {
-      return staticPagerPlan();
-    }
+    if (!parsedCliInput.options.web) {
+      if (capturedPagerHost) {
+        return staticPagerPlan();
+      }
 
-    controllingTerminal = openControllingTerminalImpl();
-    if (!controllingTerminal) {
-      return staticPagerPlan();
-    }
+      controllingTerminal = openControllingTerminalImpl();
+      if (!controllingTerminal) {
+        return staticPagerPlan();
+      }
 
-    parsedCliInput = {
-      kind: "patch",
-      file: "-",
-      text: stdinText,
-      options: {
-        ...parsedCliInput.options,
-        pager: true,
-      },
-    };
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    }
   }
 
+  if (parsedCliInput.kind === "pager") {
+    throw new Error("Unreachable pager startup plan.");
+  }
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
   const startupCwd = process.cwd();
   let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
@@ -270,12 +286,12 @@ export async function prepareStartupPlan(
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
-  if (!controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+  if (!cliInput.options.web && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
     controllingTerminal = openControllingTerminalImpl();
   }
 
   let initialThemeMode: AppBootstrap["initialThemeMode"];
-  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+  if (!cliInput.options.web && cliInput.options.theme === "auto" && stdoutIsTTY) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =
@@ -294,9 +310,8 @@ export async function prepareStartupPlan(
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and
-  // changeset transforms to the loading pipeline. External adapters may settle a root the
-  // bundled catalog could not; the shared resolver then appends newly discovered repo
-  // candidates without executing the provisional factory prefix twice.
+  // changeset transforms to the loading pipeline. Failures never reach here: the host
+  // isolates them into issues that become startup notices below.
   const resolvedExtensions = await resolveConfiguredExtensions(
     {
       runtimeInput: runtimeCliInput,
@@ -355,12 +370,15 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
-  controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  controllingTerminal ??=
+    !cliInput.options.web && usesPipedPatchInputImpl(cliInput)
+      ? openControllingTerminalImpl()
+      : null;
 
   return {
     kind: "app",
     bootstrap,
-    cliInput,
+    rawInput: runtimeCliInput,
     controllingTerminal,
   };
 }

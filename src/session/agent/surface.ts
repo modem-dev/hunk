@@ -65,6 +65,11 @@ type OptionValue<Option extends AgentCommandOption> = Option["flag"] extends `${
     : string
   : boolean;
 
+type CommanderOptionKey<Option extends AgentCommandOption> =
+  FlagBody<Option["flag"]> extends `no-${infer PositiveName}`
+    ? CamelCase<PositiveName>
+    : CamelCase<FlagBody<Option["flag"]>>;
+
 /**
  * The parsed-options shape one spec produces. Deriving this from the manifest means adding or
  * renaming an option automatically updates the action handler's type in `src/core/cli.ts` —
@@ -72,12 +77,12 @@ type OptionValue<Option extends AgentCommandOption> = Option["flag"] extends `${
  */
 export type ParsedCommandOptions<Spec extends AgentCommandSpec> = {
   [Option in Spec["options"][number] as Option extends { readonly required: true }
-    ? CamelCase<FlagBody<Option["flag"]>>
+    ? CommanderOptionKey<Option>
     : never]: OptionValue<Option>;
 } & {
   [Option in Spec["options"][number] as Option extends { readonly required: true }
     ? never
-    : CamelCase<FlagBody<Option["flag"]>>]?: OptionValue<Option>;
+    : CommanderOptionKey<Option>]?: OptionValue<Option>;
 };
 
 /** Parsed-options shape for one daemon action's CLI command. */
@@ -109,7 +114,7 @@ export function constraintSynopsis(constraint: AgentCommandConstraint) {
 
 /** Camelize one flag definition into the key Commander stores its parsed value under. */
 export function optionKeyFromFlag(flag: string) {
-  const body = flag.split(" ")[0]!.replace(/^--/, "");
+  const body = flag.split(" ")[0]!.replace(/^--/, "").replace(/^no-/, "");
   return body.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }
 
@@ -236,6 +241,24 @@ export const SESSION_AGENT_COMMANDS = {
     synopsis: [
       `hunk session review ${SESSION_SELECTOR_SYNOPSIS} [--include-patch] [--include-notes] [--json]`,
     ],
+  },
+  open: {
+    name: "session open",
+    summary: "open one live Hunk review in the browser",
+    positionals: [{ token: "[sessionId]" }],
+    options: [
+      repoOption,
+      {
+        flag: "--tailscale",
+        description: "publish browser review routes on the local tailnet",
+      },
+      {
+        flag: "--no-open",
+        description: "print the capability URL without opening the default browser",
+      },
+    ],
+    synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--tailscale] [--no-open]`],
+    examples: ["hunk session open --repo .", "hunk session open --repo . --tailscale --no-open"],
   },
   navigate: {
     name: "session navigate",

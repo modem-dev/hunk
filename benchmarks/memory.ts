@@ -39,6 +39,7 @@ for (const file of bootstrap.changeset.files) {
   const rows = buildSplitRows(file, null, theme);
   plannedRows += buildReviewRenderPlan({
     fileId: file.id,
+    hunks: file.metadata.hunks,
     rows,
     showHunkHeaders: true,
     visibleAgentNotes: [],

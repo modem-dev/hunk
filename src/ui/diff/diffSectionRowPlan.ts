@@ -81,6 +81,7 @@ export function buildDiffSectionRowPlan({
     lineNumberDigits: String(findMaxLineNumberInRows(rows, findMaxLineNumber(file))).length,
     plannedRows: buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       showHunkHeaders,
       visibleAgentNotes,

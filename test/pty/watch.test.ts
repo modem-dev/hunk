@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createPtyHarness } from "./harness";
@@ -36,6 +37,85 @@ describe("PTY watch mode", () => {
         timeout: 5_000,
       });
       expect(refreshed).not.toContain("watchedValue = 'initial change'");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("preserves an in-progress note draft while watched code reloads", async () => {
+    const fixture = harness.createWatchFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--watch", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/watchedValue = 'initial change'/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("c");
+      await session.type("Keep this draft while the agent writes.");
+      await session.waitForText(/Keep this draft while the agent writes\./, { timeout: 5_000 });
+
+      const replacement = join(dirname(fixture.after), "after-replacement.ts");
+      writeFileSync(
+        replacement,
+        "// written during review\nexport const watchedValue = 'initial change';\n",
+      );
+      renameSync(replacement, fixture.after);
+
+      const refreshed = await session.waitForText(/written during review/, { timeout: 5_000 });
+      expect(refreshed).toContain("Keep this draft while the agent writes.");
+      expect(refreshed).toContain("Draft note");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("passively refreshes an agent sidecar through the runtime watch controller", async () => {
+    const fixture = harness.createAgentFilePair();
+    execFileSync("git", ["init"], { cwd: fixture.dir, stdio: "ignore" });
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--watch",
+        "--mode",
+        "stack",
+        "--agent-context",
+        fixture.agentContext,
+        "--agent-notes",
+      ],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 18,
+    });
+
+    try {
+      await session.waitForText(/Adds bonus export/, { timeout: 15_000 });
+      writeFileSync(
+        fixture.agentContext,
+        JSON.stringify({
+          version: 1,
+          files: [
+            {
+              path: "after.ts",
+              annotations: [
+                {
+                  newRange: [2, 2],
+                  summary: "Reloaded sidecar note.",
+                  rationale: "The runtime observed the sidecar independently of the patch.",
+                },
+              ],
+            },
+          ],
+        }),
+      );
+
+      const refreshed = await session.waitForText(/Reloaded sidecar note/, { timeout: 5_000 });
+      expect(refreshed).not.toContain("Adds bonus export");
     } finally {
       session.close();
     }

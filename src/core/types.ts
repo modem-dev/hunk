@@ -107,6 +107,12 @@ export interface CommonOptions {
   extensions?: boolean;
   /** Entry paths from repeated `--extension` flags, for development and testing. */
   extensionPaths?: string[];
+  /** Render this review through the local browser surface instead of OpenTUI. */
+  web?: boolean;
+  /** False when browser startup should print the capability URL without opening it. */
+  openBrowser?: boolean;
+  /** Publish browser routes on this machine's tailnet IPv4 address. */
+  tailscale?: boolean;
 }
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
@@ -193,6 +199,15 @@ export interface SessionReviewCommandInput {
   selector: SessionSelectorInput;
   includePatch: boolean;
   includeNotes?: boolean;
+}
+
+export interface SessionOpenCommandInput {
+  kind: "session";
+  action: "open";
+  output: "text";
+  selector: SessionSelectorInput;
+  openBrowser: boolean;
+  tailscale?: boolean;
 }
 
 export interface SessionNavigateCommandInput {
@@ -282,6 +297,7 @@ export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
   | SessionReviewCommandInput
+  | SessionOpenCommandInput
   | SessionNavigateCommandInput
   | SessionReloadCommandInput
   | SessionCommentAddCommandInput

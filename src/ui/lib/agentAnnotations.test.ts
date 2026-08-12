@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildLiveComment, resolveCommentTarget } from "../../core/liveComments";
+import { resolveCommentTarget, type LiveComment } from "../../core/liveComments";
 import {
-  annotationRangeLabel,
-  getAnnotatedHunkIndices,
-  getSelectedAnnotations,
-} from "./agentAnnotations";
+  getAnnotationOwnerHunkIndices,
+  getAnnotationsVisibleInHunk,
+} from "../../core/review/notes";
+import { annotationRangeLabel } from "./agentAnnotations";
 
 function createContextHeavyHunkFile() {
   const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
@@ -51,18 +51,21 @@ describe("agent annotations", () => {
     expect(hunk.additionLines).toBe(1);
     expect(hunk.additionCount).toBeGreaterThan(target.line - hunk.additionStart + 1);
 
-    const comment = buildLiveComment(
-      {
-        filePath: file.path,
-        side: target.side,
-        line: target.line,
-        summary: "Explain inserted line",
-        rationale: "The daemon resolves hunk-number comments to the first change row.",
-      },
-      "comment-1",
-      "2026-03-22T00:00:00.000Z",
-      target.hunkIndex,
-    );
+    const comment: LiveComment = {
+      id: "comment-1",
+      source: "mcp",
+      createdAt: "2026-03-22T00:00:00.000Z",
+      filePath: file.path,
+      hunkIndex: target.hunkIndex,
+      side: target.side,
+      line: target.line,
+      summary: "Explain inserted line",
+      rationale: "The daemon resolves hunk-number comments to the first change row.",
+      oldRange: target.side === "old" ? [target.line, target.line] : undefined,
+      newRange: target.side === "new" ? [target.line, target.line] : undefined,
+      tags: ["mcp"],
+      confidence: "high",
+    };
     const annotatedFile = {
       ...file,
       agent: {
@@ -71,7 +74,7 @@ describe("agent annotations", () => {
       },
     };
 
-    expect([...getAnnotatedHunkIndices(annotatedFile)]).toEqual([0]);
-    expect(getSelectedAnnotations(annotatedFile, hunk)).toEqual([comment]);
+    expect([...getAnnotationOwnerHunkIndices(annotatedFile)]).toEqual([0]);
+    expect(getAnnotationsVisibleInHunk(annotatedFile, hunk)).toEqual([comment]);
   });
 });

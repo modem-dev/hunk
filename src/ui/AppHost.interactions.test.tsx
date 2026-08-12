@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type {
   HunkSessionBrokerClient,
   HunkSessionRegistration,
@@ -15,11 +14,14 @@ import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
+import { createTestSessionRegistration } from "../../test/helpers/session-daemon-fixtures";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
+const { createReviewSessionRuntime } = await import("../app/reviewSessionRuntime");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -75,25 +77,24 @@ function createMockHostClient({
 
   let bridge: Bridge = null;
   let latestSnapshot: HunkSessionSnapshot["state"] | null = null;
-  let registration: HunkSessionRegistration = {
-    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
-    sessionId: "session-1",
+  const replacedSnapshots: HunkSessionSnapshot["state"][] = [];
+  let registration: HunkSessionRegistration = createTestSessionRegistration({
     pid: process.pid,
     cwd,
     repoRoot,
-    launchedAt: "2026-03-24T00:00:00.000Z",
-    info: {
-      inputKind: "vcs",
-      title: "repo working tree",
-      sourceLabel: "repo",
-      files: [],
-    },
-  };
+    files: [],
+    sourceLabel: "repo",
+  });
   return {
     hostClient: {
       getRegistration: () => registration,
-      replaceSession: (nextRegistration: HunkSessionRegistration) => {
+      replaceSession: (
+        nextRegistration: HunkSessionRegistration,
+        snapshot: HunkSessionSnapshot,
+      ) => {
         registration = nextRegistration;
+        latestSnapshot = snapshot.state;
+        replacedSnapshots.push(snapshot.state);
       },
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
@@ -112,6 +113,7 @@ function createMockHostClient({
     getBridge: () => bridge,
     getLatestRegistration: () => registration,
     getLatestSnapshot: () => latestSnapshot,
+    getReplacedSnapshots: () => replacedSnapshots,
     navigateToHunk: async (
       input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
     ) => {
@@ -222,6 +224,7 @@ function createDeepNoteBootstrap(): AppBootstrap {
     summary: "file note",
     annotations: [
       {
+        oldRange: [1, 1],
         newRange: [62, 62],
         summary: "Note anchored on second hunk.",
       },
@@ -624,6 +627,48 @@ describe("App interactions", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("batched agent-note toggles use store-current visibility", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createSingleFileBootstrap()} hostClient={hostClient} />,
+      { width: 160, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("a");
+        await setup.mockInput.typeText("a");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("renderer note width republishes on layout changes without semantic mutations", async () => {
+    const bootstrap = createSingleFileBootstrap();
+    bootstrap.input.options.experimental = true;
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 180,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      const splitWidth = getLatestSnapshot()?.noteMarkupWidth;
+      expect(splitWidth).toBeGreaterThan(0);
+      await act(async () => setup.mockInput.typeText("2"));
+      await flush(setup);
+      const stackWidth = getLatestSnapshot()?.noteMarkupWidth;
+      expect(stackWidth).toBeGreaterThan(splitWidth ?? 0);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -1591,10 +1636,12 @@ describe("App interactions", () => {
       left,
       right,
       options: {
+        experimental: true,
         mode: "split",
       },
     });
-    const { dispatchCommand, hostClient } = createMockHostClient();
+    const { dispatchCommand, getLatestSnapshot, getReplacedSnapshots, hostClient } =
+      createMockHostClient();
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
       width: 220,
@@ -1622,6 +1669,8 @@ describe("App interactions", () => {
 
       let frame = await waitForFrame(setup, (currentFrame) => currentFrame.includes(reviewNote));
       expect(frame).toContain(reviewNote);
+      const widthBeforeReload = getLatestSnapshot()?.noteMarkupWidth;
+      expect(widthBeforeReload).toBeGreaterThan(0);
 
       writeFileSync(right, "export const answer = 42;\nexport const added = true;\n");
 
@@ -1652,10 +1701,84 @@ describe("App interactions", () => {
 
       expect(frame).toContain("export const added = true;");
       expect(frame).toContain(reviewNote);
+      expect(getLatestSnapshot()?.liveComments.map((comment) => comment.summary)).toContain(
+        reviewNote,
+      );
+      expect(
+        getReplacedSnapshots()
+          .at(-1)
+          ?.liveComments.map((comment) => comment.summary),
+      ).toContain(reviewNote);
+      expect(getReplacedSnapshots().at(-1)?.noteMarkupWidth).toBe(widthBeforeReload);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
       });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("post-reload daemon batches reveal notes through the current store authority", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-batch-reload-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "split" },
+    });
+    const { dispatchCommand, getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "reload-before-batch",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: { kind: "diff", left, right, options: { mode: "split" } },
+          },
+        });
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "batch-after-reload",
+          command: "comment_batch",
+          input: {
+            sessionId: "session-1",
+            revealMode: "first",
+            comments: [
+              {
+                filePath: "after.ts",
+                side: "new",
+                line: 1,
+                summary: "Batch note after soft reload",
+              },
+            ],
+          },
+        });
+      });
+
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(true);
+      const frame = await waitForFrame(setup, (text) =>
+        text.includes("Batch note after soft reload"),
+      );
+      expect(frame).toContain("Batch note after soft reload");
+    } finally {
+      await act(async () => setup.renderer.destroy());
       rmSync(dir, { force: true, recursive: true });
     }
   });
@@ -2649,8 +2772,8 @@ describe("App interactions", () => {
     }
   });
 
-  test("CLI comment navigation scrolls the inline note into view", async () => {
-    const { hostClient, navigateToHunk } = createMockHostClient();
+  test("CLI comment navigation publishes store selection synchronously and scrolls the note", async () => {
+    const { getLatestSnapshot, hostClient, navigateToHunk } = createMockHostClient();
     const setup = await testRender(
       <AppHost bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
       {
@@ -2674,11 +2797,21 @@ describe("App interactions", () => {
         filePath: "deep-note.ts",
         hunkIndex: 1,
       });
+      // The broker sees the authoritative selection before any follow-up React render or effect.
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFilePath: "deep-note.ts",
+        selectedHunkIndex: 1,
+      });
 
       frame = await waitForFrame(setup, (currentFrame) =>
         currentFrame.includes("Note anchored on second hunk."),
       );
       expect(frame).toContain("Note anchored on second hunk.");
+
+      await act(async () => {
+        result = await navigateToHunk({ commentDirection: "prev" });
+      });
+      expect(result).toMatchObject({ filePath: "deep-note.ts", hunkIndex: 0 });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2871,6 +3004,84 @@ describe("App interactions", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("failed nonempty draft saves retain note focus for editing and retry", async () => {
+    const bootstrap = createSingleFileBootstrap();
+    const runtime = createReviewSessionRuntime(bootstrap);
+    const executeReviewIntent = runtime.executeReviewIntent;
+    runtime.executeReviewIntent = (intent, options) => {
+      if (intent.type === "note/create-user") throw new Error("Test persistence rejection.");
+      return executeReviewIntent(intent, options);
+    };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} runtime={runtime} />, {
+      width: 180,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+        await setup.mockInput.typeText("Keep this draft");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+      expect(runtime.getSnapshot().store.getSnapshot().draftNote?.body).toBe("Keep this draft");
+
+      await act(async () => {
+        await setup.mockInput.typeText(" retry");
+      });
+      await flush(setup);
+      expect(runtime.getSnapshot().store.getSnapshot().draftNote?.body).toBe(
+        "Keep this draft retry",
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("terminal Ctrl-S emits one runtime-owned note_created event", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const events: Array<{ id: string; body: string }> = [];
+    extensions.registry.eventHandlers.note_created.push({
+      extensionId: "capture",
+      handler: ({ note }) => {
+        events.push({ id: note.id, body: note.body });
+      },
+    });
+    const bootstrap = { ...createSingleFileBootstrap(), extensions };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("Runtime event once.");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+
+      expect(setup.captureCharFrame()).toContain("Your note");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ body: "Runtime event once." });
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -3214,11 +3425,6 @@ describe("App interactions", () => {
     try {
       await flush(setup);
 
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
-
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 16; index += 1) {
         await act(async () => {
@@ -3263,11 +3469,6 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
-
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
 
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 8; index += 1) {
@@ -3337,11 +3538,6 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
-
-      expect(getLatestSnapshot()).toMatchObject({
-        selectedFilePath: "first.ts",
-        selectedHunkIndex: 0,
-      });
 
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 50; index += 1) {

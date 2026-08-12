@@ -26,6 +26,7 @@ describe("PTY navigation", () => {
       });
       expect(initial).not.toContain("Maximum update depth exceeded");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("}");
       const alphaNote = await harness.waitForSnapshot(
         session,
@@ -53,6 +54,38 @@ describe("PTY navigation", () => {
     }
   });
 
+  test("comment navigation follows the preferred partial range to its later hunk", async () => {
+    const fixture = harness.createPartialRangeNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--agent-context", fixture.agentContext, "--agent-notes"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("line01 = 1001");
+      expect(initial).not.toContain("line20 = 2000");
+
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("}");
+      const laterHunk = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("Preferred partial range owns the later hunk.") &&
+          text.includes("export const line20 = 20;"),
+        5_000,
+      );
+
+      expect(laterHunk).not.toContain("line01 = 1001");
+    } finally {
+      session.close();
+    }
+  });
+
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
@@ -69,6 +102,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("]");
       const secondHunk = await harness.waitForSnapshot(
         session,
@@ -96,6 +130,7 @@ describe("PTY navigation", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
+      await harness.ensureKeyboardIsLive(session);
 
       let reachedShortFileMidHunk = false;
       for (let index = 0; index < 24; index += 1) {
@@ -147,6 +182,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
+      await harness.ensureKeyboardIsLive(session);
       await session.press("]");
       const secondHunk = await harness.waitForSnapshot(
         session,
@@ -222,6 +258,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
+      await harness.ensureKeyboardIsLive(session);
       for (let index = 0; index < 16; index += 1) {
         await session.press("down");
       }

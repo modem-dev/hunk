@@ -2,21 +2,12 @@
  * Pure review-stream derivation helpers used by `useReviewController`.
  *
  * This module turns raw diff files plus live comments into the current visible
- * review state, sidebar entries, hunk cursors, and session-daemon navigation targets. It
- * stays side-effect free so selection and navigation rules can be shared and
- * tested without React state in the loop.
+ * review state, sidebar entries, and terminal hunk cursors. It stays side-effect
+ * free so selection and navigation rules can be tested without React state.
  */
-import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
-import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
 import { filterReviewFiles, mergeFileAnnotationsByFileId } from "./files";
-import {
-  buildAnnotatedHunkCursors,
-  buildHunkCursors,
-  findNextHunkCursor,
-  type HunkCursor,
-} from "./hunks";
+import { buildAnnotatedHunkCursors, buildHunkCursors, type HunkCursor } from "./hunks";
 
 export interface BuildReviewStreamStateOptions {
   files: DiffFile[];
@@ -29,12 +20,6 @@ export interface ReviewStreamState {
   visibleFiles: DiffFile[];
   hunkCursors: HunkCursor[];
   annotatedHunkCursors: HunkCursor[];
-}
-
-export interface ReviewNavigationTarget {
-  file: DiffFile;
-  hunkIndex: number;
-  scrollToNote: boolean;
 }
 
 /** Build selection-independent review stream state from files and filter text. */
@@ -54,30 +39,9 @@ export function buildReviewStreamState({
   };
 }
 
-/** Resolve the selected file using the visible stream first, then the hidden current selection. */
-export function resolveSelectedFile(
-  allFiles: DiffFile[],
-  visibleFiles: DiffFile[],
-  selectedFileId: string,
-) {
-  return (
-    visibleFiles.find((file) => file.id === selectedFileId) ??
-    allFiles.find((file) => file.id === selectedFileId) ??
-    visibleFiles[0]
-  );
-}
-
-/** Format the currently selected hunk for daemon snapshots and session command replies. */
-export function buildSelectedHunkSummary(file: DiffFile, hunkIndex: number): SelectedHunkSummary {
-  const hunk = file.metadata.hunks[hunkIndex];
-  return hunk
-    ? {
-        index: hunkIndex,
-        ...hunkLineRange(hunk),
-      }
-    : {
-        index: hunkIndex,
-      };
+/** Resolve the store-authoritative selection only when it is in the visible stream. */
+export function resolveSelectedFile(visibleFiles: DiffFile[], selectedFileId: string) {
+  return visibleFiles.find((file) => file.id === selectedFileId);
 }
 
 /** Find the next or previous annotated file in the current visible review stream. */
@@ -97,75 +61,4 @@ export function findNextAnnotatedFile(
     (((normalizedIndex + delta) % annotatedFiles.length) + annotatedFiles.length) %
     annotatedFiles.length;
   return annotatedFiles[nextIndex] ?? null;
-}
-
-/** Resolve one session-daemon navigation request against the review stream's current state. */
-export function resolveReviewNavigationTarget({
-  allFiles,
-  currentFileId,
-  currentHunkIndex,
-  input,
-  visibleFiles,
-}: {
-  allFiles: DiffFile[];
-  visibleFiles: DiffFile[];
-  currentFileId: string | undefined;
-  currentHunkIndex: number;
-  input: NavigateToHunkToolInput;
-}): ReviewNavigationTarget {
-  if (input.commentDirection) {
-    const delta = input.commentDirection === "next" ? 1 : -1;
-    const hunkCursors = buildHunkCursors(visibleFiles);
-    const annotatedCursors = buildAnnotatedHunkCursors(visibleFiles);
-    const nextCursor = findNextHunkCursor(
-      annotatedCursors,
-      currentFileId,
-      currentHunkIndex,
-      delta,
-      hunkCursors,
-    );
-
-    if (!nextCursor) {
-      throw new Error("No annotated hunks found in the current review.");
-    }
-
-    const targetFile = visibleFiles.find((file) => file.id === nextCursor.fileId);
-    if (!targetFile) {
-      throw new Error("Resolved annotated hunk references an unknown file.");
-    }
-
-    return {
-      file: targetFile,
-      hunkIndex: nextCursor.hunkIndex,
-      scrollToNote: true,
-    };
-  }
-
-  if (!input.filePath) {
-    throw new Error("navigate requires --file when not using --next-comment or --prev-comment.");
-  }
-
-  const file = findDiffFileByPath(allFiles, input.filePath);
-  if (!file) {
-    throw new Error(noDiffFileMatchesMessage(input.filePath));
-  }
-
-  let hunkIndex = input.hunkIndex;
-  if (hunkIndex === undefined) {
-    if (!input.side || input.line === undefined) {
-      throw new Error("navigate_to_hunk requires either hunkIndex or both side and line.");
-    }
-
-    hunkIndex = findHunkIndexForLine(file, input.side, input.line);
-  }
-
-  if (hunkIndex < 0 || hunkIndex >= file.metadata.hunks.length) {
-    throw new Error(`No diff hunk in ${input.filePath} matches the requested target.`);
-  }
-
-  return {
-    file,
-    hunkIndex,
-    scrollToNote: false,
-  };
 }

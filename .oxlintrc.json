@@ -1,4 +1,5 @@
 {
+  "ignorePatterns": ["src/browser/assets/bootstrap.js", "src/browser/generated/assets.ts"],
   "rules": {
     "no-control-regex": "off"
   }

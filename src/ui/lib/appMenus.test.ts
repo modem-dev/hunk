@@ -48,6 +48,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     moveToFile: noop,
     moveToHunk: noop,
     openAgentSkill: record("openAgentSkill"),
+    openBrowserReview: record("openBrowserReview"),
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),
     scrollCodeHorizontally: noop,
@@ -122,6 +123,7 @@ describe("buildAppMenus", () => {
       "Toggle files/filter focus",
       "Focus filter",
       "Open file in editor",
+      "Open in browser",
       "Reload",
       "Quit",
     ]);
@@ -161,6 +163,7 @@ describe("buildAppMenus", () => {
       "hunk.app.toggleFocusArea",
       "hunk.review.focusFilter",
       "hunk.review.editSelectedFile",
+      "hunk.app.openBrowserReview",
       "hunk.app.refresh",
       "hunk.app.quit",
     ]);
@@ -187,6 +190,7 @@ describe("buildAppMenus", () => {
     entry(menus, "view", "Sidebar").action();
     entry(menus, "view", "Copy decorations").action();
     entry(menus, "agent", "Agent skill").action();
+    entry(menus, "file", "Open in browser").action();
     entry(menus, "agent", "Next annotated file").action();
     entry(menus, "agent", "Previous annotated file").action();
 
@@ -194,6 +198,7 @@ describe("buildAppMenus", () => {
       "toggleSidebar",
       "toggleCopyDecorations",
       "openAgentSkill",
+      "openBrowserReview",
       "moveToAnnotatedFile:1",
       "moveToAnnotatedFile:-1",
     ]);
@@ -232,6 +237,7 @@ describe("buildAppMenus", () => {
       "Toggle files/filter focus",
       "Focus filter",
       "Open file in editor",
+      "Open in browser",
       "Quit",
     ]);
   });

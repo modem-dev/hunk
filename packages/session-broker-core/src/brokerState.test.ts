@@ -129,7 +129,43 @@ const testBrokerView: SessionBrokerViewAdapter<
   listComments: (_session, filter) => [{ id: "note-1", filePath: filter.filePath }],
 };
 
-function createState() {
+class PreparsedTestBrokerState extends SessionBrokerState<
+  TestSessionInfo,
+  TestSessionState,
+  TestServerMessage,
+  TestCommandResult,
+  TestListedSession,
+  TestSelectedContext,
+  TestSessionReview,
+  TestCommentSummary
+> {
+  /** Expose the specialized-broker registration seam to this core contract test. */
+  registerParsed(
+    socket: { send(data: string): unknown },
+    registration: TestSessionRegistration,
+    snapshot: TestSessionSnapshot,
+  ) {
+    return this.registerParsedSession(socket, registration, snapshot);
+  }
+
+  /** Expose the specialized-broker snapshot seam to this core contract test. */
+  updateParsed(
+    socket: { send(data: string): unknown },
+    sessionId: string,
+    snapshot: TestSessionSnapshot,
+  ) {
+    return this.updateParsedSnapshot(socket, sessionId, snapshot);
+  }
+}
+
+function createState(
+  limits: {
+    globalPendingCommands?: number;
+    perSessionPendingCommands?: number;
+    liveSessions?: number;
+    aggregateMetadataBytes?: number;
+  } = {},
+) {
   return new SessionBrokerState<
     TestSessionInfo,
     TestSessionState,
@@ -139,7 +175,7 @@ function createState() {
     TestSelectedContext,
     TestSessionReview,
     TestCommentSummary
-  >(testBrokerView);
+  >(testBrokerView, limits);
 }
 
 function createRegistration(
@@ -193,6 +229,27 @@ function createListedSession(overrides: Partial<TestListedSession> = {}): TestLi
 }
 
 describe("session broker state", () => {
+  test("retains pre-parsed specialized metadata without invoking app parsers again", () => {
+    const parseForbiddenView = {
+      ...testBrokerView,
+      parseRegistration: () => {
+        throw new Error("registration reparsed");
+      },
+      parseSnapshot: () => {
+        throw new Error("snapshot reparsed");
+      },
+    };
+    const state = new PreparsedTestBrokerState(parseForbiddenView);
+    const socket = { send() {} };
+    const registration = createRegistration();
+    const initial = createSnapshot();
+    const updated = createSnapshot({ selectedIndex: 1 });
+
+    expect(state.registerParsed(socket, registration, initial)).toBe(true);
+    expect(state.updateParsed(socket, registration.sessionId, updated)).toBe("updated");
+    expect(state.getSession({ sessionId: registration.sessionId }).snapshot).toBe(updated);
+  });
+
   test("resolves one target session by session id, session path, repo root, or sole-session fallback", () => {
     const one = [createListedSession()];
     const two = [
@@ -336,7 +393,7 @@ describe("session broker state", () => {
 
     state.registerSession(socket, createRegistration(), createSnapshot());
 
-    const result = state.updateSnapshot("session-1", {
+    const result = state.updateSnapshot(socket, "session-1", {
       selectedIndex: "oops",
     });
 
@@ -344,11 +401,50 @@ describe("session broker state", () => {
     expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
   });
 
+  test("rejects snapshot, heartbeat, and command-result mutation from a non-owner socket", async () => {
+    const state = createState();
+    const sent: string[] = [];
+    const owner = {
+      send(data: string) {
+        sent.push(data);
+      },
+    };
+    const attacker = { send() {} };
+    state.registerSession(owner, createRegistration(), createSnapshot());
+    expect(state.updateSnapshot(attacker, "session-1", createSnapshot({ selectedIndex: 9 }))).toBe(
+      "not-owner",
+    );
+    expect(state.markSessionSeen(attacker, "session-1")).toBe(false);
+
+    const pending = state.dispatchCommand<{ kind: "annotated"; annotationId: string }, "annotate">({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "src/example.ts", summary: "Review note" },
+      timeoutMessage: "Timed out.",
+    });
+    const requestId = "request-owner";
+    const pendingRequestId = (JSON.parse(sent[0]!) as { requestId: string }).requestId;
+    expect(
+      state.handleCommandResult(attacker, {
+        requestId: pendingRequestId,
+        ok: true,
+        result: { kind: "annotated", annotationId: "attacker" },
+      }),
+    ).toBe("not-owner");
+    expect(state.getPendingCommandCount()).toBe(1);
+    state.handleCommandResult(owner, {
+      requestId: pendingRequestId,
+      ok: true,
+      result: { kind: "annotated", annotationId: requestId },
+    });
+    await expect(pending).resolves.toMatchObject({ annotationId: requestId });
+  });
+
   test("reports missing sessions separately from invalid snapshot payloads", () => {
     const state = createState();
 
     expect(
-      state.updateSnapshot("missing-session", {
+      state.updateSnapshot({ send() {} }, "missing-session", {
         selectedIndex: 0,
       }),
     ).toBe("not-found");
@@ -397,13 +493,162 @@ describe("session broker state", () => {
       annotationId: "annotation-1",
     };
 
-    state.handleCommandResult({
+    state.handleCommandResult(socket, {
       requestId: outgoing.requestId,
       ok: true,
       result,
     });
 
     await expect(pending).resolves.toEqual(result);
+  });
+
+  test("bounds and releases aggregate live-session metadata across every lifecycle", () => {
+    const probe = createState();
+    const probeSocket = { send() {} };
+    probe.registerSession(probeSocket, createRegistration(), createSnapshot());
+    const oneSessionBytes = probe.getAggregateMetadataBytes();
+    probe.unregisterSocket(probeSocket);
+
+    const countState = createState({
+      liveSessions: 2,
+      aggregateMetadataBytes: oneSessionBytes * 10,
+    });
+    const firstSocket = { send() {} };
+    const secondSocket = { send() {} };
+    const thirdSocket = { send() {} };
+    countState.registerSession(firstSocket, createRegistration(), createSnapshot());
+    countState.registerSession(
+      secondSocket,
+      createRegistration({ sessionId: "session-2", cwd: "/repo/two" }),
+      createSnapshot(),
+    );
+    expect(() =>
+      countState.registerSession(
+        thirdSocket,
+        createRegistration({ sessionId: "session-3", cwd: "/repo/three" }),
+        createSnapshot(),
+      ),
+    ).toThrow(expect.objectContaining({ code: "session-metadata-capacity", scope: "sessions" }));
+    expect(countState.getSessionCount()).toBe(2);
+    countState.unregisterSocket(firstSocket);
+    expect(
+      countState.registerSession(
+        thirdSocket,
+        createRegistration({ sessionId: "session-3", cwd: "/repo/three" }),
+        createSnapshot(),
+      ),
+    ).toBe(true);
+
+    const largeState = createState({ aggregateMetadataBytes: oneSessionBytes * 2 });
+    largeState.registerSession({ send() {} }, createRegistration(), createSnapshot());
+    const largeRegistration = createRegistration({ sessionId: "session-2", cwd: "/repo/large" });
+    largeRegistration.info.files = ["x".repeat(oneSessionBytes * 2)];
+    expect(() =>
+      largeState.registerSession({ send() {} }, largeRegistration, createSnapshot()),
+    ).toThrow(expect.objectContaining({ code: "session-metadata-capacity", scope: "bytes" }));
+    expect(largeState.getSessionCount()).toBe(1);
+
+    const byteState = createState({ aggregateMetadataBytes: oneSessionBytes + 32 });
+    const socket = { send() {} };
+    const registration = createRegistration();
+    expect(byteState.registerSession(socket, registration, createSnapshot())).toBe(true);
+    const retainedBytes = byteState.getAggregateMetadataBytes();
+    expect(
+      byteState.updateSnapshot(
+        socket,
+        registration.sessionId,
+        createSnapshot({ updatedAt: "x".repeat(256) }),
+      ),
+    ).toBe("capacity");
+    expect(byteState.getAggregateMetadataBytes()).toBe(retainedBytes);
+    expect(byteState.getSession({ sessionId: registration.sessionId }).snapshot.updatedAt).toBe(
+      "2026-03-22T00:00:00.000Z",
+    );
+
+    expect(byteState.registerSession(socket, registration, createSnapshot())).toBe(true);
+    expect(byteState.getAggregateMetadataBytes()).toBe(retainedBytes);
+    const oversizedReplacement = createRegistration();
+    oversizedReplacement.info.title = "x".repeat(256);
+    expect(() => byteState.registerSession(socket, oversizedReplacement, createSnapshot())).toThrow(
+      expect.objectContaining({ code: "session-metadata-capacity", scope: "bytes" }),
+    );
+    expect(byteState.getSession({ sessionId: registration.sessionId }).title).toBe(
+      "repo working tree",
+    );
+
+    byteState.unregisterSocket(socket);
+    expect(byteState.getAggregateMetadataBytes()).toBe(0);
+    const reconnectSocket = { send() {} };
+    expect(byteState.registerSession(reconnectSocket, registration, createSnapshot())).toBe(true);
+    byteState.pruneStaleSessions({ ttlMs: 1, now: Date.now() + 10_000 });
+    expect(byteState.getSessionCount()).toBe(0);
+    expect(byteState.getAggregateMetadataBytes()).toBe(0);
+  });
+
+  test("preserves typed producer capacity failures", async () => {
+    const state = createState();
+    let requestId = "";
+    const socket = {
+      send(data: string) {
+        requestId = (JSON.parse(data) as { requestId: string }).requestId;
+      },
+    };
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const pending = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate" as const,
+      input: { filePath: "src/example.ts", summary: "Review note" },
+      timeoutMessage: "Timed out.",
+    });
+    state.handleCommandResult(socket, {
+      requestId,
+      ok: false,
+      error: "Session command execution capacity exceeded.",
+      errorCode: "session-command-capacity",
+    });
+    await expect(pending).rejects.toMatchObject({
+      code: "session-command-capacity",
+      scope: "connection",
+    });
+    expect(state.getPendingCommandCount()).toBe(0);
+  });
+
+  test("bounds pending commands globally and per session under a flood", async () => {
+    const state = createState({ globalPendingCommands: 2, perSessionPendingCommands: 1 });
+    const socketOne = { send() {} };
+    const socketTwo = { send() {} };
+    state.registerSession(socketOne, createRegistration(), createSnapshot());
+    state.registerSession(
+      socketTwo,
+      createRegistration({ sessionId: "session-2", cwd: "/repo/two" }),
+      createSnapshot(),
+    );
+    const dispatch = (sessionId: string) =>
+      state.dispatchCommand<{ kind: "annotated"; annotationId: string }, "annotate">({
+        selector: { sessionId },
+        command: "annotate",
+        input: { filePath: "src/example.ts", summary: "Review note" },
+        timeoutMessage: "Timed out.",
+      });
+
+    const first = dispatch("session-1");
+    await expect(dispatch("session-1")).rejects.toMatchObject({
+      code: "session-command-capacity",
+      scope: "session",
+    });
+    const second = dispatch("session-2");
+    await expect(dispatch("session-2")).rejects.toMatchObject({
+      code: "session-command-capacity",
+      scope: "global",
+    });
+    expect(state.getPendingCommandCount()).toBe(2);
+
+    state.unregisterSocket(socketOne);
+    await expect(first).rejects.toThrow("disconnected");
+    expect(state.getPendingCommandCount()).toBe(1);
+    state.unregisterSocket(socketTwo);
+    await expect(second).rejects.toThrow("disconnected");
+    expect(state.getPendingCommandCount()).toBe(0);
   });
 
   test("rejects in-flight commands when the session disconnects", async () => {
@@ -430,7 +675,7 @@ describe("session broker state", () => {
     await expect(pending).rejects.toThrow("disconnected");
   });
 
-  test("rejects in-flight commands when a session reconnects on a new socket", async () => {
+  test("rejects session-id hijacking until the original owner disconnects", async () => {
     const state = createState();
     const originalSocket = {
       send() {},
@@ -452,14 +697,22 @@ describe("session broker state", () => {
       timeoutMessage: "Timed out waiting for the session to apply the note.",
     });
 
-    state.registerSession(
-      replacementSocket,
-      createRegistration(),
-      createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
-    );
+    expect(
+      state.registerSession(
+        replacementSocket,
+        createRegistration(),
+        createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+      ),
+    ).toBe(false);
+    expect(state.ownsSession(originalSocket, "session-1")).toBe(true);
+    expect(state.getPendingCommandCount()).toBe(1);
 
-    await expect(pending).rejects.toThrow("reconnected before the command completed");
-    expect(state.listSessions()).toHaveLength(1);
+    state.unregisterSocket(originalSocket);
+    await expect(pending).rejects.toThrow("disconnected");
+    expect(state.registerSession(replacementSocket, createRegistration(), createSnapshot())).toBe(
+      true,
+    );
+    expect(state.ownsSession(replacementSocket, "session-1")).toBe(true);
   });
 
   test("rejects commands immediately when the live session socket cannot accept them", async () => {
@@ -537,7 +790,7 @@ describe("session broker state", () => {
       }),
     ).toBe(0);
 
-    state.markSessionSeen("session-1");
+    state.markSessionSeen(socket, "session-1");
 
     expect(
       state.pruneStaleSessions({

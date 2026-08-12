@@ -197,7 +197,7 @@ describe("startup planning", () => {
       throw new Error("Expected app startup plan.");
     }
 
-    expect(plan.cliInput).toMatchObject({
+    expect(plan.rawInput).toMatchObject({
       kind: "patch",
       file: "-",
       text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
@@ -207,6 +207,35 @@ describe("startup planning", () => {
       },
     });
     expect(seenInputs).toHaveLength(3);
+  });
+
+  test("routes web pager patches through app startup without opening a controlling terminal", async () => {
+    let openedTerminal = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager", "--web", "--no-open"], {
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { web: true, openBrowser: false },
+      }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdinIsTTY: false,
+      stdoutIsTTY: false,
+      openControllingTerminalImpl: () => {
+        openedTerminal = true;
+        return null;
+      },
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      controllingTerminal: null,
+      rawInput: { kind: "patch", text: patchText, options: { web: true, pager: true } },
+    });
+    expect(openedTerminal).toBe(false);
   });
 
   test("passes diff-like pager stdin through when stdout is not interactive", async () => {
@@ -373,6 +402,29 @@ describe("startup planning", () => {
     }
   });
 
+  test("keeps the raw invocation separate from config-resolved bootstrap input", async () => {
+    const rawInput: CliInput = { kind: "vcs", staged: false, options: {} };
+    const configuredInput: CliInput = {
+      ...rawInput,
+      options: { theme: "config-theme", mode: "stack" },
+    };
+    const plan = await prepareStartupPlan(["bun", "hunk", "diff"], {
+      parseCliImpl: async () => rawInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: () => createTestConfigResolution(configuredInput),
+      loadStartupExtensionsImpl: async () => createEmptyExtensionLoadResult(),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      stdinIsTTY: true,
+      stdoutIsTTY: false,
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      rawInput: { options: {} },
+      bootstrap: { input: { options: { theme: "config-theme", mode: "stack" } } },
+    });
+  });
+
   test("rejects watch mode for stdin-backed patch inputs", async () => {
     const cliInput: CliInput = {
       kind: "patch",
@@ -420,7 +472,7 @@ describe("startup planning", () => {
 
     expect(plan).toMatchObject({
       kind: "app",
-      cliInput,
+      rawInput: cliInput,
       controllingTerminal,
     });
     expect(opened).toBe(1);
@@ -497,7 +549,7 @@ describe("startup planning", () => {
 
     expect(plan).toMatchObject({
       kind: "app",
-      cliInput,
+      rawInput: cliInput,
       controllingTerminal,
     });
     expect(opened).toBe(1);

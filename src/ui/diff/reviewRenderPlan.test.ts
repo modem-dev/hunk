@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
+import { hunkLineRange } from "../../core/liveComments";
 import type { DiffFile } from "../../core/types";
 import {
   contextLineStableKeyTarget,
@@ -85,6 +86,7 @@ describe("review render plan", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 0,
       showHunkHeaders: true,
@@ -131,6 +133,7 @@ describe("review render plan", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 0,
       showHunkHeaders: true,
@@ -202,6 +205,7 @@ describe("review render plan", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 0,
       showHunkHeaders: false,
@@ -232,6 +236,7 @@ describe("review render plan", () => {
     const rows = buildStackRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 0,
       showHunkHeaders: true,
@@ -260,6 +265,85 @@ describe("review render plan", () => {
     expect(anchoredRow?.kind).toBe("diff-row");
     if (anchoredRow?.kind === "diff-row") {
       expect(anchoredRow.row.type).toBe("stack-line");
+    }
+  });
+
+  test("uses the first-hunk fallback for ranged notes outside visible hunks", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "outside",
+      "outside.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const rows = buildStackRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      hunks: file.metadata.hunks,
+      rows,
+      selectedHunkIndex: 0,
+      showHunkHeaders: true,
+      visibleAgentNotes: [
+        {
+          id: "annotation:outside",
+          annotation: { summary: "Outside", newRange: [500, 500] },
+        },
+      ],
+    });
+
+    const anchoredRow = inlineNoteAnchorRow(plannedRows);
+    expect(anchoredRow?.kind).toBe("diff-row");
+    if (anchoredRow?.kind === "diff-row") {
+      expect(anchoredRow.hunkIndex).toBe(0);
+      expect(anchoredRow.row.type).toBe("stack-line");
+    }
+  });
+
+  test("keeps a partially intersecting preferred range in its later owner hunk", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const beforeLines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[1] = "line 2 changed";
+    afterLines[10] = "line 11 changed";
+    const file = createDiffFile(
+      "partial-later",
+      "partial-later.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    expect(file.metadata.hunks).toHaveLength(2);
+
+    const firstRange = hunkLineRange(file.metadata.hunks[0]!);
+    const laterRange = hunkLineRange(file.metadata.hunks[1]!);
+    const preferredStart = laterRange.newRange[0] - 1;
+    expect(preferredStart).toBeGreaterThan(firstRange.newRange[1]);
+
+    const rows = buildStackRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      hunks: file.metadata.hunks,
+      rows,
+      showHunkHeaders: true,
+      visibleAgentNotes: [
+        {
+          id: "annotation:partial-later",
+          annotation: {
+            oldRange: [firstRange.oldRange[0], firstRange.oldRange[0]],
+            newRange: [preferredStart, laterRange.newRange[0]],
+            summary: "The preferred start is collapsed but the range reaches the later hunk",
+          },
+        },
+      ],
+    });
+
+    const anchoredRow = inlineNoteAnchorRow(plannedRows);
+    expect(anchoredRow?.kind).toBe("diff-row");
+    if (anchoredRow?.kind === "diff-row") {
+      expect(anchoredRow.hunkIndex).toBe(1);
+      expect(anchoredRow.row.type).toBe("stack-line");
+      if (anchoredRow.row.type === "stack-line") {
+        expect(anchoredRow.row.cell.newLineNumber).toBe(laterRange.newRange[0]);
+      }
     }
   });
 
@@ -300,6 +384,7 @@ describe("review render plan", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 1,
       showHunkHeaders: true,
@@ -337,6 +422,7 @@ describe("review render plan", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       selectedHunkIndex: 0,
       showHunkHeaders: true,

@@ -12,6 +12,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 - inline AI and agent annotations beside the code
 - split, stack, and responsive auto layouts
 - watch mode for auto-reloading file and Git-backed reviews
+- synchronized terminal and local browser review surfaces
 - keyboard, mouse, pager, and Git difftool support
 
 <table>
@@ -91,6 +92,25 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 
 Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
+
+### Browser review
+
+Add `--web` to any review command to use the synchronized browser surface instead of the terminal UI:
+
+```bash
+hunk diff --web
+hunk diff --watch --web
+hunk patch changes.patch --web --no-open
+hunk diff --web --tailscale
+hunk session open --repo .
+hunk session open --repo . --tailscale --no-open
+```
+
+`--web` opens the default browser and keeps the owning Hunk process alive until `SIGINT` or `SIGTERM`; closing a tab does not stop a watched review. `--no-open` prints the capability URL without launching a browser. The URL grants access to that one live review, so treat it as a secret and do not share it.
+
+Browser review is served by Hunk's loopback session daemon. Pass `--tailscale` to lazily add one browser-only listener on the machine's exact Tailscale IPv4 address; this requires the `tailscale` CLI to be installed and signed in. The resulting plain-HTTP URL is encrypted in transit by Tailscale/WireGuard, remains tailnet-only, and still requires the session capability. Broker websocket, health, and session API routes remain loopback-only. Unsafe remote daemon mode remains refused, and Hunk does not mutate `tailscale serve` configuration. If session brokering is disabled, omit `--web` to keep using the terminal UI.
+
+Browser extension UI v1 includes host-rendered review data and semantic actions. OpenTUI sidebar components, terminal-only file views, and other renderer-specific extension components remain terminal-only; extension transforms and lifecycle hooks still run once in the owning review process for both surfaces.
 
 ### Working with agents
 
@@ -220,7 +240,7 @@ repository's `.hunk/extensions/` (after you explicitly trust that repository),
 and from `--extension <path>` for development. `--no-extensions` turns those off
 for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded.
 
-A Phase 1 extension can contribute themes and file-extension → language
+A v1 extension can contribute themes and file-extension → language
 mappings, add a VCS backend, rewrite the changeset before review (collapse
 lockfiles, reorder files by review priority), replace the file-navigation
 sidebar with its own React component, react to lifecycle events, and show

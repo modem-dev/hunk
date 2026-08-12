@@ -14,6 +14,7 @@ import {
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  BrowserReviewUrlResult,
   ClearedCommentsResult,
   ListedSession,
   NavigatedSelectionResult,
@@ -31,6 +32,7 @@ import type {
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
   SessionNavigateCommandInput,
+  SessionOpenCommandInput,
   SessionReloadCommandInput,
   SessionReviewCommandInput,
   SessionSelectorInput,
@@ -43,6 +45,9 @@ export interface HunkSessionCliClient {
   getSession(selector: SessionSelectorInput): Promise<ListedSession>;
   getSelectedContext(selector: SessionSelectorInput): Promise<SelectedSessionContext>;
   getSessionReview(input: SessionReviewCommandInput): Promise<SessionReview>;
+  getBrowserReviewUrl(
+    input: Pick<SessionOpenCommandInput, "selector" | "tailscale">,
+  ): Promise<BrowserReviewUrlResult>;
   navigateToHunk(input: SessionNavigateCommandInput): Promise<NavigatedSelectionResult>;
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
@@ -122,6 +127,16 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         includeNotes: input.includeNotes,
       })
     ).review;
+  }
+
+  async getBrowserReviewUrl(input: Pick<SessionOpenCommandInput, "selector" | "tailscale">) {
+    return (
+      await this.request<{ result: BrowserReviewUrlResult }>({
+        action: "open",
+        selector: input.selector,
+        ...(input.tailscale ? { tailscale: true } : {}),
+      })
+    ).result;
   }
 
   async navigateToHunk(input: SessionNavigateCommandInput) {

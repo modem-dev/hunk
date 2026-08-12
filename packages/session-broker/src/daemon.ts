@@ -1,7 +1,10 @@
 import {
   MAX_HTTP_BODY_BYTES,
+  MAX_WS_MESSAGE_BYTES,
   PayloadTooLargeError,
+  SessionMetadataCapacityError,
   readRequestTextWithLimit,
+  utf8ByteLength,
   type SessionServerMessage,
   type SessionTargetSelector,
 } from "@hunk/session-broker-core";
@@ -187,6 +190,10 @@ export class SessionBrokerDaemon<
   }
 
   handleConnectionMessage(connection: SessionBrokerPeer, message: string) {
+    if (utf8ByteLength(message) > MAX_WS_MESSAGE_BYTES) {
+      connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session message exceeds broker limit.");
+      return;
+    }
     const parsed = parseSocketEnvelope(message);
     if (!parsed) {
       return;
@@ -194,7 +201,22 @@ export class SessionBrokerDaemon<
 
     switch (parsed.type) {
       case "register": {
-        if (!this.broker.registerSession(connection, parsed.registration, parsed.snapshot)) {
+        let registered: boolean;
+        try {
+          registered = this.broker.registerSession(
+            connection,
+            parsed.registration,
+            parsed.snapshot,
+          );
+        } catch (error) {
+          if (error instanceof SessionMetadataCapacityError) {
+            // Capacity rejection is non-destructive. In particular, do not close an existing
+            // owner's socket, because its previously retained session remains authoritative.
+            return;
+          }
+          throw error;
+        }
+        if (!registered) {
           // Close immediately when the registration payload is incompatible so the session does not
           // stay connected under stale assumptions after an upgrade.
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Incompatible session registration.");
@@ -211,12 +233,26 @@ export class SessionBrokerDaemon<
 
         // Snapshot updates are only valid after registration. Closing missing or invalid sessions
         // keeps the broker state single-sourced instead of guessing how to recover.
-        const updateResult = this.broker.updateSnapshot(parsed.sessionId, parsed.snapshot);
+        const updateResult = this.broker.updateSnapshot(
+          connection,
+          parsed.sessionId,
+          parsed.snapshot,
+        );
         if (updateResult === "not-found") {
           connection.close?.(
             INCOMPATIBLE_PAYLOAD_CLOSE_CODE,
             "Session not registered with broker.",
           );
+          return;
+        }
+
+        if (updateResult === "capacity") {
+          // Keep the prior snapshot and its live owner connected.
+          return;
+        }
+
+        if (updateResult === "not-owner") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Connection does not own session.");
           return;
         }
 
@@ -233,7 +269,10 @@ export class SessionBrokerDaemon<
           return;
         }
 
-        this.broker.markSessionSeen(parsed.sessionId);
+        if (!this.broker.markSessionSeen(connection, parsed.sessionId)) {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Connection does not own session.");
+          return;
+        }
         this.noteActivity();
         break;
       }
@@ -242,12 +281,18 @@ export class SessionBrokerDaemon<
           return;
         }
 
-        this.broker.handleCommandResult({
+        const resultStatus = this.broker.handleCommandResult(connection, {
           requestId: parsed.requestId,
           ok: parsed.ok,
           result: parsed.result as CommandResult | undefined,
           error: typeof parsed.error === "string" ? parsed.error : undefined,
+          errorCode: typeof parsed.errorCode === "string" ? parsed.errorCode : undefined,
         });
+        if (resultStatus === "not-owner") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Connection does not own command.");
+          return;
+        }
+        if (resultStatus === "not-found") return;
         this.noteActivity();
         break;
       }

@@ -22,6 +22,7 @@ describe("filter escape clearing (PTY)", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
 
       // Open filter, type a no-match query.
       await session.type("/");

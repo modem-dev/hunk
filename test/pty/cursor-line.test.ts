@@ -180,6 +180,60 @@ describe("PTY current line", () => {
     }
   });
 
+  test("saves a note on a line revealed from expanded source", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("z");
+      await harness.waitForSnapshot(session, (text) => text.includes("hiddenLine01"), 5_000);
+      await session.waitIdle({ timeout: 500 });
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Expanded source note.");
+      await session.type("\x13");
+
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(saved).toContain("Expanded source note.");
+      expect(lineIndexOf(saved, "Your note")).toBe(lineIndexOf(saved, "hiddenLine01") + 1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("renders a saved note beside a later hunk's expanded source row", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 18,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("]");
+      await session.waitIdle({ timeout: 300 });
+      await session.press("z");
+      await harness.waitForSnapshot(session, (text) => text.includes("line5 = 5"), 5_000);
+      await session.waitIdle({ timeout: 500 });
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Later expanded note.");
+      await session.type("\x13");
+
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(saved).toContain("Later expanded note.");
+      expect(lineIndexOf(saved, "Your note")).toBe(lineIndexOf(saved, "line5 = 5") + 1);
+    } finally {
+      session.close();
+    }
+  });
+
   test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({

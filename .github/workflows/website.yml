@@ -47,8 +47,14 @@ jobs:
       - name: Check static links and metadata
         run: bun run website:links
 
+      - name: Build compiled CLI for browser smoke tests
+        run: bun run build:bin
+
       - name: Install Chromium
-        run: cd website && bunx playwright install --with-deps chromium
+        working-directory: website
+        run: bunx playwright install --with-deps chromium
 
       - name: Run browser smoke tests
         run: bun run website:test:browser
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk

@@ -64,6 +64,7 @@ describe("session agent command surface", () => {
     expect(optionKeyFromFlag("--old-line <n>")).toBe("oldLine");
     expect(optionKeyFromFlag("--next-comment")).toBe("nextComment");
     expect(optionKeyFromFlag("--json")).toBe("json");
+    expect(optionKeyFromFlag("--no-open")).toBe("open");
   });
 
   test("declares every constraint flag as an option on its command", () => {

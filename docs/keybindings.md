@@ -42,6 +42,7 @@ The built-in commands and the keys they ship with:
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
+| `hunk.app.openBrowserReview`                  | Open in browser                                | _(none)_                     |
 | `hunk.app.quit`                                | Quit                                           | `q`                          |
 | `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.app.toggleFocusArea`                     | Switch focus between files and filter          | `tab`                        |

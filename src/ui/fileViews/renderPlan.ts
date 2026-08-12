@@ -1,7 +1,8 @@
+import { annotationAnchor } from "../../core/review/notes";
 import type { AgentAnnotation } from "../../core/types";
 import type { ExtensionFileViewLayout, ExtensionFileViewRow } from "../../extension-api/types";
 import { inlineNoteStableKey, lineStableKey } from "../diff/reviewRenderPlan";
-import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 
 /** One validated extension row or host-owned inline note in an alternate file presentation. */
 export type PlannedFileViewRow =

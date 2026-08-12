@@ -80,12 +80,15 @@ const SESSION_SELECTION = [
 const INSPECT_SECTION = [
   "### Inspect",
   "",
-  ...bashFence(synopsisLines(commands.list, commands.get, commands.context, commands.review)),
+  ...bashFence(
+    synopsisLines(commands.list, commands.get, commands.context, commands.review, commands.open),
+  ),
   "",
   "- `get` shows the session `Path`, `Repo`, and `Source`, which helps when choosing between `--repo` and `--session-path`",
   "- `Repo` is what `--repo` matches; `Path` is what `--session-path` matches",
   "- `review --json` returns file and hunk structure by default; add `--include-patch` only when a caller truly needs raw unified diff text",
   "- `review --include-notes` also returns the live review notes alongside the file and hunk structure",
+  "- `open` is a user-facing convenience for the synchronized local browser; do not print or open its capability URL unless the user asks",
 ];
 
 const NAVIGATE_SECTION = [

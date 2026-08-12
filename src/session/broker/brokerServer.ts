@@ -11,9 +11,19 @@ import {
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
+import {
+  TailscaleBrowserListener,
+  type TailscaleBrowserListenerOptions,
+} from "./tailscaleBrowserListener";
+import {
+  BrowserReviewServer,
+  withBrowserReviewSecurityHeaders,
+  type BrowserReviewServerOptions,
+} from "./browserReviewServer";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  BrowserReviewUrlResult,
   ClearedCommentsResult,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
@@ -41,12 +51,12 @@ import { parseSessionDaemonRequest } from "../protocolSchemas";
 const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
-
 const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "list",
   "get",
   "context",
   "review",
+  "open",
   "navigate",
   "reload",
   "comment-add",
@@ -60,6 +70,10 @@ export interface ServeSessionBrokerDaemonOptions {
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
+  /** Test override; production safe-loopback daemons serve browser review by default. */
+  browserReview?: false | BrowserReviewServerOptions;
+  /** Injectable Tailscale detection/transport used by portable broker tests. */
+  tailscaleBrowser?: Pick<TailscaleBrowserListenerOptions, "detectIp" | "serve">;
 }
 
 export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
@@ -125,12 +139,10 @@ export function parseHostAndPort(value: string) {
       return { host, port: undefined };
     }
 
-    if (!rest.startsWith(":")) {
-      return null;
-    }
-
-    const port = Number.parseInt(rest.slice(1), 10);
-    return Number.isInteger(port) && port > 0 ? { host, port } : null;
+    const portMatch = rest.match(/^:(\d{1,5})$/);
+    if (!portMatch) return null;
+    const port = Number(portMatch[1]);
+    return port > 0 && port <= 65_535 ? { host, port } : null;
   }
 
   const colonCount = [...trimmed].filter((character) => character === ":").length;
@@ -139,14 +151,14 @@ export function parseHostAndPort(value: string) {
   }
 
   if (colonCount === 1) {
-    const [host, rawPort] = trimmed.split(":");
-    const port = Number.parseInt(rawPort ?? "", 10);
-    return host && Number.isInteger(port) && port > 0 ? { host, port } : null;
+    const match = trimmed.match(/^([^:]+):(\d{1,5})$/);
+    if (!match) return null;
+    const port = Number(match[2]);
+    return port > 0 && port <= 65_535 ? { host: match[1]!, port } : null;
   }
 
-  // Unbracketed IPv6 literals are invalid in Host headers, but accepting the address without a
-  // port keeps validation strict enough for DNS-rebinding while tolerating unusual native clients.
-  return { host: trimmed, port: undefined };
+  // RFC Host syntax requires brackets around every IPv6 literal, even when no port is present.
+  return null;
 }
 
 /** Return whether a parsed authority targets an accepted broker host and port. */
@@ -215,7 +227,14 @@ async function parseJsonRequest(request: Request) {
   return parseSessionDaemonRequest(raw);
 }
 
-export async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
+export async function handleSessionApiRequest(
+  state: HunkSessionBrokerState,
+  request: Request,
+  options: {
+    allowBrowserReview?: boolean;
+    enableTailscaleBrowser?: () => Promise<string>;
+  } = {},
+) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
   }
@@ -226,6 +245,12 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
 
   try {
     const input = await parseJsonRequest(request);
+    if (input.action === "open" && options.allowBrowserReview === false) {
+      return jsonError(
+        "Browser review is unavailable when unsafe remote broker access is enabled.",
+        403,
+      );
+    }
     let response: SessionDaemonResponse;
 
     switch (input.action) {
@@ -240,9 +265,27 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
         break;
       case "review": {
         response = {
-          review: state.getSessionReview(input.selector, {
+          review: await state.getSessionReviewWithResources(input.selector, {
             includePatch: input.includePatch,
             includeNotes: input.includeNotes,
+          }),
+        };
+        break;
+      }
+      case "open": {
+        const target = state.getSession(input.selector);
+        const browserOrigin = input.tailscale
+          ? await options.enableTailscaleBrowser?.()
+          : undefined;
+        if (input.tailscale && !browserOrigin) {
+          throw new Error("Tailscale browser review is unavailable in this daemon.");
+        }
+        response = {
+          result: await state.dispatchCommand<BrowserReviewUrlResult, "get_browser_review_url">({
+            selector: { sessionId: target.sessionId },
+            command: "get_browser_review_url",
+            input: { sessionId: target.sessionId, browserOrigin },
+            timeoutMessage: "Timed out waiting for the session to create a browser review URL.",
           }),
         };
         break;
@@ -402,15 +445,16 @@ function createHunkBrokerController(
     getPendingCommandCount: () => state.getPendingCommandCount(),
     registerSession: (connection, registrationInput, snapshotInput) =>
       state.registerSession(connection, registrationInput, snapshotInput),
-    updateSnapshot: (sessionId, snapshotInput) => state.updateSnapshot(sessionId, snapshotInput),
-    markSessionSeen: (sessionId) => state.markSessionSeen(sessionId),
+    updateSnapshot: (connection, sessionId, snapshotInput) =>
+      state.updateSnapshot(connection, sessionId, snapshotInput),
+    markSessionSeen: (connection, sessionId) => state.markSessionSeen(connection, sessionId),
     unregisterConnection: (connection) => state.unregisterSocket(connection),
     pruneStaleSessions: (options) => state.pruneStaleSessions(options),
     dispatchCommand: (options) =>
       state.dispatchCommand<HunkSessionCommandResult, HunkSessionServerMessage["command"]>(
         options as Parameters<HunkSessionBrokerState["dispatchCommand"]>[0],
       ),
-    handleCommandResult: (message) => state.handleCommandResult(message),
+    handleCommandResult: (connection, message) => state.handleCommandResult(connection, message),
     shutdown: (error) => state.shutdown(error),
   };
 }
@@ -426,6 +470,18 @@ export function serveSessionBrokerDaemon(
   const staleSessionSweepIntervalMs =
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
   const state = createHunkSessionBrokerState();
+  const browserReviewOptions = options.browserReview ?? {};
+  const browserReview =
+    browserReviewOptions !== false && !allowRemote
+      ? new BrowserReviewServer(state, browserReviewOptions)
+      : null;
+  const tailscaleBrowser = browserReview
+    ? new TailscaleBrowserListener({
+        port: config.port,
+        browserReview,
+        ...options.tailscaleBrowser,
+      })
+    : null;
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
@@ -447,17 +503,39 @@ export function serveSessionBrokerDaemon(
     port: config.port,
     formatServeError: (error, _address) => formatDaemonServeError(error, config.host, config.port),
     handleRequest: async (request) => {
+      // Bun derives request.url from Host, so validate the authority before invoking URL parsing.
+      const rawPath = request.url.match(/^[a-z]+:\/\/[^/]*(\/[^?#]*)/i)?.[1] ?? "";
+      const isBrowserReviewRoute =
+        rawPath === "/review-auth" ||
+        rawPath.startsWith("/review/") ||
+        rawPath.startsWith("/review-api/");
+      const secureBrowserError = (response: Response) =>
+        isBrowserReviewRoute ? withBrowserReviewSecurityHeaders(response) : response;
       const hostError = validateHostHeader(request, config.port, allowRemote);
       if (hostError) {
-        return hostError;
+        return secureBrowserError(hostError);
       }
 
       const originError = validateOriginHeader(request, config.port, allowRemote);
       if (originError) {
-        return originError;
+        return secureBrowserError(originError);
       }
 
       const url = new URL(request.url);
+      if (isBrowserReviewRoute && allowRemote) {
+        return withBrowserReviewSecurityHeaders(
+          jsonError(
+            "Browser review is unavailable when unsafe remote broker access is enabled.",
+            403,
+          ),
+        );
+      }
+      if (isBrowserReviewRoute && browserReview) {
+        return (
+          (await browserReview.handle(request)) ??
+          withBrowserReviewSecurityHeaders(jsonError("Browser review route not found.", 404))
+        );
+      }
 
       if (url.pathname === "/health") {
         // Extend the generic health payload with the Hunk-specific companion endpoints that older
@@ -477,7 +555,10 @@ export function serveSessionBrokerDaemon(
       // Keep the richer Hunk session API here rather than in the shared package so commands like
       // review, reload, and comment flows stay app-specific.
       if (url.pathname === HUNK_SESSION_API_PATH) {
-        return handleSessionApiRequest(state, request);
+        return handleSessionApiRequest(state, request, {
+          allowBrowserReview: !allowRemote,
+          enableTailscaleBrowser: tailscaleBrowser ? () => tailscaleBrowser.enable() : undefined,
+        });
       }
 
       if (url.pathname === LEGACY_MCP_PATH) {
@@ -493,6 +574,19 @@ export function serveSessionBrokerDaemon(
     },
   });
 
+  const rawStop = server.stop.bind(server);
+  const stop: typeof server.stop = (closeActiveConnections) => {
+    tailscaleBrowser?.stop();
+    browserReview?.close();
+    return rawStop(closeActiveConnections);
+  };
+  Object.defineProperty(server, "stop", {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: stop,
+  });
+
   const shutdown = () => {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
@@ -502,6 +596,8 @@ export function serveSessionBrokerDaemon(
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   void server.stopped.finally(() => {
+    tailscaleBrowser?.stop();
+    browserReview?.close();
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
   });

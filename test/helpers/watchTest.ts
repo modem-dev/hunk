@@ -2,7 +2,7 @@ import type {
   WatchControllerClock,
   WatchEventSourceCallbacks,
 } from "../../src/core/watchController";
-import type { WatchedInputRuntime } from "../../src/ui/hooks/useWatchedInput";
+import type { WatchedInputRuntime } from "../../src/app/watchRuntime";
 
 interface ScheduledWatchTestTimer {
   callback: () => void;

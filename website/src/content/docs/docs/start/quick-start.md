@@ -39,13 +39,25 @@ A target is a Git ref or, in Jujutsu and Sapling workspaces, a native revset. Ad
 hunk show HEAD~1 -- src/ui README.md
 ```
 
+## Open the synchronized browser review
+
+```bash
+hunk diff --web
+hunk diff --web --no-open
+hunk diff --web --tailscale
+hunk session open --repo .
+```
+
+`--web` uses Hunk's browser surface and keeps the owning process alive until you interrupt it; closing the tab does not stop a watched review. `--no-open` prints the one-session capability URL instead. Treat that URL as a secret. `--tailscale` adds a browser-only listener on the machine's Tailscale IPv4 address while keeping broker and session-control routes loopback-only; Tailscale must be installed and signed in. Renderer-specific OpenTUI extension sidebars and file views remain terminal-only in browser UI v1.
+
 ## Keep the review fresh
 
 ```bash
 hunk diff --watch
+hunk diff --watch --web
 ```
 
-Hunk reloads file- and Git-backed input while preserving the review experience. Watch mode is continuous; press `q` when finished.
+Hunk reloads file- and Git-backed input while preserving the review experience. Watch mode is continuous; interrupt the owning process when finished.
 
 ## Bring in an agent
 

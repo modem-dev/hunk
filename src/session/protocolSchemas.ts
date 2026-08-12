@@ -51,6 +51,11 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("get"), selector: selectorSchema }),
   z.strictObject({ action: z.literal("context"), selector: selectorSchema }),
   z.strictObject({
+    action: z.literal("open"),
+    selector: selectorSchema,
+    tailscale: z.boolean().optional(),
+  }),
+  z.strictObject({
     action: z.literal("review"),
     selector: selectorSchema,
     includePatch: z.boolean().optional(),

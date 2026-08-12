@@ -40,8 +40,8 @@ export interface ResolvedCommentTarget {
  * is only the `+` / `-` lines. Comments anchored at a context-region line
  * (e.g. resolved by `firstCommentTargetForHunk` walking past leading context)
  * fall outside the additions-only range and silently disappear from
- * `getAnnotatedHunkIndices` / `findHunkIndexForLine` if those use the wrong
- * extent.
+ * note intersection/ownership helpers or `findHunkIndexForLine` if those use
+ * the wrong extent.
  */
 export function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(
@@ -145,31 +145,5 @@ export function resolveCommentTarget(
     hunkIndex,
     side: input.side,
     line: input.line,
-  };
-}
-
-/** Convert one incoming session-daemon comment command into a live annotation. */
-export function buildLiveComment(
-  input: CommentTargetInput & { side: DiffSide; line: number },
-  commentId: string,
-  createdAt: string,
-  hunkIndex: number,
-): LiveComment {
-  return {
-    id: commentId,
-    source: "mcp",
-    author: input.author,
-    createdAt,
-    filePath: input.filePath,
-    hunkIndex,
-    side: input.side,
-    line: input.line,
-    summary: input.summary,
-    rationale: input.rationale,
-    markup: input.markup,
-    oldRange: input.side === "old" ? [input.line, input.line] : undefined,
-    newRange: input.side === "new" ? [input.line, input.line] : undefined,
-    tags: ["mcp"],
-    confidence: "high",
   };
 }

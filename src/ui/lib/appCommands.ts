@@ -93,6 +93,7 @@ export interface BuildAppCommandsOptions {
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   openAgentSkill: () => void;
+  openBrowserReview: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
   /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
@@ -212,6 +213,13 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       title: "Show agent skill",
       defaultKeys: [],
       run: () => options.openAgentSkill(),
+      closesMenu: true,
+    },
+    {
+      id: "hunk.app.openBrowserReview",
+      title: "Open in browser",
+      defaultKeys: [],
+      run: () => options.openBrowserReview(),
       closesMenu: true,
     },
     {
@@ -540,6 +548,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     moveToFile: noop,
     moveToHunk: noop,
     openAgentSkill: noop,
+    openBrowserReview: noop,
     openThemeSelector: noop,
     requestQuit: noop,
     scrollCodeHorizontally: noop,

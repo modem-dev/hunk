@@ -33,12 +33,14 @@ import {
 } from "./cliClient";
 import { reportHunkDaemonUpgradeRestart } from "../client/capabilities";
 import { HUNK_SESSION_API_VERSION, type SessionDaemonAction } from "../protocol";
+import { openBrowserUrl } from "../../app/browserReview";
 
 const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionDaemonAction> = {
   list: "list",
   get: "get",
   context: "context",
   review: "review",
+  open: "open",
   navigate: "navigate",
   reload: "reload",
   "comment-add": "comment-add",
@@ -57,6 +59,7 @@ interface SessionCommandTestHooks {
     action: SessionDaemonAction,
     selector?: SessionSelectorInput,
   ) => Promise<void>;
+  openBrowserUrl?: (url: string) => Promise<void>;
 }
 
 let sessionCommandTestHooks: SessionCommandTestHooks | null = null;
@@ -146,6 +149,11 @@ async function ensureRequiredAction(action: SessionDaemonAction, selector?: Sess
 }
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
+  if (action === "open" && process.env.HUNK_MCP_DISABLE === "1") {
+    throw new Error(
+      "Browser review requires the local Hunk session daemon. Unset HUNK_MCP_DISABLE and retry.",
+    );
+  }
   const config = resolveSessionBrokerConfig();
   const healthy = await isSessionBrokerHealthy(config);
   if (healthy) {
@@ -204,6 +212,15 @@ export async function runSessionCommand(input: SessionCommandInput) {
         selector: normalizedSelector!,
       });
       return renderOutput(input.output, { review }, () => formatReviewOutput(review));
+    }
+    case "open": {
+      const result = await client.getBrowserReviewUrl({
+        selector: normalizedSelector!,
+        tailscale: input.tailscale,
+      });
+      if (!input.openBrowser) return `${result.url}\n`;
+      await (sessionCommandTestHooks?.openBrowserUrl?.(result.url) ?? openBrowserUrl(result.url));
+      return "Browser review opened.\n";
     }
     case "navigate": {
       const result = await client.navigateToHunk({

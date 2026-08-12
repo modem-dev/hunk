@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import {
-  buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
   firstCommentTargetForHunk,
@@ -76,53 +75,6 @@ describe("live comment helpers", () => {
     });
   });
 
-  test("carries STML markup through to the live annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Rendered note",
-        markup: "<box border>shape</box>",
-      },
-      "comment-2",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment.markup).toBe("<box border>shape</box>");
-  });
-
-  test("builds a live MCP comment annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Note",
-        rationale: "Why this matters",
-        author: "Pi",
-      },
-      "comment-1",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment).toMatchObject({
-      id: "comment-1",
-      source: "mcp",
-      author: "Pi",
-      filePath: "src/example.ts",
-      hunkIndex: 0,
-      side: "new",
-      line: 4,
-      summary: "Note",
-      rationale: "Why this matters",
-      newRange: [4, 4],
-      tags: ["mcp"],
-    });
-  });
-
   test("computes inclusive single-line hunk ranges", () => {
     const file = createExampleDiffFile();
     const range = hunkLineRange(file.metadata.hunks[0]!);
@@ -135,8 +87,8 @@ describe("live comment helpers", () => {
 
   // Regression: a hunk with one addition surrounded by lots of context used to report
   // newRange = [start, start] (additions-only), so a comment anchored past the leading
-  // context fell outside the hunk's range, annotationOverlapsHunk returned false, and
-  // the hunk silently disappeared from getAnnotatedHunkIndices / annotated-cursor lists.
+  // context fell outside the hunk's range, range intersection returned false, and
+  // the hunk silently disappeared from annotated-owner cursor lists.
   // Fix: hunkLineRange uses additionCount/deletionCount (header total, includes context)
   // instead of additionLines/deletionLines (just '+' / '-' counts).
   test("includes context lines when one hunk has many context rows around few changes", () => {

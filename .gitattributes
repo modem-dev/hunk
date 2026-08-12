@@ -1,0 +1,5 @@
+# Browser assets are generated canonically on Unix and must retain LF bytes on every checkout.
+src/browser/assets/bootstrap.js text eol=lf -whitespace
+src/browser/assets/review.css text eol=lf
+src/browser/assets/review.html text eol=lf
+src/browser/generated/assets.ts text eol=lf

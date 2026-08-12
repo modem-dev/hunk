@@ -403,6 +403,43 @@ export function createPtyHarness() {
     return { ...fixture, agentContext };
   }
 
+  function createPartialRangeNavigationRepoFixture() {
+    const beforeLines = createNumberedExportLines(1, 30).split("\n");
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line01 = 1001;";
+    afterLines[19] = "export const line20 = 2000;";
+
+    const fixture = createGitRepoFixture([
+      {
+        path: "partial.ts",
+        before: `${beforeLines.join("\n")}\n`,
+        after: `${afterLines.join("\n")}\n`,
+      },
+    ]);
+    const agentContext = join(fixture.dir, "agent-context.json");
+
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "partial.ts",
+            annotations: [
+              {
+                oldRange: [1, 1],
+                newRange: [16, 17],
+                summary: "Preferred partial range owns the later hunk.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...fixture, agentContext };
+  }
+
   function createMultiHunkFilePair() {
     const dir = makeTempDir("hunk-tuistory-hunks-");
     const before = join(dir, "before.ts");
@@ -917,13 +954,16 @@ end
     let snapshot = await session.text({ immediate: true });
 
     while (Date.now() - start < timeoutMs) {
-      if (predicate(snapshot)) {
-        return snapshot;
-      }
-
+      // A resize can make structural markers visible before their row text finishes painting.
+      // Only evaluate frames after the PTY has had a quiet period instead of accepting that
+      // transitional first capture.
       await session.waitIdle({ timeout: 50 });
       await sleep(30);
       snapshot = await session.text({ immediate: true });
+
+      if (predicate(snapshot)) {
+        return snapshot;
+      }
     }
 
     throw new Error(
@@ -950,12 +990,16 @@ end
       await session.press("?");
       try {
         await waitForSnapshot(session, (text) => text.includes("Controls help"), 2_000);
-        await session.press("escape");
-        await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
-        return;
       } catch {
         // Dropped before the app was listening; the next press is the retry.
+        continue;
       }
+
+      // Once the probe opens, closing it is part of the test contract. Surface a dropped Escape
+      // rather than sending another probe that could hide which transition failed.
+      await session.press("escape");
+      await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
+      return;
     }
 
     throw new Error("The app never reacted to a keypress.");
@@ -980,6 +1024,7 @@ end
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
+    createPartialRangeNavigationRepoFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,

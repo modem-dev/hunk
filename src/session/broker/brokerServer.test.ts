@@ -9,6 +9,7 @@ import {
 import { SessionBrokerState } from "@hunk/session-broker-core";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
 import { serveSessionBrokerDaemon } from "./brokerServer";
+import { HunkSessionBrokerState } from "./state";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -122,14 +123,18 @@ async function openSessionSocket(port: number) {
   return socket;
 }
 
-async function readRawWebSocketHandshake(port: number, headers: string[]) {
+async function readRawWebSocketHandshake(
+  port: number,
+  headers: string[],
+  host = `127.0.0.1:${port}`,
+) {
   return new Promise<string>((resolve, reject) => {
     const socket = connect({ host: "127.0.0.1", port }, () => {
       const key = randomBytes(16).toString("base64");
       socket.write(
         [
           "GET /session HTTP/1.1",
-          `Host: 127.0.0.1:${port}`,
+          `Host: ${host}`,
           "Upgrade: websocket",
           "Connection: Upgrade",
           `Sec-WebSocket-Key: ${key}`,
@@ -152,6 +157,33 @@ async function readRawWebSocketHandshake(port: number, headers: string[]) {
         return;
       }
 
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(response);
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
+/** Send one raw HTTP request so malformed Host syntax is not normalized by fetch. */
+async function readRawHttpResponse(port: number, host: string) {
+  return new Promise<string>((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port }, () => {
+      socket.write(
+        ["GET /health HTTP/1.1", `Host: ${host}`, "Connection: close", "", ""].join("\r\n"),
+      );
+    });
+    let response = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("Timed out waiting for raw HTTP response."));
+    }, 1_000);
+    socket.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      if (!response.includes("\r\n\r\n")) return;
       clearTimeout(timeout);
       socket.destroy();
       resolve(response);
@@ -298,6 +330,7 @@ describe("Hunk session daemon server", () => {
           "get",
           "context",
           "review",
+          "open",
           "navigate",
           "reload",
           "comment-add",
@@ -318,6 +351,106 @@ describe("Hunk session daemon server", () => {
       expect(legacyMcp.status).toBe(410);
       await expect(legacyMcp.json()).resolves.toMatchObject({
         error: "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("serves production browser routes on the safe loopback daemon", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    const server = serveSessionBrokerDaemon();
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/review-auth`, { method: "POST" });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("lazily enables one Tailscale listener and forwards only its daemon-issued origin", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    let serveCount = 0;
+    let stopCount = 0;
+    const server = serveSessionBrokerDaemon({
+      tailscaleBrowser: {
+        detectIp: () => "100.70.1.2",
+        serve: () => {
+          serveCount += 1;
+          return { stop: () => (stopCount += 1) };
+        },
+      },
+    });
+    const socket = await openRegisteredSession(port);
+    socket.addEventListener("message", (event) => {
+      const command = JSON.parse(String(event.data)) as {
+        requestId: string;
+        command: string;
+        input: { browserOrigin?: string };
+      };
+      if (command.command !== "get_browser_review_url") return;
+      expect(command.input.browserOrigin).toBe("http://100.70.1.2:" + port);
+      socket.send(
+        JSON.stringify({
+          type: "command-result",
+          requestId: command.requestId,
+          ok: true,
+          result: {
+            url: `http://100.70.1.2:${port}/review/session-1/#capability=test`,
+          },
+        }),
+      );
+    });
+    try {
+      for (let index = 0; index < 2; index += 1) {
+        const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "open",
+            selector: { sessionId: "session-1" },
+            tailscale: true,
+          }),
+        });
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+          result: { url: `http://100.70.1.2:${port}/review/session-1/#capability=test` },
+        });
+      }
+      expect(serveCount).toBe(1);
+    } finally {
+      socket.close();
+      server.stop(true);
+    }
+    expect(stopCount).toBe(1);
+  });
+
+  test("refuses browser routes whenever unsafe remote broker access is enabled", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = "1";
+    const server = serveSessionBrokerDaemon({ browserReview: {} });
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/review/session-1/`);
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        error: "Browser review is unavailable when unsafe remote broker access is enabled.",
+      });
+
+      const openResponse = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "open", selector: { sessionId: "session-1" } }),
+      });
+      expect(openResponse.status).toBe(403);
+      await expect(openResponse.json()).resolves.toEqual({
+        error: "Browser review is unavailable when unsafe remote broker access is enabled.",
       });
     } finally {
       server.stop(true);
@@ -349,6 +482,20 @@ describe("Hunk session daemon server", () => {
       await expect(missingPortResponse.json()).resolves.toEqual({
         error: "Host header is not allowed for the local session broker.",
       });
+
+      for (const host of [`127.0.0.1:${port}junk`, `localhost:${port}.5`, `[::1]:${port}suffix`]) {
+        const get = await fetch(`http://127.0.0.1:${port}/health`, { headers: { host } });
+        expect(get.status).toBe(403);
+        const post = await fetch(`http://127.0.0.1:${port}/session-api`, {
+          method: "POST",
+          headers: { host, "content-type": "application/json" },
+          body: JSON.stringify({ action: "list" }),
+        });
+        expect(post.status).toBe(403);
+      }
+
+      expect(await readRawHttpResponse(port, "::1")).toStartWith("HTTP/1.1 403");
+      expect(await readRawWebSocketHandshake(port, [], "::1")).toStartWith("HTTP/1.1 403");
     } finally {
       server.stop(true);
     }
@@ -600,8 +747,11 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const original = SessionBrokerState.prototype.getSessionReview;
-    SessionBrokerState.prototype.getSessionReview = function (selector, options) {
+    const original = HunkSessionBrokerState.prototype.getSessionReviewWithResources;
+    HunkSessionBrokerState.prototype.getSessionReviewWithResources = async function (
+      selector,
+      options,
+    ) {
       expect(selector).toEqual({ sessionId: "session-1" });
       expect(options).toEqual({ includePatch: true, includeNotes: true });
 
@@ -684,7 +834,7 @@ describe("Hunk session daemon server", () => {
         },
       });
     } finally {
-      SessionBrokerState.prototype.getSessionReview = original;
+      HunkSessionBrokerState.prototype.getSessionReviewWithResources = original;
       server.stop(true);
     }
   });
@@ -757,7 +907,33 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_PORT = String(port);
 
     const server = serveSessionBrokerDaemon();
+    const baseReview = createTestSessionSnapshot().state.review;
     const socket = await openRegisteredSession(port, "session-1", {
+      review: {
+        ...baseReview,
+        notes: [
+          {
+            id: "user:1",
+            source: "user",
+            origin: "user",
+            fileKey: "file-key-1",
+            anchor: { intersectingHunkIndices: [], ownerHunkIndex: 0 },
+            summary: "Human note",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: true,
+          },
+          {
+            id: "agent:1",
+            source: "agent",
+            origin: "live-agent",
+            fileKey: "file-key-1",
+            anchor: { intersectingHunkIndices: [], ownerHunkIndex: 0 },
+            summary: "Agent note",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: false,
+          },
+        ],
+      },
       reviewNoteCount: 2,
       reviewNotes: [
         {
@@ -772,7 +948,8 @@ describe("Hunk session daemon server", () => {
         {
           noteId: "agent:1",
           source: "agent",
-          filePath: "src/other.ts",
+          filePath: "src/example.ts",
+          hunkIndex: 0,
           body: "Agent note",
           createdAt: "2026-05-10T00:00:00.000Z",
           editable: false,
