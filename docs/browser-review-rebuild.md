@@ -117,3 +117,38 @@ Deliberately renderer-specific — do not unify: terminal row building, cell mea
 windowing; browser IntersectionObserver windowing and DOM reveal mechanics; STML layout; platform
 hashing (`node:crypto` vs Web Crypto); theme palettes, pending a product decision on whether the
 browser mirrors the terminal theme.
+
+## Commands and keyboard shortcuts in the browser
+
+The terminal command system (`src/ui/lib/appCommands.ts`) fuses three separable things per
+command: identity (id, title, chords), binding (terminal `KeyEvent` matching), and effect
+(closures over live App state). Making commands work in the browser means splitting them, not
+transporting them:
+
+- **Catalog as shared data**: id, title, category, default chords, and a declared resolution
+  locus move to a renderer-neutral catalog. Menus (`appMenus.ts`), the help dialog, and a
+  browser command palette all render from the same catalog, and user `[keybindings]` config
+  applies to the catalog rather than to one renderer.
+- **Three resolution loci, declared per command**:
+  - _Semantic_ — lowers to a `ReviewIntent` and resolves at the producer, with changes
+    broadcast to every attached client (hunk/file navigation, annotated navigation, start
+    note, toggle gap expansion, toggle agent notes, filter). The browser fires these through
+    the existing apply-action wire path — no new wire surface, and the agent runtime's
+    `hunk session` commands become a third consumer of the same lowering.
+  - _Client-local_ — view state that is deliberately per-client (scrolling, paging, line
+    alignment, layout mode, wrap, line numbers, sidebar, menu bar, theme selector, help).
+    Each client implements its own handler; identity and chords stay shared so help and
+    palettes agree.
+  - _Host-only_ — quit, source refresh, edit-in-`$EDITOR`, agent-skill helpers, and all
+    extension commands. Not invocable from the browser by default: extension commands execute
+    host-side with dialog access, so browser invocation is remote code execution and needs an
+    explicit per-command allowlist in the registration capability list. Deferred beyond the
+    initial rebuild.
+- **Keymap**: chords keep the shared string vocabulary (`keymap.ts`); each client maps chords
+  to its own event type and masks what its platform reserves (e.g. browser `Cmd+W`).
+
+Phasing: the catalog split and semantic lowering belong to Phase 1 — converting terminal `run`
+closures into intent dispatches is the same refactor that moves the terminal onto the shared
+store. Browser key bindings and the command palette land with Phase 5, gated by the shared
+catalog so the two clients cannot drift on what a command means. Brokered host-command
+invocation is explicitly out of scope until the allowlist design exists.
