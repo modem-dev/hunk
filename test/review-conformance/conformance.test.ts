@@ -1,20 +1,48 @@
 import { describe, expect, test } from "bun:test";
+import { ReviewProducer } from "../../src/app/review/producer";
+import {
+  classifyReviewPublication,
+  type ReviewPublicationAddress,
+} from "../../src/core/review/generationOrder";
 import { isBlankReviewNoteBody, planReviewIntent } from "../../src/core/review/intents";
+import { reviewNoteWithinBounds } from "../../src/core/review/noteBounds";
 import { createInitialReviewState } from "../../src/core/review/state";
+import { createReviewStore } from "../../src/core/review/store";
+import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import { REVIEW_CONFORMANCE_CONSUMERS, REVIEW_NAVIGATION_CONSUMERS } from "./consumers";
 import { REVIEW_CONFORMANCE_FIXTURES } from "./fixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
+import { REVIEW_NOTE_BOUNDS_FIXTURES } from "./noteBounds";
+import {
+  REVIEW_PRODUCER_ORDER_FIXTURES,
+  REVIEW_PUBLICATION_ORDER_FIXTURES,
+} from "./orderingFixtures";
 
 /** Findings whose adversarial fixture must exist for the finding to count as repaid. */
-const REQUIRED_FINDINGS = ["A1", "A2", "A3", "A4", "A8", "A10", "B1", "B2", "B3", "B4", "B6"];
+const REQUIRED_FINDINGS = [
+  "A1",
+  "A2",
+  "A3",
+  "A4",
+  "A8",
+  "A10",
+  "B1",
+  "B2",
+  "B3",
+  "B4",
+  "B6",
+  "C1",
+  "D1",
+];
 
 describe("review conformance corpus", () => {
   test("registers every consumer that has landed so far", () => {
     expect(REVIEW_CONFORMANCE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core review model",
       "terminal render planning",
+      "review producer",
     ]);
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
@@ -26,6 +54,9 @@ describe("review conformance corpus", () => {
     const covered = new Set([
       ...REVIEW_CONFORMANCE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_NAVIGATION_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_PUBLICATION_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_PRODUCER_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...(REVIEW_NOTE_BOUNDS_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
     expect(REQUIRED_FINDINGS.filter((finding) => !covered.has(finding))).toEqual([]);
@@ -81,6 +112,55 @@ describe("review conformance: empty note bodies", () => {
       expect(plan.actions.map((action) => action.type)).toEqual([
         fixture.blank ? "draft/cancel" : "draft/save",
       ]);
+    });
+  }
+});
+
+describe("review conformance: note bounds", () => {
+  for (const fixture of REVIEW_NOTE_BOUNDS_FIXTURES) {
+    test(`${fixture.id} ${fixture.withinBounds ? "fits" : "is too large"}`, () => {
+      expect(reviewNoteWithinBounds(fixture.build())).toBe(fixture.withinBounds);
+    });
+  }
+});
+
+describe("review conformance: publication ordering", () => {
+  for (const fixture of REVIEW_PUBLICATION_ORDER_FIXTURES) {
+    test(`${fixture.id} is ${fixture.expected} (${fixture.findings.join(", ")})`, () => {
+      expect(classifyReviewPublication(fixture.current, fixture.incoming)).toBe(fixture.expected);
+    });
+  }
+});
+
+describe("review conformance: producer ordering", () => {
+  for (const fixture of REVIEW_PRODUCER_ORDER_FIXTURES) {
+    test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+      const files = [createTestDiffFile({ before: "alpha\n", after: "beta\n" })];
+      const producer = new ReviewProducer(
+        { files, sourceLabel: "/repo" },
+        {
+          producerId: "conformance",
+        },
+      );
+      const store = createReviewStore(producer.getPublication().document);
+      producer.attachStore(store);
+
+      let previous: ReviewPublicationAddress = producer.getPublicationAddress();
+      const verdicts = fixture.steps.map((step, index) => {
+        if (step.kind === "reload") {
+          producer.publish({ files, sourceLabel: "/repo" });
+        } else {
+          // Any real state change advances the store's revision; the filter is the
+          // cheapest one that does not depend on what the fixture's files contain.
+          producer.applyIntent({ type: "filter/set", filter: `step-${index}` });
+        }
+        const next = producer.getPublicationAddress();
+        const verdict = classifyReviewPublication(previous, next);
+        previous = next;
+        return verdict;
+      });
+
+      expect(verdicts).toEqual(fixture.steps.map((step) => step.expected));
     });
   }
 });

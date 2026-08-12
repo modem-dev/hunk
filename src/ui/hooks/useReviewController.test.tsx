@@ -82,7 +82,10 @@ function createSingleHunkFile() {
  * file offers the real `before:0` and `trailing:0` gaps an expansion test can address.
  */
 function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
-  const beforeLines = Array.from({ length: 12 }, (_unused, index) => `export const alpha${index + 1} = ${index + 1};`);
+  const beforeLines = Array.from(
+    { length: 12 },
+    (_unused, index) => `export const alpha${index + 1} = ${index + 1};`,
+  );
   const afterLines = [...beforeLines];
   afterLines[7] = "export const alpha8 = 800;";
   return createDiffFile(
@@ -1319,9 +1322,9 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expect(() =>
-          expectValue(controllerRef.current).toggleGap("removed", "trailing:0"),
-        ).toThrow("does not exist");
+        expect(() => expectValue(controllerRef.current).toggleGap("removed", "trailing:0")).toThrow(
+          "does not exist",
+        );
       });
       await flush(setup);
 
