@@ -12,12 +12,10 @@
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
 import { reviewHunkRanges } from "../../core/review/geometry";
-import type { ReviewAnnotationIndex } from "../../core/review/navigation";
 import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
-import { getAnnotatedHunkIndices } from "./agentAnnotations";
 import { mergeFileAnnotationsByFileId } from "./files";
 
 export interface BuildReviewStreamStateOptions {
@@ -59,41 +57,6 @@ export function buildReviewStreamState({
       ),
     ),
   };
-}
-
-/**
- * Index which files and hunks currently carry notes, keyed by semantic file key.
- *
- * The terminal is where the review's note sources meet: a sidecar loaded with the
- * changeset, live agent comments, and the reviewer's own notes are all merged onto the
- * diff-file model before this runs. Annotated navigation plans against the result, so the
- * set is derived once here and handed to the shared planner as a fact.
- *
- * File membership is deliberately broader than hunk membership: a file carrying review
- * context but no note inside any hunk is still a stop on the annotated-file tour.
- */
-export function buildReviewAnnotationIndex(
-  files: readonly DiffFile[],
-  keyByFileId: ReadonlyMap<string, string>,
-): ReviewAnnotationIndex {
-  const annotatedHunkIndicesByFileKey = new Map<string, ReadonlySet<number>>();
-  const annotatedFileKeys = new Set<string>();
-
-  for (const file of files) {
-    const fileKey = keyByFileId.get(file.id);
-    if (!fileKey) {
-      continue;
-    }
-    if (file.agent) {
-      annotatedFileKeys.add(fileKey);
-    }
-    const annotatedHunks = getAnnotatedHunkIndices(file);
-    if (annotatedHunks.size > 0) {
-      annotatedHunkIndicesByFileKey.set(fileKey, annotatedHunks);
-    }
-  }
-
-  return { annotatedHunkIndicesByFileKey, annotatedFileKeys };
 }
 
 /** Format the currently selected hunk for daemon snapshots and session command replies. */

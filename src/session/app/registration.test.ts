@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import { buildReviewPublication } from "../../app/review/publication";
 import type { AppBootstrap } from "../../core/types";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import {
@@ -37,10 +38,19 @@ function createBootstrap(overrides: Partial<AppBootstrap> = {}): AppBootstrap {
   };
 }
 
+/** Publish one generation of a bootstrap, the way the host does before registering. */
+function publish(bootstrap: AppBootstrap) {
+  return buildReviewPublication({
+    files: bootstrap.changeset.files,
+    generation: "generation:test:0",
+    sourceLabel: bootstrap.changeset.sourceLabel,
+  });
+}
+
 describe("session registration", () => {
   // Intent: registration preserves daemon-facing repo, file, patch, and hunk metadata.
   test("createSessionRegistration exports review files with hunks and repo-root selection", () => {
-    const registration = createSessionRegistration(createBootstrap());
+    const registration = createSessionRegistration(createBootstrap(), publish(createBootstrap()));
 
     expect(registration).toMatchObject({
       registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
@@ -81,8 +91,8 @@ describe("session registration", () => {
       { ...file, path: "国際化/한국어-🧪.txt", previousPath: "国際化/日本語.txt" },
     ];
 
-    const registration = createSessionRegistration(bootstrap);
-    const snapshot = createInitialSessionSnapshot(bootstrap);
+    const registration = createSessionRegistration(bootstrap, publish(bootstrap));
+    const snapshot = createInitialSessionSnapshot(bootstrap, publish(bootstrap));
 
     expect(registration.info.files[0]).toMatchObject({
       path: "国際化/한국어-🧪.txt",
@@ -93,7 +103,7 @@ describe("session registration", () => {
 
   // Intent: reloads refresh review metadata without changing the live session identity.
   test("updateSessionRegistration preserves identity while refreshing input metadata", () => {
-    const current = createSessionRegistration(createBootstrap());
+    const current = createSessionRegistration(createBootstrap(), publish(createBootstrap()));
     const nextBootstrap = createBootstrap({
       input: { kind: "patch", file: "change.patch", options: {} },
       changeset: {
@@ -104,7 +114,7 @@ describe("session registration", () => {
       },
     });
 
-    const updated = updateSessionRegistration(current, nextBootstrap);
+    const updated = updateSessionRegistration(current, nextBootstrap, publish(nextBootstrap));
 
     expect(updated.sessionId).toBe(current.sessionId);
     expect(updated.pid).toBe(current.pid);
@@ -119,18 +129,18 @@ describe("session registration", () => {
   });
 
   test("registration advertises STML only for opted-in launches", () => {
-    const registration = createSessionRegistration(
-      createBootstrap({
-        input: { kind: "vcs", staged: false, options: { experimental: true } },
-      }),
-    );
+    const experimental = createBootstrap({
+      input: { kind: "vcs", staged: false, options: { experimental: true } },
+    });
+    const registration = createSessionRegistration(experimental, publish(experimental));
 
     expect(registration.info.experimentalFeatures).toEqual(["stml"]);
   });
 
   // Intent: initial snapshots expose first-hunk focus and configured note visibility.
   test("createInitialSessionSnapshot starts with the first hunk and note visibility", () => {
-    const snapshot = createInitialSessionSnapshot(createBootstrap());
+    const bootstrap = createBootstrap();
+    const snapshot = createInitialSessionSnapshot(bootstrap, publish(bootstrap));
 
     expect(snapshot.state).toMatchObject({
       selectedFileId: "file-1",
@@ -148,17 +158,11 @@ describe("session registration", () => {
 
   // Intent: empty reviews still publish a valid, explicit daemon snapshot.
   test("createInitialSessionSnapshot handles empty changesets", () => {
-    const snapshot = createInitialSessionSnapshot(
-      createBootstrap({
-        changeset: {
-          id: "empty",
-          title: "empty",
-          sourceLabel: "/repo",
-          files: [],
-        },
-        initialShowAgentNotes: false,
-      }),
-    );
+    const empty = createBootstrap({
+      changeset: { id: "empty", title: "empty", sourceLabel: "/repo", files: [] },
+      initialShowAgentNotes: false,
+    });
+    const snapshot = createInitialSessionSnapshot(empty, publish(empty));
 
     expect(snapshot.state).toEqual({
       selectedFileId: undefined,

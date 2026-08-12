@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
+import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { resolveConfiguredCliInput } from "../core/config";
@@ -36,12 +37,19 @@ export function AppHost({
   bootstrap,
   hostClient,
   onQuit = () => process.exit(0),
+  reviewProducer,
   startupNoticeResolver,
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
+  /**
+   * The producer whose generations this host publishes. Supplied by the process that
+   * built the initial registration from its first publication; a host mounted without one
+   * owns its own, so a headless mount still advances generations across reloads.
+   */
+  reviewProducer?: ReviewProducer;
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
   watchRuntime?: WatchedInputRuntime;
 }) {
@@ -55,6 +63,14 @@ export function AppHost({
         },
       };
   const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
+  const [producer] = useState(
+    () =>
+      reviewProducer ??
+      new ReviewProducer({
+        files: initialBootstrap.changeset.files,
+        sourceLabel: initialBootstrap.changeset.sourceLabel,
+      }),
+  );
   const [appVersion, setAppVersion] = useState(0);
   // Extensions outlive App remounts, and a trust grant can replace the whole
   // load result mid-session, so the host owns them rather than the bootstrap.
@@ -191,7 +207,13 @@ export function AppHost({
                   createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadInput.options.vcs)),
                 ]
               : configured.startupNotices;
-          const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
+          // The reload succeeded, so this content becomes the next generation; the
+          // registration and snapshot below are projections of it.
+          const publication = producer.publish({
+            files: nextBootstrap.changeset.files,
+            sourceLabel: nextBootstrap.changeset.sourceLabel,
+          });
+          const nextSnapshot = createInitialSessionSnapshot(nextBootstrap, publication);
 
           let sessionId = "local-session";
           if (hostClient) {
@@ -199,6 +221,7 @@ export function AppHost({
             const nextRegistration = updateSessionRegistration(
               hostClient.getRegistration(),
               nextBootstrap,
+              publication,
             );
             sessionId = nextRegistration.sessionId;
             hostClient.replaceSession(nextRegistration, nextSnapshot);
@@ -265,6 +288,7 @@ export function AppHost({
       launchExperimental,
       launchExtensionsEnabled,
       launchExtensionPaths,
+      producer,
       sessionFileBounds,
     ],
   );

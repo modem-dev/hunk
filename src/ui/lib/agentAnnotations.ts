@@ -1,6 +1,6 @@
 import type { Hunk } from "@pierre/diffs";
 import type { AgentAnnotation, DiffFile, ReviewNoteSource } from "../../core/types";
-import { reviewHunkRanges } from "../../core/review/geometry";
+import { reviewAnnotationOverlapsHunk } from "../../core/review/annotations";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
@@ -38,49 +38,15 @@ export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource 
   return "ai";
 }
 
-/** Check whether two inclusive line ranges overlap. */
-function overlap(rangeA: [number, number], rangeB: [number, number]) {
-  return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
-}
-
-/** Check whether an annotation belongs to the visible span of a hunk. */
-function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
-  const hunkRange = reviewHunkRanges(hunk);
-
-  if (annotation.newRange && overlap(annotation.newRange, hunkRange.newRange)) {
-    return true;
-  }
-
-  if (annotation.oldRange && overlap(annotation.oldRange, hunkRange.oldRange)) {
-    return true;
-  }
-
-  return false;
-}
-
 /** Return the annotations relevant to the currently selected hunk. */
 export function getSelectedAnnotations(file: DiffFile | undefined, hunk: Hunk | undefined) {
   if (!file?.agent || !hunk) {
     return [];
   }
 
-  return file.agent.annotations.filter((annotation) => annotationOverlapsHunk(annotation, hunk));
-}
-
-/** Mark which hunks in a file have any agent annotations attached. */
-export function getAnnotatedHunkIndices(file: DiffFile | undefined) {
-  const annotated = new Set<number>();
-  if (!file?.agent) {
-    return annotated;
-  }
-
-  file.metadata.hunks.forEach((hunk, index) => {
-    if (file.agent?.annotations.some((annotation) => annotationOverlapsHunk(annotation, hunk))) {
-      annotated.add(index);
-    }
-  });
-
-  return annotated;
+  return file.agent.annotations.filter((annotation) =>
+    reviewAnnotationOverlapsHunk(annotation, hunk),
+  );
 }
 
 /** Format an inclusive line range for note labels. */
