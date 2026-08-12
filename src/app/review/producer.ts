@@ -23,7 +23,6 @@ import {
   assertReviewPublicationAdvance,
   formatReviewGeneration,
   nextReviewGeneration,
-  parseReviewGeneration,
   type ReviewGenerationIdentity,
   type ReviewPublicationAddress,
 } from "../../core/review/generationOrder";
@@ -35,13 +34,14 @@ import {
   type ReviewIntentOutcomeByType,
 } from "../../core/review/intents";
 import {
-  isReviewResourceRange,
+  parseReadReviewResourceRequest,
   REVIEW_RESOURCE_CHUNK_BYTES,
   type ReviewResourceChunkV1,
   type ReviewResourceDescriptorV1,
   type ReviewResourceErrorCode,
+  type ReviewRequestErrorCode,
 } from "../../core/review/resources";
-import { hasExactKeys, type ReviewDigestFn } from "../../core/review/validation";
+import type { ReviewDigestFn } from "../../core/review/validation";
 import type { ReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/types";
 import { nodeReviewDigest } from "./digest";
@@ -51,16 +51,10 @@ import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore
 /**
  * Everything that can go wrong answering a producer request.
  *
- * The resource codes are the shared ones, so a reader classifies a failure the same way
- * whichever tier reported it; the two added here are about the request rather than the
- * resource.
+ * Composed from the shared vocabularies rather than restated, so a reader classifies a
+ * failure the same way whichever tier reported it.
  */
-export type ReviewProducerErrorCode =
-  | ReviewResourceErrorCode
-  /** The request named a generation this producer is no longer serving. */
-  | "stale-generation"
-  /** The request was not expressible: missing, extra, or wrongly typed fields. */
-  | "invalid-request";
+export type ReviewProducerErrorCode = ReviewResourceErrorCode | ReviewRequestErrorCode;
 
 export interface ReviewProducerFailure {
   ok: false;
@@ -73,36 +67,6 @@ export interface ReviewProducerFailure {
 export type ReviewProducerChunkResult =
   | { ok: true; chunk: ReviewResourceChunkV1 }
   | ReviewProducerFailure;
-
-/** One resource read, as an untrusted caller states it. */
-export interface ReadReviewResourceRequest {
-  generation: string;
-  resourceId: string;
-  offset: number;
-  length: number;
-}
-
-const READ_RESOURCE_FIELDS = ["generation", "resourceId", "offset", "length"] as const;
-
-/** Parse one resource-read request strictly, rejecting omitted and unknown fields alike. */
-export function parseReadReviewResourceRequest(
-  value: unknown,
-): ReadReviewResourceRequest | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    !hasExactKeys(record, READ_RESOURCE_FIELDS) ||
-    parseReviewGeneration(record.generation) === undefined ||
-    typeof record.resourceId !== "string" ||
-    record.resourceId.length === 0 ||
-    !isReviewResourceRange({ offset: record.offset, length: record.length })
-  ) {
-    return undefined;
-  }
-  return record as unknown as ReadReviewResourceRequest;
-}
 
 export interface ReviewProducerOptions {
   /** Identity of this producer, part of every generation it mints. */
@@ -192,6 +156,17 @@ export class ReviewProducer {
   }
 
   /**
+   * The review state this producer plans against, when a host has attached one.
+   *
+   * Read-only, and deliberately the *store's* state rather than a copy: a caller
+   * validating a request against the current review — does this file exist, is this the
+   * draft I opened — must see exactly what the next intent will be planned against.
+   */
+  getReviewState() {
+    return this.store?.getSnapshot();
+  }
+
+  /**
    * Plan and commit one semantic intent on behalf of a caller.
    *
    * The producer supplies the facts core refuses to invent: identity and time, and the
@@ -268,12 +243,22 @@ export class ReviewProducer {
     });
   }
 
-  /** The caller-owned facts every intent planned here is given. */
+  /**
+   * The caller-owned facts every intent planned here is given.
+   *
+   * The annotation index is keyed by the file keys of the document the plan will run
+   * against — the attached store's, when there is one — rather than by this publication's
+   * own. A host that projected its document separately from the producer would otherwise
+   * hand the planner an index addressed in a vocabulary the state does not use, and
+   * annotated navigation would silently find nothing.
+   */
   private intentFacts(): ReviewIntentFacts {
+    const document = this.store?.getSnapshot().document ?? this.publication.document;
+    const keyByRuntimeId = new Map(document.files.map((file) => [file.runtimeId, file.key]));
     return {
       annotations: buildReviewAnnotationIndex(
         [...this.publication.diffFilesByKey.values()],
-        new Map([...this.publication.diffFilesByKey].map(([fileKey, file]) => [file.id, fileKey])),
+        keyByRuntimeId,
       ),
     };
   }

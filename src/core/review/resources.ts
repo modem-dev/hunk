@@ -12,7 +12,9 @@
  * ends validate against, which is what keeps the reader's chunk size from drifting away
  * from the writer's response cap (`docs/browser-review-seam-audit.md`, C2/D5).
  */
+import { parseReviewGeneration } from "./generationOrder";
 import type { ReviewSide } from "./types";
+import { hasExactKeys } from "./validation";
 
 export type ReviewResourceKind = "canonical-file" | "patch" | "source";
 
@@ -21,6 +23,15 @@ export const REVIEW_RESOURCE_CHUNK_BYTES = 256 * 1024;
 
 /** Largest full source text a producer will read on behalf of gap expansion. */
 export const MAX_REVIEW_SOURCE_RESOURCE_BYTES = 1_000_000;
+
+/**
+ * How many resources one bulk load produces at a time.
+ *
+ * Shared because both ends run bulk loads — the producer materializing many patches, the
+ * daemon reconstructing them — and a review's memory ceiling is the product of this and
+ * the resource bound, so the two must be reasoned about together.
+ */
+export const REVIEW_RESOURCE_LOAD_CONCURRENCY = 4;
 
 /** Largest single resource of any kind a producer will materialize. */
 export const MAX_REVIEW_RESOURCE_BYTES = 32 * 1024 * 1024;
@@ -137,6 +148,43 @@ export function isReviewResourceRange(value: unknown): value is ReviewResourceRa
   );
 }
 
+/**
+ * One resource read, as an untrusted caller states it.
+ *
+ * Shared rather than declared per tier: the producer answers these, the wire protocol
+ * carries them, and a browser client will compose them — and the moment two of those
+ * write their own parser, the reader's range size and the writer's response cap drift
+ * apart again (`docs/browser-review-seam-audit.md`, D5).
+ */
+export interface ReadReviewResourceRequest {
+  generation: string;
+  resourceId: string;
+  offset: number;
+  length: number;
+}
+
+const READ_RESOURCE_FIELDS = ["generation", "resourceId", "offset", "length"] as const;
+
+/** Parse one resource-read request strictly, rejecting omitted and unknown fields alike. */
+export function parseReadReviewResourceRequest(
+  value: unknown,
+): ReadReviewResourceRequest | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    !hasExactKeys(record, READ_RESOURCE_FIELDS) ||
+    parseReviewGeneration(record.generation) === undefined ||
+    typeof record.resourceId !== "string" ||
+    record.resourceId.length === 0 ||
+    !isReviewResourceRange({ offset: record.offset, length: record.length })
+  ) {
+    return undefined;
+  }
+  return record as unknown as ReadReviewResourceRequest;
+}
+
 /** One verified slice of a resource, as a reader receives it. */
 export interface ReviewResourceChunkV1 {
   generation: string;
@@ -170,3 +218,17 @@ export type ReviewResourceErrorCode =
   | "resource-integrity"
   /** The requested window is unexpressible, or starts past the end of the content. */
   | "invalid-range";
+
+/**
+ * What can go wrong with the request itself rather than with the resource it names.
+ *
+ * Beside the resource codes because every tier that answers a review request — the
+ * producer, the wire, later an HTTP surface — reports failures from one vocabulary, and a
+ * client that classified a failure differently depending on which tier produced it would
+ * be back to inventing its own rules (`docs/browser-review-seam-audit.md`, D5).
+ */
+export type ReviewRequestErrorCode =
+  /** The request named a generation the producer is no longer serving. */
+  | "stale-generation"
+  /** The request was not expressible: missing, extra, or wrongly typed fields. */
+  | "invalid-request";

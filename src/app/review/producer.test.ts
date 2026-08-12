@@ -9,7 +9,8 @@ import {
 } from "../../core/review/resources";
 import { createReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/types";
-import { ReviewProducer, parseReadReviewResourceRequest } from "./producer";
+import { parseReadReviewResourceRequest } from "../../core/review/resources";
+import { ReviewProducer } from "./producer";
 
 const BEFORE = lines("alpha", "beta", "gamma", "delta");
 const AFTER = lines("alpha", "BETA", "gamma", "delta");
