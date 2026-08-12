@@ -315,6 +315,15 @@ here so the extraction happens before the duplication exists. Design detail in
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
+  _Repaid (Phase 1 PR 3)_: `src/core/commandCatalog.ts` carries id, title, category, default
+  chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
+  `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
+  `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
+  menus and help keep reading identity through that table. Parity is asserted in
+  `appCommands.test.ts` ("command catalog parity"): the table is exactly the catalog in catalog
+  order, and no menu item or help row names a command the catalog does not declare. Placement
+  note: the catalog sits outside `core/review`, which stays review semantics only, so Phase 5
+  must add it to the web boundary gate's allowed import targets.
 - **F2. Semantic command effects are closures instead of intent dispatches.** The ~15
   review-semantic commands (hunk/file/annotated navigation, start note, toggle gap, toggle
   agent notes, filter) run as App closures; a browser implementation would re-derive each
@@ -322,11 +331,23 @@ here so the extraction happens before the duplication exists. Design detail in
   `ReviewIntent`s (the Phase 1 store refactor is the same work); the browser fires them
   through the existing apply-action path, and the agent runtime's `hunk session` surface
   becomes a third consumer of the same lowering.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: semantic entries declare their effect as data
+  (`AppCommandReviewEffect`), and `lowerAppCommandToReviewIntent` is the one constructor turning
+  a command plus a repeat count into a `ReviewIntent`. The terminal's navigation handlers read
+  the scope and direction from that same declaration rather than restating them. Two semantic
+  commands have no intent to lower to yet — starting a note needs caller-owned draft identity,
+  and gap expansion is the Phase 2 `expansion/toggle` intent — and are listed by name in
+  `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT`, so the gap is a decision rather than an oversight.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
   user keybindings against the catalog once; each client maps resolved chords to its own event
   type and masks platform-reserved chords (browser `Cmd+W` etc.).
+  _Repaid (Phase 1 PR 3, host site)_: `builtinCommandKeyDefaults` reads the catalog, so
+  `[keybindings]` resolution, conflict detection against extension commands, and key labels all
+  fold user config over catalogued defaults exactly once. Mapping resolved chords onto a client's
+  own event type stays per client, which is the part that cannot be shared; the browser's half
+  lands in Phase 5.
 - **F4. Host-only and extension commands — do not expose, by design.** Quit, source refresh,
   edit-in-`$EDITOR`, agent-skill helpers, and all extension commands execute host-side (with
   dialog access); browser invocation is remote code execution into the terminal session.

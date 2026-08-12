@@ -1,4 +1,10 @@
 import type { KeyEvent } from "@opentui/core";
+import {
+  APP_COMMAND_CATALOG,
+  type AppCommandCatalogEntry,
+  type AppCommandId,
+} from "../../core/commandCatalog";
+import type { ReviewSelectionScope } from "../../core/review/navigation";
 import type { CursorLine, LayoutMode } from "../../core/types";
 import type { ExtensionCommandExecutionOptions } from "../../extension-api/types";
 import {
@@ -69,15 +75,12 @@ export interface AppCommand {
   closesMenu?: boolean;
 }
 
-/** One built-in command as declared: chords in, matcher and labels derived. */
-interface BuiltinCommandSpec {
-  id: string;
-  title: string;
-  /** Chords the command ships with; the user's config may replace them. */
-  defaultKeys: readonly string[];
+/** What the terminal does for one catalogued command. */
+interface BuiltinCommandHandler {
+  /** Report whether the command may run right now; skipped when false. */
   isEnabled?: () => boolean;
-  run: (key: KeyEvent, count: number) => void;
-  closesMenu?: boolean;
+  /** Run once with a host-normalized positive movement count and its catalog entry. */
+  run: (key: KeyEvent, count: number, entry: AppCommandCatalogEntry) => void;
 }
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
@@ -88,10 +91,8 @@ export interface BuildAppCommandsOptions {
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
-  moveToAnnotatedFile: (delta: number) => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToFile: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
+  /** Step the review selection through one scope, as the catalog entry declares it. */
+  moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   openAgentSkill: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
@@ -118,383 +119,122 @@ export interface BuildAppCommandsOptions {
 }
 
 /**
- * Declare Hunk's built-in commands as ids, titles, and default chords.
+ * Bind Hunk's built-in commands to the terminal's effects.
  *
- * Every id is `hunk.<group>.<name>`: `hunk.` is the reserved vendor namespace
- * no extension id may take, and the group below it is the menu-level grouping
- * users read in `[keybindings]`.
+ * Identity — id, title, chords, category, resolution locus — lives in the shared command
+ * catalog, so this table says only what each command *does here*. The map is keyed by
+ * `AppCommandId`, which makes the compiler the parity check: a command added to the
+ * catalog without a terminal handler, or a handler for a command nobody declared, fails
+ * to typecheck rather than silently going missing from menus and help.
  *
- * Order is the tiebreaker when several commands could match one key, exactly
- * as the old cascade of if-statements was, so entries keep the old cascade's
- * relative order where it mattered (uppercase before lowercase forms).
- *
- * A few commands ship with no chords at all. Declaring them here keeps semantic
- * actions bindable from `[keybindings]` and dispatchable by id whether or not a
- * menu currently presents them.
+ * Semantic navigation commands do not restate their scope or direction: they read the
+ * effect their catalog entry declares, which is the same declaration a browser palette
+ * and the agent surface lower through.
  */
-const PUBLIC_EXTENSION_COMMAND_IDS = new Set([
-  "hunk.review.jumpToBottom",
-  "hunk.review.jumpToTop",
-  "hunk.app.quit",
-  "hunk.app.toggleHelp",
-  "hunk.app.openAgentSkill",
-  "hunk.app.toggleFocusArea",
-  "hunk.review.focusFilter",
-  "hunk.review.startNote",
-  "hunk.review.pageDown",
-  "hunk.review.pageUp",
-  "hunk.review.halfPageDown",
-  "hunk.review.halfPageUp",
-  "hunk.review.stepDown",
-  "hunk.review.stepUp",
-  "hunk.review.scrollCodeLeft",
-  "hunk.review.scrollCodeRight",
-  "hunk.review.alignCurrentLineTop",
-  "hunk.review.alignCurrentLineCenter",
-  "hunk.review.alignCurrentLineBottom",
-  "hunk.view.cursorLineRow",
-  "hunk.view.cursorLineNumber",
-  "hunk.view.cursorLineOff",
-  "hunk.view.layoutSplit",
-  "hunk.view.layoutStack",
-  "hunk.view.layoutAuto",
-  "hunk.view.applyFilePresentationToAllMatching",
-  "hunk.view.toggleSidebar",
-  "hunk.app.refresh",
-  "hunk.view.openThemeSelector",
-  "hunk.view.toggleAgentNotes",
-  "hunk.view.toggleLineNumbers",
-  "hunk.view.toggleLineWrap",
-  "hunk.view.toggleMenuBar",
-  "hunk.view.toggleHunkHeaders",
-  "hunk.view.toggleCopyDecorations",
-  "hunk.review.toggleHunkGap",
-  "hunk.review.editSelectedFile",
-  "hunk.review.previousHunk",
-  "hunk.review.nextHunk",
-  "hunk.review.previousFile",
-  "hunk.review.nextFile",
-  "hunk.review.previousAnnotatedHunk",
-  "hunk.review.nextAnnotatedHunk",
-  "hunk.review.previousAnnotatedFile",
-  "hunk.review.nextAnnotatedFile",
-]);
+function runSelectionMove(
+  options: BuildAppCommandsOptions,
+  entry: AppCommandCatalogEntry,
+  count: number,
+) {
+  const effect = entry.review;
+  if (effect?.kind !== "selection/move") {
+    return;
+  }
 
-function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSpec[] {
-  return [
-    {
-      id: "hunk.review.jumpToBottom",
-      title: "Jump to end",
-      defaultKeys: ["G", "end"],
-      run: () => options.scrollDiff(1, "content"),
-    },
-    {
-      id: "hunk.review.jumpToTop",
-      title: "Jump to start",
-      defaultKeys: ["g", "home"],
-      run: () => options.scrollDiff(-1, "content"),
-    },
-    {
-      id: "hunk.app.quit",
-      title: "Quit",
-      defaultKeys: ["q"],
-      run: () => options.requestQuit(),
-    },
-    {
-      id: "hunk.app.toggleHelp",
-      title: "Toggle help",
-      defaultKeys: ["?"],
-      run: () => options.toggleHelp(),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.app.openAgentSkill",
-      title: "Show agent skill",
-      defaultKeys: [],
-      run: () => options.openAgentSkill(),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.app.toggleFocusArea",
-      title: "Switch focus between files and filter",
-      defaultKeys: ["tab"],
-      run: () => options.toggleFocusArea(),
-    },
-    {
-      id: "hunk.review.focusFilter",
-      title: "Focus the file filter",
-      defaultKeys: ["/"],
-      run: () => options.focusFilter(),
-    },
-    {
-      id: "hunk.review.startNote",
-      title: "Add a review note",
-      defaultKeys: ["c"],
-      run: () => options.startUserNote(),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.pageDown",
-      title: "Scroll down one page",
-      defaultKeys: ["pagedown", "space", "f"],
-      run: (_key, count) => options.scrollDiff(count, "viewport"),
-    },
-    {
-      id: "hunk.review.pageUp",
-      title: "Scroll up one page",
-      defaultKeys: ["pageup", "b", "shift+space"],
-      run: (_key, count) => options.scrollDiff(-count, "viewport"),
-    },
-    {
-      id: "hunk.review.halfPageDown",
-      title: "Scroll down half a page",
-      defaultKeys: ["d"],
-      run: (_key, count) => options.scrollDiff(count, "half"),
-    },
-    {
-      id: "hunk.review.halfPageUp",
-      title: "Scroll up half a page",
-      defaultKeys: ["u"],
-      run: (_key, count) => options.scrollDiff(-count, "half"),
-    },
-    {
-      id: "hunk.review.stepDown",
-      title: "Scroll down one row",
-      defaultKeys: ["down", "j"],
-      run: (_key, count) => options.stepDiffLine(count),
-    },
-    {
-      id: "hunk.review.stepUp",
-      title: "Scroll up one row",
-      defaultKeys: ["up", "k"],
-      run: (_key, count) => options.stepDiffLine(-count),
-    },
-    {
-      id: "hunk.review.scrollCodeLeft",
-      title: "Scroll code left",
-      // Both chords run the same command; the shifted one scrolls further, so
-      // the handler reads the event rather than splitting into two commands.
-      defaultKeys: ["left", "shift+left"],
+  options.moveSelection(effect.scope, effect.direction * count);
+}
+
+function builtinCommandHandlers(
+  options: BuildAppCommandsOptions,
+): Record<AppCommandId, BuiltinCommandHandler> {
+  return {
+    "hunk.review.jumpToBottom": { run: () => options.scrollDiff(1, "content") },
+    "hunk.review.jumpToTop": { run: () => options.scrollDiff(-1, "content") },
+    "hunk.app.quit": { run: () => options.requestQuit() },
+    "hunk.app.toggleHelp": { run: () => options.toggleHelp() },
+    "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
+    "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
+    "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.startNote": { run: () => options.startUserNote() },
+    "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
+    "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
+    "hunk.review.halfPageDown": { run: (_key, count) => options.scrollDiff(count, "half") },
+    "hunk.review.halfPageUp": { run: (_key, count) => options.scrollDiff(-count, "half") },
+    "hunk.review.stepDown": { run: (_key, count) => options.stepDiffLine(count) },
+    "hunk.review.stepUp": { run: (_key, count) => options.stepDiffLine(-count) },
+    "hunk.review.scrollCodeLeft": {
       run: (key, count) =>
         options.scrollCodeHorizontally(
           (key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1) * count,
         ),
     },
-    {
-      id: "hunk.review.scrollCodeRight",
-      title: "Scroll code right",
-      defaultKeys: ["right", "shift+right"],
+    "hunk.review.scrollCodeRight": {
       run: (key, count) =>
         options.scrollCodeHorizontally(
           (key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1) * count,
         ),
     },
-    {
-      id: "hunk.review.alignCurrentLineTop",
-      title: "Align current line to top",
-      defaultKeys: [],
+    "hunk.review.alignCurrentLineTop": {
       isEnabled: () => options.canAlignCurrentLine,
       run: () => options.alignCurrentLine("top"),
     },
-    {
-      id: "hunk.review.alignCurrentLineCenter",
-      title: "Align current line to center",
-      defaultKeys: [],
+    "hunk.review.alignCurrentLineCenter": {
       isEnabled: () => options.canAlignCurrentLine,
       run: () => options.alignCurrentLine("center"),
     },
-    {
-      id: "hunk.review.alignCurrentLineBottom",
-      title: "Align current line to bottom",
-      defaultKeys: [],
+    "hunk.review.alignCurrentLineBottom": {
       isEnabled: () => options.canAlignCurrentLine,
       run: () => options.alignCurrentLine("bottom"),
     },
-    {
-      id: "hunk.view.cursorLineRow",
-      title: "Highlight the current row",
-      defaultKeys: [],
-      run: () => options.selectCursorLine("row"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.cursorLineNumber",
-      title: "Mark the current line number",
-      defaultKeys: [],
-      run: () => options.selectCursorLine("number"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.cursorLineOff",
-      title: "Hide the current-line marker",
-      defaultKeys: [],
-      run: () => options.selectCursorLine("off"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.layoutSplit",
-      title: "Split layout",
-      defaultKeys: ["1"],
-      run: () => options.selectLayoutMode("split"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.layoutStack",
-      title: "Stack layout",
-      defaultKeys: ["2"],
-      run: () => options.selectLayoutMode("stack"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.layoutAuto",
-      title: "Auto layout",
-      defaultKeys: ["0"],
-      run: () => options.selectLayoutMode("auto"),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.view.applyFilePresentationToAllMatching",
-      title: "Apply the current file presentation to all matching files",
-      defaultKeys: [],
+    "hunk.view.cursorLineRow": { run: () => options.selectCursorLine("row") },
+    "hunk.view.cursorLineNumber": { run: () => options.selectCursorLine("number") },
+    "hunk.view.cursorLineOff": { run: () => options.selectCursorLine("off") },
+    "hunk.view.layoutSplit": { run: () => options.selectLayoutMode("split") },
+    "hunk.view.layoutStack": { run: () => options.selectLayoutMode("stack") },
+    "hunk.view.layoutAuto": { run: () => options.selectLayoutMode("auto") },
+    "hunk.view.applyFilePresentationToAllMatching": {
       isEnabled: () => options.canApplyFilePresentationToAllMatching,
       run: () => options.applyFilePresentationToAllMatching(),
-      closesMenu: true,
     },
-    {
-      id: "hunk.view.toggleSidebar",
-      title: "Toggle sidebar",
-      defaultKeys: ["s"],
-      run: () => options.toggleSidebar(),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.app.refresh",
-      title: "Refresh the review",
-      defaultKeys: ["r"],
+    "hunk.view.toggleSidebar": { run: () => options.toggleSidebar() },
+    "hunk.app.refresh": {
       isEnabled: () => options.canRefreshCurrentInput,
       run: () => options.triggerRefreshCurrentInput(),
-      closesMenu: true,
     },
-    {
-      id: "hunk.view.openThemeSelector",
-      title: "Choose theme",
-      defaultKeys: ["t"],
-      run: () => options.openThemeSelector(),
-      closesMenu: true,
+    "hunk.view.openThemeSelector": { run: () => options.openThemeSelector() },
+    "hunk.view.toggleAgentNotes": { run: () => options.toggleAgentNotes() },
+    "hunk.view.toggleLineNumbers": { run: () => options.toggleLineNumbers() },
+    "hunk.view.toggleLineWrap": { run: () => options.toggleLineWrap() },
+    "hunk.view.toggleMenuBar": { run: () => options.toggleMenuBar() },
+    "hunk.view.toggleHunkHeaders": { run: () => options.toggleHunkHeaders() },
+    "hunk.view.toggleCopyDecorations": { run: () => options.toggleCopyDecorations() },
+    "hunk.review.toggleHunkGap": { run: () => options.toggleGapForSelectedHunk() },
+    "hunk.review.editSelectedFile": { run: () => options.triggerEditSelectedFile() },
+    "hunk.review.previousHunk": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleAgentNotes",
-      title: "Toggle agent notes",
-      defaultKeys: ["a"],
-      run: () => options.toggleAgentNotes(),
-      closesMenu: true,
+    "hunk.review.nextHunk": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleLineNumbers",
-      title: "Toggle line numbers",
-      defaultKeys: ["l"],
-      run: () => options.toggleLineNumbers(),
-      closesMenu: true,
+    "hunk.review.previousFile": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleLineWrap",
-      title: "Toggle line wrapping",
-      defaultKeys: ["w"],
-      run: () => options.toggleLineWrap(),
-      closesMenu: true,
+    "hunk.review.nextFile": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleMenuBar",
-      title: "Toggle menu bar",
-      defaultKeys: ["M"],
-      run: () => options.toggleMenuBar(),
-      closesMenu: true,
+    "hunk.review.previousAnnotatedHunk": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleHunkHeaders",
-      title: "Toggle hunk headers",
-      defaultKeys: ["m"],
-      run: () => options.toggleHunkHeaders(),
-      closesMenu: true,
+    "hunk.review.nextAnnotatedHunk": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.view.toggleCopyDecorations",
-      title: "Toggle copy decorations",
-      defaultKeys: [],
-      run: () => options.toggleCopyDecorations(),
-      closesMenu: true,
+    "hunk.review.previousAnnotatedFile": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.review.toggleHunkGap",
-      title: "Expand or collapse context for the selected hunk",
-      defaultKeys: ["z"],
-      run: () => options.toggleGapForSelectedHunk(),
-      closesMenu: true,
+    "hunk.review.nextAnnotatedFile": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
-    {
-      id: "hunk.review.editSelectedFile",
-      title: "Open the selected file in your editor",
-      defaultKeys: ["e"],
-      run: () => options.triggerEditSelectedFile(),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.previousHunk",
-      title: "Previous hunk",
-      defaultKeys: ["["],
-      run: (_key, count) => options.moveToHunk(-count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.nextHunk",
-      title: "Next hunk",
-      defaultKeys: ["]"],
-      run: (_key, count) => options.moveToHunk(count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.previousFile",
-      title: "Previous file",
-      defaultKeys: [","],
-      run: (_key, count) => options.moveToFile(-count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.nextFile",
-      title: "Next file",
-      defaultKeys: ["."],
-      run: (_key, count) => options.moveToFile(count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.previousAnnotatedHunk",
-      title: "Previous annotated hunk",
-      defaultKeys: ["{"],
-      run: (_key, count) => options.moveToAnnotatedHunk(-count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.nextAnnotatedHunk",
-      title: "Next annotated hunk",
-      defaultKeys: ["}"],
-      run: (_key, count) => options.moveToAnnotatedHunk(count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.previousAnnotatedFile",
-      title: "Previous annotated file",
-      defaultKeys: [],
-      run: (_key, count) => options.moveToAnnotatedFile(-count),
-      closesMenu: true,
-    },
-    {
-      id: "hunk.review.nextAnnotatedFile",
-      title: "Next annotated file",
-      defaultKeys: [],
-      run: (_key, count) => options.moveToAnnotatedFile(count),
-      closesMenu: true,
-    },
-  ];
+  };
 }
 
 /**
@@ -504,26 +244,40 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
  * answers to its new key *and* advertises it; a command the user unbound
  * resolves to no chords and simply never matches.
  */
-function toAppCommand(spec: BuiltinCommandSpec, resolvedKeys?: ResolvedCommandKeys): AppCommand {
-  const keys = resolvedKeys?.get(spec.id) ?? spec.defaultKeys;
+function toAppCommand(
+  entry: AppCommandCatalogEntry,
+  handler: BuiltinCommandHandler,
+  resolvedKeys?: ResolvedCommandKeys,
+): AppCommand {
+  const keys = resolvedKeys?.get(entry.id) ?? entry.defaultKeys;
 
   return {
-    id: spec.id,
-    title: spec.title,
-    defaultKeys: spec.defaultKeys,
+    id: entry.id,
+    title: entry.title,
+    defaultKeys: entry.defaultKeys,
     keys,
     keyLabels: keys.map(formatKeyChord),
-    isEnabled: spec.isEnabled,
-    publicToExtensions: PUBLIC_EXTENSION_COMMAND_IDS.has(spec.id),
+    isEnabled: handler.isEnabled,
+    publicToExtensions: entry.publicToExtensions,
     match: matchesAnyKeyChord(keys),
-    run: spec.run,
-    closesMenu: spec.closesMenu,
+    run: (key, count) => handler.run(key, count, entry),
+    closesMenu: entry.closesMenu,
   };
 }
 
-/** Build Hunk's built-in command table over live callbacks. */
+/**
+ * Build Hunk's built-in command table: catalogued identity over live callbacks.
+ *
+ * Order follows the catalog, which is what makes first-match-wins dispatch and the
+ * conflict probes below agree with what a browser palette would show.
+ */
 export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[] {
-  return builtinCommandSpecs(options).map((spec) => toAppCommand(spec, options.resolvedKeys));
+  const handlers = builtinCommandHandlers(options);
+  // Sound because the handler map is keyed by `AppCommandId` and therefore covers every
+  // catalogued id; a missing one is a type error where the map is written, not here.
+  return APP_COMMAND_CATALOG.map((entry) =>
+    toAppCommand(entry, handlers[entry.id as AppCommandId], options.resolvedKeys),
+  );
 }
 
 const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
@@ -535,10 +289,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
-    moveToAnnotatedFile: noop,
-    moveToAnnotatedHunk: noop,
-    moveToFile: noop,
-    moveToHunk: noop,
+    moveSelection: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,
     requestQuit: noop,
@@ -600,9 +351,9 @@ export function builtinCommandMatchProbes(
  * the defaults the app dispatches can never drift apart.
  */
 export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
-  return builtinCommandSpecs(NOOP_COMMAND_OPTIONS).map((spec) => ({
-    id: spec.id,
-    defaultKeys: spec.defaultKeys,
+  return APP_COMMAND_CATALOG.map((entry) => ({
+    id: entry.id,
+    defaultKeys: entry.defaultKeys,
   }));
 }
 
