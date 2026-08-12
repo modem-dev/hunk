@@ -734,6 +734,22 @@ describe("config resolution", () => {
     expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
+  test("gives tutor its dedicated theme while preserving explicit theme preferences", () => {
+    const home = createTempDir("hunk-config-home-");
+    const cwd = createTempDir("hunk-config-cwd-");
+    const input: CliInput = { kind: "tutor", options: {} };
+
+    expect(resolveConfiguredCliInput(input, { cwd, env: { HOME: home } }).input.options.theme).toBe(
+      "hunk-tutor",
+    );
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), '[tutor]\ntheme = "dracula"\n');
+    expect(resolveConfiguredCliInput(input, { cwd, env: { HOME: home } }).input.options.theme).toBe(
+      "dracula",
+    );
+  });
+
   test("command-specific config sections also apply to show mode", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });

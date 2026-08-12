@@ -13,6 +13,17 @@ From a repository:
 hunk diff
 ```
 
+If this is your first review, start with the vimtutor-inspired interactive guide:
+
+```bash
+hunk tutor
+```
+
+It opens a safe synthetic changeset whose diff is the guide, plus a focused lesson pane that
+follows your configured keybindings. Each step reveals an explanation in the review while
+introducing navigation, layouts, filtering, agent notes, human review notes, themes, menus, mouse
+support, and extensions.
+
 This includes tracked changes and untracked files. Use `--exclude-untracked` when you intentionally want tracked changes only.
 
 Inside Hunk:

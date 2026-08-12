@@ -100,6 +100,8 @@ export function createSessionReloadBounds(
             )
           : [];
       break;
+    case "tutor":
+      break;
   }
 
   return {
@@ -200,6 +202,7 @@ export function validateSessionReloadWithinBounds(
     case "vcs":
     case "show":
     case "stash-show":
+    case "tutor":
       break;
   }
 

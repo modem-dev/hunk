@@ -57,6 +57,9 @@ export function computeWatchSignature(input: CliInput, context: WatchSignatureCo
       }
       parts.push(statSignature(resolveInputPath(input.file)));
       break;
+    case "tutor":
+      parts.push("bundled:tutor");
+      break;
   }
 
   if (input.options.agentContext && input.options.agentContext !== "-") {

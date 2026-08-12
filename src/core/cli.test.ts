@@ -58,6 +58,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Usage:");
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
+    expect(parsed.text).toContain("hunk tutor");
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
@@ -147,6 +148,28 @@ describe("parseCli", () => {
         hunkHeaders: false,
         agentNotes: true,
         transparentBackground: true,
+      },
+    });
+  });
+
+  test("parses the interactive tutor with normal review preferences", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "tutor",
+      "--mode",
+      "stack",
+      "--theme",
+      "github-light-default",
+      "--no-extensions",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "tutor",
+      options: {
+        mode: "stack",
+        theme: "github-light-default",
+        extensions: false,
       },
     });
   });
@@ -1114,6 +1137,7 @@ describe("parseCli command help text", () => {
     expect(await expectHelp(["patch", "--help"])).toContain("review a patch file");
     expect(await expectHelp(["pager", "--help"])).toContain("general Git pager wrapper");
     expect(await expectHelp(["difftool", "--help"])).toContain("review Git difftool file pairs");
+    expect(await expectHelp(["tutor", "--help"])).toContain("interactive guided changeset");
   });
 
   test("renders the stash command overview and the stash show command help", async () => {

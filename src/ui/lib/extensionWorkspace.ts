@@ -88,6 +88,8 @@ function nonWorkingTreeReview(input: CliInput): string | null {
       return "a stash entry";
     case "patch":
       return "patch input";
+    case "tutor":
+      return "the bundled tutorial";
     case "diff":
     case "difftool":
       return "a file comparison";

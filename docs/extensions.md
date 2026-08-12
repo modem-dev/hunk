@@ -190,7 +190,8 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. They live in
+as are the **built-in file-navigation pane** and the interactive guide opened
+by `hunk tutor`. They live in
 `src/extensions/default/`, are compiled into the binary, and register through
 the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
 documents. There is no private registration path.
@@ -204,8 +205,10 @@ can do, because Git does it the same way you would.
 Bundled extensions differ from yours in three ways, all of them consequences of
 being Hunk's own code:
 
-- They are **statically imported**, so they load synchronously, before config
-  resolution picks the session's VCS.
+- The VCS adapters and default sidebar are **statically imported**, so they load
+  synchronously before config resolution picks the session's VCS. The UI-backed tutor
+  extension is imported only after the `tutor` command is selected, keeping headless
+  commands free of OpenTUI's native runtime.
 - They are **implicitly trusted**: no discovery, no trust prompt, and no
   `[extension.<id>]` config table.
 - They stay loaded under `--no-extensions` and `[extensions] enabled = false`.

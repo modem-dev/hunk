@@ -133,6 +133,18 @@ Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
 
+## `hunk tutor`
+
+learn Hunk inside an interactive guided changeset
+
+### Usage
+
+```bash
+hunk tutor
+```
+
+Also accepts every [common review option](#common-review-options).
+
 ## `hunk markup render`
 
 preview experimental STML markup as terminal text

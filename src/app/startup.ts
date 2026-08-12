@@ -310,6 +310,14 @@ export async function prepareStartupPlan(
   configured = resolvedExtensions.configured;
   cliInput = configured.input;
   const extensionResult = resolvedExtensions.extensions;
+  if (cliInput.kind === "tutor" && configured.extensions.enabled) {
+    // UI-backed bundled extensions stay behind the interactive command path so
+    // headless commands never materialize OpenTUI's embedded native library.
+    // Unlike the core bundled extensions, Tutor also respects the session's
+    // extension switch so `--no-extensions` produces a plain synthetic review.
+    const { installBundledTutorExtension } = await import("../extensions/default/ui/tutor");
+    installBundledTutorExtension(extensionResult);
+  }
 
   let preparedSession: SessionBootstrapResult;
   try {

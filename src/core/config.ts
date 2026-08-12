@@ -361,7 +361,13 @@ export const CONFIG_COMMAND_SECTIONS = {
   diff: "two-file comparisons (`hunk diff <left> <right>`)",
   patch: "patch-file reviews (`hunk patch`)",
   difftool: "Git difftool pair reviews (`hunk difftool`)",
+  tutor: "interactive tutorial reviews (`hunk tutor`)",
 } as const satisfies Record<CliInput["kind"], string>;
+
+/** Command-specific defaults applied before user, repo, and CLI preference layers. */
+const CONFIG_COMMAND_DEFAULTS: Partial<Record<CliInput["kind"], CommonOptions>> = {
+  tutor: { theme: "hunk-tutor" },
+};
 
 /** Reference metadata for the root-only custom-theme tables. */
 export const CONFIG_REFERENCE_CUSTOM_THEME = {
@@ -1059,6 +1065,7 @@ export function resolveConfiguredCliInput(
 
   let resolvedOptions: CommonOptions = {
     ...buildDefaultConfigPreferences(cwd, vcsCatalog),
+    ...CONFIG_COMMAND_DEFAULTS[input.kind],
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     experimental: false,

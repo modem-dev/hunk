@@ -330,13 +330,20 @@ export interface DiffToolCommandInput {
   options: CommonOptions;
 }
 
+/** Launch the bundled, synthetic review used by Hunk's interactive tutorial. */
+export interface TutorCommandInput {
+  kind: "tutor";
+  options: CommonOptions;
+}
+
 export type CliInput =
   | VcsDiffCommandInput
   | VcsShowCommandInput
   | VcsStashShowCommandInput
   | FileCommandInput
   | PatchCommandInput
-  | DiffToolCommandInput;
+  | DiffToolCommandInput
+  | TutorCommandInput;
 
 export interface MarkupRenderCommandInput {
   kind: "markup-render";

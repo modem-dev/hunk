@@ -184,6 +184,37 @@ afterEach(() => {
 });
 
 describe("loadAppBootstrap", () => {
+  test("loads the bundled tutor as an ordered, multi-file synthetic changeset", async () => {
+    const bootstrap = await loadAppBootstrap({ kind: "tutor", options: { mode: "auto" } });
+
+    expect(bootstrap.changeset.title).toBe("Hunk Tutor");
+    expect(bootstrap.changeset.sourceLabel).toBe("hunk tutor");
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "00-start-here.md",
+      "01-moving-through-a-review.md",
+      "02-scrolling-and-panning.md",
+      "03-shaping-the-view.md",
+      "04-find-a-file/haystack-a.md",
+      "04-find-a-file/needle.md",
+      "04-find-a-file/haystack-b.md",
+      "05-context-and-notes.md",
+      "06-how-the-tutor-works.md",
+      "07-finish-and-next-steps.md",
+    ]);
+    expect(
+      bootstrap.changeset.files.find((file) => file.path.includes("context-and-notes"))?.metadata
+        .hunks,
+    ).toHaveLength(2);
+    const scrollingLesson = bootstrap.changeset.files.find((file) =>
+      file.path.includes("scrolling-and-panning"),
+    );
+    expect(scrollingLesson?.patch).toContain("YOU FOUND IT");
+    expect(scrollingLesson?.metadata.hunks).toHaveLength(2);
+    expect(await scrollingLesson?.sourceFetcher?.getFullText("new")).toContain(
+      "YOU REVEALED THE FOLDED GUIDE",
+    );
+  });
+
   test("synthesizes untracked file diffs an adapter reported by path", async () => {
     const dir = createTempDir("hunk-adapter-untracked-");
     writeFileSync(join(dir, "note.txt"), "hello\n");

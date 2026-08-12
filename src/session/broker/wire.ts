@@ -28,6 +28,7 @@ const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
   "diff",
   "patch",
   "difftool",
+  "tutor",
 ]);
 const EXPERIMENTAL_FEATURE_SET = new Set<string>(EXPERIMENTAL_FEATURES);
 

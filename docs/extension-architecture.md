@@ -22,9 +22,12 @@ object and registry collection (`src/extensions/runExtension.ts`):
   extension host. `default/ui/index.ts` is deliberately not part of that list:
   it synchronously loads the bundled files pane through `runExtensionFactory`
   only where the app resolves UI panes.
+  `default/ui/tutor/` is another public-API consumer; it loads only for
+  `hunk tutor`, after parsing establishes that the process is taking an
+  interactive path.
 
-Git and the built-in file navigation use the public `registerVcsAdapter` and
-`registerPane` paths. The current-line lens remains an installable example.
+Git, built-in file navigation, and Tutor use the public `registerVcsAdapter`
+and `registerPane` paths. The current-line lens remains an installable example.
 
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.

@@ -39,6 +39,65 @@ function createBootstrap(input: CliInput): AppBootstrap {
 }
 
 describe("startup planning", () => {
+  test("installs the bundled tutor extension for an enabled extension session", async () => {
+    const cliInput: CliInput = { kind: "tutor", options: {} };
+    const extensionResult = createEmptyExtensionLoadResult();
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "tutor"], {
+      parseCliImpl: async () => cliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(input, {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        }),
+      loadStartupExtensionsImpl: async () => extensionResult,
+      usesPipedPatchInputImpl: () => false,
+      stdinIsTTY: true,
+      stdoutIsTTY: false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.bootstrap.extensions?.loaded.map((extension) => extension.id)).toContain(
+      "hunk-tutor",
+    );
+    expect(plan.bootstrap.extensions?.registry.panes).toMatchObject([
+      { extensionId: "hunk-tutor", pane: { id: "guide", replaces: "hunk:files" } },
+    ]);
+    expect(plan.bootstrap.customThemes?.map((theme) => theme.id)).toContain("hunk-tutor");
+    expect(
+      plan.bootstrap.changeset.files.find((file) => file.path.includes("context-and-notes"))?.agent
+        ?.annotations,
+    ).toHaveLength(2);
+  });
+
+  test("does not install the bundled tutor extension when extensions are disabled", async () => {
+    const cliInput: CliInput = { kind: "tutor", options: { extensions: false } };
+    const extensionResult = createEmptyExtensionLoadResult();
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "tutor", "--no-extensions"], {
+      parseCliImpl: async () => cliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadStartupExtensionsImpl: async () => extensionResult,
+      usesPipedPatchInputImpl: () => false,
+      stdinIsTTY: true,
+      stdoutIsTTY: false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.bootstrap.extensions?.loaded).toEqual([]);
+    expect(plan.bootstrap.extensions?.registry.panes).toEqual([]);
+    expect(plan.bootstrap.customThemes).toEqual([]);
+  });
+
   test("returns help output without entering app startup", async () => {
     let loaded = false;
 

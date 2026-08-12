@@ -189,6 +189,7 @@ Enable moved-line coloring when the renderer supports it.
 | `[diff]`       | two-file comparisons (`hunk diff <left> <right>`) |
 | `[patch]`      | patch-file reviews (`hunk patch`)                 |
 | `[difftool]`   | Git difftool pair reviews (`hunk difftool`)       |
+| `[tutor]`      | interactive tutorial reviews (`hunk tutor`)       |
 
 `[pager]` is an additional overlay for any review opened with pager-style chrome. It is applied after the matching command table in the same file.
 

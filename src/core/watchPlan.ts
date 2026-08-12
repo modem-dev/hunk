@@ -114,6 +114,8 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
       }
       fileTargets.push({ path: input.file, source: "content" });
       break;
+    case "tutor":
+      return null;
     case "vcs":
     case "show":
     case "stash-show": {

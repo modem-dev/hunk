@@ -98,9 +98,9 @@ Test the exact layout users will get with `hunk extension install /path/to/check
 
 ## Bundled extensions
 
-Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
+Hunk's own Git, Jujutsu, and Sapling backends, built-in file-navigation pane, and the interactive `hunk tutor` guide are themselves extensions, registered through the same public API — which is what keeps that API honest. They differ from yours in three ways:
 
-- statically imported, so they load before config resolution picks the session's VCS
+- VCS adapters and the default pane load with their host surfaces; the UI-backed tutor is imported only for `hunk tutor`
 - implicitly trusted, with no `[extension.<id>]` config table
 - still loaded under `--no-extensions` and `[extensions] enabled = false` — those switches triage extensions _you_ installed
 

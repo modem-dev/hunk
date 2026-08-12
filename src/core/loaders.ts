@@ -22,6 +22,7 @@ import {
 import type { VcsCatalog } from "./vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
 import { computeWatchSignature } from "./watch";
+import { getTutorDocumentText, TUTOR_PATCH } from "../tutor/content";
 import type {
   AppBootstrap,
   AgentContext,
@@ -451,6 +452,18 @@ async function loadPatchChangeset(
   );
 }
 
+/** Build the bundled tutorial as an ordinary normalized patch changeset. */
+function loadTutorChangeset(agentContext: AgentContext | null) {
+  return normalizePatchChangeset(TUTOR_PATCH, "Hunk Tutor", "hunk tutor", agentContext, {
+    sourceFetcherBuilder: ({ path }) => ({
+      cacheKey: `hunk-tutor:${path}`,
+      async getFullText(side) {
+        return getTutorDocumentText(path, side);
+      },
+    }),
+  });
+}
+
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
@@ -494,6 +507,9 @@ export async function loadAppBootstrap(
       break;
     case "difftool":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
+      break;
+    case "tutor":
+      changeset = loadTutorChangeset(agentContext);
       break;
   }
 

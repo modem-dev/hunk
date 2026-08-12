@@ -163,6 +163,12 @@ export const CLI_REFERENCE_COMMANDS = {
     commonReviewOptions: true,
     watch: true,
   },
+  tutor: {
+    path: "tutor",
+    summary: "learn Hunk inside an interactive guided changeset",
+    synopsis: ["hunk tutor"],
+    commonReviewOptions: true,
+  },
   "markup-render": {
     path: "markup render",
     summary: "preview experimental STML markup as terminal text",
@@ -417,6 +423,7 @@ function renderCliHelp() {
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
+    "  hunk tutor                              learn Hunk in an interactive guided changeset",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
     "  hunk markup guide                       print the experimental STML authoring guide",
@@ -835,6 +842,23 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
     path: parsedPath,
     options: buildCommonOptions(parsedOptions, argv),
   };
+}
+
+/** Parse the self-contained interactive tutorial entrypoint. */
+async function parseTutorCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const command = createCliReferenceCommand("tutor");
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((options: Record<string, unknown>) => {
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  return { kind: "tutor", options: buildCommonOptions(parsedOptions, argv) };
 }
 
 function requireReloadableCliInput(input: ParsedCliInput): CliInput {
@@ -1624,7 +1648,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   if (
     prefixedExperimental &&
-    !["diff", "show", "patch", "pager", "difftool", "stash"].includes(commandName)
+    !["diff", "show", "patch", "pager", "difftool", "stash", "tutor"].includes(commandName)
   ) {
     throw new Error("`--experimental` must be used with a Hunk review command.");
   }
@@ -1640,6 +1664,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parsePagerCommand(rest, argv);
     case "difftool":
       return parseDifftoolCommand(rest, argv);
+    case "tutor":
+      return parseTutorCommand(rest, argv);
     case "stash":
       return parseStashCommand(rest, argv);
     case "session":
