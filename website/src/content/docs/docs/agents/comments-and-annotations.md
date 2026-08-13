@@ -35,8 +35,8 @@ hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 ```
 
-Use `--all --yes` to clear both live agent comments and human notes. Destructive clears require confirmation.
+Use `--all --yes` to clear both live agent comments and human notes; `--yes` is the confirmation every destructive clear requires.
 
 ## Add a human note
 
-In the TUI, select a hunk and press `c` or click an add-note affordance. Human and agent notes are labeled by source. Use `{` and `}` to move through annotated hunks across the review stream.
+In the TUI, select a hunk and press `c` or click an add-note affordance. Hunk labels every note by source, so your own notes stay distinct from the agent's. Use `{` and `}` to move through annotated hunks across the review stream.

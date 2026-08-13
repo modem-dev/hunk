@@ -13,7 +13,7 @@ hunk session get --repo .
 hunk session context --repo .
 ```
 
-Use `--repo <path>` for normal worktrees. Use an explicit session ID when multiple windows share a repository.
+Use `--repo <path>` for normal worktrees, and an explicit session ID when multiple windows share a repository.
 
 ## Inspect without overloading context
 
@@ -51,4 +51,4 @@ Advanced reloads can target the live window by `--session-path` and load from a 
 
 ## Diagnose local access
 
-If a visible Hunk window does not appear in `session list`, an agent sandbox may block loopback access. Hunk's daemon is intentionally local-only; retry with the agent's network/sandbox permission rather than exposing it remotely. `hunk daemon serve` is available for manual startup or daemon debugging.
+If a visible Hunk window does not appear in `session list`, an agent sandbox may block loopback access. Hunk's daemon is intentionally local-only; retry with the agent's network/sandbox permission rather than exposing it remotely. Run `hunk daemon serve` to start the daemon by hand or debug it.

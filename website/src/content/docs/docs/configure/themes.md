@@ -33,7 +33,7 @@ A custom theme inherits from a built-in base, then overlays semantic Hunk colors
 
 Quote scope selectors containing dots. Later equal-specificity declarations win, but a more-specific base selector can beat a broad override, so add grammar-specific selectors when needed.
 
-The old `[custom_theme.syntax]` role table is deprecated and temporarily translated. Prefer `syntax_scopes` for new themes.
+Hunk still translates the old `[custom_theme.syntax]` role table, but that support is deprecated and temporary, so prefer `syntax_scopes` for new themes.
 
 ## Name several themes
 

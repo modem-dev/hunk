@@ -27,7 +27,7 @@ Ask the agent to load that file and use it for the review. A portable prompt is:
 Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
-The skill tells agents not to launch the interactive TUI themselves. It teaches them to use the session surface instead.
+The skill tells agents not to launch the interactive TUI themselves, and to work through the session surface instead.
 
 ## What the agent does
 

@@ -18,7 +18,7 @@ A compact example lives at `examples/3-agent-review-demo/agent-context.json` in 
 
 ## Opt into STML
 
-STML is experimental rich markup for terminal note bodies. It is off by default:
+STML is an experimental markup language for terminal note bodies, off by default:
 
 ```bash
 hunk --experimental diff --agent-context notes.json

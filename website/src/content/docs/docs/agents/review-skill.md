@@ -13,7 +13,7 @@ hunk skill path
 
 Load or symlink the returned file according to your coding agent's skill mechanism. Resolve the path again after upgrades so the guidance stays aligned with the installed CLI.
 
-For agents that need a stable web-readable URL, use the [generated Hunk review skill](/docs/hunk-review-skill.md). The published artifact and installed skill are rendered by the same function; neither is a handwritten copy.
+For agents that need a stable web-readable URL, use the [generated Hunk review skill](/docs/hunk-review-skill.md). One function renders both the published artifact and the installed skill, so neither is a handwritten copy.
 
 ## Why it is generated
 

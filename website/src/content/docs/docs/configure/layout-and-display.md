@@ -25,7 +25,7 @@ Explicit split and stack choices override responsive behavior. Press `0`, `1`, o
 hunk diff --no-line-numbers --wrap --no-hunk-headers --tab-width 2
 ```
 
-Paired flags let scripts express either state: `--line-numbers` / `--no-line-numbers`, `--wrap` / `--no-wrap`, and `--hunk-headers` / `--no-hunk-headers`. Tab width accepts an integer from 1 through 16.
+These flags come in pairs so a script can set either state explicitly: `--line-numbers` / `--no-line-numbers`, `--wrap` / `--no-wrap`, and `--hunk-headers` / `--no-hunk-headers`. Tab width accepts an integer from 1 through 16.
 
 ## Tune review chrome
 
