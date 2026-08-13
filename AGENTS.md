@@ -54,9 +54,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures and currently
   covers core plus terminal render planning. Every new semantic consumer registers its real
   projection and runs the whole corpus. `scripts/source-boundaries.test.ts` keeps the seam
-  renderer/platform-free and its Node-debt/tombstone lists shrink-only. A repaid seam finding
-  deletes copies, adds a file or banned-symbol tombstone and adversarial fixture, registers
-  consumers, and updates `docs/browser-review-seam-audit.md`.
+  renderer/platform-free; its Node-debt list is shrink-only and tombstone lists append-only. A
+  repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
+  fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
 
 - CLI entrypoints: `diff`, `show`, `stash show`, `patch`, `pager`, `difftool`.
 - All input sources normalize into one internal changeset model.
