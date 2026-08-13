@@ -96,6 +96,7 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
 
 const SIDED_LINE_STABLE_KEY = /^line:(\d+):(old|new):(\d+)$/;
 const CONTEXT_LINE_STABLE_KEY = /^line:(\d+):context:\d+:(\d+)$/;
+const CONTEXT_LINE_STABLE_KEY_SIDES = /^line:(\d+):context:(\d+):(\d+)$/;
 
 /** Recover the source line one single-sided stable anchor names. */
 export function lineStableKeyTarget(
@@ -123,6 +124,27 @@ export function contextLineStableKeyTarget(
   }
 
   return { hunkIndex: Number(match[1]), side: "new", line: Number(match[2]) };
+}
+
+/**
+ * Recover both source lines one shared context anchor names.
+ *
+ * A context row shows the same text on both sides under two different numbers, so a caller
+ * addressing it by line number has to be able to match either one.
+ */
+export function contextLineStableKeySides(
+  stableKey: string,
+): { hunkIndex: number; oldLine: number; newLine: number } | null {
+  const match = CONTEXT_LINE_STABLE_KEY_SIDES.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hunkIndex: Number(match[1]),
+    oldLine: Number(match[2]),
+    newLine: Number(match[3]),
+  };
 }
 
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */

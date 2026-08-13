@@ -11,6 +11,7 @@ import { resolveTheme } from "../themes";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  findLineCursorAt,
   findNextLineCursor,
   firstLineCursorInHunk,
   resolveLineCursor,
@@ -191,6 +192,60 @@ describe("buildLineCursors", () => {
 
   test("returns nothing when no files are visible", () => {
     expect(buildLineCursors([], [])).toEqual([]);
+  });
+});
+
+describe("findLineCursorAt", () => {
+  /** Build a file whose inserted line pushes the trailing context onto different side numbers. */
+  function createShiftedContextFile() {
+    return createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines("one", "two", "three"),
+      after: lines("one", "inserted", "two", "three"),
+      context: 3,
+    });
+  }
+
+  test("finds a changed line by the side the patch numbers it on", () => {
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+
+    expect(findLineCursorAt(cursors, "alpha", "new", 10)?.target).toEqual({
+      side: "new",
+      line: 10,
+    });
+    expect(findLineCursorAt(cursors, "alpha", "old", 10)?.target).toEqual({
+      side: "old",
+      line: 10,
+    });
+  });
+
+  test("answers a context row to either side's number, even once they diverge", () => {
+    // "three" is old line 3 and new line 4 after the insertion; both address the same row.
+    const cursors = cursorsFor([createShiftedContextFile()], "stack");
+    const byNew = findLineCursorAt(cursors, "alpha", "new", 4);
+    const byOld = findLineCursorAt(cursors, "alpha", "old", 3);
+
+    expect(byNew?.stableKey).toBe("line:0:context:3:4");
+    expect(byOld).toEqual(byNew);
+  });
+
+  test("stays inside the requested file when two files number the same line", () => {
+    const cursors = cursorsFor(
+      [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
+      "stack",
+    );
+
+    expect(findLineCursorAt(cursors, "beta", "new", 1)?.fileId).toBe("beta");
+  });
+
+  test("finds no cursor for a line the stream draws no row for", () => {
+    // Line 3 is inside the collapsed gap above the only hunk, so nothing measures it.
+    const cursors = cursorsFor([createCollapsedGapFile()], "stack");
+
+    expect(findLineCursorAt(cursors, "alpha", "new", 3)).toBeNull();
+    expect(findLineCursorAt(cursors, "alpha", "new", 900)).toBeNull();
+    expect(findLineCursorAt(cursors, "missing", "new", 6)).toBeNull();
   });
 });
 

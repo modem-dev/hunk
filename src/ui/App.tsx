@@ -84,7 +84,11 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import {
+  useReviewController,
+  type AgentNoteGeometrySnapshot,
+  type RevealedLineResult,
+} from "./hooks/useReviewController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
@@ -491,6 +495,8 @@ export function App({
   const extensionCommandNavigationRef = useRef({
     onSelectFile: (_fileId: string) => {},
     onSelectHunk: (_fileId: string, _hunkIndex: number) => {},
+    onRevealLine: (_fileId: string, _side: "old" | "new", _line: number): RevealedLineResult =>
+      "none",
   });
   // A hard session reload (`resetApp`) remounts App under an in-flight async
   // command handler, whose `ctx.navigation` closes over *this* instance's
@@ -878,6 +884,8 @@ export function App({
           onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
           onSelectHunk: (fileId, hunkIndex) =>
             extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
+          onRevealLine: (fileId, side, line) =>
+            extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
         }),
       };
 
@@ -1752,6 +1760,10 @@ export function App({
       focusFiles();
       review.selectHunk(fileId, hunkIndex);
     },
+    onRevealLine: (fileId, side, line) => {
+      focusFiles();
+      return review.revealLine(fileId, side, line);
+    },
   };
 
   /** Toggle keyboard focus between the file list and the file filter. */
@@ -2081,6 +2093,10 @@ export function App({
             focusFiles();
             review.selectHunk(fileId, hunkIndex);
           }}
+          onRevealLine={(fileId, side, line) => {
+            focusFiles();
+            return review.revealLine(fileId, side, line);
+          }}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY
               ? undefined
@@ -2215,7 +2231,7 @@ export function App({
             selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
             cursorLine={cursorLine}
             lineCursor={review.lineCursor}
-            lineCursorRevealRequestId={review.lineCursorRevealRequestId}
+            lineCursorRevealRequest={review.lineCursorRevealRequest}
             lineCursorAlignmentRequest={lineCursorAlignmentRequest}
             theme={activeTheme}
             width={diffPaneWidth}

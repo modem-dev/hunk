@@ -33,6 +33,7 @@ import {
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide } from "../../core/review/expansion";
+import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
   reviewFileKeysWithRetiredContent,
@@ -59,8 +60,10 @@ import type {
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 
+import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
   EMPTY_LINE_CURSORS,
+  findLineCursorAt,
   findNextLineCursor,
   firstLineCursorInHunk,
   hasLineCursor,
@@ -138,6 +141,25 @@ interface SourceLoadRequest {
   side: "old" | "new";
 }
 
+/**
+ * One request to scroll the current line into view, and how far it may move the viewport.
+ *
+ * Carried as one object because the id and the placement have to change together: a consumer
+ * that read a bumped id against a stale placement would scroll by the previous policy.
+ */
+export interface LineCursorRevealRequest {
+  id: number;
+  placement: LineRevealPlacement;
+}
+
+/**
+ * What a `revealLine` call could actually reach.
+ *
+ * `"line"` landed on the requested line, `"hunk"` fell back to the hunk containing it because
+ * the review stream draws no row for that line, and `"none"` means no hunk covers it either.
+ */
+export type RevealedLineResult = "line" | "hunk" | "none";
+
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   scrollToNote?: boolean;
@@ -179,13 +201,14 @@ export interface ReviewController {
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
-  lineCursorRevealRequestId: number;
+  lineCursorRevealRequest: LineCursorRevealRequest;
   anchorLineCursor: (cursor: LineCursor) => void;
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
   anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
+  revealLine: (fileId: string, side: "old" | "new", line: number) => RevealedLineResult;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
@@ -315,7 +338,10 @@ export function useReviewController({
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
-  const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
+  const [lineCursorRevealRequest, setLineCursorRevealRequest] = useState<LineCursorRevealRequest>({
+    id: 0,
+    placement: "nearest",
+  });
   const previousLineCursorsRef = useRef(lineCursors);
   const pendingLineCursorRef = useRef<
     | { kind: "reveal"; fileId: string; gapKey: string }
@@ -488,9 +514,9 @@ export function useReviewController({
 
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
-    (cursor: LineCursor) => {
+    (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
       applyLineCursor(cursor);
-      setLineCursorRevealRequestId((current) => current + 1);
+      setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
       // The line cursor carries its own reveal request; the selection only follows it.
       anchorSelection(cursor.fileId, cursor.hunkIndex);
     },
@@ -581,6 +607,34 @@ export function useReviewController({
     (scope: ReviewSelectionScope, delta: number) =>
       runIntent({ type: "selection/move", scope, delta }, { annotations }),
     [annotations, runIntent],
+  );
+
+  /**
+   * Jump to one file's source line, addressed the way a patch numbers it.
+   *
+   * Cursors are measured for every visible file, not just the selected one, so a cross-file
+   * jump resolves in the same pass as a local one. A line the stream draws no row for — hidden
+   * inside a collapsed gap, or never numbered by a partial patch — has no row to scroll to, so
+   * the jump degrades to the hunk containing it and reports which target it reached.
+   */
+  const revealLine = useCallback(
+    (fileId: string, side: "old" | "new", line: number): RevealedLineResult => {
+      const cursor = findLineCursorAt(lineCursors, fileId, side, line);
+      if (cursor) {
+        revealLineCursor(cursor, "reveal");
+        return "line";
+      }
+
+      const file = visibleFiles.find((candidate) => candidate.id === fileId);
+      const hunkIndex = file ? reviewHunkIndexForLine(file.metadata.hunks, side, line) : -1;
+      if (hunkIndex < 0) {
+        return "none";
+      }
+
+      selectHunk(fileId, hunkIndex);
+      return "hunk";
+    },
+    [lineCursors, revealLineCursor, selectHunk, visibleFiles],
   );
 
   /** Set the shared file filter. */
@@ -1148,7 +1202,7 @@ export function useReviewController({
     liveCommentSummaries,
     liveCommentsByFileId,
     lineCursor,
-    lineCursorRevealRequestId,
+    lineCursorRevealRequest,
     reviewNoteCount: reviewNoteSummaries.length,
     reviewNoteSummaries,
     showAgentNotes: state.showAgentNotes,
@@ -1176,6 +1230,7 @@ export function useReviewController({
     navigateToLocation,
     removeLiveComment,
     removeUserNote,
+    revealLine,
     saveDraftNote,
     selectFile,
     selectHunk,

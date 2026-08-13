@@ -66,6 +66,7 @@ export interface ExtensionPaneHostProps {
   notify: ExtensionNotifySink;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
+  onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
   onRenderFailure?: () => void;
 }
 
@@ -86,6 +87,7 @@ function ExtensionPaneHostView({
   notify,
   onSelectFile,
   onSelectHunk,
+  onRevealLine,
   onRenderFailure,
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
@@ -99,12 +101,13 @@ function ExtensionPaneHostView({
           notify,
           onSelectFile,
           onSelectHunk,
+          onRevealLine,
         }),
         notify(message: string, type: ExtensionNotifyType = "info") {
           notify(`${extensionId}: ${message}`, type);
         },
       }),
-    [extensionId, files, notify, onSelectFile, onSelectHunk],
+    [extensionId, files, notify, onRevealLine, onSelectFile, onSelectHunk],
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {

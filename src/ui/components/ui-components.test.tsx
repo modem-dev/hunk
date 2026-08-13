@@ -461,7 +461,12 @@ describe("UI components", () => {
         theme={theme}
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
-        actions={{ selectFile: () => {}, selectHunk: () => {}, notify: () => {} }}
+        actions={{
+          selectFile: () => {},
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
       />,
       36,
       12,

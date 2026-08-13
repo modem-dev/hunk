@@ -36,6 +36,7 @@ import {
   computeLineAlignmentScrollTop,
   computeLineRevealScrollTop,
   type CurrentLineAlignment,
+  type LineRevealPlacement,
 } from "../../lib/hunkScroll";
 import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
@@ -218,7 +219,7 @@ export function DiffPane({
   selectedHunkIndex,
   cursorLine = "off",
   lineCursor = null,
-  lineCursorRevealRequestId = 0,
+  lineCursorRevealRequest = { id: 0, placement: "nearest" },
   lineCursorAlignmentRequest = { id: 0, alignment: "center" },
   scrollToNote = false,
   draftNote = null,
@@ -280,7 +281,7 @@ export function DiffPane({
   selectedHunkIndex: number;
   cursorLine?: CursorLine;
   lineCursor?: LineCursor | null;
-  lineCursorRevealRequestId?: number;
+  lineCursorRevealRequest?: { id: number; placement: LineRevealPlacement };
   lineCursorAlignmentRequest?: { id: number; alignment: CurrentLineAlignment };
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
@@ -2110,13 +2111,13 @@ export function DiffPane({
     suppressViewportSelectionSync,
   ]);
 
-  const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequestId);
+  const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequest.id);
 
   useLayoutEffect(() => {
-    if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequestId) {
+    if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequest.id) {
       return;
     }
-    previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequestId;
+    previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequest.id;
 
     const scrollBox = scrollRef.current;
     if (!scrollBox || !lineCursor) {
@@ -2129,12 +2130,22 @@ export function DiffPane({
     }
 
     const viewportHeight = scrollBox.viewport.height || scrollViewport.height;
-    const revealScrollTop = computeLineRevealScrollTop({
-      lineTop: bounds.top,
-      lineHeight: bounds.height,
-      scrollTop: scrollBox.scrollTop,
-      viewportHeight,
-    });
+    // A jump lands the line where hunk and note reveals land theirs; stepping only closes the
+    // gap to the viewport edge, so a held key does not drag the whole stream past the marker.
+    const revealScrollTop =
+      lineCursorRevealRequest.placement === "reveal"
+        ? computeHunkRevealScrollTop({
+            hunkTop: bounds.top,
+            hunkHeight: bounds.height,
+            preferredTopPadding: Math.max(2, Math.floor(viewportHeight * 0.25)),
+            viewportHeight,
+          })
+        : computeLineRevealScrollTop({
+            lineTop: bounds.top,
+            lineHeight: bounds.height,
+            scrollTop: scrollBox.scrollTop,
+            viewportHeight,
+          });
     if (revealScrollTop === scrollBox.scrollTop) {
       return;
     }
@@ -2145,7 +2156,7 @@ export function DiffPane({
     clampReviewScrollTop,
     lineCursor,
     lineCursorBoundsOf,
-    lineCursorRevealRequestId,
+    lineCursorRevealRequest,
     scrollRef,
     scrollViewport.height,
     suppressViewportSelectionSync,
