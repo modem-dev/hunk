@@ -46,6 +46,28 @@ describe("review address grammar", () => {
     }
   });
 
+  // Intent: canonical serialization must never produce text the strict parser rejects.
+  test("refuses values the address grammar cannot represent", () => {
+    const invalid: ReviewAddress[] = [
+      { kind: "file", fileKey: "" },
+      { kind: "hunk", fileKey: "abc", hunkIndex: -1 },
+      { kind: "hunk", fileKey: "abc", hunkIndex: 1.5 },
+      { kind: "hunk", fileKey: "abc", hunkIndex: Number.POSITIVE_INFINITY },
+      { kind: "line", fileKey: "abc", side: "new", line: 0 },
+      { kind: "line", fileKey: "abc", side: "new", line: -1 },
+      { kind: "line", fileKey: "abc", side: "new", line: 1.5 },
+      { kind: "line", fileKey: "abc", side: "left" as never, line: 1 },
+      { kind: "note", fileKey: "abc", noteId: "" },
+    ];
+
+    for (const address of invalid) {
+      expect(() => formatReviewAddress(address)).toThrow();
+    }
+    expect(() => formatReviewAddress({ kind: "file", fileKey: "\ud800" })).toThrow(
+      "must be valid Unicode",
+    );
+  });
+
   // Intent: an address is untrusted input; a half-understood one must not navigate.
   test("rejects anything that is not exactly the grammar", () => {
     const rejected = [

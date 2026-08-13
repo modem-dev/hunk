@@ -223,7 +223,7 @@ async function renderReviewController(
 }
 
 describe("useReviewController", () => {
-  test("reselects the first visible file when filtering hides the current selection", async () => {
+  test("preserves a filtered-out selection until the reviewer clears the filter", async () => {
     const { controllerRef, setup } = await renderReviewController([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createDiffFile(
@@ -246,9 +246,21 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).visibleFiles.map((file) => file.path)).toEqual([
         "beta.ts",
       ]);
-      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
-      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("alpha.ts");
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).clearFilter();
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).visibleFiles.map((file) => file.path)).toEqual([
+        "alpha.ts",
+        "beta.ts",
+      ]);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("alpha.ts");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1732,7 +1744,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("re-seeds the current line into the file a filter leaves visible", async () => {
+  test("clears the line cursor while its selected file is filtered out", async () => {
     const { controllerRef, setup } = await renderReviewController([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createDiffFile(
@@ -1752,7 +1764,14 @@ describe("useReviewController", () => {
       });
       await flush(setup);
 
-      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("beta");
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+
+      await act(async () => {
+        expectValue(controllerRef.current).clearFilter();
+      });
+      await flush(setup);
+
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("alpha");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

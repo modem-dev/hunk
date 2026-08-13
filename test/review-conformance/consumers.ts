@@ -8,6 +8,7 @@
  */
 import { coreModelConsumer } from "./consumers/coreModel";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
+import { terminalReviewControllerNavigationConsumer } from "./consumers/terminalReviewController";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type { ReviewConformanceConsumer, ReviewNavigationConsumer } from "./types";
 
@@ -25,4 +26,5 @@ export const REVIEW_CONFORMANCE_CONSUMERS: readonly ReviewConformanceConsumer[] 
  */
 export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = [
   intentPlannerNavigationConsumer,
+  terminalReviewControllerNavigationConsumer,
 ];

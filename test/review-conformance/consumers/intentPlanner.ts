@@ -20,10 +20,10 @@ import type {
 } from "../types";
 
 /** A key no projected document can produce, standing in for a file a reload dropped. */
-const VANISHED_FILE_KEY = "vanished:no-such-file";
+export const VANISHED_FILE_KEY = "vanished:no-such-file";
 
 /** Resolve a fixture's positional selection into the semantic one core reads. */
-function toSemanticSelection(input: ConformanceSelectionInput, document: ReviewDocumentV1) {
+export function toSemanticSelection(input: ConformanceSelectionInput, document: ReviewDocumentV1) {
   if (input.file === null) {
     return { fileKey: null, hunkIndex: input.hunkIndex };
   }
@@ -37,7 +37,7 @@ function toSemanticSelection(input: ConformanceSelectionInput, document: ReviewD
 }
 
 /** Report a semantic position back as the file index the fixture states. */
-function toConformanceSelection(
+export function toConformanceSelection(
   fileKey: string | null,
   hunkIndex: number,
   document: ReviewDocumentV1,
@@ -47,7 +47,7 @@ function toConformanceSelection(
 }
 
 /** Build the annotation index the fixture declares, keyed by semantic file key. */
-function toAnnotationIndex(
+export function toAnnotationIndex(
   fixture: ReviewNavigationFixture,
   document: ReviewDocumentV1,
 ): ReviewAnnotationIndex {

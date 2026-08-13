@@ -39,7 +39,6 @@ import {
   isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
-  selectFallbackFileKey,
   selectNormalizedSelection,
 } from "../../core/review/selectors";
 import type { ReviewDraftNote, ReviewRevealRequest } from "../../core/review/state";
@@ -87,6 +86,7 @@ import {
   buildReviewAnnotationIndex,
   buildReviewStreamState,
   buildSelectedHunkSummary,
+  planTerminalSelectionReconciliation,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
 
@@ -289,7 +289,6 @@ export function useReviewController({
 
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
-  const selectedHunkIndex = state.selection.hunkIndex;
   const scrollToNote = state.reveal.scrollToNote;
   const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
@@ -376,8 +375,9 @@ export function useReviewController({
   // is still the selection, and only a file the document lost falls back to the first
   // visible one.
   const normalizedSelection = selectNormalizedSelection(state);
-  const selectedFileId = state.selection.fileKey
-    ? (fileByKey.get(state.selection.fileKey)?.id ?? "")
+  const selectedHunkIndex = normalizedSelection.hunkIndex;
+  const selectedFileId = normalizedSelection.fileKey
+    ? (fileByKey.get(normalizedSelection.fileKey)?.id ?? "")
     : "";
   const selectedFile = normalizedSelection.fileKey
     ? fileByKey.get(normalizedSelection.fileKey)
@@ -441,38 +441,18 @@ export function useReviewController({
     [keyByFileId, runIntent],
   );
 
-  /**
-   * Keep the selection on a file the review stream still shows, with its hunk in range.
-   *
-   * Reconciliation carries no reveal request: filters and reloads move the selection on
-   * the reviewer's behalf, and must not also move the viewport under them.
-   */
+  /** Reconcile only a stale document selection; filtering preserves the reviewer's place. */
   const reconcileSelection = useCallback(() => {
-    const snapshot = store.getSnapshot();
-    const selection = snapshot.selection;
-    const selected = selection.fileKey ? fileByKey.get(selection.fileKey) : undefined;
-    const isVisible =
-      selected !== undefined && visibleFiles.some((file) => file.id === selected.id);
-    const fallbackKey = selectFallbackFileKey(snapshot);
-
-    if (!isVisible && fallbackKey) {
-      store.dispatch({ type: "selection/select", fileKey: fallbackKey, hunkIndex: 0 });
-      return;
+    const action = planTerminalSelectionReconciliation(store.getSnapshot());
+    if (action) {
+      store.dispatch(action);
     }
-
-    if (selection.fileKey) {
-      store.dispatch({
-        type: "selection/select",
-        fileKey: selection.fileKey,
-        hunkIndex: selection.hunkIndex,
-      });
-    }
-  }, [fileByKey, store, visibleFiles]);
+  }, [store]);
 
   useEffect(() => {
     reconcileSelection();
     // The store's own state is what needs reconciling, so re-run when it moves.
-  }, [reconcileSelection, state.document, state.selection]);
+  }, [reconcileSelection, state.document, state.filter, state.selection]);
 
   /**
    * Keep the current line on a row the review stream still renders.

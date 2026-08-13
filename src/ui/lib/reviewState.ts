@@ -11,9 +11,11 @@
  * which files and hunks carry notes — are derived here.
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
+import type { ReviewAction } from "../../core/review/actions";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import type { ReviewAnnotationIndex } from "../../core/review/navigation";
-import { reviewFileMatchesFilter } from "../../core/review/selectors";
+import { reviewFileMatchesFilter, selectNormalizedSelection } from "../../core/review/selectors";
+import type { ReviewState } from "../../core/review/state";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
@@ -59,6 +61,29 @@ export function buildReviewStreamState({
       ),
     ),
   };
+}
+
+/**
+ * Plan the terminal follow-up when a document replacement invalidates its selection.
+ *
+ * A filter only changes the visible stream, so a selected file it hides stays selected.
+ * The shared selector instead supplies a replacement only when the selected file vanished
+ * or its hunk index became stale. This returns no reveal request: reconciliation must not
+ * move the reviewer's viewport.
+ */
+export function planTerminalSelectionReconciliation(
+  state: ReviewState,
+): Extract<ReviewAction, { type: "selection/select" }> | undefined {
+  const normalized = selectNormalizedSelection(state);
+  const fileKey = normalized.fileKey;
+  if (
+    fileKey === null ||
+    (fileKey === state.selection.fileKey && normalized.hunkIndex === state.selection.hunkIndex)
+  ) {
+    return undefined;
+  }
+
+  return { type: "selection/select", fileKey, hunkIndex: normalized.hunkIndex };
 }
 
 /**

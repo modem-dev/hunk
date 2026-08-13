@@ -22,18 +22,48 @@ export type ReviewAddress =
   | { kind: "line"; fileKey: string; side: ReviewSide; line: number }
   | { kind: "note"; fileKey: string; noteId: string };
 
-/** Serialize one address into its canonical string form. */
+/** Encode one required identifier, rejecting values the address grammar cannot represent. */
+function encodeIdentifier(value: string, label: "file key" | "note id") {
+  if (value.length === 0) {
+    throw new TypeError(`Review address ${label} must not be empty.`);
+  }
+
+  try {
+    return encodeURIComponent(value);
+  } catch {
+    // A lone surrogate cannot be percent-encoded into a URL-safe identifier.
+    throw new TypeError(`Review address ${label} must be valid Unicode.`);
+  }
+}
+
+/** Format one integer segment the parser will accept. */
+function formatIndex(value: number, label: "hunk index" | "line", minimum: number) {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new RangeError(`Review address ${label} must be an integer at least ${minimum}.`);
+  }
+  return String(value);
+}
+
+/** Validate the line side that remains a runtime value at this public boundary. */
+function formatSide(side: ReviewSide) {
+  if (side !== "old" && side !== "new") {
+    throw new TypeError("Review address line side must be old or new.");
+  }
+  return side;
+}
+
+/** Serialize one valid address into its canonical string form. */
 export function formatReviewAddress(address: ReviewAddress): string {
-  const file = `file/${encodeURIComponent(address.fileKey)}`;
+  const file = `file/${encodeIdentifier(address.fileKey, "file key")}`;
   switch (address.kind) {
     case "file":
       return file;
     case "hunk":
-      return `${file}/hunk/${address.hunkIndex}`;
+      return `${file}/hunk/${formatIndex(address.hunkIndex, "hunk index", 0)}`;
     case "line":
-      return `${file}/line/${address.side}/${address.line}`;
+      return `${file}/line/${formatSide(address.side)}/${formatIndex(address.line, "line", 1)}`;
     case "note":
-      return `${file}/note/${encodeURIComponent(address.noteId)}`;
+      return `${file}/note/${encodeIdentifier(address.noteId, "note id")}`;
   }
 }
 
