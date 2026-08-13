@@ -143,6 +143,10 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
   { file: "src/core/liveComments.ts", symbol: "firstCommentTargetForHunk", finding: "A10" },
   { file: "src/core/review/state.ts", symbol: "reviewLineAnchor", finding: "A3" },
+  { file: "src/ui/lib/files.ts", symbol: "filterReviewFiles", finding: "B5" },
+  { file: "src/ui/lib/reviewState.ts", symbol: "findNextAnnotatedFile", finding: "B2" },
+  { file: "src/ui/lib/reviewState.ts", symbol: "resolveSelectedFile", finding: "B4" },
+  { file: "src/ui/lib/agentAnnotations.ts", symbol: "alwaysShowReviewNote", finding: "B9" },
 ];
 
 describe("source architecture boundaries", () => {
