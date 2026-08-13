@@ -126,6 +126,25 @@ const EXTRACTED_DUPLICATE_TOMBSTONES: readonly string[] = [
   // e.g. "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
 ];
 
+// Function-level deletions the file tombstones cannot see: each entry bans one named
+// symbol from the file that used to declare it, tagged with the audit finding whose
+// primitive replaced it. Append-only, same contract as the file list — a matching
+// declaration reappearing means the duplication came back.
+const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
+  file: string;
+  symbol: string;
+  finding: string;
+}> = [
+  { file: "src/ui/diff/pierre.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedLines", finding: "A2" },
+  { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "sliceLines", finding: "A4" },
+  { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "gapKey", finding: "A1" },
+  { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
+  { file: "src/core/liveComments.ts", symbol: "firstCommentTargetForHunk", finding: "A10" },
+  { file: "src/core/review/state.ts", symbol: "reviewLineAnchor", finding: "A3" },
+];
+
 describe("source architecture boundaries", () => {
   test("keeps UI rendering out of core", () => {
     expect(forbiddenImports(CORE_ROOT, join(SRC_ROOT, "ui"))).toEqual([]);
@@ -135,6 +154,19 @@ describe("source architecture boundaries", () => {
     const resurrected = EXTRACTED_DUPLICATE_TOMBSTONES.filter((tombstone) =>
       existsSync(join(REPO_ROOT, ...tombstone.split("/"))),
     );
+    expect(resurrected).toEqual([]);
+  });
+
+  test("keeps extracted duplicate symbols deleted", () => {
+    const resurrected = EXTRACTED_DUPLICATE_SYMBOLS.filter(({ file, symbol }) => {
+      const path = join(REPO_ROOT, ...file.split("/"));
+      if (!existsSync(path)) {
+        return false;
+      }
+      return new RegExp(`\\b(?:function|const|let)\\s+${symbol}\\b`).test(
+        readFileSync(path, "utf8"),
+      );
+    }).map(({ file, symbol, finding }) => `${file} -> ${symbol} (${finding})`);
     expect(resurrected).toEqual([]);
   });
 

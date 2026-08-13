@@ -83,6 +83,13 @@ export function reviewGapSourceForFile(file: ReviewFileV1): ReviewGapSource {
  *
  * The gap's length is the parser's `collapsedBefore`. Returns undefined when there is no
  * gap, or when its start would fall outside the file.
+ *
+ * Residual, the leading-side sibling of `reviewTrailingGap`'s: when the anchor side has
+ * zero rows (a pure deletion's new side) and untouched content precedes the hunk, the
+ * parser's `collapsedBefore` undercounts the true omitted region by one line, so the
+ * file's first omitted line is neither shown collapsed nor offered by expansion. Every
+ * consumer now agrees on the same undercount; correcting it changes terminal output and
+ * is staged with the A2 residual (`docs/browser-review-seam-audit.md`).
  */
 export function reviewLeadingGap(
   source: ReviewGapSource,

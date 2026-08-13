@@ -19,6 +19,11 @@ should delete the copies its primitive replaces and check off the finding here.
   _Repaid (Phase 1 PR 2)_: `reviewLeadingGap`/`reviewGapAddress` in `core/review/expansion.ts`;
   `pierre.ts` copies deleted; fixtures `pure-insertion-hunk` and `pure-deletion-hunk` in
   `test/review-conformance/fixtures.ts`; core and terminal render planning both registered.
+  Residual (found in review): when the anchor side has zero rows and untouched content
+  precedes the hunk, the parser's `collapsedBefore` undercounts the leading gap by one line
+  — the leading-side sibling of A2's residual, recorded on `reviewLeadingGap` and pinned
+  (as the residual, explicitly) by the `pure-deletion-hunk` fixture; both residuals stage
+  together as one disclosed behavior-change commit.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
   producer `src/session/app/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
@@ -315,7 +320,8 @@ implementation does.
 
 The per-phase verification ladder lives in `browser-review-rebuild.md` § "Per-phase seam
 verification". A finding here counts as repaid only when all four hold: duplicate copies
-deleted, their paths appended to the tombstone list in `scripts/source-boundaries.test.ts`,
+deleted, their paths (for whole files) or banned-symbol entries (for function-level
+deletions) appended to the tombstone lists in `scripts/source-boundaries.test.ts`,
 the finding's adversarial fixture landed in the conformance harness, and the consumer
 registered against that harness.
 

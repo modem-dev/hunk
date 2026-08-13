@@ -90,8 +90,12 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ReviewConformanceFixture[] = 
       files: [
         {
           path: "deletion.ts",
-          // The parser omits four rows here; both sides end at line 5, the last
-          // unchanged row before the deletion.
+          // Pins the recorded residual, not the ideal: the true omitted region is lines
+          // 1–5, but the parser's `collapsedBefore` undercounts a zero-anchor-side
+          // leading gap by one, so every consumer currently agrees on [2, 5]. When the
+          // staged A1/A2 residual correction lands, this expectation changes to
+          // [1, 5] / lineCount 5 in the same commit (`reviewLeadingGap`'s doc comment,
+          // `docs/browser-review-seam-audit.md`).
           gaps: [{ gapId: "before:0", oldRange: [2, 5], newRange: [2, 5], lineCount: 4 }],
           hunkRanges: [{ oldRange: [6, 6], newRange: [5, 5] }],
           defaultNoteTargets: [{ side: "old", line: 6 }],
