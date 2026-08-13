@@ -1012,6 +1012,22 @@ export interface ExtensionReviewNavigation {
   selectFile(fileId: string): void;
   /** Jump the review stream to one hunk of one file. */
   selectHunk(fileId: string, hunkIndex: number): void;
+  /**
+   * Jump the review stream to one source line, addressed by side and number.
+   *
+   * The finest navigation target there is: a hunk hundreds of lines tall no
+   * longer lands the viewport pages away from the line you meant. `line` is a
+   * 1-based number on `side` as the patch numbers it, so a context line
+   * answers to either side's number. The revealed line lands where every other
+   * Hunk reveal lands — a little below the viewport top — and becomes the
+   * current line, so it pairs with a mark from `registerLineHighlighter`.
+   *
+   * When the review cannot render that line (it sits inside a collapsed gap,
+   * or the patch never numbered it) the jump falls back to the hunk containing
+   * it; a line no hunk contains is refused with a warning naming the
+   * extension.
+   */
+  revealLine(fileId: string, side: "old" | "new", line: number): void;
 }
 
 /**
