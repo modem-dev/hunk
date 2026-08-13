@@ -1,4 +1,5 @@
 import type { ExperimentalFeature } from "../core/experimental";
+import type { ExtensionLineHighlightTone } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/types";
@@ -146,6 +147,23 @@ export interface ReadReviewResourceToolInput
 export interface ApplyReviewActionToolInput
   extends SessionTargetInput, HunkReviewActionEnvelopeV1 {}
 
+/** One agent-set attention mark: a character range inside one diff line. */
+export interface HighlightToolInput extends SessionTargetInput {
+  filePath: string;
+  side: DiffSide;
+  line: number;
+  /** `[start, end)` UTF-16 code-unit offsets into the line's raw source text. */
+  start: number;
+  end: number;
+  tone?: ExtensionLineHighlightTone;
+  /** Also land the viewport on the marked line. */
+  reveal?: boolean;
+}
+
+export interface ClearHighlightsToolInput extends SessionTargetInput {
+  filePath?: string;
+}
+
 export interface SessionLiveCommentSummary {
   commentId: string;
   filePath: string;
@@ -195,6 +213,31 @@ export interface NavigatedSelectionResult {
   filePath: string;
   hunkIndex: number;
   selectedHunk?: SelectedHunkSummary;
+  /** For line targets: whether the viewport landed on the exact line or fell back to its hunk. */
+  revealed?: "line" | "hunk";
+  side?: DiffSide;
+  line?: number;
+}
+
+export interface AppliedHighlightResult {
+  fileId: string;
+  filePath: string;
+  hunkIndex: number;
+  side: DiffSide;
+  line: number;
+  start: number;
+  end: number;
+  tone: ExtensionLineHighlightTone;
+  /** Agent marks now active on this file, including this one. */
+  fileMarkCount: number;
+  /** Where the optional `reveal` landed. */
+  revealed?: "line" | "hunk";
+}
+
+export interface ClearedHighlightsResult {
+  removedCount: number;
+  remainingCount: number;
+  filePath?: string;
 }
 
 export interface RemovedCommentResult {
@@ -295,7 +338,9 @@ export type HunkSessionCommandResult =
   | RemovedCommentResult
   | ClearedCommentsResult
   | ReloadedSessionResult
-  | HunkReviewResultV1;
+  | HunkReviewResultV1
+  | AppliedHighlightResult
+  | ClearedHighlightsResult;
 
 export type HunkSessionClientMessage = SessionClientMessage<
   HunkSessionInfo,
@@ -318,4 +363,6 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"remove_comment", RemoveCommentToolInput>
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
   | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
-  | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>;
+  | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
+  | SessionServerMessage<"highlight", HighlightToolInput>
+  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>;
