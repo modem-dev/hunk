@@ -278,8 +278,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard
-modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
+The API generation this Hunk speaks (currently `5`). Version 5 adds line
+highlighters; version 4 added keyboard modes and docked panes, with API-v3
+sidebar names remaining as deprecated aliases.
 
 ### `hunk.registerTheme(theme)`
 
@@ -1048,6 +1049,96 @@ callbacks must also return synchronously, and `onExit` runs exactly once per
 activation. A failing or asynchronous `onEnter` or `onKey` exits the mode; any
 callback failure warns without breaking the review.
 
+### `hunk.registerLineHighlighter(highlighter)`
+
+A line highlighter marks **character ranges inside Hunk's own diff rendering**
+— syntax highlighting, word diff, and layout stay exactly as they are, and the
+marked characters get a resolved background. It is the lever for search hits,
+diagnostics mapped onto changed lines, secret or bidi-character scanning,
+coverage, and anything else that wants to say “these exact characters, here.”
+For a whole alternate presentation, use `registerFileView` instead.
+
+```ts
+import type { ExtensionLineHighlight, HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerLineHighlighter({
+    id: "todos",
+    highlight({ file }) {
+      const marks: ExtensionLineHighlight[] = [];
+      let newLine = 0;
+      for (const raw of file.patch.split("\n")) {
+        const header = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(raw);
+        if (header) {
+          newLine = Number(header[1]);
+          continue;
+        }
+        if (newLine === 0 || raw.startsWith("-")) continue;
+        const start = raw.slice(1).indexOf("TODO");
+        if (start !== -1) {
+          marks.push({ side: "new", line: newLine, range: [start, start + 4], tone: "warning" });
+        }
+        newLine += 1;
+      }
+      return marks;
+    },
+  });
+}
+```
+
+Marks are addressed by **source coordinates**, never by rendered rows: `side`
+(`"old"` or `"new"`), a 1-based `line` on that side, and a `[start, end)`
+range in UTF-16 code units of the line's raw text — exactly what `indexOf` and
+`RegExp.exec` return against `file.patch` lines or a `readDocument` result.
+That addressing survives split vs stack layout, line wrapping, horizontal
+scrolling, and collapsed-context expansion, and the extension never learns
+Hunk's row model. A context line may be addressed through either side's line
+number; split view mirrors the mark onto both halves of the row. Offsets that
+land inside an emoji or a wide character widen outward to the whole glyph.
+
+The `tone` says what a mark means — `"match"` (the default), `"current"` for
+the emphatic variant a search gives the active hit, `"info"`, `"warning"`, or
+`"error"`. Tones exist because a **color would be the extension's problem to
+get right and it cannot be**: a fixed background that reads on a context line
+is invisible on an added line's green. Hunk resolves each tone against the
+actual background of each marked line with the same minimum-contrast guarantee
+its own word-diff emphasis uses, per theme, so a mark is never invisible.
+
+`highlight({ file, signal, readDocument })` may be sync or async, and returns
+the complete set of marks for one file — or `null` for none. Hunk calls it per
+reviewed file, bounded by the same timeout and concurrency discipline as file
+views, and treats the result as a pure derivation of the file plus an
+invalidation epoch: results are cached until `ctx.highlights.refresh` bumps the
+epoch or the review reloads. A search that moves to the next match flips its
+own state and refreshes rather than pushing marks into the host:
+
+```ts
+hunk.registerCommand({ id: "next", title: "Next match", key: "f9" }, (ctx) => {
+  ctx.highlights.refresh("todos");
+});
+```
+
+Refresh defaults to highlighter-wide; pass `{ fileId }` to re-derive one
+file's marks and leave the rest untouched. Bare ids address the calling
+extension's own highlighter, `"other-extension:highlighter-id"` addresses any
+registered one, unknown ids warn and do nothing, and a `fileId` no reviewed
+file carries invalidates nothing — ids can race a reload. The same controls
+are available to session keyboard modes through their context, so a prompt's
+submit can refresh marks directly.
+
+Containment matches the rest of the system. Marks addressing lines the review
+is not showing — inside a collapsed gap, absent from a partial patch — are
+silently invisible rather than errors; expanding a gap reveals marks addressed
+into it when the file's source is loaded. Structurally invalid entries are
+dropped with one warning per file; a result larger than 2,000 ranges per file
+or 100 per line is rejected whole rather than truncated silently; overlapping
+ranges resolve deterministically with the later range winning. A throwing,
+rejecting, or timed-out `highlight` costs that file's marks from that
+highlighter and nothing else. Because highlights are paint-only — they change
+colors, never text or geometry — the failure mode is always “no marks,” never
+a broken review. Highlights render in interactive sessions only; the static
+pager fallback never runs extension code.
+
 ### Session keyboard modes
 
 Register a session-wide mode when an extension needs to interpret review keys
@@ -1107,8 +1198,9 @@ keyboard mode runs at a time.
 - `"pass"` continues through ordinary Hunk commands and focused scrolling.
 - `"exit"` consumes the key and leaves the mode.
 
-The context is intentionally small: `cwd`, `notify`, live public `commands`, and
-activation-scoped `keyboardModes`. Keys are frozen plain snapshots, not OpenTUI
+The context is intentionally small: `cwd`, `notify`, live public `commands`,
+activation-scoped `keyboardModes`, and `highlights` (so a prompt's submit can
+refresh line marks directly). Keys are frozen plain snapshots, not OpenTUI
 events. Async/throwing callbacks are contained and exit safely. When the session
 mode is the highest-priority active input owner, host-owned Escape exits without
 reaching `onKey`; the status badge and a host-owned **Extensions** menu item are
@@ -1250,6 +1342,10 @@ extension registry. Controls retained across an extension-registry reload or App
 
 `ctx.keyboardModes` enters, exits, or probes the command's own registered
 session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
+
+`ctx.highlights` refreshes prepared line-highlight marks, whole or
+`{ fileId }`-scoped. See
+[`hunk.registerLineHighlighter`](#hunkregisterlinehighlighterhighlighter).
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)` and
 `selectHunk(fileId, hunkIndex)`, the same guarded navigation a pane's

@@ -99,6 +99,34 @@ plan, and `src/ui/components/panes/FileView.tsx` windows and paints it. Extensio
 components can paint only their fixed validated rectangles; note cards,
 scrolling, hunk bounds, and navigation remain host-owned.
 
+## Line-highlight system
+
+Line highlighters mark character ranges inside Hunk's own diff rendering, so
+the system is deliberately split between a pull-based preparation half and a
+paint-only application half. `src/ui/highlights/useLineHighlights.ts` bounds
+asynchronous extension work with the same timeout/concurrency discipline as
+file views and retains only marks accepted by
+`src/ui/highlights/validate.ts`; results cache under `(file, highlighter,
+epoch)`, and each file's merged mark array keeps a stable identity while its
+inputs are unchanged so row memoization can hold. The epoch is owned by
+`src/ui/highlights/useLineHighlightsController.ts` behind
+`ctx.highlights.refresh`, using the shared scoped-epoch policy in
+`src/ui/lib/scopedEpochs.ts` — the same module `src/ui/fileViews/state.ts`
+delegates to — and the shared bounded `readDocument` capability lives in
+`src/ui/lib/extensionDocumentReader.ts`.
+
+Application is paint-time by construction. `src/ui/diff/lineHighlightPaint.ts`
+owns the one mapping from source coordinates (raw code-unit offsets) to
+terminal columns — sanitize-aware, tab-aware, snapped outward to grapheme
+clusters, with context and gap lines sharing one range list under both side
+keys — and the one span transform that repaints backgrounds without changing
+text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
+background with the word-diff minimum-contrast guarantee.
+`src/ui/diff/renderRows.tsx` applies the transform per rendered cell, which
+keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
+geometry measurement: a highlight change is a repaint, never a re-plan. The
+static pager never runs extension code, so highlights are interactive-only.
+
 `src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
 containment. The presentation controller stores the active mode and funnels all
 exit paths through one teardown, including re-entrant handoffs.
