@@ -14,7 +14,9 @@ import {
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   ListedSession,
   NavigatedSelectionResult,
   ReloadedSessionResult,
@@ -30,6 +32,8 @@ import type {
   SessionCommentClearCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
+  SessionHighlightAddCommandInput,
+  SessionHighlightClearCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
   SessionReviewCommandInput,
@@ -52,6 +56,8 @@ export interface HunkSessionCliClient {
   ): Promise<Array<SessionLiveCommentSummary | SessionReviewNoteSummary>>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
+  addHighlight(input: SessionHighlightAddCommandInput): Promise<AppliedHighlightResult>;
+  clearHighlights(input: SessionHighlightClearCommandInput): Promise<ClearedHighlightsResult>;
 }
 
 async function extractResponseError(response: Response) {
@@ -207,6 +213,32 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         selector: input.selector,
         filePath: input.filePath,
         includeUser: input.includeUser,
+      })
+    ).result;
+  }
+
+  async addHighlight(input: SessionHighlightAddCommandInput) {
+    return (
+      await this.request<{ result: AppliedHighlightResult }>({
+        action: "highlight-add",
+        selector: input.selector,
+        filePath: input.filePath,
+        side: input.side,
+        line: input.line,
+        start: input.start,
+        end: input.end,
+        tone: input.tone,
+        reveal: input.reveal,
+      })
+    ).result;
+  }
+
+  async clearHighlights(input: SessionHighlightClearCommandInput) {
+    return (
+      await this.request<{ result: ClearedHighlightsResult }>({
+        action: "highlight-clear",
+        selector: input.selector,
+        filePath: input.filePath,
       })
     ).result;
   }
@@ -426,6 +458,10 @@ export function formatNavigationOutput(
   selector: SessionSelectorInput,
   result: NavigatedSelectionResult,
 ) {
+  if (result.revealed === "line" && result.line !== undefined) {
+    return `Revealed ${formatSessionPath(result.filePath)}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} of ${formatSessionSelector(selector)}.\n`;
+  }
+
   return `Focused ${formatSessionPath(result.filePath)} hunk ${result.hunkIndex + 1} in ${formatSessionSelector(selector)}.\n`;
 }
 
@@ -516,6 +552,33 @@ export function formatNoteListOutput(
       ].join("\n"),
     )
     .join("\n\n")}\n`;
+}
+
+export function formatHighlightOutput(
+  selector: SessionSelectorInput,
+  result: AppliedHighlightResult,
+) {
+  const reveal =
+    result.revealed === "line"
+      ? " and revealed its line"
+      : result.revealed === "hunk"
+        ? " and revealed its hunk"
+        : "";
+  return (
+    `Marked ${formatSessionPath(result.filePath)}:${result.line} (${result.side}) ` +
+    `[${result.start}, ${result.end}) as ${result.tone} in ${formatSessionSelector(selector)}${reveal}. ` +
+    `File marks: ${result.fileMarkCount}.\n`
+  );
+}
+
+export function formatClearHighlightsOutput(
+  selector: SessionSelectorInput,
+  result: ClearedHighlightsResult,
+) {
+  const scope = result.filePath
+    ? `${formatSessionPath(result.filePath)} in ${formatSessionSelector(selector)}`
+    : formatSessionSelector(selector);
+  return `Cleared ${result.removedCount} attention marks from ${scope}. Remaining marks: ${result.remainingCount}.\n`;
 }
 
 export function formatClearCommentsOutput(

@@ -86,6 +86,12 @@ function connect(files: DiffFile[], cache = new ReviewResourceCache()) {
     navigateToLocation: () => {
       throw new Error("unused");
     },
+    addAgentLineHighlight: () => {
+      throw new Error("unused");
+    },
+    clearAgentLineHighlights: () => {
+      throw new Error("unused");
+    },
     openAgentNotes: () => undefined,
     reloadSession: () => {
       throw new Error("unused");

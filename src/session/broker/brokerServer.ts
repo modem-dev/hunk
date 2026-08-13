@@ -14,7 +14,9 @@ import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./sta
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigatedSelectionResult,
@@ -54,6 +56,8 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-list",
   "comment-rm",
   "comment-clear",
+  "highlight-add",
+  "highlight-clear",
 ];
 
 export interface ServeSessionBrokerDaemonOptions {
@@ -371,6 +375,38 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
               includeUser: input.includeUser,
             },
             timeoutMessage: "Timed out waiting for the session to clear the requested comments.",
+          }),
+        };
+        break;
+      case "highlight-add":
+        response = {
+          result: await state.dispatchCommand<AppliedHighlightResult, "highlight">({
+            selector: input.selector,
+            command: "highlight",
+            input: {
+              ...input.selector,
+              filePath: input.filePath,
+              side: input.side,
+              line: input.line,
+              start: input.start,
+              end: input.end,
+              tone: input.tone,
+              reveal: input.reveal,
+            },
+            timeoutMessage: "Timed out waiting for the session to apply the highlight.",
+          }),
+        };
+        break;
+      case "highlight-clear":
+        response = {
+          result: await state.dispatchCommand<ClearedHighlightsResult, "clear_highlights">({
+            selector: input.selector,
+            command: "clear_highlights",
+            input: {
+              ...input.selector,
+              filePath: input.filePath,
+            },
+            timeoutMessage: "Timed out waiting for the session to clear the requested highlights.",
           }),
         };
         break;

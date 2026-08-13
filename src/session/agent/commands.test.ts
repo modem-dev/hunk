@@ -121,6 +121,21 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       removedCount: 0,
       remainingCommentCount: 0,
     }),
+    addHighlight: async () => ({
+      fileId: "file-1",
+      filePath: "README.md",
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      start: 0,
+      end: 4,
+      tone: "match",
+      fileMarkCount: 1,
+    }),
+    clearHighlights: async () => ({
+      removedCount: 0,
+      remainingCount: 0,
+    }),
     ...overrides,
   };
 }

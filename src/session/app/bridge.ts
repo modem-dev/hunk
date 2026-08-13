@@ -3,7 +3,9 @@ import type { HunkReviewFailureV1, HunkReviewResourceReadResultV1 } from "../rev
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigatedSelectionResult,
@@ -30,6 +32,10 @@ export interface HunkSessionBridgeHandlers {
   navigateToLocation: (
     input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
   ) => NavigatedSelectionResult;
+  addAgentLineHighlight: (
+    input: Extract<HunkSessionServerMessage, { command: "highlight" }>["input"],
+  ) => AppliedHighlightResult;
+  clearAgentLineHighlights: (filePath?: string) => ClearedHighlightsResult;
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: Extract<
@@ -90,6 +96,10 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
         }
         case "navigate_to_hunk":
           return handlers.navigateToLocation(message.input);
+        case "highlight":
+          return handlers.addAgentLineHighlight(message.input);
+        case "clear_highlights":
+          return handlers.clearAgentLineHighlights(message.input.filePath);
         case "reload_session":
           return handlers.reloadSession(message.input.nextInput, {
             resetApp: false,
