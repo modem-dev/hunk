@@ -48,9 +48,12 @@ import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  HighlightToolInput,
   LiveComment,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
@@ -59,6 +62,12 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
+import {
+  MAX_LINE_HIGHLIGHTS_PER_FILE,
+  MAX_LINE_HIGHLIGHTS_PER_LINE,
+  validateLineHighlights,
+  type ValidatedLineHighlight,
+} from "../highlights/validate";
 
 import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
@@ -90,6 +99,9 @@ import {
   planTerminalSelectionReconciliation,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
+
+const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
+  new Map();
 
 /** Merge file-id keyed annotation maps without losing their concrete item types. */
 function mergeAnnotationMaps<T extends AgentAnnotation, U extends AgentAnnotation>(
@@ -237,6 +249,10 @@ export interface ReviewController {
   ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /** Agent attention marks per file id, painted through the extension line-highlight pipeline. */
+  agentLineHighlightsByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
+  addAgentLineHighlight: (input: HighlightToolInput) => AppliedHighlightResult;
+  clearAgentLineHighlights: (filePath?: string) => ClearedHighlightsResult;
   cancelDraftNote: () => void;
   removeUserNote: (noteId: string) => void;
   saveDraftNote: () => UserReviewNote | null;
@@ -309,6 +325,20 @@ export function useReviewController({
 
   const reconciledDocumentRef = useRef(document);
 
+  // Agent attention marks, keyed by runtime file id. A ref backs the state so daemon
+  // handlers can compute counts synchronously; both always move together.
+  const agentLineHighlightsRef = useRef(EMPTY_AGENT_LINE_HIGHLIGHTS);
+  const [agentLineHighlightsByFileId, setAgentLineHighlightsByFileId] = useState(
+    EMPTY_AGENT_LINE_HIGHLIGHTS,
+  );
+  const commitAgentLineHighlights = useCallback(
+    (next: ReadonlyMap<string, readonly ValidatedLineHighlight[]>) => {
+      agentLineHighlightsRef.current = next;
+      setAgentLineHighlightsByFileId(next);
+    },
+    [],
+  );
+
   // Adopt a replacement file list in the same commit that renders it, so a soft reload
   // never paints new files against state the previous patch produced. The store retires
   // content-derived state itself; the work here is the cursor and in-flight source
@@ -328,8 +358,14 @@ export function useReviewController({
         }
       }
     }
+    // Marks address exact character offsets in specific line content, and nothing re-derives
+    // them after a reload the way extension highlighters re-run — a stale mark would silently
+    // light up different text. Reloading the review clears them wholesale.
+    if (agentLineHighlightsRef.current.size > 0) {
+      commitAgentLineHighlights(EMPTY_AGENT_LINE_HIGHLIGHTS);
+    }
     store.dispatch({ type: "document/reconcile", document });
-  }, [document, store]);
+  }, [commitAgentLineHighlights, document, store]);
 
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
@@ -833,6 +869,26 @@ export function useReviewController({
       }
 
       const target = resolveReviewNavigationTarget({ allFiles, input });
+
+      // A line target lands the viewport on the exact line through the same reveal path
+      // `ctx.navigation.revealLine` uses, degrading to the hunk when the stream renders no
+      // row for the line. `"none"` means the file is not currently visible, where only the
+      // plain hunk selection below has defined behavior.
+      if (input.hunkIndex === undefined && input.side && input.line !== undefined) {
+        const reached = revealLine(target.file.id, input.side, input.line);
+        if (reached !== "none") {
+          return {
+            fileId: target.file.id,
+            filePath: target.file.path,
+            hunkIndex: target.hunkIndex,
+            selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
+            revealed: reached,
+            side: input.side,
+            line: input.line,
+          };
+        }
+      }
+
       selectHunk(target.file.id, target.hunkIndex);
       return {
         fileId: target.file.id,
@@ -841,7 +897,113 @@ export function useReviewController({
         selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
       };
     },
-    [allFiles, fileByKey, moveSelection, selectHunk],
+    [allFiles, fileByKey, moveSelection, revealLine, selectHunk],
+  );
+
+  /**
+   * Paint one agent attention mark, validated by the same contract extension line
+   * highlighters answer to, so both sources feed one painted-mark pipeline.
+   */
+  const addAgentLineHighlight = useCallback(
+    (input: HighlightToolInput): AppliedHighlightResult => {
+      const file = findDiffFileByPath(allFiles, input.filePath);
+      if (!file) {
+        throw new Error(noDiffFileMatchesMessage(input.filePath));
+      }
+
+      // Requiring hunk coverage catches line-number typos the way comment targets do; the
+      // agent-visible review model only exposes hunk-covered lines anyway.
+      const hunkIndex = reviewHunkIndexForLine(file.metadata.hunks, input.side, input.line);
+      if (hunkIndex < 0) {
+        throw new Error(
+          `No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`,
+        );
+      }
+
+      const validation = validateLineHighlights([
+        { side: input.side, line: input.line, range: [input.start, input.end], tone: input.tone },
+      ]);
+      const mark = validation.ok ? validation.marks[0] : undefined;
+      if (!mark) {
+        throw new Error(
+          `Highlight range [${input.start}, ${input.end}) is not a valid [start, end) character range.`,
+        );
+      }
+
+      const existing = agentLineHighlightsRef.current.get(file.id) ?? [];
+      if (existing.length >= MAX_LINE_HIGHLIGHTS_PER_FILE) {
+        throw new Error(
+          `${input.filePath} already carries ${MAX_LINE_HIGHLIGHTS_PER_FILE} attention marks. Clear some first.`,
+        );
+      }
+      const marksOnLine = existing.filter(
+        (candidate) => candidate.side === mark.side && candidate.line === mark.line,
+      ).length;
+      if (marksOnLine >= MAX_LINE_HIGHLIGHTS_PER_LINE) {
+        throw new Error(
+          `${input.filePath}:${input.line} already carries ${MAX_LINE_HIGHLIGHTS_PER_LINE} attention marks. Clear some first.`,
+        );
+      }
+
+      const next = new Map(agentLineHighlightsRef.current);
+      next.set(file.id, [...existing, mark]);
+      commitAgentLineHighlights(next);
+
+      let revealed: "line" | "hunk" | undefined;
+      if (input.reveal ?? false) {
+        const reached = revealLine(file.id, mark.side, mark.line);
+        if (reached === "none") {
+          selectHunk(file.id, hunkIndex);
+          revealed = "hunk";
+        } else {
+          revealed = reached;
+        }
+      }
+
+      return {
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        side: mark.side,
+        line: mark.line,
+        start: mark.start,
+        end: mark.end,
+        tone: mark.tone,
+        fileMarkCount: existing.length + 1,
+        ...(revealed ? { revealed } : {}),
+      };
+    },
+    [allFiles, commitAgentLineHighlights, revealLine, selectHunk],
+  );
+
+  /** Clear agent attention marks, globally or for one file. */
+  const clearAgentLineHighlights = useCallback(
+    (filePath?: string): ClearedHighlightsResult => {
+      const current = agentLineHighlightsRef.current;
+      const total = [...current.values()].reduce((sum, marks) => sum + marks.length, 0);
+
+      if (!filePath) {
+        if (total > 0) {
+          commitAgentLineHighlights(EMPTY_AGENT_LINE_HIGHLIGHTS);
+        }
+        return { removedCount: total, remainingCount: 0 };
+      }
+
+      const file = findDiffFileByPath(allFiles, filePath);
+      if (!file) {
+        throw new Error(noDiffFileMatchesMessage(filePath));
+      }
+
+      const removed = current.get(file.id)?.length ?? 0;
+      if (removed > 0) {
+        const next = new Map(current);
+        next.delete(file.id);
+        commitAgentLineHighlights(next);
+      }
+
+      return { removedCount: removed, remainingCount: total - removed, filePath };
+    },
+    [allFiles, commitAgentLineHighlights],
   );
 
   /**
@@ -1230,10 +1392,13 @@ export function useReviewController({
     toggleGap,
     toggleSelectedHunkGap,
     visibleFiles,
+    addAgentLineHighlight,
     addLiveComment,
     addLiveCommentBatch,
+    agentLineHighlightsByFileId,
     anchorLineCursor,
     anchorSelection,
+    clearAgentLineHighlights,
     clearFilter,
     cancelDraftNote,
     clearLiveComments,

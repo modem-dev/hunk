@@ -14,8 +14,10 @@ import type { ReviewController } from "./useReviewController";
 
 /** Bridge one live Hunk review session to the local session daemon. */
 export function useHunkSessionBridge({
+  addAgentLineHighlight,
   addLiveComment,
   addLiveCommentBatch,
+  clearAgentLineHighlights,
   clearLiveComments,
   hostClient,
   liveCommentCount,
@@ -34,8 +36,10 @@ export function useHunkSessionBridge({
   selectedHunkIndex,
   showAgentNotes,
 }: {
+  addAgentLineHighlight: ReviewController["addAgentLineHighlight"];
   addLiveComment: ReviewController["addLiveComment"];
   addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
+  clearAgentLineHighlights: ReviewController["clearAgentLineHighlights"];
   clearLiveComments: ReviewController["clearLiveComments"];
   hostClient?: HunkSessionBrokerClient;
   liveCommentCount: number;
@@ -63,8 +67,10 @@ export function useHunkSessionBridge({
   const bridge = useMemo(
     () =>
       createHunkSessionBridge({
+        addAgentLineHighlight,
         addLiveComment,
         addLiveCommentBatch,
+        clearAgentLineHighlights,
         clearLiveComments,
         navigateToLocation,
         openAgentNotes,
@@ -73,8 +79,10 @@ export function useHunkSessionBridge({
         reviewProducer,
       }),
     [
+      addAgentLineHighlight,
       addLiveComment,
       addLiveCommentBatch,
+      clearAgentLineHighlights,
       clearLiveComments,
       navigateToLocation,
       openAgentNotes,

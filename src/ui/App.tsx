@@ -112,6 +112,7 @@ import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
+import { mergeLineHighlightMaps } from "./highlights/merge";
 import { useLineHighlights } from "./highlights/useLineHighlights";
 import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
@@ -1170,9 +1171,18 @@ export function App({
     onIssue: showFileViewWarning,
   });
 
+  // Extension marks and agent attention marks paint through one pipeline: the
+  // merged map is the only mark source the diff pane sees.
+  const paintedLineHighlights = useMemo(
+    () => mergeLineHighlightMaps(extensionLineHighlights, review.agentLineHighlightsByFileId),
+    [extensionLineHighlights, review.agentLineHighlightsByFileId],
+  );
+
   useHunkSessionBridge({
+    addAgentLineHighlight: review.addAgentLineHighlight,
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
+    clearAgentLineHighlights: review.clearAgentLineHighlights,
     clearLiveComments: review.clearLiveComments,
     hostClient,
     liveCommentCount: review.liveCommentCount,
@@ -2203,7 +2213,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
-            lineHighlights={extensionLineHighlights}
+            lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
             screenLeft={diffPaneScreenLeft}
             screenTop={diffPaneScreenTop}
