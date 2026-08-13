@@ -147,6 +147,14 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "src/ui/lib/reviewState.ts", symbol: "findNextAnnotatedFile", finding: "B2" },
   { file: "src/ui/lib/reviewState.ts", symbol: "resolveSelectedFile", finding: "B4" },
   { file: "src/ui/lib/agentAnnotations.ts", symbol: "alwaysShowReviewNote", finding: "B9" },
+  {
+    file: "src/ui/diff/expandCollapsedRows.ts",
+    symbol: "selectGapForKeyboardToggle",
+    finding: "F2",
+  },
+  { file: "src/ui/lib/agentAnnotations.ts", symbol: "annotationOverlapsHunk", finding: "B1" },
+  { file: "src/ui/lib/agentAnnotations.ts", symbol: "getAnnotatedHunkIndices", finding: "B1" },
+  { file: "src/ui/lib/reviewState.ts", symbol: "buildReviewAnnotationIndex", finding: "B1" },
 ];
 
 describe("source architecture boundaries", () => {
