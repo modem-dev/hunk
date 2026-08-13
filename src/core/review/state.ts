@@ -30,7 +30,7 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
 }
 
 /**
- * The one note-layer visibility rule.
+ * Decides whether one note stays visible under the agent-notes toggle.
  *
  * Hiding the note layer hides what the review was given, not what the reviewer wrote:
  * their own notes are their working state and stay on screen. Stated once over the

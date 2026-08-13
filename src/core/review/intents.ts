@@ -143,7 +143,7 @@ export class ReviewIntentPlanningError extends Error {
 }
 
 /**
- * The one empty-note-body rule.
+ * Decides what counts as a blank note body.
  *
  * Surfaces differ in what they do about a blank body — the terminal quietly retires the
  * draft, an agent command reports a rejection — but not in what counts as blank.

@@ -343,6 +343,13 @@ here so the extraction happens before the duplication exists. Design detail in
   commands have no intent to lower to yet — starting a note needs caller-owned draft identity,
   and gap expansion is the Phase 2 `expansion/toggle` intent — and are listed by name in
   `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT`, so the gap is a decision rather than an oversight.
+  Residual (found in review): `lowerAppCommandToReviewIntent` has no production caller yet —
+  the terminal's navigation handlers read the catalog's declared scope/direction but build
+  their intents inline, and `toggleAgentNotes` reads no catalog data at all, so the lowering
+  and the terminal closures can diverge with only `commandCatalog.test.ts` noticing half the
+  drift. Closes when the lowering gains its second consumer (the Phase 5 palette / wire
+  command path); until then any change to a declared review effect must update both sites,
+  and a review-effect parity check is the missing test.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve

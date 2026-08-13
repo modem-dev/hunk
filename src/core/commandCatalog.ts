@@ -516,8 +516,8 @@ export interface AppCommandLoweringContext {
 /**
  * Lower one command into the review intent it asks for.
  *
- * The single constructor every surface goes through: a keyboard chord, a browser palette
- * entry, and an agent command that name the same id produce the same intent. Undefined
+ * Builds the intent one semantic command lowers to, so a keyboard chord, a browser
+ * palette entry, and an agent command naming the same id produce the same intent. Undefined
  * means the command has no declared review effect — it is client-local, host-only, or one
  * of the semantic commands still listed above.
  */

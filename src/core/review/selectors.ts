@@ -63,7 +63,7 @@ export function reviewFileKeysWithRetiredContent(
 export type ReviewFilterFile = Pick<ReviewFileV1, "path" | "previousPath" | "agentSummary">;
 
 /**
- * The one review filter matcher.
+ * Matches one file against the shared review filter.
  *
  * A query matches a file's current path, the path it came from, or the agent's summary of
  * it, case-insensitively. The fields are joined before matching, so a query may span the
