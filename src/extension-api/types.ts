@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 4;
+export const HUNK_EXTENSION_API_VERSION = 5;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -243,6 +243,8 @@ export type ExtensionKeyboardModeKeyResult = "handled" | "pass" | "exit";
 export interface ExtensionKeyboardModeContext extends ExtensionContext {
   /** Live access to explicitly public built-in Hunk commands. */
   readonly commands: ExtensionCommandControls;
+  /** Invalidate prepared line highlights, e.g. after a prompt submit changes them. */
+  readonly highlights: ExtensionLineHighlightControls;
   /**
    * Controls scoped to this extension and activation.
    *
@@ -435,6 +437,100 @@ export interface ExtensionFileView {
    * `ctx.fileViews.enterMode(viewId)` to start it.
    */
   mode?: ExtensionFileViewMode;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Line highlights                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What one line-highlight mark means.
+ *
+ * Tones rather than colors on purpose: a background is only visible resolved
+ * against the background it sits on, which differs per line kind (added,
+ * removed, context) and per theme. The host owns that resolution, applying the
+ * same minimum-contrast guarantee its own word-diff emphasis uses, so a mark
+ * is never invisible on a green line. `"current"` is the emphatic variant of
+ * `"match"` — search uses it for the match the user is on.
+ */
+export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning" | "error";
+
+/**
+ * One marked character range inside one diff line.
+ *
+ * Addressed by source coordinates — `(side, line, range)` — rather than by
+ * rendered rows, so a mark survives split vs stack layout, line wrapping,
+ * horizontal scrolling, and collapsed-context expansion without the extension
+ * ever learning Hunk's row model.
+ */
+export interface ExtensionLineHighlight {
+  /** Which side the line belongs to. A context line may be addressed by either side. */
+  side: ExtensionFileSide;
+  /** 1-based source line number on that side. */
+  line: number;
+  /**
+   * `[start, end)` UTF-16 code-unit offsets into the line's raw source text —
+   * the text as it appears in `ExtensionDiffFile.patch` or a `readDocument`
+   * result, before Hunk's tab expansion or terminal sanitization. This is what
+   * `String.prototype.indexOf` and `RegExp.exec` return, so scanning the patch
+   * yields usable offsets directly. The host maps them to terminal columns and
+   * widens them to grapheme-cluster boundaries, so an offset inside an emoji or
+   * a CJK character marks the whole visible glyph rather than tearing it.
+   */
+  range: readonly [number, number];
+  /** What the mark means. Defaults to `"match"`. */
+  tone?: ExtensionLineHighlightTone;
+}
+
+/** The input one line-highlight request receives. */
+export interface ExtensionLineHighlightInput {
+  readonly file: ExtensionDiffFile;
+  /** Aborted when the result can no longer be used (reload, supersession, timeout). */
+  readonly signal: AbortSignal;
+  /**
+   * Read one side's complete source document, exactly like
+   * `ExtensionFileViewInput.readDocument`. Resolves `null` whenever the side
+   * cannot be read. Patch text is already at hand as `file.patch`.
+   */
+  readDocument(side: ExtensionFileSide): Promise<string | null>;
+}
+
+/**
+ * A contributor of character-range marks painted onto diff lines.
+ *
+ * `highlight` is a pure derivation of the file plus an invalidation epoch: the
+ * host calls it per reviewed file, caches the result, and re-calls it only
+ * when `ctx.highlights.refresh` bumps the epoch or the review reloads. There
+ * is no host-held mark state to go stale. Highlights are paint-only — they
+ * change colors, never text or geometry — so the failure mode of a throwing,
+ * rejecting, or timed-out `highlight` is "no marks for that file" and nothing
+ * else.
+ *
+ * Marks whose lines never render (a line inside a collapsed gap, a line the
+ * patch does not contain) are silently invisible rather than errors: the mark
+ * is valid, the review just is not showing that line.
+ */
+export interface ExtensionLineHighlighter {
+  /** Identifies the highlighter within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  /** Return every mark for one file, or `null`/empty for none. */
+  highlight(
+    input: ExtensionLineHighlightInput,
+  ): readonly ExtensionLineHighlight[] | null | Promise<readonly ExtensionLineHighlight[] | null>;
+}
+
+/** Invalidate prepared line highlights from a command or keyboard-mode handler. */
+export interface ExtensionLineHighlightControls {
+  /**
+   * Mark this highlighter's prepared results stale so `highlight` runs again.
+   *
+   * Without `fileId` every file's marks for this highlighter are re-derived;
+   * with one, only that file's. A `fileId` no reviewed file carries
+   * invalidates nothing and warns about nothing: ids can race a reload. Bare
+   * ids address the calling extension's own highlighter,
+   * `"<extensionId>:<highlighterId>"` addresses any registered one.
+   */
+  refresh(highlighterId: string, options?: { fileId?: string }): void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1456,6 +1552,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
   readonly keyboardModes: ExtensionKeyboardModeControls;
   /** Session panes registered by this command's owning extension. */
   readonly panes: ExtensionPaneControls;
+  /** Invalidate prepared line highlights so `highlight` re-derives them. */
+  readonly highlights: ExtensionLineHighlightControls;
   /** @deprecated Use panes. */
   readonly sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
@@ -1619,6 +1717,16 @@ export interface HunkExtensionAPI {
    * row component contract may paint React/OpenTUI content inside clipped host geometry.
    */
   registerFileView(view: ExtensionFileView): void;
+  /**
+   * Register a contributor of character-range marks painted onto diff lines.
+   *
+   * Marks are addressed by source coordinates and painted by the host inside
+   * its own diff rendering — syntax highlighting, word diff, and layout stay
+   * intact. The host resolves each mark's `tone` against the active theme and
+   * line kind, guaranteeing visible contrast the way its own word-diff
+   * emphasis does.
+   */
+  registerLineHighlighter(highlighter: ExtensionLineHighlighter): void;
   /**
    * Register one session-scoped keyboard interpretation.
    *
