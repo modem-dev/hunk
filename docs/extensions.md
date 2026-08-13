@@ -279,8 +279,9 @@ new instances and run that shutdown/startup pair around the replacement.
 ### `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `5`). Version 5 adds line
-highlighters; version 4 added keyboard modes and docked panes, with API-v3
-sidebar names remaining as deprecated aliases.
+highlighters and line-granular navigation (`revealLine`); version 4 added
+keyboard modes and docked panes, with API-v3 sidebar names remaining as
+deprecated aliases.
 
 ### `hunk.registerTheme(theme)`
 
@@ -648,13 +649,16 @@ The component receives fresh props as the app changes:
 API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 `ExtensionPane*`, `ctx.panes`, and `replaces: "hunk:files"` in new code.
 
-`actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route
-through the same review controller as the built-in files pane and the keyboard
-shortcuts, so the review stream scrolls, selection updates, and the
-`selection_changed` event fires exactly as if the user had clicked a built-in
-row. `actions.notify(message, type?)` shows a toast attributed to your
-extension. An action given a file id that is not currently visible is refused
-with a warning rather than corrupting the selection.
+`actions.selectFile(fileId)`, `actions.selectHunk(fileId, hunkIndex)`, and
+`actions.revealLine(fileId, side, line)` route through the same review
+controller as the built-in files pane and the keyboard shortcuts, so the review
+stream scrolls, selection updates, and the `selection_changed` event fires
+exactly as if the user had clicked a built-in row. `actions.notify(message,
+type?)` shows a toast attributed to your extension. An action given a file id
+that is not currently visible is refused with a warning rather than corrupting
+the selection. A pane's `actions` carry the same navigation methods a command
+handler's [`ctx.navigation`](#navigating-the-review) does, with the same
+guarantees.
 
 The three hunk surfaces line up by design: each file's `hunks` lists public
 `ExtensionDiffHunk` summaries (`index`, the `@@` header, inclusive old/new
@@ -1358,15 +1362,49 @@ session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 `{ fileId }`-scoped. See
 [`hunk.registerLineHighlighter`](#hunkregisterlinehighlighterhighlighter).
 
-`ctx.navigation` moves the review stream: `selectFile(fileId)` and
-`selectHunk(fileId, hunkIndex)`, the same guarded navigation a pane's
-`actions` carry, routed through the same review controller — the stream
-scrolls, selection updates, and `selection_changed` fires exactly as if the
-user had clicked a pane row. Unlike `selection` it is live, not a snapshot:
-a call acts on the review as it is at that moment, so a handler that awaits a
-dialog and then navigates still works. A file id the stream cannot currently
-show is refused with a warning rather than corrupting the selection, and a
-hunk index is clamped into the file's real range.
+#### Navigating the review
+
+`ctx.navigation` moves the review stream: `selectFile(fileId)`,
+`selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)`, the same
+guarded navigation a pane's `actions` carry, routed through the same review
+controller — the stream scrolls, selection updates, and `selection_changed`
+fires exactly as if the user had clicked a pane row. Unlike `selection` it is
+live, not a snapshot: a call acts on the review as it is at that moment, so a
+handler that awaits a dialog and then navigates still works. A file id the
+stream cannot currently show is refused with a warning rather than corrupting
+the selection, and a hunk index is clamped into the file's real range.
+
+`revealLine` is the finest target there is, and the one to reach for when your
+extension knows exactly which line it means — a search hit, a lint finding, the
+line a mark from [`registerLineHighlighter`](#hunkregisterlinehighlighterhighlighter)
+sits on. A hunk hundreds of lines tall has one anchor, so `selectHunk` can leave
+the line you meant pages below the viewport; `revealLine` scrolls to the line
+itself, lands it a little below the viewport top like every other Hunk reveal,
+and makes it the current line so the reverse-video marker sits on it.
+
+`line` is 1-based on `side` as the patch numbers it, so a context line answers
+to either side's number. Two things soften the target rather than failing it:
+when no rendered row carries that line — it is inside a collapsed gap, absent
+from a partial patch, or the reviewer turned the current-line marker off
+(`view.cursor_line = "off"`) — the jump lands on the hunk containing the line
+instead. Only a line no hunk of the file covers is refused, with a warning
+naming your extension, and so are a side outside `"old"`/`"new"` and a line
+number that is not a positive whole number.
+
+```ts
+hunk.registerCommand({ id: "first-todo", title: "Jump to the first TODO" }, async (ctx) => {
+  const file = ctx.selection.file;
+  if (!file) {
+    return;
+  }
+
+  const document = await ctx.workspace.readDocument(file.id, "new");
+  const index = (document ?? "").split("\n").findIndex((line) => line.includes("TODO"));
+  if (index >= 0) {
+    ctx.navigation.revealLine(file.id, "new", index + 1);
+  }
+});
+```
 
 A handler may be async; a failure (sync or rejected) becomes a warning naming
 your extension.

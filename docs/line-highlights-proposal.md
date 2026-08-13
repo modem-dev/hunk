@@ -247,11 +247,40 @@ Search is the weakest justification on this list.
   on a rendered line still shows nothing, and it wants its own mechanism rather
   than a background tint.
 
-## Companion gap (separate PR)
+## Companion gap — closed by `revealLine`
 
-`ctx.navigation` reaches files and hunks; the finest target is `selectHunk`. A
-highlight tells you which characters matched, but the review still lands on the
-hunk. `revealLine(fileId, side, line)` would complete it, and the internals
-already have the pieces — `firstLineCursorInHunk` and `revealLineCursor` in
-`useReviewController.ts` do exactly this for the host's own line cursor.
-Deliberately kept out of the highlight change to keep both reviewable.
+`ctx.navigation` reached files and hunks; the finest target was `selectHunk`. A
+highlight told you which characters matched, but the review still landed on the
+hunk anchor — in a hunk hundreds of lines tall, pages above the mark.
+`revealLine(fileId, side, line)` closes that, still under API v5.
+
+It reuses the host's own line-cursor machinery rather than adding a second
+scrolling path: `(side, line)` resolves against the stops `buildLineCursors`
+measures, and `revealLineCursor` sets the current line, bumps the reveal
+request, and anchors the selection without moving the viewport. Two decisions
+are worth recording.
+
+**Placement is the app's, not the caller's.** The revealed line lands at
+`computeHunkRevealScrollTop` with `preferredTopPadding = max(2, floor(viewportHeight * 0.25))`
+— the same position hunk and note reveals use. One landing spot app-wide, so a
+reviewer never has to learn where a given extension decided to put things, and
+no API option to get it wrong. That required naming the two line-reveal
+policies apart: stepping keeps its minimum-distance scroll (`"nearest"`), so a
+held `j` does not yank the stream, while a jump uses `"reveal"` even when the
+line already happened to be on screen.
+
+**Cross-file needs no pending state.** The diff pane measures section geometry
+for every visible file, not just the selected one, so `buildLineCursors`
+already enumerates the whole review stream and a jump into another file
+resolves in the same pass as a local one. The `pendingLineCursorRef` dance that
+gap expansion needs — waiting for rows that do not exist yet — has no analogue
+here, and adding one would have been a second mechanism for a problem that is
+not there.
+
+What a caller gets when the line is not drawable is deliberate rather than
+silent: a line with no measured row (inside a collapsed gap, absent from a
+partial patch, or with the current-line marker configured off, which retires
+the stop list entirely) falls back to the hunk containing it, since that is
+strictly closer than where `selectHunk` would have landed anyway. Only a line
+no hunk covers is refused, with a warning naming the extension — the same
+attribution every other guarded navigation refusal carries.

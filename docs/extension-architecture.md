@@ -168,6 +168,17 @@ chord at a time and detected by probing matchers with a synthesized event
 `src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
 panes render. App reads it through a ref so the dispatch table stays stable.
 
+`src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
+`ctx.navigation` and a pane's `actions`, so a jump from either surface is
+validated, attributed, and reported the same way. It owns argument policy only
+— visible-file validation, hunk clamping, `revealLine`'s side and line-number
+checks — and delegates the move itself to the review controller. Where a jump
+puts a line on screen stays host policy: `useReviewController` tags each
+current-line reveal with a placement, and `DiffPane` reads it to choose between
+stepping's minimum-distance scroll and the top-padded position hunk, note, and
+`revealLine` reveals share. Extensions name a target; they never name a scroll
+position.
+
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
 `src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a

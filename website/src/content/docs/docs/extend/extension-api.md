@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `5`). Version 5 adds line highlighters; version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `5`). Version 5 adds line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
 
 ## `hunk.registerTheme(theme)`
 
@@ -168,7 +168,9 @@ hunk.registerCommand(
 
 `selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` only when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
-`ctx.navigation.selectFile(fileId)` and `selectHunk(fileId, hunkIndex)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
+`ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
+
+`revealLine` is the finest target: a hunk hundreds of lines tall has one anchor, so `selectHunk` can leave the line you meant pages below the viewport. `line` is 1-based on `side` as the patch numbers it, so a context line answers to either side's number. The revealed line lands a little below the viewport top — where every other Hunk reveal lands — and becomes the current line, pairing with a mark from `registerLineHighlighter`. A line no rendered row carries (inside a collapsed gap, absent from a partial patch, or with the current-line marker off) falls back to the hunk containing it; a line no hunk covers, a side outside `"old"`/`"new"`, and a line number that is not a positive whole number are refused with a warning naming the extension.
 
 All built-ins listed in the [keybindings reference](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) are public to command handlers. This includes the unbound `hunk.review.alignCurrentLineTop`, `hunk.review.alignCurrentLineCenter`, and `hunk.review.alignCurrentLineBottom` commands. `count` defaults to `1`, is capped at `10,000`, and scales relative row, viewport, horizontal, file, hunk, and annotated navigation in one host transition. Absolute and one-shot commands run once. Unknown, disabled, non-public, extension-owned, or stale commands return `false`. `isEnabled` also returns `false` for a malformed id; malformed `execute` ids, options, and counts throw into normal extension failure containment.
 

@@ -195,6 +195,16 @@ export default function (hunk: HunkExtensionAPI) {
     modeControls.exitMode();
     ctx.panes.toggle("bottom");
     if (ctx.sidebars.isOpen("legacy")) ctx.sidebars.close("legacy");
+
+    const targetFile = ctx.selection.file;
+    if (targetFile) {
+      ctx.navigation.selectFile(targetFile.id);
+      ctx.navigation.selectHunk(targetFile.id, 0);
+      ctx.navigation.revealLine(targetFile.id, "new", 211);
+      ctx.navigation.revealLine(targetFile.id, "old", 1);
+      // @ts-expect-error Only the two diff sides address a line.
+      ctx.navigation.revealLine(targetFile.id, "both", 1);
+    }
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {
