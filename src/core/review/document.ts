@@ -137,6 +137,10 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
           : {}),
       })
     : undefined;
+  // Without a fetcher cache key, an unchanged identity proves only that the *diff* did not
+  // move — the full source behind it may have (a rebase shifting base and working tree in
+  // lockstep). Only a reader that names its snapshot can attest the text itself.
+  const sourceAttested = file.sourceFetcher?.cacheKey !== undefined;
 
   return {
     key: reviewFileKey({
@@ -169,7 +173,7 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
       : {}),
     hunks,
     contentIdentity,
-    ...(sourceIdentity !== undefined ? { sourceIdentity } : {}),
+    ...(sourceIdentity !== undefined ? { sourceIdentity, sourceAttested } : {}),
   } satisfies ReviewFileV1;
 }
 

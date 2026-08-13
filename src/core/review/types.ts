@@ -151,6 +151,13 @@ export interface ReviewFileV1 {
    * from that content survives a reload only while this value is unchanged.
    */
   sourceIdentity?: string;
+  /**
+   * True when the source reader vouched for `sourceIdentity` with its own cache key, so
+   * the full source cannot have changed behind an unchanged identity. Loaded source text
+   * survives a reload only when attested; expansion state needs only the identity, since
+   * gap geometry is a fact of the diff content alone.
+   */
+  sourceAttested?: boolean;
 }
 
 export interface ReviewDocumentV1 {

@@ -118,8 +118,8 @@ describe("document reconciliation", () => {
   test("drops expansion and loaded source for a file whose source identity changed", () => {
     const state = reduceAll(
       createTestReviewState([
-        { key: "alpha", sourceIdentity: "source-1" },
-        { key: "beta", sourceIdentity: "source-1" },
+        { key: "alpha", sourceIdentity: "source-1", sourceAttested: true },
+        { key: "beta", sourceIdentity: "source-1", sourceAttested: true },
       ]),
       { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
       { type: "expansion/toggle", fileKey: "beta", gapId: "before:1", expanded: true },
@@ -138,13 +138,35 @@ describe("document reconciliation", () => {
     const next = reduceReviewState(state, {
       type: "document/reconcile",
       document: createTestReviewDocument([
-        { key: "alpha", sourceIdentity: "source-2" },
-        { key: "beta", sourceIdentity: "source-1" },
+        { key: "alpha", sourceIdentity: "source-2", sourceAttested: true },
+        { key: "beta", sourceIdentity: "source-1", sourceAttested: true },
       ]),
     });
 
     expect(next.expandedGaps).toEqual([{ fileKey: "beta", gapId: "before:1", expanded: true }]);
     expect(next.sourceStatusByFileKey).toEqual({ beta: { kind: "loaded", text: "b" } });
+  });
+
+  test("drops unattested loaded source on reconcile while keeping the gap open", () => {
+    const state = reduceAll(
+      createTestReviewState([{ key: "alpha", sourceIdentity: "source-1" }]),
+      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
+      {
+        type: "expansion/set-source-status",
+        fileKey: "alpha",
+        status: { kind: "loaded", text: "a" },
+      },
+    );
+
+    // Same identity, but no reader attestation: the diff not moving proves nothing about
+    // the full source behind it, so the cached text goes and the open gap refetches.
+    const next = reduceReviewState(state, {
+      type: "document/reconcile",
+      document: createTestReviewDocument([{ key: "alpha", sourceIdentity: "source-1" }]),
+    });
+
+    expect(next.expandedGaps).toEqual([{ fileKey: "alpha", gapId: "before:1", expanded: true }]);
+    expect(next.sourceStatusByFileKey).toEqual({});
   });
 
   test("drops file-scoped state for a file the new document retired", () => {

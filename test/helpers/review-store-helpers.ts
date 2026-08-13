@@ -17,6 +17,7 @@ export interface TestReviewFileInput {
   hunkCount?: number;
   path?: string;
   sourceIdentity?: string;
+  sourceAttested?: boolean;
   contentIdentity?: string;
 }
 
@@ -83,6 +84,7 @@ export function createTestReviewFile(input: TestReviewFileInput): ReviewFileV1 {
     hunks,
     contentIdentity: input.contentIdentity ?? `content:${input.key}`,
     ...(input.sourceIdentity !== undefined ? { sourceIdentity: input.sourceIdentity } : {}),
+    ...(input.sourceAttested !== undefined ? { sourceAttested: input.sourceAttested } : {}),
   };
 }
 
