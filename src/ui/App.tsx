@@ -37,6 +37,7 @@ import {
   resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
 } from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
@@ -106,6 +107,8 @@ import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
+import { useLineHighlights } from "./highlights/useLineHighlights";
+import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
@@ -428,6 +431,10 @@ export function App({
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
   );
+  const sessionLineHighlighters = useMemo(
+    () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
+    [extensions],
+  );
   // The one conversion of the visible review files into the frozen views every
   // extension surface sees: sidebar props and command-handler selection both
   // read from this list, so they can never describe the review differently.
@@ -552,6 +559,12 @@ export function App({
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
   );
+  const { epochs: lineHighlightEpochs, createControls: createLineHighlightControls } =
+    useLineHighlightsController({
+      files: reviewFiles,
+      highlighters: sessionLineHighlighters,
+      showNotice: showSessionNotice,
+    });
   const {
     activeModeTitle: keyboardModeTitle,
     createControls: createKeyboardModeControls,
@@ -561,6 +574,7 @@ export function App({
     sendModeKey: sendKeyboardModeKey,
   } = useKeyboardModeController({
     commands: extensionCommandControls,
+    createHighlightControls: createLineHighlightControls,
     cwd: extensions?.context.cwd ?? process.cwd(),
     modes: sessionKeyboardModes,
     notify: notifyExtensionMode,
@@ -831,6 +845,7 @@ export function App({
         panes,
         sidebars: panes,
         fileViews: createFileViewControls(registered.extensionId),
+        highlights: createLineHighlightControls(registered.extensionId),
         // Snapshot semantics: built when the key fires, so the handler sees
         // where the review was at that moment, even if it awaits and the user
         // navigates on.
@@ -876,6 +891,7 @@ export function App({
       createExtensionDialogs,
       createFileViewControls,
       createKeyboardModeControls,
+      createLineHighlightControls,
       createPaneControls,
       extensionCommandControls,
       createWorkspaceControls,
@@ -1132,6 +1148,13 @@ export function App({
       onIssue: showSessionNotice,
       onWarning: showFileViewWarning,
     });
+
+  const extensionLineHighlights = useLineHighlights({
+    files: filteredFiles,
+    highlighters: sessionLineHighlighters,
+    epochs: lineHighlightEpochs,
+    onIssue: showFileViewWarning,
+  });
 
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
@@ -2159,6 +2182,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            lineHighlights={extensionLineHighlights}
             pagerMode={pagerMode}
             screenLeft={diffPaneScreenLeft}
             screenTop={diffPaneScreenTop}

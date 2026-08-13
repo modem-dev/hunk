@@ -59,6 +59,7 @@ async function renderController(initial: HarnessState) {
     const showNotice = useCallback((message: string) => notices.push(message), []);
     controller = useKeyboardModeController({
       commands,
+      createHighlightControls: () => ({ refresh: () => {} }),
       cwd: "/repo",
       modes: state.modes,
       notify: (message) => notices.push(message),

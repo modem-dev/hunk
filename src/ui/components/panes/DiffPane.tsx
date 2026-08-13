@@ -74,6 +74,7 @@ import {
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
+import type { ValidatedLineHighlight } from "../../highlights/validate";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import {
   createExtensionCurrentLinePaint,
@@ -200,6 +201,7 @@ function buildHighlightPrefetchFileIds({
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
 
@@ -210,6 +212,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
+  lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -270,6 +273,8 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
+  /** Validated extension line marks, keyed by file id. */
+  lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -2293,6 +2298,7 @@ export function DiffPane({
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                        extensionLineHighlights={lineHighlights.get(file.id)}
                         file={file}
                         fileView={fileViewRenderPlans.get(file.id)?.fileView}
                         headerLabelWidth={headerLabelWidth}

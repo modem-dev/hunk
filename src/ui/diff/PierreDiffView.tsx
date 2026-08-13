@@ -9,6 +9,8 @@ import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { type FileSourceStatus } from "./expandCollapsedRows";
+import { buildLineHighlightPaintIndex } from "./lineHighlightPaint";
+import type { ValidatedLineHighlight } from "../highlights/validate";
 import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
@@ -71,6 +73,7 @@ export function PierreDiffView({
   copySelectedSide,
   cursorHighlight,
   expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
+  extensionLineHighlights,
   file,
   layout,
   onHover,
@@ -100,6 +103,8 @@ export function PierreDiffView({
   /** The current line within this file, when the review-stream cursor rests in it. */
   cursorHighlight?: CursorHighlight;
   expandedGapKeys?: ReadonlySet<string>;
+  /** Validated extension marks for this file, in source coordinates. */
+  extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
@@ -249,6 +254,21 @@ export function PierreDiffView({
   useEffect(() => {
     onRowPlanChange?.(sectionRowPlan, rowPlanHighlighted);
   }, [onRowPlanChange, rowPlanHighlighted, sectionRowPlan]);
+
+  // Resolved to terminal columns outside the row plan on purpose: highlights are
+  // paint-only, so they must never enter the geometry-bearing plan or its caches.
+  const lineHighlightPaintIndex = useMemo(
+    () =>
+      file && extensionLineHighlights && extensionLineHighlights.length > 0
+        ? buildLineHighlightPaintIndex({
+            file,
+            marks: extensionLineHighlights,
+            tabWidth,
+            sourceText: sourceStatus?.kind === "loaded" ? sourceStatus.text : undefined,
+          })
+        : undefined,
+    [extensionLineHighlights, file, sourceStatus, tabWidth],
+  );
 
   const plannedRows = sectionRowPlan.plannedRows;
   const lineNumberDigits = sectionRowPlan.lineNumberDigits;
@@ -406,6 +426,7 @@ export function PierreDiffView({
               copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
               copySelectedSide={copySelectedSide}
               cursorHighlight={isCursorRow ? cursorHighlight : undefined}
+              lineHighlights={lineHighlightPaintIndex}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
