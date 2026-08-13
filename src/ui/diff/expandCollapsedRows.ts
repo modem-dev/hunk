@@ -1,3 +1,5 @@
+import { reviewGapId } from "../../core/review/expansion";
+import { normalizedReviewSourceLines } from "../../core/review/geometry";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { expandDiffTabs } from "./codeColumns";
@@ -29,11 +31,6 @@ export interface ExpandCollapsedRowsOptions {
   side?: "old" | "new";
 }
 
-/** Stable identifier for one collapsed gap inside a single file. */
-export function gapKey(position: CollapsedGapPosition, hunkIndex: number) {
-  return `${position}:${hunkIndex}`;
-}
-
 /**
  * Pick the gap key that the keyboard shortcut should toggle for the selected
  * hunk. Looks at the leading gap of the current hunk first, then the leading
@@ -52,12 +49,12 @@ export function selectGapForKeyboardToggle(
   const startIndex = Math.max(0, Math.min(selectedHunkIndex, hunks.length - 1));
   for (let index = startIndex; index < hunks.length; index += 1) {
     if ((hunks[index]?.collapsedBefore ?? 0) > 0) {
-      return gapKey("before", index);
+      return reviewGapId("before", index);
     }
   }
 
   if (hasTrailingGap) {
-    return gapKey("trailing", hunks.length - 1);
+    return reviewGapId("trailing", hunks.length - 1);
   }
 
   return null;
@@ -77,13 +74,6 @@ function errorRowText(lineCount: number, reason?: "too-large") {
   }
 
   return `Could not load ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
-}
-
-function sliceLines(sourceText: string) {
-  // Normalize CRLF so Windows-authored sources don't leak `\r` into rendered spans.
-  const normalized = sourceText.replaceAll("\r\n", "\n");
-  const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
-  return trimmed.length === 0 ? [] : trimmed.split("\n");
 }
 
 function spansFor(line: string | undefined, tabWidth: number): RenderSpan[] {
@@ -115,7 +105,7 @@ function buildSplitContextRow(
     left: cell(oldLineNumber),
     right: cell(newLineNumber),
     isExpansionRow: true,
-    expandedGapKey: gapKey(position, hunkIndex),
+    expandedGapKey: reviewGapId(position, hunkIndex),
   };
 }
 
@@ -143,7 +133,7 @@ function buildStackContextRow(
     hunkIndex,
     cell,
     isExpansionRow: true,
-    expandedGapKey: gapKey(position, hunkIndex),
+    expandedGapKey: reviewGapId(position, hunkIndex),
   };
 }
 
@@ -171,7 +161,8 @@ export function expandCollapsedRows(
     return rows;
   }
 
-  const sourceLines = sourceStatus?.kind === "loaded" ? sliceLines(sourceStatus.text) : [];
+  const sourceLines =
+    sourceStatus?.kind === "loaded" ? normalizedReviewSourceLines(sourceStatus.text) : [];
   const result: DiffRow[] = [];
 
   for (const row of rows) {
@@ -180,7 +171,7 @@ export function expandCollapsedRows(
       continue;
     }
 
-    const key = gapKey(row.position, row.hunkIndex);
+    const key = reviewGapId(row.position, row.hunkIndex);
     if (!expandedKeys.has(key)) {
       result.push(row);
       continue;

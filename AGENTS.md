@@ -22,6 +22,42 @@ CLI input
   -> Pierre-backed terminal renderer draws diff rows
 ```
 
+### shared review seam
+
+Review core serves multiple surfaces: TUI today; web, API, and agent/runtime consumers later. Do
+not recreate semantic review behavior in a surface:
+
+```text
+DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> surface projection
+```
+
+- **Model:** `src/core/review/{types,document,identity}.ts` owns the ordered, JSON-safe document.
+  File order is review/sidebar order; use `key` (referenced as `fileKey` elsewhere),
+  `contentIdentity`, and `sourceIdentity` (cached source text additionally requires
+  `sourceAttested`) — not runtime IDs or indexes — across reloads/surfaces.
+- **Shared derivations:** `geometry.ts`, `expansion.ts`, `anchors.ts`, `stml.ts`, and
+  `contentManifest.ts` own ranges, gaps, source splitting, note targets/ownership, tag roles, and
+  parity manifests. Consume them; never re-derive those facts in a renderer.
+- **State:** `state.ts` is semantic state; `actions.ts` transitions; `reducer.ts` pure/no-I/O;
+  `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
+  operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
+- **Surfaces/publishers:** `useReviewController.ts` is the TUI adapter and
+  `reviewProjection.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, DOM
+  mechanics, and source I/O stay local. `useHunkSessionBridge.ts` publishes the current terminal
+  session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
+  agent commands. This broker export is not a full `ReviewState` mirror.
+- **Future consumers:** Web/API consumers reuse the model, derivations, state, intents, and then
+  the producer/protocol tier (see Phases 2–3 in `docs/browser-review-rebuild.md` for modules and
+  status). Never build a parallel protocol. Keep presentation/client-local state local;
+  host/extension commands need explicit remote capabilities.
+- **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures and currently
+  covers core plus terminal render planning. Every new semantic consumer registers its real
+  projection and runs the whole corpus. `scripts/source-boundaries.test.ts` keeps the seam
+  renderer/platform-free; its Node-debt list is shrink-only and tombstone lists append-only. A
+  repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
+  fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
+
 - CLI entrypoints: `diff`, `show`, `stash show`, `patch`, `pager`, `difftool`.
 - All input sources normalize into one internal changeset model.
 - Bundled VCS implementations live under `src/extensions/default/vcs/<provider>/` and consume the
@@ -45,7 +81,6 @@ CLI input
 - Keep split and stack views terminal-native and driven from the same normalized diff model.
 - Preserve mouse + keyboard parity for primary actions.
 - Keep the chrome restrained: top menu bar, minimal borders, no redundant metadata headers.
-- Shared review primitives are a hard seam: the semantic review model (`src/core/review/`) and its wire protocol (`src/session/reviewProtocol.ts`) are what every review consumer — terminal UI, session runtime, browser client — builds on. Both stay renderer-free and platform-neutral; `scripts/source-boundaries.test.ts` gates their imports, and its debt lists may only shrink. The staged plan for building on this seam is `docs/browser-review-rebuild.md`.
 
 ## component guidance
 
@@ -72,6 +107,7 @@ CLI input
   - `test/cli/` for black-box CLI contract coverage.
   - `test/session/` for daemon/session integration and end-to-end flows.
   - `test/pty/` for PTY-backed live UI integration tests.
+  - `test/review-conformance/` for the shared review model's golden fixtures and per-consumer conformance suites.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
 
 ## code comments

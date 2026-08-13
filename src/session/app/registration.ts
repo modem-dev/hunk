@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { resolveExperimentalFeatures } from "../../core/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/hunkSummary";
-import { hunkLineRange } from "../../core/liveComments";
+import { reviewHunkRanges } from "../../core/review/geometry";
 import type { AppBootstrap } from "../../core/types";
 import {
   SESSION_BROKER_REGISTRATION_VERSION,
@@ -92,7 +92,7 @@ export function updateSessionRegistration(
 export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessionSnapshot {
   const firstFile = bootstrap.changeset.files[0];
   const firstHunk = firstFile?.metadata.hunks[0];
-  const firstRange = firstHunk ? hunkLineRange(firstHunk) : null;
+  const firstRange = firstHunk ? reviewHunkRanges(firstHunk) : null;
 
   return {
     updatedAt: new Date().toISOString(),

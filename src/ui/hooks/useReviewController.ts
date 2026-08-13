@@ -22,7 +22,6 @@ import {
 import {
   buildLiveComment,
   findDiffFileByPath,
-  firstCommentTargetForHunk,
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
@@ -32,6 +31,9 @@ import {
   type ReviewIntent,
   type ReviewIntentFacts,
 } from "../../core/review/intents";
+import { projectReviewDocument } from "../../core/review/document";
+import { reviewExpansionSide, reviewTrailingGap } from "../../core/review/expansion";
+import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
 import {
   isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
@@ -56,7 +58,7 @@ import type {
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
-import { trailingCollapsedLines } from "../diff/pierre";
+
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   EMPTY_LINE_CURSORS,
@@ -73,7 +75,6 @@ import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   groupStoredNotesByFileId,
   liveCommentToStoredNote,
-  projectReviewDocument,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
@@ -641,32 +642,12 @@ export function useReviewController({
     [runIntent],
   );
 
-  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
-  const toggleGap = useCallback(
-    (fileId: string, gapKey: string) => {
-      const file = allFiles.find((entry) => entry.id === fileId);
-      const fileKey = keyByFileId.get(fileId);
-      if (!file?.sourceFetcher || !fileKey) {
+  /** Start one full-source load and mirror its progress into review state as a status. */
+  const startSourceLoad = useCallback(
+    (file: DiffFile, fileKey: string) => {
+      if (!file.sourceFetcher) {
         return;
       }
-
-      const restorePointKey = `${fileId}:${gapKey}`;
-      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const expanding = !isReviewGapExpanded(store.getSnapshot(), fileKey, gapKey);
-      if (expanding) {
-        if (lineCursorRef.current) {
-          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
-        }
-        pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
-      } else {
-        lineCursorBeforeExpandRef.current.delete(restorePointKey);
-        pendingLineCursorRef.current = restorePoint
-          ? { kind: "restore", cursor: restorePoint }
-          : null;
-      }
-
-      store.dispatch({ type: "expansion/toggle", fileKey, gapId: gapKey, expanded: expanding });
-
       // The fetcher caches its own resolved text; we mirror it into review state as a
       // tagged status so the UI can distinguish loading, loaded, and error states. Skip
       // the fetch when one is already in flight or has resolved to avoid redundant work
@@ -676,7 +657,7 @@ export function useReviewController({
         return;
       }
 
-      const side = file.metadata.type === "deleted" ? "old" : "new";
+      const side = reviewExpansionSide(file.metadata.type);
       const request = {
         fetcher: file.sourceFetcher,
         requestId: nextSourceLoadRequestIdRef.current,
@@ -732,7 +713,53 @@ export function useReviewController({
           setSettledStatus({ kind: "error", reason });
         });
     },
-    [allFiles, keyByFileId, store],
+    [store],
+  );
+
+  // A reload drops unattested source text while its gap stays open (the reducer's
+  // attestation rule), so an open gap refetches instead of rendering lines the source
+  // may no longer contain.
+  useEffect(() => {
+    const snapshot = store.getSnapshot();
+    for (const gap of snapshot.expandedGaps) {
+      if (!gap.expanded || snapshot.sourceStatusByFileKey[gap.fileKey]) {
+        continue;
+      }
+      const file = fileByKey.get(gap.fileKey);
+      if (file?.sourceFetcher) {
+        startSourceLoad(file, gap.fileKey);
+      }
+    }
+  }, [fileByKey, startSourceLoad, store, state.document]);
+
+  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
+  const toggleGap = useCallback(
+    (fileId: string, gapKey: string) => {
+      const file = allFiles.find((entry) => entry.id === fileId);
+      const fileKey = keyByFileId.get(fileId);
+      if (!file?.sourceFetcher || !fileKey) {
+        return;
+      }
+
+      const restorePointKey = `${fileId}:${gapKey}`;
+      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+      const expanding = !isReviewGapExpanded(store.getSnapshot(), fileKey, gapKey);
+      if (expanding) {
+        if (lineCursorRef.current) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
+        }
+        pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
+      } else {
+        lineCursorBeforeExpandRef.current.delete(restorePointKey);
+        pendingLineCursorRef.current = restorePoint
+          ? { kind: "restore", cursor: restorePoint }
+          : null;
+      }
+
+      store.dispatch({ type: "expansion/toggle", fileKey, gapId: gapKey, expanded: expanding });
+      startSourceLoad(file, fileKey);
+    },
+    [allFiles, keyByFileId, startSourceLoad, store],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */
@@ -745,7 +772,7 @@ export function useReviewController({
     const target = selectGapForKeyboardToggle(
       file.metadata.hunks,
       selectedHunkIndex,
-      trailingCollapsedLines(file.metadata) > 0,
+      reviewTrailingGap(file.metadata) !== undefined,
     );
     if (target) {
       toggleGap(file.id, target);
@@ -839,7 +866,7 @@ export function useReviewController({
       );
       store.dispatch({
         type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey)],
+        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks)],
       });
 
       if (options?.reveal ?? false) {
@@ -883,7 +910,9 @@ export function useReviewController({
       if (prepared.length > 0) {
         store.dispatch({
           type: "notes/add-live",
-          notes: prepared.map((entry) => liveCommentToStoredNote(entry.liveComment, entry.fileKey)),
+          notes: prepared.map((entry) =>
+            liveCommentToStoredNote(entry.liveComment, entry.fileKey, entry.file.metadata.hunks),
+          ),
         });
       }
 
@@ -978,7 +1007,7 @@ export function useReviewController({
         return null;
       }
 
-      const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      const target = requestedTarget ?? reviewDefaultHunkLineTarget(hunk);
       applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
       const draft: ReviewDraftNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,

@@ -86,6 +86,23 @@ function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
   );
 }
 
+/**
+ * Build the alpha fixture as a later reload would see it, with changed content.
+ *
+ * Content-derived source identity is what retires expansion and loaded source, so a
+ * reload test has to change the file rather than only hand it a new fetcher object.
+ */
+function createReloadedAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  return createDiffFile(
+    "alpha",
+    "alpha.ts",
+    "export const alpha = 1;\n",
+    "export const alpha = 3;\n",
+    null,
+    sourceFetcher,
+  );
+}
+
 /** Build one file with two independently expandable gaps. */
 function createTwoGapFile(sourceFetcher: DiffFile["sourceFetcher"]) {
   const beforeLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
@@ -1289,13 +1306,44 @@ describe("useReviewController", () => {
     }
   });
 
-  test("a soft reload that replaces a file's sourceFetcher invalidates cached source and expansion", async () => {
+  test("a soft reload that changed nothing keeps the reviewer's expanded gap open", async () => {
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createAlphaFile(createTestSourceFetcher(() => "first\n")),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      // Source identity is derived from content, so a reload that produced the same file
+      // leaves everything derived from it valid — including what the reviewer expanded.
+      await act(async () => {
+        expectValue(setFilesRef.current)([
+          createAlphaFile(createTestSourceFetcher(() => "first\n")),
+        ]);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]?.kind).toBe("loaded");
+      expect(
+        expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
+      ).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a soft reload that changed the file invalidates cached source and expansion", async () => {
     const firstFetcher = createTestSourceFetcher((side) => (side === "new" ? "first\n" : null));
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const baseFile = createAlphaFile();
-
     const { controllerRef, setFilesRef, setup } = await renderReviewController([
-      { ...baseFile, sourceFetcher: firstFetcher },
+      createAlphaFile(firstFetcher),
     ]);
 
     try {
@@ -1316,9 +1364,9 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
       ).toBe(true);
 
-      // Simulate a soft reload: same file id, different sourceFetcher (and patch).
+      // Simulate a soft reload: same file, changed content and a fresh fetcher.
       await act(async () => {
-        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+        expectValue(setFilesRef.current)([createReloadedAlphaFile(secondFetcher)]);
       });
       await flush(setup);
 
@@ -1350,10 +1398,8 @@ describe("useReviewController", () => {
     const firstLoad = createTestDeferred<string | null>();
     const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const baseFile = createAlphaFile();
-
     const { controllerRef, setFilesRef, setup } = await renderReviewController([
-      { ...baseFile, sourceFetcher: firstFetcher },
+      createAlphaFile(firstFetcher),
     ]);
 
     try {
@@ -1369,7 +1415,7 @@ describe("useReviewController", () => {
       );
 
       await act(async () => {
-        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+        expectValue(setFilesRef.current)([createReloadedAlphaFile(secondFetcher)]);
       });
       await flush(setup);
 
@@ -1413,10 +1459,8 @@ describe("useReviewController", () => {
     const firstLoad = createTestDeferred<string | null>();
     const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const baseFile = createAlphaFile();
-
     const { controllerRef, setFilesRef, setup } = await renderReviewController([
-      { ...baseFile, sourceFetcher: firstFetcher },
+      createAlphaFile(firstFetcher),
     ]);
 
     try {
@@ -1428,7 +1472,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+        expectValue(setFilesRef.current)([createReloadedAlphaFile(secondFetcher)]);
       });
       await flush(setup);
 

@@ -6,7 +6,8 @@
  * stays side-effect free so selection and navigation rules can be shared and
  * tested without React state in the loop.
  */
-import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
+import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
+import { reviewHunkRanges } from "../../core/review/geometry";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
@@ -73,7 +74,7 @@ export function buildSelectedHunkSummary(file: DiffFile, hunkIndex: number): Sel
   return hunk
     ? {
         index: hunkIndex,
-        ...hunkLineRange(hunk),
+        ...reviewHunkRanges(hunk),
       }
     : {
         index: hunkIndex,

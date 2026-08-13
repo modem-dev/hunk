@@ -11,13 +11,7 @@
  * they read, so "which notes are visible" or "where does a note hang" gets one named
  * answer instead of an inline conditional per consumer.
  */
-import type {
-  ReviewDocumentV1,
-  ReviewLineAddressV1,
-  ReviewNoteV1,
-  ReviewRangeAnchorV1,
-  ReviewSide,
-} from "./types";
+import type { ReviewDocumentV1, ReviewLineAddressV1, ReviewNoteV1, ReviewSide } from "./types";
 
 export type ReviewNoteResolution = "active" | "stale" | "orphaned";
 
@@ -33,27 +27,6 @@ export interface ReviewStoredNote {
  */
 export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
   return entry.resolution !== "orphaned";
-}
-
-/**
- * Anchor one note to a single line inside one hunk.
- *
- * The one place a single-line anchor is constructed, so a note written by the reviewer
- * and a note delivered by an agent hang from the same geometry. Multi-hunk intersection
- * belongs to the geometry phase; a single line intersects exactly its own hunk.
- */
-export function reviewLineAnchor(target: {
-  hunkIndex: number;
-  side: ReviewSide;
-  line: number;
-}): ReviewRangeAnchorV1 {
-  const range = [target.line, target.line] as const;
-  return {
-    ...(target.side === "old" ? { oldRange: range } : { newRange: range }),
-    preferred: { side: target.side, line: target.line },
-    intersectingHunkIndices: [target.hunkIndex],
-    ownerHunkIndex: target.hunkIndex,
-  };
 }
 
 /**

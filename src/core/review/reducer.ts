@@ -61,8 +61,17 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       // stream, so consumers dispatch the follow-up selection they want.
       const retired = reviewFileKeysWithRetiredContent(state.document, action.document);
       const expandedGaps = state.expandedGaps.filter((gap) => !retired.has(gap.fileKey));
+      // Loaded text is a cache of what a reader returned, not a fact of the diff: it
+      // survives a reload only when the file's reader attested its snapshot. Unattested
+      // text is dropped so an open gap refetches instead of rendering lines the source
+      // may no longer contain; the gap itself stays open either way.
+      const attested = new Set(
+        action.document.files.filter((file) => file.sourceAttested).map((file) => file.key),
+      );
       const sourceStatusByFileKey = Object.fromEntries(
-        Object.entries(state.sourceStatusByFileKey).filter(([fileKey]) => !retired.has(fileKey)),
+        Object.entries(state.sourceStatusByFileKey).filter(
+          ([fileKey]) => !retired.has(fileKey) && attested.has(fileKey),
+        ),
       );
       return { ...state, document: action.document, expandedGaps, sourceStatusByFileKey };
     }
@@ -71,7 +80,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!file) {
         return state;
       }
-      const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunkCount - 1));
+      const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunks.length - 1));
       const selectionChanged =
         file.key !== state.selection.fileKey || hunkIndex !== state.selection.hunkIndex;
       const reveal = action.reveal

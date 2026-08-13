@@ -1,4 +1,4 @@
-import type { Hunk } from "@pierre/diffs";
+import { reviewDefaultHunkLineTarget, reviewHunkIndexForLine } from "./review/geometry";
 import type { AgentAnnotation, DiffFile } from "./types";
 
 export type DiffSide = "old" | "new";
@@ -32,33 +32,6 @@ export interface ResolvedCommentTarget {
   line: number;
 }
 
-/**
- * Compute the inclusive old/new line spans for the visible extent of a hunk.
- *
- * Use the per-side `*Count` from the hunk header (`-X,count` / `+X,count`),
- * which includes both context and changed lines, not the `*Lines` count which
- * is only the `+` / `-` lines. Comments anchored at a context-region line
- * (e.g. resolved by `firstCommentTargetForHunk` walking past leading context)
- * fall outside the additions-only range and silently disappear from
- * `getAnnotatedHunkIndices` / `findHunkIndexForLine` if those use the wrong
- * extent.
- */
-export function hunkLineRange(hunk: Hunk) {
-  const newEnd = Math.max(
-    hunk.additionStart,
-    hunk.additionStart + Math.max(hunk.additionCount, 1) - 1,
-  );
-  const oldEnd = Math.max(
-    hunk.deletionStart,
-    hunk.deletionStart + Math.max(hunk.deletionCount, 1) - 1,
-  );
-
-  return {
-    oldRange: [hunk.deletionStart, oldEnd] as [number, number],
-    newRange: [hunk.additionStart, newEnd] as [number, number],
-  };
-}
-
 /** Find the diff file matching one current or previous path. */
 export function findDiffFileByPath(files: DiffFile[], filePath: string) {
   return files.find((file) => file.path === filePath || file.previousPath === filePath);
@@ -66,53 +39,7 @@ export function findDiffFileByPath(files: DiffFile[], filePath: string) {
 
 /** Find the first hunk covering one requested side/line location. */
 export function findHunkIndexForLine(file: DiffFile, side: DiffSide, line: number) {
-  return file.metadata.hunks.findIndex((hunk) => {
-    const range = hunkLineRange(hunk);
-    const target = side === "new" ? range.newRange : range.oldRange;
-    return line >= target[0] && line <= target[1];
-  });
-}
-
-/** Pick one stable anchor row for a whole-hunk comment target. */
-export function firstCommentTargetForHunk(hunk: Hunk): Omit<ResolvedCommentTarget, "hunkIndex"> {
-  let deletionLineNumber = hunk.deletionStart;
-  let additionLineNumber = hunk.additionStart;
-  let firstDeletionLine: number | undefined;
-
-  for (const content of hunk.hunkContent) {
-    if (content.type === "context") {
-      deletionLineNumber += content.lines;
-      additionLineNumber += content.lines;
-      continue;
-    }
-
-    if (content.additions > 0) {
-      return {
-        side: "new",
-        line: additionLineNumber,
-      };
-    }
-
-    if (content.deletions > 0 && firstDeletionLine === undefined) {
-      firstDeletionLine = deletionLineNumber;
-    }
-
-    deletionLineNumber += content.deletions;
-    additionLineNumber += content.additions;
-  }
-
-  if (firstDeletionLine !== undefined) {
-    return {
-      side: "old",
-      line: firstDeletionLine,
-    };
-  }
-
-  const fallbackRange = hunkLineRange(hunk);
-  return {
-    side: "new",
-    line: fallbackRange.newRange[0],
-  };
+  return reviewHunkIndexForLine(file.metadata.hunks, side, line);
 }
 
 /** Resolve either a hunk-wide or line-specific target against one visible diff file. */
@@ -128,7 +55,7 @@ export function resolveCommentTarget(
 
     return {
       hunkIndex: input.hunkIndex,
-      ...firstCommentTargetForHunk(hunk),
+      ...reviewDefaultHunkLineTarget(hunk),
     };
   }
 
