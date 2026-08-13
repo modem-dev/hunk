@@ -127,6 +127,16 @@ keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
 geometry measurement: a highlight change is a repaint, never a re-plan. The
 static pager never runs extension code, so highlights are interactive-only.
 
+Agent attention marks (`hunk session highlight add` / `clear`) join this same
+pipeline rather than growing a second one: `useReviewController.ts` validates
+each daemon-pushed mark with the same `validate.ts` contract and caps, holds
+them per file, and `src/ui/highlights/merge.ts` appends them after extension
+marks in the one map `DiffPane` paints from — so agent marks share paint,
+contrast, and geometry guarantees, and win where ranges overlap. Unlike
+extension marks, nothing re-derives agent marks after a reload, so a document
+replacement clears them. Line-target `session navigate` reuses the same
+`revealLine` landing policy `ctx.navigation.revealLine` gets.
+
 `src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
 containment. The presentation controller stores the active mode and funnels all
 exit paths through one teardown, including re-entrant handoffs.

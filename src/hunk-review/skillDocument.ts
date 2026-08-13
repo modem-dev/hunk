@@ -32,7 +32,7 @@ function navigateExamples(kind: "absolute" | "relative") {
 const FRONTMATTER = [
   "---",
   "name: hunk-review",
-  "description: Interacts with live Hunk diff review sessions via CLI. Inspects review focus, navigates files and hunks, reloads session contents, and adds inline review comments. Use when the user has a Hunk session running or wants to review diffs interactively.",
+  "description: Interacts with live Hunk diff review sessions via CLI. Inspects review focus, navigates files, hunks, and exact lines, reloads session contents, adds inline review comments, and paints attention marks on character ranges. Use when the user has a Hunk session running or wants to review diffs interactively.",
   "---",
 ];
 
@@ -57,6 +57,7 @@ const WORKFLOW = [
   "7. hunk session reload -- <command>                     # swap contents if needed",
   "8. hunk session comment add ...                         # leave one review note",
   "9. hunk session comment apply ...                       # apply many agent notes in one stdin batch",
+  "10. hunk session highlight add ...                      # light up the exact range you are explaining",
   "```",
 ];
 
@@ -103,6 +104,7 @@ const NAVIGATE_SECTION = [
   "",
   "- `--hunk <n>` is 1-based",
   "- `--new-line` / `--old-line` are 1-based line numbers on that diff side",
+  "- A line target lands the user's viewport on that exact line (falling back to its hunk when the line is inside a collapsed region); `--hunk` lands on the hunk",
   "- Use either `--next-comment` or `--prev-comment`, not both",
 ];
 
@@ -154,6 +156,28 @@ const COMMENTS_SECTION = [
   "- Quote `--summary` and `--rationale` defensively in the shell",
 ];
 
+const HIGHLIGHTS_SECTION = [
+  "### Attention marks",
+  "",
+  "Highlights paint character ranges inside the diff lines the user is looking at — use them to light up the exact expression you are explaining while you narrate.",
+  "",
+  ...bashFence(synopsisLines(commands["highlight-add"], commands["highlight-clear"])),
+  "",
+  "Examples:",
+  "",
+  ...bashFence([
+    ...(commands["highlight-add"].examples ?? []),
+    ...(commands["highlight-clear"].examples ?? []),
+  ]),
+  "",
+  "- `highlight add` requires `--file`, exactly one of `--old-line` or `--new-line`, and the `--start` / `--end` offsets",
+  "- `--start` is a 0-based inclusive offset into the line's text and `--end` is exclusive, counted in UTF-16 code units — the same `[start, end)` range extensions use",
+  "- Tones: `match` (default), `info`, `warning`, `error`; `current` renders as reverse video and is best reserved for the one range under discussion",
+  "- Pass `--focus` to also land the viewport on the marked line",
+  "- Marks survive scrolling and navigation but clear when the session reloads; `highlight clear` removes them explicitly (optionally per `--file`)",
+  "- Marks are visual only — pair them with a `comment add` when the explanation should persist as a note",
+];
+
 const STML_SECTION = [
   "### Experimental rich markup notes (STML)",
   "",
@@ -191,6 +215,7 @@ const GUIDING_SECTION = [
   "",
   "- Work in the order that tells the clearest story, not necessarily file order",
   "- Navigate before commenting so the user sees the code you're discussing",
+  "- Use `highlight add --focus` to steer the user's eyes to the exact expression while you explain it, and `highlight clear` before moving to the next topic",
   "- Use `comment apply` for agent-generated batches and `comment add` for one-off notes",
   "- Use `--focus` sparingly when the note itself should actively steer the review",
   "- Keep comments focused: intent, structure, risks, or follow-ups",
@@ -217,6 +242,7 @@ export function renderHunkReviewSkill() {
     NAVIGATE_SECTION,
     RELOAD_SECTION,
     COMMENTS_SECTION,
+    HIGHLIGHTS_SECTION,
     STML_SECTION,
     NEW_FILES_SECTION,
     GUIDING_SECTION,
