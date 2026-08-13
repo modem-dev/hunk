@@ -2137,7 +2137,52 @@ describe("useReviewController", () => {
     }
   });
 
-  test("a session reload clears agent attention marks", async () => {
+  test("a reload keeps agent attention marks on files whose content is unchanged", async () => {
+    // A refresh that finds nothing changed on disk still rebuilds the file list, and the marks
+    // it carries still name the same characters, so they survive and re-key onto the new ids.
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).addAgentLineHighlight({
+          filePath: "alpha.ts",
+          side: "new",
+          line: 8,
+          start: 0,
+          end: 6,
+        });
+      });
+      await flush(setup);
+      expect([...expectValue(controllerRef.current).agentLineHighlightsByFileId.keys()]).toEqual([
+        "alpha",
+      ]);
+
+      await act(async () => {
+        // Same path and content, rebuilt under a new runtime id, as a reload produces.
+        expectValue(setFilesRef.current)([{ ...createAlphaFile(), id: "alpha-reloaded" }]);
+      });
+      await flush(setup);
+
+      const marks = expectValue(controllerRef.current).agentLineHighlightsByFileId;
+      expect([...marks.keys()]).toEqual(["alpha-reloaded"]);
+      expect(marks.get("alpha-reloaded")).toEqual([
+        { side: "new", line: 8, start: 0, end: 6, tone: "match" },
+      ]);
+
+      let cleared: ReturnType<ReviewController["clearAgentLineHighlights"]> | undefined;
+      await act(async () => {
+        cleared = expectValue(controllerRef.current).clearAgentLineHighlights();
+      });
+      expect(cleared).toEqual({ removedCount: 1, remainingCount: 0 });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a session reload clears agent attention marks on files whose content changed", async () => {
     // Marks address exact character offsets; after a reload nothing re-derives them the way
     // extension highlighters re-run, so a stale mark would light up different text.
     const { controllerRef, setFilesRef, setup } = await renderReviewController([createAlphaFile()]);
@@ -2148,7 +2193,7 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).addAgentLineHighlight({
           filePath: "alpha.ts",
           side: "new",
-          line: 1,
+          line: 8,
           start: 0,
           end: 6,
         });

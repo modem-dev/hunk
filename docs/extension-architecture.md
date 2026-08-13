@@ -133,8 +133,10 @@ each daemon-pushed mark with the same `validate.ts` contract and caps, holds
 them per file, and `src/ui/highlights/merge.ts` appends them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
 contrast, and geometry guarantees, and win where ranges overlap. Unlike
-extension marks, nothing re-derives agent marks after a reload, so a document
-replacement clears them. Line-target `session navigate` reuses the same
+extension marks, nothing re-derives agent marks after a reload, so
+`src/ui/highlights/reconcile.ts` carries them across a document replacement only
+for files whose `contentIdentity` is unchanged — those still show the same
+characters — and drops the rest. Line-target `session navigate` reuses the same
 `revealLine` landing policy `ctx.navigation.revealLine` gets.
 
 `src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback

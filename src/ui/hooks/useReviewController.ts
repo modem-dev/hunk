@@ -62,6 +62,7 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
+import { carryOverLineHighlights } from "../highlights/reconcile";
 import {
   MAX_LINE_HIGHLIGHTS_PER_FILE,
   MAX_LINE_HIGHLIGHTS_PER_LINE,
@@ -360,9 +361,11 @@ export function useReviewController({
     }
     // Marks address exact character offsets in specific line content, and nothing re-derives
     // them after a reload the way extension highlighters re-run — a stale mark would silently
-    // light up different text. Reloading the review clears them wholesale.
+    // light up different text. Files that came back with identical content keep their marks,
+    // re-keyed onto the replacement runtime ids; every other mark is dropped.
     if (agentLineHighlightsRef.current.size > 0) {
-      commitAgentLineHighlights(EMPTY_AGENT_LINE_HIGHLIGHTS);
+      const carried = carryOverLineHighlights(agentLineHighlightsRef.current, previous, document);
+      commitAgentLineHighlights(carried.size > 0 ? carried : EMPTY_AGENT_LINE_HIGHLIGHTS);
     }
     store.dispatch({ type: "document/reconcile", document });
   }, [commitAgentLineHighlights, document, store]);
