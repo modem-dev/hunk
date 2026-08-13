@@ -11,6 +11,7 @@ import type {
   RegisteredCommand,
   RegisteredFileView,
   RegisteredKeyboardMode,
+  RegisteredLineHighlighter,
   RegisteredPane,
 } from "./types";
 
@@ -189,6 +190,42 @@ export function resolveExtensionFileViews(registry: ExtensionRegistry): Resolved
   return { views, issues };
 }
 
+/** Derive the key one line highlighter is addressed by everywhere in the app. */
+export function lineHighlighterKey(registered: RegisteredLineHighlighter) {
+  return qualifiedViewKey(registered.extensionId, registered.highlighter.id);
+}
+
+/** The line highlighters one session runs, plus registrations skipped as duplicates. */
+export interface ResolvedExtensionLineHighlighters {
+  highlighters: RegisteredLineHighlighter[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve line-highlighter identities while retaining registration order as the priority rule. */
+export function resolveExtensionLineHighlighters(
+  registry: ExtensionRegistry,
+): ResolvedExtensionLineHighlighters {
+  const highlighters: RegisteredLineHighlighter[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.lineHighlighters) {
+    const key = lineHighlighterKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate line highlighter "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    highlighters.push(registered);
+  }
+
+  return { highlighters, issues };
+}
+
 /** Derive the key one session keyboard mode is addressed by everywhere in the app. */
 export function keyboardModeKey(registered: RegisteredKeyboardMode) {
   return qualifiedViewKey(registered.extensionId, registered.mode.id);
@@ -293,6 +330,7 @@ export function applyExtensionRegistrations(
   // other refusal.
   const panes = resolveExtensionPanes(result.registry);
   const fileViews = resolveExtensionFileViews(result.registry);
+  const lineHighlighters = resolveExtensionLineHighlighters(result.registry);
   const keyboardModes = resolveExtensionKeyboardModes(result.registry);
   const commands = resolveExtensionCommands(result.registry);
   return {
@@ -303,6 +341,7 @@ export function applyExtensionRegistrations(
       ...vcs.issues,
       ...panes.issues,
       ...fileViews.issues,
+      ...lineHighlighters.issues,
       ...keyboardModes.issues,
       ...commands.issues,
     ],
