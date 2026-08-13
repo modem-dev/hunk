@@ -70,7 +70,7 @@ hunk.registerLineHighlighter({
 });
 ```
 
-Marks are addressed by source coordinates — `side`, a 1-based `line`, and a `[start, end)` range in UTF-16 code units of the raw line text — so they survive split vs stack layout, wrapping, horizontal scrolling, and collapsed-context expansion. Tones (`match`, `current`, `info`, `warning`, `error`) rather than colors: Hunk resolves each tone against the actual background of each marked line with the same minimum-contrast guarantee its own word-diff emphasis uses, so a mark is never invisible on an added line's green.
+Marks are addressed by source coordinates — `side`, a 1-based `line`, and a `[start, end)` range in UTF-16 code units of the raw line text — so they survive split vs stack layout, wrapping, horizontal scrolling, and collapsed-context expansion. Tones (`match`, `current`, `info`, `warning`, `error`) rather than colors: Hunk resolves each tinted tone against the actual background of each marked line with a minimum-contrast guarantee stronger than its own word-diff emphasis, so a mark is never invisible on an added line's green; `current` renders as reverse video, the `less`/vim convention for the active hit.
 
 `highlight` may be sync or async and is treated as a pure derivation of the file plus an invalidation epoch: results are cached until `ctx.highlights.refresh("todos")` (optionally `{ fileId }`-scoped) re-derives them. Failures, oversized results, and invalid entries cost that file's marks and nothing else — highlights change colors, never text or geometry.
 

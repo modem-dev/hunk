@@ -92,11 +92,14 @@ The API does not accept a color. Three reasons, in order of importance:
    extension punches straight through that.
 3. **It is a smaller contract.** A tone can be re-mapped later; a color cannot.
 
-Tone anchors map to existing semantic theme tokens (`accent`, `text`,
-`badgeNeutral`, `fileModified`, `removedSignColor`); `current` carries a higher
-distance floor so the active search hit reads against its `match` siblings.
-Surfaces that cannot take a blend (transparent, non-hex) decline the mark —
-the same degradation word diff uses.
+Tinted tone anchors map to existing semantic theme tokens (`accent`,
+`badgeNeutral`, `fileModified`, `removedSignColor`) with a distance floor well
+above word diff's, backing off only where the code on top would stop being
+readable. `current` renders as reverse video — theme text as the block, theme
+background as the glyphs — the `less`/vim convention for the active hit, which
+sidesteps the tint-versus-readability tug-of-war entirely. Surfaces that
+cannot take a blend (transparent, non-hex) decline the mark — the same
+degradation word diff uses.
 
 ## Where it plugs in
 
@@ -191,9 +194,10 @@ windowed cost (only mounted rows consult the index), and no cache invalidation
    occurrence that split view happens to draw twice; changed lines are separate
    addresses with separate marks, which is what makes `n` step from an old-side
    hit across to a new-side hit.
-3. **`current` as a tone** — kept as a tone. It is the emphatic variant of
-   `match` with a higher contrast floor; a separate concept would be more API
-   for the same pixels.
+3. **`current` as a tone** — kept as a tone, rendered as reverse video. A
+   separate concept would be more API for the same pixels, and inversion is
+   both unmistakable and readable by construction where a stronger tint kept
+   trading against the text on top of it.
 4. **Interaction with word diff** — the extension mark wins where they overlap.
    It is the more specific statement, and it is stated in the docs.
 5. **`matches` pre-filter** — dropped. File views need `matches` because view

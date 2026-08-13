@@ -164,7 +164,7 @@ describe("buildLineHighlightPaintIndex", () => {
 });
 
 describe("applyLineHighlightsToSpans", () => {
-  const resolveBg = (tone: string) => `bg-${tone}`;
+  const resolveBg = (tone: string) => ({ bg: `bg-${tone}` });
 
   test("splits one span at range boundaries and repaints only the marked run", () => {
     const spans: RenderSpan[] = [{ text: "const alpha = 10;", fg: "#ffffff" }];
@@ -228,6 +228,22 @@ describe("applyLineHighlightsToSpans", () => {
     expect(painted).toEqual([
       { text: "alpha", bg: "#204020" },
       { text: "beta", bg: "bg-match" },
+    ]);
+  });
+
+  test("applies a foreground too when the tone style inverts", () => {
+    const spans: RenderSpan[] = [{ text: "const alpha = 10;", fg: "#ffffff" }];
+
+    const painted = applyLineHighlightsToSpans(
+      spans,
+      [{ startCol: 6, endCol: 11, tone: "current" }],
+      () => ({ bg: "#eeeeee", fg: "#111111" }),
+    );
+
+    expect(painted).toEqual([
+      { text: "const ", fg: "#ffffff" },
+      { text: "alpha", fg: "#111111", bg: "#eeeeee" },
+      { text: " = 10;", fg: "#ffffff" },
     ]);
   });
 

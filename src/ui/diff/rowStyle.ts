@@ -1,5 +1,5 @@
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
-import { blendHex, hexColorDistance } from "../lib/color";
+import { blendHex, contrastRatio, hexColorDistance } from "../lib/color";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
 import type { SplitLineCell, StackLineCell } from "./pierre";
 
@@ -185,94 +185,138 @@ export function stackCellPalette(
   };
 }
 
-// The same minimum perceptual distance Pierre word-diff emphasis guarantees
-// (`MIN_WORD_DIFF_BG_DISTANCE` in pierre.ts): below it a background is
-// indistinguishable from the line it sits on — the exact failure this API
-// exists to prevent.
-const MIN_LINE_HIGHLIGHT_BG_DISTANCE = 28;
-// `current` is the emphatic variant of `match`; a higher distance floor keeps
-// the active mark visibly distinct from its siblings on every line kind.
-const MIN_CURRENT_HIGHLIGHT_BG_DISTANCE = 64;
+// Word-diff emphasis guarantees 28 (`MIN_WORD_DIFF_BG_DISTANCE` in pierre.ts),
+// but that floor is tuned for subtle tinting inside already-tinted lines.
+// Extension marks are things the user is looking *for* — search hits,
+// diagnostics — so they target a substantially higher floor: distances are
+// summed channel deltas on a 0–765 scale, and 28 reads as a whisper on many
+// added/removed backgrounds. The readability guard below may bind first on a
+// few theme/tone combinations, which is the intended order of priorities.
+const MIN_LINE_HIGHLIGHT_BG_DISTANCE = 72;
 const LINE_HIGHLIGHT_BLEND_STEP = 0.05;
 const LINE_HIGHLIGHT_MAX_BLEND = 0.85;
+// Strengthening stops before the code on top of the mark becomes hard to
+// read: a mark that eats its own text would defeat the point of marking it.
+const MIN_LINE_HIGHLIGHT_TEXT_CONTRAST = 3.1;
 
-const lineHighlightBackgroundCache = new WeakMap<AppTheme, Map<string, string | undefined>>();
+/** How one resolved mark paints: a background, plus a foreground when the mark inverts. */
+export interface LineHighlightStyle {
+  bg: string;
+  /** Set only for reverse-video marks; tinted marks keep the spans' own colors. */
+  fg?: string;
+}
+
+const lineHighlightStyleCache = new WeakMap<
+  AppTheme,
+  Map<string, LineHighlightStyle | undefined>
+>();
 
 /** Return whether a theme color can safely participate in RGB distance and blend math. */
 function isHexThemeColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color);
 }
 
-/** The theme color one highlight tone pulls the line background toward. */
+/** The theme color one tinted highlight tone pulls the line background toward. */
 function lineHighlightToneAnchor(tone: ExtensionLineHighlightTone, theme: AppTheme) {
   switch (tone) {
-    case "current":
-      // Luminance rather than hue, like the cursor line: blending toward one
-      // accent barely moves a background already sharing its hue.
-      return theme.text;
     case "info":
       return theme.badgeNeutral;
     case "warning":
       return theme.fileModified;
     case "error":
       return theme.removedSignColor;
+    case "current":
     case "match":
       return theme.accent;
   }
 }
 
-/** Blend the anchor into the base background until the mark clears its distance floor. */
-function strengthenLineHighlightBg(baseBg: string, anchor: string, minDistance: number) {
-  let strongestCandidate = baseBg;
+/**
+ * Blend the anchor into the base background until the mark clears its distance
+ * floor, backing off before the theme's text stops being readable on it.
+ */
+function strengthenLineHighlightBg(
+  baseBg: string,
+  anchor: string,
+  minDistance: number,
+  textColor: string,
+) {
+  let strongestReadable = baseBg;
   const maxSteps = Math.floor(LINE_HIGHLIGHT_MAX_BLEND / LINE_HIGHLIGHT_BLEND_STEP);
 
   for (let step = 1; step <= maxSteps; step += 1) {
     const candidate = blendHex(anchor, baseBg, step * LINE_HIGHLIGHT_BLEND_STEP);
-    strongestCandidate = candidate;
+    if (contrastRatio(textColor, candidate) < MIN_LINE_HIGHLIGHT_TEXT_CONTRAST) {
+      // Readability wins over the distance floor: return the strongest mark
+      // the code on top of it can still be read through.
+      return strongestReadable;
+    }
+    strongestReadable = candidate;
     if (hexColorDistance(candidate, baseBg) >= minDistance) {
       return candidate;
     }
   }
 
-  return strongestCandidate;
+  return strongestReadable;
 }
 
 /**
  * Resolve one extension highlight tone against the background it will sit on.
  *
- * Visibility is the host's guarantee, not the extension's problem: the anchor
- * color is blended into the line's own background until the result clears a
- * minimum perceptual distance, so a mark reads on added, removed, and context
- * lines alike. Returns `undefined` — leave the background untouched — for
+ * Visibility is the host's guarantee, not the extension's problem. Tinted
+ * tones blend the anchor color into the line's own background until the
+ * result clears a minimum perceptual distance — backing off before the code
+ * on top stops being readable — so a mark reads on added, removed, and
+ * context lines alike. `"current"` inverts instead: theme text as the
+ * background, theme background as the foreground — the reverse-video
+ * convention `less` and vim use for the active hit, unmistakable and readable
+ * by construction. Returns `undefined` — leave the spans untouched — for
  * surfaces that cannot take a blend (transparent or non-hex theme colors),
  * the same degradation word-diff emphasis uses.
  */
-export function lineHighlightToneBg(
+export function lineHighlightToneStyle(
   tone: ExtensionLineHighlightTone,
   baseBg: string,
   theme: AppTheme,
-): string | undefined {
-  let backgrounds = lineHighlightBackgroundCache.get(theme);
-  if (!backgrounds) {
-    backgrounds = new Map();
-    lineHighlightBackgroundCache.set(theme, backgrounds);
+): LineHighlightStyle | undefined {
+  let styles = lineHighlightStyleCache.get(theme);
+  if (!styles) {
+    styles = new Map();
+    lineHighlightStyleCache.set(theme, styles);
   }
   const cacheKey = `${tone}:${baseBg}`;
-  if (backgrounds.has(cacheKey)) {
-    return backgrounds.get(cacheKey);
+  if (styles.has(cacheKey)) {
+    return styles.get(cacheKey);
+  }
+
+  const resolved = resolveLineHighlightToneStyle(tone, baseBg, theme);
+  styles.set(cacheKey, resolved);
+  return resolved;
+}
+
+/** Compute one uncached tone style; `lineHighlightToneStyle` owns memoization. */
+function resolveLineHighlightToneStyle(
+  tone: ExtensionLineHighlightTone,
+  baseBg: string,
+  theme: AppTheme,
+): LineHighlightStyle | undefined {
+  if (tone === "current" && isHexThemeColor(theme.text) && isHexThemeColor(theme.background)) {
+    return { bg: theme.text, fg: theme.background };
   }
 
   const anchor = lineHighlightToneAnchor(tone, theme);
-  const resolved =
-    baseBg === TRANSPARENT_BACKGROUND || !isHexThemeColor(baseBg) || !isHexThemeColor(anchor)
-      ? undefined
-      : strengthenLineHighlightBg(
-          baseBg,
-          anchor,
-          tone === "current" ? MIN_CURRENT_HIGHLIGHT_BG_DISTANCE : MIN_LINE_HIGHLIGHT_BG_DISTANCE,
-        );
-  backgrounds.set(cacheKey, resolved);
-  return resolved;
+  if (
+    baseBg === TRANSPARENT_BACKGROUND ||
+    !isHexThemeColor(baseBg) ||
+    !isHexThemeColor(anchor) ||
+    !isHexThemeColor(theme.text)
+  ) {
+    return undefined;
+  }
+
+  return {
+    bg: strengthenLineHighlightBg(baseBg, anchor, MIN_LINE_HIGHLIGHT_BG_DISTANCE, theme.text),
+  };
 }
 
 /** Format one optional line number for a fixed-width diff gutter. */

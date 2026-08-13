@@ -341,19 +341,26 @@ function toneAtColumn(ranges: readonly LineHighlightColRange[], col: number) {
   return undefined;
 }
 
+/** The resolved paint for one tone: a background, plus a foreground when the mark inverts. */
+export interface LineHighlightSpanStyle {
+  bg: string;
+  fg?: string;
+}
+
 /**
- * Repaint span backgrounds over highlighted column ranges.
+ * Repaint span colors over highlighted column ranges.
  *
  * Returns new span objects — cell spans are shared cached arrays (context
  * cells even share one array across sides) and must never be mutated. Text is
- * preserved exactly, so this cannot move geometry. `resolveBg` returning
- * `undefined` leaves the original background, degrading like word diff does on
- * surfaces that cannot take a blend.
+ * preserved exactly, so this cannot move geometry. `resolveStyle` returning
+ * `undefined` leaves the original colors, degrading like word diff does on
+ * surfaces that cannot take a blend; a style carrying `fg` (reverse-video
+ * marks) overrides the span foreground as well.
  */
 export function applyLineHighlightsToSpans(
   spans: readonly RenderSpan[],
   ranges: readonly LineHighlightColRange[],
-  resolveBg: (tone: ExtensionLineHighlightTone) => string | undefined,
+  resolveStyle: (tone: ExtensionLineHighlightTone) => LineHighlightSpanStyle | undefined,
 ): RenderSpan[] {
   if (ranges.length === 0) {
     return [...spans];
@@ -390,10 +397,14 @@ export function applyLineHighlightsToSpans(
           : sliceTextByWidth(span.text, pieceStart - spanStart, boundary - pieceStart).text;
       if (piece.length > 0) {
         const tone = toneAtColumn(ranges, pieceStart);
-        const bg = tone === undefined ? undefined : resolveBg(tone);
+        const style = tone === undefined ? undefined : resolveStyle(tone);
         appendSpan(
           result,
-          bg === undefined ? { ...span, text: piece } : { ...span, text: piece, bg },
+          style === undefined
+            ? { ...span, text: piece }
+            : style.fg === undefined
+              ? { ...span, text: piece, bg: style.bg }
+              : { ...span, text: piece, bg: style.bg, fg: style.fg },
         );
       }
       pieceStart = boundary;

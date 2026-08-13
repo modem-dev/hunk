@@ -1097,12 +1097,16 @@ number; split view mirrors the mark onto both halves of the row. Offsets that
 land inside an emoji or a wide character widen outward to the whole glyph.
 
 The `tone` says what a mark means — `"match"` (the default), `"current"` for
-the emphatic variant a search gives the active hit, `"info"`, `"warning"`, or
-`"error"`. Tones exist because a **color would be the extension's problem to
-get right and it cannot be**: a fixed background that reads on a context line
-is invisible on an added line's green. Hunk resolves each tone against the
-actual background of each marked line with the same minimum-contrast guarantee
-its own word-diff emphasis uses, per theme, so a mark is never invisible.
+the one hit a search is standing on, `"info"`, `"warning"`, or `"error"`.
+Tones exist because a **color would be the extension's problem to get right
+and it cannot be**: a fixed background that reads on a context line is
+invisible on an added line's green. Hunk resolves each tinted tone against the
+actual background of each marked line until it clears a minimum perceptual
+distance — stronger than its own word-diff emphasis, backing off only before
+the code on top would stop being readable — per theme, so a mark is never
+invisible. `"current"` renders as reverse video (theme text as the block,
+theme background as the glyphs), the convention `less` and vim use for the
+active hit.
 
 `highlight({ file, signal, readDocument })` may be sync or async, and returns
 the complete set of marks for one file — or `null` for none. Hunk calls it per

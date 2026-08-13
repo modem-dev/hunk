@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { contrastRatio, hexColorDistance } from "../lib/color";
 import { THEMES, TRANSPARENT_BACKGROUND, withTransparentSurfaces } from "../themes";
-import { cursorLineHighlightBg, lineHighlightToneBg, stackCellPalette } from "./rowStyle";
+import { cursorLineHighlightBg, lineHighlightToneStyle, stackCellPalette } from "./rowStyle";
 
 const DARK = THEMES.find((theme) => theme.id === "github-dark-dimmed")!;
 const LIGHT = THEMES.find((theme) => theme.id === "github-light-default")!;
@@ -42,32 +42,39 @@ describe("cursorLineHighlightBg", () => {
   });
 });
 
-describe("lineHighlightToneBg", () => {
-  const TONES = ["match", "current", "info", "warning", "error"] as const;
+describe("lineHighlightToneStyle", () => {
+  const TINTED_TONES = ["match", "info", "warning", "error"] as const;
 
-  test("clears the minimum visible distance on every line kind of every built-in theme", () => {
+  test("clears a strong visible distance on every line kind of every built-in theme", () => {
     for (const theme of THEMES) {
       for (const kind of ["context", "addition", "deletion"] as const) {
         const baseBg = stackCellPalette(kind, theme).contentBg;
-        for (const tone of TONES) {
-          const resolved = lineHighlightToneBg(tone, baseBg, theme);
+        for (const tone of TINTED_TONES) {
+          const resolved = lineHighlightToneStyle(tone, baseBg, theme);
           expect(resolved).toBeDefined();
-          // The word-diff guarantee applied to extension marks: a mark is
-          // never invisible on the background it sits on.
-          expect(hexColorDistance(resolved!, baseBg)).toBeGreaterThanOrEqual(28);
+          // The target floor is 72 — well above word diff's 28 whisper — but
+          // the readability guard may bind first on a few theme/tone pairs;
+          // 60 is the strongest distance every combination can guarantee
+          // while the code on top stays readable.
+          expect(hexColorDistance(resolved!.bg, baseBg)).toBeGreaterThanOrEqual(60);
         }
       }
     }
   });
 
-  test("makes the current mark stand apart from its match siblings", () => {
+  test("paints the current mark as reverse video, unmistakable on every theme", () => {
     for (const theme of THEMES) {
       for (const kind of ["context", "addition", "deletion"] as const) {
         const baseBg = stackCellPalette(kind, theme).contentBg;
-        const match = lineHighlightToneBg("match", baseBg, theme)!;
-        const current = lineHighlightToneBg("current", baseBg, theme)!;
-        expect(hexColorDistance(current, match)).toBeGreaterThan(0);
-        expect(hexColorDistance(current, baseBg)).toBeGreaterThan(hexColorDistance(match, baseBg));
+        const match = lineHighlightToneStyle("match", baseBg, theme)!;
+        const current = lineHighlightToneStyle("current", baseBg, theme)!;
+        // Inversion: theme text becomes the block, theme background the glyphs.
+        expect(current).toEqual({ bg: theme.text, fg: theme.background });
+        // The active hit must dominate both the line and its siblings.
+        expect(hexColorDistance(current.bg, baseBg)).toBeGreaterThan(
+          hexColorDistance(match.bg, baseBg),
+        );
+        expect(contrastRatio(current.fg!, current.bg)).toBeGreaterThan(3);
       }
     }
   });
@@ -76,15 +83,15 @@ describe("lineHighlightToneBg", () => {
     const theme = withTransparentSurfaces(THEMES[0]!);
     const contextBg = stackCellPalette("context", theme).contentBg;
     expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
-    expect(lineHighlightToneBg("match", contextBg, theme)).toBeUndefined();
+    expect(lineHighlightToneStyle("match", contextBg, theme)).toBeUndefined();
   });
 
-  test("keeps code readable over every resolved tone background", () => {
+  test("keeps code readable over every resolved tinted background", () => {
     for (const theme of THEMES) {
       const baseBg = stackCellPalette("context", theme).contentBg;
-      for (const tone of TONES) {
-        const resolved = lineHighlightToneBg(tone, baseBg, theme);
-        expect(contrastRatio(theme.text, resolved!)).toBeGreaterThan(3);
+      for (const tone of TINTED_TONES) {
+        const resolved = lineHighlightToneStyle(tone, baseBg, theme);
+        expect(contrastRatio(theme.text, resolved!.bg)).toBeGreaterThan(3);
       }
     }
   });

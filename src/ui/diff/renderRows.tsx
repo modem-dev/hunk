@@ -20,7 +20,7 @@ import {
   dimRailColor,
   neutralRailColor,
   cursorLineHighlightBg,
-  lineHighlightToneBg,
+  lineHighlightToneStyle,
   selectionHighlightBg,
   splitCellPalette,
   splitGutterText,
@@ -1734,7 +1734,7 @@ function withSplitCellLineHighlights(
   return {
     ...cell,
     spans: applyLineHighlightsToSpans(cell.spans, ranges, (tone) =>
-      lineHighlightToneBg(tone, contentBg, theme),
+      lineHighlightToneStyle(tone, contentBg, theme),
     ),
   };
 }
@@ -1782,7 +1782,7 @@ function withRowLineHighlights(
       cell: {
         ...cell,
         spans: applyLineHighlightsToSpans(cell.spans, ranges, (tone) =>
-          lineHighlightToneBg(tone, contentBg, theme),
+          lineHighlightToneStyle(tone, contentBg, theme),
         ),
       },
     };
