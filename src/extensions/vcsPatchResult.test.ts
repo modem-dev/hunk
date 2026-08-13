@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import { HunkExtensionUserError } from "../extension-api/types";
 import { HunkUserError, toUserFacingError } from "../core/errors";
+import { SourceTextTooLargeError } from "../core/fileSource";
 import { toInternalVcsAdapter } from "./runExtension";
 import type {
   ExtensionVcsFileSourceRequest,
@@ -118,6 +119,28 @@ describe("published source readers", () => {
 
     await expect(fetcher?.getFullText("new")).rejects.toThrow("source too large");
     expect(await fetcher?.getFullText("new")).toBe("recovered");
+  });
+
+  test("translate and cache public too-large results without re-reading the adapter", async () => {
+    let attempts = 0;
+    const result = toInternalVcsPatchResult(
+      baseResult({
+        readFileSource: async () => {
+          attempts += 1;
+          return attempts === 1 ? { kind: "too-large", maxBytes: 42 } : "recovered";
+        },
+      }),
+    );
+    const fetcher = result.sourceFetcherBuilder?.({
+      path: "src/a.ts",
+      type: "change",
+      isUntracked: false,
+      isBinary: false,
+    });
+
+    await expect(fetcher?.getFullText("new")).rejects.toEqual(new SourceTextTooLargeError(42));
+    await expect(fetcher?.getFullText("new")).rejects.toEqual(new SourceTextTooLargeError(42));
+    expect(attempts).toBe(1);
   });
 
   test("are absent when the result declares none", () => {

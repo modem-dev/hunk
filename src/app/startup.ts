@@ -1,4 +1,6 @@
+import { resolveConfiguredExtensions } from "./extensionBootstrap";
 import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
+import { getBundledVcsCatalog } from "./vcsCatalog";
 import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/default/vcs";
 import {
@@ -17,15 +19,17 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "../core/terminal";
+import type { AppBootstrap } from "./types";
 import type {
-  AppBootstrap,
   CliInput,
+  ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
   SessionCommandInput,
 } from "../core/types";
 import { canReloadInput } from "../core/inputReload";
 import { parseCli } from "../core/cli";
+import { resolveSessionSelectorBoundary } from "./sessionSelector";
 
 export type StartupPlan =
   | {
@@ -60,6 +64,10 @@ export type StartupPlan =
     }
   | {
       kind: "markup-guide";
+    }
+  | {
+      kind: "extension-manage";
+      input: ExtensionManageCommandInput;
     }
   | {
       kind: "app";
@@ -115,6 +123,7 @@ export async function prepareStartupPlan(
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
+  const baseVcsCatalog = getBundledVcsCatalog();
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
@@ -133,9 +142,16 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "session") {
+    const sessionInput =
+      "selector" in parsedCliInput
+        ? {
+            ...parsedCliInput,
+            selector: resolveSessionSelectorBoundary(parsedCliInput.selector, baseVcsCatalog),
+          }
+        : parsedCliInput;
     return {
       kind: "session-command",
-      input: parsedCliInput,
+      input: sessionInput,
     };
   }
 
@@ -149,6 +165,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "markup-guide") {
     return {
       kind: "markup-guide",
+    };
+  }
+
+  if (parsedCliInput.kind === "extension-manage") {
+    return {
+      kind: "extension-manage",
+      input: parsedCliInput,
     };
   }
 
@@ -168,6 +191,9 @@ export async function prepareStartupPlan(
       };
       const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
+        {
+          vcsCatalog: baseVcsCatalog,
+        },
       );
       const staticPlan = {
         kind: "static-diff-pager" as const,
@@ -232,7 +258,12 @@ export async function prepareStartupPlan(
   }
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
-  const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
+  const startupCwd = process.cwd();
+  let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
+    cwd: startupCwd,
+    env,
+    vcsCatalog: baseVcsCatalog,
+  });
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
 
@@ -263,15 +294,22 @@ export async function prepareStartupPlan(
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and
-  // changeset transforms to the loading pipeline. Failures never reach here: the host
-  // isolates them into issues that become startup notices below.
-  const startupCwd = process.cwd();
-  const extensionResult = await loadStartupExtensionsImpl({
-    extensions: configured.extensions,
-    cwd: startupCwd,
-    env,
-    cliExtensionPaths: cliInput.options.extensionPaths,
-  });
+  // changeset transforms to the loading pipeline. External adapters may settle a root the
+  // bundled catalog could not; the shared resolver then appends newly discovered repo
+  // candidates without executing the provisional factory prefix twice.
+  const resolvedExtensions = await resolveConfiguredExtensions(
+    {
+      runtimeInput: runtimeCliInput,
+      configured,
+      cwd: startupCwd,
+      env,
+      baseVcsCatalog,
+    },
+    { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
+  );
+  configured = resolvedExtensions.configured;
+  cliInput = configured.input;
+  const extensionResult = resolvedExtensions.extensions;
 
   let preparedSession: SessionBootstrapResult;
   try {
@@ -281,6 +319,7 @@ export async function prepareStartupPlan(
       extensions: extensionResult,
       initialThemeMode,
       loadAppBootstrapImpl,
+      baseVcsCatalog,
     });
   } catch (error) {
     controllingTerminal?.close();

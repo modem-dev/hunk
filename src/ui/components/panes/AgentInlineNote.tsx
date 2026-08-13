@@ -1,6 +1,10 @@
-import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
-import { flushSync } from "@opentui/react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createTextAttributes,
+  EditBuffer,
+  EditorView,
+  type TextareaRenderable,
+} from "@opentui/core";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
@@ -48,30 +52,30 @@ export function agentInlineNoteMarkupLines(
   return lines.length > 0 ? lines : null;
 }
 
-function draftLineCount(text: string) {
-  return Math.max(1, text.split("\n").length);
-}
+let draftMeasureView: { buffer: EditBuffer; view: EditorView } | null = null;
 
-/** Estimate the textarea's wrapped visual row count for a given content width. */
-function draftVisualLineCount(text: string, width: number) {
-  const usableWidth = Math.max(1, width);
-  return Math.max(
-    1,
-    text
-      .split("\n")
-      .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / usableWidth)), 0),
-  );
-}
+/**
+ * Count the composer's visual rows for one body at one content width.
+ *
+ * Measured through the editor's own native buffer because JS width tables
+ * disagree with it on some clusters (e.g. an emoji flag followed by a
+ * combining mark). This count must match the editor exactly: the
+ * row-windowed stream plans note heights from it before the card mounts,
+ * and the editor clamps its wrap count to its viewport height, so an
+ * undercount would hide rows instead of revealing them.
+ */
+export function draftVisualLineCount(text: string, width: number) {
+  if (!draftMeasureView) {
+    const buffer = EditBuffer.create("unicode");
+    const view = EditorView.create(buffer, 1, 1);
+    view.setWrapMode("char");
+    draftMeasureView = { buffer, view };
+  }
 
-function isNewlineKey(key: { ctrl?: boolean; name?: string; sequence?: string }) {
-  return (
-    key.name === "return" ||
-    key.name === "enter" ||
-    key.name === "linefeed" ||
-    key.sequence === "\r" ||
-    key.sequence === "\n" ||
-    (key.ctrl && key.name === "j")
-  );
+  const { buffer, view } = draftMeasureView;
+  view.setViewport(0, 0, Math.max(1, width), 1);
+  buffer.setText(text);
+  return view.getTotalVirtualLineCount();
 }
 
 /** Wrap text while preserving author-entered line breaks in review notes. */
@@ -158,13 +162,6 @@ export function AgentInlineNote({
   width: number;
 }) {
   const textareaRef = useRef<TextareaRenderable | null>(null);
-  const [draftLineCountHint, setDraftLineCountHint] = useState(() =>
-    draftLineCount(draft?.body ?? ""),
-  );
-
-  useEffect(() => {
-    setDraftLineCountHint(draftLineCount(draft?.body ?? ""));
-  }, [draft?.body]);
 
   useLayoutEffect(() => {
     if (!draft) {
@@ -208,9 +205,7 @@ export function AgentInlineNote({
   const closeWidth = closeText.length;
   const draftInnerWidth = Math.max(1, boxWidth - 2);
   const draftContentWidth = Math.max(1, draftInnerWidth - 2);
-  const draftVisibleRows = draft
-    ? Math.max(draftLineCountHint, draftVisualLineCount(draft.body, draftContentWidth))
-    : 0;
+  const draftVisibleRows = draft ? draftVisualLineCount(draft.body, draftContentWidth) : 0;
 
   useLayoutEffect(() => {
     if (!draft || draftVisibleRows <= 0) {
@@ -232,12 +227,6 @@ export function AgentInlineNote({
     textarea.editorView.setViewport(viewport.offsetX, 0, viewport.width, draftVisibleRows, false);
     textarea.requestRender();
   }, [draft, draftVisibleRows]);
-
-  const updateDraftLineCountHint = (nextLineCount: number) => {
-    flushSync(() => {
-      setDraftLineCountHint(nextLineCount);
-    });
-  };
 
   const lines = agentInlineNoteBodyLines(annotation, contentWidth);
   const savedTitleText = fitText(
@@ -354,36 +343,20 @@ export function AgentInlineNote({
             initialValue={draft.body}
             placeholder="Write a note…"
             focused={draft.focused}
+            wrapMode="char"
             backgroundColor={theme.panel}
             textColor={theme.text}
             focusedBackgroundColor={theme.panel}
             focusedTextColor={theme.text}
             keyBindings={[{ name: "j", ctrl: true, action: "newline" }]}
             onContentChange={() => {
-              const textarea = textareaRef.current;
-              const nextBody = textarea?.plainText ?? "";
-              updateDraftLineCountHint(
-                Math.max(
-                  draftVisualLineCount(nextBody, draftContentWidth),
-                  textarea?.virtualLineCount ?? 0,
-                ),
-              );
+              const nextBody = textareaRef.current?.plainText ?? "";
+              // Deliberately not flushSync: burst input (chunked paste, key
+              // repeat) emits many content changes in one stack, and forcing a
+              // synchronous render per change nests renders until React hits
+              // its nested-update limit. Batched propagation commits before
+              // the next frame, so the resize still lands with the edit.
               draft.onInput(nextBody);
-            }}
-            onKeyDown={(key) => {
-              // Escape (cancel) and Ctrl-S (save) never reach this textarea:
-              // the global key chain owns and consumes them while the draft is
-              // focused (`useAppKeyboardShortcuts`, focus area "note"). Only
-              // sizing bookkeeping for keys the editor itself handles lives
-              // here.
-              if (isNewlineKey(key)) {
-                updateDraftLineCountHint(
-                  draftVisualLineCount(
-                    textareaRef.current?.plainText ?? draft.body,
-                    draftContentWidth,
-                  ) + 1,
-                );
-              }
             }}
           />
           <box style={{ width: 1, height: draftTextareaRows, backgroundColor: theme.panel }} />

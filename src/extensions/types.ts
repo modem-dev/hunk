@@ -11,7 +11,7 @@ import type {
   ExtensionFileView,
   ExtensionKeyboardMode,
   ExtensionNotifyType,
-  ExtensionSidebarView,
+  ExtensionPane,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -64,6 +64,19 @@ export type {
   ExtensionReviewNote,
   ExtensionNotifyType,
   ExtensionPaintTheme,
+  ExtensionPane,
+  ExtensionPaneActions,
+  ExtensionPaneAvailabilityContext,
+  ExtensionPaneComponent,
+  ExtensionPaneControls,
+  ExtensionPaneKeybindings,
+  ExtensionPanePlacement,
+  ExtensionPaneProps,
+  ExtensionPaneTheme,
+  ExtensionPaneSize,
+  ExtensionHorizontalPane,
+  ExtensionVerticalPane,
+  ExtensionCurrentLinePaint,
   ExtensionSelectOptions,
   ExtensionSidebarActions,
   ExtensionSidebarComponent,
@@ -107,6 +120,12 @@ export interface ExtensionCandidate {
   /** Absolute, resolved path to the entry file. */
   path: string;
   origin: ExtensionOrigin;
+  /**
+   * Minimum extension API version the folder's manifest requires
+   * (`"hunk": { "apiVersion": N }`). The host refuses the candidate before
+   * importing it when this Hunk's API is older.
+   */
+  requiresApiVersion?: number;
 }
 
 export interface RegisteredTheme {
@@ -131,9 +150,9 @@ export interface RegisteredChangesetTransform {
   transform: ChangesetTransform;
 }
 
-export interface RegisteredSidebarView {
+export interface RegisteredPane {
   extensionId: string;
-  view: ExtensionSidebarView;
+  pane: ExtensionPane;
 }
 
 /** A host-rendered alternative file presentation registered by one extension. */
@@ -189,7 +208,7 @@ export interface ExtensionRegistry {
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
-  sidebarViews: RegisteredSidebarView[];
+  panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
   keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
@@ -213,6 +232,13 @@ export interface ExtensionLoadIssue {
 }
 
 /** Result of one extension load pass. */
+export interface ExtensionLoadState {
+  /** Full discovery order used to build this registry, including refused candidates. */
+  candidates: readonly ExtensionCandidate[];
+  /** Config snapshot factories in this registry were created against. */
+  extensionConfigs: Record<string, Record<string, unknown>>;
+}
+
 export interface ExtensionLoadResult {
   registry: ExtensionRegistry;
   issues: ExtensionLoadIssue[];
@@ -232,6 +258,8 @@ export interface ExtensionLoadResult {
    * the same hub instead of orphaning the UI's subscription.
    */
   notifications: ExtensionNotificationHub;
+  /** Internal inputs retained so a staged pass can append newly discovered candidates safely. */
+  loadState: ExtensionLoadState;
   /**
    * Repo root holding repo-local extensions that have no trust decision yet.
    * Set only when such extensions exist and were therefore skipped, so the UI
@@ -264,7 +292,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],
-    sidebarViews: [],
+    panes: [],
     fileViews: [],
     keyboardModes: [],
     commands: [],
@@ -313,5 +341,6 @@ export function createEmptyExtensionLoadResult(
     loaded: [],
     context: createExtensionContext(cwd, notifications.notify),
     notifications,
+    loadState: { candidates: [], extensionConfigs: {} },
   };
 }

@@ -3,10 +3,10 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../binary";
 import { buildDiffFile, createSkippedLargeMetadata } from "../diffFile";
-import { inspectLargeUntrackedFile } from "./largeFile";
-import { escapeUntrackedPatchPath } from "../patch/normalize";
+import { inspectLargeUntrackedFile } from "../../lib/largeFile";
+import { escapeUntrackedPatchPath } from "../../lib/patchPath";
 import { parseSingleFilePatch } from "../patch/singleFile";
-import type { LargeFileCheck } from "./largeFile";
+import type { LargeFileCheck } from "../../lib/largeFile";
 
 /**
  * Host-side synthesis of untracked files into reviewable diffs.

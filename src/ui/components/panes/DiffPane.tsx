@@ -24,7 +24,7 @@ import type {
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
-import type { DraftReviewNote } from "../../hooks/useReviewController";
+import type { DraftReviewNote } from "../../lib/reviewProjection";
 import {
   alwaysShowReviewNote,
   reviewNoteSource,
@@ -53,6 +53,7 @@ import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
 } from "../../diff/diffSectionGeometry";
+import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import { createReviewMouseWheelScrollAcceleration } from "../../lib/scrollAcceleration";
 import {
   buildFileSectionLayouts,
@@ -74,6 +75,10 @@ import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
+import {
+  createExtensionCurrentLinePaint,
+  type ExtensionCurrentLinePaintUpdate,
+} from "../../lib/extensionCurrentLine";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -237,6 +242,7 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
+  height,
   cancelCopySelectionRef,
   onActiveAddNoteAffordanceChange,
   onRemoveUserNote,
@@ -253,6 +259,8 @@ export function DiffPane({
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
   onLineCursorsChange,
+  currentLinePaintRequested = false,
+  onCurrentLinePaintChange,
   onViewportCenteredHunkChange,
   onViewportLineCursorChange,
 }: {
@@ -294,6 +302,7 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
+  height?: number;
   cancelCopySelectionRef?: RefObject<(() => void) | null>;
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
@@ -312,6 +321,8 @@ export function DiffPane({
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
+  currentLinePaintRequested?: boolean;
+  onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
@@ -321,6 +332,11 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
+  const [currentLineRowPlan, setCurrentLineRowPlan] = useState<{
+    source: { file: DiffFile; theme: AppTheme; tabWidth: number };
+    rowPlan: DiffSectionRowPlan;
+    highlighted: boolean;
+  } | null>(null);
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
@@ -951,6 +967,99 @@ export function DiffPane({
             side: renderedLineCursor.target.side,
           } satisfies CursorHighlight),
     [cursorLine, renderedLineCursor],
+  );
+
+  // Current-line paint closes over the exact accepted renderer plan. It remains opaque to
+  // extensions and never introduces another highlight request, cache, or cursor model.
+  const currentLinePaintFile = useMemo(() => {
+    if (
+      !currentLinePaintRequested ||
+      layout !== "split" ||
+      cursorLine === "off" ||
+      !renderedLineCursor ||
+      pagerMode ||
+      fileViewRenderPlans.has(renderedLineCursor.fileId)
+    )
+      return undefined;
+    const sectionIndex = fileSectionIndexById.get(renderedLineCursor.fileId);
+    return sectionIndex === undefined ? undefined : files[sectionIndex];
+  }, [
+    currentLinePaintRequested,
+    cursorLine,
+    fileSectionIndexById,
+    fileViewRenderPlans,
+    files,
+    layout,
+    pagerMode,
+    renderedLineCursor,
+  ]);
+
+  const currentLinePaintSource = useMemo(
+    () => (currentLinePaintFile ? { file: currentLinePaintFile, theme, tabWidth } : null),
+    [currentLinePaintFile, tabWidth, theme],
+  );
+
+  const currentLineRowPlanCallback = useMemo(() => {
+    if (!currentLinePaintSource) return undefined;
+    return (rowPlan: DiffSectionRowPlan, highlighted: boolean) => {
+      setCurrentLineRowPlan((current) =>
+        current?.source === currentLinePaintSource &&
+        current.rowPlan === rowPlan &&
+        current.highlighted === highlighted
+          ? current
+          : { source: currentLinePaintSource, rowPlan, highlighted },
+      );
+    };
+  }, [currentLinePaintSource]);
+
+  const currentLinePaint = useMemo(() => {
+    if (
+      !currentLinePaintSource ||
+      !renderedLineCursor ||
+      !currentLineRowPlan?.highlighted ||
+      currentLineRowPlan.source !== currentLinePaintSource
+    )
+      return null;
+    return createExtensionCurrentLinePaint({
+      cursor: renderedLineCursor,
+      rowPlan: currentLineRowPlan.rowPlan,
+      showLineNumbers,
+      codeHorizontalOffset,
+      theme,
+    });
+  }, [
+    codeHorizontalOffset,
+    currentLinePaintSource,
+    currentLineRowPlan,
+    renderedLineCursor,
+    showLineNumbers,
+    theme,
+  ]);
+
+  const currentLinePaintUpdate = useMemo<ExtensionCurrentLinePaintUpdate>(() => {
+    if (!currentLinePaintSource) return { status: "unavailable" };
+    if (
+      !renderedLineCursor ||
+      !currentLineRowPlan?.highlighted ||
+      currentLineRowPlan.source !== currentLinePaintSource
+    )
+      return { status: "pending" };
+    return currentLinePaint
+      ? {
+          status: "ready",
+          fileId: renderedLineCursor.fileId,
+          cursorKey: renderedLineCursor.stableKey,
+          paint: currentLinePaint,
+        }
+      : { status: "unavailable" };
+  }, [currentLinePaint, currentLinePaintSource, currentLineRowPlan, renderedLineCursor]);
+
+  useLayoutEffect(() => {
+    onCurrentLinePaintChange?.(currentLinePaintUpdate);
+  }, [currentLinePaintUpdate, onCurrentLinePaintChange]);
+  useLayoutEffect(
+    () => () => onCurrentLinePaintChange?.({ status: "unavailable" }),
+    [onCurrentLinePaintChange],
   );
 
   const copySelectedRowKeysByFile = useMemo(
@@ -2098,6 +2207,7 @@ export function DiffPane({
     <box
       style={{
         width,
+        ...(height === undefined ? {} : { height }),
         border: renderTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
@@ -2130,113 +2240,124 @@ export function DiffPane({
               />
             </box>
           ) : null}
-          <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
-            <scrollbox
-              ref={scrollRef}
-              width="100%"
-              height="100%"
-              scrollY={true}
-              viewportCulling={true}
-              focused={pagerMode}
-              onMouseDown={beginCopySelection}
-              onMouseDrag={updateCopySelection}
-              onMouseDragEnd={endCopySelection}
-              onMouseScroll={handleMouseScroll}
-              onMouseUp={endCopySelection}
-              scrollAcceleration={mouseWheelScrollAcceleration}
-              rootOptions={{ backgroundColor: theme.panel }}
-              wrapperOptions={{ backgroundColor: theme.panel }}
-              viewportOptions={{ backgroundColor: theme.panel }}
-              contentOptions={{ backgroundColor: theme.panel }}
-              verticalScrollbarOptions={{ visible: false }}
-              horizontalScrollbarOptions={{ visible: false }}
-            >
-              <box
-                // Remount the diff content when width/layout/wrap mode changes so viewport culling
-                // recomputes against the new row geometry, while the outer scrollbox keeps its state.
-                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:tabs-${tabWidth}:${width}`}
-                style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+          <box style={{ width: "100%", flexGrow: 1, flexDirection: "column" }}>
+            <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
+              <scrollbox
+                ref={scrollRef}
+                width="100%"
+                height="100%"
+                scrollY={true}
+                viewportCulling={true}
+                focused={pagerMode}
+                onMouseDown={beginCopySelection}
+                onMouseDrag={updateCopySelection}
+                onMouseDragEnd={endCopySelection}
+                onMouseScroll={handleMouseScroll}
+                onMouseUp={endCopySelection}
+                scrollAcceleration={mouseWheelScrollAcceleration}
+                rootOptions={{ backgroundColor: theme.panel }}
+                wrapperOptions={{ backgroundColor: theme.panel }}
+                viewportOptions={{ backgroundColor: theme.panel }}
+                contentOptions={{ backgroundColor: theme.panel }}
+                verticalScrollbarOptions={{ visible: false }}
+                horizontalScrollbarOptions={{ visible: false }}
               >
-                {fileRenderItems.map((item) => {
-                  if (item.kind === "spacer") {
+                <box
+                  // Remount the diff content when width/layout/wrap mode changes so viewport culling
+                  // recomputes against the new row geometry, while the outer scrollbox keeps its state.
+                  key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:tabs-${tabWidth}:${width}`}
+                  style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+                >
+                  {fileRenderItems.map((item) => {
+                    if (item.kind === "spacer") {
+                      return (
+                        <box
+                          key={item.key}
+                          style={{
+                            width: "100%",
+                            height: item.height,
+                            backgroundColor: theme.panel,
+                          }}
+                        />
+                      );
+                    }
+
+                    const { sectionIndex: index } = item;
+                    const file = files[index];
+                    if (!file) {
+                      return null;
+                    }
+
                     return (
-                      <box
-                        key={item.key}
-                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
+                      <DiffSection
+                        key={file.id}
+                        codeHorizontalOffset={codeHorizontalOffset}
+                        expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                        file={file}
+                        fileView={fileViewRenderPlans.get(file.id)?.fileView}
+                        headerLabelWidth={headerLabelWidth}
+                        headerStatsWidth={headerStatsWidth}
+                        layout={layout}
+                        selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                        copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
+                        copySelectedSide={copySelectionSide}
+                        cursorHighlight={
+                          file.id === renderedLineCursor?.fileId ? cursorHighlight : undefined
+                        }
+                        shouldLoadHighlight={
+                          (!wrapLines || initialWrappedRenderWindowWarmed) &&
+                          highlightPrefetchFileIds.has(file.id)
+                        }
+                        sectionGeometry={sectionGeometry[index]}
+                        separatorWidth={separatorWidth}
+                        showHeader={shouldRenderInStreamFileHeader(index)}
+                        showSeparator={index > 0}
+                        showLineNumbers={showLineNumbers}
+                        showHunkHeaders={showHunkHeaders}
+                        sourceStatus={sourceStatusByFileId[file.id]}
+                        tabWidth={tabWidth}
+                        wrapLines={wrapLines}
+                        theme={theme}
+                        hoverActive={hoveredFileId === null || hoveredFileId === file.id}
+                        hoverClearSignal={
+                          addNoteHoverClearFileId === file.id ? addNoteHoverClearSignal : 0
+                        }
+                        viewWidth={diffContentWidth}
+                        visibleAgentNotes={
+                          visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
+                        }
+                        visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
+                        onHover={() => setHoveredFileForRowActions(file.id)}
+                        onMouseScroll={clearAddNoteHoverForScroll}
+                        onFileViewRowFailure={onFileViewRowFailure}
+                        onActiveAddNoteAffordanceChange={
+                          onActiveAddNoteAffordanceChange
+                            ? activeAddNoteAffordanceCallback(file.id)
+                            : undefined
+                        }
+                        onStartUserNoteAtHunk={
+                          reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
+                        }
+                        onRowPlanChange={
+                          file.id === currentLinePaintFile?.id
+                            ? currentLineRowPlanCallback
+                            : undefined
+                        }
+                        onSelect={selectFileCallback(file.id)}
+                        onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
                       />
                     );
-                  }
-
-                  const { sectionIndex: index } = item;
-                  const file = files[index];
-                  if (!file) {
-                    return null;
-                  }
-
-                  return (
-                    <DiffSection
-                      key={file.id}
-                      codeHorizontalOffset={codeHorizontalOffset}
-                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
-                      file={file}
-                      fileView={fileViewRenderPlans.get(file.id)?.fileView}
-                      headerLabelWidth={headerLabelWidth}
-                      headerStatsWidth={headerStatsWidth}
-                      layout={layout}
-                      selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                      copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
-                      copySelectedSide={copySelectionSide}
-                      cursorHighlight={
-                        file.id === renderedLineCursor?.fileId ? cursorHighlight : undefined
-                      }
-                      shouldLoadHighlight={
-                        (!wrapLines || initialWrappedRenderWindowWarmed) &&
-                        highlightPrefetchFileIds.has(file.id)
-                      }
-                      sectionGeometry={sectionGeometry[index]}
-                      separatorWidth={separatorWidth}
-                      showHeader={shouldRenderInStreamFileHeader(index)}
-                      showSeparator={index > 0}
-                      showLineNumbers={showLineNumbers}
-                      showHunkHeaders={showHunkHeaders}
-                      sourceStatus={sourceStatusByFileId[file.id]}
-                      tabWidth={tabWidth}
-                      wrapLines={wrapLines}
-                      theme={theme}
-                      hoverActive={hoveredFileId === null || hoveredFileId === file.id}
-                      hoverClearSignal={
-                        addNoteHoverClearFileId === file.id ? addNoteHoverClearSignal : 0
-                      }
-                      viewWidth={diffContentWidth}
-                      visibleAgentNotes={
-                        visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
-                      }
-                      visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
-                      onHover={() => setHoveredFileForRowActions(file.id)}
-                      onMouseScroll={clearAddNoteHoverForScroll}
-                      onFileViewRowFailure={onFileViewRowFailure}
-                      onActiveAddNoteAffordanceChange={
-                        onActiveAddNoteAffordanceChange
-                          ? activeAddNoteAffordanceCallback(file.id)
-                          : undefined
-                      }
-                      onStartUserNoteAtHunk={
-                        reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
-                      }
-                      onSelect={selectFileCallback(file.id)}
-                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
-                    />
-                  );
-                })}
-              </box>
-            </scrollbox>
-            <VerticalScrollbar
-              ref={scrollbarRef}
-              scrollRef={scrollRef}
-              contentHeight={totalContentHeight}
-              height={scrollViewport.height}
-              theme={theme}
-            />
+                  })}
+                </box>
+              </scrollbox>
+              <VerticalScrollbar
+                ref={scrollbarRef}
+                scrollRef={scrollRef}
+                contentHeight={totalContentHeight}
+                height={scrollViewport.height}
+                theme={theme}
+              />
+            </box>
           </box>
         </box>
       ) : (

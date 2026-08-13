@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPtyHarness, lineIndexOf } from "./harness";
+import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
 
 const harness = createPtyHarness();
 const REVIEW_TRIAGE_EXTENSION = resolve(
@@ -87,6 +87,29 @@ export default function (hunk) {
  * dialog path: a registered key opens the modal, Enter resolves the handler's
  * awaited promise, and the answer comes back as a toast.
  */
+const FOUR_EDGE_PANE_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  for (const placement of ["top", "bottom"]) {
+    hunk.registerPane({
+      id: placement,
+      placement,
+      defaultOpen: false,
+      height: placement === "top"
+        ? { preferred: 2, min: 2, max: 5 }
+        : { preferred: 2, min: 2, max: 2 },
+      component: (props) => createElement("text", {
+        content: "PANE " + placement.toUpperCase() + " " + props.width + "x" + props.height,
+        style: { fg: props.theme.text, bg: props.theme.panel },
+      }),
+    });
+  }
+  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "y" }, (ctx) => {
+    ctx.panes.toggle("top");
+    ctx.panes.toggle("bottom");
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -297,6 +320,50 @@ describe("PTY extensions", () => {
       // The same key toggles it away again.
       await session.press("y");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("an extension can dock edge panes and resize through horizontal divider hit slop", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(FOUR_EDGE_PANE_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("y");
+      const frame = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("PANE TOP") && text.includes("PANE BOTTOM") && text.includes("alpha.ts"),
+        20_000,
+      );
+      expect(frame).toContain("PANE TOP 138x2");
+      expect(frame).toContain("PANE BOTTOM 138x2");
+
+      // The visible divider is on row 3. Start one row below it to prove the
+      // enlarged horizontal hit area wins over review-stream text selection.
+      await dragMouse(session, 70, 4, 70, 6);
+      await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
+
+      await session.press("y");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("PANE TOP") && !text.includes("PANE BOTTOM"),
+        20_000,
+      );
     } finally {
       session.close();
     }

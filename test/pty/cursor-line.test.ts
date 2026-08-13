@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPtyHarness, lineIndexOf, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
+const CURRENT_LINE_LENS_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/current-line-lens", import.meta.url)),
+);
 
 /** Give PTY-backed startup and redraws enough headroom for slower CI machines. */
 setDefaultTimeout(20_000);
@@ -39,6 +44,76 @@ describe("PTY current line", () => {
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(0);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the current-line lens example pins old above new and hides in stack mode", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--extension",
+        CURRENT_LINE_LENS_EXTENSION,
+      ],
+      cols: 140,
+      rows: 18,
+    });
+
+    try {
+      const split = await session.waitForText(/Current line · old above, new below/, {
+        timeout: 15_000,
+      });
+      const splitLines = split.split("\n");
+      const lensIndex = lineIndexOf(split, "Current line");
+      expect(splitLines[lensIndex + 1]).toContain("export const message = 'short';");
+      expect(splitLines[lensIndex + 2]).toContain("this is a very long wrapped line");
+
+      await session.press("2");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Current line"), 5_000);
+
+      await session.press("1");
+      await session.waitForText(/Current line · old above, new below/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
+  test("stepping updates lens content without moving its fixed rectangle", async () => {
+    const fixture = harness.createWideCharacterFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--extension",
+        CURRENT_LINE_LENS_EXTENSION,
+      ],
+      cols: 140,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/Current line · old above, new below/, {
+        timeout: 15_000,
+      });
+      const lensRow = lineIndexOf(initial, "Current line");
+      expect(initial.split("\n")[lensRow + 1]).toContain("日本語");
+      expect(initial.split("\n")[lensRow + 2]).toContain("한국어");
+
+      await harness.ensureKeyboardIsLive(session);
+      for (let step = 0; step < 4; step += 1) await session.press("j");
+      const moved = await session.waitForText(/plain = 'after'/, { timeout: 5_000 });
+      expect(lineIndexOf(moved, "Current line")).toBe(lensRow);
+      expect(moved.split("\n")[lensRow + 1]).toContain("plain = 'before'");
+      expect(moved.split("\n")[lensRow + 2]).toContain("plain = 'after'");
     } finally {
       session.close();
     }

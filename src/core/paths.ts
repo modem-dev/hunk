@@ -104,6 +104,20 @@ export function resolveGlobalExtensionsDir(env: NodeJS.ProcessEnv = process.env)
   return configDir ? join(configDir, "hunk", "extensions") : undefined;
 }
 
+/**
+ * Directory inside the global extensions dir that `hunk extension install`
+ * owns. It is not itself a folder extension, so a plain scan of the global
+ * dir skips it; discovery scans its subdirectories — one per installed
+ * repository — explicitly.
+ */
+export const INSTALLED_EXTENSIONS_DIR_NAME = "installed";
+
+/** Resolve the managed install root for `hunk extension install`. */
+export function resolveInstalledExtensionsRoot(env: NodeJS.ProcessEnv = process.env) {
+  const extensionsDir = resolveGlobalExtensionsDir(env);
+  return extensionsDir ? join(extensionsDir, INSTALLED_EXTENSIONS_DIR_NAME) : undefined;
+}
+
 /** Search one path and its parents for one relative child path. */
 function findRelativePathFromAncestors(startPath: string, relativePath: string) {
   let current = resolve(startPath);

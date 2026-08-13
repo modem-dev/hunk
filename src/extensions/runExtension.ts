@@ -11,6 +11,7 @@ import {
   type ExtensionEventBus,
   type ExtensionMetadata,
   type ExtensionRegistry,
+  type ExtensionPane,
   type ExtensionSidebarView,
   type ExtensionFileView,
   type ExtensionKeyboardMode,
@@ -23,6 +24,7 @@ import { toUserFacingError } from "../core/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
+import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
 
 /**
  * Running one extension factory into the shared registry.
@@ -217,7 +219,7 @@ interface RegistrySnapshot {
   fileLanguages: number;
   vcsAdapters: number;
   changesetTransforms: number;
-  sidebarViews: number;
+  panes: number;
   fileViews: number;
   keyboardModes: number;
   commands: number;
@@ -238,7 +240,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
-    sidebarViews: registry.sidebarViews.length,
+    panes: registry.panes.length,
     fileViews: registry.fileViews.length,
     keyboardModes: registry.keyboardModes.length,
     commands: registry.commands.length,
@@ -259,7 +261,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
-  registry.sidebarViews.length = snapshot.sidebarViews;
+  registry.panes.length = snapshot.panes;
   registry.fileViews.length = snapshot.fileViews;
   registry.keyboardModes.length = snapshot.keyboardModes;
   registry.commands.length = snapshot.commands;
@@ -356,19 +358,76 @@ export function createExtensionApi(
         }),
       });
     },
+    registerPane(pane: ExtensionPane) {
+      assertOpen("registerPane");
+      assertNonEmptyString(pane?.id, "registerPane requires a pane with a non-empty id.");
+      if (typeof pane.component !== "function") {
+        throw new Error("registerPane requires a pane with a component function.");
+      }
+      const placement = pane.placement ?? "left";
+      if (!(["left", "right", "top", "bottom"] as const).includes(placement)) {
+        throw new Error(
+          `registerPane placement must be "left", "right", "top", or "bottom", got "${String(placement)}".`,
+        );
+      }
+      const dimension = isVerticalPanePlacement(placement) ? "width" : "height";
+      const wrongDimension = dimension === "width" ? "height" : "width";
+      if (pane[wrongDimension] !== undefined) {
+        throw new Error(`registerPane ${placement} panes use ${dimension}, not ${wrongDimension}.`);
+      }
+      const size = extensionPaneSize(pane, placement);
+      const min = size.min ?? 1;
+      const max = size.max ?? Number.MAX_SAFE_INTEGER;
+      for (const [name, value] of Object.entries({ preferred: size.preferred, min, max })) {
+        if (!Number.isSafeInteger(value) || value <= 0) {
+          throw new Error(`registerPane ${dimension}.${name} must be a positive safe integer.`);
+        }
+      }
+      if (min > size.preferred || size.preferred > max) {
+        throw new Error(`registerPane ${dimension} must satisfy min <= preferred <= max.`);
+      }
+      if (pane.available !== undefined && typeof pane.available !== "function") {
+        throw new Error("registerPane available must be a function.");
+      }
+      if (pane.currentLine !== undefined && typeof pane.currentLine !== "boolean") {
+        throw new Error("registerPane currentLine must be a boolean.");
+      }
+      if (pane.replaces !== undefined) {
+        assertNonEmptyString(pane.replaces, "registerPane replaces must be a non-empty pane key.");
+        if (pane.replaces === `${metadata.id}:${pane.id}`) {
+          throw new Error("registerPane cannot replace itself.");
+        }
+      }
+
+      const normalizedSize = { preferred: size.preferred, min, max };
+      registry.panes.push({
+        extensionId: metadata.id,
+        pane: {
+          ...pane,
+          placement,
+          ...(dimension === "width"
+            ? { width: normalizedSize, height: undefined }
+            : { height: normalizedSize, width: undefined }),
+        } as ExtensionPane,
+      });
+    },
     registerSidebarView(view: ExtensionSidebarView) {
       assertOpen("registerSidebarView");
       assertNonEmptyString(view?.id, "registerSidebarView requires a view with a non-empty id.");
-      if (typeof view.component !== "function") {
-        throw new Error("registerSidebarView requires a view with a component function.");
-      }
       if (view.placement !== undefined && view.placement !== "left" && view.placement !== "right") {
         throw new Error(
           `registerSidebarView placement must be "left" or "right", got "${String(view.placement)}".`,
         );
       }
-
-      registry.sidebarViews.push({ extensionId: metadata.id, view });
+      api.registerPane({
+        id: view.id,
+        ...(view.title ? { title: view.title } : {}),
+        placement: view.placement ?? "left",
+        width: defaultExtensionPaneSize("left"),
+        defaultOpen: view.defaultOpen,
+        replaces: view.replacesDefault ? "hunk:files" : undefined,
+        component: view.component as unknown as ExtensionPane["component"],
+      });
     },
     registerFileView(view: ExtensionFileView) {
       assertOpen("registerFileView");

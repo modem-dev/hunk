@@ -3,7 +3,7 @@
  *
  * An extension id is a file stem the user chose, and it is the namespace that
  * id space owns everywhere else: `<extensionId>.<commandId>` for commands,
- * `<extensionId>:<viewId>` for sidebar views, `[extension.<id>]` for config.
+ * `<extensionId>:<paneId>` for panes, `[extension.<id>]` for config.
  * Two structural rules keep that from breaking down:
  *
  * - **One vendor namespace.** Everything Hunk itself owns lives under `hunk`,
@@ -11,7 +11,7 @@
  *   built-in groupings can be added forever without colliding with an id
  *   somebody already installed.
  * - **A parseable charset.** No dots, so `<extensionId>.<commandId>` splits at
- *   the first dot; no colons, so `<extensionId>:<viewId>` splits at the first
+ *   the first dot; no colons, so `<extensionId>:<paneId>` splits at the first
  *   colon; no leading separator, so ids read as names.
  *
  * The rules are enforced once, where candidates become loadable extensions
@@ -19,8 +19,10 @@
  * ask about the vendor namespace without pulling the loader in behind it.
  */
 
-/** The id Hunk reserves for itself: built-in commands, views, and bundled UI. */
+/** The id Hunk reserves for itself: built-in commands, panes, and bundled UI. */
 export const HUNK_VENDOR_EXTENSION_ID = "hunk";
+/** Stable key of the bundled files pane. */
+export const HUNK_FILES_PANE_KEY = "hunk:files";
 
 /**
  * Characters an extension id may be spelled with.

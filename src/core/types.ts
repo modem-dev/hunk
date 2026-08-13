@@ -1,7 +1,4 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-// Type-only import; the extension types depend on this module in turn, and
-// `import type` keeps that relationship out of the runtime module graph.
-import type { ExtensionLoadResult } from "../extensions/types";
 import type {
   AgentFileContext,
   ExtensionVcsDiffInput,
@@ -11,7 +8,7 @@ import type {
 } from "../extension-api/types";
 import type { FileSourceFetcher } from "./fileSource";
 import type { StartupNotice } from "./startupNotice";
-import type { VcsAdapter } from "./vcs/types";
+import type { VcsCatalog } from "./vcs/types";
 
 /**
  * Shapes that are simultaneously internal model types and part of the published
@@ -172,6 +169,8 @@ export interface SessionSelectorInput {
   sessionId?: string;
   sessionPath?: string;
   repoRoot?: string;
+  /** Nearest project boundary known for this repo-path selector. */
+  repoBoundary?: string;
 }
 
 export interface SessionListCommandInput {
@@ -353,6 +352,40 @@ export interface MarkupGuideCommandInput {
   kind: "markup-guide";
 }
 
+export interface ExtensionInstallCommandInput {
+  kind: "extension-manage";
+  action: "install";
+  /** Install source spec: owner/repo, git:host/path, a git URL, or a local path. */
+  source: string;
+  /** Skip the interactive confirmation (required when stdin is not a TTY). */
+  yes: boolean;
+}
+
+export interface ExtensionListCommandInput {
+  kind: "extension-manage";
+  action: "list";
+}
+
+export interface ExtensionUpdateCommandInput {
+  kind: "extension-manage";
+  action: "update";
+  /** One managed install to update; every managed install when omitted. */
+  name?: string;
+}
+
+export interface ExtensionRemoveCommandInput {
+  kind: "extension-manage";
+  action: "remove";
+  name: string;
+}
+
+/** `hunk extension ...` managed-install commands. */
+export type ExtensionManageCommandInput =
+  | ExtensionInstallCommandInput
+  | ExtensionListCommandInput
+  | ExtensionUpdateCommandInput
+  | ExtensionRemoveCommandInput;
+
 export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
@@ -360,24 +393,18 @@ export type ParsedCliInput =
   | DaemonServeCommandInput
   | SessionCommandInput
   | MarkupRenderCommandInput
-  | MarkupGuideCommandInput;
+  | MarkupGuideCommandInput
+  | ExtensionManageCommandInput;
 
 export interface ReloadContext {
   cwd: string;
   repoRoot?: string;
   initialWatchSignature?: string;
-  /**
-   * Extension-contributed VCS backends this session loaded its review through.
-   *
-   * Watch planning and signatures re-resolve the adapter from the input's
-   * configured VCS id, so they need the same adapter set the changeset came
-   * from — otherwise a review backed by an extension backend could not be
-   * watched at all.
-   */
-  vcsAdapters?: readonly VcsAdapter[];
+  /** Complete catalog used to load this review, retained for reload and watch. */
+  vcsCatalog?: VcsCatalog;
 }
 
-export interface AppBootstrap {
+export interface AppBootstrap<ExtensionState = unknown> {
   input: CliInput;
   reloadContext: ReloadContext;
   changeset: Changeset;
@@ -398,6 +425,6 @@ export interface AppBootstrap {
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;
-  /** Extensions loaded for this session, and any load failures worth surfacing. */
-  extensions?: ExtensionLoadResult;
+  /** App-owned extension state carried without coupling core to the extension host. */
+  extensions?: ExtensionState;
 }

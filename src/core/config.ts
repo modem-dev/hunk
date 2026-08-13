@@ -16,7 +16,9 @@ import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
-import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter } from "./vcs";
+import { findProjectRootCandidate } from "./projectRoot";
+import { createVcsCatalog, detectVcs } from "./vcs";
+import type { VcsCatalog } from "./vcs/types";
 import type {
   CliInput,
   CommonOptions,
@@ -62,10 +64,15 @@ const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   { configKey: "cursor_line", value: (preferences) => preferences.cursorLine },
 ];
 
-interface ConfigResolutionOptions {
+export interface ConfigResolutionOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Base catalog available before user extensions load. */
+  vcsCatalog?: VcsCatalog;
 }
+
+const CONFIG_FALLBACK_VCS_ID = "git";
+const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
 export interface HunkConfigResolution {
   input: CliInput;
@@ -91,6 +98,8 @@ export interface HunkConfigResolution {
   explicitVcsId?: string;
   startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
+  /** Project root selected from `.hunk` or the base VCS catalog. */
+  projectRoot?: string;
   repoConfigPath?: string;
   viewPreferencesConfigPath?: string;
 }
@@ -856,8 +865,8 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
 }
 
 /** Build concrete preference defaults from the same catalog rendered by generated docs. */
-function buildDefaultConfigPreferences(cwd: string): CommonOptions {
-  const defaults: CommonOptions = { vcs: detectRepoVcsMode(cwd) };
+function buildDefaultConfigPreferences(cwd: string, vcsCatalog: VcsCatalog): CommonOptions {
+  const defaults: CommonOptions = { vcs: detectRepoVcsMode(cwd, vcsCatalog) };
   const mutable = defaults as Record<string, unknown>;
   for (const option of CONFIG_REFERENCE_OPTIONS) {
     if (option.runtimeDefault !== undefined) {
@@ -914,8 +923,8 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
 }
 
 /** Choose the VCS backend that best matches the discovered checkout. */
-function detectRepoVcsMode(cwd: string): VcsMode {
-  return detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id;
+function detectRepoVcsMode(cwd: string, vcsCatalog: VcsCatalog): VcsMode {
+  return detectVcs(cwd, vcsCatalog)?.id ?? vcsCatalog.defaultAdapterId;
 }
 
 /** Parse one TOML config file into a plain object. */
@@ -1031,9 +1040,13 @@ export function saveViewPreferencesPromptPreference(
 /** Resolve CLI input against global and repo-local config files. */
 export function resolveConfiguredCliInput(
   input: CliInput,
-  { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
+  {
+    cwd = process.cwd(),
+    env = process.env,
+    vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
+  }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
-  const repoRoot = findVcsRepoRootCandidate(cwd);
+  const repoRoot = findProjectRootCandidate(cwd, vcsCatalog);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomThemes: NamedCustomThemeConfig[] = [];
@@ -1045,7 +1058,7 @@ export function resolveConfiguredCliInput(
   let keybindingsLayer: KeybindingsLayer = { bindings: {}, unusableIds: [] };
 
   let resolvedOptions: CommonOptions = {
-    ...buildDefaultConfigPreferences(cwd),
+    ...buildDefaultConfigPreferences(cwd, vcsCatalog),
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     experimental: false,
@@ -1094,7 +1107,7 @@ export function resolveConfiguredCliInput(
     experimental: input.options.experimental ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     theme: resolvedOptions.theme,
-    vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
+    vcs: resolvedOptions.vcs ?? vcsCatalog.defaultAdapterId,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
@@ -1153,6 +1166,7 @@ export function resolveConfiguredCliInput(
       ...keybindingNotices,
     ]),
     globalConfigPath: userConfigPath,
+    projectRoot: repoRoot,
     repoConfigPath,
     // Persist in the repo config only when the repo already has one; otherwise keep personal view
     // choices user-scoped so Hunk does not create project policy files from an interactive prompt.

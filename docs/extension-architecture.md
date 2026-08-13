@@ -17,28 +17,24 @@ object and registry collection (`src/extensions/runExtension.ts`):
   `src/extensions/trust.ts`.
 - **Bundled extensions** live in `src/extensions/default/` and are compiled
   into the binary. `default/vcs/{git,jujutsu,sapling}` is statically imported
-  and loaded synchronously _from VCS adapter resolution_
-  (`default/vcs/index.ts`), so backends exist during config resolution — that
-  load path must stay renderer-free. `default/ui/sidebar/` is deliberately not
-  part of that list: it is UI code, loaded through `getBundledSidebarView`
-  where the app resolves its sidebar views.
+  by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
+  before config resolution, so backends exist without making core import the
+  extension host. `default/ui/index.ts` is deliberately not part of that list:
+  it synchronously loads the bundled files pane through `runExtensionFactory`
+  only where the app resolves UI panes.
 
-There are zero core-registered VCS adapters and no private sidebar: Git and
-the built-in file navigation register through the public `registerVcsAdapter`
-and `registerSidebarView` like any extension. That dogfooding is the honesty
-mechanism — Git exercises every VCS integration point, the bundled sidebar
-consumes exactly the public sidebar props, so a gap in the published contract
-breaks Hunk's own code first.
+Git and the built-in file navigation use the public `registerVcsAdapter` and
+`registerPane` paths. The current-line lens remains an installable example.
 
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.
 
 An extension id is a file stem the user chose, and it is the namespace that id
-owns for commands (`<extensionId>.<commandId>`), sidebar views
+owns for commands (`<extensionId>.<commandId>`), panes
 (`<extensionId>:<viewId>`), and config (`[extension.<id>]`). `host.ts` is the
 one place those ids are vetted — discovery stays a pure filesystem walk, and
 every way an id can be derived arrives there as `candidate.id`. It refuses
-reserved ids (`hunk`, plus the bundled backends via `isVcsId`), ids outside
+reserved ids (`hunk`, plus the base catalog's bundled backend ids), ids outside
 `/^[A-Za-z0-9][A-Za-z0-9_-]*$/` (a dot or colon would make the composed ids
 unsplittable), and the later of two sources claiming one id; each refusal is a
 load issue and costs only that extension. The rules themselves are stated in
@@ -47,11 +43,15 @@ load issue and costs only that extension. The rules themselves are stated in
 ## One registry, one apply path
 
 Registrations (themes, file languages, VCS adapters, changeset transforms,
-sidebar views, commands, lifecycle/UI events, and inter-extension bus listeners) collect into one
+panes, commands, lifecycle/UI events, and bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
-through `src/extensions/apply.ts` on both startup and reload. A factory that
-throws is rolled back to its pre-run registration counts
-(`runExtension.ts`); failures cost a warning, not the session.
+through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
+bootstrap retains the provisional candidate/config snapshot: a final pass that
+only appends repo candidates extends the same registry, while a changed prefix
+receives bounded `shutdown` before being rebuilt. Live registry replacement uses
+the same shutdown/startup lifecycle. A factory that throws is rolled back to its
+pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
+session.
 
 ## Host-served runtime modules
 
@@ -59,25 +59,23 @@ Extension files import `react`, `@opentui/*`, and `hunkdiff/extension` as
 host-served runtime modules (`src/extensions/hostRuntimeModules.ts`): a
 per-extension-directory Bun loader hook transpiles extension source and
 rewrites those specifiers to prefixed virtual modules backed by the host's
-own instances. That identity is what lets `registerSidebarView` components
+own instances. That identity is what lets `registerPane` components
 render inside the app's React tree with working hooks. The module header
 documents why the obvious alternatives don't work (process-wide specifier
 claims break the host's lazy imports; the loaders resolve lazily so headless
 commands never pay OpenTUI's native-library extraction).
 
-## Sidebar system
+## Four-edge pane system
 
-Sidebar registration is additive: any number of views, placed left or right
-of the review stream, open/closed per view, `replacesDefault` to stand in
-for the bundled file navigation. `src/ui/lib/sidebarPanes.ts` is the pane
-model — session view list, open-state reconciliation across reloads, and the
-layout plan deciding which open panes fit at what width.
-`src/ui/components/panes/ExtensionSidebarPane.tsx` mounts one view: frozen
-file views in, guarded actions out, error boundary scoped to the
-registration identity. The frozen views fill `changeType` and the public
-`hunks` summaries from the opaque metadata at the view boundary
-(`src/extensions/events.ts`, deriving through `src/core/hunkSummary.ts` — the
-same helper the agent session surface reports hunks with).
+`src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
+plan for panes, dividers, and review bounds. Left/right panes consume columns;
+top/bottom panes consume rows from the central review column, outside review
+stream coordinates.
+
+`src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions and
+failure containment. `DiffPane` exposes optional current-line paint without
+publishing Pierre rows, plans, cursor keys, or caches. Deprecated sidebar APIs
+normalize into this same registry and layout path.
 
 ## File-view system
 
@@ -138,13 +136,9 @@ commands. Extension
 `registerCommand` entries join the same table via
 `src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
 chord at a time and detected by probing matchers with a synthesized event
-(`src/lib/commandKeys.ts`). Command handlers receive sidebar open/close
-controls, which is how a registered key opens an extension's sidebar, plus a
-`selection` snapshot resolved by `src/ui/lib/extensionSelection.ts` from the
-same frozen file views the sidebar panes render — one conversion feeding both
-surfaces, so a command and a sidebar can never disagree about what is selected.
-App reads the snapshot through a ref when a command fires, keeping the dispatch
-table stable as the review moves.
+(`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
+`src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
+panes render. App reads it through a ref so the dispatch table stays stable.
 
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
@@ -210,16 +204,22 @@ none — which is why the visible menu list is derived from the menus record
 
 ## VCS adapters
 
-`src/core/vcs/index.ts` is the single assembly point ordering bundled + user
-adapters by `detectionPriority` (Git is the baseline at 0; jj 200 / sl 100
-sit above it for colocated checkouts — the constants in
-`src/extension-api/types.ts` document the reasoning). Detection is uniform
-across tiers: nearest checkout wins, priority breaks equal-distance ties, an
-explicit `vcs` id a loaded backend owns beats detection
-(`src/extensions/apply.ts`). `src/extensions/vcsPatchResult.ts` is the one
-conversion boundary where a published `ExtensionVcsPatchResult` becomes
-Hunk's internal diff model — anything a backend needs that cannot be
-expressed publicly is a real gap in the contract.
+`src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
+detection, and operation dispatch. `src/app/vcsCatalog.ts` composes bundled
+registrations, while `src/app/sessionBootstrap.ts` extends that catalog with
+accepted user adapters and threads the same value through loading, reload, and
+watch. Detection is uniform across tiers: nearest checkout wins, priority breaks
+equal-distance ties, and an explicit `vcs` id owned by the catalog wins.
+
+Provider implementations — command construction, spawning, error translation,
+and exact-source reading — live entirely under
+`src/extensions/default/vcs/<provider>/`. `src/extensions/vcsPatchResult.ts` is
+the one conversion boundary where a published `ExtensionVcsPatchResult`
+becomes Hunk's internal diff model, including structural `too-large` source
+results. `src/core/projectRoot.ts` treats `.hunk` as a provider-independent
+bootstrap marker and also consults the available catalog; startup performs a
+second root/config pass when a global, config-path, or CLI adapter recognizes a
+repository unavailable to the bundled catalog.
 
 ## Public contract rules
 

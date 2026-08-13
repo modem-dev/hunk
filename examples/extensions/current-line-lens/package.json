@@ -1,0 +1,9 @@
+{
+  "name": "hunk-current-line-lens-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.tsx"
+    ]
+  }
+}

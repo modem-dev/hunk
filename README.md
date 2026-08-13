@@ -44,13 +44,21 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
+Or with [mise](https://mise.jdx.dev) (macOS and Linux):
+
+```bash
+mise use -g hunk
+```
+
 Requirements:
 
-- Node.js 18+
 - macOS, Linux, or Windows
+- Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
+
+> Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
 ## Quick start
 
@@ -231,9 +239,22 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
+Extensions shared as git repositories install straight from their host, and a
+`hunk-extension` GitHub topic marks community ones:
+
+```bash
+hunk extension install acme/hunk-word-diff@v1.2.0   # or git:host/path, a URL, a local path
+hunk extension list                                 # then update [name] / remove <name>
+```
+
+Browse community extensions at
+[github.com/topics/hunk-extension](https://github.com/topics/hunk-extension);
+publish yours by pushing the extension to a repository root and adding that
+topic.
+
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
-and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
-include [review triage](examples/extensions/review-triage/), an optional
+publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
+Installable examples include [review triage](examples/extensions/review-triage/), an optional
 [rendered Markdown file view](examples/extensions/rendered-markdown/), and a
 [Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 

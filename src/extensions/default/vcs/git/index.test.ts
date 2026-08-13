@@ -8,7 +8,7 @@ import type {
   ExtensionVcsOperations,
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
-} from "../../../../extension-api/types";
+} from "hunkdiff/extension";
 
 // The adapter is written against the published contract, so the tests read it
 // through that contract too — including the capabilities Git is the only

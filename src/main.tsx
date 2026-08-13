@@ -26,6 +26,35 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "extension-manage") {
+    const [{ runExtensionManageCommand }, readline] = await Promise.all([
+      import("./extensions/manage/cli"),
+      import("node:readline/promises"),
+    ]);
+    // A confirmation needs a real terminal on both sides; piped runs use --yes.
+    const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+    process.exit(
+      await runExtensionManageCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+        confirm: canConfirm
+          ? async (question) => {
+              const prompt = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+              });
+              try {
+                const answer = await prompt.question(question);
+                return ["y", "yes"].includes(answer.trim().toLowerCase());
+              } finally {
+                prompt.close();
+              }
+            }
+          : undefined,
+      }),
+    );
+  }
+
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
     process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));

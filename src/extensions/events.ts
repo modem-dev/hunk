@@ -9,7 +9,7 @@ import type { Hunk } from "@pierre/diffs";
 import type {
   ExtensionDiffHunk,
   ExtensionEventContext,
-  ExtensionSidebarControls,
+  ExtensionPaneControls,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
 import { summarizeHunk } from "../core/hunkSummary";
@@ -288,14 +288,14 @@ function toHandlerPayload<Event extends ExtensionEventName>(
   }) as ExtensionEventPayloads[Event];
 }
 
-/** Sidebar controls used only before the mounted app has installed live controls. */
-function unavailableSidebarControls(
+/** Pane controls used only before the mounted app has installed live controls. */
+function unavailablePaneControls(
   result: ExtensionLoadResult,
   extensionId: string,
-): ExtensionSidebarControls {
+): ExtensionPaneControls {
   const unavailable = (method: string, viewId: string) => {
     result.context.notify(
-      `Extension ${extensionId} cannot ${method} sidebar view "${viewId}" before the app is ready`,
+      `Extension ${extensionId} cannot ${method} pane "${viewId}" before the app is ready`,
       "warning",
     );
   };
@@ -313,17 +313,23 @@ function createEventContext(
   result: ExtensionLoadResult,
   extensionId: string,
 ): ExtensionEventContext {
-  return (
-    result.eventContextProvider?.(extensionId) ?? {
-      ...result.context,
-      sidebars: unavailableSidebarControls(result, extensionId),
-      events: {
-        emit(event, payload) {
-          emitExtensionCustomEvent(result, event, payload);
-        },
+  const provided = result.eventContextProvider?.(extensionId);
+  if (provided) {
+    return provided;
+  }
+
+  // The deprecated name is an alias, not another control path.
+  const panes = unavailablePaneControls(result, extensionId);
+  return {
+    ...result.context,
+    panes,
+    sidebars: panes,
+    events: {
+      emit(event, payload) {
+        emitExtensionCustomEvent(result, event, payload);
       },
-    }
-  );
+    },
+  };
 }
 
 /**
@@ -337,13 +343,8 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
   result: ExtensionLoadResult,
   event: Event,
   rawPayload: ExtensionEventPayloads[Event],
-  /** Restrict delivery to handlers owned by these extensions; all of them when omitted. */
-  extensionIds?: ReadonlySet<string>,
 ): Promise<void>[] {
-  const registered = result.registry.eventHandlers[event];
-  const handlers = extensionIds
-    ? registered.filter((entry) => extensionIds.has(entry.extensionId))
-    : registered;
+  const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
 
   if (handlers.length === 0) {
@@ -387,7 +388,7 @@ export function emitExtensionCustomEvent(
   event: string,
   rawPayload: unknown,
 ) {
-  if (!result) {
+  if (!result || result.registry.eventBusPhase === "closed") {
     return;
   }
 
@@ -457,29 +458,6 @@ export function emitExtensionEvent<Event extends ExtensionEventName>(
 }
 
 /**
- * Emit one lifecycle event to a named subset of the loaded extensions.
- *
- * This exists for `startup`, which is a per-extension promise ("once, after the
- * app mounts with its first changeset") rather than a per-session one. Granting
- * repo trust mid-session loads extensions that missed the mount emit entirely,
- * and re-emitting to everyone would fire `startup` a second time for the
- * extensions that already had it. Delivering to just the newly loaded ones
- * keeps both halves of the promise.
- */
-export function emitExtensionEventToExtensions<Event extends ExtensionEventName>(
-  result: ExtensionLoadResult | undefined,
-  event: Event,
-  payload: ExtensionEventPayloads[Event],
-  extensionIds: ReadonlySet<string>,
-) {
-  if (!result || extensionIds.size === 0) {
-    return;
-  }
-
-  runExtensionEventHandlers(result, event, payload, extensionIds);
-}
-
-/**
  * Emit one lifecycle event and wait for its async handlers, up to a bound.
  *
  * Only `shutdown` needs this: everything else is fire-and-forget. The returned
@@ -512,4 +490,27 @@ export async function emitExtensionEventBounded<Event extends ExtensionEventName
   if (timer) {
     clearTimeout(timer);
   }
+}
+
+/** Revoke one runtime's UI/event authority before asynchronous teardown begins. */
+export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefined) {
+  if (!result || result.registry.eventBusPhase === "closed") {
+    return false;
+  }
+
+  result.registry.emitCustomEvent = undefined;
+  result.registry.eventBusPhase = "closed";
+  result.registry.pendingCustomEvents.length = 0;
+  return true;
+}
+
+/** Shut down one retired extension runtime after synchronously revoking its authority. */
+export async function retireExtensionLoadResult(
+  result: ExtensionLoadResult | undefined,
+): Promise<void> {
+  if (!revokeExtensionLoadResult(result)) {
+    return;
+  }
+
+  await emitExtensionEventBounded(result, "shutdown", {});
 }

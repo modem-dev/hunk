@@ -83,13 +83,13 @@ describe("readHunkSessionDaemonCapabilities", () => {
     await expect(readHunkSessionDaemonCapabilities(config)).resolves.toBeNull();
   });
 
-  test("rejects version 5 daemons that drop session experimental-feature fields", async () => {
+  test("rejects daemons from the previous selector wire version", async () => {
     const { config } = await listen((_request: IncomingMessage, response: ServerResponse) => {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
           version: HUNK_SESSION_API_VERSION,
-          daemonVersion: 5,
+          daemonVersion: HUNK_SESSION_DAEMON_VERSION - 1,
           actions: ["comment-add", "comment-apply"],
         }),
       );
