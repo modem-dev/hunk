@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   agentOptionFlagName,
+  isHighlightTone,
   optionKeyFromFlag,
   type AgentCommandOption,
   SESSION_AGENT_COMMAND_LIST,
   SESSION_AGENT_COMMANDS,
   SESSION_COMMENT_COMMAND_LIST,
+  SESSION_HIGHLIGHT_COMMAND_LIST,
   type SessionCommandOptions,
 } from "./surface";
 
@@ -21,6 +23,10 @@ describe("session agent command surface", () => {
       "session comment list",
       "session comment rm",
       "session comment clear",
+    ]);
+    expect(SESSION_HIGHLIGHT_COMMAND_LIST.map((spec) => spec.name)).toEqual([
+      "session highlight add",
+      "session highlight clear",
     ]);
   });
 
@@ -103,5 +109,22 @@ describe("session agent command surface", () => {
         expect(option.parse).toBe("positiveInt");
       }
     }
+  });
+
+  test("parses highlight offsets as 0-based start and positive exclusive end", () => {
+    const options: readonly AgentCommandOption[] = SESSION_AGENT_COMMANDS["highlight-add"].options;
+    const parseByFlag = new Map(
+      options.map((option) => [agentOptionFlagName(option), option.parse]),
+    );
+    // `--start` accepts 0 because offsets are 0-based; `--end` is exclusive so it starts at 1.
+    expect(parseByFlag.get("--start")).toBe("nonNegativeInt");
+    expect(parseByFlag.get("--end")).toBe("positiveInt");
+  });
+
+  test("recognizes exactly the five shared highlight tones", () => {
+    for (const tone of ["match", "current", "info", "warning", "error"]) {
+      expect(isHighlightTone(tone)).toBe(true);
+    }
+    expect(isHighlightTone("loud")).toBe(false);
   });
 });
