@@ -516,20 +516,37 @@ export function createPtyHarness() {
    * test shows only the two changed source files, keeping snapshot assertions
    * about the extension's effect unambiguous.
    */
-  function createRepoExtensionFixture(source: string, entryName = "fixture.ts") {
+  function createRepoExtensionFixture(
+    source: string,
+    entryName = "fixture.ts",
+    changedFiles: ChangedFileSpec[] = [
+      {
+        path: "alpha.ts",
+        before: "export const alpha = 1;\n",
+        after: "export const alphaValue = 2;\n",
+      },
+      {
+        path: "beta.ts",
+        before: "export const beta = 1;\n",
+        after: "export const betaValue = 2;\n",
+      },
+    ],
+  ) {
     const dir = makeTempDir("hunk-tuistory-extension-");
 
     runGit(["init"], dir);
     runGit(["config", "user.name", "Pi"], dir);
     runGit(["config", "user.email", "pi@example.com"], dir);
-    writeText(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-    writeText(join(dir, "beta.ts"), "export const beta = 1;\n");
+    for (const file of changedFiles) {
+      writeText(join(dir, file.path), file.before);
+    }
     writeText(join(dir, ".hunk", "extensions", entryName), source);
     runGit(["add", "."], dir);
     runGit(["commit", "-m", "initial"], dir);
 
-    writeText(join(dir, "alpha.ts"), "export const alphaValue = 2;\n");
-    writeText(join(dir, "beta.ts"), "export const betaValue = 2;\n");
+    for (const file of changedFiles) {
+      writeText(join(dir, file.path), file.after);
+    }
 
     return { dir };
   }

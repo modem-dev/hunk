@@ -139,6 +139,47 @@ const LINE_HIGHLIGHT_EXTENSION_SOURCE = `export default function (hunk) {
 }
 `;
 
+/**
+ * A single hunk tall enough that its anchor and its last lines cannot share a
+ * viewport, with one unmistakable token near the bottom.
+ *
+ * Every line differs, so git emits one hunk spanning the whole file — the shape
+ * `selectHunk` cannot navigate usefully.
+ */
+const REVEAL_LINE_TARGET = 111;
+const REVEAL_LINE_TOKEN = "REVEALLINETOKEN";
+const TALL_HUNK_FILE = {
+  path: "tall.ts",
+  before: `${Array.from(
+    { length: 130 },
+    (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+  ).join("\n")}\n`,
+  after: `${Array.from({ length: 130 }, (_, index) =>
+    index + 1 === REVEAL_LINE_TARGET
+      ? `export const needle = "${REVEAL_LINE_TOKEN}";`
+      : `export const line${String(index + 1).padStart(3, "0")} = ${index + 1001};`,
+  ).join("\n")}\n`,
+};
+
+/**
+ * An extension that jumps to one exact line of the reviewed file.
+ *
+ * The second command asks for a line no hunk covers, so the same session shows
+ * both halves of the contract: a reachable line scrolls, an unreachable one
+ * comes back as a warning naming the extension.
+ */
+const REVEAL_LINE_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "jump", title: "Jump to the needle", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+  });
+  hunk.registerCommand({ id: "jump-nowhere", title: "Jump past the file", key: "f8" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", 9001);
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -685,6 +726,55 @@ describe("PTY extensions", () => {
       await session.press("f8");
       const warned = await session.waitForText(/unknown line highlighter/, { timeout: 20_000 });
       expect(warned).toContain('Extension fixture targeted unknown line highlighter "nope"');
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine lands a line deep inside one tall hunk near the viewport top", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(REVEAL_LINE_EXTENSION_SOURCE, "fixture.ts", [
+      TALL_HUNK_FILE,
+    ]);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts"),
+        20_000,
+      );
+      // This is the bug: the hunk anchor is on screen, the marked line is pages below it.
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const revealed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      // Near the top of a 24-row terminal, where every other Hunk reveal lands:
+      // a little below the viewport edge, not scrolled just barely into view.
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
+
+      await session.press("f8");
+      const warned = await session.waitForText(/revealLine found no/, { timeout: 20_000 });
+      expect(warned).toContain("Extension fixture revealLine found no new line 9001");
     } finally {
       session.close();
     }
