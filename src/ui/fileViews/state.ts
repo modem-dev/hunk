@@ -1,6 +1,12 @@
 import { fileViewKey, qualifiedViewKey } from "../../extensions/apply";
 import type { ExtensionDiffFile } from "../../extension-api/types";
 import type { RegisteredFileView } from "../../extensions/types";
+import {
+  bumpScopedEpoch,
+  reconcileScopedEpochs,
+  scopedEpoch,
+  type ScopedEpochState,
+} from "../lib/scopedEpochs";
 
 /** Raw is implicit: only files explicitly switched away from raw have an entry. */
 export type FileViewSelectionState = Readonly<Record<string, string>>;
@@ -81,53 +87,16 @@ export function resolveFileViewSelectionTarget({
 }
 
 /**
- * Layout invalidation counters for one session, in two kinds of key.
+ * Layout invalidation counters for one session.
  *
- * One encoded tuple kind counts view-wide invalidation; another includes a
- * reviewed file id and scopes invalidation to that file's presentation. One
- * map holds both so preparation has a single place to consult, and
- * `fileViewLayoutEpoch` is the only thing that knows how the two compose.
- *
- * Absent means zero: a view only earns an entry once something invalidates it,
- * so the common session never carries any epoch state at all.
+ * The shared scoped-epoch policy (`src/ui/lib/scopedEpochs.ts`) keyed by
+ * registered view, optionally narrowed to one reviewed file's presentation.
  */
-export type FileViewEpochState = ReadonlyMap<string, number>;
+export type FileViewEpochState = ScopedEpochState;
 
-/** Encode a view-wide or file-scoped epoch key without constraining extension-owned ids. */
-function fileViewEpochKey(viewKey: string, fileId?: string) {
-  // JSON string tuples stay unambiguous even when a registered id contains control characters.
-  return JSON.stringify(fileId === undefined ? [viewKey] : [viewKey, fileId]);
-}
-
-/** Decode an internally generated epoch key, ignoring malformed external map entries. */
-function parseFileViewEpochKey(key: string): readonly [viewKey: string, fileId?: string] | null {
-  try {
-    const parsed: unknown = JSON.parse(key);
-    if (
-      !Array.isArray(parsed) ||
-      (parsed.length !== 1 && parsed.length !== 2) ||
-      !parsed.every((part) => typeof part === "string")
-    ) {
-      return null;
-    }
-    return parsed as [string, string?];
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The invalidation epoch one `(file, view)` preparation is retained under.
- *
- * View-wide and file-scoped counters are summed rather than compared, so
- * bumping either always moves the result and neither can mask the other
- * whatever order they arrive in. Both only ever count up.
- */
+/** The invalidation epoch one `(file, view)` preparation is retained under. */
 export function fileViewLayoutEpoch(epochs: FileViewEpochState, viewKey: string, fileId: string) {
-  return (
-    (epochs.get(fileViewEpochKey(viewKey)) ?? 0) +
-    (epochs.get(fileViewEpochKey(viewKey, fileId)) ?? 0)
-  );
+  return scopedEpoch(epochs, viewKey, fileId);
 }
 
 /**
@@ -141,11 +110,7 @@ export function bumpFileViewEpoch(
   viewKey: string,
   fileId?: string,
 ): FileViewEpochState {
-  const key = fileViewEpochKey(viewKey, fileId);
-  // A fresh map identity is the signal preparation watches; mutating in place would be invisible.
-  const next = new Map(current);
-  next.set(key, (current.get(key) ?? 0) + 1);
-  return next;
+  return bumpScopedEpoch(current, viewKey, fileId);
 }
 
 /**
@@ -159,18 +124,7 @@ export function reconcileFileViewEpochs(
   fileIds: readonly string[],
   viewKeys: ReadonlySet<string>,
 ): FileViewEpochState {
-  if (current.size === 0) return current;
-  const validFileIds = new Set(fileIds);
-  const next = new Map<string, number>();
-  for (const [key, epoch] of current) {
-    const parsed = parseFileViewEpochKey(key);
-    if (!parsed) continue;
-    const [viewKey, fileId] = parsed;
-    if (viewKeys.has(viewKey) && (fileId === undefined || validFileIds.has(fileId))) {
-      next.set(key, epoch);
-    }
-  }
-  return next.size === current.size ? current : next;
+  return reconcileScopedEpochs(current, fileIds, viewKeys);
 }
 
 /** Reconcile per-file selections after filtering/reload removes files or views. */
