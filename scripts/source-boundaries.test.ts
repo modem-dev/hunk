@@ -30,10 +30,17 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-/** Read static and dynamic module specifiers from one source file. */
+/**
+ * Reads every module specifier one source file names: static imports and re-exports
+ * (both carry `from`), dynamic `import(...)`, and side-effect-only `import "..."` — the
+ * last matters most here, since a side-effect import is exactly how a renderer or
+ * platform dependency could slip past a containment check unnamed.
+ */
 function importSpecifiers(path: string) {
   const source = readFileSync(path, "utf8");
-  return [...source.matchAll(/(?:from\s*|import\s*\()["']([^"']+)["']/g)].map((match) => match[1]!);
+  return [...source.matchAll(/(?:from\s*|import\s*\(?\s*)["']([^"']+)["']/g)].map(
+    (match) => match[1]!,
+  );
 }
 
 /** Resolve one relative source import sufficiently for architectural containment checks. */
