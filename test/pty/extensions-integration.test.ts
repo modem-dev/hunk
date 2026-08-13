@@ -180,6 +180,38 @@ const REVEAL_LINE_EXTENSION_SOURCE = `export default function (hunk) {
 }
 `;
 
+/**
+ * An extension that jumps through pane actions captured at mount.
+ *
+ * This is the shape the less-search example uses: a keyboard mode cannot
+ * navigate, so it leaves the jump for the mounted pane, whose \`actions\` were
+ * minted on the pane's first render — before the diff pane had published any
+ * measured line cursors — and are documented to stay valid while the pane is
+ * mounted. A \`revealLine\` that reads its own stale closure instead of the
+ * live cursor list silently degrades this exact call to the hunk fallback.
+ */
+const REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE = `import { createElement } from "react";
+let capturedActions = null;
+export default function (hunk) {
+  hunk.registerPane({
+    id: "capture",
+    placement: "bottom",
+    defaultOpen: true,
+    height: { preferred: 1, min: 1, max: 1 },
+    component: (props) => {
+      if (capturedActions === null) capturedActions = props.actions;
+      return createElement("text", { content: "CAPTURE PANE", style: { fg: props.theme.text } });
+    },
+  });
+  hunk.registerCommand({ id: "jump-held", title: "Jump via held actions", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file && capturedActions) {
+      capturedActions.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+    }
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -775,6 +807,52 @@ describe("PTY extensions", () => {
       await session.press("f8");
       const warned = await session.waitForText(/revealLine found no/, { timeout: 20_000 });
       expect(warned).toContain("Extension fixture revealLine found no new line 9001");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine through pane actions held since mount still lands the line", async () => {
+    // The first deferred jump of a session runs against actions minted before
+    // any cursors were measured; it must land on the line, not the hunk anchor.
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(
+      REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE,
+      "fixture.ts",
+      [TALL_HUNK_FILE],
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts") && text.includes("CAPTURE PANE"),
+        20_000,
+      );
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const revealed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
     } finally {
       session.close();
     }

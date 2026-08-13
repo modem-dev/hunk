@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, StrictMode, useEffect, useState } from "react";
+import { act, StrictMode, useEffect, useRef, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
 import {
@@ -158,6 +158,7 @@ function ReviewControllerHarness({
   publishLineCursors = true,
   stmlEnabled,
   onController,
+  onFirstController,
   onSetFiles,
 }: {
   initialFiles: DiffFile[];
@@ -166,11 +167,20 @@ function ReviewControllerHarness({
   publishLineCursors?: boolean;
   stmlEnabled?: boolean;
   onController: (controller: ReviewController) => void;
+  /** Receive the first render's controller, before any cursors were published. */
+  onFirstController?: (controller: ReviewController) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
+  // Capture during render, as a memoized consumer's closure would: the effects
+  // below have not yet published measured cursors on the first pass.
+  const firstControllerRef = useRef<ReviewController | null>(null);
+  if (firstControllerRef.current === null) {
+    firstControllerRef.current = controller;
+    onFirstController?.(controller);
+  }
   const visibleFiles = controller.visibleFiles;
   const { expandedGapsByFileId, sourceStatusByFileId } = controller;
 
@@ -219,11 +229,13 @@ async function renderReviewController(
     noteGeometry,
     publishLineCursors,
     stmlEnabled,
+    onFirstController,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
     publishLineCursors?: boolean;
     stmlEnabled?: boolean;
+    onFirstController?: (controller: ReviewController) => void;
   } = {},
 ) {
   const controllerRef: { current: ReviewController | null } = { current: null };
@@ -234,6 +246,7 @@ async function renderReviewController(
       noteGeometry={noteGeometry}
       publishLineCursors={publishLineCursors}
       stmlEnabled={stmlEnabled}
+      onFirstController={onFirstController}
       onController={(nextController) => {
         controllerRef.current = nextController;
       }}
@@ -1870,6 +1883,47 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
       // A hunk selection reveal, not a line reveal: nothing measured the requested row.
       expect(expectValue(controllerRef.current).lineCursorRevealRequest.id).toBe(before.id);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a revealLine reference held from before cursors were measured still lands the line", async () => {
+    // A memoized extension pane keeps its mount-time `actions`, whose
+    // `revealLine` was minted on the first render — before the diff pane's
+    // effect published any measured cursors. That held reference must read the
+    // stops live: the session's first deferred search jump used to silently
+    // degrade to the hunk fallback because its closure still saw the empty
+    // pre-measurement list.
+    const firstControllerRef: { current: ReviewController | null } = { current: null };
+    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()], {
+      onFirstController: (controller) => {
+        firstControllerRef.current = controller;
+      },
+    });
+
+    try {
+      await flush(setup);
+      // The captured instance predates the cursor publication…
+      const first = expectValue(firstControllerRef.current);
+      // …while the current instance has long since seen the measured stops.
+      expect(expectValue(controllerRef.current).lineCursor).not.toBeNull();
+
+      let outcome: string | undefined;
+      await act(async () => {
+        outcome = first.revealLine("alpha", "new", 30);
+      });
+      await flush(setup);
+
+      expect(outcome).toBe("line");
+      expect(expectValue(controllerRef.current).lineCursor).toMatchObject({
+        fileId: "alpha",
+        hunkIndex: 2,
+        target: { side: "new", line: 30 },
+      });
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest.placement).toBe("reveal");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -596,6 +596,18 @@ export function useReviewController({
     [lineCursors, revealLineCursor],
   );
 
+  // `revealLine` is handed to surfaces that hold it across commits — a memoized
+  // extension pane keeps its mount-time `actions`, and an async command handler
+  // may navigate long after its dispatch render. Reading these through the
+  // callback's own closure silently downgraded such a call to the hunk
+  // fallback: at mount the pane captured a `revealLine` whose cursor list was
+  // still the pre-measurement empty state, so the first deferred jump of a
+  // session landed on the hunk anchor. Refs keep any held reference live.
+  const lineCursorsForRevealRef = useRef(lineCursors);
+  lineCursorsForRevealRef.current = lineCursors;
+  const visibleFilesRef = useRef(visibleFiles);
+  visibleFilesRef.current = visibleFiles;
+
   /**
    * Step the selection through one navigable scope.
    *
@@ -619,13 +631,13 @@ export function useReviewController({
    */
   const revealLine = useCallback(
     (fileId: string, side: "old" | "new", line: number): RevealedLineResult => {
-      const cursor = findLineCursorAt(lineCursors, fileId, side, line);
+      const cursor = findLineCursorAt(lineCursorsForRevealRef.current, fileId, side, line);
       if (cursor) {
         revealLineCursor(cursor, "reveal");
         return "line";
       }
 
-      const file = visibleFiles.find((candidate) => candidate.id === fileId);
+      const file = visibleFilesRef.current.find((candidate) => candidate.id === fileId);
       const hunkIndex = file ? reviewHunkIndexForLine(file.metadata.hunks, side, line) : -1;
       if (hunkIndex < 0) {
         return "none";
@@ -634,7 +646,7 @@ export function useReviewController({
       selectHunk(fileId, hunkIndex);
       return "hunk";
     },
-    [lineCursors, revealLineCursor, selectHunk, visibleFiles],
+    [revealLineCursor, selectHunk],
   );
 
   /** Set the shared file filter. */
