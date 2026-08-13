@@ -387,6 +387,13 @@ export function applyLineHighlightsToSpans(
     const spanEnd = col + spanWidth;
     const localCuts = [...cuts]
       .filter((cut) => cut > spanStart && cut < spanEnd)
+      // A cut inside a wide glyph would slice it into a dropped half and a pad
+      // space, costing the row one column and breaking the one contract
+      // everything upstream relies on: paint never changes rendered width.
+      // Cluster snapping upstream should make this unreachable, but the
+      // invariant is enforced here, where it could break: a mid-glyph cut is
+      // snapped away and the glyph paints whole under one tone.
+      .filter((cut) => sliceTextByWidth(span.text, 0, cut - spanStart).width === cut - spanStart)
       .sort((a, b) => a - b);
 
     let pieceStart = spanStart;

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { ValidatedLineHighlight } from "../highlights/validate";
+import { measureTextWidth } from "../lib/text";
+import { expandDiffTabs } from "./codeColumns";
 import {
   applyLineHighlightsToSpans,
   buildLineHighlightPaintIndex,
@@ -293,5 +296,90 @@ describe("applyLineHighlightsToSpans", () => {
       { text: "\u{1F44D}", bg: "bg-match" },
       { text: "ok" },
     ]);
+  });
+});
+
+describe("paint geometry neutrality", () => {
+  // The one contract everything upstream relies on: applying highlights can
+  // recolor spans but never change the rendered width of a line. A column cut
+  // landing *inside* a wide glyph would slice it into a dropped half and a pad
+  // space, silently costing the row one column — so this pins the composed
+  // guarantee that `markToColRange`'s cluster snapping only ever produces cuts
+  // on glyph boundaries, exhaustively over hostile offsets on hostile text.
+  const HOSTILE_LINES = [
+    // CJK identifiers and full-width punctuation around ASCII.
+    "const \u540D\u524D = '\u65E5\u672C\u8A9E\u30C6\u30AD\u30B9\u30C8'; // \u{1F389} emoji",
+    // Combining accent, ZWJ emoji sequence, surrogate pairs.
+    "e\u0301combining + \u{1F469}\u200D\u{1F4BB} zwj \u{1F44D}",
+    // Tabs interleaved with wide glyphs so expansion shifts columns too.
+    "\tif (\u5024 === \u771F) {\treturn \u7D50\u679C;\t}",
+  ] as const;
+
+  test("arbitrary column cuts never change rendered width at the paint layer", () => {
+    // Direct contract on `applyLineHighlightsToSpans` with RAW column ranges,
+    // including cuts landing inside wide glyphs — the guard must snap them
+    // away rather than slicing a glyph into a dropped half and a pad space.
+    for (const line of HOSTILE_LINES) {
+      const text = expandDiffTabs(line, DEFAULT_TAB_WIDTH);
+      const spans: RenderSpan[] = [{ text, fg: "#ffffff" }];
+      const width = measureTextWidth(text);
+
+      for (let startCol = 0; startCol < width; startCol += 1) {
+        for (let endCol = startCol + 1; endCol <= width; endCol += 1) {
+          const painted = applyLineHighlightsToSpans(
+            spans,
+            [{ startCol, endCol, tone: "match" }],
+            (tone) => ({ bg: `bg-${tone}` }),
+          );
+          const paintedText = painted.map((span) => span.text).join("");
+          if (measureTextWidth(paintedText) !== width) {
+            throw new Error(
+              `width ${width} -> ${measureTextWidth(paintedText)} at cols [${startCol}, ${endCol})`,
+            );
+          }
+          expect(paintedText).toBe(text);
+        }
+      }
+    }
+  });
+
+  test("marks never change a line's rendered width, at every offset pair", () => {
+    for (const [lineIndex, line] of HOSTILE_LINES.entries()) {
+      const file = createTestDiffFile({
+        before: lines("placeholder"),
+        after: lines(line),
+        id: `hostile-${lineIndex}`,
+        path: `hostile-${lineIndex}.ts`,
+      });
+      const spans: RenderSpan[] = [
+        { text: expandDiffTabs(line, DEFAULT_TAB_WIDTH), fg: "#ffffff" },
+      ];
+      const originalWidth = measureTextWidth(spans[0]!.text);
+
+      // Every [start, end) code-unit pair, including mid-surrogate, mid-ZWJ,
+      // and mid-combining offsets an extension could plausibly emit.
+      for (let start = 0; start < line.length; start += 1) {
+        for (let end = start + 1; end <= line.length; end += 1) {
+          const index = buildLineHighlightPaintIndex({
+            file,
+            marks: [mark("new", 1, start, end)],
+          });
+          const ranges = index?.get(lineHighlightPaintKey("new", 1));
+          if (!ranges) continue;
+
+          const painted = applyLineHighlightsToSpans(spans, ranges, (tone) => ({
+            bg: `bg-${tone}`,
+          }));
+          const paintedWidth = measureTextWidth(painted.map((span) => span.text).join(""));
+          if (paintedWidth !== originalWidth) {
+            throw new Error(
+              `width ${originalWidth} -> ${paintedWidth} for offsets [${start}, ${end}) on line ${lineIndex}`,
+            );
+          }
+          // Text content itself must also survive byte-for-byte.
+          expect(painted.map((span) => span.text).join("")).toBe(spans[0]!.text);
+        }
+      }
+    }
   });
 });
