@@ -33,4 +33,4 @@ git diff --no-color | hunk patch -
 
 Use `-` to make stdin explicit. Stdin is a snapshot, so it cannot use `--watch`; write the patch to a file when you need continuous reloads.
 
-Patch-like input is parsed into the same file and hunk model as repository input. Non-diff text belongs in [pager mode](/docs/workflows/git-pager-and-difftool/), where Hunk can fall back to plain text.
+Hunk parses patch-like input into the same file and hunk model as repository input. Non-diff text belongs in [pager mode](/docs/workflows/git-pager-and-difftool/), where Hunk can fall back to plain text.

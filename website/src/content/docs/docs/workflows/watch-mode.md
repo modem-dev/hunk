@@ -23,7 +23,7 @@ hunk patch changes.patch --watch
 
 ## Know what can reload
 
-Watch mode requires input Hunk can open again. Stdin-backed patches and stdin agent context cannot be watched:
+Watch mode requires input Hunk can open again, so stdin-backed patches and stdin agent context cannot be watched:
 
 ```bash
 # Snapshot only; --watch would fail
@@ -34,4 +34,4 @@ Save changing output to a file or use a repository-backed command instead.
 
 ## Refresh manually
 
-Press `r` for a reloadable review when you need an immediate refresh without continuous watch mode. A live agent can also use `hunk session reload` to replace the session's entire input.
+In a reloadable review, press `r` when you need an immediate refresh without continuous watch mode. A live agent can also use `hunk session reload` to replace the session's entire input.

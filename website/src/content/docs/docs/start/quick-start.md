@@ -13,7 +13,7 @@ From a repository:
 hunk diff
 ```
 
-This includes tracked changes and untracked files. Use `--exclude-untracked` when you intentionally want tracked changes only.
+Working-tree reviews include untracked files alongside tracked changes; `--exclude-untracked` limits them to tracked changes only.
 
 Inside Hunk:
 
@@ -24,7 +24,7 @@ Inside Hunk:
 
 ![Hunk showing a multi-file review stream with a file sidebar, split diff rows, and restrained terminal chrome](/docs/images/review-stream.webp)
 
-The sidebar indexes the same continuous stream shown in the main pane. Selecting a file jumps to it without hiding the rest of the changeset.
+The sidebar indexes the same continuous stream shown in the main pane, so selecting a file jumps to it without hiding the rest of the changeset.
 
 ## Review a commit
 

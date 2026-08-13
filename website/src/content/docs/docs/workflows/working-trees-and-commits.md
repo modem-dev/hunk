@@ -31,7 +31,7 @@ hunk diff main
 hunk diff main...feature -- src/core
 ```
 
-Arguments after `--` are pathspecs. Before `--`, the target is interpreted by the detected VCS.
+Arguments after `--` are pathspecs; before `--`, the detected VCS interprets the target.
 
 ## Review a commit
 
@@ -44,7 +44,7 @@ hunk show HEAD~2 -- README.md src/ui
 
 ## Review a stash
 
-Git repositories can open a stash directly:
+In a Git repository, open a stash directly:
 
 ```bash
 hunk stash show
