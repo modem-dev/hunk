@@ -110,6 +110,35 @@ export default function (hunk) {
 }
 `;
 
+/**
+ * An extension marking characters inside the reviewed diff lines.
+ *
+ * PTY snapshots carry text only, so the visible assertions are that the
+ * highlighted review renders unchanged text (paint never moves geometry) and
+ * that the refresh controls route: a valid refresh answers with the fixture's
+ * own toast, an unknown id with the host's attribution warning. The paint
+ * decisions themselves (columns, tones, backgrounds) are unit-tested in
+ * src/ui/diff/lineHighlightPaint.test.ts and rowStyle.test.ts.
+ */
+const LINE_HIGHLIGHT_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerLineHighlighter({
+    id: "needles",
+    highlight({ file }) {
+      if (!file.path.includes("alpha")) return null;
+      // Mark "alphaValue" on the added line: export const alphaValue = 2;
+      return [{ side: "new", line: 1, range: [13, 23], tone: "match" }];
+    },
+  });
+  hunk.registerCommand({ id: "refresh-marks", title: "Refresh marks", key: "f7" }, (ctx) => {
+    ctx.highlights.refresh("needles");
+    ctx.notify("marks refreshed");
+  });
+  hunk.registerCommand({ id: "refresh-unknown", title: "Refresh unknown", key: "f8" }, (ctx) => {
+    ctx.highlights.refresh("nope");
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -609,6 +638,53 @@ describe("PTY extensions", () => {
         (text) => !/Vim navigation.*Esc exits/.test(text),
         20_000,
       );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a line highlighter marks the diff without disturbing it and refresh routes through controls", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(LINE_HIGHLIGHT_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      // The marked line renders its exact text: highlights repaint backgrounds
+      // and can never change, split, or reflow the code they sit on.
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const alphaValue = 2;"),
+        20_000,
+      );
+      expect(review).toContain("alpha.ts");
+      // A failing highlighter would have surfaced as an attributed warning toast.
+      expect(review).not.toContain("line highlighter");
+      // The first keypress after the initial paint can be dropped before the
+      // app subscribes its handler; prove the keyboard is live first.
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const refreshed = await session.waitForText(/marks refreshed/, { timeout: 20_000 });
+      // The valid refresh raised only the fixture's own toast, no host warning.
+      expect(refreshed).not.toContain("unknown line highlighter");
+      // The re-derived marks still leave the reviewed text untouched.
+      expect(refreshed).toContain("export const alphaValue = 2;");
+
+      await session.press("f8");
+      const warned = await session.waitForText(/unknown line highlighter/, { timeout: 20_000 });
+      expect(warned).toContain('Extension fixture targeted unknown line highlighter "nope"');
     } finally {
       session.close();
     }
