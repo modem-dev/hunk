@@ -36,7 +36,7 @@ The repository-level `vercel.json` defines the install command, build command, A
 - **Domain:** `hunk.dev` and `www.hunk.dev`
 - **Optional environment variable:** `GITHUB_TOKEN` for authenticated build-time star counts
 
-Vercel should deploy pushes to `main` after the website and repository checks pass. Pull requests can use preview deployments from the same project.
+Configure Vercel to deploy pushes to `main` after the website and repository checks pass. Pull requests can use preview deployments from the same project.
 
 ## Cut over from `hunk-web`
 

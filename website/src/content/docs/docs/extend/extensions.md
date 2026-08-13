@@ -18,7 +18,7 @@ export default function (hunk: HunkExtensionAPI) {
 
 **The API is experimental**: `hunkdiff/extension` may change in breaking ways between minor releases while it stabilizes. Breaking changes are called out in release notes, and `hunk.apiVersion` identifies the surface an extension was written against.
 
-What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom panes](/docs/extend/custom-sidebars/).
+The companion pages cover what an extension can register: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom panes](/docs/extend/custom-sidebars/).
 
 Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bundled skill that maps these touchpoints for agents, the way `hunk skill path` does for reviewing.
 
@@ -68,7 +68,7 @@ Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `gi
 
 ## Bundled extensions
 
-Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
+Hunk's Git, Jujutsu, and Sapling backends and its built-in files pane use the same public extension API. Bundled extensions differ from yours in three ways:
 
 - statically imported, so they load before config resolution picks the session's VCS
 - implicitly trusted, with no `[extension.<id>]` config table

@@ -28,7 +28,7 @@ hunk.registerVcsAdapter({
 
 The ids Hunk ships with — `git`, `jj`, and `sl` — are reserved. An adapter that reuses one is skipped with a notice.
 
-`operations` is optional and may implement any of `working-tree-diff`, `revision-show`, and `stash-show`; an operation you leave out — or leaving the map off entirely — produces a clear "not supported" error for that command instead of a crash.
+`operations` is optional and may implement any of `working-tree-diff`, `revision-show`, and `stash-show`. Leaving out an operation — or the map entirely — produces a clear "not supported" error for that command instead of a crash.
 
 A `load` result is patch text plus how to label it. Everything else on it is optional, and each optional field buys one thing:
 

@@ -18,7 +18,7 @@ If a terminal omits one capability, keyboard navigation and stack layout remain 
 
 ## Remote sessions and multiplexers
 
-SSH, tmux, and similar layers can filter mouse, clipboard, keyboard, or color sequences. Verify the behavior in the underlying terminal, then ensure each intermediate layer forwards the relevant protocol. Use keyboard shortcuts when mouse reporting is captured by a multiplexer.
+SSH, tmux, and similar layers can filter mouse, clipboard, keyboard, or color sequences. Verify the behavior in the underlying terminal, then ensure each intermediate layer forwards the relevant protocol. Use keyboard shortcuts when a multiplexer captures mouse reporting.
 
 ## Windows notes
 

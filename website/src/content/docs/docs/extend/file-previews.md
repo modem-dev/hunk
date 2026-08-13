@@ -3,7 +3,7 @@ title: File previews
 description: Add opt-in file presentations that keep Hunk's review navigation, scrolling, and inline notes.
 ---
 
-`hunk.registerFileView(view)` lets an extension offer a different way to read a changed file. A Markdown extension can render headings and lists, a package extension can summarize dependency changes, and a CSS extension can put color swatches beside changed values.
+`hunk.registerFileView(view)` contributes a different way to read a changed file. A Markdown extension can render headings and lists, a package extension can summarize dependency changes, and a CSS extension can put color swatches beside changed values.
 
 A preview is still part of Hunk's normal review stream. Hunk keeps control of file ordering, measurement, scrolling, windowing, hunk navigation, selection, and inline notes. The extension describes deterministic rows; it does not replace the review pane.
 
@@ -70,7 +70,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Return `null` whenever the view cannot safely present a file. Hunk will keep or restore the raw diff. This smallest example deliberately omits source bindings; add them only to rows owned by exactly one hunk extent, as described below.
+Return `null` whenever the view cannot safely present a file; Hunk then keeps or restores the raw diff. This smallest example deliberately omits source bindings; add them only to rows owned by exactly one hunk extent, as described below.
 
 ### Matching
 
