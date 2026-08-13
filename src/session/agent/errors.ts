@@ -33,6 +33,10 @@ export const RELOAD_SEPARATOR_MESSAGE =
 /** `comment apply` invoked without opting into the stdin JSON batch. */
 export const COMMENT_APPLY_STDIN_MESSAGE = "Pass --stdin to read batch comments from stdin JSON.";
 
+/** `highlight add` invoked with an empty or inverted character range. */
+export const HIGHLIGHT_RANGE_MESSAGE =
+  "Highlight --end must be greater than --start; the range is [start, end) with an exclusive end.";
+
 /** The daemon is reachable but no live Hunk session has registered with it. */
 export const NO_ACTIVE_SESSIONS_MESSAGE =
   "No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.";
@@ -103,6 +107,14 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
   {
     quote: "Specify exactly one comment target",
     remedy: "pass `comment add` one of `--old-line` or `--new-line`.",
+  },
+  {
+    quote: "Specify exactly one highlight target",
+    remedy: "pass `highlight add` one of `--old-line` or `--new-line`.",
+  },
+  {
+    quote: "Highlight --end must be greater than --start",
+    remedy: "offsets are `[start, end)` UTF-16 code units into the line text; end is exclusive.",
   },
   {
     quote: "Specify either --next-comment or --prev-comment, not both.",

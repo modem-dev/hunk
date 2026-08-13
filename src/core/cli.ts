@@ -26,15 +26,20 @@ import {
   type SessionCommandOptions,
   COMMENT_DIRECTION_CONSTRAINT,
   COMMENT_TARGET_CONSTRAINT,
+  HIGHLIGHT_TARGET_CONSTRAINT,
+  HIGHLIGHT_TONES,
+  isHighlightTone,
   NAVIGATE_TARGET_CONSTRAINT,
   optionKeyFromFlag,
   SESSION_AGENT_COMMANDS,
   SESSION_AGENT_COMMAND_LIST,
   SESSION_COMMENT_COMMAND_LIST,
+  SESSION_HIGHLIGHT_COMMAND_LIST,
 } from "../session/agent/surface";
 import {
   COMMENT_APPLY_STDIN_MESSAGE,
   constraintViolationMessage,
+  HIGHLIGHT_RANGE_MESSAGE,
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "./tabWidth";
@@ -258,6 +263,20 @@ function parsePositiveInt(value: string) {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid positive integer: ${value}`);
+  }
+
+  return parsed;
+}
+
+/** Parse one required non-negative integer CLI value, accepting 0. */
+function parseNonNegativeInt(value: string) {
+  if (!/^(0|[1-9]\d*)$/.test(value)) {
+    throw new Error(`Invalid non-negative integer: ${value}`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid non-negative integer: ${value}`);
   }
 
   return parsed;
@@ -880,6 +899,8 @@ function buildSessionCommand(spec: AgentCommandSpec) {
       : command.option.bind(command);
     if (option.parse === "positiveInt") {
       register(option.flag, option.description, parsePositiveInt);
+    } else if (option.parse === "nonNegativeInt") {
+      register(option.flag, option.description, parseNonNegativeInt);
     } else {
       register(option.flag, option.description);
     }
@@ -1292,6 +1313,93 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
     }
 
     throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
+  }
+
+  if (subcommand === "highlight") {
+    const [highlightSubcommand, ...highlightRest] = rest;
+    if (!highlightSubcommand || highlightSubcommand === "--help" || highlightSubcommand === "-h") {
+      return {
+        kind: "help",
+        text: ["Usage:", ...sessionUsageLines(SESSION_HIGHLIGHT_COMMAND_LIST)].join("\n") + "\n",
+      };
+    }
+
+    if (highlightSubcommand === "add") {
+      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["highlight-add"]);
+
+      let parsedSessionId: string | undefined;
+      let parsedOptions: SessionCommandOptions<"highlight-add"> = {
+        file: "",
+        start: 0,
+        end: 0,
+      };
+
+      command.action(
+        (sessionId: string | undefined, options: SessionCommandOptions<"highlight-add">) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
+
+      if (highlightRest.includes("--help") || highlightRest.includes("-h")) {
+        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["highlight-add"]);
+      }
+
+      await parseStandaloneCommand(command, highlightRest);
+
+      enforceConstraint(HIGHLIGHT_TARGET_CONSTRAINT, parsedOptions);
+      if (parsedOptions.end <= parsedOptions.start) {
+        throw new Error(HIGHLIGHT_RANGE_MESSAGE);
+      }
+      const tone = parsedOptions.tone;
+      if (tone !== undefined && !isHighlightTone(tone)) {
+        throw new Error(`Highlight tone must be one of ${HIGHLIGHT_TONES.join(", ")}.`);
+      }
+
+      return {
+        kind: "session",
+        action: "highlight-add",
+        output: resolveJsonOutput(parsedOptions),
+        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+        filePath: parsedOptions.file,
+        side: parsedOptions.oldLine !== undefined ? "old" : "new",
+        line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
+        start: parsedOptions.start,
+        end: parsedOptions.end,
+        ...(tone !== undefined && isHighlightTone(tone) ? { tone } : {}),
+        reveal: parsedOptions.focus ?? false,
+      };
+    }
+
+    if (highlightSubcommand === "clear") {
+      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["highlight-clear"]);
+
+      let parsedSessionId: string | undefined;
+      let parsedOptions: SessionCommandOptions<"highlight-clear"> = {};
+
+      command.action(
+        (sessionId: string | undefined, options: SessionCommandOptions<"highlight-clear">) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
+
+      if (highlightRest.includes("--help") || highlightRest.includes("-h")) {
+        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["highlight-clear"]);
+      }
+
+      await parseStandaloneCommand(command, highlightRest);
+
+      return {
+        kind: "session",
+        action: "highlight-clear",
+        output: resolveJsonOutput(parsedOptions),
+        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+        filePath: parsedOptions.file,
+      };
+    }
+
+    throw new Error("Supported highlight subcommands are add and clear.");
   }
 
   throw new Error(`Unknown session command: ${subcommand}`);
