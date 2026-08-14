@@ -1418,7 +1418,8 @@ export function App({
     [themeSelectorItems],
   );
 
-  const pickThemeSelectorItem = useCallback(
+  /** Preview the theme under the pointer without committing it. */
+  const previewThemeSelectorItem = useCallback(
     (index: number) => {
       const item = themeSelectorItems[index];
       if (!item) {
@@ -1434,16 +1435,24 @@ export function App({
     [themeSelectorItems],
   );
 
-  const acceptThemeSelector = useCallback(() => {
-    const item = themeSelectorItems[themeSelectorState.selectedIndex];
-    if (!item) {
-      return;
-    }
+  /** Commit one theme and close the selector. */
+  const acceptThemeSelectorItem = useCallback(
+    (index: number) => {
+      const item = themeSelectorItems[index];
+      if (!item) {
+        return;
+      }
 
-    selectTheme(item.id);
-    // Close without a preview id; the committed theme id now supplies the same effective theme.
-    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-  }, [selectTheme, themeSelectorState.selectedIndex, themeSelectorItems]);
+      selectTheme(item.id);
+      // Close without a preview id; the committed theme id now supplies the same effective theme.
+      setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+    },
+    [selectTheme, themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    acceptThemeSelectorItem(themeSelectorState.selectedIndex);
+  }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
@@ -2442,9 +2451,9 @@ export function App({
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}
+            onAcceptItem={acceptThemeSelectorItem}
             onClose={closeThemeSelector}
-            onPickItem={pickThemeSelectorItem}
-            onScroll={moveThemeSelector}
+            onPreviewItem={previewThemeSelectorItem}
           />
         </Suspense>
       ) : null}

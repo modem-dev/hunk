@@ -44,10 +44,12 @@ describe("PTY chrome", () => {
       expect(themeSelector).toContain("Theme selector");
 
       await session.click(/github-light-default/);
-      await session.press("enter");
       const themeSelected = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Adds bonus export.") && !text.includes("Theme selector"),
+        (text) =>
+          text.includes("Adds bonus export.") &&
+          text.includes("Theme: github-light-default") &&
+          !text.includes("Theme selector"),
         5_000,
       );
       expect(themeSelected).toContain("Adds bonus export.");
