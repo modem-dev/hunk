@@ -448,7 +448,8 @@ describe("loadAppBootstrap", () => {
       "example.ts",
       "new-file.ts",
     ]);
-    expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
+    expect(bootstrap.changeset.files[1]?.metadata.type).toBe("new");
+    expect(bootstrap.changeset.files[1]?.patch).toContain("+export const added = true;");
   });
 
   slTest(
@@ -750,7 +751,8 @@ describe("loadAppBootstrap", () => {
     });
 
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["untracked.ts"]);
-    expect(bootstrap.changeset.files[0]?.patch).toContain("new file mode");
+    expect(bootstrap.changeset.files[0]?.metadata.type).toBe("new");
+    expect(bootstrap.changeset.files[0]?.patch).toContain("+export const added = true;");
   });
 
   test("still shows an untracked agent sidecar when it lives inside the repo", async () => {

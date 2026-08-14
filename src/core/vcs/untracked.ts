@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../binary";
 import { buildDiffFile, createSkippedLargeMetadata } from "../diffFile";
+import { createFileSourceFetcher } from "../fileSource";
 import { inspectLargeUntrackedFile } from "../../lib/largeFile";
 import { escapeUntrackedPatchPath } from "../../lib/patchPath";
 import { parseSingleFilePatch } from "../patch/singleFile";
@@ -55,9 +56,10 @@ export function buildFilesystemUntrackedDiffFile(
     );
   }
 
-  const patch = createTwoFilesPatch(
+  const safePath = escapeUntrackedPatchPath(filePath);
+  const body = createTwoFilesPatch(
     "/dev/null",
-    escapeUntrackedPatchPath(filePath),
+    safePath,
     "",
     fs.readFileSync(absolutePath, "utf8"),
     "",
@@ -65,7 +67,27 @@ export function buildFilesystemUntrackedDiffFile(
     { context: 3 },
   ).replaceAll("\r\n", "\n");
 
+  // Replace jsdiff's "===" banner with the git-style header every patch
+  // consumer parses, so the file is typed as an addition, not a change.
+  const patch = [
+    `diff --git a/${safePath} b/${safePath}`,
+    "new file mode 100644",
+    ...body
+      .split("\n")
+      .slice(1)
+      .map((line) => (line.startsWith("+++ ") ? `+++ b/${safePath}` : line)),
+  ].join("\n");
+
   return buildDiffFile(parseSingleFilePatch(patch, filePath), patch, index, sourcePrefix, null, {
     isUntracked: true,
+    // An added file has no old side; the new side reads the working copy so
+    // source-backed features treat synthesized untracked files like any other.
+    sourceFetcherBuilder: (file) =>
+      file.isBinary
+        ? undefined
+        : createFileSourceFetcher({
+            old: { kind: "none" },
+            new: { kind: "fs", absolutePath },
+          }),
   });
 }
