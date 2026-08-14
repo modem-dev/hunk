@@ -25,7 +25,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
-import { REVIEW_INTENT_TYPES, type ReviewIntentType } from "../src/core/review/intents";
+import { REVIEW_INTENT_TYPES } from "../src/core/review/intents";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../src/core/review/resources";
 import {
   MAX_REVIEW_EVENT_CHUNKS,

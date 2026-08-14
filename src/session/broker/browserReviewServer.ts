@@ -38,7 +38,7 @@ import {
   PayloadTooLargeError,
   readRequestTextWithLimit,
 } from "@hunk/session-broker-core";
-import { nodeReviewDigest } from "../../app/review/digest";
+import { nodeReviewDigest } from "../../lib/reviewDigest";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../core/review/resources";
 import type { ReviewPublicationAddress } from "../../core/review/generationOrder";
 import { isReviewSha256Digest } from "../../core/review/validation";

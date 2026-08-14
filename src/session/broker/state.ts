@@ -140,7 +140,6 @@ function readRegistrationReviewCapabilityDigest(registrationInput: unknown): str
     : undefined;
 }
 
-
 /** Run one bounded-parallel pass over a work list, in the shared load concurrency. */
 async function inBoundedParallel<Item, Result>(
   items: readonly Item[],
