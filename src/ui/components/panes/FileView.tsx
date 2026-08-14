@@ -13,7 +13,7 @@ import { plannedRowMatchesCursor, type CursorHighlight } from "../../diff/render
 import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";
-import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { toExtensionPaintTheme } from "../../ext/extensionPaintTheme";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";

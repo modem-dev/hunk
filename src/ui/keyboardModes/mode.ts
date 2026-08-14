@@ -9,7 +9,7 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import {
   deliverSynchronousExtensionModeKey,
   runSynchronousExtensionModeLifecycle,
-} from "../lib/synchronousExtensionCallback";
+} from "../ext/synchronousExtensionCallback";
 
 /** Everything the host retains while one session keyboard mode is active. */
 export interface ActiveSessionKeyboardMode {

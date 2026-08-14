@@ -6,7 +6,7 @@ import type {
 import {
   enqueueExtensionNotification,
   EXTENSION_TOAST_DURATION_MS,
-} from "../lib/extensionNotifications";
+} from "../ext/extensionNotifications";
 
 /**
  * Subscribe the app to extension notifications and surface them one at a time.

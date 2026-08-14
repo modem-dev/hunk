@@ -10,7 +10,7 @@ import {
   type ResolvedCommandKeys,
 } from "./appCommands";
 import { buildAppMenus, type BuildAppMenusOptions } from "./appMenus";
-import { buildExtensionAppCommands } from "./extensionCommands";
+import { buildExtensionAppCommands } from "../ext/extensionCommands";
 import { resolveCommandKeys } from "./keymap";
 
 /** The app-state half of the menu options, so tests only state what they exercise. */

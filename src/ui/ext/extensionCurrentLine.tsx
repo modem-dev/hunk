@@ -2,7 +2,7 @@ import type { ExtensionCurrentLinePaint } from "../../extension-api/types";
 import type { DiffRow, SplitLineCell, StackLineCell } from "../diff/pierre";
 import { DiffRowView } from "../diff/renderRows";
 import type { DiffSectionRowPlan } from "../diff/diffSectionRowPlan";
-import type { LineCursor } from "./lineCursors";
+import type { LineCursor } from "../lib/lineCursors";
 import type { AppTheme } from "../themes";
 
 type SplitLineRow = Extract<DiffRow, { type: "split-line" }>;

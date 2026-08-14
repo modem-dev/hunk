@@ -34,7 +34,7 @@ function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Pro
  * `ctx.workspace`, driven through the real app: a fixture extension reads a
  * reviewed file's document and asks to replace it, Hunk raises the confirm the
  * user actually answers, and the bytes on disk are what the answer decided. The
- * policy behind the refusals is unit-tested in `lib/extensionWorkspace.test.ts`;
+ * policy behind the refusals is unit-tested in `src/extensions/workspace/extensionWorkspace.test.ts`;
  * only the whole stack can show the real loader-attached source behind a read,
  * the prompt, the write, and the reload.
  */

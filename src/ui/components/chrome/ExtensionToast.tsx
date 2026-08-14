@@ -3,7 +3,7 @@ import {
   extensionToastColor,
   extensionToastMessage,
   extensionToastPrefix,
-} from "../../lib/extensionNotifications";
+} from "../../ext/extensionNotifications";
 import type { AppTheme } from "../../themes";
 
 /**

@@ -98,18 +98,18 @@ import {
   type AppCommand,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
-import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { createExtensionCommandControls } from "./lib/extensionCommandControls";
+import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./ext/extensionCommands";
+import { createExtensionCommandControls } from "./ext/extensionCommandControls";
 import {
   applyExtensionCurrentLinePaintUpdate,
   extensionCurrentLinePaintMatchesCursor,
   type ExtensionCurrentLinePaintState,
   type ExtensionCurrentLinePaintUpdate,
-} from "./lib/extensionCurrentLine";
-import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
+} from "./ext/extensionCurrentLine";
+import { createGuardedReviewNavigation } from "./ext/extensionNavigation";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
-import { buildExtensionReviewSelection } from "./lib/extensionSelection";
+import { buildExtensionReviewSelection } from "./ext/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
 import { mergeLineHighlightMaps } from "./highlights/merge";
@@ -126,18 +126,18 @@ import {
   reconcilePaneOpenState,
   resolvePaneKey,
   type PlannedPane,
-} from "./lib/extensionPanes";
+} from "./ext/extensionPanes";
 import type { ExtensionPanePlacement } from "../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { extensionPaneSize } from "../extensions/panes";
-import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
+import { nextExtensionTrustPromptRoot } from "./ext/extensionTrustPrompt";
 import {
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
   resolveExtensionWorkspaceWriteTarget,
-} from "./lib/extensionWorkspace";
+} from "../extensions/workspace/extensionWorkspace";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
-import { verifyWorkspaceWriteTarget } from "./lib/workspaceWriteGuard";
+import { verifyWorkspaceWriteTarget } from "../extensions/workspace/workspaceWriteGuard";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";

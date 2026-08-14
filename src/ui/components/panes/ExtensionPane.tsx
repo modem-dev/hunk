@@ -12,8 +12,8 @@ import { paneKey } from "../../../extensions/apply";
 import { BuiltInSidebarView } from "../../../extensions/default/ui/sidebar";
 import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";
 import type { ExtensionNotifySink, RegisteredPane } from "../../../extensions/types";
-import { createGuardedReviewNavigation } from "../../lib/extensionNavigation";
-import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { createGuardedReviewNavigation } from "../../ext/extensionNavigation";
+import { toExtensionPaintTheme } from "../../ext/extensionPaintTheme";
 import type { AppTheme } from "../../themes";
 
 function describeError(error: unknown) {

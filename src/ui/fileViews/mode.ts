@@ -9,7 +9,7 @@ import type { RegisteredFileView } from "../../extensions/types";
 import {
   deliverSynchronousExtensionModeKey,
   runSynchronousExtensionModeLifecycle,
-} from "../lib/synchronousExtensionCallback";
+} from "../ext/synchronousExtensionCallback";
 import { registeredFileViewKey, resolveFileViewSelectionTarget } from "./state";
 
 /**
