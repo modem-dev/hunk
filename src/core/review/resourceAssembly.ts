@@ -79,7 +79,7 @@ function failure(code: ReviewResourceErrorCode, message: string): ReviewAssembly
  */
 export class ReviewChunkAssembler {
   private readonly options: ReviewChunkAssemblerOptions;
-  private readonly parts: Uint8Array[] = [];
+  private buffer: Uint8Array | undefined;
   private offset = 0;
   private contentSize: number | undefined;
   private contentDigest: string | undefined;
@@ -202,7 +202,11 @@ export class ReviewChunkAssembler {
       );
     }
 
-    this.parts.push(bytes);
+    // Chunks land directly in the one final-size buffer, allocated only after the size
+    // checks above accept the declared total. Peak memory therefore stays at the declared
+    // size plus one in-flight chunk — never a second full copy at finish time.
+    this.buffer ??= new Uint8Array(this.contentSize);
+    this.buffer.set(bytes, this.offset);
     this.offset += bytes.byteLength;
     if (chunk.eof) {
       if (this.offset !== this.contentSize) {
@@ -217,7 +221,7 @@ export class ReviewChunkAssembler {
   }
 
   /**
-   * Concatenate and verify everything accepted so far.
+   * Verify everything accepted so far and hand back the assembled bytes.
    *
    * The digest is recomputed over the assembled bytes rather than trusted from the
    * stream, which is the whole point of carrying a whole-resource digest on every chunk.
@@ -233,12 +237,7 @@ export class ReviewChunkAssembler {
       );
     }
 
-    const bytes = new Uint8Array(this.contentSize);
-    let cursor = 0;
-    for (const part of this.parts) {
-      bytes.set(part, cursor);
-      cursor += part.byteLength;
-    }
+    const bytes = this.buffer ?? new Uint8Array(0);
     if (!reviewDigestsEqual(this.options.digest(bytes), this.contentDigest)) {
       return this.fail(
         "resource-integrity",
