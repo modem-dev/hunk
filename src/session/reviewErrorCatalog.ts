@@ -99,10 +99,6 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
     message: "This review link is not valid for that session.",
     remedy: "Open the review from the terminal running it to get a current link.",
   },
-  "unknown-session": {
-    message: "No Hunk session with that id is running.",
-    remedy: "The session closed. Open the review again from a running Hunk.",
-  },
   "no-publication": {
     message: "That Hunk session is not publishing a review yet.",
     remedy: "Wait for the session to finish loading, then reload.",

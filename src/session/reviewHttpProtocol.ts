@@ -181,10 +181,13 @@ export function parseReviewCapabilityFragment(fragment: string): string | undefi
  * not carry.
  */
 export type HunkReviewTransportErrorCode =
-  /** No capability, or one that does not match the session addressed. */
+  /**
+   * No capability, or one that does not match the session addressed.
+   *
+   * Also the answer for a session nobody is serving: telling a caller that a session does
+   * not exist is telling it which sessions do.
+   */
   | "unauthorized"
-  /** No live session with that id is registered with the daemon. */
-  | "unknown-session"
   /** The session is registered but publishes no review to serve. */
   | "no-publication"
   /** The request body is larger than this surface accepts. */

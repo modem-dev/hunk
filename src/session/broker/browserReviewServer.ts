@@ -97,7 +97,6 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "resource-integrity": 502,
   "invalid-range": 416,
   unauthorized: 401,
-  "unknown-session": 404,
   "no-publication": 409,
   "payload-too-large": 413,
   "method-not-allowed": 405,

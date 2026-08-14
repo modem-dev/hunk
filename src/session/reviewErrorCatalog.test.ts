@@ -31,7 +31,6 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "resource-integrity",
   "invalid-range",
   "unauthorized",
-  "unknown-session",
   "no-publication",
   "payload-too-large",
   "method-not-allowed",
