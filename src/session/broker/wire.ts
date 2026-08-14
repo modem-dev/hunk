@@ -11,6 +11,10 @@ import {
   parseSessionSnapshotEnvelope,
   utf8ByteLength,
 } from "@hunk/session-broker-core";
+import {
+  parseHunkReviewPublicationAddress,
+  parseHunkReviewResourceCatalog,
+} from "../reviewProtocol";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
 import type {
   HunkSessionInfo,
@@ -226,12 +230,25 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     return null;
   }
 
+  // The review catalog is parsed by the wire protocol itself, so the broker never grows a
+  // second opinion about what a resource descriptor is (`docs/browser-review-seam-audit.md`,
+  // D5). A session from before the mirror existed sends none; one that sends a malformed
+  // catalog is refused outright rather than mirrored half-parsed.
+  const reviewCatalog =
+    record.reviewCatalog === undefined
+      ? undefined
+      : parseHunkReviewResourceCatalog(record.reviewCatalog);
+  if (record.reviewCatalog !== undefined && reviewCatalog === undefined) {
+    return null;
+  }
+
   return {
     inputKind,
     title,
     sourceLabel,
     experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
     files: files as SessionReviewFile[],
+    ...(reviewCatalog ? { reviewCatalog } : {}),
   };
 }
 
@@ -250,6 +267,16 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
   const selectedHunkIndex = brokerWireParsers.parseNonNegativeInt(record.selectedHunkIndex);
   const showAgentNotes = typeof record.showAgentNotes === "boolean" ? record.showAgentNotes : null;
   if (selectedHunkIndex === null || showAgentNotes === null) {
+    return null;
+  }
+
+  // Where the review sits is the one fact the mirror orders on, so it is parsed as the
+  // shared publication address rather than as two loose numbers (C1).
+  const reviewPublication =
+    record.reviewPublication === undefined
+      ? undefined
+      : parseHunkReviewPublicationAddress(record.reviewPublication);
+  if (record.reviewPublication !== undefined && reviewPublication === undefined) {
     return null;
   }
 
@@ -272,6 +299,7 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     liveComments,
     reviewNoteCount: reviewNotes.length,
     reviewNotes,
+    ...(reviewPublication ? { reviewPublication } : {}),
   };
 }
 

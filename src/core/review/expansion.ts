@@ -170,6 +170,46 @@ export function reviewGapAddress(
 }
 
 /**
+ * A caller's claim that one line it is addressing came from an expanded gap.
+ *
+ * A line inside a gap is not in the patch at all, so nothing about the file proves it
+ * exists: a surface that expanded a gap and then addressed a line in it has to say which
+ * gap, and which content it was reading. The identity is what makes the claim checkable
+ * across a reload — the same gap over different source text is a different set of lines.
+ */
+export interface ReviewExpandedLineClaim {
+  gapId: string;
+  side: ReviewSide;
+  line: number;
+  /** Identity of the source the caller expanded; must still be the file's own. */
+  sourceIdentity: string;
+}
+
+/**
+ * Resolve one expanded-line claim against the file's current geometry.
+ *
+ * Returns the gap the line belongs to, or undefined when the claim does not hold — the
+ * gap is gone, the line falls outside it, or the source behind it has been replaced. The
+ * gap's `hunkIndex` is what an anchor uses as the owning hunk, so a note on an expanded
+ * line stays attached to the hunk the reviewer was reading (`docs/browser-review-seam-
+ * audit.md`, B10/D3).
+ */
+export function resolveReviewExpandedLine(
+  file: ReviewFileV1,
+  claim: ReviewExpandedLineClaim,
+): ReviewGapAddress | undefined {
+  if (file.sourceIdentity === undefined || file.sourceIdentity !== claim.sourceIdentity) {
+    return undefined;
+  }
+  const address = reviewGapAddress(reviewGapSourceForFile(file), claim.gapId);
+  if (!address) {
+    return undefined;
+  }
+  const [start, end] = claim.side === "old" ? address.oldRange : address.newRange;
+  return claim.line >= start && claim.line <= end ? address : undefined;
+}
+
+/**
  * Which side's full source text fills this file's expanded gaps.
  *
  * A deleted file has no new side to read, so its gaps come from the old one. Both ranges

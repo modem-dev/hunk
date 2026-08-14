@@ -106,6 +106,22 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     filePath: z.string().optional(),
     includeUser: z.boolean().optional(),
   }),
+  z.strictObject({
+    action: z.literal("highlight-add"),
+    selector: selectorSchema,
+    filePath: z.string(),
+    side: sideSchema,
+    line: z.int().positive(),
+    start: z.int().nonnegative(),
+    end: z.int().positive(),
+    tone: z.enum(["match", "current", "info", "warning", "error"]).optional(),
+    reveal: z.boolean(),
+  }),
+  z.strictObject({
+    action: z.literal("highlight-clear"),
+    selector: selectorSchema,
+    filePath: z.string().optional(),
+  }),
 ]);
 
 /** Compose one readable rejection reason from the first schema issue. */

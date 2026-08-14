@@ -110,6 +110,108 @@ export default function (hunk) {
 }
 `;
 
+/**
+ * An extension marking characters inside the reviewed diff lines.
+ *
+ * PTY snapshots carry text only, so the visible assertions are that the
+ * highlighted review renders unchanged text (paint never moves geometry) and
+ * that the refresh controls route: a valid refresh answers with the fixture's
+ * own toast, an unknown id with the host's attribution warning. The paint
+ * decisions themselves (columns, tones, backgrounds) are unit-tested in
+ * src/ui/diff/lineHighlightPaint.test.ts and rowStyle.test.ts.
+ */
+const LINE_HIGHLIGHT_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerLineHighlighter({
+    id: "needles",
+    highlight({ file }) {
+      if (!file.path.includes("alpha")) return null;
+      // Mark "alphaValue" on the added line: export const alphaValue = 2;
+      return [{ side: "new", line: 1, range: [13, 23], tone: "match" }];
+    },
+  });
+  hunk.registerCommand({ id: "refresh-marks", title: "Refresh marks", key: "f7" }, (ctx) => {
+    ctx.highlights.refresh("needles");
+    ctx.notify("marks refreshed");
+  });
+  hunk.registerCommand({ id: "refresh-unknown", title: "Refresh unknown", key: "f8" }, (ctx) => {
+    ctx.highlights.refresh("nope");
+  });
+}
+`;
+
+/**
+ * A single hunk tall enough that its anchor and its last lines cannot share a
+ * viewport, with one unmistakable token near the bottom.
+ *
+ * Every line differs, so git emits one hunk spanning the whole file — the shape
+ * `selectHunk` cannot navigate usefully.
+ */
+const REVEAL_LINE_TARGET = 111;
+const REVEAL_LINE_TOKEN = "REVEALLINETOKEN";
+const TALL_HUNK_FILE = {
+  path: "tall.ts",
+  before: `${Array.from(
+    { length: 130 },
+    (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+  ).join("\n")}\n`,
+  after: `${Array.from({ length: 130 }, (_, index) =>
+    index + 1 === REVEAL_LINE_TARGET
+      ? `export const needle = "${REVEAL_LINE_TOKEN}";`
+      : `export const line${String(index + 1).padStart(3, "0")} = ${index + 1001};`,
+  ).join("\n")}\n`,
+};
+
+/**
+ * An extension that jumps to one exact line of the reviewed file.
+ *
+ * The second command asks for a line no hunk covers, so the same session shows
+ * both halves of the contract: a reachable line scrolls, an unreachable one
+ * comes back as a warning naming the extension.
+ */
+const REVEAL_LINE_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "jump", title: "Jump to the needle", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+  });
+  hunk.registerCommand({ id: "jump-nowhere", title: "Jump past the file", key: "f8" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", 9001);
+  });
+}
+`;
+
+/**
+ * An extension that jumps through pane actions captured at mount.
+ *
+ * This is the shape the less-search example uses: a keyboard mode cannot
+ * navigate, so it leaves the jump for the mounted pane, whose \`actions\` were
+ * minted on the pane's first render — before the diff pane had published any
+ * measured line cursors — and are documented to stay valid while the pane is
+ * mounted. A \`revealLine\` that reads its own stale closure instead of the
+ * live cursor list silently degrades this exact call to the hunk fallback.
+ */
+const REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE = `import { createElement } from "react";
+let capturedActions = null;
+export default function (hunk) {
+  hunk.registerPane({
+    id: "capture",
+    placement: "bottom",
+    defaultOpen: true,
+    height: { preferred: 1, min: 1, max: 1 },
+    component: (props) => {
+      if (capturedActions === null) capturedActions = props.actions;
+      return createElement("text", { content: "CAPTURE PANE", style: { fg: props.theme.text } });
+    },
+  });
+  hunk.registerCommand({ id: "jump-held", title: "Jump via held actions", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file && capturedActions) {
+      capturedActions.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+    }
+  });
+}
+`;
+
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
@@ -609,6 +711,148 @@ describe("PTY extensions", () => {
         (text) => !/Vim navigation.*Esc exits/.test(text),
         20_000,
       );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a line highlighter marks the diff without disturbing it and refresh routes through controls", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(LINE_HIGHLIGHT_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      // The marked line renders its exact text: highlights repaint backgrounds
+      // and can never change, split, or reflow the code they sit on.
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const alphaValue = 2;"),
+        20_000,
+      );
+      expect(review).toContain("alpha.ts");
+      // A failing highlighter would have surfaced as an attributed warning toast.
+      expect(review).not.toContain("line highlighter");
+      // The first keypress after the initial paint can be dropped before the
+      // app subscribes its handler; prove the keyboard is live first.
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const refreshed = await session.waitForText(/marks refreshed/, { timeout: 20_000 });
+      // The valid refresh raised only the fixture's own toast, no host warning.
+      expect(refreshed).not.toContain("unknown line highlighter");
+      // The re-derived marks still leave the reviewed text untouched.
+      expect(refreshed).toContain("export const alphaValue = 2;");
+
+      await session.press("f8");
+      const warned = await session.waitForText(/unknown line highlighter/, { timeout: 20_000 });
+      expect(warned).toContain('Extension fixture targeted unknown line highlighter "nope"');
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine lands a line deep inside one tall hunk near the viewport top", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(REVEAL_LINE_EXTENSION_SOURCE, "fixture.ts", [
+      TALL_HUNK_FILE,
+    ]);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts"),
+        20_000,
+      );
+      // This is the bug: the hunk anchor is on screen, the marked line is pages below it.
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const revealed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      // Near the top of a 24-row terminal, where every other Hunk reveal lands:
+      // a little below the viewport edge, not scrolled just barely into view.
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
+
+      await session.press("f8");
+      const warned = await session.waitForText(/revealLine found no/, { timeout: 20_000 });
+      expect(warned).toContain("Extension fixture revealLine found no new line 9001");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine through pane actions held since mount still lands the line", async () => {
+    // The first deferred jump of a session runs against actions minted before
+    // any cursors were measured; it must land on the line, not the hunk anchor.
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(
+      REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE,
+      "fixture.ts",
+      [TALL_HUNK_FILE],
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts") && text.includes("CAPTURE PANE"),
+        20_000,
+      );
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("f7");
+      const revealed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
     } finally {
       session.close();
     }

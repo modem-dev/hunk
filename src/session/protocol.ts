@@ -4,6 +4,8 @@ import type {
   SessionCommentClearCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
+  SessionHighlightAddCommandInput,
+  SessionHighlightClearCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
   SessionReviewCommandInput,
@@ -12,7 +14,9 @@ import type {
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   ListedSession,
   NavigatedSelectionResult,
   ReloadedSessionResult,
@@ -32,7 +36,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * builds can refresh an older daemon even when it still exposes the same API endpoints. Bump this
  * when daemon-forwarded payloads change, even if the supported action names stay stable.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 7;
+export const HUNK_SESSION_DAEMON_VERSION = 9;
 
 export type SessionDaemonAction =
   | "list"
@@ -45,7 +49,9 @@ export type SessionDaemonAction =
   | "comment-apply"
   | "comment-list"
   | "comment-rm"
-  | "comment-clear";
+  | "comment-clear"
+  | "highlight-add"
+  | "highlight-clear";
 
 export interface SessionDaemonCapabilities {
   version: number;
@@ -120,6 +126,22 @@ export type SessionDaemonRequest =
       selector: SessionCommentClearCommandInput["selector"];
       filePath?: string;
       includeUser?: boolean;
+    }
+  | {
+      action: "highlight-add";
+      selector: SessionHighlightAddCommandInput["selector"];
+      filePath: string;
+      side: "old" | "new";
+      line: number;
+      start: number;
+      end: number;
+      tone?: "match" | "current" | "info" | "warning" | "error";
+      reveal: boolean;
+    }
+  | {
+      action: "highlight-clear";
+      selector: SessionHighlightClearCommandInput["selector"];
+      filePath?: string;
     };
 
 export type SessionDaemonResponse =
@@ -133,4 +155,6 @@ export type SessionDaemonResponse =
   | { result: AppliedCommentBatchResult }
   | { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }
   | { result: RemovedCommentResult }
-  | { result: ClearedCommentsResult };
+  | { result: ClearedCommentsResult }
+  | { result: AppliedHighlightResult }
+  | { result: ClearedHighlightsResult };

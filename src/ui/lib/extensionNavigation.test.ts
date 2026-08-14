@@ -10,10 +10,12 @@ function createTestNavigation(options?: {
   files?: ReturnType<typeof createTestNavigableFile>[];
   onSelectFile?: (fileId: string) => void;
   onSelectHunk?: (fileId: string, hunkIndex: number) => void;
+  revealResult?: "line" | "hunk" | "none";
 }) {
   const warnings: string[] = [];
   const selectedFiles: string[] = [];
   const selectedHunks: Array<[string, number]> = [];
+  const revealedLines: Array<[string, string, number]> = [];
   let files = options?.files ?? [createTestNavigableFile("a", 3)];
 
   const navigation = createGuardedReviewNavigation({
@@ -27,6 +29,10 @@ function createTestNavigation(options?: {
     onSelectFile: options?.onSelectFile ?? ((fileId) => selectedFiles.push(fileId)),
     onSelectHunk:
       options?.onSelectHunk ?? ((fileId, hunkIndex) => selectedHunks.push([fileId, hunkIndex])),
+    onRevealLine: (fileId, side, line) => {
+      revealedLines.push([fileId, side, line]);
+      return options?.revealResult ?? "line";
+    },
   });
 
   return {
@@ -34,6 +40,7 @@ function createTestNavigation(options?: {
     warnings,
     selectedFiles,
     selectedHunks,
+    revealedLines,
     setFiles(next: ReturnType<typeof createTestNavigableFile>[]) {
       files = next;
     },
@@ -116,18 +123,86 @@ describe("createGuardedReviewNavigation", () => {
       },
       onSelectFile: (fileId) => selectedFiles.push(fileId),
       onSelectHunk: () => {},
+      onRevealLine: () => "line",
     });
 
     navigation.selectFile("a");
     alive = false;
     navigation.selectFile("a");
     navigation.selectHunk("a", 0);
+    navigation.revealLine("a", "new", 1);
 
     expect(selectedFiles).toEqual(["a"]);
     expect(warnings).toEqual([
       "Extension triage selectFile ignored — the review session was reloaded",
       "Extension triage selectHunk ignored — the review session was reloaded",
+      "Extension triage revealLine ignored — the review session was reloaded",
     ]);
+  });
+
+  test("routes a line reveal on a visible file through to the host callback", () => {
+    const { navigation, revealedLines, warnings } = createTestNavigation();
+
+    navigation.revealLine("a", "old", 211);
+
+    expect(revealedLines).toEqual([["a", "old", 211]]);
+    expect(warnings).toEqual([]);
+  });
+
+  test("refuses a line reveal on a file the review stream cannot show", () => {
+    const { navigation, revealedLines, warnings } = createTestNavigation();
+
+    navigation.revealLine("hidden", "new", 4);
+
+    expect(revealedLines).toEqual([]);
+    expect(warnings).toEqual(['Extension triage revealLine targeted unknown file id "hidden"']);
+  });
+
+  test("refuses a side outside the two diff sides", () => {
+    const { navigation, revealedLines, warnings } = createTestNavigation();
+
+    navigation.revealLine("a", "both" as unknown as "new", 4);
+
+    expect(revealedLines).toEqual([]);
+    expect(warnings).toEqual(['Extension triage revealLine received an invalid side for "a"']);
+  });
+
+  test("refuses a line number that is not a 1-based whole line", () => {
+    // Patches number lines from 1 upward; a fraction, a zero, or a string is a caller bug,
+    // not a line the review merely failed to find.
+    const { navigation, revealedLines, warnings } = createTestNavigation();
+
+    navigation.revealLine("a", "new", 0);
+    navigation.revealLine("a", "new", -3);
+    navigation.revealLine("a", "new", 2.5);
+    navigation.revealLine("a", "new", Number.NaN);
+    navigation.revealLine("a", "new", "4" as unknown as number);
+
+    expect(revealedLines).toEqual([]);
+    expect(warnings).toEqual(
+      Array.from(
+        { length: 5 },
+        () => 'Extension triage revealLine received an invalid line number for "a"',
+      ),
+    );
+  });
+
+  test("stays quiet when the host falls back to the hunk containing the line", () => {
+    // A line inside a collapsed gap has no row to scroll to; landing on its hunk is the
+    // honest best effort, not a failure worth a toast.
+    const { navigation, warnings } = createTestNavigation({ revealResult: "hunk" });
+
+    navigation.revealLine("a", "new", 42);
+
+    expect(warnings).toEqual([]);
+  });
+
+  test("warns when no hunk of the file covers the requested line", () => {
+    const { navigation, warnings } = createTestNavigation({ revealResult: "none" });
+
+    navigation.revealLine("a", "new", 9001);
+
+    expect(warnings).toEqual(['Extension triage revealLine found no new line 9001 in "a"']);
   });
 
   test("validates against the files visible at call time, not at creation", () => {

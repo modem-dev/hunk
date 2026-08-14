@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
+The API generation this Hunk speaks (currently `5`). Version 5 adds line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
 
 ## `hunk.registerTheme(theme)`
 
@@ -56,6 +56,26 @@ Raw diff remains the default and fallback. Hunk continues to own review-stream g
 
 Full contract and examples: [File previews](/docs/extend/file-previews/).
 
+## `hunk.registerLineHighlighter(highlighter)`
+
+Mark character ranges inside Hunk's own diff rendering — search hits, diagnostics, secret scanning, coverage — without replacing the file's presentation. Syntax highlighting, word diff, and layout stay intact; the marked characters get a resolved background.
+
+```ts
+hunk.registerLineHighlighter({
+  id: "todos",
+  highlight({ file }) {
+    // Scan file.patch (or a readDocument result) and return marks.
+    return [{ side: "new", line: 12, range: [4, 8], tone: "warning" }];
+  },
+});
+```
+
+Marks are addressed by source coordinates — `side`, a 1-based `line`, and a `[start, end)` range in UTF-16 code units of the raw line text — so they survive split vs stack layout, wrapping, horizontal scrolling, and collapsed-context expansion. A mark paints terminal columns, so a range covering only zero-width characters (bidi controls, ZWSP) paints nothing. Tones (`match`, `current`, `info`, `warning`, `error`) rather than colors: Hunk resolves each tinted tone against the actual background of each marked line with a minimum-contrast guarantee stronger than its own word-diff emphasis, so a mark is never invisible on an added line's green; on a transparent cell the tint is resolved against the background Hunk assumes rather than the one behind the terminal. `current` renders as reverse video, the `less`/vim convention for the active hit.
+
+`highlight` may be sync or async and is treated as a pure derivation of the file plus an invalidation epoch: results are cached until `ctx.highlights.refresh("todos")` (optionally `{ fileId }`-scoped) re-derives them. Failures, oversized results, and invalid entries cost that file's marks and nothing else — highlights change colors, never text or geometry.
+
+Full contract: [authoring guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#hunkregisterlinehighlighterhighlighter).
+
 ## `hunk.transformChangeset(fn)`
 
 Rewrite the loaded changeset before it reaches the review UI. Transforms run in registration order, each seeing the previous one's output, on first load and on every reload.
@@ -94,7 +114,7 @@ hunk.registerCommand({ id: "vim", title: "Toggle Vim navigation", key: "ctrl+v" 
 });
 ```
 
-`onKey` returns `"handled"`, `"pass"`, or `"exit"` synchronously. Optional `onEnter`/`onExit` callbacks reset extension-owned state such as counts and pending sequences; while either lifecycle callback runs, `enterMode()` and `exitMode()` return `false`. The context exposes only `cwd`, `notify`, public `commands`, and activation-scoped `keyboardModes` controls. Those controls become inert on exit, so retained callbacks cannot replace a later mode. When the session mode is the highest-priority input owner, host-owned Escape exits it; the persistent status badge and Extensions-menu exit are clickable too.
+`onKey` returns `"handled"`, `"pass"`, or `"exit"` synchronously. Optional `onEnter`/`onExit` callbacks reset extension-owned state such as counts and pending sequences; while either lifecycle callback runs, `enterMode()` and `exitMode()` return `false`. The context exposes only `cwd`, `notify`, public `commands`, activation-scoped `keyboardModes` controls, and `highlights` refresh controls. Those controls become inert on exit, so retained callbacks cannot replace a later mode. When the session mode is the highest-priority input owner, host-owned Escape exits it; the persistent status badge and Extensions-menu exit are clickable too.
 
 One session mode runs at a time. Entering another runs the outgoing `onExit` first. Focused dialogs and file-view modes temporarily outrank, rather than destroy, a session mode. Content soft reloads preserve it; extension reload, registry closure, and App teardown retire it. See the complete [authoring guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#session-keyboard-modes) and [`vim-navigation` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/vim-navigation), which includes counts, Ctrl chords, and a focused `:` command line.
 
@@ -148,7 +168,9 @@ hunk.registerCommand(
 
 `selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` only when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
-`ctx.navigation.selectFile(fileId)` and `selectHunk(fileId, hunkIndex)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
+`ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
+
+`revealLine` is the finest target: a hunk hundreds of lines tall has one anchor, so `selectHunk` can leave the line you meant pages below the viewport. `line` is 1-based on `side` as the patch numbers it, so a context line answers to either side's number. The revealed line lands a little below the viewport top — where every other Hunk reveal lands — and becomes the current line, pairing with a mark from `registerLineHighlighter`. A line no rendered row carries (inside a collapsed gap, absent from a partial patch, or with the current-line marker off) falls back to the hunk containing it; a line no hunk covers, a side outside `"old"`/`"new"`, and a line number that is not a positive whole number are refused with a warning naming the extension.
 
 All built-ins listed in the [keybindings reference](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) are public to command handlers. This includes the unbound `hunk.review.alignCurrentLineTop`, `hunk.review.alignCurrentLineCenter`, and `hunk.review.alignCurrentLineBottom` commands. `count` defaults to `1`, is capped at `10,000`, and scales relative row, viewport, horizontal, file, hunk, and annotated navigation in one host transition. Absolute and one-shot commands run once. Unknown, disabled, non-public, extension-owned, or stale commands return `false`. `isEnabled` also returns `false` for a malformed id; malformed `execute` ids, options, and counts throw into normal extension failure containment.
 

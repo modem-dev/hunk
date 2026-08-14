@@ -71,6 +71,8 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
         "comment-list",
         "comment-rm",
         "comment-clear",
+        "highlight-add",
+        "highlight-clear",
       ],
     }),
     listSessions: async () => [],
@@ -120,6 +122,21 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
     clearComments: async () => ({
       removedCount: 0,
       remainingCommentCount: 0,
+    }),
+    addHighlight: async () => ({
+      fileId: "file-1",
+      filePath: "README.md",
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      start: 0,
+      end: 4,
+      tone: "match",
+      fileMarkCount: 1,
+    }),
+    clearHighlights: async () => ({
+      removedCount: 0,
+      remainingCount: 0,
     }),
     ...overrides,
   };
@@ -1048,6 +1065,76 @@ describe("session command compatibility checks", () => {
     ).toBe("Cleared 2 live comments from README.md in session session-1. Remaining comments: 0.\n");
 
     expect(calls).toEqual(["navigate", "comment-list", "comment-rm", "comment-clear"]);
+  });
+
+  test("routes highlight actions through the daemon and formats text output", async () => {
+    const selector: SessionSelectorInput = { sessionId: "session-1" };
+    const calls: string[] = [];
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          addHighlight: async (input) => {
+            calls.push("highlight-add");
+            expect(input.selector).toEqual(selector);
+            expect(input.filePath).toBe("README.md");
+            expect(input.side).toBe("new");
+            expect(input.line).toBe(2);
+            expect(input.start).toBe(4);
+            expect(input.end).toBe(11);
+            expect(input.tone).toBe("info");
+            expect(input.reveal).toBe(true);
+            return {
+              fileId: "file-1",
+              filePath: "README.md",
+              hunkIndex: 0,
+              side: "new",
+              line: 2,
+              start: 4,
+              end: 11,
+              tone: "info",
+              fileMarkCount: 1,
+              revealed: "line",
+            };
+          },
+          clearHighlights: async (input) => {
+            calls.push("highlight-clear");
+            expect(input.selector).toEqual(selector);
+            expect(input.filePath).toBeUndefined();
+            return { removedCount: 1, remainingCount: 0 };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "highlight-add",
+        selector,
+        filePath: "README.md",
+        side: "new",
+        line: 2,
+        start: 4,
+        end: 11,
+        tone: "info",
+        reveal: true,
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toBe(
+      "Marked README.md:2 (new) [4, 11) as info in session session-1 and revealed its line. File marks: 1.\n",
+    );
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "highlight-clear",
+        selector,
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toBe("Cleared 1 attention marks from session session-1. Remaining marks: 0.\n");
+
+    expect(calls).toEqual(["highlight-add", "highlight-clear"]);
   });
 });
 

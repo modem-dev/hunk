@@ -11,10 +11,16 @@ import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../../core/re
 import { reviewGapId } from "../../core/review/expansion";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
+  applyLineHighlightsToSpans,
+  lineHighlightPaintKey,
+  type LineHighlightPaintIndex,
+} from "./lineHighlightPaint";
+import {
   diffRailMarker,
   dimRailColor,
   neutralRailColor,
   cursorLineHighlightBg,
+  lineHighlightToneStyle,
   selectionHighlightBg,
   splitCellPalette,
   splitGutterText,
@@ -1710,9 +1716,84 @@ export function measureRenderedRowHeight(
   return measureWrappedSpansLineCount(row.cell.spans, cellGeometry.contentWidth);
 }
 
+/** Repaint one split cell's spans over its extension highlight ranges, if any. */
+function withSplitCellLineHighlights(
+  cell: SplitLineCell,
+  side: "old" | "new",
+  lineHighlights: LineHighlightPaintIndex,
+  theme: AppTheme,
+): SplitLineCell {
+  if (cell.kind === "empty" || cell.lineNumber === undefined) {
+    return cell;
+  }
+  const ranges = lineHighlights.get(lineHighlightPaintKey(side, cell.lineNumber));
+  if (!ranges) {
+    return cell;
+  }
+  const contentBg = splitCellPalette(cell.kind, theme, cell.moveKind).contentBg;
+  return {
+    ...cell,
+    spans: applyLineHighlightsToSpans(cell.spans, ranges, (tone) =>
+      lineHighlightToneStyle(tone, contentBg, theme),
+    ),
+  };
+}
+
+/**
+ * Apply extension line highlights to one row's cells before rendering.
+ *
+ * Paint-time by design: text is never changed, so the returned row measures
+ * and wraps identically to the original, and the shared row plan, geometry,
+ * and highlighted-diff caches never see highlights at all. Cells are copied
+ * because their span arrays are shared cached objects.
+ */
+function withRowLineHighlights(
+  row: DiffRow,
+  lineHighlights: LineHighlightPaintIndex | undefined,
+  theme: AppTheme,
+): DiffRow {
+  if (!lineHighlights || lineHighlights.size === 0) {
+    return row;
+  }
+
+  if (row.type === "split-line") {
+    const left = withSplitCellLineHighlights(row.left, "old", lineHighlights, theme);
+    const right = withSplitCellLineHighlights(row.right, "new", lineHighlights, theme);
+    return left === row.left && right === row.right ? row : { ...row, left, right };
+  }
+
+  if (row.type === "stack-line") {
+    const cell = row.cell;
+    // Context cells carry both numbers pointing at one merged range list, so
+    // consulting the new side first never hides an old-side mark.
+    const ranges =
+      (cell.newLineNumber !== undefined
+        ? lineHighlights.get(lineHighlightPaintKey("new", cell.newLineNumber))
+        : undefined) ??
+      (cell.oldLineNumber !== undefined
+        ? lineHighlights.get(lineHighlightPaintKey("old", cell.oldLineNumber))
+        : undefined);
+    if (!ranges) {
+      return row;
+    }
+    const contentBg = stackCellPalette(cell.kind, theme, cell.moveKind).contentBg;
+    return {
+      ...row,
+      cell: {
+        ...cell,
+        spans: applyLineHighlightsToSpans(cell.spans, ranges, (tone) =>
+          lineHighlightToneStyle(tone, contentBg, theme),
+        ),
+      },
+    };
+  }
+
+  return row;
+}
+
 /** Render one diff row. */
 function renderRow(
-  row: DiffRow,
+  sourceRow: DiffRow,
   width: number,
   lineNumberDigits: number,
   showLineNumbers: boolean,
@@ -1724,6 +1805,7 @@ function renderRow(
   copySelectedRowRange: CopySelectedRowRange | undefined,
   copySelectedSide: "left" | "right" | undefined,
   cursorHighlight: CursorHighlight | undefined,
+  lineHighlights: LineHighlightPaintIndex | undefined,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
   showAddNoteBadge = false,
@@ -1731,6 +1813,8 @@ function renderRow(
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
   onToggleGap?: (gapKey: string) => void,
 ) {
+  // Extension marks repaint span backgrounds only; geometry inputs keep using the source row.
+  const row = withRowLineHighlights(sourceRow, lineHighlights, theme);
   const hasCopySelection = !!copySelectedRowRange;
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
 
@@ -2201,6 +2285,8 @@ interface DiffRowViewProps {
   copySelectedRowRange?: CopySelectedRowRange;
   copySelectedSide?: "left" | "right";
   cursorHighlight?: CursorHighlight;
+  /** Extension marks for this row's file, resolved to terminal columns. */
+  lineHighlights?: LineHighlightPaintIndex;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
   showAddNoteBadge?: boolean;
@@ -2230,6 +2316,7 @@ export const DiffRowView = memo(
     copySelectedRowRange,
     copySelectedSide,
     cursorHighlight,
+    lineHighlights,
     anchorId,
     noteGuideSide,
     showAddNoteBadge,
@@ -2250,6 +2337,7 @@ export const DiffRowView = memo(
       copySelectedRowRange,
       copySelectedSide,
       cursorHighlight,
+      lineHighlights,
       anchorId,
       noteGuideSide,
       showAddNoteBadge,
@@ -2272,6 +2360,7 @@ export const DiffRowView = memo(
       previous.copySelectedRowRange === next.copySelectedRowRange &&
       previous.copySelectedSide === next.copySelectedSide &&
       previous.cursorHighlight === next.cursorHighlight &&
+      previous.lineHighlights === next.lineHighlights &&
       previous.anchorId === next.anchorId &&
       previous.noteGuideSide === next.noteGuideSide &&
       previous.showAddNoteBadge === next.showAddNoteBadge &&

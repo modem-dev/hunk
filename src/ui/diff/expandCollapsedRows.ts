@@ -31,35 +31,6 @@ export interface ExpandCollapsedRowsOptions {
   side?: "old" | "new";
 }
 
-/**
- * Pick the gap key that the keyboard shortcut should toggle for the selected
- * hunk. Looks at the leading gap of the current hunk first, then the leading
- * gaps of subsequent hunks, and finally the trailing gap of the file. Returns
- * `null` when no reachable gap exists.
- */
-export function selectGapForKeyboardToggle(
-  hunks: ReadonlyArray<{ collapsedBefore: number }>,
-  selectedHunkIndex: number,
-  hasTrailingGap: boolean,
-): string | null {
-  if (hunks.length === 0) {
-    return null;
-  }
-
-  const startIndex = Math.max(0, Math.min(selectedHunkIndex, hunks.length - 1));
-  for (let index = startIndex; index < hunks.length; index += 1) {
-    if ((hunks[index]?.collapsedBefore ?? 0) > 0) {
-      return reviewGapId("before", index);
-    }
-  }
-
-  if (hasTrailingGap) {
-    return reviewGapId("trailing", hunks.length - 1);
-  }
-
-  return null;
-}
-
 function expandedRowText(lineCount: number) {
   return `Hide ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
 }

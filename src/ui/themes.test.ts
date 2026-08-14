@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createTestCustomThemes } from "../../test/helpers/theme-helpers";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
-import { BUNDLED_SHIKI_THEME_IDS } from "../core/themeCatalog";
+import { BUNDLED_SHIKI_THEME_IDS } from "../core/theme/catalog";
 import {
   availableThemeIds,
   availableThemes,

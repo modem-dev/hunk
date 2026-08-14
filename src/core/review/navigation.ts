@@ -112,7 +112,7 @@ export const REVIEW_FILE_JUMP_REVEAL: ReviewRevealRequest = Object.freeze({
 export const REVIEW_FILE_JUMP_HUNK_INDEX = 0;
 
 /** Clamp one index into an inclusive range. */
-function clamp(value: number, min: number, max: number) {
+export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 

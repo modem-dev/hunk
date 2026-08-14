@@ -3,10 +3,10 @@ import {
   createWatchController,
   type WatchControllerClock,
   type WatchEventSourceCallbacks,
-} from "../../core/watchController";
-import { createWatchEventSource } from "../../core/watchObserver";
-import { computeWatchSignature } from "../../core/watch";
-import { resolveWatchPlan, type WatchPlan } from "../../core/watchPlan";
+} from "../../core/watch/controller";
+import { createWatchEventSource } from "../../core/watch/observer";
+import { resolveWatchPlan, type WatchPlan } from "../../core/watch/plan";
+import { computeWatchSignature } from "../../core/watch/signature";
 import type { CliInput, ReloadContext } from "../../core/types";
 
 export interface WatchedInputRuntime {

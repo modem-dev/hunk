@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collectSessionCustomThemes } from "../core/customThemes";
+import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type { Changeset } from "../core/types";
 import { detectVcs, extendVcsCatalog } from "../core/vcs";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";

@@ -32,25 +32,28 @@ import {
   type ReviewIntentFacts,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
-import { reviewExpansionSide, reviewTrailingGap } from "../../core/review/expansion";
-import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
+import { reviewExpansionSide } from "../../core/review/expansion";
+import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
-  isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
   selectNormalizedSelection,
+  selectReviewGapForSelection,
 } from "../../core/review/selectors";
-import type { ReviewDraftNote, ReviewRevealRequest } from "../../core/review/state";
+import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  HighlightToolInput,
   LiveComment,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
@@ -59,10 +62,18 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
-import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
+import { carryOverLineHighlights } from "../highlights/reconcile";
+import {
+  MAX_LINE_HIGHLIGHTS_PER_FILE,
+  MAX_LINE_HIGHLIGHTS_PER_LINE,
+  validateLineHighlights,
+  type ValidatedLineHighlight,
+} from "../highlights/validate";
 
+import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
   EMPTY_LINE_CURSORS,
+  findLineCursorAt,
   findNextLineCursor,
   firstLineCursorInHunk,
   hasLineCursor,
@@ -82,13 +93,16 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewProjection";
+import { buildReviewAnnotationIndex } from "../../core/review/annotations";
 import {
-  buildReviewAnnotationIndex,
   buildReviewStreamState,
   buildSelectedHunkSummary,
   planTerminalSelectionReconciliation,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
+
+const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
+  new Map();
 
 /** Merge file-id keyed annotation maps without losing their concrete item types. */
 function mergeAnnotationMaps<T extends AgentAnnotation, U extends AgentAnnotation>(
@@ -140,6 +154,25 @@ interface SourceLoadRequest {
   side: "old" | "new";
 }
 
+/**
+ * One request to scroll the current line into view, and how far it may move the viewport.
+ *
+ * Carried as one object because the id and the placement have to change together: a consumer
+ * that read a bumped id against a stale placement would scroll by the previous policy.
+ */
+export interface LineCursorRevealRequest {
+  id: number;
+  placement: LineRevealPlacement;
+}
+
+/**
+ * What a `revealLine` call could actually reach.
+ *
+ * `"line"` landed on the requested line, `"hunk"` fell back to the hunk containing it because
+ * the review stream draws no row for that line, and `"none"` means no hunk covers it either.
+ */
+export type RevealedLineResult = "line" | "hunk" | "none";
+
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   scrollToNote?: boolean;
@@ -160,6 +193,16 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  /**
+   * The semantic review store this controller owns.
+   *
+   * Exposed so the host can attach it to the producer that publishes this review: a
+   * brokered action and a key press must plan against the same state, not against two
+   * stores that happen to hold the same content.
+   */
+  store: ReviewStore;
+  /** The store's monotonic revision, reported to anyone ordering this review's publications. */
+  stateRevision: number;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -171,13 +214,14 @@ export interface ReviewController {
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
-  lineCursorRevealRequestId: number;
+  lineCursorRevealRequest: LineCursorRevealRequest;
   anchorLineCursor: (cursor: LineCursor) => void;
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
   anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
+  revealLine: (fileId: string, side: "old" | "new", line: number) => RevealedLineResult;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
@@ -206,6 +250,10 @@ export interface ReviewController {
   ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /** Agent attention marks per file id, painted through the extension line-highlight pipeline. */
+  agentLineHighlightsByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
+  addAgentLineHighlight: (input: HighlightToolInput) => AppliedHighlightResult;
+  clearAgentLineHighlights: (filePath?: string) => ClearedHighlightsResult;
   cancelDraftNote: () => void;
   removeUserNote: (noteId: string) => void;
   saveDraftNote: () => UserReviewNote | null;
@@ -236,6 +284,7 @@ export function useReviewController({
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
   noteGeometry,
+  sourceLabel = "",
   stmlEnabled = false,
 }: {
   files: DiffFile[];
@@ -246,6 +295,15 @@ export function useReviewController({
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
    */
   lineCursors?: LineCursor[];
+  /**
+   * Identity of the review's input as a whole.
+   *
+   * Part of every semantic file key, so the document this controller projects addresses
+   * files exactly as the producer's published generation does. Without it the two would
+   * key the same review differently and an action addressed by one could not be planned
+   * against the other.
+   */
+  sourceLabel?: string;
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
   /**
@@ -255,7 +313,10 @@ export function useReviewController({
    */
   noteGeometry?: { current: AgentNoteGeometrySnapshot | null };
 }): ReviewController {
-  const document = useMemo(() => projectReviewDocument(files), [files]);
+  const document = useMemo(
+    () => projectReviewDocument(files, { sourceLabel }),
+    [files, sourceLabel],
+  );
   const [store] = useState(() =>
     createReviewStore(document, { showAgentNotes: initialShowAgentNotes }),
   );
@@ -264,6 +325,20 @@ export function useReviewController({
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
 
   const reconciledDocumentRef = useRef(document);
+
+  // Agent attention marks, keyed by runtime file id. A ref backs the state so daemon
+  // handlers can compute counts synchronously; both always move together.
+  const agentLineHighlightsRef = useRef(EMPTY_AGENT_LINE_HIGHLIGHTS);
+  const [agentLineHighlightsByFileId, setAgentLineHighlightsByFileId] = useState(
+    EMPTY_AGENT_LINE_HIGHLIGHTS,
+  );
+  const commitAgentLineHighlights = useCallback(
+    (next: ReadonlyMap<string, readonly ValidatedLineHighlight[]>) => {
+      agentLineHighlightsRef.current = next;
+      setAgentLineHighlightsByFileId(next);
+    },
+    [],
+  );
 
   // Adopt a replacement file list in the same commit that renders it, so a soft reload
   // never paints new files against state the previous patch produced. The store retires
@@ -284,8 +359,16 @@ export function useReviewController({
         }
       }
     }
+    // Marks address exact character offsets in specific line content, and nothing re-derives
+    // them after a reload the way extension highlighters re-run — a stale mark would silently
+    // light up different text. Files that came back with identical content keep their marks,
+    // re-keyed onto the replacement runtime ids; every other mark is dropped.
+    if (agentLineHighlightsRef.current.size > 0) {
+      const carried = carryOverLineHighlights(agentLineHighlightsRef.current, previous, document);
+      commitAgentLineHighlights(carried.size > 0 ? carried : EMPTY_AGENT_LINE_HIGHLIGHTS);
+    }
     store.dispatch({ type: "document/reconcile", document });
-  }, [document, store]);
+  }, [commitAgentLineHighlights, document, store]);
 
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
@@ -294,7 +377,10 @@ export function useReviewController({
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
-  const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
+  const [lineCursorRevealRequest, setLineCursorRevealRequest] = useState<LineCursorRevealRequest>({
+    id: 0,
+    placement: "nearest",
+  });
   const previousLineCursorsRef = useRef(lineCursors);
   const pendingLineCursorRef = useRef<
     | { kind: "reveal"; fileId: string; gapKey: string }
@@ -467,9 +553,9 @@ export function useReviewController({
 
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
-    (cursor: LineCursor) => {
+    (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
       applyLineCursor(cursor);
-      setLineCursorRevealRequestId((current) => current + 1);
+      setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
       // The line cursor carries its own reveal request; the selection only follows it.
       anchorSelection(cursor.fileId, cursor.hunkIndex);
     },
@@ -549,6 +635,18 @@ export function useReviewController({
     [lineCursors, revealLineCursor],
   );
 
+  // `revealLine` is handed to surfaces that hold it across commits — a memoized
+  // extension pane keeps its mount-time `actions`, and an async command handler
+  // may navigate long after its dispatch render. Reading these through the
+  // callback's own closure silently downgraded such a call to the hunk
+  // fallback: at mount the pane captured a `revealLine` whose cursor list was
+  // still the pre-measurement empty state, so the first deferred jump of a
+  // session landed on the hunk anchor. Refs keep any held reference live.
+  const lineCursorsForRevealRef = useRef(lineCursors);
+  lineCursorsForRevealRef.current = lineCursors;
+  const visibleFilesRef = useRef(visibleFiles);
+  visibleFilesRef.current = visibleFiles;
+
   /**
    * Step the selection through one navigable scope.
    *
@@ -560,6 +658,34 @@ export function useReviewController({
     (scope: ReviewSelectionScope, delta: number) =>
       runIntent({ type: "selection/move", scope, delta }, { annotations }),
     [annotations, runIntent],
+  );
+
+  /**
+   * Jump to one file's source line, addressed the way a patch numbers it.
+   *
+   * Cursors are measured for every visible file, not just the selected one, so a cross-file
+   * jump resolves in the same pass as a local one. A line the stream draws no row for — hidden
+   * inside a collapsed gap, or never numbered by a partial patch — has no row to scroll to, so
+   * the jump degrades to the hunk containing it and reports which target it reached.
+   */
+  const revealLine = useCallback(
+    (fileId: string, side: "old" | "new", line: number): RevealedLineResult => {
+      const cursor = findLineCursorAt(lineCursorsForRevealRef.current, fileId, side, line);
+      if (cursor) {
+        revealLineCursor(cursor, "reveal");
+        return "line";
+      }
+
+      const file = visibleFilesRef.current.find((candidate) => candidate.id === fileId);
+      const hunkIndex = file ? reviewHunkIndexForLine(file.metadata.hunks, side, line) : -1;
+      if (hunkIndex < 0) {
+        return "none";
+      }
+
+      selectHunk(fileId, hunkIndex);
+      return "hunk";
+    },
+    [revealLineCursor, selectHunk],
   );
 
   /** Set the shared file filter. */
@@ -585,7 +711,7 @@ export function useReviewController({
 
   /** Start one full-source load and mirror its progress into review state as a status. */
   const startSourceLoad = useCallback(
-    (file: DiffFile, fileKey: string) => {
+    (file: DiffFile, fileKey: string, side: SourceLoadRequest["side"]) => {
       if (!file.sourceFetcher) {
         return;
       }
@@ -598,7 +724,6 @@ export function useReviewController({
         return;
       }
 
-      const side = reviewExpansionSide(file.metadata.type);
       const request = {
         fetcher: file.sourceFetcher,
         requestId: nextSourceLoadRequestIdRef.current,
@@ -659,7 +784,8 @@ export function useReviewController({
 
   // A reload drops unattested source text while its gap stays open (the reducer's
   // attestation rule), so an open gap refetches instead of rendering lines the source
-  // may no longer contain.
+  // may no longer contain. The side is the shared expansion-side policy, since no
+  // intent outcome is in hand on a reload.
   useEffect(() => {
     const snapshot = store.getSnapshot();
     for (const gap of snapshot.expandedGaps) {
@@ -668,7 +794,7 @@ export function useReviewController({
       }
       const file = fileByKey.get(gap.fileKey);
       if (file?.sourceFetcher) {
-        startSourceLoad(file, gap.fileKey);
+        startSourceLoad(file, gap.fileKey, reviewExpansionSide(file.metadata.type));
       }
     }
   }, [fileByKey, startSourceLoad, store, state.document]);
@@ -684,10 +810,14 @@ export function useReviewController({
 
       const restorePointKey = `${fileId}:${gapKey}`;
       const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const expanding = !isReviewGapExpanded(store.getSnapshot(), fileKey, gapKey);
-      if (expanding) {
-        if (lineCursorRef.current) {
-          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
+      const cursorBeforeToggle = lineCursorRef.current;
+      // The intent decides whether this is an expand or a collapse and reports the side
+      // whose source fills the gap; the line-cursor bookkeeping below is the terminal's
+      // own, and reads that decision rather than predicting it.
+      const toggled = runIntent({ type: "expansion/toggle", fileKey, gapId: gapKey });
+      if (toggled.expanded) {
+        if (cursorBeforeToggle) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
         }
         pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
       } else {
@@ -697,28 +827,21 @@ export function useReviewController({
           : null;
       }
 
-      store.dispatch({ type: "expansion/toggle", fileKey, gapId: gapKey, expanded: expanding });
-      startSourceLoad(file, fileKey);
+      startSourceLoad(file, fileKey, toggled.side);
     },
-    [allFiles, keyByFileId, startSourceLoad, store],
+    [allFiles, keyByFileId, runIntent, startSourceLoad],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */
   const toggleSelectedHunkGap = useCallback(() => {
-    const file = selectedFile;
-    if (!file?.sourceFetcher) {
-      return;
+    // Which gap "toggle unchanged context" reaches is the shared policy, not a terminal
+    // rule: the same command fired from anywhere else must land on the same gap.
+    const target = selectReviewGapForSelection(store.getSnapshot());
+    const file = target ? fileByKey.get(target.fileKey) : undefined;
+    if (target && file) {
+      toggleGap(file.id, target.gapId);
     }
-
-    const target = selectGapForKeyboardToggle(
-      file.metadata.hunks,
-      selectedHunkIndex,
-      reviewTrailingGap(file.metadata) !== undefined,
-    );
-    if (target) {
-      toggleGap(file.id, target);
-    }
-  }, [selectedFile, selectedHunkIndex, toggleGap]);
+  }, [fileByKey, store, toggleGap]);
 
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
@@ -749,6 +872,26 @@ export function useReviewController({
       }
 
       const target = resolveReviewNavigationTarget({ allFiles, input });
+
+      // A line target lands the viewport on the exact line through the same reveal path
+      // `ctx.navigation.revealLine` uses, degrading to the hunk when the stream renders no
+      // row for the line. `"none"` means the file is not currently visible, where only the
+      // plain hunk selection below has defined behavior.
+      if (input.hunkIndex === undefined && input.side && input.line !== undefined) {
+        const reached = revealLine(target.file.id, input.side, input.line);
+        if (reached !== "none") {
+          return {
+            fileId: target.file.id,
+            filePath: target.file.path,
+            hunkIndex: target.hunkIndex,
+            selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
+            revealed: reached,
+            side: input.side,
+            line: input.line,
+          };
+        }
+      }
+
       selectHunk(target.file.id, target.hunkIndex);
       return {
         fileId: target.file.id,
@@ -757,7 +900,113 @@ export function useReviewController({
         selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
       };
     },
-    [allFiles, fileByKey, moveSelection, selectHunk],
+    [allFiles, fileByKey, moveSelection, revealLine, selectHunk],
+  );
+
+  /**
+   * Paint one agent attention mark, validated by the same contract extension line
+   * highlighters answer to, so both sources feed one painted-mark pipeline.
+   */
+  const addAgentLineHighlight = useCallback(
+    (input: HighlightToolInput): AppliedHighlightResult => {
+      const file = findDiffFileByPath(allFiles, input.filePath);
+      if (!file) {
+        throw new Error(noDiffFileMatchesMessage(input.filePath));
+      }
+
+      // Requiring hunk coverage catches line-number typos the way comment targets do; the
+      // agent-visible review model only exposes hunk-covered lines anyway.
+      const hunkIndex = reviewHunkIndexForLine(file.metadata.hunks, input.side, input.line);
+      if (hunkIndex < 0) {
+        throw new Error(
+          `No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`,
+        );
+      }
+
+      const validation = validateLineHighlights([
+        { side: input.side, line: input.line, range: [input.start, input.end], tone: input.tone },
+      ]);
+      const mark = validation.ok ? validation.marks[0] : undefined;
+      if (!mark) {
+        throw new Error(
+          `Highlight range [${input.start}, ${input.end}) is not a valid [start, end) character range.`,
+        );
+      }
+
+      const existing = agentLineHighlightsRef.current.get(file.id) ?? [];
+      if (existing.length >= MAX_LINE_HIGHLIGHTS_PER_FILE) {
+        throw new Error(
+          `${input.filePath} already carries ${MAX_LINE_HIGHLIGHTS_PER_FILE} attention marks. Clear some first.`,
+        );
+      }
+      const marksOnLine = existing.filter(
+        (candidate) => candidate.side === mark.side && candidate.line === mark.line,
+      ).length;
+      if (marksOnLine >= MAX_LINE_HIGHLIGHTS_PER_LINE) {
+        throw new Error(
+          `${input.filePath}:${input.line} already carries ${MAX_LINE_HIGHLIGHTS_PER_LINE} attention marks. Clear some first.`,
+        );
+      }
+
+      const next = new Map(agentLineHighlightsRef.current);
+      next.set(file.id, [...existing, mark]);
+      commitAgentLineHighlights(next);
+
+      let revealed: "line" | "hunk" | undefined;
+      if (input.reveal ?? false) {
+        const reached = revealLine(file.id, mark.side, mark.line);
+        if (reached === "none") {
+          selectHunk(file.id, hunkIndex);
+          revealed = "hunk";
+        } else {
+          revealed = reached;
+        }
+      }
+
+      return {
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        side: mark.side,
+        line: mark.line,
+        start: mark.start,
+        end: mark.end,
+        tone: mark.tone,
+        fileMarkCount: existing.length + 1,
+        ...(revealed ? { revealed } : {}),
+      };
+    },
+    [allFiles, commitAgentLineHighlights, revealLine, selectHunk],
+  );
+
+  /** Clear agent attention marks, globally or for one file. */
+  const clearAgentLineHighlights = useCallback(
+    (filePath?: string): ClearedHighlightsResult => {
+      const current = agentLineHighlightsRef.current;
+      const total = [...current.values()].reduce((sum, marks) => sum + marks.length, 0);
+
+      if (!filePath) {
+        if (total > 0) {
+          commitAgentLineHighlights(EMPTY_AGENT_LINE_HIGHLIGHTS);
+        }
+        return { removedCount: total, remainingCount: 0 };
+      }
+
+      const file = findDiffFileByPath(allFiles, filePath);
+      if (!file) {
+        throw new Error(noDiffFileMatchesMessage(filePath));
+      }
+
+      const removed = current.get(file.id)?.length ?? 0;
+      if (removed > 0) {
+        const next = new Map(current);
+        next.delete(file.id);
+        commitAgentLineHighlights(next);
+      }
+
+      return { removedCount: removed, remainingCount: total - removed, filePath };
+    },
+    [allFiles, commitAgentLineHighlights],
   );
 
   /**
@@ -966,22 +1215,23 @@ export function useReviewController({
         return null;
       }
 
-      const target = requestedTarget ?? reviewDefaultHunkLineTarget(hunk);
-      applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
-      const draft: ReviewDraftNote = {
-        id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
-        fileKey,
-        hunkIndex,
-        side: target.side,
-        line: target.line,
-        body: "",
-      };
-      store.dispatch({ type: "draft/start", draft });
-      if (options?.preserveViewport) {
-        anchorSelection(file.id, hunkIndex);
-      } else {
-        selectHunk(file.id, hunkIndex, { scrollToNote: true });
-      }
+      // The draft's identity is the caller's to own, and where a whole-hunk note lands is
+      // the shared default; a measured cursor target overrides it.
+      const { draft } = runIntent(
+        {
+          type: "notes/start-draft",
+          fileKey,
+          hunkIndex,
+          ...(requestedTarget ? { target: requestedTarget } : {}),
+          // Adopting a position the viewport already settled on is the shared anchor
+          // policy, so the draft asks for no reveal at all in that case.
+          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
+        },
+        { draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}` },
+      );
+      applyLineCursor(
+        lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
+      );
       return storedDraftToDraftNote(draft, file);
     },
     [
@@ -989,10 +1239,9 @@ export function useReviewController({
       applyLineCursor,
       keyByFileId,
       lineCursors,
-      selectHunk,
+      runIntent,
       selectedFile?.id,
       selectedHunkIndex,
-      store,
     ],
   );
 
@@ -1120,6 +1369,8 @@ export function useReviewController({
 
   return {
     allFiles,
+    store,
+    stateRevision: state.stateRevision,
     draftNote,
     expandedGapsByFileId,
     filter,
@@ -1128,7 +1379,7 @@ export function useReviewController({
     liveCommentSummaries,
     liveCommentsByFileId,
     lineCursor,
-    lineCursorRevealRequestId,
+    lineCursorRevealRequest,
     reviewNoteCount: reviewNoteSummaries.length,
     reviewNoteSummaries,
     showAgentNotes: state.showAgentNotes,
@@ -1144,10 +1395,13 @@ export function useReviewController({
     toggleGap,
     toggleSelectedHunkGap,
     visibleFiles,
+    addAgentLineHighlight,
     addLiveComment,
     addLiveCommentBatch,
+    agentLineHighlightsByFileId,
     anchorLineCursor,
     anchorSelection,
+    clearAgentLineHighlights,
     clearFilter,
     cancelDraftNote,
     clearLiveComments,
@@ -1156,6 +1410,7 @@ export function useReviewController({
     navigateToLocation,
     removeLiveComment,
     removeUserNote,
+    revealLine,
     saveDraftNote,
     selectFile,
     selectHunk,

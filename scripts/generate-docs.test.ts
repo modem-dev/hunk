@@ -12,7 +12,7 @@ import {
   SESSION_BROKER_PORT_ENV,
   UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV,
 } from "../src/session/broker/brokerConfig";
-import { LEGACY_THEME_ID_ALIASES } from "../src/core/themeCatalog";
+import { LEGACY_THEME_ID_ALIASES } from "../src/core/theme/catalog";
 import {
   generateDocsArtifacts,
   GENERATED_DOC_PATHS,

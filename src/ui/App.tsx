@@ -37,6 +37,7 @@ import {
   resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
 } from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
@@ -58,6 +59,7 @@ import type {
   RegisteredCommand,
   RegisteredPane,
 } from "../extensions/types";
+import type { ReviewProducer } from "../app/review/producer";
 import type {
   HunkSessionBrokerClient,
   ReloadedSessionResult,
@@ -82,7 +84,11 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import {
+  useReviewController,
+  type AgentNoteGeometrySnapshot,
+  type RevealedLineResult,
+} from "./hooks/useReviewController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
@@ -106,6 +112,9 @@ import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
+import { mergeLineHighlightMaps } from "./highlights/merge";
+import { useLineHighlights } from "./highlights/useLineHighlights";
+import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
@@ -206,6 +215,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  reviewProducer,
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
@@ -216,6 +226,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** The producer publishing this review's generations, when the host mounted one. */
+  reviewProducer?: ReviewProducer;
   watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
@@ -238,8 +250,16 @@ export function App({
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
     noteGeometry: noteGeometryRef,
+    sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
   });
+  // The producer plans brokered actions against the store this controller owns, so a
+  // remote action and a key press reach the same state through the same intent path.
+  // Attached before any command can arrive: the session bridge is installed by a later
+  // effect, so nothing can be dispatched into the producer until this has run.
+  useEffect(() => {
+    reviewProducer?.attachStore(review.store);
+  }, [review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -428,6 +448,10 @@ export function App({
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
   );
+  const sessionLineHighlighters = useMemo(
+    () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
+    [extensions],
+  );
   // The one conversion of the visible review files into the frozen views every
   // extension surface sees: sidebar props and command-handler selection both
   // read from this list, so they can never describe the review differently.
@@ -472,6 +496,8 @@ export function App({
   const extensionCommandNavigationRef = useRef({
     onSelectFile: (_fileId: string) => {},
     onSelectHunk: (_fileId: string, _hunkIndex: number) => {},
+    onRevealLine: (_fileId: string, _side: "old" | "new", _line: number): RevealedLineResult =>
+      "none",
   });
   // A hard session reload (`resetApp`) remounts App under an in-flight async
   // command handler, whose `ctx.navigation` closes over *this* instance's
@@ -546,6 +572,12 @@ export function App({
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
   );
+  const { epochs: lineHighlightEpochs, createControls: createLineHighlightControls } =
+    useLineHighlightsController({
+      files: reviewFiles,
+      highlighters: sessionLineHighlighters,
+      showNotice: showSessionNotice,
+    });
   const {
     activeModeTitle: keyboardModeTitle,
     createControls: createKeyboardModeControls,
@@ -555,6 +587,7 @@ export function App({
     sendModeKey: sendKeyboardModeKey,
   } = useKeyboardModeController({
     commands: extensionCommandControls,
+    createHighlightControls: createLineHighlightControls,
     cwd: extensions?.context.cwd ?? process.cwd(),
     modes: sessionKeyboardModes,
     notify: notifyExtensionMode,
@@ -825,6 +858,7 @@ export function App({
         panes,
         sidebars: panes,
         fileViews: createFileViewControls(registered.extensionId),
+        highlights: createLineHighlightControls(registered.extensionId),
         // Snapshot semantics: built when the key fires, so the handler sees
         // where the review was at that moment, even if it awaits and the user
         // navigates on.
@@ -851,6 +885,8 @@ export function App({
           onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
           onSelectHunk: (fileId, hunkIndex) =>
             extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
+          onRevealLine: (fileId, side, line) =>
+            extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
         }),
       };
 
@@ -870,6 +906,7 @@ export function App({
       createExtensionDialogs,
       createFileViewControls,
       createKeyboardModeControls,
+      createLineHighlightControls,
       createPaneControls,
       extensionCommandControls,
       createWorkspaceControls,
@@ -1127,9 +1164,25 @@ export function App({
       onWarning: showFileViewWarning,
     });
 
+  const extensionLineHighlights = useLineHighlights({
+    files: filteredFiles,
+    highlighters: sessionLineHighlighters,
+    epochs: lineHighlightEpochs,
+    onIssue: showFileViewWarning,
+  });
+
+  // Extension marks and agent attention marks paint through one pipeline: the
+  // merged map is the only mark source the diff pane sees.
+  const paintedLineHighlights = useMemo(
+    () => mergeLineHighlightMaps(extensionLineHighlights, review.agentLineHighlightsByFileId),
+    [extensionLineHighlights, review.agentLineHighlightsByFileId],
+  );
+
   useHunkSessionBridge({
+    addAgentLineHighlight: review.addAgentLineHighlight,
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
+    clearAgentLineHighlights: review.clearAgentLineHighlights,
     clearLiveComments: review.clearLiveComments,
     hostClient,
     liveCommentCount: review.liveCommentCount,
@@ -1139,8 +1192,10 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
+    reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
+    reviewStateRevision: review.stateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -1715,6 +1770,10 @@ export function App({
       focusFiles();
       review.selectHunk(fileId, hunkIndex);
     },
+    onRevealLine: (fileId, side, line) => {
+      focusFiles();
+      return review.revealLine(fileId, side, line);
+    },
   };
 
   /** Toggle keyboard focus between the file list and the file filter. */
@@ -2044,6 +2103,10 @@ export function App({
             focusFiles();
             review.selectHunk(fileId, hunkIndex);
           }}
+          onRevealLine={(fileId, side, line) => {
+            focusFiles();
+            return review.revealLine(fileId, side, line);
+          }}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY
               ? undefined
@@ -2150,6 +2213,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
             screenLeft={diffPaneScreenLeft}
             screenTop={diffPaneScreenTop}
@@ -2177,7 +2241,7 @@ export function App({
             selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
             cursorLine={cursorLine}
             lineCursor={review.lineCursor}
-            lineCursorRevealRequestId={review.lineCursorRevealRequestId}
+            lineCursorRevealRequest={review.lineCursorRevealRequest}
             lineCursorAlignmentRequest={lineCursorAlignmentRequest}
             theme={activeTheme}
             width={diffPaneWidth}

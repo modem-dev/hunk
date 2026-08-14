@@ -19,6 +19,7 @@ export interface TestReviewFileInput {
   sourceIdentity?: string;
   sourceAttested?: boolean;
   contentIdentity?: string;
+  patch?: string;
 }
 
 /**
@@ -77,6 +78,7 @@ export function createTestReviewFile(input: TestReviewFileInput): ReviewFileV1 {
     changeKind: "change",
     stats: { additions: hunks.length, deletions: hunks.length, truncated: false },
     flags: { untracked: false, binary: false, tooLarge: false, partial: false },
+    patch: input.patch ?? "",
     splitLineCount: hunks.length * 3,
     unifiedLineCount: hunks.length * 3,
     additionLines: hunks.flatMap((hunk) => [`a${hunk.index}`, `b${hunk.index}`, `c${hunk.index}`]),

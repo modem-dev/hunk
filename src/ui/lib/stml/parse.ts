@@ -5,6 +5,7 @@
 // human-readable `errors`, so a sloppy note still renders something useful.
 
 import { isRawTextStmlTag, isVoidStmlTag } from "../../../core/review/stml";
+import { utf8ByteLength } from "../../../core/review/validation";
 import { sanitizeTerminalText } from "../../../lib/terminalText";
 
 export interface StmlText {
@@ -261,10 +262,6 @@ function limitedErrorCollector(errors: string[], maxErrors: number): (message: s
       errors[errors.length - 1] = `${errors[errors.length - 1]} (further parse errors omitted)`;
     }
   };
-}
-
-function utf8ByteLength(text: string): number {
-  return new TextEncoder().encode(text).length;
 }
 
 function truncateUtf8(text: string, maxBytes: number): string {

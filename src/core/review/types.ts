@@ -132,6 +132,15 @@ export interface ReviewFileV1 {
   stats: ReviewFileStatsV1;
   flags: ReviewFileFlagsV1;
   /**
+   * The file's unified diff text, as the producer that loaded it supplied it.
+   *
+   * Carried rather than left behind in the renderer's model: it is content, not
+   * publication, every consumer that offers "show me the raw diff" needs exactly these
+   * bytes, and identity already hashes it — so re-reading it from somewhere else could
+   * only disagree. Empty for a file whose producer rendered no patch at all.
+   */
+  patch: string;
+  /**
    * Row totals the diff parser measured for each layout. Carried rather than reduced from
    * hunk spans, because a parser may count rows that sit outside every hunk.
    */

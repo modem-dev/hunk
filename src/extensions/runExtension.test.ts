@@ -424,6 +424,55 @@ describe("registerFileView", () => {
   });
 });
 
+describe("registerLineHighlighter", () => {
+  test("collects a valid highlighter under its owning extension", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const highlighter = { id: "matches", highlight: () => null };
+
+    runExtensionFactory({
+      metadata: bundledMetadata("search"),
+      registry,
+      issues,
+      factory: (hunk) => hunk.registerLineHighlighter(highlighter),
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.lineHighlighters).toEqual([{ extensionId: "search", highlighter }]);
+  });
+
+  test("rejects a highlighter without an id or a highlight() function", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-search"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerLineHighlighter({ id: "no-callback" } as never);
+      },
+    });
+
+    expect(registry.lineHighlighters).toEqual([]);
+    expect(issues[0]?.message).toContain("highlight() function");
+
+    const namelessRegistry = createEmptyExtensionRegistry();
+    const namelessIssues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("nameless-search"),
+      registry: namelessRegistry,
+      issues: namelessIssues,
+      factory: (hunk) => {
+        hunk.registerLineHighlighter({ id: " ", highlight: () => null });
+      },
+    });
+
+    expect(namelessRegistry.lineHighlighters).toEqual([]);
+    expect(namelessIssues[0]?.message).toContain("non-empty id");
+  });
+});
+
 describe("registerKeyboardMode", () => {
   test("collects a valid mode under its owning extension", () => {
     const registry = createEmptyExtensionRegistry();

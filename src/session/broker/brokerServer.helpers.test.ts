@@ -171,7 +171,9 @@ describe("handleSessionApiRequest", () => {
       listSessions: record("listSessions", [createTestListedSession({ sessionId: "s-1" })]),
       getSession: record("getSession", createTestListedSession({ sessionId: "s-1" })),
       getSelectedContext: record("getSelectedContext", { sessionId: "s-1" }),
-      getSessionReview: record("getSessionReview", { title: "review" }),
+      getSessionReviewWithResources: record("getSessionReviewWithResources", {
+        title: "review",
+      }),
       listComments: record("listComments", []),
       dispatchCommand: record("dispatchCommand", { ok: true }),
       ...overrides,
@@ -224,7 +226,7 @@ describe("handleSessionApiRequest", () => {
       "listSessions",
       "getSession",
       "getSelectedContext",
-      "getSessionReview",
+      "getSessionReviewWithResources",
     ]);
   });
 

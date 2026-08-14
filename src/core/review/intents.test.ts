@@ -376,3 +376,148 @@ describe("applyReviewIntent", () => {
     expect(store.getSnapshot()).toBe(before);
   });
 });
+
+describe("notes/start-draft", () => {
+  test("opens a draft at the hunk's default note target and reveals it", () => {
+    const state = createTestReviewState();
+
+    const plan = planReviewIntent(
+      state,
+      { type: "notes/start-draft", fileKey: "alpha", hunkIndex: 1 },
+      { draftId: "draft:1" },
+    );
+
+    expect(plan.actions).toEqual([
+      {
+        type: "draft/start",
+        draft: {
+          id: "draft:1",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          // The second test hunk starts at line 11 with one context line before the change.
+          side: "new",
+          line: 12,
+          body: "",
+        },
+      },
+      {
+        type: "selection/select",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        reveal: { anchor: "hunk", scrollToNote: true },
+      },
+    ]);
+    expect(plan.outcome).toEqual({
+      type: "notes/draft-started",
+      draft: { id: "draft:1", fileKey: "alpha", hunkIndex: 1, side: "new", line: 12, body: "" },
+    });
+  });
+
+  test("honors a caller-measured line target and reveal request", () => {
+    const plan = planReviewIntent(
+      createTestReviewState(),
+      {
+        type: "notes/start-draft",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        target: { side: "old", line: 2 },
+        reveal: { anchor: "none", scrollToNote: false },
+      },
+      { draftId: "draft:2" },
+    );
+
+    expect(plan.actions[0]).toMatchObject({
+      type: "draft/start",
+      draft: { side: "old", line: 2 },
+    });
+    expect(plan.actions[1]).toMatchObject({ reveal: { anchor: "none", scrollToNote: false } });
+  });
+
+  test("requires the caller to own the draft's identity", () => {
+    expect(() =>
+      planReviewIntent(createTestReviewState(), {
+        type: "notes/start-draft",
+        fileKey: "alpha",
+        hunkIndex: 0,
+      }),
+    ).toThrow(ReviewIntentPlanningError);
+  });
+
+  test("rejects a hunk the file does not have", () => {
+    expect(() =>
+      planReviewIntent(
+        createTestReviewState(),
+        { type: "notes/start-draft", fileKey: "alpha", hunkIndex: 9 },
+        { draftId: "draft:3" },
+      ),
+    ).toThrow(ReviewIntentPlanningError);
+  });
+});
+
+describe("expansion/toggle", () => {
+  test("expands a collapsed gap and reports the address it resolved", () => {
+    const plan = planReviewIntent(createTestReviewState(), {
+      type: "expansion/toggle",
+      fileKey: "alpha",
+      gapId: "before:1",
+    });
+
+    expect(plan.actions).toEqual([
+      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
+    ]);
+    expect(plan.outcome).toEqual({
+      type: "expansion/toggled",
+      fileKey: "alpha",
+      gapId: "before:1",
+      expanded: true,
+      side: "new",
+      oldRange: [2, 10],
+      newRange: [2, 10],
+      lineCount: 9,
+    });
+  });
+
+  test("collapses a gap that is already expanded", () => {
+    const state = reduceReviewState(createTestReviewState(), {
+      type: "expansion/toggle",
+      fileKey: "alpha",
+      gapId: "before:1",
+      expanded: true,
+    });
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/toggle",
+      fileKey: "alpha",
+      gapId: "before:1",
+    });
+
+    expect(plan.actions).toEqual([
+      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: false },
+    ]);
+    expect(plan.outcome).toMatchObject({ expanded: false });
+  });
+
+  test("carries the source identity a caller needs to fill the gap", () => {
+    const state = createTestReviewState([{ key: "alpha", sourceIdentity: "source:alpha" }]);
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/toggle",
+      fileKey: "alpha",
+      gapId: "before:1",
+    });
+
+    expect(plan.outcome).toMatchObject({ sourceIdentity: "source:alpha" });
+  });
+
+  test("rejects a gap id the file's geometry does not address", () => {
+    for (const gapId of ["before:0", "trailing:1", "nonsense"]) {
+      expect(() =>
+        planReviewIntent(createTestReviewState(), {
+          type: "expansion/toggle",
+          fileKey: "alpha",
+          gapId,
+        }),
+      ).toThrow(ReviewIntentPlanningError);
+    }
+  });
+});

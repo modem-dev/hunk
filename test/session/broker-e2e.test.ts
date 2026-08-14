@@ -461,6 +461,143 @@ describe("session broker end-to-end", () => {
     }
   }, 20_000);
 
+  test("session CLI marks a character range and reveals its exact line in a live session", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    // One tall hunk: every line differs, so git emits a single hunk whose deep lines cannot
+    // share a 24-row viewport with its anchor — the shape hunk navigation cannot land.
+    const needleLine = 111;
+    const needleToken = "ATTENTIONNEEDLE";
+    const fixture = createFixtureFiles(
+      "attention",
+      Array.from(
+        { length: 130 },
+        (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+      ),
+      Array.from({ length: 130 }, (_, index) =>
+        index + 1 === needleLine
+          ? `export const needle = "${needleToken}";`
+          : `export const line${String(index + 1).padStart(3, "0")} = ${index + 1001};`,
+      ),
+    );
+    const port = await reserveLoopbackPort();
+    const hunkProc = spawnHunkSession(fixture, port);
+
+    let daemonPid: number | null = null;
+
+    try {
+      const health = await waitForHealth(port);
+      daemonPid = health.pid;
+      expect(health.ok).toBe(true);
+
+      const listed = await waitUntil("registered Hunk session", async () => {
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
+      });
+      const targetSession =
+        listed.find((session) => session.files.some((file) => file.path === fixture.afterName)) ??
+        listed[0]!;
+
+      // The review opens at the hunk anchor, pages above the marked line.
+      const initial = await waitForTranscript(fixture, "rendered review", (current) =>
+        current.includes("line001"),
+      );
+      expect(initial).not.toContain(needleToken);
+
+      // Mark "needle" on the deep line and focus it in one call.
+      const highlight = runSessionCli(
+        [
+          "highlight",
+          "add",
+          targetSession.sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          String(needleLine),
+          "--start",
+          "13",
+          "--end",
+          "19",
+          "--tone",
+          "warning",
+          "--focus",
+          "--json",
+        ],
+        port,
+      );
+      expect(highlight.proc.exitCode).toBe(0);
+      expect(highlight.stderr).toBe("");
+      expect(JSON.parse(highlight.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          side: "new",
+          line: needleLine,
+          start: 13,
+          end: 19,
+          tone: "warning",
+          fileMarkCount: 1,
+          revealed: "line",
+        },
+      });
+
+      // The focus reveal scrolled the marked line into the live terminal.
+      await waitForTranscript(fixture, "revealed marked line", (current) =>
+        current.includes(needleToken),
+      );
+
+      // Line-target navigation reports the same line-exact landing.
+      const navigate = runSessionCli(
+        [
+          "navigate",
+          targetSession.sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "25",
+          "--json",
+        ],
+        port,
+      );
+      expect(navigate.proc.exitCode).toBe(0);
+      expect(JSON.parse(navigate.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          revealed: "line",
+          side: "new",
+          line: 25,
+        },
+      });
+
+      const cleared = runSessionCli(
+        ["highlight", "clear", targetSession.sessionId, "--json"],
+        port,
+      );
+      expect(cleared.proc.exitCode).toBe(0);
+      expect(JSON.parse(cleared.stdout)).toMatchObject({
+        result: { removedCount: 1, remainingCount: 0 },
+      });
+
+      expect(await quitHunkSession(hunkProc, fixture)).toBe(0);
+    } finally {
+      await cleanupHunkSession(hunkProc);
+
+      if (daemonPid) {
+        try {
+          process.kill(daemonPid, "SIGTERM");
+        } catch {
+          // Ignore daemons that already exited during cleanup.
+        }
+      }
+    }
+  }, 30_000);
+
   test("one daemon routes CLI comments to the correct Hunk session when multiple local sessions are open", async () => {
     if (!ttyToolsAvailable) {
       return;

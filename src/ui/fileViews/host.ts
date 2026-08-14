@@ -2,33 +2,10 @@ import type { DiffFile } from "../../core/types";
 import type {
   ExtensionDiffFile,
   ExtensionFileChangeRange,
-  ExtensionFileSide,
   ExtensionFileViewInput,
 } from "../../extension-api/types";
 import { readMetadataHunkSummaries, toReadOnlyFileViews } from "../../extensions/events";
-
-/** Abort one caller's wait without cancelling the host's shared source read. */
-function waitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("The file-view request was aborted.", "AbortError"));
-  }
-
-  return new Promise<T>((resolve, reject) => {
-    const abort = () =>
-      reject(new DOMException("The file-view request was aborted.", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", abort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", abort);
-        reject(error);
-      },
-    );
-  });
-}
+import { createExtensionDocumentReader } from "../lib/extensionDocumentReader";
 
 /** Build public added/removed ranges from parsed hunks, without leaking Pierre types. */
 export function fileViewChanges(file: DiffFile): readonly ExtensionFileChangeRange[] {
@@ -91,22 +68,12 @@ export function createFileViewInput(
   signal: AbortSignal,
   snapshot: FileViewInputSnapshot = createFileViewInputSnapshot(file),
 ): ExtensionFileViewInput {
-  const reads = new Map<ExtensionFileSide, Promise<string | null>>();
   return Object.freeze({
     file: snapshot.file,
     width,
     signal,
     changes: snapshot.changes,
-    readDocument(side: ExtensionFileSide) {
-      let read = reads.get(side);
-      if (!read) {
-        read = file.sourceFetcher
-          ? file.sourceFetcher.getFullText(side).catch(() => null)
-          : Promise.resolve(null);
-        reads.set(side, read);
-      }
-      return waitWithSignal(read, signal);
-    },
+    readDocument: createExtensionDocumentReader(file, signal),
   });
 }
 

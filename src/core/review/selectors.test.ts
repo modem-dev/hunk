@@ -3,6 +3,7 @@ import {
   createTestReviewState,
   createTestStoredNote,
 } from "../../../test/helpers/review-store-helpers";
+import { createTestReviewFile } from "../../../test/helpers/review-store-helpers";
 import { reduceReviewState } from "./reducer";
 import {
   isReviewGapExpanded,
@@ -14,6 +15,7 @@ import {
   selectNormalizedSelection,
   selectNotesByHunk,
   selectReviewFileByKey,
+  selectReviewGapForSelection,
   selectReviewNavigationFiles,
   selectRevealTarget,
   selectVisibleReviewFiles,
@@ -212,5 +214,66 @@ describe("note selectors", () => {
 
     expect(selectActiveRevealNoteId(state)).toBe("live-early");
     expect(selectActiveRevealNoteId({ ...state, liveNotes: [], userNotes: [] })).toBeUndefined();
+  });
+});
+
+describe("selectReviewGapForSelection", () => {
+  test("reaches forward to the next hunk carrying a collapsed gap", () => {
+    const state = createTestReviewState([{ key: "alpha", sourceIdentity: "source:alpha" }]);
+
+    // The first test hunk starts the file, so the only leading gap belongs to the second.
+    expect(selectReviewGapForSelection(state)).toEqual({
+      fileKey: "alpha",
+      gapId: "before:1",
+    });
+  });
+
+  test("prefers the selected hunk's own gap over a later one", () => {
+    const state = createTestReviewState([
+      { key: "alpha", hunkCount: 3, sourceIdentity: "source:alpha" },
+    ]);
+
+    expect(
+      selectReviewGapForSelection({ ...state, selection: { fileKey: "alpha", hunkIndex: 2 } }),
+    ).toEqual({ fileKey: "alpha", gapId: "before:2" });
+  });
+
+  test("falls back to the file's trailing gap when no leading gap is left", () => {
+    const file = createTestReviewFile({
+      key: "alpha",
+      hunkCount: 1,
+      sourceIdentity: "source:alpha",
+    });
+    const state = createTestReviewState();
+    const withTrailing = {
+      ...state,
+      document: {
+        files: [
+          {
+            ...file,
+            additionLines: [...file.additionLines, "tail"],
+            deletionLines: [...file.deletionLines, "tail"],
+          },
+        ],
+      },
+      selection: { fileKey: "alpha", hunkIndex: 0 },
+    };
+
+    expect(selectReviewGapForSelection(withTrailing)).toEqual({
+      fileKey: "alpha",
+      gapId: "trailing:0",
+    });
+  });
+
+  test("offers nothing for a file with no expandable source behind it", () => {
+    expect(selectReviewGapForSelection(createTestReviewState())).toBeUndefined();
+  });
+
+  test("offers nothing when the selection reaches no gap at all", () => {
+    const state = createTestReviewState([
+      { key: "alpha", hunkCount: 1, sourceIdentity: "source:alpha" },
+    ]);
+
+    expect(selectReviewGapForSelection(state)).toBeUndefined();
   });
 });

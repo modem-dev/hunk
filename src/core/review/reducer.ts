@@ -6,6 +6,7 @@
  * Timestamps and ids never originate here — callers put them on the action.
  */
 import type { ReviewAction } from "./actions";
+import { clamp } from "./navigation";
 import {
   isReviewNoteWithinClearScope,
   reviewFileKeysWithRetiredContent,
@@ -18,11 +19,6 @@ import {
   type ReviewState,
   type ReviewStoredNote,
 } from "./state";
-
-/** Clamp one index into an inclusive range. */
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 /** Compare renderer-neutral source statuses by semantic value. */
 function sourceStatusesEqual(left: ReviewSourceStatus | undefined, right: ReviewSourceStatus) {

@@ -100,13 +100,14 @@ bad or duplicate id is skipped with a startup notice.
 | Support another VCS (`git`/`jj`/`sl` are reserved)      | `hunk.registerVcsAdapter(adapter)`           |
 | Add a navigation/list/status pane beside the review     | `hunk.registerPane(pane)`                    |
 | Present a file as something other than a raw diff       | `hunk.registerFileView(view)` (experimental) |
+| Mark character ranges inside diff lines                 | `hunk.registerLineHighlighter(highlighter)`  |
 | Interpret review keys as a temporary global mode        | `hunk.registerKeyboardMode(mode)`            |
 | Bind a key / add an Extensions-menu entry               | `hunk.registerCommand(command, handler)`     |
 | Hide, reorder, retitle files before review              | `hunk.transformChangeset(fn)`                |
 | React to loads, selection, viewed files, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                             | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `4`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `5`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -120,8 +121,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 - **Event and bus handlers** also get `ctx.panes` (open/close/toggle/isOpen on
   any pane) and `ctx.events.emit`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
-  refresh/enterMode/exitMode), `ctx.selection` (a snapshot of file + hunk index),
-  `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.commands`
+  refresh/enterMode/exitMode), `ctx.highlights` (refresh prepared line marks,
+  whole or `{ fileId }`-scoped), `ctx.selection` (a snapshot of file + hunk index),
+  `ctx.navigation` (live, guarded `selectFile`/`selectHunk`/`revealLine`, the
+  last landing one exact `(side, line)` near the viewport top), `ctx.commands`
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.dialogs`
   (`confirm`/`select`/`input`, queued and attributed), and `ctx.workspace`

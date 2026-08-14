@@ -10,7 +10,7 @@ import { createVcsCatalog } from "./vcs";
 import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
-import { computeWatchSignature } from "./watch";
+import { computeWatchSignature } from "./watch/signature";
 
 const tempDirs: string[] = [];
 

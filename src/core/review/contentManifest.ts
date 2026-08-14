@@ -13,6 +13,7 @@
  */
 import {
   reviewExpansionSide,
+  reviewGapId,
   reviewGapSourceForFile,
   reviewLeadingGap,
   reviewTrailingGap,
@@ -25,6 +26,7 @@ import type {
   ReviewFileFlagsV1,
   ReviewFileStatsV1,
   ReviewFileV1,
+  ReviewHunkBlockV1,
   ReviewLineAddressV1,
   ReviewLineRange,
   ReviewSide,
@@ -36,6 +38,14 @@ export interface ReviewContentManifestHunk {
   newRange: ReviewLineRange;
   /** Where a note addressed to the whole hunk lands. */
   defaultNoteTarget: ReviewLineAddressV1;
+  /**
+   * The hunk's own content blocks.
+   *
+   * Recorded so the snapshot covers what a hunk *contains* and not only where it sits —
+   * without it, a consumer could serve hunk content that no check ever compares against
+   * the model it claims to describe (`docs/browser-review-seam-audit.md`, D4).
+   */
+  blocks: ReviewHunkBlockV1[];
   leadingGap?: ReviewContentManifestGap;
 }
 
@@ -56,8 +66,16 @@ export interface ReviewContentManifestFile {
   stats: ReviewFileStatsV1;
   flags: ReviewFileFlagsV1;
   contentIdentity: string;
+  /**
+   * Identity of the expandable source behind the file, when it has one. The content
+   * itself is fetched lazily and is not part of a deterministic snapshot; its identity is
+   * what says whether two consumers would expand the same text.
+   */
+  sourceIdentity?: string;
   splitLineCount: number;
   unifiedLineCount: number;
+  /** The raw unified diff, so a consumer serving patch bytes is snapshotted too. */
+  patch: string;
   additionLines: string[];
   deletionLines: string[];
   expansionSide: ReviewSide;
@@ -74,7 +92,7 @@ export interface ReviewContentManifest {
 /** Record one resolved gap address, keyed by the id every consumer addresses it with. */
 function manifestGap(address: ReviewGapAddress): ReviewContentManifestGap {
   return {
-    gapId: `${address.position}:${address.hunkIndex}`,
+    gapId: reviewGapId(address.position, address.hunkIndex),
     oldRange: [...address.oldRange] as ReviewLineRange,
     newRange: [...address.newRange] as ReviewLineRange,
     lineCount: address.lineCount,
@@ -82,7 +100,7 @@ function manifestGap(address: ReviewGapAddress): ReviewContentManifestGap {
 }
 
 /** Snapshot one semantic file plus everything a renderer derives from it. */
-function manifestFile(file: ReviewFileV1): ReviewContentManifestFile {
+export function buildReviewContentManifestFile(file: ReviewFileV1): ReviewContentManifestFile {
   const gapSource = reviewGapSourceForFile(file);
   const trailingGap = reviewTrailingGap(gapSource);
   return {
@@ -95,8 +113,10 @@ function manifestFile(file: ReviewFileV1): ReviewContentManifestFile {
     stats: { ...file.stats },
     flags: { ...file.flags },
     contentIdentity: file.contentIdentity,
+    ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
     splitLineCount: file.splitLineCount,
     unifiedLineCount: file.unifiedLineCount,
+    patch: file.patch,
     additionLines: [...file.additionLines],
     deletionLines: [...file.deletionLines],
     expansionSide: reviewExpansionSide(file.changeKind),
@@ -116,6 +136,7 @@ function manifestFile(file: ReviewFileV1): ReviewContentManifestFile {
         oldRange: reviewHunkRange(hunk, "old"),
         newRange: reviewHunkRange(hunk, "new"),
         defaultNoteTarget: reviewDefaultHunkLineTarget(hunk),
+        blocks: hunk.hunkContent.map((block) => ({ ...block })),
         ...(leadingGap ? { leadingGap: manifestGap(leadingGap) } : {}),
       };
     }),
@@ -125,5 +146,5 @@ function manifestFile(file: ReviewFileV1): ReviewContentManifestFile {
 
 /** Build the deterministic semantic snapshot of one projected review document. */
 export function buildReviewContentManifest(document: ReviewDocumentV1): ReviewContentManifest {
-  return { version: 1, files: document.files.map(manifestFile) };
+  return { version: 1, files: document.files.map(buildReviewContentManifestFile) };
 }

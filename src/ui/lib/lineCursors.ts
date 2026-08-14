@@ -8,6 +8,7 @@
 import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
 import {
+  contextLineStableKeySides,
   contextLineStableKeyTarget,
   lineStableKey,
   lineStableKeyTarget,
@@ -192,6 +193,39 @@ export function lineCursorAt(
       stableKey: lineStableKey(hunkIndex, target.side, target.line),
       target,
     }
+  );
+}
+
+/**
+ * Check whether one cursor stands on the source line a caller named.
+ *
+ * A context row carries a single new-side target but renders one line under both sides'
+ * numbers, so its old-side number addresses the same stop.
+ */
+function lineCursorAddresses(cursor: LineCursor, side: "old" | "new", line: number) {
+  if (cursor.target.side === side && cursor.target.line === line) {
+    return true;
+  }
+
+  const context = contextLineStableKeySides(cursor.stableKey);
+  return context !== null && (side === "old" ? context.oldLine : context.newLine) === line;
+}
+
+/**
+ * Find the rendered stop one file's source line sits on, addressed by side and number.
+ *
+ * Answers only for lines the review stream actually draws: a line hidden inside a collapsed
+ * gap, or absent from a partial patch, has no cursor and no measured row to scroll to.
+ */
+export function findLineCursorAt(
+  cursors: LineCursor[],
+  fileId: string,
+  side: "old" | "new",
+  line: number,
+): LineCursor | null {
+  return (
+    cursors.find((cursor) => cursor.fileId === fileId && lineCursorAddresses(cursor, side, line)) ??
+    null
   );
 }
 
