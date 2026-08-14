@@ -15,6 +15,7 @@ import {
   parseHunkReviewPublicationAddress,
   parseHunkReviewResourceCatalog,
 } from "../reviewProtocol";
+import { isReviewSha256Digest } from "../../core/review/validation";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
 import type {
   HunkSessionInfo,
@@ -242,6 +243,15 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     return null;
   }
 
+  // The capability verifier is a digest and nothing else, checked with the shared
+  // canonical-form validator rather than an inline pattern (D5). A registration that
+  // offers something else in its place is refused rather than mirrored with an
+  // unverifiable credential attached.
+  const reviewCapabilityDigest = record.reviewCapabilityDigest;
+  if (reviewCapabilityDigest !== undefined && !isReviewSha256Digest(reviewCapabilityDigest)) {
+    return null;
+  }
+
   return {
     inputKind,
     title,
@@ -249,6 +259,7 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
     files: files as SessionReviewFile[],
     ...(reviewCatalog ? { reviewCatalog } : {}),
+    ...(reviewCapabilityDigest ? { reviewCapabilityDigest } : {}),
   };
 }
 

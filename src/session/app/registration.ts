@@ -4,6 +4,7 @@ import { resolveExperimentalFeatures } from "../../core/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/hunkSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";
+import { reviewProcessCapability } from "../../app/review/capability";
 import type { ReviewPublication } from "../../app/review/publication";
 import type { AppBootstrap } from "../../core/types";
 import {
@@ -94,6 +95,9 @@ export function createSessionRegistration(
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(publication),
       reviewCatalog: buildReviewCatalog(publication),
+      // The verifier, not the secret: the daemon can check a presented capability and can
+      // never hand one out.
+      reviewCapabilityDigest: reviewProcessCapability().digest,
     },
   };
 }
@@ -115,6 +119,9 @@ export function updateSessionRegistration(
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(publication),
       reviewCatalog: buildReviewCatalog(publication),
+      // The verifier, not the secret: the daemon can check a presented capability and can
+      // never hand one out.
+      reviewCapabilityDigest: reviewProcessCapability().digest,
     },
   };
 }

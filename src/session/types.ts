@@ -73,6 +73,15 @@ export interface HunkSessionInfo {
    * treats that as "this session serves no resources" rather than as an invalid payload.
    */
   reviewCatalog?: HunkReviewResourceCatalogV1;
+  /**
+   * Digest of the capability this session's review may be read under.
+   *
+   * The digest, never the capability: the session keeps the secret and the daemon only
+   * ever compares hashes, so nothing the daemon holds can be replayed as authorization.
+   * Absent from a session that predates the HTTP review surface, which then simply has no
+   * review to serve over HTTP.
+   */
+  reviewCapabilityDigest?: string;
 }
 
 /** App-owned live state that the broker snapshots and rebroadcasts. */
