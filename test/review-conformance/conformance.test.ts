@@ -11,11 +11,13 @@ import { createReviewStore } from "../../src/core/review/store";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {
+  REVIEW_EVENT_CONSUMERS,
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
 } from "./consumers";
+import { REVIEW_EVENT_FIXTURES } from "./eventFixtures";
 import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
@@ -42,6 +44,7 @@ const REQUIRED_FINDINGS = [
   "B10",
   "B12",
   "C1",
+  "C4",
   "D1",
 ];
 
@@ -63,6 +66,10 @@ describe("review conformance corpus", () => {
     expect(REVIEW_WIRE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review wire protocol",
     ]);
+    expect(REVIEW_EVENT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "review event protocol",
+      "browser review HTTP surface",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -72,6 +79,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_PUBLICATION_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_PRODUCER_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -164,6 +172,16 @@ for (const consumer of REVIEW_WIRE_CONSUMERS) {
     for (const fixture of REVIEW_NOTE_SIZE_FIXTURES) {
       test(`${fixture.id} is ${fixture.withinSizeLimit ? "transportable" : "refused"} (D1)`, () => {
         expect(consumer.acceptsNote(fixture.build())).toBe(fixture.withinSizeLimit);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_EVENT_CONSUMERS) {
+  describe(`review event conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_EVENT_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, async () => {
+        expect(await consumer.frame(fixture)).toEqual(fixture.expected);
       });
     }
   });

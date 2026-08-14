@@ -7,6 +7,8 @@
  * own has joined (`docs/browser-review-rebuild.md` § "Per-phase seam verification").
  */
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
+import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
+import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
@@ -15,6 +17,7 @@ import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewControllerNavigationConsumer } from "./consumers/terminalReviewController";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type {
+  ReviewEventConsumer,
   ReviewGeometryConsumer,
   ReviewNavigationConsumer,
   ReviewOrderingConsumer,
@@ -59,3 +62,15 @@ export const REVIEW_ORDERING_CONSUMERS: readonly ReviewOrderingConsumer[] = [
  * validates it and the tier that sends it.
  */
 export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireConsumer];
+
+/**
+ * Consumers of the event contract.
+ *
+ * The shared protocol answers first and the HTTP surface answers beside it, over a real
+ * listener — which is what proves the surface has no framing of its own. A browser
+ * client's reader joins in Phase 5, closing the loop the C4 finding is about.
+ */
+export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
+  reviewEventProtocolConsumer,
+  browserReviewSurfaceEventConsumer,
+];
