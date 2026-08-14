@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.2
+
+### Patch Changes
+
+- [#742](https://github.com/modem-dev/hunk/pull/742) [`568e7a5`](https://github.com/modem-dev/hunk/commit/568e7a50ff34ba64fb1784cc74ffd1c7d0baaafc) - Fix `hunk diff` taking tens of seconds in repos with many untracked files by synthesizing untracked diffs in-process instead of spawning one `git diff --no-index` subprocess per file.
+
 ## 0.18.1
 
 ### Patch Changes
