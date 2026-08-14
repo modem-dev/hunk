@@ -82,6 +82,19 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Preserve mouse + keyboard parity for primary actions.
 - Keep the chrome restrained: top menu bar, minimal borders, no redundant metadata headers.
 
+## drift prevention
+
+Parallel implementations of one rule always diverge. When two places answer the same question,
+make one ask the other.
+
+- Consumers import shared policies and vocabularies and delete their local derivations and private
+  lists. A shared policy whose only importer is its own test is a drift alarm: something is
+  re-answering the question in parallel.
+- Where a writer and a parser share a format, colocate them and pin `parse(format(x))` round-trips
+  in tests.
+- After fixing drift or duplication, add a mechanical gate for the class — a boundary test, a
+  round-trip pin, a re-declaration scan — not just the fix.
+
 ## component guidance
 
 - `App` should remain the orchestration shell for app state, navigation, layout mode, theme, filtering, and pane coordination.
