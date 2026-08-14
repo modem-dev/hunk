@@ -18,6 +18,8 @@ import { computeWatchSignature } from "./watch";
 
 const tempDirs: string[] = [];
 
+// Git setup for source-cap coverage can exceed Bun's default 5s timeout on Windows CI.
+const GitLargeSourceLoaderIntegrationTestTimeoutMs = 30_000;
 // Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
 const JjLoaderIntegrationTestTimeoutMs = 20_000;
 // Sapling subprocess setup can exceed Bun's default 5s test timeout on slower machines.
@@ -1931,31 +1933,35 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
   });
 
-  test("`hunk show <ref>` refuses to expand source blobs above the source cap", async () => {
-    const dir = createTempRepo("hunk-source-show-large-");
-    const lines = Array.from({ length: 130_000 }, (_, index) => `line ${index + 1}`);
-    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
-    git(dir, "add", "large.txt");
-    git(dir, "commit", "-m", "initial");
+  test(
+    "`hunk show <ref>` refuses to expand source blobs above the source cap",
+    async () => {
+      const dir = createTempRepo("hunk-source-show-large-");
+      const lines = Array.from({ length: 130_000 }, (_, index) => `line ${index + 1}`);
+      writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+      git(dir, "add", "large.txt");
+      git(dir, "commit", "-m", "initial");
 
-    lines[65_000] = "line 65001 changed";
-    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
-    git(dir, "add", "large.txt");
-    git(dir, "commit", "-m", "change middle line");
+      lines[65_000] = "line 65001 changed";
+      writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+      git(dir, "add", "large.txt");
+      git(dir, "commit", "-m", "change middle line");
 
-    const bootstrap = await loadFromRepo(dir, {
-      kind: "show",
-      ref: "HEAD",
-      options: { mode: "auto" },
-    });
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "show",
+        ref: "HEAD",
+        options: { mode: "auto" },
+      });
 
-    const file = bootstrap.changeset.files[0];
-    expect(file?.sourceFetcher).toBeDefined();
-    expect(file?.metadata.hunks.length).toBeGreaterThan(0);
-    await expect(file?.sourceFetcher?.getFullText("new")).rejects.toBeInstanceOf(
-      SourceTextTooLargeError,
-    );
-  });
+      const file = bootstrap.changeset.files[0];
+      expect(file?.sourceFetcher).toBeDefined();
+      expect(file?.metadata.hunks.length).toBeGreaterThan(0);
+      await expect(file?.sourceFetcher?.getFullText("new")).rejects.toBeInstanceOf(
+        SourceTextTooLargeError,
+      );
+    },
+    GitLargeSourceLoaderIntegrationTestTimeoutMs,
+  );
 
   test("`hunk show <ref>` pins expansion sources after the ref moves", async () => {
     const dir = createTempRepo("hunk-source-show-pinned-");
