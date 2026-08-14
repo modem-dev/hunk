@@ -29,7 +29,7 @@ function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Pro
  * question from a command handler, the modal renders inside the mounted review,
  * and the keys the user presses are the ones the handler's promise resolves on.
  * Only the whole stack can show that — the queue's own semantics are unit-tested
- * in `lib/extensionDialogs.test.ts`.
+ * in `ext/extensionDialogs.test.ts`.
  */
 
 const tempDirs: string[] = [];

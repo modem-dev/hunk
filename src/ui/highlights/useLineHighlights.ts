@@ -3,7 +3,7 @@ import type { DiffFile } from "../../core/types";
 import type { ExtensionLineHighlightInput } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
 import type { RegisteredLineHighlighter } from "../../extensions/types";
-import { createExtensionDocumentReader } from "../lib/extensionDocumentReader";
+import { createExtensionDocumentReader } from "../ext/extensionDocumentReader";
 import { scopedEpoch } from "../lib/scopedEpochs";
 import { registeredLineHighlighterKey, type LineHighlightEpochState } from "./state";
 import {

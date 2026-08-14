@@ -6,8 +6,8 @@ import {
   synthesizeKeyEvent,
   toKeyChordList,
 } from "../../lib/commandKeys";
-import type { AppCommand, ResolvedCommandKeys } from "./appCommands";
-import { formatKeyChord } from "./keymap";
+import type { AppCommand, ResolvedCommandKeys } from "../lib/appCommands";
+import { formatKeyChord } from "../lib/keymap";
 
 /** One extension binding refused because its chord is already taken. */
 export interface ExtensionCommandConflict {

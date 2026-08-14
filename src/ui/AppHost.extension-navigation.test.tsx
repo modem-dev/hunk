@@ -26,7 +26,7 @@ function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Pro
  * `ctx.navigation`, driven through the real app: a fixture extension's command
  * jumps the review stream, and the `selection_changed` event that comes back is
  * the proof the navigation ran through the same controller as a sidebar click.
- * The guard semantics themselves are unit-tested in `lib/extensionNavigation.test.ts`.
+ * The guard semantics themselves are unit-tested in `ext/extensionNavigation.test.ts`.
  */
 
 const tempDirs: string[] = [];

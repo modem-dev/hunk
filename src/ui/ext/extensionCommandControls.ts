@@ -7,7 +7,7 @@ import {
   isCommandEnabled,
   normalizeAppCommandCount,
   type AppCommand,
-} from "./appCommands";
+} from "../lib/appCommands";
 
 /** Validate an execution id passed by JavaScript despite the TypeScript contract. */
 function requireCommandId(commandId: unknown): string {

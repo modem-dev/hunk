@@ -5,7 +5,7 @@ import type { DiffFile } from "../../core/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
 import type { RegisteredFileView } from "../../extensions/types";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
-import { buildExtensionReviewSelection } from "../lib/extensionSelection";
+import { buildExtensionReviewSelection } from "../ext/extensionSelection";
 import { registeredFileViewKey } from "./state";
 import { useFilePresentationController } from "./useFilePresentationController";
 

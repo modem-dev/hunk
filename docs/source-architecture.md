@@ -14,12 +14,14 @@ src/core/theme/      bundled theme metadata, custom-theme rules, and terminal th
 src/core/watch/      input signatures, observation plans/backends, and refresh coordination
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support
 src/extensions/      extension host, registry, trust, lifecycle, and bundled extensions
+src/extensions/workspace/ renderer-free workspace capability policy and filesystem confinement
 src/session/         shared session protocol, schemas, types, agent surface, app bridge, and broker transport
 src/session/client/  shared session-daemon HTTP and compatibility client support
 src/session/agent/   agent-facing session CLI, command manifest, errors, and formatting
 src/session/app/     mounted-review registration, bridge, and reload authorization
 src/session/broker/  local daemon transport, launcher, Hunk broker state, wire parsing, projections
 src/ui/              interactive review application, rendering, interaction, and chrome
+src/ui/ext/          terminal UI integration for extension commands, panes, and interaction
 src/extension-api/   public `hunkdiff/extension` declaration and runtime boundary
 src/opentui/         public `hunkdiff/opentui` component boundary
 src/lib/             small product-wide utilities with no feature ownership

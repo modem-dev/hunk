@@ -67,7 +67,7 @@ commands never pay OpenTUI's native-library extraction).
 
 ## Four-edge pane system
 
-`src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
+`src/ui/ext/extensionPanes.ts` owns open state, availability, and one rectangle
 plan for panes, dividers, and review bounds. Left/right panes consume columns;
 top/bottom panes consume rows from the central review column, outside review
 stream coordinates.
@@ -113,7 +113,7 @@ inputs are unchanged so row memoization can hold. The epoch is owned by
 `ctx.highlights.refresh`, using the shared scoped-epoch policy in
 `src/ui/lib/scopedEpochs.ts` — the same module `src/ui/fileViews/state.ts`
 delegates to — and the shared bounded `readDocument` capability lives in
-`src/ui/lib/extensionDocumentReader.ts`.
+`src/ui/ext/extensionDocumentReader.ts`.
 
 Application is paint-time by construction. `src/ui/diff/lineHighlightPaint.ts`
 owns the one mapping from source coordinates (raw code-unit offsets) to
@@ -156,10 +156,10 @@ status, menu, reload, and unmount. Mode controls are activation-scoped;
 `onEnter` and `onExit` cannot change ownership, while `onKey` may deliberately
 replace its activation without letting the outgoing callback defeat recovery or
 manipulate the replacement.
-`src/ui/lib/extensionKeyEvent.ts` freezes the method-free public key snapshot
+`src/ui/ext/extensionKeyEvent.ts` freezes the method-free public key snapshot
 used by both session and file-view mode delivery, so OpenTUI events and their
 consumption methods never cross the extension boundary. Their shared
-`src/ui/lib/synchronousExtensionCallback.ts` path contains lifecycle failures,
+`src/ui/ext/synchronousExtensionCallback.ts` path contains lifecycle failures,
 rejects thenables without leaving unhandled rejections, and normalizes key
 results; each mode module supplies only its context and attributed warnings. A
 focused file-view mode may overlap and temporarily outrank a session mode;
@@ -174,13 +174,13 @@ and extension-owned ids in disjoint spaces however either grows; modal surfaces
 (dialogs, menus, focused inputs) own their keys first and are deliberately not
 commands. Extension
 `registerCommand` entries join the same table via
-`src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
+`src/ui/ext/extensionCommands.ts` — built-ins win key conflicts, refused one
 chord at a time and detected by probing matchers with a synthesized event
 (`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
-`src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
+`src/ui/ext/extensionSelection.ts`, derived from the same frozen file views the
 panes render. App reads it through a ref so the dispatch table stays stable.
 
-`src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
+`src/ui/ext/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only
 — visible-file validation, hunk clamping, `revealLine`'s side and line-number
@@ -193,7 +193,7 @@ position.
 
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
-`src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
+`src/ui/ext/extensionDialogs.ts` — one FIFO queue per App instance, minting a
 per-extension `dialogs` object, normalizing (and sanitizing) extension-authored
 text into a request the host draws, and answering by request id so a duplicated
 Enter cannot spill onto whatever was queued behind. App subscribes with
@@ -210,7 +210,7 @@ frame always carries an `ext <id>` attribution row — the toast marker — beca
 the title is extension-authored and a prompt must not be able to impersonate
 Hunk.
 
-`src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
+`src/extensions/workspace/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains
 ownership of caching and size limits. Missing or unreadable sources become
 `null`.
@@ -241,7 +241,7 @@ their key text from resolved `keyLabels` and run entries through
 exist for a menu item; they never match a key but remain bindable by id.
 
 Command handlers receive guarded `ctx.commands` controls built by
-`src/ui/lib/extensionCommandControls.ts`. They resolve the live App command table on every call,
+`src/ui/ext/extensionCommandControls.ts`. They resolve the live App command table on every call,
 then expose only built-ins carrying explicit public metadata. Counted movement reaches the same
 command callback once with a normalized delta; it is never implemented as repeated synchronous
 dispatch. Current-line alignment is also semantic: App raises an alignment request and `DiffPane`

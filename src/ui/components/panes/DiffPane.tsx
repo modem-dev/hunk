@@ -77,7 +77,7 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import {
   createExtensionCurrentLinePaint,
   type ExtensionCurrentLinePaintUpdate,
-} from "../../lib/extensionCurrentLine";
+} from "../../ext/extensionCurrentLine";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";

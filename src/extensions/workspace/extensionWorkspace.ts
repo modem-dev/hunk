@@ -22,7 +22,7 @@ import { normalizeDiffPath } from "../../core/diffPaths";
 import type { FileSourceSide } from "../../core/fileSource";
 import { canReloadInput } from "../../core/inputReload";
 import type { CliInput } from "../../core/types";
-import { readMetadataChangeType } from "../../extensions/events";
+import { readMetadataChangeType } from "../events";
 
 /**
  * The slice of one reviewed file the workspace policy inspects.

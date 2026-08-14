@@ -5,7 +5,7 @@ import type {
   ExtensionFileViewInput,
 } from "../../extension-api/types";
 import { readMetadataHunkSummaries, toReadOnlyFileViews } from "../../extensions/events";
-import { createExtensionDocumentReader } from "../lib/extensionDocumentReader";
+import { createExtensionDocumentReader } from "../ext/extensionDocumentReader";
 
 /** Build public added/removed ranges from parsed hunks, without leaking Pierre types. */
 export function fileViewChanges(file: DiffFile): readonly ExtensionFileChangeRange[] {

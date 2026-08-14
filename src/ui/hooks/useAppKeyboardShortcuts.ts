@@ -8,8 +8,8 @@ import type {
 } from "../../extensions/types";
 import type { MenuId } from "../components/chrome/menu";
 import { dispatchAppCommand, type AppCommand } from "../lib/appCommands";
-import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
-import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
+import type { ExtensionDialogRequest } from "../ext/extensionDialogs";
+import { toExtensionKeyEvent } from "../ext/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 

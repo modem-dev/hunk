@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AppCommand } from "./appCommands";
-import { MAX_APP_COMMAND_COUNT } from "./appCommands";
+import type { AppCommand } from "../lib/appCommands";
+import { MAX_APP_COMMAND_COUNT } from "../lib/appCommands";
 import { createExtensionCommandControls } from "./extensionCommandControls";
 
 /** Build one host command without coupling these capability tests to App callbacks. */

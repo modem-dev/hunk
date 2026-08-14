@@ -7,7 +7,7 @@ import {
   createExtensionCurrentLinePaint,
   extensionCurrentLinePaintMatchesCursor,
 } from "./extensionCurrentLine";
-import type { LineCursor } from "./lineCursors";
+import type { LineCursor } from "../lib/lineCursors";
 
 /** Build one accepted split row plan and a cursor that resolves inside it. */
 function splitPlanFixture() {

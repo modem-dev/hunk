@@ -3,8 +3,8 @@ import type {
   ExtensionDialogRequest,
   ExtensionInputDialogRequest,
   ExtensionSelectDialogRequest,
-} from "../../lib/extensionDialogs";
-import { extensionToastPrefix } from "../../lib/extensionNotifications";
+} from "../../ext/extensionDialogs";
+import { extensionToastPrefix } from "../../ext/extensionNotifications";
 import { listWindowStart } from "../../lib/listWindow";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";

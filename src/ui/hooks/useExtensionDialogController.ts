@@ -3,7 +3,7 @@ import {
   createExtensionDialogQueue,
   type ExtensionDialogQueue,
   type ExtensionDialogRequest,
-} from "../lib/extensionDialogs";
+} from "../ext/extensionDialogs";
 
 export interface ExtensionDialogController {
   /** Build the dialog capability one extension command receives. */
