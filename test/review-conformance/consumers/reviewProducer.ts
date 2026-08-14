@@ -26,8 +26,8 @@ import { createReviewStore } from "../../../src/core/review/store";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,
-  ReviewConformanceConsumer,
-  ReviewConformanceFixture,
+  ReviewGeometryConsumer,
+  ReviewGeometryFixture,
 } from "../types";
 
 /** Report one manifest gap in the shape the corpus states gaps in. */
@@ -62,10 +62,10 @@ function expandedRowsOf(
   }));
 }
 
-export const reviewProducerConsumer: ReviewConformanceConsumer = {
+export const reviewProducerConsumer: ReviewGeometryConsumer = {
   name: "review producer",
   phase: "Phase 2",
-  project(fixture: ReviewConformanceFixture) {
+  project(fixture: ReviewGeometryFixture) {
     const files = fixture.build();
     const producer = new ReviewProducer(
       { files, sourceLabel: "conformance" },

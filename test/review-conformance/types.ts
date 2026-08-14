@@ -63,7 +63,7 @@ export interface ConformanceFileProjection {
   expandedRows?: ConformanceExpandedRow[];
 }
 
-export interface ReviewConformanceProjection {
+export interface ReviewGeometryProjection {
   files: ConformanceFileProjection[];
 }
 
@@ -75,7 +75,7 @@ export interface ConformanceExpansion {
   sourceText: string;
 }
 
-export interface ReviewConformanceFixture {
+export interface ReviewGeometryFixture {
   id: string;
   /** Audit finding ids this fixture guards, e.g. `A1`. */
   findings: string[];
@@ -84,7 +84,7 @@ export interface ReviewConformanceFixture {
   build: () => DiffFile[];
   expansion?: ConformanceExpansion;
   /** Hand-written from the semantics — never captured from a primitive. */
-  expected: ReviewConformanceProjection;
+  expected: ReviewGeometryProjection;
 }
 
 /**
@@ -94,11 +94,11 @@ export interface ReviewConformanceFixture {
  * calling core directly — the terminal adapter drives row building, a producer adapter
  * drives publication, a browser adapter drives its own projection.
  */
-export interface ReviewConformanceConsumer {
+export interface ReviewGeometryConsumer {
   name: string;
   /** The phase that registered this consumer, for the gate ladder's records. */
   phase: string;
-  project: (fixture: ReviewConformanceFixture) => ReviewConformanceProjection;
+  project: (fixture: ReviewGeometryFixture) => ReviewGeometryProjection;
 }
 
 /**

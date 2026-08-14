@@ -25,8 +25,8 @@ import type {
   ConformanceExpandedRow,
   ConformanceGap,
   ConformanceExpansion,
-  ReviewConformanceConsumer,
-  ReviewConformanceFixture,
+  ReviewGeometryConsumer,
+  ReviewGeometryFixture,
 } from "../types";
 
 /** Collect one file's gaps in the order a top-to-bottom renderer meets them. */
@@ -78,10 +78,10 @@ function expandedRowsOf(
   }));
 }
 
-export const coreModelConsumer: ReviewConformanceConsumer = {
+export const coreModelConsumer: ReviewGeometryConsumer = {
   name: "core review model",
   phase: "Phase 1 PR 2",
-  project(fixture: ReviewConformanceFixture) {
+  project(fixture: ReviewGeometryFixture) {
     const document = projectReviewDocument(fixture.build());
     return {
       files: document.files.map((file, fileIndex) => {

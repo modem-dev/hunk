@@ -19,8 +19,8 @@ import type {
   ConformanceExpandedRow,
   ConformanceGap,
   ConformanceHunkRanges,
-  ReviewConformanceConsumer,
-  ReviewConformanceFixture,
+  ReviewGeometryConsumer,
+  ReviewGeometryFixture,
 } from "../types";
 
 const THEME = resolveTheme("github-dark-default", null);
@@ -87,10 +87,10 @@ function hunkRangesOf(file: DiffFile): ConformanceHunkRanges[] {
   });
 }
 
-export const terminalRenderPlanConsumer: ReviewConformanceConsumer = {
+export const terminalRenderPlanConsumer: ReviewGeometryConsumer = {
   name: "terminal render planning",
   phase: "Phase 1 PR 2",
-  project(fixture: ReviewConformanceFixture) {
+  project(fixture: ReviewGeometryFixture) {
     const files = fixture.build();
     return {
       files: files.map((file, fileIndex) => {

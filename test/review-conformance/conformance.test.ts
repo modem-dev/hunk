@@ -11,12 +11,12 @@ import { createReviewStore } from "../../src/core/review/store";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {
-  REVIEW_CONFORMANCE_CONSUMERS,
+  REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
 } from "./consumers";
-import { REVIEW_CONFORMANCE_FIXTURES } from "./fixtures";
+import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
@@ -47,7 +47,7 @@ const REQUIRED_FINDINGS = [
 
 describe("review conformance corpus", () => {
   test("registers every consumer that has landed so far", () => {
-    expect(REVIEW_CONFORMANCE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+    expect(REVIEW_GEOMETRY_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core review model",
       "terminal render planning",
       "review producer",
@@ -67,7 +67,7 @@ describe("review conformance corpus", () => {
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
     const covered = new Set([
-      ...REVIEW_CONFORMANCE_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_GEOMETRY_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_NAVIGATION_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_PUBLICATION_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_PRODUCER_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
@@ -89,9 +89,9 @@ for (const consumer of REVIEW_NAVIGATION_CONSUMERS) {
   });
 }
 
-for (const consumer of REVIEW_CONFORMANCE_CONSUMERS) {
+for (const consumer of REVIEW_GEOMETRY_CONSUMERS) {
   describe(`review conformance: ${consumer.name}`, () => {
-    for (const fixture of REVIEW_CONFORMANCE_FIXTURES) {
+    for (const fixture of REVIEW_GEOMETRY_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
       });

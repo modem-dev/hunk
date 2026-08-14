@@ -50,7 +50,7 @@ draft-body intent yet, recorded under B12.
   Fix: terminal calls `reviewGapAddress`; delete its local math.
   _Repaid (Phase 1 PR 2)_: `reviewLeadingGap`/`reviewGapAddress` in `core/review/expansion.ts`;
   `pierre.ts` copies deleted; fixtures `pure-insertion-hunk` and `pure-deletion-hunk` in
-  `test/review-conformance/fixtures.ts`; core and terminal render planning both registered.
+  `test/review-conformance/geometryFixtures.ts`; core and terminal render planning both registered.
   Residual (found in review): when the anchor side has zero rows and untouched content
   precedes the hunk, the parser's `collapsedBefore` undercounts the leading gap by one line
   — the leading-side sibling of A2's residual, recorded on `reviewLeadingGap` and pinned

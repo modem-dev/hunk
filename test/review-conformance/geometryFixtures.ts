@@ -8,7 +8,7 @@
  */
 import { createTestDiffFile, lines } from "../helpers/diff-helpers";
 import type { DiffFile } from "../../src/core/types";
-import type { ReviewConformanceFixture } from "./types";
+import type { ReviewGeometryFixture } from "./types";
 
 /** Twelve numbered lines, the base every geometry fixture edits. */
 const BASE_LINES = Array.from({ length: 12 }, (_unused, index) => `line ${index + 1}`);
@@ -47,7 +47,7 @@ const CHANGED_SIXTH_AFTER = edited((values) =>
   values.map((l) => (l === "line 6" ? "line six" : l)),
 );
 
-export const REVIEW_CONFORMANCE_FIXTURES: readonly ReviewConformanceFixture[] = [
+export const REVIEW_GEOMETRY_FIXTURES: readonly ReviewGeometryFixture[] = [
   {
     id: "pure-insertion-hunk",
     findings: ["A1", "A2", "A10"],

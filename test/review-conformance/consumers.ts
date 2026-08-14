@@ -15,13 +15,13 @@ import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewControllerNavigationConsumer } from "./consumers/terminalReviewController";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type {
-  ReviewConformanceConsumer,
+  ReviewGeometryConsumer,
   ReviewNavigationConsumer,
   ReviewOrderingConsumer,
   ReviewWireConsumer,
 } from "./types";
 
-export const REVIEW_CONFORMANCE_CONSUMERS: readonly ReviewConformanceConsumer[] = [
+export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
   reviewProducerConsumer,
