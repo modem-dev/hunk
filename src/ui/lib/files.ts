@@ -1,6 +1,7 @@
 import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/diffPaths";
+import { reviewFileStatBadges } from "../../core/review/presentation";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import { readMetadataChangeType } from "../../extensions/events";
 import { formatTerminalPath } from "../../lib/terminalText";
@@ -59,11 +60,6 @@ function sidebarFileName(file: SidebarFileSource) {
   const previousName = basename(previousPath);
   const nextName = basename(path);
   return previousName === nextName ? nextName : `${previousName} -> ${nextName}`;
-}
-
-/** Hide zero-value file stats so the sidebar only shows real line deltas. */
-function formatSidebarStat(prefix: "+" | "-", value: number, truncated = false) {
-  return value > 0 ? `${prefix}${value}${truncated ? "+" : ""}` : null;
 }
 
 /** Build the visible stats badges for one sidebar row.
@@ -140,14 +136,21 @@ export function buildSidebarEntries(files: readonly SidebarFileSource[]): Sideba
     }
 
     const agentCommentCount = file.agent?.annotations.length ?? 0;
+    // Badge text is the shared review formatter's, not the sidebar's, so a browser
+    // rendering the same file states the same churn (E1).
+    const { additionsText, deletionsText } = reviewFileStatBadges({
+      additions: file.stats.additions,
+      deletions: file.stats.deletions,
+      ...(file.statsTruncated !== undefined ? { truncated: file.statsTruncated } : {}),
+    });
 
     entries.push({
       kind: "file",
       id: file.id,
       name: sidebarFileName(file),
       agentCommentsText: agentCommentCount > 0 ? `*${agentCommentCount}` : null,
-      additionsText: formatSidebarStat("+", file.stats.additions, file.statsTruncated),
-      deletionsText: formatSidebarStat("-", file.stats.deletions),
+      additionsText,
+      deletionsText,
       changeType: file.changeType ?? readMetadataChangeType(file.metadata) ?? "change",
       isUntracked: file.isUntracked ?? false,
     });
