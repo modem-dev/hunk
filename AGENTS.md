@@ -37,8 +37,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
   operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
 - **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
-  `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, DOM
-  mechanics, and source I/O stay local. `useHunkSessionBridge.ts` publishes the current terminal
+  `reviewNoteMapping.ts` is terminal-only; `src/web/` is the browser client — read-only today
+  — where `reviewApiClient`/`reviewMirror` speak the Phase 4 HTTP contracts and
+  `pierreDocument`/`ReviewStream` render with Pierre. Rows, measurement, scrolling, layout,
+  themes, DOM mechanics, and source I/O stay local to each surface. `useHunkSessionBridge.ts` publishes the current terminal
   session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
   agent commands. This broker export is not a full `ReviewState` mirror.
 - **Other consumers:** Web/API consumers reuse the model, derivations, state, intents, and the
@@ -46,8 +48,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   local; host/extension commands need explicit remote capabilities. See
   `docs/browser-review-rebuild.md` for the rollout and current boundaries.
 - **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures covering every
-  registered core, terminal, producer, broker, protocol, and extension projection. Every new
-  semantic consumer registers its real projection and runs the whole corpus.
+  registered core, terminal, producer, broker, protocol, extension, and browser projection. Every
+  new semantic consumer registers its real projection and runs the whole corpus.
   `scripts/source-boundaries.test.ts` keeps the seam
   renderer/platform-free; its Node-debt list is shrink-only and tombstone lists append-only. A
   repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
@@ -112,6 +114,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   - `test/session/` for daemon/session integration and end-to-end flows.
   - `test/pty/` for PTY-backed live UI integration tests.
   - `test/review-conformance/` for the shared review model's golden fixtures and per-consumer conformance suites.
+  - Browser client code lives in `src/web/` with colocated unit tests; its end-to-end flow against a real session is `test/session/browserReviewClient.integration.test.ts`.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
 
 ## code comments

@@ -12,7 +12,7 @@
  * it before anything renders is what makes the two agree.
  */
 import { createRoot } from "react-dom/client";
-import "../core/fileLanguage";
+import "../core/changeset/fileLanguage";
 import { ReviewApiClient, parseReviewLocation } from "./reviewApiClient";
 import { ReviewMirror } from "./reviewMirror";
 import { ReviewApp } from "./ReviewApp";

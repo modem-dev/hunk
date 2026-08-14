@@ -23,7 +23,7 @@ const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
 const BROWSER_SAFE_CORE_MODULES: readonly string[] = [
   // A11: Hunk registers file extensions Pierre's own inference lacks, and a browser that
   // never imports the registration highlights the same file differently from a terminal.
-  join(CORE_ROOT, "fileLanguage.ts"),
+  join(CORE_ROOT, "changeset", "fileLanguage.ts"),
 ];
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
 const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
