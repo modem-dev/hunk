@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import { reviewProcessCapability } from "../../app/review/capability";
 import { buildReviewPublication } from "../../app/review/publication";
 import type { AppBootstrap } from "../../core/types";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
@@ -126,7 +127,11 @@ describe("session registration", () => {
       experimentalFeatures: [],
       files: [],
       reviewCatalog: { generation: "generation:test:0", fileKeysByRuntimeId: {}, resources: [] },
+      reviewCapabilityDigest: reviewProcessCapability().digest,
     });
+    // A reload replaces the review, not the session, so a review link already opened keeps
+    // working across one.
+    expect(updated.info.reviewCapabilityDigest).toBe(current.info.reviewCapabilityDigest);
   });
 
   test("registration advertises STML only for opted-in launches", () => {
