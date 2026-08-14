@@ -35,6 +35,7 @@ import {
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const REVIEW_MODEL_ROOT = join(REPO_ROOT, "src", "core", "review");
 const SESSION_ROOT = join(REPO_ROOT, "src", "session");
+const PRODUCER_ROOT = join(REPO_ROOT, "src", "app");
 
 /** Every production TypeScript file below one directory. */
 function sourceFiles(directory: string): string[] {
@@ -107,10 +108,15 @@ describe("review constant derivation", () => {
 
   // The canonical digest check lives in `core/review/validation.ts`; five inline patterns
   // with differing case sensitivity are what let a writer and a reader disagree about
-  // whether two digests matched.
+  // whether two digests matched. The producer tier is scanned too, because it is the side
+  // that computes the digests the other tiers compare.
   test("no module writes its own SHA-256 digest pattern", () => {
     const pattern = /\{\s*64\s*\}/;
-    const offenders = [...sourceFiles(SESSION_ROOT), ...sourceFiles(REVIEW_MODEL_ROOT)]
+    const offenders = [
+      ...sourceFiles(SESSION_ROOT),
+      ...sourceFiles(REVIEW_MODEL_ROOT),
+      ...sourceFiles(PRODUCER_ROOT),
+    ]
       .filter((path) => repoPath(path) !== "src/core/review/validation.ts")
       .filter((path) => pattern.test(readFileSync(path, "utf8")))
       .map(repoPath);
