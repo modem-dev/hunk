@@ -2146,6 +2146,14 @@ export function DiffPane({
             scrollTop: scrollBox.scrollTop,
             viewportHeight,
           });
+    // A named line is the final scroll policy for this request, exactly as an
+    // explicit alignment is: a cross-file reveal changes the selection, and the
+    // selection reveal it schedules would otherwise run its zero-delay retry
+    // after this layout effect and drag the viewport back to the hunk anchor.
+    // Superseding here is what keeps a reveal into another file line-exact.
+    supersedePendingSelectionReveal();
+    clearPendingFileTopAlign();
+
     if (revealScrollTop === scrollBox.scrollTop) {
       return;
     }
@@ -2154,11 +2162,13 @@ export function DiffPane({
     scrollBox.scrollTo(clampReviewScrollTop(revealScrollTop, viewportHeight));
   }, [
     clampReviewScrollTop,
+    clearPendingFileTopAlign,
     lineCursor,
     lineCursorBoundsOf,
     lineCursorRevealRequest,
     scrollRef,
     scrollViewport.height,
+    supersedePendingSelectionReveal,
     suppressViewportSelectionSync,
   ]);
 

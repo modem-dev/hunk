@@ -17,7 +17,7 @@ import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
-import type { CurrentLineAlignment } from "../lib/hunkScroll";
+import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
 import type { LineCursor } from "../lib/lineCursors";
 
 const { AppHost } = await import("../AppHost");
@@ -1361,6 +1361,103 @@ describe("UI components", () => {
       expect(scrollToSpy).toHaveBeenCalledTimes(alignedCallCount);
       expect(scrollBox?.scrollTop ?? 0).toBe(alignedScrollTop);
       scrollToSpy.mockRestore();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a cross-file line reveal against the selection reveal retry", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    // Two files, so revealing a line in the second one also changes the
+    // selected file — the case that schedules selection-reveal retries. The
+    // second file is one tall hunk, so a line near its end sits far from the
+    // hunk anchor the retry would scroll to, making the two outcomes
+    // unmistakably different rather than a row apart.
+    const files = [
+      createWideTwoHunkDiffFile("first", "first.ts", 1),
+      createTallDiffFile("second", "second.ts", 60),
+    ];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let revealDeepLineInSecondFile = () => {};
+    let cursorReady = false;
+
+    function CrossFileRevealHarness() {
+      const [selection, setSelection] = useState({
+        fileId: files[0]!.id,
+        hunkIndex: 0,
+      });
+      const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [revealRequest, setRevealRequest] = useState<{
+        id: number;
+        placement: LineRevealPlacement;
+      }>({ id: 0, placement: "nearest" });
+      const deepCursorRef = useRef<LineCursor | null>(null);
+
+      revealDeepLineInSecondFile = () => {
+        const cursor = deepCursorRef.current;
+        if (!cursor) return;
+        // Exactly what a `revealLine` into another file produces: a new
+        // selection, a hunk reveal request, and an explicit line reveal.
+        setSelection({ fileId: cursor.fileId, hunkIndex: cursor.hunkIndex });
+        setSelectedHunkRevealRequestId((current) => current + 1);
+        setLineCursor(cursor);
+        setRevealRequest((current) => ({ id: current.id + 1, placement: "reveal" }));
+      };
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorRevealRequest: revealRequest,
+            scrollRef,
+            selectedFileId: selection.fileId,
+            selectedHunkIndex: selection.hunkIndex,
+            selectedHunkRevealRequestId,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            const deep = cursors.filter((cursor) => cursor.fileId === files[1]!.id).at(-1);
+            if (!deep) return;
+            deepCursorRef.current = deep;
+            cursorReady = true;
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<CrossFileRevealHarness />, { width: 104, height: 14 });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !cursorReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(cursorReady).toBe(true);
+
+      await act(async () => {
+        revealDeepLineInSecondFile();
+        await setup.renderOnce();
+        await setup.renderOnce();
+      });
+      const revealedScrollTop = scrollRef.current?.scrollTop ?? 0;
+
+      // The selection reveal schedules a zero-delay retry plus a 120ms
+      // pinned-header settle window. Both must leave the exact line where the
+      // reveal put it; without superseding they scroll back to the hunk anchor.
+      await act(async () => {
+        await Bun.sleep(150);
+        await setup.renderOnce();
+      });
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(revealedScrollTop);
+      // Guard the guard: if the fixture ever put the revealed line at the hunk
+      // anchor, this test would pass without proving anything.
+      expect(revealedScrollTop).toBeGreaterThan(20);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
