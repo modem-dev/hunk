@@ -41,7 +41,7 @@ import {
 } from "./publication";
 
 /** How many materialized bytes one generation retains before evicting its oldest. */
-export const MAX_REVIEW_RESOURCE_CACHE_BYTES = 64 * 1024 * 1024;
+export const MAX_REVIEW_PRODUCER_RESOURCE_BYTES = 64 * 1024 * 1024;
 
 export interface MaterializedReviewResource {
   bytes: Uint8Array;
@@ -93,7 +93,7 @@ export class ReviewResourceStore {
     publication,
     digest,
     concurrency = REVIEW_RESOURCE_LOAD_CONCURRENCY,
-    maxCacheBytes = MAX_REVIEW_RESOURCE_CACHE_BYTES,
+    maxCacheBytes = MAX_REVIEW_PRODUCER_RESOURCE_BYTES,
   }: ReviewResourceStoreOptions) {
     this.publication = publication;
     this.digest = digest;
