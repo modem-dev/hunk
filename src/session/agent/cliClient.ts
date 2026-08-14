@@ -554,6 +554,12 @@ export function formatNoteListOutput(
     .join("\n\n")}\n`;
 }
 
+/**
+ * Report one applied attention mark, including whether the review moved to it.
+ *
+ * The running mark count is part of the answer because marks accumulate per
+ * file: an agent that keeps marking needs to see its own total without asking.
+ */
 export function formatHighlightOutput(
   selector: SessionSelectorInput,
   result: AppliedHighlightResult,
@@ -571,6 +577,12 @@ export function formatHighlightOutput(
   );
 }
 
+/**
+ * Report how many attention marks were cleared, and from what scope.
+ *
+ * Clearing is addressed either to one file or to the whole session, so the
+ * scope is named back to the caller rather than assumed.
+ */
 export function formatClearHighlightsOutput(
   selector: SessionSelectorInput,
   result: ClearedHighlightsResult,
