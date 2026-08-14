@@ -14,6 +14,17 @@ const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // all, so it can never carry a renderer or a platform runtime in. Only this one file is allowed,
 // not the tree — `extension-api/index.ts` is the runtime boundary and imports freely.
 const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
+
+// Core modules outside the review model that a browser bundle may import, each for a
+// stated reason. Deliberately a list rather than a directory: `src/core` also holds config
+// resolution, VCS catalogs, and file I/O, none of which a browser has any business
+// reaching. Every entry is walked by the platform-free closure check below like any other
+// browser-reachable module.
+const BROWSER_SAFE_CORE_MODULES: readonly string[] = [
+  // A11: Hunk registers file extensions Pierre's own inference lacks, and a browser that
+  // never imports the registration highlights the same file differently from a terminal.
+  join(CORE_ROOT, "fileLanguage.ts"),
+];
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
 const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
 
@@ -334,6 +345,7 @@ describe("shared review primitives seam", () => {
       escapingImports(WEB_CLIENT_ROOT, [
         WEB_CLIENT_ROOT,
         REVIEW_MODEL_ROOT,
+        ...BROWSER_SAFE_CORE_MODULES,
         ...BROWSER_SAFE_SESSION_MODULES,
       ]),
     ).toEqual([]);
@@ -344,7 +356,11 @@ describe("shared review primitives seam", () => {
   // the node-debt map's "a browser bundle must never import these until repaid" clause
   // mechanical rather than aspirational.
   test("keeps the browser-reachable module closure free of platform runtimes", () => {
-    const roots = [...sourceFiles(WEB_CLIENT_ROOT), ...BROWSER_SAFE_SESSION_MODULES];
+    const roots = [
+      ...sourceFiles(WEB_CLIENT_ROOT),
+      ...BROWSER_SAFE_CORE_MODULES,
+      ...BROWSER_SAFE_SESSION_MODULES,
+    ];
     const violations = [...reachableSourceFiles(roots)].flatMap((path) =>
       valueImportSpecifiers(path)
         .filter((specifier) => specifier.startsWith("node:") || specifier.startsWith("bun:"))
