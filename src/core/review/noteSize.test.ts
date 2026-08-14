@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_REVIEW_NOTE_BYTES, reviewNoteByteLength, reviewNoteWithinBounds } from "./noteBounds";
+import { MAX_REVIEW_NOTE_BYTES, reviewNoteByteLength, reviewNoteWithinSizeLimit } from "./noteSize";
 import type { ReviewNoteV1 } from "./types";
 
 const base: ReviewNoteV1 = {
@@ -11,7 +11,7 @@ const base: ReviewNoteV1 = {
   editable: true,
 };
 
-describe("review note bounds", () => {
+describe("review note size", () => {
   test("measures the whole note, framing included", () => {
     const empty = reviewNoteByteLength(base);
     expect(empty).toBeGreaterThan(0);
@@ -33,12 +33,12 @@ describe("review note bounds", () => {
       summary: "x".repeat(MAX_REVIEW_NOTE_BYTES - 1),
       rationale: "x".repeat(MAX_REVIEW_NOTE_BYTES - 1),
     };
-    expect(reviewNoteWithinBounds(oversized)).toBe(false);
+    expect(reviewNoteWithinSizeLimit(oversized)).toBe(false);
   });
 
   test("counts multibyte text in bytes rather than characters", () => {
     const summary = "🧪".repeat(MAX_REVIEW_NOTE_BYTES / 4);
     expect(summary.length).toBeLessThan(MAX_REVIEW_NOTE_BYTES);
-    expect(reviewNoteWithinBounds({ ...base, summary })).toBe(false);
+    expect(reviewNoteWithinSizeLimit({ ...base, summary })).toBe(false);
   });
 });

@@ -30,7 +30,7 @@ export function reviewNoteByteLength(note: ReviewNoteV1) {
   return utf8ByteLength(JSON.stringify(note));
 }
 
-/** Whether one note fits within the shared bound. */
-export function reviewNoteWithinBounds(note: ReviewNoteV1) {
+/** Whether one note fits within the shared size limit. */
+export function reviewNoteWithinSizeLimit(note: ReviewNoteV1) {
   return reviewNoteByteLength(note) <= MAX_REVIEW_NOTE_BYTES;
 }

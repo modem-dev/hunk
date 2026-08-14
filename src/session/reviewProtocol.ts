@@ -11,7 +11,7 @@
  *   Here the vocabulary *is* `REVIEW_INTENT_TYPES`, and each action's payload is the
  *   intent's own shape plus the few fields only a remote caller needs.
  * - **Validation is the shared validators.** Exact-key checking is `hasExactKeys`; digests
- *   are `isReviewSha256Digest`; note size is core's `reviewNoteWithinBounds`, measured once
+ *   are `isReviewSha256Digest`; note size is core's `reviewNoteWithinSizeLimit`, measured once
  *   over the whole note (D1); the resource read request and chunk are core's own types
  *   (D5). This module declares no digest regex, no second byte measurement, and no copy
  *   of a bound that exists elsewhere.

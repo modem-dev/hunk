@@ -7,10 +7,10 @@
  * wire type that drifted away from the semantics it carries fails here rather than at a
  * client (`docs/browser-review-seam-audit.md`, B12/B10).
  *
- * It also runs the note-bounds corpus, because "may this note cross a boundary" is a wire
+ * It also runs the note-size corpus, because "may this note cross a boundary" is a wire
  * question the prototype answered differently from the producer (D1).
  */
-import { reviewNoteWithinBounds } from "../../../src/core/review/noteBounds";
+import { reviewNoteWithinSizeLimit } from "../../../src/core/review/noteSize";
 import { parseHunkReviewAction, toReviewIntent } from "../../../src/session/reviewProtocol";
 import type { ReviewWireConsumer } from "../types";
 
@@ -23,5 +23,5 @@ export const reviewWireConsumer: ReviewWireConsumer = {
       ? { accepted: true, intent: toReviewIntent(parsed.value) }
       : { accepted: false };
   },
-  acceptsNote: reviewNoteWithinBounds,
+  acceptsNote: reviewNoteWithinSizeLimit,
 };

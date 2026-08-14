@@ -381,17 +381,17 @@ path suffixes, expansion retention, git-status badges).
   against `MAX_REVIEW_NOTE_BYTES`; broker/producer check whole-note JSON — so a note that
   passes action validation can poison the entire snapshot with a capacity error. Neither
   client pre-checks size, and the server's action-body cap is smaller than the largest
-  "valid" note. Fix: one `reviewNoteWithinBounds` used by wire, broker, producer, and both
+  "valid" note. Fix: one `reviewNoteWithinSizeLimit` used by wire, broker, producer, and both
   composers.
-  _Repaid (Phase 2, core and producer sites)_: `core/review/noteBounds.ts` measures the whole
+  _Repaid (Phase 2, core and producer sites)_: `core/review/noteSize.ts` measures the whole
   note in the unit a transport pays — its serialized bytes, through the platform-free
   `utf8ByteLength` — and `MAX_REVIEW_NOTE_BYTES` sits beside it. Fixtures
-  `test/review-conformance/noteBounds.ts` pin the boundary the two prototype rules disagreed
+  `test/review-conformance/noteSize.ts` pin the boundary the two prototype rules disagreed
   at, including a note whose summary, rationale, and markup each fit while the note itself is
   three times the bound. Wire and composer sites adopt it in Phases 3 and 5.
   _Repaid (Phase 3, wire site)_: `isTransportableReviewNote` in `src/session/reviewProtocol.ts`
-  is `reviewNoteWithinBounds` and nothing else — the wire has no per-field check any more, and
-  declares no second bound. The protocol module is registered as a consumer of the note-bounds
+  is `reviewNoteWithinSizeLimit` and nothing else — the wire has no per-field check any more, and
+  declares no second bound. The protocol module is registered as a consumer of the note-size
   corpus, so `every-field-fits-but-the-note-does-not` — the note whose summary, rationale, and
   markup each pass a per-field check while the note is triple the bound — is now refused at the
   wire rather than admitted and then failing at the publisher. Both composer sites are Phase 5.

@@ -10,7 +10,7 @@
  * The adversarial cases are the two the audit contributed. B10: a line inside an expanded
  * gap is addressable at all, because the action carries the proof for it — the prototype's
  * browser could not express one and had its clicks rejected or mis-sided. D1 is covered by
- * the note-bounds corpus, which the wire now runs as a consumer.
+ * the note-size corpus, which the wire now runs as a consumer.
  */
 import type { ReviewWireFixture } from "./types";
 
