@@ -3,17 +3,24 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createTestCustomThemes } from "../../test/helpers/theme-helpers";
+import { parseDiffFromFile, resolveLanguage } from "@pierre/diffs";
 import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
 } from "../extension-api/types";
+import { getFiletypeFromFileName } from "../core/fileLanguage";
 import type { Changeset, DiffFile } from "../core/types";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { buildStackRows, loadHighlightedDiff } from "../ui/diff/pierre";
+import { prefetchHighlightedDiff } from "../ui/diff/useHighlightedDiff";
+import { resolveTheme } from "../ui/themes";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
+  applyExtensionSyntaxLanguages,
   createExtensionApplyNotices,
   reportExtensionApplyIssues,
   createUnknownVcsNotice,
@@ -85,6 +92,415 @@ function createTestVcsAdapter(id: string): VcsAdapter {
   return { id, name: id, detect: () => null, operations: {} };
 }
 
+/** Build one lazy TextMate grammar module accepted by the public contract. */
+function createTestSyntaxLoader(language: string, onLoad?: () => void) {
+  return async () => {
+    onLoad?.();
+    return {
+      default: [
+        {
+          name: language,
+          scopeName: `source.${language}`,
+          patterns: [],
+          repository: {},
+        },
+      ],
+    };
+  };
+}
+
+describe("extension syntax languages", () => {
+  test("registers a grammar lazily in Pierre's host-owned language registry", async () => {
+    const { result } = createTestLoadResult();
+    let loadCount = 0;
+    const language = "hunk-lazy-syntax-fixture";
+    result.registry.extensions.push({
+      id: "syntax-pack",
+      sourcePath: "/extensions/syntax-pack.ts",
+      origin: "global",
+    });
+    result.registry.syntaxLanguages.push({
+      extensionId: "syntax-pack",
+      language,
+      loader: createTestSyntaxLoader(language, () => (loadCount += 1)),
+    });
+
+    expect(applyExtensionSyntaxLanguages(result.registry, result.context)).toEqual([]);
+    expect(loadCount).toBe(0);
+
+    const resolved = await resolveLanguage(language);
+    expect(loadCount).toBe(1);
+    expect(resolved.name).toBe(language);
+    expect(resolved.data[0]?.scopeName).toBe(`source.${language}`);
+  });
+
+  test("highlights mapped files with extension-contributed grammar scopes", async () => {
+    const { result } = createTestLoadResult();
+    const language = "hunk-rendered-syntax-fixture";
+    result.registry.syntaxLanguages.push({
+      extensionId: "rendered-syntax",
+      language,
+      loader: async () => ({
+        default: [
+          {
+            name: language,
+            scopeName: `source.${language}`,
+            patterns: [
+              {
+                match: "\\bmagic\\b",
+                name: `keyword.control.${language}`,
+              },
+            ],
+            repository: {},
+          },
+        ],
+      }),
+    });
+    result.registry.fileLanguages.push({
+      extensionId: "rendered-syntax",
+      extension: "hunkrenderedfixture",
+      language,
+    });
+
+    expect(applyExtensionSyntaxLanguages(result.registry, result.context)).toEqual([]);
+    expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
+
+    const path = "example.hunkrenderedfixture";
+    const metadata = parseDiffFromFile(
+      { name: path, contents: "ordinary\n", cacheKey: "custom-syntax-before" },
+      { name: path, contents: "magic\n", cacheKey: "custom-syntax-after" },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "rendered-custom-syntax",
+      path,
+      patch: "",
+      language: getFiletypeFromFileName(path),
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "github-dark-default",
+        syntaxScopes: { [`keyword.control.${language}`]: "#123456" },
+      }),
+    );
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter((row) => row.type === "stack-line" && row.cell.kind === "addition")
+      .flatMap((row) => (row.type === "stack-line" ? row.cell.spans : []));
+
+    expect(file.language).toBe(language);
+    expect(spans.find((span) => span.text === "magic")?.fg).toBe("#123456");
+  });
+
+  test("keeps the first grammar registration and attributes later conflicts", async () => {
+    const { result } = createTestLoadResult();
+    const language = "hunk-duplicate-syntax-fixture";
+    result.registry.syntaxLanguages.push(
+      {
+        extensionId: "first",
+        language,
+        loader: createTestSyntaxLoader(language),
+      },
+      {
+        extensionId: "second",
+        language,
+        loader: createTestSyntaxLoader("ignored-syntax-fixture"),
+      },
+    );
+
+    expect(applyExtensionSyntaxLanguages(result.registry, result.context)).toEqual([
+      {
+        extensionId: "second",
+        message: `Skipped syntax language "${language}" from extension second • extension first registered it first`,
+      },
+    ]);
+    expect((await resolveLanguage(language)).data[0]?.name).toBe(language);
+  });
+
+  test("reserves Pierre's plain-text language ids", () => {
+    const { result } = createTestLoadResult();
+    result.registry.syntaxLanguages.push(
+      { extensionId: "syntax-pack", language: "text", loader: createTestSyntaxLoader("text") },
+      { extensionId: "syntax-pack", language: "ansi", loader: createTestSyntaxLoader("ansi") },
+    );
+
+    expect(applyExtensionSyntaxLanguages(result.registry, result.context)).toEqual([
+      {
+        extensionId: "syntax-pack",
+        message: 'Skipped syntax language "text" from extension syntax-pack • Hunk reserves it',
+      },
+      {
+        extensionId: "syntax-pack",
+        message: 'Skipped syntax language "ansi" from extension syntax-pack • Hunk reserves it',
+      },
+    ]);
+  });
+
+  test("reports malformed lazy modules once and leaves Pierre's failure retryable", async () => {
+    const { result, notices } = createTestLoadResult();
+    const language = "hunk-invalid-syntax-fixture";
+    result.registry.syntaxLanguages.push({
+      extensionId: "broken-syntax",
+      language,
+      loader: async () => ({
+        default: [{ name: "", scopeName: "" }],
+      }),
+    });
+
+    expect(applyExtensionSyntaxLanguages(result.registry, result.context)).toEqual([]);
+    await expect(resolveLanguage(language)).rejects.toThrow("loader must resolve");
+    await expect(resolveLanguage(language)).rejects.toThrow("loader must resolve");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain(
+      `Failed to highlight syntax language "${language}" from extension broken-syntax`,
+    );
+  });
+
+  test("times out a stalled loader without blocking later highlighting", async () => {
+    const { result, notices } = createTestLoadResult();
+    const language = "hunk-stalled-syntax-fixture";
+    result.registry.syntaxLanguages.push({
+      extensionId: "stalled-syntax",
+      language,
+      loader: () => new Promise<never>(() => undefined),
+    });
+    applyExtensionSyntaxLanguages(result.registry, result.context, { loaderTimeoutMs: 10 });
+
+    const stalledFile = createTestDiffFile({
+      id: "stalled-syntax",
+      language,
+      path: "stalled.hunksyntaxfixture",
+    });
+    const recoveryFile = createTestDiffFile({
+      id: "stalled-syntax-recovery",
+      language: "typescript",
+      path: "recovery.ts",
+    });
+    const theme = resolveTheme("github-dark-default", null);
+    const [fallback, recovery] = await Promise.all([
+      loadHighlightedDiff(stalledFile, theme),
+      loadHighlightedDiff(recoveryFile, theme),
+    ]);
+
+    expect(fallback.cachePolicy).toBe("retry");
+    expect(recovery.cachePolicy).toBe("reuse");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("loader did not resolve within 10ms");
+    const recoverySpans = buildStackRows(recoveryFile, recovery, theme)
+      .filter((row) => row.type === "stack-line" && row.cell.kind === "addition")
+      .flatMap((row) => (row.type === "stack-line" ? row.cell.spans : []));
+    expect(recoverySpans.some((span) => span.fg !== undefined)).toBe(true);
+  });
+
+  test("retries plaintext fallbacks instead of retaining them in the shared cache", async () => {
+    const { result } = createTestLoadResult();
+    const language = "hunk-transient-syntax-fixture";
+    let loadAttempts = 0;
+    result.registry.syntaxLanguages.push({
+      extensionId: "transient-syntax",
+      language,
+      loader: async () => {
+        loadAttempts += 1;
+        if (loadAttempts === 1) {
+          throw new Error("transient grammar failure");
+        }
+        return createTestSyntaxLoader(language)();
+      },
+    });
+    applyExtensionSyntaxLanguages(result.registry, result.context);
+
+    const theme = resolveTheme("github-dark-default", null);
+    const firstFile = createTestDiffFile({
+      id: "transient-syntax-first",
+      language,
+      path: "first.hunksyntaxfixture",
+    });
+    const secondFile = createTestDiffFile({
+      id: "transient-syntax-second",
+      language,
+      path: "second.hunksyntaxfixture",
+    });
+
+    const fallback = await prefetchHighlightedDiff({ file: firstFile, theme });
+    const recovered = await prefetchHighlightedDiff({ file: secondFile, theme });
+    const revisited = await prefetchHighlightedDiff({ file: firstFile, theme });
+
+    expect(fallback.cachePolicy).toBe("retry");
+    expect(recovered.cachePolicy).toBe("reuse");
+    expect(revisited.cachePolicy).toBe("reuse");
+    expect(revisited).not.toBe(fallback);
+    expect(await prefetchHighlightedDiff({ file: firstFile, theme })).toBe(revisited);
+    expect(loadAttempts).toBe(2);
+  });
+
+  test("attributes grammar attachment failures before falling back to text", async () => {
+    const { result, notices } = createTestLoadResult();
+    const language = "hunk-broken-render-syntax-fixture";
+    result.registry.syntaxLanguages.push({
+      extensionId: "broken-render-syntax",
+      language,
+      loader: async () => ({
+        default: [
+          {
+            name: language,
+            scopeName: `source.${language}`,
+            patterns: [null],
+            repository: {},
+          },
+        ],
+      }),
+    });
+    applyExtensionSyntaxLanguages(result.registry, result.context);
+
+    const path = "broken.hunkrenderedfixture";
+    const metadata = parseDiffFromFile(
+      { name: path, contents: "before\n", cacheKey: "broken-syntax-before" },
+      { name: path, contents: "after\n", cacheKey: "broken-syntax-after" },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "broken-rendered-custom-syntax",
+      path,
+      patch: "",
+      language,
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+
+    const recoveryPath = "recovery.ex";
+    const recoveryMetadata = parseDiffFromFile(
+      { name: recoveryPath, contents: "", cacheKey: "syntax-recovery-before" },
+      {
+        name: recoveryPath,
+        contents: "def recovered do\n  :ok\nend\n",
+        cacheKey: "syntax-recovery-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const recoveryFile: DiffFile = {
+      id: "syntax-recovery",
+      path: recoveryPath,
+      patch: "",
+      language: "elixir",
+      stats: { additions: 3, deletions: 0 },
+      metadata: recoveryMetadata,
+      agent: null,
+    };
+    const recoveryTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "github-dark-default",
+        syntaxScopes: { "keyword.control.hunk-recovery-theme": "#13579b" },
+      }),
+    );
+    const [highlighted, recoveryHighlight] = await Promise.all([
+      loadHighlightedDiff(file, recoveryTheme),
+      loadHighlightedDiff(recoveryFile, recoveryTheme),
+    ]);
+
+    expect(highlighted.additionLines.length).toBeGreaterThan(0);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain(
+      `Failed to highlight syntax language "${language}" from extension broken-render-syntax`,
+    );
+    const recoverySpans = buildStackRows(recoveryFile, recoveryHighlight, recoveryTheme)
+      .filter((row) => row.type === "stack-line" && row.cell.kind === "addition")
+      .flatMap((row) => (row.type === "stack-line" ? row.cell.spans : []));
+
+    expect(recoverySpans.some((span) => span.text.includes("def") && span.fg !== undefined)).toBe(
+      true,
+    );
+  });
+
+  test("reapplying one source is idempotent while another source cannot replace it", () => {
+    const language = "hunk-reload-syntax-fixture";
+    const first = createTestLoadResult().result;
+    first.registry.extensions.push({
+      id: "syntax-pack",
+      sourcePath: "/extensions/first.ts",
+      origin: "global",
+    });
+    first.registry.syntaxLanguages.push({
+      extensionId: "syntax-pack",
+      language,
+      loader: createTestSyntaxLoader(language),
+    });
+
+    expect(applyExtensionSyntaxLanguages(first.registry, first.context)).toEqual([]);
+    expect(applyExtensionSyntaxLanguages(first.registry, first.context)).toEqual([]);
+
+    const second = createTestLoadResult().result;
+    second.registry.extensions.push({
+      id: "syntax-pack",
+      sourcePath: "/extensions/second.ts",
+      origin: "global",
+    });
+    second.registry.syntaxLanguages.push({
+      extensionId: "syntax-pack",
+      language,
+      loader: createTestSyntaxLoader("replacement-syntax-fixture"),
+    });
+
+    expect(applyExtensionSyntaxLanguages(second.registry, second.context)).toEqual([
+      {
+        extensionId: "syntax-pack",
+        message: `Skipped syntax language "${language}" from extension syntax-pack • already loaded by extension syntax-pack; restart Hunk to replace it`,
+      },
+    ]);
+  });
+
+  test("does not let a reload challenger claim the retained owner's language", () => {
+    const language = "hunk-reload-order-syntax-fixture";
+    const initial = createTestLoadResult().result;
+    initial.registry.extensions.push({
+      id: "owner",
+      sourcePath: "/extensions/owner.ts",
+      origin: "global",
+    });
+    initial.registry.syntaxLanguages.push({
+      extensionId: "owner",
+      language,
+      loader: createTestSyntaxLoader(language),
+    });
+    expect(applyExtensionSyntaxLanguages(initial.registry, initial.context)).toEqual([]);
+
+    const reload = createTestLoadResult().result;
+    reload.registry.extensions.push(
+      { id: "challenger", sourcePath: "/extensions/challenger.ts", origin: "global" },
+      { id: "owner", sourcePath: "/extensions/owner.ts", origin: "global" },
+    );
+    reload.registry.syntaxLanguages.push(
+      {
+        extensionId: "challenger",
+        language,
+        loader: createTestSyntaxLoader("ignored-reload-order-syntax-fixture"),
+      },
+      {
+        extensionId: "owner",
+        language,
+        loader: createTestSyntaxLoader(language),
+      },
+    );
+
+    expect(applyExtensionSyntaxLanguages(reload.registry, reload.context)).toEqual([
+      {
+        extensionId: "challenger",
+        message: `Skipped syntax language "${language}" from extension challenger • already loaded by extension owner; restart Hunk to replace it`,
+      },
+    ]);
+  });
+});
+
 describe("extension file languages", () => {
   test("registers extension mappings and skips built-in ones", () => {
     const { result } = createTestLoadResult();
@@ -113,6 +529,22 @@ describe("extension file languages", () => {
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
     expect(getFiletypeFromFileName("sample.hunkfixture")).toBe("ruby");
+  });
+
+  test("removes mappings retired by an extension reload", async () => {
+    const { getFiletypeFromFileName } = await import("../core/fileLanguage");
+    const { result } = createTestLoadResult();
+    result.registry.fileLanguages.push({
+      extensionId: "temporary",
+      extension: "hunkretiredfixture",
+      language: "python",
+    });
+
+    applyExtensionFileLanguages(result.registry);
+    expect(getFiletypeFromFileName("sample.hunkretiredfixture")).toBe("python");
+
+    applyExtensionFileLanguages(createTestLoadResult().result.registry);
+    expect(getFiletypeFromFileName("sample.hunkretiredfixture")).toBe("text");
   });
 });
 

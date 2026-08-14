@@ -155,6 +155,12 @@ type TtyInteraction = "quit" | "wrap" | "wrap-cycle" | "page";
 
 type TtySmokeProcess = ReturnType<typeof spawnTtySmokeProcess>;
 
+// The first rendered frame can arrive before the TTY key listener is ready on
+// a contended CI runner, so spread readiness probes across the startup window.
+const TTY_KEYBOARD_READINESS_TIMEOUT_MS = 5_000;
+const TTY_KEYBOARD_READINESS_MAX_ATTEMPTS = 12;
+const TTY_KEYBOARD_READINESS_RETRY_INTERVAL_MS = 250;
+
 /** Poll observable terminal output until a state appears or the deadline expires. */
 async function waitUntil<T>(
   label: string,
@@ -279,14 +285,17 @@ async function writeTtyInputUntil(
           throw new Error(`TTY process exited with ${proc.exitCode} before ${label}.`);
         }
 
-        if (attempts < 4 && (attempts === 0 || Date.now() - lastAttemptAt >= 150)) {
+        if (
+          attempts < TTY_KEYBOARD_READINESS_MAX_ATTEMPTS &&
+          (attempts === 0 || Date.now() - lastAttemptAt >= TTY_KEYBOARD_READINESS_RETRY_INTERVAL_MS)
+        ) {
           await writeTtyInput(proc, input);
           attempts += 1;
           lastAttemptAt = Date.now();
         }
         return null;
       },
-      2_000,
+      TTY_KEYBOARD_READINESS_TIMEOUT_MS,
       25,
     );
   } catch (error) {

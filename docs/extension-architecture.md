@@ -42,7 +42,7 @@ load issue and costs only that extension. The rules themselves are stated in
 
 ## One registry, one apply path
 
-Registrations (themes, file languages, VCS adapters, changeset transforms,
+Registrations (themes, syntax languages, file languages, VCS adapters, changeset transforms,
 panes, commands, lifecycle/UI events, and bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
@@ -51,7 +51,10 @@ only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses
 the same shutdown/startup lifecycle. A factory that throws is rolled back to its
 pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
-session.
+session. Syntax-language loaders are registered with Pierre only at this apply
+boundary, preserving factory rollback. Pierre owns the process-wide grammar cache,
+so an extension reload may add a new syntax id but changing or removing an
+applied grammar needs a Hunk restart.
 
 ## Host-served runtime modules
 
@@ -59,11 +62,15 @@ Extension files import `react`, `@opentui/*`, and `hunkdiff/extension` as
 host-served runtime modules (`src/extensions/hostRuntimeModules.ts`): a
 per-extension-directory Bun loader hook transpiles extension source and
 rewrites those specifiers to prefixed virtual modules backed by the host's
-own instances. That identity is what lets `registerPane` components
-render inside the app's React tree with working hooks. The module header
-documents why the obvious alternatives don't work (process-wide specifier
-claims break the host's lazy imports; the loaders resolve lazily so headless
-commands never pay OpenTUI's native-library extraction).
+own instances. That identity is what lets `registerPane` components render
+inside the app's React tree with working hooks. Other literal imports resolve
+from the extension's own `node_modules` and are rewritten to filesystem URLs,
+including package export/import maps, because Bun's compiled runtime cannot
+resolve packages that were installed after Hunk itself was built. Resolved package
+modules join the same scoped loader path so their dependencies work recursively.
+The module header documents why the obvious alternatives don't work
+(process-wide specifier claims break the host's lazy imports; the loaders resolve
+lazily so headless commands never pay OpenTUI's native-library extraction).
 
 ## Four-edge pane system
 
