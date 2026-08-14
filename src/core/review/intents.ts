@@ -249,8 +249,14 @@ function requireFact(value: string | undefined, label: "noteId" | "draftId" | "t
   return value;
 }
 
-/** Resolve one current semantic file or reject the target. */
-function requireFile(state: ReviewState, fileKey: string): ReviewFileV1 {
+/**
+ * Resolve one current semantic file or reject the target.
+ *
+ * Exported because a caller validating an action before it plans one asks the same
+ * question, and the rejection a caller reports must be the rejection planning would have
+ * produced — the same code and the same words, not a second phrasing of them.
+ */
+export function requireReviewFile(state: ReviewState, fileKey: string): ReviewFileV1 {
   const file = selectReviewFileByKey(state, fileKey);
   if (!file) {
     throw new ReviewIntentPlanningError(
@@ -334,7 +340,7 @@ function planDraftStart(
   intent: Extract<ReviewIntent, { type: "notes/start-draft" }>,
   facts: ReviewIntentFacts,
 ): ReviewIntentPlan {
-  const file = requireFile(state, intent.fileKey);
+  const file = requireReviewFile(state, intent.fileKey);
   requireHunk(file, intent.hunkIndex);
   const hunk = file.hunks[intent.hunkIndex]!;
   // Where a note about the whole hunk belongs is one shared answer; a caller that
@@ -367,7 +373,7 @@ function planExpansionToggle(
   state: ReviewState,
   intent: Extract<ReviewIntent, { type: "expansion/toggle" }>,
 ): ReviewIntentPlan {
-  const file = requireFile(state, intent.fileKey);
+  const file = requireReviewFile(state, intent.fileKey);
   // Validated against the same addressing every renderer draws and every note-line check
   // accepts, so a gap a surface can offer is exactly a gap this intent can expand (A1).
   const address = reviewGapAddress(reviewGapSourceForFile(file), intent.gapId);
@@ -401,7 +407,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
   if (!draft) {
     throw new ReviewIntentPlanningError("draft-missing", "No user note draft is active.");
   }
-  const file = requireFile(state, draft.fileKey);
+  const file = requireReviewFile(state, draft.fileKey);
   requireHunk(file, draft.hunkIndex);
   if (isBlankReviewNoteBody(draft.body)) {
     return { actions: [{ type: "draft/cancel" }] };
@@ -486,7 +492,7 @@ export function planReviewIntent(
     case "selection/select": {
       // Only the file is required: an out-of-range hunk clamps rather than rejecting, so
       // a stale index from a reloaded file still lands the reviewer somewhere real.
-      const file = requireFile(state, intent.fileKey);
+      const file = requireReviewFile(state, intent.fileKey);
       return {
         actions: [
           {
@@ -503,7 +509,7 @@ export function planReviewIntent(
     case "selection/select-file": {
       // The file-jump rule, owned here rather than restated per surface: selecting a file
       // means its first hunk, and the reveal defaults to the file's own header.
-      const file = requireFile(state, intent.fileKey);
+      const file = requireReviewFile(state, intent.fileKey);
       return planSelection(
         file.key,
         REVIEW_FILE_JUMP_HUNK_INDEX,
@@ -511,7 +517,7 @@ export function planReviewIntent(
       );
     }
     case "selection/anchor": {
-      const file = requireFile(state, intent.fileKey);
+      const file = requireReviewFile(state, intent.fileKey);
       return {
         actions: [
           {

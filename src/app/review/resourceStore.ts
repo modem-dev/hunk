@@ -22,12 +22,12 @@ import { SourceTextTooLargeError } from "../../core/fileSource";
 import {
   isMaterializedReviewResource,
   isReviewResourceRange,
-  MAX_REVIEW_RESOURCE_BYTES,
-  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
+  reviewResourceCeiling,
+  reviewResourceFailure,
   type ReviewResourceChunkV1,
   type ReviewResourceDescriptorV1,
-  type ReviewResourceErrorCode,
+  type ReviewResourceFailure,
   type ReviewResourceRange,
 } from "../../core/review/resources";
 import { reviewDigestsEqual, type ReviewDigestFn } from "../../core/review/validation";
@@ -49,22 +49,13 @@ export interface MaterializedReviewResource {
   digest: string;
 }
 
-export interface ReviewResourceFailure {
-  ok: false;
-  code: ReviewResourceErrorCode;
-  message: string;
-}
+export type { ReviewResourceFailure };
 
 export type ReviewResourceLoad =
   | { ok: true; resource: MaterializedReviewResource }
   | ReviewResourceFailure;
 
 export type ReviewResourceRead = { ok: true; chunk: ReviewResourceChunkV1 } | ReviewResourceFailure;
-
-/** Build one typed failure without inventing a transport string for it. */
-function failure(code: ReviewResourceErrorCode, message: string): ReviewResourceFailure {
-  return { ok: false, code, message };
-}
 
 /**
  * Serialize one canonical file, self-checking it against the manifest first.
@@ -185,7 +176,7 @@ export class ReviewResourceStore {
   /** Read one verified byte window of a resource. */
   async readChunk(resourceId: string, range: ReviewResourceRange): Promise<ReviewResourceRead> {
     if (!isReviewResourceRange(range)) {
-      return failure(
+      return reviewResourceFailure(
         "invalid-range",
         `Resource reads take a non-negative offset and a length within the shared chunk bound.`,
       );
@@ -198,7 +189,7 @@ export class ReviewResourceStore {
 
     const { bytes, byteLength, digest } = load.resource;
     if (range.offset > byteLength) {
-      return failure(
+      return reviewResourceFailure(
         "invalid-range",
         `Resource ${resourceId} has ${byteLength} bytes; offset ${range.offset} is past its end.`,
       );
@@ -225,14 +216,14 @@ export class ReviewResourceStore {
   private async produce(resourceId: string): Promise<ReviewResourceLoad> {
     const descriptor = reviewPublicationResource(this.publication, resourceId);
     if (!descriptor) {
-      return failure(
+      return reviewResourceFailure(
         "unknown-resource",
         `Review resource ${resourceId} is not part of generation ${this.publication.generation}.`,
       );
     }
     const file = reviewPublicationFile(this.publication, descriptor.fileKey);
     if (!file) {
-      return failure(
+      return reviewResourceFailure(
         "unknown-resource",
         `Review resource ${resourceId} names a file this generation does not have.`,
       );
@@ -252,7 +243,7 @@ export class ReviewResourceStore {
   ): Promise<ReviewResourceLoad> {
     const fetcher = this.publication.diffFilesByKey.get(descriptor.fileKey)?.sourceFetcher;
     if (!fetcher) {
-      return failure(
+      return reviewResourceFailure(
         "resource-unavailable",
         `Review file ${file.path} has no source reader in this generation.`,
       );
@@ -266,8 +257,11 @@ export class ReviewResourceStore {
       // reader that failed, and a caller offering to expand context needs to tell them
       // apart.
       return error instanceof SourceTextTooLargeError
-        ? failure("resource-too-large", `Source for ${file.path} exceeds the readable limit.`)
-        : failure(
+        ? reviewResourceFailure(
+            "resource-too-large",
+            `Source for ${file.path} exceeds the readable limit.`,
+          )
+        : reviewResourceFailure(
             "resource-unavailable",
             `Could not read ${descriptor.side} source for ${file.path}: ${
               error instanceof Error ? error.message : String(error)
@@ -275,17 +269,20 @@ export class ReviewResourceStore {
           );
     }
     if (text === null) {
-      return failure(
+      return reviewResourceFailure(
         "resource-unavailable",
         `Review file ${file.path} has no ${descriptor.side} source to read.`,
       );
     }
 
+    // Reported against the path rather than the resource id, because a reviewer asking to
+    // expand context needs to know which file refused before the generic measure does.
+    const ceiling = reviewResourceCeiling(descriptor.kind);
     const bytes = Buffer.from(text, "utf8");
-    return bytes.byteLength > MAX_REVIEW_SOURCE_RESOURCE_BYTES
-      ? failure(
+    return bytes.byteLength > ceiling
+      ? reviewResourceFailure(
           "resource-too-large",
-          `Source for ${file.path} is ${bytes.byteLength} bytes, over the ${MAX_REVIEW_SOURCE_RESOURCE_BYTES}-byte source limit.`,
+          `Source for ${file.path} is ${bytes.byteLength} bytes, over the ${ceiling}-byte source limit.`,
         )
       : this.measure(descriptor, bytes);
   }
@@ -298,10 +295,11 @@ export class ReviewResourceStore {
    * what was produced, and disagreeing is an integrity failure rather than a miss.
    */
   private measure(descriptor: ReviewResourceDescriptorV1, bytes: Buffer): ReviewResourceLoad {
-    if (bytes.byteLength > MAX_REVIEW_RESOURCE_BYTES) {
-      return failure(
+    const ceiling = reviewResourceCeiling(descriptor.kind);
+    if (bytes.byteLength > ceiling) {
+      return reviewResourceFailure(
         "resource-too-large",
-        `Review resource ${descriptor.id} is ${bytes.byteLength} bytes, over the ${MAX_REVIEW_RESOURCE_BYTES}-byte resource limit.`,
+        `Review resource ${descriptor.id} is ${bytes.byteLength} bytes, over the ${ceiling}-byte resource limit.`,
       );
     }
     const digest = this.digest(bytes);
@@ -310,7 +308,7 @@ export class ReviewResourceStore {
       (descriptor.byteLength !== bytes.byteLength ||
         !reviewDigestsEqual(descriptor.digest!, digest))
     ) {
-      return failure(
+      return reviewResourceFailure(
         "resource-integrity",
         `Review resource ${descriptor.id} does not match the length and digest it was published with.`,
       );

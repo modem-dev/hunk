@@ -46,10 +46,9 @@ import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewRes
 import { ReviewChunkAssembler } from "../../core/review/resourceAssembly";
 import {
   isMaterializedReviewResource,
-  MAX_REVIEW_RESOURCE_BYTES,
-  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
+  reviewResourceCeiling,
   reviewResourceId,
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
@@ -98,13 +97,6 @@ export class ReviewGenerationRetiredError extends Error {
         : "The review generation retired and the session is no longer connected.",
     );
   }
-}
-
-/** The largest a resource of one kind may be, which is what a load reserves against. */
-function resourceCeiling(descriptor: ReviewResourceDescriptorV1) {
-  return descriptor.kind === "source"
-    ? MAX_REVIEW_SOURCE_RESOURCE_BYTES
-    : MAX_REVIEW_RESOURCE_BYTES;
 }
 
 /** Run one bounded-parallel pass over a work list, in the shared load concurrency. */
@@ -392,14 +384,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       key,
       measured
         ? descriptor.byteLength!
-        : Math.min(REVIEW_RESOURCE_CHUNK_BYTES, resourceCeiling(descriptor)),
+        : Math.min(REVIEW_RESOURCE_CHUNK_BYTES, reviewResourceCeiling(descriptor.kind)),
     );
     try {
       const assembler = new ReviewChunkAssembler({
         resourceId: key.resourceId,
         generation: key.generation,
         digest: nodeReviewDigest,
-        maxBytes: resourceCeiling(descriptor),
+        maxBytes: reviewResourceCeiling(descriptor.kind),
         ...(measured
           ? { expected: { byteLength: descriptor.byteLength!, digest: descriptor.digest! } }
           : {}),

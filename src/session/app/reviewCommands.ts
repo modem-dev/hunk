@@ -20,11 +20,10 @@
  *   the caller here, so note and draft ids and timestamps are allocated at this edge.
  */
 import { randomUUID } from "node:crypto";
-import type { ReviewProducer, ReviewProducerFailure } from "../../app/review/producer";
+import type { ReviewProducer } from "../../app/review/producer";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
 import { resolveReviewExpandedLine } from "../../core/review/expansion";
-import { ReviewIntentPlanningError } from "../../core/review/intents";
-import { selectReviewFileByKey } from "../../core/review/selectors";
+import { requireReviewFile, ReviewIntentPlanningError } from "../../core/review/intents";
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1, ReviewLineAddressV1 } from "../../core/review/types";
 import {
@@ -53,28 +52,19 @@ function fail(
   };
 }
 
-/** Lift one producer failure onto the wire with its code and message intact. */
-function fromProducerFailure(failure: ReviewProducerFailure): HunkReviewFailureV1 {
-  return {
-    ok: false,
-    code: failure.code,
-    message: failure.message,
-    currentGeneration: failure.currentGeneration,
-  };
-}
-
 /**
  * Read one bounded, digest-verified window of one published resource.
  *
  * Everything about the read — strict request parsing, generation checking, single-flight
  * materialization, chunk bounds — already belongs to the producer; this only routes to it.
+ * Its answer is already a wire answer: the producer's failure codes are a subset of the
+ * wire's, so copying the fields across would only be a second shape of one rejection.
  */
 export async function readSessionReviewResource(
   producer: ReviewProducer,
   envelope: HunkReviewResourceReadEnvelopeV1,
 ): Promise<HunkReviewResourceReadResultV1> {
-  const read = await producer.readResource(envelope.request);
-  return read.ok ? read : fromProducerFailure(read);
+  return producer.readResource(envelope.request);
 }
 
 /**
@@ -114,26 +104,6 @@ function checkPosition(
       );
 }
 
-/** Resolve one file the action names, or the failure that says it is not there. */
-function requireFile(
-  producer: ReviewProducer,
-  state: ReviewState,
-  fileKey: string,
-):
-  | { file: ReviewFileV1; failure?: undefined }
-  | { file?: undefined; failure: HunkReviewFailureV1 } {
-  const file = selectReviewFileByKey(state, fileKey);
-  return file
-    ? { file }
-    : {
-        failure: fail(
-          producer,
-          "file-not-found",
-          `Review file ${fileKey} does not exist in the current review.`,
-        ),
-      };
-}
-
 /**
  * Check one expanded-line proof against the file it claims to be about.
  *
@@ -164,7 +134,13 @@ function checkExpandedLine(
       );
 }
 
-/** Validate everything about one action that needs the current review to be known. */
+/**
+ * Validate everything about one action that needs the current review to be known.
+ *
+ * Resolving a file the action names is core's `requireReviewFile`, so it throws a
+ * `ReviewIntentPlanningError` the caller converts — the same rejection, in the same words,
+ * a caller would have received had planning reached it.
+ */
 function checkAgainstReview(
   producer: ReviewProducer,
   state: ReviewState,
@@ -174,8 +150,8 @@ function checkAgainstReview(
     if (!action.expandedLineProof || !action.target) {
       return undefined;
     }
-    const { file, failure } = requireFile(producer, state, action.fileKey);
-    return failure ?? checkExpandedLine(producer, file, action.target, action.expandedLineProof);
+    const file = requireReviewFile(state, action.fileKey);
+    return checkExpandedLine(producer, file, action.target, action.expandedLineProof);
   }
 
   if (action.type === "notes/create-user" && action.target) {
@@ -192,8 +168,8 @@ function checkAgainstReview(
     if (!action.expandedLineProof) {
       return undefined;
     }
-    const { file, failure } = requireFile(producer, state, draft.fileKey);
-    return failure ?? checkExpandedLine(producer, file, action.target, action.expandedLineProof);
+    const file = requireReviewFile(state, draft.fileKey);
+    return checkExpandedLine(producer, file, action.target, action.expandedLineProof);
   }
 
   return undefined;
@@ -225,12 +201,12 @@ export function applySessionReviewAction(
     );
   }
 
-  const rejected = checkAgainstReview(producer, state, envelope.action);
-  if (rejected) {
-    return rejected;
-  }
-
   try {
+    const rejected = checkAgainstReview(producer, state, envelope.action);
+    if (rejected) {
+      return rejected;
+    }
+
     // Identity and time are the facts core refuses to invent, and this edge is the caller
     // that owns them for a remote action.
     producer.applyIntent(toReviewIntent(envelope.action), {

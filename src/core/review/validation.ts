@@ -46,6 +46,18 @@ export function utf8ByteLength(value: string): number {
 }
 
 /**
+ * Narrows one untrusted value to a plain object, or undefined when it is not one.
+ *
+ * Arrays and `null` are excluded because both pass a bare `typeof value === "object"`, and
+ * a parser that accepted either would then read named keys off a value that has none.
+ */
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
  * Whether one parsed record carries exactly the allowed keys — none missing, none extra.
  *
  * The one strictness rule for untrusted input crossing a review boundary. Rejecting extra

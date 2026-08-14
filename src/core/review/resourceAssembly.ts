@@ -17,16 +17,15 @@
  */
 import {
   REVIEW_RESOURCE_CHUNK_BYTES,
+  reviewResourceFailure,
   type ReviewResourceChunkV1,
   type ReviewResourceErrorCode,
+  type ReviewResourceFailure,
 } from "./resources";
 import { isReviewSha256Digest, reviewDigestsEqual, type ReviewDigestFn } from "./validation";
 
-export interface ReviewAssemblyFailure {
-  ok: false;
-  code: ReviewResourceErrorCode;
-  message: string;
-}
+/** A refused assembly, in the shared resource vocabulary a caller already handles. */
+export type ReviewAssemblyFailure = ReviewResourceFailure;
 
 export type ReviewAssemblyStep = { ok: true; done: boolean } | ReviewAssemblyFailure;
 
@@ -61,11 +60,6 @@ export interface ReviewChunkAssemblerOptions {
    * every later chunk to it.
    */
   expected?: { byteLength: number; digest: string };
-}
-
-/** Build one typed failure without inventing a transport string for it. */
-function failure(code: ReviewResourceErrorCode, message: string): ReviewAssemblyFailure {
-  return { ok: false, code, message };
 }
 
 /**
@@ -249,7 +243,7 @@ export class ReviewChunkAssembler {
 
   /** Record one failure so every later call reports the first cause rather than a symptom. */
   private fail(code: ReviewResourceErrorCode, message: string): ReviewAssemblyFailure {
-    this.failed ??= failure(code, message);
+    this.failed ??= reviewResourceFailure(code, message);
     return this.failed;
   }
 }

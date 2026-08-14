@@ -54,7 +54,12 @@ import {
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
 import type { ReviewLineAddressV1, ReviewSide } from "../core/review/types";
-import { hasExactKeys, isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
+import {
+  asRecord,
+  hasExactKeys,
+  isReviewSha256Digest,
+  utf8ByteLength,
+} from "../core/review/validation";
 
 export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
 
@@ -252,13 +257,6 @@ export type HunkReviewParseResult<Value> = { ok: true; value: Value } | HunkRevi
 
 const INVALID: HunkReviewParseFailure = { ok: false, reason: "invalid" };
 const UNSUPPORTED: HunkReviewParseFailure = { ok: false, reason: "unsupported" };
-
-/** Whether one value is a plain object rather than an array or null. */
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 
 /** Whether one value is a non-empty identifier within the shared identifier bound. */
 function isIdentifier(value: unknown): value is string {

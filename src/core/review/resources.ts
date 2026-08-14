@@ -14,7 +14,7 @@
  */
 import { parseReviewGeneration } from "./generationOrder";
 import type { ReviewSide } from "./types";
-import { hasExactKeys } from "./validation";
+import { asRecord, hasExactKeys } from "./validation";
 
 export type ReviewResourceKind = "canonical-file" | "patch" | "source";
 
@@ -35,6 +35,17 @@ export const REVIEW_RESOURCE_LOAD_CONCURRENCY = 4;
 
 /** Largest single resource of any kind a producer will materialize. */
 export const MAX_REVIEW_RESOURCE_BYTES = 32 * 1024 * 1024;
+
+/**
+ * The largest a resource of one kind may be, which is what a read reserves against.
+ *
+ * Stated once because both tiers reserve: the producer before it retains bytes, the mirror
+ * before it accepts a stream. Two copies of "source is held to a smaller limit" would be
+ * two chances for one of them to keep the general bound after the source bound moved.
+ */
+export function reviewResourceCeiling(kind: ReviewResourceKind) {
+  return kind === "source" ? MAX_REVIEW_SOURCE_RESOURCE_BYTES : MAX_REVIEW_RESOURCE_BYTES;
+}
 
 export const REVIEW_CANONICAL_FILE_CONTENT_TYPE =
   "application/vnd.hunk.review-file+json; charset=utf-8" as const;
@@ -169,11 +180,9 @@ const READ_RESOURCE_FIELDS = ["generation", "resourceId", "offset", "length"] as
 export function parseReadReviewResourceRequest(
   value: unknown,
 ): ReadReviewResourceRequest | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
+  const record = asRecord(value);
   if (
+    !record ||
     !hasExactKeys(record, READ_RESOURCE_FIELDS) ||
     parseReviewGeneration(record.generation) === undefined ||
     typeof record.resourceId !== "string" ||
@@ -232,3 +241,24 @@ export type ReviewRequestErrorCode =
   | "stale-generation"
   /** The request was not expressible: missing, extra, or wrongly typed fields. */
   | "invalid-request";
+
+/**
+ * One refused resource operation, in the vocabulary above.
+ *
+ * Shared by everything that produces or consumes resource bytes — the producer's store,
+ * the reader's chunk assembler — so a caller handling one of them handles both, and a code
+ * added here reaches every tier at once.
+ */
+export interface ReviewResourceFailure {
+  ok: false;
+  code: ReviewResourceErrorCode;
+  message: string;
+}
+
+/** Build one typed failure without inventing a transport string for it. */
+export function reviewResourceFailure(
+  code: ReviewResourceErrorCode,
+  message: string,
+): ReviewResourceFailure {
+  return { ok: false, code, message };
+}

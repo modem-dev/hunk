@@ -13,6 +13,7 @@
  */
 import {
   reviewExpansionSide,
+  reviewGapId,
   reviewGapSourceForFile,
   reviewLeadingGap,
   reviewTrailingGap,
@@ -91,7 +92,7 @@ export interface ReviewContentManifest {
 /** Record one resolved gap address, keyed by the id every consumer addresses it with. */
 function manifestGap(address: ReviewGapAddress): ReviewContentManifestGap {
   return {
-    gapId: `${address.position}:${address.hunkIndex}`,
+    gapId: reviewGapId(address.position, address.hunkIndex),
     oldRange: [...address.oldRange] as ReviewLineRange,
     newRange: [...address.newRange] as ReviewLineRange,
     lineCount: address.lineCount,
