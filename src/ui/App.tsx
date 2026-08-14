@@ -1323,7 +1323,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    review.setShowAgentNotes(!showAgentNotes);
+    review.toggleAgentNotes();
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */

@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useRef, useState } from "react";
+import { builtinAppCommand } from "../../core/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
 import {
@@ -1160,6 +1161,88 @@ describe("useReviewController", () => {
 
       expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  // Intent: these three handlers execute the effect their catalog entry declares, rather
+  // than a terminal restatement of it that could drift from what a browser palette or an
+  // agent command lowering the same id would do.
+  test("runs the review effect the catalog declares for the note layer, the nearest gap, and a new note", async () => {
+    expect(builtinAppCommand("hunk.view.toggleAgentNotes").review).toEqual({
+      kind: "notes/toggle-visibility",
+    });
+    expect(builtinAppCommand("hunk.review.toggleHunkGap").review).toEqual({
+      kind: "expansion/toggle-selected-gap",
+    });
+    expect(builtinAppCommand("hunk.review.startNote").review).toEqual({
+      kind: "notes/start-draft",
+    });
+
+    const beforeLines = Array.from(
+      { length: 12 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[11] = "export const line12 = 1200;";
+    const after = lines(...afterLines);
+    const file = createDiffFile(
+      "alpha",
+      "alpha.ts",
+      lines(...beforeLines),
+      after,
+      null,
+      createTestSourceFetcher((side) => (side === "new" ? after : null)),
+    );
+
+    const { controllerRef, setup } = await renderReviewController([file]);
+
+    try {
+      await flush(setup);
+
+      // A declared toggle, not a set: two invocations return the layer to where it started.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAgentNotes();
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).showAgentNotes).toBe(true);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAgentNotes();
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).showAgentNotes).toBe(false);
+
+      // A note with no measured line lands on the shared whole-hunk default: the selected
+      // hunk's first added line.
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).draftNote).toMatchObject({
+        fileId: "alpha",
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+      });
+      await act(async () => {
+        expectValue(controllerRef.current).cancelDraftNote();
+      });
+      await flush(setup);
+
+      // The selected hunk opens the file, so it has no leading gap of its own and the
+      // declared effect reaches forward to the next hunk's — the shared gap policy.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleSelectedHunkGap();
+      });
+      await flush(setup);
+      expect([...(expectValue(controllerRef.current).expandedGapsByFileId["alpha"] ?? [])]).toEqual(
+        ["before:1"],
+      );
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -24,6 +24,12 @@ import {
   findDiffFileByPath,
   resolveCommentTarget,
 } from "../../core/liveComments";
+import {
+  builtinAppCommand,
+  lowerAppCommandToReviewIntent,
+  type AppCommandId,
+  type AppCommandLoweringContext,
+} from "../../core/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import {
   applyReviewIntent,
@@ -39,7 +45,6 @@ import {
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
   selectNormalizedSelection,
-  selectReviewGapForSelection,
 } from "../../core/review/selectors";
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
@@ -261,6 +266,8 @@ export interface ReviewController {
   selectFile: (fileId: string, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
   setShowAgentNotes: (visible: boolean) => void;
+  /** Flip the note layer the way the catalogued toggle command declares it. */
+  toggleAgentNotes: () => void;
   startUserNote: (
     fileId?: string,
     hunkIndex?: number,
@@ -474,6 +481,24 @@ export function useReviewController({
   const runIntent = useCallback(
     <T extends ReviewIntent>(intent: T, facts?: ReviewIntentFacts) =>
       applyReviewIntent(store, intent, facts),
+    [store],
+  );
+
+  /**
+   * Lower one built-in command to the intent its catalog entry declares.
+   *
+   * The terminal invokes these commands from keys, menus, and the mouse, and lowers each
+   * one here rather than restating its effect: what "toggle the note layer" or "toggle the
+   * nearest gap" means is the catalog's declaration, and this hook only supplies the facts
+   * a renderer owns and keeps the bookkeeping that follows.
+   */
+  const lowerCommand = useCallback(
+    (id: AppCommandId, facts?: Omit<AppCommandLoweringContext, "count" | "state">) =>
+      lowerAppCommandToReviewIntent(builtinAppCommand(id), {
+        count: 1,
+        state: store.getSnapshot(),
+        ...facts,
+      }),
     [store],
   );
 
@@ -709,6 +734,14 @@ export function useReviewController({
     [runIntent],
   );
 
+  /** Flip the shared agent note layer, as the catalogued command declares that flip. */
+  const toggleAgentNotes = useCallback(() => {
+    const intent = lowerCommand("hunk.view.toggleAgentNotes");
+    if (intent) {
+      runIntent(intent);
+    }
+  }, [lowerCommand, runIntent]);
+
   /** Start one full-source load and mirror its progress into review state as a status. */
   const startSourceLoad = useCallback(
     (file: DiffFile, fileKey: string, side: SourceLoadRequest["side"]) => {
@@ -799,7 +832,34 @@ export function useReviewController({
     }
   }, [fileByKey, startSourceLoad, store, state.document]);
 
-  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
+  /** Run one expansion toggle plus the line-cursor bookkeeping that belongs to the terminal. */
+  const applyGapToggle = useCallback(
+    (file: DiffFile, intent: Extract<ReviewIntent, { type: "expansion/toggle" }>) => {
+      const restorePointKey = `${file.id}:${intent.gapId}`;
+      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+      const cursorBeforeToggle = lineCursorRef.current;
+      // The intent decides whether this is an expand or a collapse and reports the side
+      // whose source fills the gap; the line-cursor bookkeeping below is the terminal's
+      // own, and reads that decision rather than predicting it.
+      const toggled = runIntent(intent);
+      if (toggled.expanded) {
+        if (cursorBeforeToggle) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
+        }
+        pendingLineCursorRef.current = { kind: "reveal", fileId: file.id, gapKey: intent.gapId };
+      } else {
+        lineCursorBeforeExpandRef.current.delete(restorePointKey);
+        pendingLineCursorRef.current = restorePoint
+          ? { kind: "restore", cursor: restorePoint }
+          : null;
+      }
+
+      startSourceLoad(file, intent.fileKey, toggled.side);
+    },
+    [runIntent, startSourceLoad],
+  );
+
+  /** Toggle expansion of one collapsed gap the renderer addressed by file id. */
   const toggleGap = useCallback(
     (fileId: string, gapKey: string) => {
       const file = allFiles.find((entry) => entry.id === fileId);
@@ -808,40 +868,23 @@ export function useReviewController({
         return;
       }
 
-      const restorePointKey = `${fileId}:${gapKey}`;
-      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const cursorBeforeToggle = lineCursorRef.current;
-      // The intent decides whether this is an expand or a collapse and reports the side
-      // whose source fills the gap; the line-cursor bookkeeping below is the terminal's
-      // own, and reads that decision rather than predicting it.
-      const toggled = runIntent({ type: "expansion/toggle", fileKey, gapId: gapKey });
-      if (toggled.expanded) {
-        if (cursorBeforeToggle) {
-          lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
-        }
-        pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
-      } else {
-        lineCursorBeforeExpandRef.current.delete(restorePointKey);
-        pendingLineCursorRef.current = restorePoint
-          ? { kind: "restore", cursor: restorePoint }
-          : null;
-      }
-
-      startSourceLoad(file, fileKey, toggled.side);
+      applyGapToggle(file, { type: "expansion/toggle", fileKey, gapId: gapKey });
     },
-    [allFiles, keyByFileId, runIntent, startSourceLoad],
+    [allFiles, applyGapToggle, keyByFileId],
   );
 
-  /** Toggle the collapsed gap nearest to the current hunk selection. */
+  /** Toggle the collapsed gap the catalogued "toggle unchanged context" command reaches. */
   const toggleSelectedHunkGap = useCallback(() => {
-    // Which gap "toggle unchanged context" reaches is the shared policy, not a terminal
-    // rule: the same command fired from anywhere else must land on the same gap.
-    const target = selectReviewGapForSelection(store.getSnapshot());
-    const file = target ? fileByKey.get(target.fileKey) : undefined;
-    if (target && file) {
-      toggleGap(file.id, target.gapId);
+    const intent = lowerCommand("hunk.review.toggleHunkGap");
+    if (intent?.type !== "expansion/toggle") {
+      return;
     }
-  }, [fileByKey, store, toggleGap]);
+
+    const file = fileByKey.get(intent.fileKey);
+    if (file?.sourceFetcher) {
+      applyGapToggle(file, intent);
+    }
+  }, [applyGapToggle, fileByKey, lowerCommand]);
 
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
@@ -1215,16 +1258,21 @@ export function useReviewController({
         return null;
       }
 
-      // The draft's identity is the caller's to own, and where a whole-hunk note lands is
-      // the shared default; a measured cursor target overrides it.
+      // Where the note lands is the catalogued command's effect: the row this renderer
+      // measured when it has one, the shared whole-hunk default when it does not.
+      const intent = lowerCommand("hunk.review.startNote", {
+        noteLocation: { fileKey, hunkIndex },
+        ...(requestedTarget ? { noteTarget: requestedTarget } : {}),
+      });
+      if (intent?.type !== "notes/start-draft") {
+        return null;
+      }
+
+      // The draft's identity is the caller's to own, and adopting a position the viewport
+      // already settled on is the shared anchor policy, so such a draft asks for no reveal.
       const { draft } = runIntent(
         {
-          type: "notes/start-draft",
-          fileKey,
-          hunkIndex,
-          ...(requestedTarget ? { target: requestedTarget } : {}),
-          // Adopting a position the viewport already settled on is the shared anchor
-          // policy, so the draft asks for no reveal at all in that case.
+          ...intent,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
         { draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}` },
@@ -1239,6 +1287,7 @@ export function useReviewController({
       applyLineCursor,
       keyByFileId,
       lineCursors,
+      lowerCommand,
       runIntent,
       selectedFile?.id,
       selectedHunkIndex,
@@ -1415,6 +1464,7 @@ export function useReviewController({
     selectFile,
     selectHunk,
     setShowAgentNotes,
+    toggleAgentNotes,
     startUserNote,
     setFilter,
     updateDraftNote,

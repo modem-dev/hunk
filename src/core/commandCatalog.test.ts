@@ -118,6 +118,24 @@ describe("app command catalog", () => {
     });
   });
 
+  // Intent: an add-note affordance can address a row the reviewer is only pointing at, so
+  // the client says where the note goes and the lowering falls back to the selection.
+  test("lowers a new note at the location the client addressed", () => {
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.startNote"), {
+        count: 1,
+        state: createTestReviewState(["alpha", "beta"]),
+        noteLocation: { fileKey: "beta", hunkIndex: 1 },
+        noteTarget: { side: "new", line: 21 },
+      }),
+    ).toEqual({
+      type: "notes/start-draft",
+      fileKey: "beta",
+      hunkIndex: 1,
+      target: { side: "new", line: 21 },
+    });
+  });
+
   test("lowers the gap toggle to the gap the shared policy reaches", () => {
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.review.toggleHunkGap"), {

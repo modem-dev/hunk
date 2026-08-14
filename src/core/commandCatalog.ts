@@ -498,6 +498,17 @@ export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | und
   return APP_COMMAND_CATALOG.find((entry) => entry.id === id);
 }
 
+/**
+ * Look one built-in command up by its catalogued id.
+ *
+ * Total where `appCommandCatalogEntry` is partial, because `AppCommandId` is derived from
+ * the catalog itself: a client naming a built-in it lowers does not have to handle the
+ * possibility that the command does not exist.
+ */
+export function builtinAppCommand(id: AppCommandId): AppCommandCatalogEntry {
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id) as AppCommandCatalogEntry;
+}
+
 /** The facts a command needs to become one concrete review intent. */
 export interface AppCommandLoweringContext {
   /** Host-normalized positive repeat count. */
@@ -516,6 +527,14 @@ export interface AppCommandLoweringContext {
    * default for the whole hunk.
    */
   noteTarget?: ReviewLineAddressV1;
+  /**
+   * The file and hunk the invoking client's note affordance addressed.
+   *
+   * The other renderer-owned fact: a client may offer "add a note here" on a row the
+   * reviewer is merely pointing at or has scrolled to, which is not always what the review
+   * has selected. Omitted, the note lands on the current selection.
+   */
+  noteLocation?: { fileKey: string; hunkIndex: number };
 }
 
 /**
@@ -530,7 +549,7 @@ export interface AppCommandLoweringContext {
  */
 export function lowerAppCommandToReviewIntent(
   entry: AppCommandCatalogEntry,
-  { count, state, noteTarget }: AppCommandLoweringContext,
+  { count, state, noteTarget, noteLocation }: AppCommandLoweringContext,
 ): ReviewIntent | undefined {
   switch (entry.review?.kind) {
     case "selection/move":
@@ -542,7 +561,7 @@ export function lowerAppCommandToReviewIntent(
     case "notes/toggle-visibility":
       return { type: "notes/set-visibility", visible: !state.showAgentNotes };
     case "notes/start-draft": {
-      const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+      const { fileKey, hunkIndex } = noteLocation ?? selectNormalizedSelection(state);
       return fileKey === null
         ? undefined
         : {
