@@ -1,7 +1,7 @@
 import type {
   WatchControllerClock,
   WatchEventSourceCallbacks,
-} from "../../src/core/watchController";
+} from "../../src/core/watch/controller";
 import type { WatchedInputRuntime } from "../../src/ui/hooks/useWatchedInput";
 
 interface ScheduledWatchTestTimer {

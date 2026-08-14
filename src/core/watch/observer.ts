@@ -2,8 +2,8 @@ import { watch as nativeFsWatch } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { watch as chokidarWatch, type ChokidarOptions, type FSWatcher } from "chokidar";
 
-import type { WatchEventSource, WatchEventSourceCallbacks } from "./watchController";
-import type { DirectoryTreeWatchTarget, WatchPlan, WatchTarget } from "./watchPlan";
+import type { WatchEventSource, WatchEventSourceCallbacks } from "./controller";
+import type { DirectoryTreeWatchTarget, WatchPlan, WatchTarget } from "./plan";
 
 export interface WatchObserver extends WatchEventSource {
   ready: Promise<void>;

@@ -10,6 +10,7 @@ Use it when adding a new module or deciding where an existing responsibility bel
 src/app/             executable composition: startup plans and shared session bootstrap
 src/core/            normalized review model, loading, patch handling, VCS contracts,
                      configuration, and runtime primitives
+src/core/watch/      input signatures, observation plans/backends, and refresh coordination
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support
 src/extensions/      extension host, registry, trust, lifecycle, and bundled extensions
 src/session/         shared session protocol, schemas, types, agent surface, app bridge, and broker transport

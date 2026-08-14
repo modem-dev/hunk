@@ -424,7 +424,7 @@ describe("UI components", () => {
       ),
       createTestDiffFile(
         "watch",
-        "src/core/watch.ts",
+        "src/core/watch/signature.ts",
         "export const watch = 1;\n",
         lines(
           "export const watch = 1;",
@@ -474,7 +474,7 @@ describe("UI components", () => {
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
     expect(frame).toContain(" App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
-    expect(frame).toContain(" watch.ts");
+    expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
     expect(frame).toContain("+5");
     expect(frame).toContain("-3");

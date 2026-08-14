@@ -1,5 +1,5 @@
 import type { BuildDiffFileOptions } from "../diffFile";
-import type { WatchPlan } from "../watchPlan";
+import type { WatchPlan } from "../watch/plan";
 import type {
   DiffFile,
   VcsShowCommandInput,

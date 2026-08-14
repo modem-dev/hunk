@@ -5,7 +5,7 @@ import {
   WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
   type WatchControllerClock,
   type WatchEventSourceCallbacks,
-} from "./watchController";
+} from "./controller";
 
 class FakeWatchClock implements WatchControllerClock {
   nowMs = 0;
