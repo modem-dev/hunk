@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { ExtensionLineHighlightInput } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
@@ -16,8 +16,6 @@ import {
 export const LINE_HIGHLIGHT_TIMEOUT_MS = 1_500;
 /** Keep extension preparation parallel but bounded across a large changeset. */
 export const LINE_HIGHLIGHT_CONCURRENCY = 4;
-/** Retain a bounded set of per-(file, highlighter) results across epoch and reload churn. */
-export const LINE_HIGHLIGHT_CACHE_MAX_ENTRIES = 512;
 /** Bound warning dedupe metadata retained for this hook lifetime. */
 const LINE_HIGHLIGHT_ISSUE_MAX_ENTRIES = 256;
 
@@ -32,6 +30,13 @@ interface CacheEntry {
   marks: readonly ValidatedLineHighlight[] | null;
 }
 
+/** One file's merged marks, tagged with the inputs that produced them. */
+interface ResolvedEntry {
+  file: DiffFile;
+  highlighters: readonly RegisteredLineHighlighter[];
+  marks: readonly ValidatedLineHighlight[];
+}
+
 /** Record a dedupe key while evicting the oldest retained key at the fixed limit. */
 function recordBoundedIssue(keys: Set<string>, key: string) {
   if (keys.has(key)) return false;
@@ -43,14 +48,26 @@ function recordBoundedIssue(keys: Set<string>, key: string) {
   return true;
 }
 
-/** Insert one result and evict the oldest retained entry when full. */
-function cacheResult(entries: Map<string, CacheEntry>, key: string, entry: CacheEntry) {
-  entries.delete(key);
-  entries.set(key, entry);
-  while (entries.size > LINE_HIGHLIGHT_CACHE_MAX_ENTRIES) {
-    const oldest = entries.keys().next().value;
-    if (oldest === undefined) return;
-    entries.delete(oldest);
+/**
+ * Drop retained results the current generation can no longer read.
+ *
+ * Retention is scoped to the live `(file, highlighter)` objects rather than to
+ * a fixed entry ceiling: a reload replaces both, so an older entry is dead
+ * weight the moment it stops matching. A ceiling instead evicted live entries
+ * once a review carried more pairs than the ceiling, which turned one file's
+ * `ctx.highlights.refresh` into a rerun of unrelated files.
+ */
+function retainActiveResults(
+  entries: Map<string, CacheEntry>,
+  files: readonly DiffFile[],
+  highlighters: readonly RegisteredLineHighlighter[],
+) {
+  const activeFiles = new Set(files);
+  const activeHighlighters = new Set(highlighters);
+  for (const [key, entry] of entries) {
+    if (!activeFiles.has(entry.file) || !activeHighlighters.has(entry.registered)) {
+      entries.delete(key);
+    }
   }
 }
 
@@ -71,13 +88,7 @@ function selectCacheVariant(
       entries.delete(key);
     }
   }
-  const cached = entries.get(cacheKey);
-  if (cached) {
-    // Map insertion order doubles as a small LRU so hot entries survive churn.
-    entries.delete(cacheKey);
-    entries.set(cacheKey, cached);
-  }
-  return cached;
+  return entries.get(cacheKey);
 }
 
 /**
@@ -145,6 +156,13 @@ export async function runLineHighlightRequest(
  * entries, and a throwing, rejecting, or timed-out highlighter costs that
  * file's marks from that highlighter and nothing else.
  *
+ * Files publish as they finish rather than behind one barrier, so a slow
+ * highlighter on one file no longer delays every other file's marks. Published
+ * marks carry the file and registration objects they were derived from, and
+ * the returned map only exposes the ones still matching this render — marks
+ * addressed at one review's text can never paint onto its replacement, which
+ * usually reuses the same file ids.
+ *
  * The returned map holds one merged, registration-ordered mark array per file
  * with identity stable across renders while its inputs are unchanged, so row
  * memoization downstream keeps holding.
@@ -173,18 +191,82 @@ export function useLineHighlights({
   const reportedIssues = useRef(new Set<string>());
   const registrationIdentities = useRef(new WeakMap<RegisteredLineHighlighter, number>());
   const nextRegistrationIdentity = useRef(1);
-  const [resolved, setResolved] = useState(EMPTY_RESOLVED_LINE_HIGHLIGHTS);
+  const [resolved, setResolved] = useState<ReadonlyMap<string, ResolvedEntry>>(new Map());
 
   useEffect(() => {
     if (highlighters.length === 0) {
-      setResolved((current) => (current.size > 0 ? EMPTY_RESOLVED_LINE_HIGHLIGHTS : current));
+      cache.current.clear();
+      setResolved((current) => (current.size > 0 ? new Map() : current));
       return;
     }
 
     const controller = new AbortController();
-    const next = new Map<string, readonly ValidatedLineHighlight[]>();
     let active = true;
     let cursor = 0;
+
+    retainActiveResults(cache.current, files, highlighters);
+
+    // Retire whatever the previous generation left for files this review no
+    // longer carries, so a reload cannot retain its diff trees indefinitely.
+    // Files the review still carries republish as their preparation lands.
+    const activeFileIds = new Set(files.map((file) => file.id));
+    for (const fileId of mergedByFile.current.keys()) {
+      if (!activeFileIds.has(fileId)) mergedByFile.current.delete(fileId);
+    }
+    setResolved((current) => {
+      let pruned: Map<string, ResolvedEntry> | undefined;
+      for (const fileId of current.keys()) {
+        if (activeFileIds.has(fileId)) continue;
+        pruned ??= new Map(current);
+        pruned.delete(fileId);
+      }
+      return pruned ?? current;
+    });
+
+    // Publication is buffered and flushed on a microtask: a fully cached
+    // generation resolves every file synchronously and commits once, while a
+    // slow generation still commits each file as it lands.
+    const pending = new Map<string, ResolvedEntry | null>();
+    let flushScheduled = false;
+
+    const flush = () => {
+      flushScheduled = false;
+      if (!active || pending.size === 0) return;
+      const updates = [...pending];
+      pending.clear();
+      setResolved((current) => {
+        let next: Map<string, ResolvedEntry> | undefined;
+        for (const [fileId, entry] of updates) {
+          const previous = current.get(fileId);
+          if (entry === null) {
+            if (!previous) continue;
+            next ??= new Map(current);
+            next.delete(fileId);
+            continue;
+          }
+          if (
+            previous?.file === entry.file &&
+            previous.highlighters === entry.highlighters &&
+            previous.marks === entry.marks
+          ) {
+            continue;
+          }
+          next ??= new Map(current);
+          next.set(fileId, entry);
+        }
+        // Keep the previous map identity when nothing changed, so re-running
+        // this effect over equivalent inputs can never trigger a render loop.
+        return next ?? current;
+      });
+    };
+
+    /** Queue one file's marks, or `null` to retire what it published before. */
+    const publish = (fileId: string, entry: ResolvedEntry | null) => {
+      pending.set(fileId, entry);
+      if (flushScheduled) return;
+      flushScheduled = true;
+      queueMicrotask(flush);
+    };
 
     const registrationIdentityFor = (registered: RegisteredLineHighlighter) => {
       let identity = registrationIdentities.current.get(registered);
@@ -202,7 +284,10 @@ export function useLineHighlights({
 
     const prepareFile = async (file: DiffFile) => {
       // A file with no rows to mark never reaches extension code.
-      if (file.isBinary || file.isTooLarge || file.metadata.hunks.length === 0) return;
+      if (file.isBinary || file.isTooLarge || file.metadata.hunks.length === 0) {
+        publish(file.id, null);
+        return;
+      }
 
       const parts: Array<readonly ValidatedLineHighlight[] | null> = [];
       let mergedCount = 0;
@@ -250,7 +335,7 @@ export function useLineHighlights({
               `${file.id}:${validation.issue}`,
               `${attribution} ${validation.issue} for ${file.path} • marks dropped`,
             );
-            cacheResult(cache.current, cacheKey, { file, registered, marks: null });
+            cache.current.set(cacheKey, { file, registered, marks: null });
             accept(registered, null);
             continue;
           }
@@ -263,7 +348,7 @@ export function useLineHighlights({
             );
           }
           const marks = validation.marks.length > 0 ? validation.marks : null;
-          cacheResult(cache.current, cacheKey, { file, registered, marks });
+          cache.current.set(cacheKey, { file, registered, marks });
           accept(registered, marks);
         } catch {
           if (controller.signal.aborted || !active) return;
@@ -272,13 +357,14 @@ export function useLineHighlights({
             `${file.id}:highlight`,
             `${attribution} failed highlighting ${file.path} • marks dropped`,
           );
-          cacheResult(cache.current, cacheKey, { file, registered, marks: null });
+          cache.current.set(cacheKey, { file, registered, marks: null });
           accept(registered, null);
         }
       }
 
       if (!parts.some((part) => part !== null && part.length > 0)) {
         mergedByFile.current.delete(file.id);
+        publish(file.id, null);
         return;
       }
 
@@ -290,12 +376,12 @@ export function useLineHighlights({
         previous.parts.length === parts.length &&
         previous.parts.every((part, index) => part === parts[index])
       ) {
-        next.set(file.id, previous.merged);
+        publish(file.id, { file, highlighters, marks: previous.merged });
         return;
       }
       const merged = parts.flatMap((part) => part ?? []);
       mergedByFile.current.set(file.id, { parts, merged });
-      next.set(file.id, merged);
+      publish(file.id, { file, highlighters, marks: merged });
     };
 
     const worker = async () => {
@@ -307,26 +393,8 @@ export function useLineHighlights({
       }
     };
 
-    void Promise.all(
-      Array.from({ length: Math.min(LINE_HIGHLIGHT_CONCURRENCY, files.length) }, worker),
-    ).then(() => {
-      if (!active) return;
-      setResolved((current) => {
-        // Keep the previous map identity when nothing changed, so re-running
-        // this effect over equivalent inputs can never trigger a render loop.
-        if (current.size === next.size) {
-          let unchanged = true;
-          for (const [fileId, marks] of next) {
-            if (current.get(fileId) !== marks) {
-              unchanged = false;
-              break;
-            }
-          }
-          if (unchanged) return current;
-        }
-        return next;
-      });
-    });
+    const workerCount = Math.min(LINE_HIGHLIGHT_CONCURRENCY, files.length);
+    for (let index = 0; index < workerCount; index += 1) void worker();
 
     return () => {
       active = false;
@@ -334,5 +402,20 @@ export function useLineHighlights({
     };
   }, [epochs, files, highlighters, onIssue]);
 
-  return highlighters.length === 0 ? EMPTY_RESOLVED_LINE_HIGHLIGHTS : resolved;
+  return useMemo(() => {
+    if (highlighters.length === 0) return EMPTY_RESOLVED_LINE_HIGHLIGHTS;
+
+    const current = new Map<string, readonly ValidatedLineHighlight[]>();
+    for (const file of files) {
+      const entry = resolved.get(file.id);
+      // Marks address one exact text at one set of registrations. Effects clean
+      // up after render, so filtering here is what keeps a reload's first
+      // frames from painting the previous review's offsets onto new content
+      // under a reused file id.
+      if (entry?.file === file && entry.highlighters === highlighters) {
+        current.set(file.id, entry.marks);
+      }
+    }
+    return current.size > 0 ? current : EMPTY_RESOLVED_LINE_HIGHLIGHTS;
+  }, [files, highlighters, resolved]);
 }
