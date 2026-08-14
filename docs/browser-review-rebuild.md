@@ -71,13 +71,25 @@ Gate: broker suites join the conformance harness (wire round-trip + mirror again
 fixtures, including the C1 ordering fixtures); `reviewResources.integration.test.ts` with the
 parallel-load test; vocabulary derivation checks active (rung 5).
 
-## Phase 4 — HTTP surface, no client
+## Phase 4 — HTTP surface, no client (landed)
 
 `browserReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
-Auth sessions renew (a review must be able to outlive the initial cookie TTL) and Range
-handling covers zero-length resources. The SSE event contract lives in a shared
-`reviewEventProtocol` module from day one (C4), and the user-facing error catalog is created
-beside the stabilized error codes (G4).
+Four routes per live session, mounted inside the existing daemon rather than on a port per
+terminal: the current publication (position plus resource catalog), bounded digest-verified
+resource reads through the existing mirror and cache, an SSE stream, and action submission
+parsed by `reviewProtocol.ts` and forwarded to the existing `apply_review_action` path —
+which this gives its first production caller. Range handling covers zero-length resources.
+The SSE event contract lives in a shared `reviewEventProtocol` module from day one (C4), and
+the user-facing error catalog is created beside the stabilized error codes (G4).
+
+Authorization is a capability the _session_ mints, publishing only its SHA-256 to the
+daemon; it rides in the URL fragment and is presented in a request header, so it reaches no
+log, path, or query string, and a cross-origin page cannot attach it the way it could a
+cookie — which is why there is no CSRF machinery and no CORS header anywhere on the surface.
+That replaces the prototype's cookie exchange and, with it, the renewal problem: a
+capability lives as long as the session, so a review outlives any TTL by construction. The
+cost is that `EventSource` cannot carry a header, so the Phase 5 client reads the stream
+with `fetch` — which is also what makes C5's single reconnect scheduler reachable.
 
 Repays: C4 server side; G4 catalog creation.
 Gate: HTTP-contract tests against the shared event-protocol module; security review focused on

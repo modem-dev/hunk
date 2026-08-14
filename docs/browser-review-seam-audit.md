@@ -7,20 +7,25 @@ references are against the prototype branch (`feat/browser-review` at merge comm
 and will drift as that branch changes; treat them as locators, not anchors. Each extraction PR
 should delete the copies its primitive replaces and check off the finding here.
 
-## Run boundary — after Phase 3
+## Run boundary — after Phase 4
 
-Phases 0–3 have landed: the seam contract and its gates, the shared review model with the
-terminal on it, the producer runtime, and now the wire protocol with the daemon's review
-mirror and resource path. Work stops here for this run; Phases 4–6 are the next one. What
-remains open, and where the plan puts it:
+Phases 0–4 have landed: the seam contract and its gates, the shared review model with the
+terminal on it, the producer runtime, the wire protocol with the daemon's review mirror and
+resource path, and now the HTTP surface — capability authorization, publication and resource
+reads, the SSE event stream, and action submission — with no browser client. What remains
+open, and where the plan puts it:
 
-- **C3, C4, C5** — the epoch/supersede queue, the SSE event contract, and one reconnect
-  scheduler. C4 lands with the HTTP surface (Phase 4); C3 and C5 with the browser client
-  (Phase 5).
-- **G4** — the user-facing error-code catalog, created beside the stabilized codes in
-  Phase 4 and consumed by the browser in Phase 5. The codes themselves are stable now
-  (`ReviewResourceErrorCode` + `ReviewRequestErrorCode` + `ReviewIntentPlanningErrorCode`,
-  composed as `HunkReviewFailureCodeV1`); what is missing is the message catalog.
+- **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
+  work (Phase 5). C4 is repaid on the server side; its client half closes with the reader
+  that imports the same module.
+- **The event stream needs a `fetch` reader, not `EventSource`.** The capability is
+  presented in a header, which `EventSource` cannot set, so Phase 5's client consumes the
+  stream with `fetch` and a streaming reader. That is also what makes C5's "one reconnect
+  scheduler" reachable — there is no built-in reconnect to interleave with.
+- **No replay buffer.** The surface answers any `Last-Event-ID` with a fresh publication
+  rather than retained frames. The stream carries no deltas, so a publication _is_ a
+  complete resynchronization and a history would be an optimization; if Phase 5 measures a
+  need for one, it is additive.
 - **Browser sites of A, B, C, D** — every finding whose fix landed in core with only the
   terminal, producer, broker, and wire converted keeps its browser half open: A6, A7, A11,
   B3–B8, B10's client, C1 and C2's client sites, D1's composer sites, D3's
@@ -36,8 +41,11 @@ remains open, and where the plan puts it:
   (Phase 5) and opener fragments (Phase 6) close it.
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-One residual this run created rather than inherited: remote note _composition_ has no
-draft-body intent yet, recorded under B12.
+Two residuals earlier runs created rather than inherited: remote note _composition_ has no
+draft-body intent yet (recorded under B12), and the publication a client reads over HTTP is
+a position plus a resource catalog rather than a serialized `ReviewState` — selection,
+filter, and notes reach a client through the resources and actions it already has, and
+whether a client needs more than that is Phase 5's first question.
 
 ## A. Diff geometry
 
@@ -369,6 +377,24 @@ path suffixes, expansion retention, git-status badges).
   are unlinked from server bounds and only coincidentally compatible. Fix:
   `src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
   from `MAX_BROWSER_REVIEW_SNAPSHOT_BYTES`.
+  _Repaid (Phase 4, server side)_: `src/session/reviewEventProtocol.ts` owns the event
+  vocabulary, the frame names and their phases, the begin/chunk/end envelopes and their
+  parsers, the event-id grammar, and every bound — `MAX_REVIEW_EVENT_PAYLOAD_BYTES` is the
+  protocol's envelope bound, `REVIEW_EVENT_CHUNK_BYTES` is the shared resource chunk size,
+  and `MAX_REVIEW_EVENT_CHUNKS` is the quotient, so a sender asking for smaller windows is
+  clamped to the ceiling a reader is allowed to hold rather than emitting frames the reader
+  will refuse. `browserReviewServer.ts` imports all of it and declares none of it; the
+  browser client imports the same module unchanged in Phase 5, which
+  `scripts/source-boundaries.test.ts` keeps possible by gating the module's transitive
+  closure platform-free. Two decisions differ from the prototype deliberately: a chunked
+  payload is framed and verified as the byte stream it is, so reading it is the shared
+  `ReviewChunkAssembler` rather than a fourth reassembly loop (C2's rule applied here); and
+  only the frame that _completes_ an event carries an `id`, so a `Last-Event-ID` can never
+  name a position inside a half-delivered payload. Fixtures
+  `publication-exactly-one-window` and `publication-one-byte-over-a-window` in
+  `test/review-conformance/eventFixtures.ts` pin the boundary the two ends must agree on,
+  and both the protocol and the real HTTP surface are registered as event consumers. The
+  browser reader joins in Phase 5, which is when this finding closes.
 - **C5. Reconnect/backoff — 4 schedulers, 1 verbatim duplicate.** `apiClient.ts` (exp/4 s),
   web `App.tsx` (exp/4 s + anti-spin), `brokerClient.ts` (fixed 3 s — re-implementing the
   scheduler of the connection it already configures), `session-broker/connection.ts`. Fix: one
@@ -575,6 +601,14 @@ implementation does.
   the HTTP surface issues in Phase 4. The producer records the tag and applies no policy to
   it, and a client cannot widen what it may do by claiming a kind — so adding a policy later
   changes behavior rather than the schema, which is the whole point of carrying the field now.
+  _Amended (Phase 4)_: part (4) does not land with the HTTP surface after all, and the
+  reason is worth stating. The capability authorizes _a review_, not _a client_: one link
+  may be opened in several tabs, and the surface deliberately cannot tell them apart,
+  because a credential that identified a tab would be a credential a tab could be tracked
+  by. The actor therefore arrives in the action envelope, opaque and non-authoritative, and
+  minting a per-client identity belongs with the client that needs one — Phase 5, beside the
+  selection policy that is the only thing which will read it. Parts (2) and (3) are
+  unchanged.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
@@ -594,6 +628,20 @@ implementation does.
   `src/web`, drifting from what the terminal shows for the same failure. One error-code →
   user-message catalog beside the wire protocol, consumed by both clients (and reused by the
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
+  _Repaid (Phase 4, catalog creation)_: `src/session/reviewErrorCatalog.ts` gives every code a
+  statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
+  than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
+  _composed_ — resource plus request plus intent-planning plus the transport's own codes —
+  so a code added to any of the four tiers fails to typecheck until it has a message, and
+  `reviewErrorCatalog.test.ts` states the vocabulary by hand rather than reading it back out
+  of the thing under test. Messages carry no interpolated caller input, so they can be
+  rendered anywhere, including where echoing a request back would be wrong; the HTTP surface
+  uses a catalog message unless the producer supplied a more specific one. The status map
+  lives with the transport (`browserReviewServer.ts`) rather than in the catalog, because a
+  client reads codes and an HTTP status is not something to tell a person. The agent surface
+  keeps its own wording — its codes are `hunk session` CLI failures rather than these, and
+  the two vocabularies do not yet overlap. Browser adoption is Phase 5, which is when this
+  finding closes.
 - **G5. Undo, if it ever arrives.** Note editing today has no undo. If it is added, the
   history/undo semantics belong in the shared reducer (which client undoes what, across
   actors), never in one client's keyboard handler. Recorded as a placement rule, not work.
