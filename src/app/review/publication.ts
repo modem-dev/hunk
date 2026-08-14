@@ -9,7 +9,8 @@
  *
  * The document itself deliberately knows nothing about any of this
  * (`src/core/review/document.ts`); publication is layered on top so the shared model stays
- * a description of a review rather than of a transport.
+ * a description of a review rather than of a transport. The vocabulary for addressing and
+ * ordering those generations is `src/core/review/generationOrder.ts`.
  */
 import {
   buildReviewContentManifest,
