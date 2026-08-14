@@ -25,7 +25,13 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
-import { REVIEW_INTENT_TYPES } from "../src/core/review/intents";
+import { REVIEW_INTENT_TYPES, type ReviewIntentType } from "../src/core/review/intents";
+import { REVIEW_RESOURCE_CHUNK_BYTES } from "../src/core/review/resources";
+import {
+  MAX_REVIEW_EVENT_CHUNKS,
+  MAX_REVIEW_EVENT_PAYLOAD_BYTES,
+  REVIEW_EVENT_CHUNK_BYTES,
+} from "../src/session/reviewEventProtocol";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
@@ -129,5 +135,17 @@ describe("review constant derivation", () => {
   // session transport carries must still fit a complete review envelope.
   test("the session transport can carry a complete review envelope", () => {
     expect(MAX_WS_MESSAGE_BYTES).toBeGreaterThanOrEqual(MAX_HUNK_REVIEW_ENVELOPE_BYTES);
+  });
+
+  // C4: the event stream's bounds are the protocol's and the resource path's, arithmetic
+  // apart. The prototype chose them separately on each end and they were compatible only
+  // by luck, so the check is that they are still the same numbers rather than that they
+  // are still large enough.
+  test("the event stream derives its bounds rather than choosing them", () => {
+    expect(MAX_REVIEW_EVENT_PAYLOAD_BYTES).toBe(MAX_HUNK_REVIEW_ENVELOPE_BYTES);
+    expect(REVIEW_EVENT_CHUNK_BYTES).toBe(REVIEW_RESOURCE_CHUNK_BYTES);
+    expect(MAX_REVIEW_EVENT_CHUNKS).toBe(
+      Math.ceil(MAX_HUNK_REVIEW_ENVELOPE_BYTES / REVIEW_RESOURCE_CHUNK_BYTES),
+    );
   });
 });
