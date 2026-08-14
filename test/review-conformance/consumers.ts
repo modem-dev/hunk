@@ -7,6 +7,9 @@
  * own has joined (`docs/browser-review-rebuild.md` § "Per-phase seam verification").
  */
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
+import { browserMirrorOrderingConsumer } from "./consumers/browserReviewMirror";
+import { browserReviewProjectionConsumer } from "./consumers/browserReviewProjection";
+import { browserReviewReaderEventConsumer } from "./consumers/browserReviewReader";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
@@ -28,6 +31,7 @@ export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
   reviewProducerConsumer,
+  browserReviewProjectionConsumer,
 ];
 
 /**
@@ -46,12 +50,13 @@ export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = 
  * Consumers of the publication-ordering contract.
  *
  * The contract itself answers first, and every tier that orders publications joins beside
- * it: the broker's mirror here, a browser client's in Phase 5. A tier with a rule of its
- * own disagrees with the reference on the fixtures the C1 finding contributed.
+ * it: the broker's mirror and the browser client's. A tier with a rule of its own
+ * disagrees with the reference on the fixtures the C1 finding contributed.
  */
 export const REVIEW_ORDERING_CONSUMERS: readonly ReviewOrderingConsumer[] = [
   coreOrderingConsumer,
   brokerMirrorOrderingConsumer,
+  browserMirrorOrderingConsumer,
 ];
 
 /**
@@ -66,11 +71,12 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
 /**
  * Consumers of the event contract.
  *
- * The shared protocol answers first and the HTTP surface answers beside it, over a real
- * listener — which is what proves the surface has no framing of its own. A browser
- * client's reader joins in Phase 5, closing the loop the C4 finding is about.
+ * The shared protocol answers first, the HTTP surface answers beside it over a real
+ * listener, and the browser client reads the same stream back — the sender and the reader
+ * on one corpus, which is the loop the C4 finding is about.
  */
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
   browserReviewSurfaceEventConsumer,
+  browserReviewReaderEventConsumer,
 ];
