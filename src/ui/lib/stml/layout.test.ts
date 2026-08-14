@@ -33,6 +33,25 @@ describe("layoutStml", () => {
     }
   });
 
+  test("flows the color tags inline and keeps their styling attributes", () => {
+    for (const tag of ["c", "color", "span"]) {
+      const markup = `one <${tag} fg="success">two</${tag}> three`;
+      const { lines, errors } = layoutStml(markup, 20);
+      expect(errors).toEqual([]);
+      expect(frameText(lines)).toEqual(["one two three"]);
+      expect(lines[0]!.spans.find((span) => span.text === "two")?.fg).toBe("success");
+      // Note heights are measured before mount, so a repeat must match exactly.
+      expect(layoutStml(markup, 20)).toEqual({ lines, errors });
+    }
+  });
+
+  test("treats an inline color tag inside <row> as loose text, not a column", () => {
+    const { lines } = layoutStml('<row><c fg="accent">label</c><box border>a</box></row>', 20);
+    const rows = frameText(lines);
+    expect(rows[0]).toBe("label");
+    expect(rows[1]).toBe(`┌${"─".repeat(18)}┐`);
+  });
+
   test("decodes entities in flowing text", () => {
     const { lines } = layoutStml("<text>a &rarr; b &amp; c</text>", 30);
     expect(lineText(lines[0]!)).toBe("a → b & c");
