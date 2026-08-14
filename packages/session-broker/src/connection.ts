@@ -1,8 +1,10 @@
-import type {
-  SessionClientMessage,
-  SessionRegistration,
-  SessionServerMessage,
-  SessionSnapshot,
+import {
+  createReconnectScheduler,
+  type ReconnectScheduler,
+  type SessionClientMessage,
+  type SessionRegistration,
+  type SessionServerMessage,
+  type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import type {
   SessionBrokerConnectionCloseDirective,
@@ -54,7 +56,7 @@ export class SessionBrokerConnection<
   private socket: Socket | null = null;
   private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
   private queuedMessages: Array<{ socket: Socket; message: ServerMessage }> = [];
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly reconnect: ReconnectScheduler;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private registration: SessionRegistration<Info>;
@@ -72,6 +74,12 @@ export class SessionBrokerConnection<
     this.bridge = options.bridge ?? null;
     this.registration = options.registration;
     this.snapshot = options.snapshot;
+    // Timing is the shared scheduler's; this connection only decides when to ask for a
+    // retry and what one does (`docs/browser-review-seam-audit.md`, C5).
+    this.reconnect = createReconnectScheduler({
+      delayMs: options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS,
+      onDue: () => this.connect(),
+    });
   }
 
   start() {
@@ -84,10 +92,7 @@ export class SessionBrokerConnection<
 
   stop() {
     this.stopped = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    this.reconnect.stop();
 
     this.stopHeartbeat();
     this.socket?.close();
@@ -187,17 +192,10 @@ export class SessionBrokerConnection<
     };
   }
 
-  private scheduleReconnect(delayMs = this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS) {
-    if (this.reconnectTimer || this.stopped) {
-      return;
+  private scheduleReconnect(delayMs?: number) {
+    if (!this.stopped) {
+      this.reconnect.schedule(delayMs);
     }
-
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, delayMs);
-
-    this.reconnectTimer.unref?.();
   }
 
   private startHeartbeat() {

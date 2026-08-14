@@ -200,6 +200,7 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "src/ui/lib/agentAnnotations.ts", symbol: "annotationOverlapsHunk", finding: "B1" },
   { file: "src/ui/lib/agentAnnotations.ts", symbol: "getAnnotatedHunkIndices", finding: "B1" },
   { file: "src/ui/lib/reviewState.ts", symbol: "buildReviewAnnotationIndex", finding: "B1" },
+  { file: "src/ui/lib/files.ts", symbol: "formatSidebarStat", finding: "E1" },
 ];
 
 describe("source architecture boundaries", () => {
