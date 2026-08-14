@@ -2,14 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { createVcsCatalog } from "./vcs";
+import { getBundledVcsCatalog } from "../../app/vcsCatalog";
+import type { CliInput } from "../types";
+import { createVcsCatalog } from "../vcs";
+import type { VcsAdapter } from "../vcs/types";
 import {
   computeWatchSignature as computeCoreWatchSignature,
   type WatchSignatureContext,
-} from "./watch";
-import type { CliInput } from "./types";
-import type { VcsAdapter } from "./vcs/types";
+} from "./signature";
 
 const tempDirs: string[] = [];
 

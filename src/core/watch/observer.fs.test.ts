@@ -4,9 +4,9 @@ import { mkdtemp, mkdir, rename, rm, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createWatchController } from "./watchController";
-import { createWatchEventSource, createWatchObserver, type WatchObserver } from "./watchObserver";
-import type { WatchPlan } from "./watchPlan";
+import { createWatchController } from "./controller";
+import { createWatchEventSource, createWatchObserver, type WatchObserver } from "./observer";
+import type { WatchPlan } from "./plan";
 
 const WAIT_MS = 3_000;
 const ABSENCE_MS = 250;

@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { createWatchTestClock } from "../../test/helpers/watchTest";
-import { createWatchController, WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE } from "./watchController";
+import { createWatchTestClock } from "../../../test/helpers/watchTest";
+import { createWatchController, WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE } from "./controller";
 import {
   createNativeTreeWatcher,
   createWatchObserver,
   type NativeRecursiveWatchFactory,
   type WatchTreeBackend,
-} from "./watchObserver";
-import type { DirectoryTreeWatchTarget, WatchPlan } from "./watchPlan";
+} from "./observer";
+import type { DirectoryTreeWatchTarget, WatchPlan } from "./plan";
 
 /** Build one neutral recursive target for backend and event-filter tests. */
 function treeTarget(directory = "/repo"): DirectoryTreeWatchTarget {

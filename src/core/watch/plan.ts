@@ -1,15 +1,15 @@
 import { posix, win32 } from "node:path";
-import { normalizePathForOS } from "../lib/osPath";
 import type {
   ExtensionVcsDirectoryEntriesWatchTarget,
   ExtensionVcsDirectoryTreeWatchTarget,
   ExtensionVcsWatchPlan,
   ExtensionVcsWatchTarget,
   ExtensionVcsWatchTargetSource,
-} from "../extension-api/types";
-import type { CliInput } from "./types";
-import type { VcsCatalog } from "./vcs/types";
-import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
+} from "../../extension-api/types";
+import { normalizePathForOS } from "../../lib/osPath";
+import type { CliInput } from "../types";
+import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "../vcs";
+import type { VcsCatalog } from "../vcs/types";
 
 /**
  * Watch shapes are declared once in the published extension contract and

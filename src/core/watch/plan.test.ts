@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
-import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { createVcsCatalog } from "./vcs";
-import { resolveWatchPlan as resolveCoreWatchPlan, type WatchPlanContext } from "./watchPlan";
-import type { CliInput } from "./types";
-import type { VcsAdapter } from "./vcs/types";
+import { getBundledVcsCatalog } from "../../app/vcsCatalog";
+import type { CliInput } from "../types";
+import { createVcsCatalog } from "../vcs";
+import type { VcsAdapter } from "../vcs/types";
+import { resolveWatchPlan as resolveCoreWatchPlan, type WatchPlanContext } from "./plan";
 
 const cwd = posix.join("/", "workspace", "review");
 
