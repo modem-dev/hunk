@@ -1,7 +1,7 @@
-import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "./themeCatalog";
+import type { StartupNotice } from "../startupNotice";
+import type { NamedCustomThemeConfig } from "../types";
+import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "./catalog";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS } from "./legacySyntaxScopes";
-import type { StartupNotice } from "./startupNotice";
-import type { NamedCustomThemeConfig } from "./types";
 
 /** Provider-neutral shape accepted from any custom-theme registration source. */
 export interface RegisteredCustomTheme {

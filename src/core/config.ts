@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "./themeCatalog";
+import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "./theme/catalog";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -11,8 +11,11 @@ import {
   LEGACY_CUSTOM_THEME_ID,
   normalizeThemeColorValue,
   resolveThemeBase,
-} from "./customThemes";
-import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
+} from "./theme/customThemes";
+import {
+  LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
+  resolveSyntaxScopeOverrides,
+} from "./theme/legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
@@ -420,7 +423,7 @@ export const CONFIG_REFERENCE_EXTENSIONS = {
 /**
  * Accept only #rrggbb theme colors and report the failing TOML key path.
  *
- * The rule itself lives in `./customThemes` so config tables and extension
+ * The rule itself lives in `./theme/customThemes` so config tables and extension
  * `registerTheme` calls cannot drift apart; only the error wording — which
  * names the TOML key the user actually wrote — belongs to this layer.
  */

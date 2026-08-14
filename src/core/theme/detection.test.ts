@@ -4,7 +4,7 @@ import {
   detectTerminalThemeModeFromBackground,
   parseOsc11BackgroundColor,
   themeModeForBackgroundColor,
-} from "./themeDetection";
+} from "./detection";
 
 class FakeThemeInput extends EventEmitter {
   isRaw = false;

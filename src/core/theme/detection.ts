@@ -1,6 +1,6 @@
-import type { TerminalThemeMode } from "./types";
+import type { TerminalThemeMode } from "../types";
 
-export type { TerminalThemeMode } from "./types";
+export type { TerminalThemeMode } from "../types";
 
 export interface RgbColor {
   red: number;

@@ -12,7 +12,7 @@ import { resolveConfiguredCliInput } from "../core/config";
 import { HunkUserError } from "../core/errors";
 import { loadAppBootstrap } from "../core/loaders";
 import { looksLikePatchInput } from "../core/pager";
-import { detectTerminalThemeModeFromBackground } from "../core/themeDetection";
+import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,

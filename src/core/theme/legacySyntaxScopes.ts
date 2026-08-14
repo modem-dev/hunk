@@ -1,4 +1,4 @@
-import type { CustomSyntaxColorsConfig, CustomSyntaxScopesConfig } from "./types";
+import type { CustomSyntaxColorsConfig, CustomSyntaxScopesConfig } from "../types";
 
 /** Deprecated role keys accepted only during the temporary configuration migration window. */
 export const LEGACY_CUSTOM_SYNTAX_COLOR_KEYS = [
