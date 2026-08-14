@@ -10,6 +10,9 @@ import {
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
+import { APP_COMMAND_CATALOG } from "../../core/commandCatalog";
+import { buildAppMenus } from "./appMenus";
+import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
 import { resolveCommandKeys } from "./keymap";
 
 /** Build a key event with the fields command matching reads. */
@@ -44,10 +47,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
-    moveToAnnotatedFile: record("moveToAnnotatedFile"),
-    moveToAnnotatedHunk: record("moveToAnnotatedHunk"),
-    moveToFile: record("moveToFile"),
-    moveToHunk: record("moveToHunk"),
+    moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
@@ -270,7 +270,7 @@ describe("commands that ship unbound", () => {
     expect(dispatchAppCommand(commands, keyEvent({ name: "n", ctrl: true }))?.id).toBe(
       "hunk.review.nextAnnotatedFile",
     );
-    expect(ran).toEqual(["moveToAnnotatedFile:1"]);
+    expect(ran).toEqual(["moveSelection:annotated-file,1"]);
     expect(
       commands.find((command) => command.id === "hunk.review.nextAnnotatedFile")?.keyLabels,
     ).toEqual(["Ctrl+N"]);
@@ -309,7 +309,7 @@ describe("executeAppCommand", () => {
     expect(executeAppCommand(commands, "hunk.review.nextHunk", { count: 3 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.stepUp", { count: 4 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.pageDown", { count: 2 })).toBe(true);
-    expect(ran).toEqual(["moveToHunk:3", "stepDiffLine:-4", "scrollDiff:2,viewport"]);
+    expect(ran).toEqual(["moveSelection:hunk,3", "stepDiffLine:-4", "scrollDiff:2,viewport"]);
   });
 
   test("runs one-shot commands once regardless of count", () => {
@@ -328,5 +328,63 @@ describe("executeAppCommand", () => {
     expect(executeAppCommand(disabled, "hunk.app.refresh")).toBe(false);
     expect(executeAppCommand(commands, "nobody.registered.this")).toBe(false);
     expect(ran).toEqual([]);
+  });
+});
+
+// The command-parity hook (audit F1–F3): every surface that presents a command — the
+// terminal's dispatch table, its dropdown menus, its help dialog — must name one the
+// shared catalog declares, and the table must present every catalogued command. A command
+// added to one client without a catalog entry fails here instead of forking the vocabulary
+// between the terminal and the browser palette that renders from the same data.
+describe("command catalog parity", () => {
+  test("the built-in table is exactly the catalog, in catalog order", () => {
+    const { commands } = createTestCommands();
+
+    expect(commands.map((command) => command.id)).toEqual(
+      APP_COMMAND_CATALOG.map((entry) => entry.id),
+    );
+  });
+
+  test("each built-in command carries the catalog's identity", () => {
+    const { commands } = createTestCommands();
+
+    for (const entry of APP_COMMAND_CATALOG) {
+      const command = commands.find((candidate) => candidate.id === entry.id);
+      expect(command?.title).toBe(entry.title);
+      expect(command?.defaultKeys).toEqual(entry.defaultKeys);
+      expect(command?.keys).toEqual(entry.defaultKeys);
+      expect(command?.publicToExtensions).toBe(entry.publicToExtensions);
+      expect(Boolean(command?.closesMenu)).toBe(Boolean(entry.closesMenu));
+    }
+  });
+
+  test("menus and help only name catalogued commands", () => {
+    const { commands } = createTestCommands();
+    const catalogued = new Set(APP_COMMAND_CATALOG.map((entry) => entry.id));
+    const menus = buildAppMenus({
+      commands,
+      copyDecorations: false,
+      cursorLine: "row",
+      layoutMode: "auto",
+      renderSidebar: true,
+      showAgentNotes: false,
+      showHelp: false,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      showMenuBar: true,
+      wrapLines: false,
+    });
+    const menuCommandIds = Object.values(menus)
+      .flat()
+      .flatMap((entry) => (entry.kind === "item" && entry.commandId ? [entry.commandId] : []));
+
+    expect(menuCommandIds.length).toBeGreaterThan(0);
+    expect(menuCommandIds.filter((id) => !catalogued.has(id))).toEqual([]);
+    expect(
+      buildHelpSections(commands)
+        .flatMap((section) => section.rows)
+        .filter((row) => row.keys.length === 0),
+    ).toEqual([]);
+    expect(HELP_COMMAND_IDS.filter((id) => !catalogued.has(id))).toEqual([]);
   });
 });

@@ -2,12 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { isBlankReviewNoteBody, planReviewIntent } from "../../src/core/review/intents";
 import { createInitialReviewState } from "../../src/core/review/state";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
-import { REVIEW_CONFORMANCE_CONSUMERS } from "./consumers";
+import { REVIEW_CONFORMANCE_CONSUMERS, REVIEW_NAVIGATION_CONSUMERS } from "./consumers";
 import { REVIEW_CONFORMANCE_FIXTURES } from "./fixtures";
+import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 
 /** Findings whose adversarial fixture must exist for the finding to count as repaid. */
-const REQUIRED_FINDINGS = ["A1", "A2", "A3", "A4", "A8", "A10"];
+const REQUIRED_FINDINGS = ["A1", "A2", "A3", "A4", "A8", "A10", "B1", "B2", "B3", "B4", "B6"];
 
 describe("review conformance corpus", () => {
   test("registers every consumer that has landed so far", () => {
@@ -15,14 +16,31 @@ describe("review conformance corpus", () => {
       "core review model",
       "terminal render planning",
     ]);
+    expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core intent planner",
+      "terminal review controller",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
-    const covered = new Set(REVIEW_CONFORMANCE_FIXTURES.flatMap((fixture) => fixture.findings));
+    const covered = new Set([
+      ...REVIEW_CONFORMANCE_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_NAVIGATION_FIXTURES.flatMap((fixture) => fixture.findings),
+    ]);
 
     expect(REQUIRED_FINDINGS.filter((finding) => !covered.has(finding))).toEqual([]);
   });
 });
+
+for (const consumer of REVIEW_NAVIGATION_CONSUMERS) {
+  describe(`review navigation conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_NAVIGATION_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
 
 for (const consumer of REVIEW_CONFORMANCE_CONSUMERS) {
   describe(`review conformance: ${consumer.name}`, () => {

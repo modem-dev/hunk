@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   normalizedReviewSourceLines,
   rebaseReviewHunk,
+  reviewCanonicalHunkLine,
   reviewDefaultHunkLineTarget,
   reviewHunkIndexForLine,
   reviewHunkRange,
@@ -111,6 +112,41 @@ describe("reviewDefaultHunkLineTarget", () => {
     const hunk = { ...span(4, 2), hunkContent: [{ type: "context" as const, lines: 2 }] };
 
     expect(reviewDefaultHunkLineTarget(hunk)).toEqual({ side: "new", line: 4 });
+  });
+});
+
+describe("reviewCanonicalHunkLine", () => {
+  test("takes the preferred side when it has rows", () => {
+    expect(reviewCanonicalHunkLine(span(3, 7))).toEqual({ side: "new", line: 3 });
+    expect(reviewCanonicalHunkLine(span(3, 7), "old")).toEqual({ side: "old", line: 3 });
+  });
+
+  // Intent: the case the browser prototype got wrong — every hunk reports a new-side
+  // range, so choosing a side by "has a range" scrolls a deletion to a line that is not there.
+  test("falls back to the backed side of a pure deletion", () => {
+    const deletion = {
+      additionStart: 5,
+      additionCount: 0,
+      deletionStart: 6,
+      deletionCount: 1,
+    };
+
+    expect(reviewCanonicalHunkLine(deletion)).toEqual({ side: "old", line: 6 });
+  });
+
+  test("falls back to the backed side of a pure insertion asked for the old one", () => {
+    const insertion = {
+      additionStart: 7,
+      additionCount: 1,
+      deletionStart: 6,
+      deletionCount: 0,
+    };
+
+    expect(reviewCanonicalHunkLine(insertion, "old")).toEqual({ side: "new", line: 7 });
+  });
+
+  test("reports nothing for a hunk with rows on neither side", () => {
+    expect(reviewCanonicalHunkLine(span(1, 0))).toBeUndefined();
   });
 });
 

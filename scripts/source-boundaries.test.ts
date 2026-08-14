@@ -123,7 +123,7 @@ function privateProviderApiImports() {
 // with the finding id, and this gate keeps them deleted — a reappearing path means the
 // duplication came back. Entries are repo-relative with forward slashes.
 const EXTRACTED_DUPLICATE_TOMBSTONES: readonly string[] = [
-  // e.g. "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
+  "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
 ];
 
 // Function-level deletions the file tombstones cannot see: each entry bans one named
@@ -143,6 +143,10 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
   { file: "src/core/liveComments.ts", symbol: "firstCommentTargetForHunk", finding: "A10" },
   { file: "src/core/review/state.ts", symbol: "reviewLineAnchor", finding: "A3" },
+  { file: "src/ui/lib/files.ts", symbol: "filterReviewFiles", finding: "B5" },
+  { file: "src/ui/lib/reviewState.ts", symbol: "findNextAnnotatedFile", finding: "B2" },
+  { file: "src/ui/lib/reviewState.ts", symbol: "resolveSelectedFile", finding: "B4" },
+  { file: "src/ui/lib/agentAnnotations.ts", symbol: "alwaysShowReviewNote", finding: "B9" },
 ];
 
 describe("source architecture boundaries", () => {

@@ -34,10 +34,12 @@ import {
 import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide, reviewTrailingGap } from "../../core/review/expansion";
 import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
+import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
   isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
+  selectNormalizedSelection,
 } from "../../core/review/selectors";
 import type { ReviewDraftNote, ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
@@ -59,7 +61,6 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 
-import { findNextHunkCursor } from "../lib/hunks";
 import {
   EMPTY_LINE_CURSORS,
   findNextLineCursor,
@@ -82,17 +83,12 @@ import {
   type UserReviewNote,
 } from "../lib/reviewProjection";
 import {
+  buildReviewAnnotationIndex,
   buildReviewStreamState,
   buildSelectedHunkSummary,
-  findNextAnnotatedFile,
+  planTerminalSelectionReconciliation,
   resolveReviewNavigationTarget,
-  resolveSelectedFile,
 } from "../lib/reviewState";
-
-/** Clamp one numeric index into an inclusive range. */
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 /** Merge file-id keyed annotation maps without losing their concrete item types. */
 function mergeAnnotationMaps<T extends AgentAnnotation, U extends AgentAnnotation>(
@@ -146,19 +142,18 @@ interface SourceLoadRequest {
 
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
-  preserveViewport?: boolean;
   scrollToNote?: boolean;
 }
 
 /**
  * Translate the terminal's selection options into the shared reveal request.
  *
- * File-header alignment outranks viewport preservation: a caller passing both is
- * crossing into another file, where the header is what belongs on screen.
+ * Selections that deliberately leave the viewport alone do not come through here at all:
+ * that is the viewport-anchor policy, expressed as its own intent.
  */
 function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest {
   return {
-    anchor: options?.alignFileHeaderTop ? "file-top" : options?.preserveViewport ? "none" : "hunk",
+    anchor: options?.alignFileHeaderTop ? "file-top" : "hunk",
     scrollToNote: Boolean(options?.scrollToNote),
   };
 }
@@ -178,11 +173,11 @@ export interface ReviewController {
   lineCursor: LineCursor | null;
   lineCursorRevealRequestId: number;
   anchorLineCursor: (cursor: LineCursor) => void;
+  /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
+  anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
-  moveToAnnotatedFile: (delta: number) => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToFile: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
+  /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
+  moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
@@ -214,7 +209,8 @@ export interface ReviewController {
   cancelDraftNote: () => void;
   removeUserNote: (noteId: string) => void;
   saveDraftNote: () => UserReviewNote | null;
-  selectFile: (fileId: string, nextHunkIndex?: number, options?: ReviewSelectionOptions) => void;
+  /** Jump to one file; the shared file-jump rule decides which hunk it lands on. */
+  selectFile: (fileId: string, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
   setShowAgentNotes: (visible: boolean) => void;
   startUserNote: (
@@ -293,7 +289,6 @@ export function useReviewController({
 
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
-  const selectedHunkIndex = state.selection.hunkIndex;
   const scrollToNote = state.reveal.scrollToNote;
   const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
@@ -361,7 +356,7 @@ export function useReviewController({
   }, [fileByKey, state.sourceStatusByFileKey]);
 
   const deferredFilter = useDeferredValue(filter);
-  const { allFiles, visibleFiles, hunkCursors, annotatedHunkCursors } = useMemo(
+  const { allFiles, visibleFiles } = useMemo(
     () =>
       buildReviewStreamState({
         files,
@@ -370,13 +365,23 @@ export function useReviewController({
       }),
     [deferredFilter, files, liveCommentsByFileId, userNotesByFileId],
   );
-  const selectedFileId = state.selection.fileKey
-    ? (fileByKey.get(state.selection.fileKey)?.id ?? "")
-    : "";
-  const selectedFile = useMemo(
-    () => resolveSelectedFile(allFiles, visibleFiles, selectedFileId),
-    [allFiles, selectedFileId, visibleFiles],
+  // Which files and hunks carry notes, for the shared annotated-navigation planner. Built
+  // from the merged stream, so a live comment that just arrived is navigable immediately.
+  const annotations = useMemo(
+    () => buildReviewAnnotationIndex(allFiles, keyByFileId),
+    [allFiles, keyByFileId],
   );
+  // The shared normalization rule, not a terminal copy: a selected file the filter hides
+  // is still the selection, and only a file the document lost falls back to the first
+  // visible one.
+  const normalizedSelection = selectNormalizedSelection(state);
+  const selectedHunkIndex = normalizedSelection.hunkIndex;
+  const selectedFileId = normalizedSelection.fileKey
+    ? (fileByKey.get(normalizedSelection.fileKey)?.id ?? "")
+    : "";
+  const selectedFile = normalizedSelection.fileKey
+    ? fileByKey.get(normalizedSelection.fileKey)
+    : undefined;
   const selectedHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
 
   /** Run one semantic intent against the review store. */
@@ -404,48 +409,50 @@ export function useReviewController({
     [keyByFileId, runIntent],
   );
 
-  /** Select one file and optionally one specific hunk within it. */
-  const selectFile = useCallback(
-    (fileId: string, nextHunkIndex = 0, options?: ReviewSelectionOptions) => {
-      selectHunk(fileId, nextHunkIndex, options);
+  /**
+   * Adopt a selection the viewport arrived at on its own.
+   *
+   * Scrolling reports where the reviewer is; it never asks to be scrolled back, and with
+   * several surfaces attached to one review it must not move anybody else's viewport
+   * either. That is the shared anchor policy rather than a local "preserve viewport" flag.
+   */
+  const anchorSelection = useCallback(
+    (fileId: string, hunkIndex: number) => {
+      const fileKey = keyByFileId.get(fileId);
+      if (!fileKey) {
+        return;
+      }
+
+      runIntent({ type: "selection/anchor", fileKey, hunkIndex });
     },
-    [selectHunk],
+    [keyByFileId, runIntent],
   );
 
-  /**
-   * Keep the selection on a file the review stream still shows, with its hunk in range.
-   *
-   * Reconciliation carries no reveal request: filters and reloads move the selection on
-   * the reviewer's behalf, and must not also move the viewport under them.
-   */
-  const reconcileSelection = useCallback(() => {
-    const selection = store.getSnapshot().selection;
-    const selected = selection.fileKey ? fileByKey.get(selection.fileKey) : undefined;
-    const isVisible =
-      selected !== undefined && visibleFiles.some((file) => file.id === selected.id);
-    const fallback = visibleFiles[0];
-
-    if (!isVisible && fallback) {
-      const fallbackKey = keyByFileId.get(fallback.id);
-      if (fallbackKey) {
-        store.dispatch({ type: "selection/select", fileKey: fallbackKey, hunkIndex: 0 });
+  /** Jump to one file through the shared file-jump rule. */
+  const selectFile = useCallback(
+    (fileId: string, options?: ReviewSelectionOptions) => {
+      const fileKey = keyByFileId.get(fileId);
+      if (!fileKey) {
+        return;
       }
-      return;
-    }
 
-    if (selection.fileKey) {
-      store.dispatch({
-        type: "selection/select",
-        fileKey: selection.fileKey,
-        hunkIndex: selection.hunkIndex,
-      });
+      runIntent({ type: "selection/select-file", fileKey, reveal: revealRequestFor(options) });
+    },
+    [keyByFileId, runIntent],
+  );
+
+  /** Reconcile only a stale document selection; filtering preserves the reviewer's place. */
+  const reconcileSelection = useCallback(() => {
+    const action = planTerminalSelectionReconciliation(store.getSnapshot());
+    if (action) {
+      store.dispatch(action);
     }
-  }, [fileByKey, keyByFileId, store, visibleFiles]);
+  }, [store]);
 
   useEffect(() => {
     reconcileSelection();
     // The store's own state is what needs reconciling, so re-run when it moves.
-  }, [reconcileSelection, state.document, state.selection]);
+  }, [reconcileSelection, state.document, state.filter, state.selection]);
 
   /**
    * Keep the current line on a row the review stream still renders.
@@ -463,9 +470,10 @@ export function useReviewController({
     (cursor: LineCursor) => {
       applyLineCursor(cursor);
       setLineCursorRevealRequestId((current) => current + 1);
-      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+      // The line cursor carries its own reveal request; the selection only follows it.
+      anchorSelection(cursor.fileId, cursor.hunkIndex);
     },
-    [applyLineCursor, selectHunk],
+    [anchorSelection, applyLineCursor],
   );
 
   const reconcileLineCursor = useCallback(() => {
@@ -523,9 +531,9 @@ export function useReviewController({
   const anchorLineCursor = useCallback(
     (cursor: LineCursor) => {
       applyLineCursor(cursor);
-      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+      anchorSelection(cursor.fileId, cursor.hunkIndex);
     },
-    [applyLineCursor, selectHunk],
+    [anchorSelection, applyLineCursor],
   );
 
   /** Move the current line one row through the visible review stream. */
@@ -541,84 +549,17 @@ export function useReviewController({
     [lineCursors, revealLineCursor],
   );
 
-  /** Move through the full visible review stream one hunk at a time. */
-  const moveToHunk = useCallback(
-    (delta: number) => {
-      const nextCursor = findNextHunkCursor(
-        hunkCursors,
-        selectedFile?.id,
-        selectedHunkIndex,
-        delta,
-      );
-      if (!nextCursor) {
-        return;
-      }
-
-      const crossingFileBoundary = nextCursor.fileId !== selectedFile?.id;
-      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, {
-        // Align the file header to top only for forward cross-file jumps so the new file
-        // starts at its header. Backward jumps should reveal the target hunk directly,
-        // since the target is often near the bottom of the previous file and the file-top
-        // align would require an extra navigation press to reach it.
-        alignFileHeaderTop: crossingFileBoundary && delta > 0,
-      });
-    },
-    [hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
-  );
-
-  /** Move through only hunks that currently have agent notes or live comments. */
-  const moveToAnnotatedHunk = useCallback(
-    (delta: number) => {
-      const nextCursor = findNextHunkCursor(
-        annotatedHunkCursors,
-        selectedFile?.id,
-        selectedHunkIndex,
-        delta,
-        hunkCursors,
-      );
-      if (!nextCursor) {
-        return;
-      }
-
-      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { scrollToNote: true });
-    },
-    [annotatedHunkCursors, hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
-  );
-
-  /** Cycle through only the currently visible files that carry annotations. */
-  const moveToAnnotatedFile = useCallback(
-    (delta: number) => {
-      const nextFile = findNextAnnotatedFile(visibleFiles, selectedFile?.id, delta);
-      if (!nextFile) {
-        return;
-      }
-
-      selectFile(nextFile.id);
-    },
-    [selectFile, selectedFile?.id, visibleFiles],
-  );
-
-  /** Move through all currently visible files without wrapping past either end. */
-  const moveToFile = useCallback(
-    (delta: number) => {
-      const currentIndex = visibleFiles.findIndex((file) => file.id === selectedFile?.id);
-      if (currentIndex < 0) {
-        return;
-      }
-
-      const nextIndex = clamp(currentIndex + delta, 0, visibleFiles.length - 1);
-      if (nextIndex === currentIndex) {
-        return;
-      }
-
-      const nextFile = visibleFiles[nextIndex];
-      if (!nextFile) {
-        return;
-      }
-
-      selectFile(nextFile.id, 0, { alignFileHeaderTop: true });
-    },
-    [selectFile, selectedFile?.id, visibleFiles],
+  /**
+   * Step the selection through one navigable scope.
+   *
+   * The walk itself — which hunk or file is next, whether the scope wraps, and what the
+   * landing asks the viewport to reveal — lives in the shared planner, so the keyboard,
+   * the session's comment navigation, and later a browser client all move identically.
+   */
+  const moveSelection = useCallback(
+    (scope: ReviewSelectionScope, delta: number) =>
+      runIntent({ type: "selection/move", scope, delta }, { annotations }),
+    [annotations, runIntent],
   );
 
   /** Set the shared file filter. */
@@ -779,18 +720,36 @@ export function useReviewController({
     }
   }, [selectedFile, selectedHunkIndex, toggleGap]);
 
-  /** Resolve one session-daemon navigation request against the current review state and select it. */
+  /**
+   * Resolve one session-daemon navigation request against the current review and select it.
+   *
+   * Relative comment navigation is the same walk the keyboard performs and goes through
+   * the shared planner; only absolute addressing (a path plus a hunk or a line) is
+   * resolved against the terminal's diff-file model here.
+   */
   const navigateToLocation = useCallback(
     (input: NavigateToHunkToolInput): NavigatedSelectionResult => {
-      const target = resolveReviewNavigationTarget({
-        allFiles,
-        currentFileId: selectedFile?.id,
-        currentHunkIndex: selectedHunkIndex,
-        input,
-        visibleFiles,
-      });
+      if (input.commentDirection) {
+        const moved = moveSelection("annotated-hunk", input.commentDirection === "next" ? 1 : -1);
+        if (!moved) {
+          throw new Error("No annotated hunks found in the current review.");
+        }
 
-      selectHunk(target.file.id, target.hunkIndex, { scrollToNote: target.scrollToNote });
+        const file = fileByKey.get(moved.fileKey);
+        if (!file) {
+          throw new Error("Resolved annotated hunk references an unknown file.");
+        }
+
+        return {
+          fileId: file.id,
+          filePath: file.path,
+          hunkIndex: moved.hunkIndex,
+          selectedHunk: buildSelectedHunkSummary(file, moved.hunkIndex),
+        };
+      }
+
+      const target = resolveReviewNavigationTarget({ allFiles, input });
+      selectHunk(target.file.id, target.hunkIndex);
       return {
         fileId: target.file.id,
         filePath: target.file.path,
@@ -798,7 +757,7 @@ export function useReviewController({
         selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
       };
     },
-    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex, visibleFiles],
+    [allFiles, fileByKey, moveSelection, selectHunk],
   );
 
   /**
@@ -1018,11 +977,11 @@ export function useReviewController({
         body: "",
       };
       store.dispatch({ type: "draft/start", draft });
-      selectHunk(
-        file.id,
-        hunkIndex,
-        options?.preserveViewport ? { preserveViewport: true } : { scrollToNote: true },
-      );
+      if (options?.preserveViewport) {
+        anchorSelection(file.id, hunkIndex);
+      } else {
+        selectHunk(file.id, hunkIndex, { scrollToNote: true });
+      }
       return storedDraftToDraftNote(draft, file);
     },
     [
@@ -1188,14 +1147,12 @@ export function useReviewController({
     addLiveComment,
     addLiveCommentBatch,
     anchorLineCursor,
+    anchorSelection,
     clearFilter,
     cancelDraftNote,
     clearLiveComments,
     moveLineCursor,
-    moveToAnnotatedFile,
-    moveToAnnotatedHunk,
-    moveToFile,
-    moveToHunk,
+    moveSelection,
     navigateToLocation,
     removeLiveComment,
     removeUserNote,

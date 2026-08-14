@@ -7,10 +7,24 @@
  * own has joined (`docs/browser-review-rebuild.md` § "Per-phase seam verification").
  */
 import { coreModelConsumer } from "./consumers/coreModel";
+import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
+import { terminalReviewControllerNavigationConsumer } from "./consumers/terminalReviewController";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
-import type { ReviewConformanceConsumer } from "./types";
+import type { ReviewConformanceConsumer, ReviewNavigationConsumer } from "./types";
 
 export const REVIEW_CONFORMANCE_CONSUMERS: readonly ReviewConformanceConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
+];
+
+/**
+ * Consumers of the shared navigation semantics.
+ *
+ * A separate registry because navigation answers different questions than geometry, under
+ * the same contract: the browser's projection and the wire join these fixtures in later
+ * phases, and every earlier consumer keeps running.
+ */
+export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = [
+  intentPlannerNavigationConsumer,
+  terminalReviewControllerNavigationConsumer,
 ];

@@ -21,15 +21,12 @@ import type {
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
+import { reviewNoteVisibleByPolicy } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
 import type { DraftReviewNote } from "../../lib/reviewProjection";
-import {
-  alwaysShowReviewNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import { reviewNoteSource, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
@@ -471,7 +468,10 @@ export function DiffPane({
 
     files.forEach((file) => {
       const annotations = (file.agent?.annotations ?? []).filter(
-        (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
+        // One shared visibility rule over the normalized note source, so the terminal and
+        // any other surface hide the same notes when the layer is off.
+        (annotation) =>
+          reviewNoteVisibleByPolicy({ source: reviewNoteSource(annotation) }, showAgentNotes),
       );
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);

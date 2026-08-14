@@ -520,15 +520,9 @@ export function App({
     () => extensionSelectionInputsRef.current.selectedFileId,
     [],
   );
-  const moveToAnnotatedFile = review.moveToAnnotatedFile;
-  const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
-  const moveToFile = review.moveToFile;
-
   const jumpToFile = useCallback(
-    (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
-      review.selectFile(fileId, nextHunkIndex, {
-        alignFileHeaderTop: options?.alignFileHeaderTop,
-      });
+    (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
+      review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
     [review.selectFile],
   );
@@ -1715,7 +1709,7 @@ export function App({
   extensionCommandNavigationRef.current = {
     onSelectFile: (fileId) => {
       focusFiles();
-      jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+      jumpToFile(fileId, { alignFileHeaderTop: true });
     },
     onSelectHunk: (fileId, hunkIndex) => {
       focusFiles();
@@ -1828,10 +1822,7 @@ export function App({
       alignCurrentLine,
       applyFilePresentationToAllMatching,
       focusFilter,
-      moveToAnnotatedFile,
-      moveToAnnotatedHunk,
-      moveToFile,
-      moveToHunk: review.moveToHunk,
+      moveSelection: review.moveSelection,
       openAgentSkill,
       openThemeSelector,
       requestQuit,
@@ -2047,7 +2038,7 @@ export function App({
           notify={(message, type) => extensions?.context.notify(message, type)}
           onSelectFile={(fileId) => {
             focusFiles();
-            jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+            jumpToFile(fileId, { alignFileHeaderTop: true });
           }}
           onSelectHunk={(fileId, hunkIndex) => {
             focusFiles();
@@ -2207,7 +2198,7 @@ export function App({
             onSelectFile={jumpToFile}
             onToggleGap={review.toggleGap}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
-              review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
+              review.anchorSelection(fileId, hunkIndex)
             }
             onLineCursorsChange={setLineCursors}
             currentLinePaintRequested={currentLinePaintRequested}

@@ -116,35 +116,91 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   (terminal `DiffFile` model vs `intersectingHunkIndices`). Fix: `selection/move` intent
   (`scope: hunk|file|annotated-hunk|annotated-file`, delta, wrap policy) planned over shared
   selectors; delete `ui/lib/hunks.ts` and the runtime walk.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: `planReviewSelectionMove` in
+  `core/review/navigation.ts`, reached through the `selection/move` intent. `ui/lib/hunks.ts` is
+  deleted and tombstoned, and the session runtime's separate walk is gone — comment navigation
+  (`--next-comment` / `--prev-comment`) now plans the same intent the keyboard does, so the
+  multi-step carry rule it lacked applies there too. Fixture `annotated-hunk-multi-step-carry`
+  in `test/review-conformance/navigationFixtures.ts`; the planner is registered as a navigation
+  consumer. Residual: which hunks count as annotated is still derived from the terminal's merged
+  diff-file model (`buildReviewAnnotationIndex`) and handed to the planner as a caller-owned
+  fact, because the semantic document does not carry notes yet — one derivation now, consumed by
+  both the keyboard and the session.
 - **B2. Wrap vs clamp policy split.** `moveToFile` clamps; `moveToAnnotatedFile` wraps
   (`ui/lib/reviewState.ts`). Encode per-scope wrap policy in the `selection/move` intent.
+  _Repaid (Phase 1 PR 3)_: `REVIEW_SELECTION_WRAP_POLICY` names the policy per scope —
+  hunk/file/annotated-hunk clamp, annotated-file wraps — and `findNextAnnotatedFile` is deleted.
+  The asymmetry is today's terminal behavior kept deliberately, including two quirks now stated
+  rather than implied: a clamping hunk move at an edge re-selects and re-reveals the same hunk
+  while a file move at an edge publishes nothing at all, and annotated-file navigation from a
+  file with no notes enters the ring at its start (so the first forward step lands on the ring's
+  _second_ entry). Fixture `scope-wrap-and-clamp`.
 - **B3. File-jump semantics — hard-coded identically in both clients.** "Hunk 0 + file-top
   reveal" in terminal `App.tsx`/`useReviewController.ts` and web `App.tsx`; the terminal-only
   forward-cross-file alignment rule has no web counterpart. Fix: `selection/select-file`
   intent owning the rule.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: `selection/select-file` owns "first hunk"
+  (`REVIEW_FILE_JUMP_HUNK_INDEX`) with `REVIEW_FILE_JUMP_REVEAL` as its default reveal, and the
+  forward-cross-file alignment rule moved into the hunk-move planner, where the crossing is
+  known. The terminal's `selectFile` lowers to the intent and no longer takes a hunk index.
+  Fixture `scope-wrap-and-clamp` pins both reveals. The browser's copy lands in Phase 5.
 - **B4. Selection fallback after reload/filter — 2 divergent answers.** Terminal
   `resolveSelectedFile` returns undefined (renders "no file"); web `validSelection` and
   `treeSource.reset` silently fall back to `files[0]`. Core permits `fileKey: null`. Fix:
   `selectNormalizedSelection`/`selectFallbackFileKey` selectors; delete both client fallbacks.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: both selectors live in
+  `core/review/selectors.ts`, and `resolveSelectedFile` is deleted. Recorded difference from this
+  finding's description: the terminal in this repo did _not_ render "no file" for a selection the
+  filter hides — it kept rendering the selected file, and fell back only when the file was gone
+  from the document. That behavior is authoritative and is what the selector now states, so
+  `fileKey: null` is reached exactly when nothing is visible at all. Fixtures
+  `selection-outliving-its-file` and `selection-with-nothing-visible`. The browser's
+  `validSelection`/`treeSource.reset` fallbacks close in Phase 5.
 - **B5. Filter matching — 3 matchers.** Core `reviewFileMatchesFilter` (path, previousPath,
   agentSummary), terminal `filterReviewFiles` (normalized paths), web tree search
   (canonicalPath only) — browser sidebar and stream can disagree on the same query. Also
   live-per-keystroke (terminal) vs apply-on-Enter (web, which clobbers in-flight typing on
   snapshot). Fix: one matcher; one committed-vs-live decision.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: `reviewFileMatchesFilter` in
+  `core/review/selectors.ts` is the only matcher, and `filterReviewFiles` is deleted. The
+  terminal's behavior won on both points of difference: paths are normalized before matching
+  (core's matcher did not), and the three fields are joined before the substring test, so a query
+  may span the boundary between them. Residual: the committed-vs-live decision is still open —
+  the terminal matches live per keystroke, and planning reads the immediate filter while
+  rendering reads a one-render-deferred copy of it. The browser's tree search closes in Phase 5.
 - **B6. Reveal-target derivation — web re-derives, wrongly.** Web `App.tsx` recomputes the
   hunk target line (`newRange ? "new" : "old"`), duplicating core `canonicalLineForHunk` which
   prefers by side counts and requires a backed line — pure-deletion hunks scroll the wrong side
   in the browser. Fix: `selectRevealTarget(state)` selector; clients only resolve DOM/rows.
+  _Repaid (Phase 1 PR 3, core site)_: `reviewCanonicalHunkLine` in `core/review/geometry.ts`
+  (preferred side first, backed sides only), behind `selectRevealTarget`. Fixture
+  `pure-deletion-reveal-target` pins the case the prototype browser got wrong, and pins that a
+  hunk's position is its first row while a note about the whole hunk hangs from its first change.
+  The terminal's reveal is row geometry it measures itself and stays renderer-local; the browser
+  consumes the selector in Phase 5.
 - **B7. "Jump to note" target — terminal geometry decides, web ignores.** The
   active-note choice lives in `DiffPane.tsx` row scanning; web never reads
   `reveal.scrollToNote`. Fix: `selectActiveRevealNoteId(state)` in core.
+  _Repaid (Phase 1 PR 3, core site)_: `selectActiveRevealNoteId` names the policy — an active
+  draft in the selected hunk first, else the note anchored earliest in it, arrival order breaking
+  ties — which is what `DiffPane`'s row scan resolves geometrically today. The terminal site
+  stays open: it looks the answer up by measured row bounds, and swapping that for the selector
+  is a rendering change rather than a semantic one. Browser adoption is Phase 5.
 - **B8. Notes-by-hunk grouping — web re-filters by range containment.** `ReviewStream.tsx`
   drops annotations whose anchor came from core's fallback path or expanded context even after
   `pierreDocument` accepted them — notes silently disappear in the browser. Fix: group by
   `ownerHunkIndex` via a shared `selectNotesByHunk`.
+  _Repaid (Phase 1 PR 3, core site)_: `selectNotesByHunk` groups by `reviewNoteOwnerHunkIndex`,
+  reading the ownership `resolveReviewNoteAnchor` decided instead of re-testing containment. The
+  terminal site stays open deliberately: `DiffPane` groups by range overlap and therefore renders
+  a note under _every_ hunk it overlaps, so converting it changes what a reviewer sees and
+  belongs in a behavior-changing PR, not this one.
 - **B9. Note-visibility policy — two core predicates for one rule.**
   `selectors.ts` `reviewNoteVisibleByPolicy` (web path) vs `notes.ts` `alwaysShowReviewNote`
   (terminal path). Collapse to one predicate over `{source}`.
+  _Repaid (Phase 1 PR 3)_: one `reviewNoteVisibleByPolicy` over `{source}` in
+  `core/review/state.ts`, beside the other stored-note policies; `alwaysShowReviewNote` is
+  deleted, and `DiffPane` calls the predicate over the normalized source.
 - **B10. Selected-line semantics — browser structurally weaker.** Terminal maps rendered rows
   to semantic side/line with `expandedLineProof` and separates "anchor" from "reveal"; web
   sends raw lines with `reveal` forced on every click, and the wire `selection/set-line` /
@@ -155,6 +211,12 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   nearest-hunk-to-center into shared state; web keeps IntersectionObserver results local. With
   both clients attached, terminal scrolling rewrites shared selection under the browser. Fix:
   one core policy (e.g. `selection/anchor` intent that never bumps reveal tokens).
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: `REVIEW_VIEWPORT_ANCHOR_REVEAL` in
+  `core/review/state.ts`, and the `selection/anchor` intent that carries it. The terminal's
+  viewport-centered hunk selection and its line-cursor anchoring both publish through it, and the
+  local `preserveViewport` selection option is deleted. The policy is stated, but the
+  multi-client question it exists for — whether an anchor should be shared at all — is G2,
+  decided before Phase 5 PR 2.
 - **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `HunkReviewActionV1`
   union, capability list in `registration.ts`, validation list in `wire.ts`, remapped
   field-by-field in `reviewSessionRuntime.ts`; forgotten fields/actions are silently
@@ -258,6 +320,15 @@ here so the extraction happens before the duplication exists. Design detail in
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
+  _Repaid (Phase 1 PR 3)_: `src/core/commandCatalog.ts` carries id, title, category, default
+  chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
+  `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
+  `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
+  menus and help keep reading identity through that table. Parity is asserted in
+  `appCommands.test.ts` ("command catalog parity"): the table is exactly the catalog in catalog
+  order, and no menu item or help row names a command the catalog does not declare. Placement
+  note: the catalog sits outside `core/review`, which stays review semantics only, so Phase 5
+  must add it to the web boundary gate's allowed import targets.
 - **F2. Semantic command effects are closures instead of intent dispatches.** The ~15
   review-semantic commands (hunk/file/annotated navigation, start note, toggle gap, toggle
   agent notes, filter) run as App closures; a browser implementation would re-derive each
@@ -265,11 +336,30 @@ here so the extraction happens before the duplication exists. Design detail in
   `ReviewIntent`s (the Phase 1 store refactor is the same work); the browser fires them
   through the existing apply-action path, and the agent runtime's `hunk session` surface
   becomes a third consumer of the same lowering.
+  _Repaid (Phase 1 PR 3, core and terminal sites)_: semantic entries declare their effect as data
+  (`AppCommandReviewEffect`), and `lowerAppCommandToReviewIntent` is the one constructor turning
+  a command plus a repeat count into a `ReviewIntent`. The terminal's navigation handlers read
+  the scope and direction from that same declaration rather than restating them. Two semantic
+  commands have no intent to lower to yet — starting a note needs caller-owned draft identity,
+  and gap expansion is the Phase 2 `expansion/toggle` intent — and are listed by name in
+  `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT`, so the gap is a decision rather than an oversight.
+  Residual (found in review): `lowerAppCommandToReviewIntent` has no production caller yet —
+  the terminal's navigation handlers read the catalog's declared scope/direction but build
+  their intents inline, and `toggleAgentNotes` reads no catalog data at all, so the lowering
+  and the terminal closures can diverge with only `commandCatalog.test.ts` noticing half the
+  drift. Closes when the lowering gains its second consumer (the Phase 5 palette / wire
+  command path); until then any change to a declared review effect must update both sites,
+  and a review-effect parity check is the missing test.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
   user keybindings against the catalog once; each client maps resolved chords to its own event
   type and masks platform-reserved chords (browser `Cmd+W` etc.).
+  _Repaid (Phase 1 PR 3, host site)_: `builtinCommandKeyDefaults` reads the catalog, so
+  `[keybindings]` resolution, conflict detection against extension commands, and key labels all
+  fold user config over catalogued defaults exactly once. Mapping resolved chords onto a client's
+  own event type stays per client, which is the part that cannot be shared; the browser's half
+  lands in Phase 5.
 - **F4. Host-only and extension commands — do not expose, by design.** Quit, source refresh,
   edit-in-`$EDITOR`, agent-skill helpers, and all extension commands execute host-side (with
   dialog access); browser invocation is remote code execution into the terminal session.
@@ -305,6 +395,11 @@ implementation does.
   grammar over semantic keys (`fileKey`/`hunkIndex`/side/line/noteId — never array indices or
   rendered rows) in `core/review`, used everywhere an address crosses a boundary. Core
   primitive in Phase 1; browser adoption Phase 5; opener fragments Phase 6.
+  _Repaid (Phase 1 PR 3, core primitive)_: `core/review/address.ts` serializes and parses the
+  four address kinds over percent-encoded semantic identifiers, with round-trip coverage for keys
+  carrying separators, percent signs, and non-ASCII characters, and strict rejection of anything
+  outside the grammar. No consumers yet, by design — browser deep links are Phase 5 and opener
+  fragments Phase 6, which is when this finding closes.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,
