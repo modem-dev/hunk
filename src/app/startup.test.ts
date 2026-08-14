@@ -287,6 +287,72 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
+  test("routes color-only pager stdin through the filter plan", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const customThemes = [{ id: "custom", base: "github-light-default", text: "#123456" }];
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "--color-only"], {
+      parseCliImpl: async () => ({ kind: "pager", colorOnly: true, options: { theme: "custom" } }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: false,
+      env: { TERM: "xterm-256color" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(
+          {
+            ...input,
+            options: { ...input.options, theme: "custom" },
+          },
+          { customThemes },
+        ),
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({
+      kind: "color-only",
+      text: patchText,
+      options: { theme: "custom", pager: true },
+      customThemes,
+    });
+    expect(loaded).toBe(false);
+  });
+
+  test("keeps non-diff stdin on the color-only plan so the filter can pass it through", async () => {
+    let loaded = false;
+    const text = "* main\n  feature/demo\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "--color-only"], {
+      parseCliImpl: async () => ({ kind: "pager", colorOnly: true, options: {} }),
+      readStdinText: async () => text,
+      looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: false,
+      env: { TERM: "xterm-256color" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan.kind).toBe("color-only");
+    expect(loaded).toBe(false);
+  });
+
+  test("rejects color-only filter mode when stdin is an interactive terminal", async () => {
+    await expect(
+      prepareStartupPlan(["bun", "hunk", "--color-only"], {
+        parseCliImpl: async () => ({ kind: "pager", colorOnly: true, options: {} }),
+        stdinIsTTY: true,
+      }),
+    ).rejects.toThrow("reads a unified diff from standard input");
+  });
+
   test("routes diff-like pager stdin to static output when no controlling terminal is available", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";

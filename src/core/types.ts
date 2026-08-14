@@ -157,6 +157,8 @@ export interface HelpCommandInput {
 export interface PagerCommandInput {
   kind: "pager";
   options: CommonOptions;
+  /** Filter mode: color stdin without reformatting it, for `git interactive.diffFilter`. */
+  colorOnly?: boolean;
 }
 
 export interface DaemonServeCommandInput {

@@ -435,6 +435,7 @@ function renderCliHelp() {
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
+    "  hunk --color-only                       color a unified diff piped on stdin (git interactive.diffFilter)",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
@@ -801,7 +802,10 @@ async function parsePagerCommand(
   tokens: string[],
   argv: string[],
 ): Promise<PagerCommandInput | HelpCommandInput> {
-  const command = createCliReferenceCommand("pager");
+  const command = createCliReferenceCommand("pager").option(
+    "--color-only",
+    "color the piped diff without reformatting it (for git interactive.diffFilter)",
+  );
   let parsedOptions: Record<string, unknown> = {};
 
   command.action((options: Record<string, unknown>) => {
@@ -816,6 +820,7 @@ async function parsePagerCommand(
 
   return {
     kind: "pager",
+    colorOnly: parsedOptions.colorOnly ? true : undefined,
     options: buildCommonOptions(parsedOptions, argv),
   };
 }
@@ -1746,6 +1751,9 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parsePatchCommand(rest, argv);
     case "pager":
       return parsePagerCommand(rest, argv);
+    // Bare `hunk --color-only` is the form Git stores in `interactive.diffFilter`.
+    case "--color-only":
+      return parsePagerCommand(["--color-only", ...rest], argv);
     case "difftool":
       return parseDifftoolCommand(rest, argv);
     case "stash":

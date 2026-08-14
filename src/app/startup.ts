@@ -59,6 +59,12 @@ export type StartupPlan =
       customThemes?: AppBootstrap["customThemes"];
     }
   | {
+      kind: "color-only";
+      text: string;
+      options: CliInput["options"];
+      customThemes?: AppBootstrap["customThemes"];
+    }
+  | {
       kind: "markup-render";
       input: MarkupRenderCommandInput;
     }
@@ -176,36 +182,54 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "pager") {
+    const wantsColorOnly = parsedCliInput.colorOnly === true;
+    if (wantsColorOnly && stdinIsTTY) {
+      // Reading an interactive stdin would hang the filter; Git always pipes the diff.
+      throw new HunkUserError("`hunk --color-only` reads a unified diff from standard input.", [
+        "Use it as a Git diff filter: `git config interactive.diffFilter 'hunk --color-only'`.",
+      ]);
+    }
+
     const stdinText = await readStdinText();
     const pagerOptions = parsedCliInput.options;
     const capturedPagerHost = isCapturedPagerHost(env);
-    const staticPagerPlan = () => {
-      const staticPatchInput: CliInput = {
-        kind: "patch",
-        file: "-",
-        text: stdinText,
-        options: {
-          ...pagerOptions,
-          pager: true,
-        },
-      };
-      const configuredStatic = resolveConfiguredCliInputImpl(
-        resolveRuntimeCliInputImpl(staticPatchInput),
+    // Both non-interactive pager plans resolve the piped patch through the same config layers,
+    // so option defaults and custom themes apply identically. Extensions never load on these
+    // paths, so config themes are the whole theme set here.
+    const resolvePipedPatchPlan = (kind: "static-diff-pager" | "color-only") => {
+      const configured = resolveConfiguredCliInputImpl(
+        resolveRuntimeCliInputImpl({
+          kind: "patch",
+          file: "-",
+          text: stdinText,
+          options: {
+            ...pagerOptions,
+            pager: true,
+          },
+        }),
         {
           vcsCatalog: baseVcsCatalog,
         },
       );
-      const staticPlan = {
-        kind: "static-diff-pager" as const,
+      const plan = {
+        kind,
         text: stdinText,
-        options: configuredStatic.input.options,
+        options: configured.input.options,
       };
 
-      // Extensions never load on the static pager path, so config themes are the whole set here.
-      return configuredStatic.customThemes.length > 0
-        ? { ...staticPlan, customThemes: configuredStatic.customThemes }
-        : staticPlan;
+      return configured.customThemes.length > 0
+        ? { ...plan, customThemes: configured.customThemes }
+        : plan;
     };
+
+    const staticPagerPlan = () => resolvePipedPatchPlan("static-diff-pager");
+
+    // Filter mode: color whatever stdin holds without touching the interactive pager paths.
+    // The renderer itself passes non-diff input through unchanged, as `interactive.diffFilter`
+    // requires, so both diff-like and plain stdin share this one plan.
+    if (wantsColorOnly) {
+      return resolvePipedPatchPlan("color-only");
+    }
 
     // Captured hosts render Hunk's stdout in their own panel, so passed-through text keeps
     // the color Git already put in it.

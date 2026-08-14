@@ -287,6 +287,42 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses bare --color-only as pager filter mode", async () => {
+    const parsed = await parseCli(["bun", "hunk", "--color-only"]);
+
+    expect(parsed).toMatchObject({
+      kind: "pager",
+      colorOnly: true,
+    });
+  });
+
+  test("parses --color-only with theme options", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "--color-only",
+      "--theme",
+      "github-light-default",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "pager",
+      colorOnly: true,
+      options: {
+        theme: "github-light-default",
+      },
+    });
+  });
+
+  test("parses pager --color-only explicitly", async () => {
+    const parsed = await parseCli(["bun", "hunk", "pager", "--color-only"]);
+
+    expect(parsed).toMatchObject({
+      kind: "pager",
+      colorOnly: true,
+    });
+  });
+
   test("prints the bundled skill path for hunk skill path", async () => {
     const parsed = await parseCli(["bun", "hunk", "skill", "path"]);
 
@@ -1246,6 +1282,11 @@ describe("parseCli command help text", () => {
     expect(await expectHelp(["patch", "--help"])).toContain("review a patch file");
     expect(await expectHelp(["pager", "--help"])).toContain("general Git pager wrapper");
     expect(await expectHelp(["difftool", "--help"])).toContain("review Git difftool file pairs");
+  });
+
+  test("documents the --color-only filter mode in help output", async () => {
+    expect(await expectHelp([])).toContain("hunk --color-only");
+    expect(await expectHelp(["pager", "--help"])).toContain("--color-only");
   });
 
   test("renders the stash command overview and the stash show command help", async () => {

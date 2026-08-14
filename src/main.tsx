@@ -95,6 +95,17 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "color-only") {
+    const { renderColorOnlyDiff } = await import("./ui/colorOnlyFilter");
+    process.stdout.write(
+      await renderColorOnlyDiff(startupPlan.text, startupPlan.options, {
+        customThemes: startupPlan.customThemes,
+        stderr: process.stderr,
+      }),
+    );
+    process.exit(0);
+  }
+
   if (startupPlan.kind !== "app") {
     throw new Error("Unreachable startup plan.");
   }
