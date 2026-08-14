@@ -8,12 +8,11 @@
  * - **The action vocabulary is `ReviewIntent`.** The prototype hand-copied that union
  *   into a wire type, a capability list, and a validator, so an intent added to one was
  *   silently unreachable from the others (`docs/browser-review-seam-audit.md`, B12).
- *   Here the vocabulary is `REVIEW_INTENT_TYPES` minus a named exclusion list, and each
- *   action's payload is the intent's own shape plus the few fields only a remote caller
- *   needs.
- * - **Validation is the shared validators.** Note size is measured once, over the whole
- *   note, by `reviewNoteWithinBounds` (D1); exact-key checking is `hasExactKeys`; digests
- *   are `isReviewSha256Digest`; the resource read request and chunk are core's own types
+ *   Here the vocabulary *is* `REVIEW_INTENT_TYPES`, and each action's payload is the
+ *   intent's own shape plus the few fields only a remote caller needs.
+ * - **Validation is the shared validators.** Exact-key checking is `hasExactKeys`; digests
+ *   are `isReviewSha256Digest`; note size is core's `reviewNoteWithinBounds`, measured once
+ *   over the whole note (D1); the resource read request and chunk are core's own types
  *   (D5). This module declares no digest regex, no second byte measurement, and no copy
  *   of a bound that exists elsewhere.
  * - **Nothing is re-derived.** A caller addressing a line inside an expanded gap sends
@@ -36,7 +35,6 @@ import {
   type ReviewIntentType,
 } from "../core/review/intents";
 import { REVIEW_SELECTION_WRAP_POLICY, type ReviewSelectionScope } from "../core/review/navigation";
-import { reviewNoteWithinBounds } from "../core/review/noteBounds";
 import {
   parseReadReviewResourceRequest,
   parseReviewResourceId,
@@ -55,7 +53,7 @@ import {
   type ReviewPublicationAddress,
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
-import type { ReviewLineAddressV1, ReviewNoteV1, ReviewSide } from "../core/review/types";
+import type { ReviewLineAddressV1, ReviewSide } from "../core/review/types";
 import { hasExactKeys, isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
 
 export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
@@ -133,35 +131,17 @@ export type HunkReviewExpandedLineProofV1 = ReviewExpandedLineClaim;
 // -- Action vocabulary (B12) ------------------------------------------------------------
 
 /**
- * Intents deliberately not reachable over the wire.
- *
- * Empty, and that is a statement rather than an oversight: a semantic intent is by
- * definition one that resolves at the producer and is broadcast to every attached
- * surface, so every one of them belongs to every surface. Host-only effects — quitting,
- * editing in `$EDITOR`, extension commands — are not intents at all and never enter this
- * vocabulary (F4). An entry added here must carry the reason it is not shareable.
- */
-export const WIRE_UNREACHABLE_REVIEW_INTENT_TYPES =
-  [] as const satisfies readonly ReviewIntentType[];
-
-/** Subtract one named exclusion list from the intent vocabulary. */
-export function deriveReviewActionTypes(
-  intentTypes: readonly ReviewIntentType[],
-  excluded: readonly ReviewIntentType[],
-): readonly ReviewIntentType[] {
-  return intentTypes.filter((type) => !excluded.includes(type));
-}
-
-/**
  * Every action type a review client may send.
  *
- * Derived, never listed: adding an intent makes it wire-reachable automatically, and
- * withholding one requires naming it above.
+ * The intent vocabulary itself, never a list: adding an intent makes it wire-reachable
+ * automatically, and a wire-reachable type with no parser in `ACTION_PARSERS` fails to
+ * compile. Nothing is withheld, and that is a statement rather than an oversight — a
+ * semantic intent resolves at the producer and is broadcast to every attached surface, so
+ * every one of them belongs to every surface, while host-only effects (quitting, editing
+ * in `$EDITOR`, extension commands) are not intents at all (F4). Withholding one would
+ * mean subtracting a named exclusion list here, with the reason it is not shareable.
  */
-export const HUNK_REVIEW_ACTION_TYPES: readonly ReviewIntentType[] = deriveReviewActionTypes(
-  REVIEW_INTENT_TYPES,
-  WIRE_UNREACHABLE_REVIEW_INTENT_TYPES,
-);
+export const HUNK_REVIEW_ACTION_TYPES: readonly ReviewIntentType[] = REVIEW_INTENT_TYPES;
 
 /**
  * Fields a remote caller needs that a locally planned intent does not.
@@ -489,18 +469,6 @@ export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
   return action;
 }
 
-/**
- * Render one intent as the action that carries it.
- *
- * The inverse of `toReviewIntent` for an intent that needs no wire-only fields, which is
- * every intent a local surface can plan. Round-tripping through
- * `parseHunkReviewAction` must return the same value, and the conformance harness checks
- * exactly that for the whole vocabulary.
- */
-export function toHunkReviewAction(intent: ReviewIntent): HunkReviewActionV1 {
-  return intent;
-}
-
 /** Parse one action envelope, then the action inside it. */
 export function parseHunkReviewActionEnvelope(
   value: unknown,
@@ -540,22 +508,6 @@ export function parseHunkReviewResourceReadEnvelope(
     return INVALID;
   }
   return { ok: true, value: record as unknown as HunkReviewResourceReadEnvelopeV1 };
-}
-
-// -- Note transport ---------------------------------------------------------------------
-
-/**
- * Whether one note may cross a review boundary.
- *
- * One measurement, over the whole note, in the unit a transport pays. The prototype
- * checked `body` and `markup` separately here and the whole serialized note at the
- * producer, so a note could pass the check that admitted it and then fail the check that
- * published it — poisoning a whole snapshot with a capacity error rather than rejecting
- * one note (D1). There is no per-field check on this side any more, and there is no
- * second bound: `reviewNoteWithinBounds` is the answer at every tier.
- */
-export function isTransportableReviewNote(note: ReviewNoteV1) {
-  return reviewNoteWithinBounds(note);
 }
 
 // -- Resource catalog transport ---------------------------------------------------------

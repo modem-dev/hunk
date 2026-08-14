@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   hasExactKeys,
   isReviewSha256Digest,
-  normalizeReviewDigest,
   reviewDigestsEqual,
   utf8ByteLength,
 } from "./validation";
@@ -51,12 +50,6 @@ describe("review digests", () => {
     expect(isReviewSha256Digest(`${HEX}0`)).toBe(false);
     expect(isReviewSha256Digest(HEX.slice(1))).toBe(false);
     expect(isReviewSha256Digest(undefined)).toBe(false);
-  });
-
-  test("normalizes an external digest into canonical form or rejects it", () => {
-    expect(normalizeReviewDigest(HEX.toUpperCase())).toBe(HEX);
-    expect(normalizeReviewDigest("zz")).toBeUndefined();
-    expect(normalizeReviewDigest(42)).toBeUndefined();
   });
 
   test("compares with both operands normalized", () => {

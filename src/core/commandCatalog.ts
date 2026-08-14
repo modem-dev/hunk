@@ -493,17 +493,6 @@ export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
 export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
 
-/**
- * Semantic commands whose review effect is not modelled as an intent yet.
- *
- * Empty, and meant to stay that way: the last two entries — starting a note and toggling
- * gap expansion — became the `notes/start-draft` and `expansion/toggle` intents in the
- * producer-runtime phase, so every semantic command now lowers to something every attached
- * surface can resolve. The list survives as the place a deliberate exception would be
- * named, rather than being left implicit in a command with no declared effect.
- */
-export const SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT: readonly AppCommandId[] = [];
-
 /** Look one command up by id. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
   return APP_COMMAND_CATALOG.find((entry) => entry.id === id);

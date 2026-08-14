@@ -4,7 +4,6 @@ import {
   APP_COMMAND_CATALOG,
   appCommandCatalogEntry,
   lowerAppCommandToReviewIntent,
-  SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT,
   type AppCommandCatalogEntry,
 } from "./commandCatalog";
 
@@ -29,7 +28,8 @@ describe("app command catalog", () => {
   });
 
   // Intent: the resolution locus is what tells a remote client whether it may invoke a
-  // command at all, so only semantic commands may carry a review effect.
+  // command at all, so only semantic commands may carry a review effect — and every one of
+  // them carries one, so a semantic command added without an effect is caught here.
   test("declares a review effect for semantic commands and nothing else", () => {
     const missingEffect = APP_COMMAND_CATALOG.filter(
       (command) => command.locus === "semantic" && command.review === undefined,
@@ -38,7 +38,7 @@ describe("app command catalog", () => {
       (command) => command.locus !== "semantic" && command.review !== undefined,
     ).map((command) => command.id);
 
-    expect(missingEffect).toEqual([...SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT]);
+    expect(missingEffect).toEqual([]);
     expect(strayEffect).toEqual([]);
   });
 

@@ -82,15 +82,6 @@ export function isReviewSha256Digest(value: unknown): value is string {
   return typeof value === "string" && REVIEW_SHA256_DIGEST_PATTERN.test(value);
 }
 
-/** Put one externally supplied digest into canonical form, or undefined when it is not one. */
-export function normalizeReviewDigest(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.toLowerCase();
-  return isReviewSha256Digest(normalized) ? normalized : undefined;
-}
-
 /** Compare two digests with both operands normalized, never just one. */
 export function reviewDigestsEqual(left: string, right: string) {
   return left.toLowerCase() === right.toLowerCase();

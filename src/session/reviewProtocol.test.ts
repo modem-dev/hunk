@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { REVIEW_INTENT_TYPES, type ReviewIntent } from "../core/review/intents";
-import { MAX_REVIEW_NOTE_BYTES } from "../core/review/noteBounds";
+import { MAX_REVIEW_NOTE_BYTES, reviewNoteWithinBounds } from "../core/review/noteBounds";
 import {
   REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   REVIEW_PATCH_CONTENT_TYPE,
@@ -9,10 +9,8 @@ import {
 } from "../core/review/resources";
 import type { ReviewNoteV1 } from "../core/review/types";
 import {
-  deriveReviewActionTypes,
   HUNK_REVIEW_ACTION_TYPES,
   HUNK_REVIEW_PROTOCOL_VERSION,
-  isTransportableReviewNote,
   parseHunkReviewAction,
   parseHunkReviewActionEnvelope,
   parseHunkReviewActor,
@@ -22,7 +20,6 @@ import {
   parseHunkReviewResourceReadEnvelope,
   parseHunkReviewPublicationAddress,
   toReviewIntent,
-  WIRE_UNREACHABLE_REVIEW_INTENT_TYPES,
 } from "./reviewProtocol";
 
 const GENERATION = "generation:p1:3";
@@ -41,19 +38,8 @@ function envelope(action: unknown, overrides: Record<string, unknown> = {}) {
 
 describe("review action vocabulary", () => {
   // Intent: B12 — the wire cannot forget an intent, because it does not list them.
-  test("is the intent vocabulary minus the named exclusions", () => {
-    expect([...HUNK_REVIEW_ACTION_TYPES]).toEqual(
-      REVIEW_INTENT_TYPES.filter(
-        (type) => !(WIRE_UNREACHABLE_REVIEW_INTENT_TYPES as readonly string[]).includes(type),
-      ),
-    );
-  });
-
-  test("subtracts exactly what an exclusion list names", () => {
-    expect(deriveReviewActionTypes(["filter/set", "notes/clear"], ["notes/clear"])).toEqual([
-      "filter/set",
-    ]);
-    expect(deriveReviewActionTypes(["filter/set"], [])).toEqual(["filter/set"]);
+  test("is the intent vocabulary", () => {
+    expect([...HUNK_REVIEW_ACTION_TYPES]).toEqual([...REVIEW_INTENT_TYPES]);
   });
 
   test("names an action outside the vocabulary as unsupported, not malformed", () => {
@@ -413,19 +399,19 @@ describe("note transport bounds", () => {
   }
 
   // Intent: D1 — the case the prototype's two rules disagreed at. Every field passes a
-  // per-field check; the note is three times the bound and must be refused here, at the
-  // wire, rather than admitted and then poisoning the snapshot that publishes it.
+  // per-field check; the note is three times the bound, and the wire tier answers with the
+  // shared bound rather than admitting it and poisoning the snapshot that publishes it.
   test("refuses a note whose fields each fit but whose whole does not", () => {
     const note = oversizedNote();
     for (const field of [note.summary, note.rationale!, note.markup!]) {
       expect(field.length).toBeLessThanOrEqual(MAX_REVIEW_NOTE_BYTES);
     }
-    expect(isTransportableReviewNote(note)).toBe(false);
+    expect(reviewNoteWithinBounds(note)).toBe(false);
   });
 
   test("accepts a note within the shared bound", () => {
     expect(
-      isTransportableReviewNote({
+      reviewNoteWithinBounds({
         id: "user:1",
         source: "user",
         fileKey: FILE_KEY,

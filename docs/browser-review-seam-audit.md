@@ -270,9 +270,10 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   _Repaid (Phase 3)_: `REVIEW_INTENT_TYPES` in `core/review/intents.ts` is the vocabulary,
   made total in both directions by type assertions — a member added to `ReviewIntent` and not
   listed fails to typecheck, and a listed name that is not an intent fails too.
-  `HUNK_REVIEW_ACTION_TYPES` is that list minus `WIRE_UNREACHABLE_REVIEW_INTENT_TYPES`, which
-  is empty and says why: a semantic intent resolves at the producer and is broadcast to every
-  attached surface, so every one of them belongs to every surface. The wire _type_ is derived
+  `HUNK_REVIEW_ACTION_TYPES` _is_ that list, and nothing is withheld: a semantic intent
+  resolves at the producer and is broadcast to every attached surface, so every one of them
+  belongs to every surface. Withholding one would mean subtracting it by name, with the reason
+  it is not shareable. The wire _type_ is derived
   the same way — `HunkReviewActionV1` is `ReviewIntent` with the two wire-only fields added to
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the

@@ -10,11 +10,8 @@
  * It also runs the note-bounds corpus, because "may this note cross a boundary" is a wire
  * question the prototype answered differently from the producer (D1).
  */
-import {
-  isTransportableReviewNote,
-  parseHunkReviewAction,
-  toReviewIntent,
-} from "../../../src/session/reviewProtocol";
+import { reviewNoteWithinBounds } from "../../../src/core/review/noteBounds";
+import { parseHunkReviewAction, toReviewIntent } from "../../../src/session/reviewProtocol";
 import type { ReviewWireConsumer } from "../types";
 
 export const reviewWireConsumer: ReviewWireConsumer = {
@@ -26,5 +23,5 @@ export const reviewWireConsumer: ReviewWireConsumer = {
       ? { accepted: true, intent: toReviewIntent(parsed.value) }
       : { accepted: false };
   },
-  acceptsNote: isTransportableReviewNote,
+  acceptsNote: reviewNoteWithinBounds,
 };
