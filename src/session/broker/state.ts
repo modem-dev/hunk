@@ -42,7 +42,11 @@ import {
   readSnapshotReviewPublication,
   type MirroredReviewPublication,
 } from "./reviewMirror";
-import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewResourceCache";
+import {
+  ReviewResourceCache,
+  type LoadedReviewResource,
+  type ReviewResourceReservation,
+} from "./reviewResourceCache";
 import { ReviewChunkAssembler } from "../../core/review/resourceAssembly";
 import {
   isMaterializedReviewResource,
@@ -185,7 +189,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly mirror = new ReviewMirror();
   private readonly resources: ReviewResourceCache;
   /** One load per resource; concurrent callers await the same assembly. */
-  private readonly loads = new Map<string, Promise<Uint8Array>>();
+  private readonly loads = new Map<string, Promise<LoadedReviewResource>>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
@@ -349,7 +353,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     generation: string,
     resourceId: string,
-  ): Promise<Uint8Array> {
+  ): Promise<LoadedReviewResource> {
     const descriptor = this.requireDescriptor(sessionId, generation, resourceId);
     const key = { sessionId, generation, resourceId };
     const cached = this.resources.get(key);
@@ -481,7 +485,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private async assembleResource(
     key: { sessionId: string; generation: string; resourceId: string },
     descriptor: ReviewResourceDescriptorV1,
-  ): Promise<Uint8Array> {
+  ): Promise<LoadedReviewResource> {
     const measured = isMaterializedReviewResource(descriptor);
     const reservation: ReviewResourceReservation = this.resources.reserve(
       key,
@@ -526,8 +530,11 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         throw new ReviewResourceReadError(assembled.code, assembled.message);
       }
       this.assertGenerationActive(key.sessionId, key.generation);
-      this.resources.store(key, assembled.bytes);
-      return assembled.bytes;
+      // The digest the stream declared is what the bytes were just verified against, so it
+      // travels with them instead of being recomputed by whoever serves them next.
+      const loaded = { bytes: assembled.bytes, digest: assembler.declaredDigest! };
+      this.resources.store(key, loaded);
+      return loaded;
     } finally {
       this.resources.release(reservation);
     }
@@ -567,7 +574,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     if (!fileKey) {
       throw new Error(reviewResourceUnavailableMessage(file.path));
     }
-    const bytes = await this.loadReviewResource(
+    const { bytes } = await this.loadReviewResource(
       sessionId,
       publication.address.generation,
       reviewResourceId({ kind: "patch", fileKey }),

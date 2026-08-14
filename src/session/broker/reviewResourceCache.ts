@@ -55,7 +55,19 @@ export class ReviewResourceBudgetError extends Error {
 
 interface CacheEntry {
   key: ReviewResourceKey;
+  resource: LoadedReviewResource;
+}
+
+/**
+ * One assembled resource and the measurement it was verified against.
+ *
+ * The digest is kept with the bytes rather than recomputed by whoever serves them: the
+ * assembly already held the stream to it, and a second hash of a thirty-megabyte file per
+ * range request would be the cost of forgetting it.
+ */
+export interface LoadedReviewResource {
   bytes: Uint8Array;
+  digest: string;
 }
 
 /** Build one map key that cannot collide between two sessions or two generations. */
@@ -80,7 +92,7 @@ export class ReviewResourceCache {
   }
 
   /** Return one completed resource, promoting it to the young end of the eviction order. */
-  get(key: ReviewResourceKey): Uint8Array | undefined {
+  get(key: ReviewResourceKey): LoadedReviewResource | undefined {
     const mapKey = cacheKey(key);
     const entry = this.entries.get(mapKey);
     if (!entry) {
@@ -88,7 +100,7 @@ export class ReviewResourceCache {
     }
     this.entries.delete(mapKey);
     this.entries.set(mapKey, entry);
-    return entry.bytes;
+    return entry.resource;
   }
 
   /**
@@ -169,22 +181,22 @@ export class ReviewResourceCache {
    * The resource just admitted is never the one evicted: a caller that asked for it is
    * about to use it, and dropping it to make room for itself would guarantee a re-read.
    */
-  store(key: ReviewResourceKey, bytes: Uint8Array) {
+  store(key: ReviewResourceKey, resource: LoadedReviewResource) {
     const mapKey = cacheKey(key);
     const existing = this.entries.get(mapKey);
     if (existing) {
-      this.cachedBytes -= existing.bytes.byteLength;
+      this.cachedBytes -= existing.resource.bytes.byteLength;
       this.entries.delete(mapKey);
     }
-    this.entries.set(mapKey, { key, bytes });
-    this.cachedBytes += bytes.byteLength;
+    this.entries.set(mapKey, { key, resource });
+    this.cachedBytes += resource.bytes.byteLength;
 
     for (const [oldestKey, oldest] of this.entries) {
       if (this.cachedBytes <= this.limits.cacheBytes || oldestKey === mapKey) {
         break;
       }
       this.entries.delete(oldestKey);
-      this.cachedBytes -= oldest.bytes.byteLength;
+      this.cachedBytes -= oldest.resource.bytes.byteLength;
     }
   }
 
@@ -232,7 +244,7 @@ export class ReviewResourceCache {
     for (const [mapKey, entry] of this.entries) {
       if (matches(entry.key)) {
         this.entries.delete(mapKey);
-        this.cachedBytes -= entry.bytes.byteLength;
+        this.cachedBytes -= entry.resource.bytes.byteLength;
       }
     }
     for (const [mapKey, reservation] of this.reservations) {
