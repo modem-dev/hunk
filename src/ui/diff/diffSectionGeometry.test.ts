@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../lib/agentAnnotations";
 import { measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resolveTheme } from "../themes";
 import {
@@ -96,10 +96,10 @@ describe("measureDiffSectionGeometry", () => {
     const file = createTestDiffFile({ after, before, id: "snapshot", path: "snapshot.txt" });
     const expandedKeys = new Set(["trailing:0"]);
     const visibleAgentNotes: VisibleAgentNote[] = [
-      {
+      createVisibleAgentNote(file.metadata.hunks, {
         id: "original-note",
         annotation: { newRange: [5, 5], summary: "Original note." },
-      },
+      }),
     ];
     const geometry = measureDiffSectionGeometry(
       file,
@@ -117,10 +117,12 @@ describe("measureDiffSectionGeometry", () => {
     expandedKeys.clear();
     visibleAgentNotes[0]!.annotation.newRange = [1, 1];
     visibleAgentNotes[0]!.annotation.summary = "Mutated after geometry measurement.";
-    visibleAgentNotes.push({
-      id: "late-note",
-      annotation: { newRange: [1, 1], summary: "Added after geometry measurement." },
-    });
+    visibleAgentNotes.push(
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "late-note",
+        annotation: { newRange: [1, 1], summary: "Added after geometry measurement." },
+      }),
+    );
 
     const plannedRows = geometry.plannedRows;
     expect(plannedRows.map((row) => row.key)).toEqual(
@@ -134,14 +136,14 @@ describe("measureDiffSectionGeometry", () => {
   test("replaces stale width variants while retaining separate base and note slots", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [
-      {
+      createVisibleAgentNote(file.metadata.hunks, {
         id: "annotation:example:0",
         annotation: {
           newRange: [1, 1],
           rationale: "Keep a note-aware geometry slot.",
           summary: "Explain",
         },
-      },
+      }),
     ];
 
     const width100 = measureDiffSectionGeometry(file, "split", true, theme, [], 100, true, false);
@@ -169,14 +171,14 @@ describe("measureDiffSectionGeometry", () => {
   test("accounts for visible inline notes without moving the hunk anchor", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [
-      {
+      createVisibleAgentNote(file.metadata.hunks, {
         id: "annotation:example:0",
         annotation: {
           newRange: [1, 1],
           rationale: "Keep note height in section geometry.",
           summary: "Explain the change",
         },
-      },
+      }),
     ];
 
     const baseGeometry = measureDiffSectionGeometry(file, "split", true, theme, [], 120);
@@ -197,14 +199,14 @@ describe("measureDiffSectionGeometry", () => {
   test("reuses note-aware geometry across equivalent note arrays", () => {
     const file = createTestDiffFile();
     const buildNotes = (summary: string): VisibleAgentNote[] => [
-      {
+      createVisibleAgentNote(file.metadata.hunks, {
         id: "annotation:example:0",
         annotation: {
           newRange: [1, 1],
           rationale: "Keep note height in section geometry.",
           summary,
         },
-      },
+      }),
     ];
 
     const first = measureDiffSectionGeometry(
@@ -455,14 +457,14 @@ describe("measureDiffSectionGeometry", () => {
       path: "same-length-source.txt",
     });
     const visibleAgentNotes: VisibleAgentNote[] = [
-      {
+      createVisibleAgentNote(file.metadata.hunks, {
         id: "annotation:same-length-source:0",
         annotation: {
           newRange: [5, 5],
           rationale: "Forces note-aware geometry caching.",
           summary: "Changed line",
         },
-      },
+      }),
     ];
     const expandedKeys = new Set(["trailing:0"]);
     const shortSourceLines = [...afterLines];

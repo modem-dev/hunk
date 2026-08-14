@@ -12,6 +12,7 @@ import type {
 } from "../src/extension-api/types";
 import { validateFileViewLayout } from "../src/ui/fileViews/layout";
 import { buildFileViewRenderPlan } from "../src/ui/fileViews/renderPlan";
+import { createVisibleAgentNote } from "../src/ui/lib/agentAnnotations";
 import inlineEditExtension from "../examples/extensions/inline-edit";
 
 const TEST_FILE = {
@@ -717,7 +718,10 @@ describe("inline edit example extension", () => {
     });
     expect(
       buildFileViewRenderPlan(layout!, [
-        { id: "line-two", annotation: { id: "line-two", summary: "Line two", newRange: [2, 2] } },
+        createVisibleAgentNote([], {
+          id: "line-two",
+          annotation: { id: "line-two", summary: "Line two", newRange: [2, 2] },
+        }),
       ]).unresolvedNoteIds,
     ).toEqual([]);
 

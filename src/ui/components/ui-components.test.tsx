@@ -10,6 +10,7 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
@@ -3350,13 +3351,13 @@ describe("UI components", () => {
         width={88}
         selectedHunkIndex={0}
         visibleAgentNotes={[
-          {
+          createVisibleAgentNote(file.metadata.hunks, {
             id: "note:ungrounded",
             annotation: {
               summary: "Ungrounded note",
               rationale: "Falls back to the first visible row.",
             },
-          },
+          }),
         ]}
         showHunkHeaders={false}
         scrollable={false}

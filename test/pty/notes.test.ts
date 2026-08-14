@@ -61,6 +61,37 @@ describe("PTY notes", () => {
     }
   });
 
+  test("a note anchored to collapsed lines renders inside its owning hunk", async () => {
+    const fixture = harness.createGapAnnotatedAgentFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--agent-context",
+        fixture.agentContext,
+      ],
+      cols: 140,
+      rows: 30,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("a");
+      const withNotes = await session.waitForText(/GAP NOTE/, { timeout: 5_000 });
+
+      // Lines 6-7 are collapsed away, so the note hangs from the hunk that owns the gap:
+      // it lands just below that hunk's first row, not at the top of the file.
+      const noteIndex = lineIndexOf(withNotes, "GAP NOTE");
+      expect(noteIndex).toBeGreaterThan(lineIndexOf(withNotes, "line8 = 8;"));
+      expect(noteIndex).toBeLessThan(lineIndexOf(withNotes, "line9 = 9;"));
+    } finally {
+      session.close();
+    }
+  });
+
   test("experimental launches render STML note bodies", async () => {
     const fixture = harness.createAgentFilePair();
     const session = await harness.launchHunk({

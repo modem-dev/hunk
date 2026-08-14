@@ -14,6 +14,29 @@
 import { reviewHunkRange, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
 import type { ReviewLineRange, ReviewRangeAnchorV1, ReviewSide } from "./types";
 
+/**
+ * Names the hunk a line outside every hunk hangs from.
+ *
+ * A line the patch omitted sits in a collapsed gap, and a gap is addressed by the hunk it
+ * leads into (`before:<hunkIndex>`) or the one it trails (`trailing:<hunkIndex>`). Picking
+ * the first hunk that starts after the line — the last hunk when none does — resolves that
+ * same ownership from geometry alone, which is what a caller anchoring an imported note
+ * needs when nothing declares where the note was written. Undefined when the file has no
+ * hunk to hang anything from.
+ */
+export function reviewGapOwnerHunkIndex(
+  hunks: readonly ReviewHunkSpan[],
+  side: ReviewSide,
+  line: number,
+): number | undefined {
+  if (hunks.length === 0) {
+    return undefined;
+  }
+
+  const following = hunks.findIndex((hunk) => reviewHunkRange(hunk, side)[0] > line);
+  return following >= 0 ? following : hunks.length - 1;
+}
+
 export interface ReviewNoteAnchorInput {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;

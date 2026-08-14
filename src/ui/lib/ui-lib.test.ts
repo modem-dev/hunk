@@ -11,6 +11,7 @@ import {
   nextMenuItemIndex,
   type MenuEntry,
 } from "../components/chrome/menu";
+import { createVisibleAgentNote } from "./agentAnnotations";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
@@ -491,14 +492,14 @@ describe("ui helpers", () => {
       true,
       theme,
       [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:example:0",
           annotation: {
             newRange: [1, 1],
             summary: "Explain the changed line",
             rationale: "Keep the inline note height in placeholder math.",
           },
-        },
+        }),
       ],
       120,
     );

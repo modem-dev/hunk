@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../lib/agentAnnotations";
 import { reviewRowId } from "../lib/ids";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import {
@@ -88,7 +88,7 @@ function inlineNote(key: string, hunkIndex: number): PlannedReviewRow {
     summary: "Explain why this branch changed.",
     rationale: "The note should reserve space in the hunk bounds.",
   };
-  const note: VisibleAgentNote = { id: "note-1", annotation };
+  const note: VisibleAgentNote = createVisibleAgentNote([], { id: "note-1", annotation });
 
   return {
     kind: "inline-note",

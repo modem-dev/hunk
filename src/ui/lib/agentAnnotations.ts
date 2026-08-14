@@ -1,11 +1,20 @@
 import type { Hunk } from "@pierre/diffs";
 import type { AgentAnnotation, DiffFile, ReviewNoteSource } from "../../core/types";
 import { reviewAnnotationOverlapsHunk } from "../../core/review/annotations";
+import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex } from "../../core/review/anchors";
+import type { ReviewHunkSpan } from "../../core/review/geometry";
+import type { ReviewLineAddressV1, ReviewRangeAnchorV1 } from "../../core/review/types";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
   id: string;
   annotation: AgentAnnotation;
+  /**
+   * Where this note hangs, as the shared resolver decided it: the owning hunk plus the
+   * line the card sits beside. Render planning places the card from this and never from
+   * range containment against the rows it happens to have drawn.
+   */
+  anchor: ReviewRangeAnchorV1;
   source?: ReviewNoteSource | "draft";
   editable?: boolean;
   draft?: {
@@ -71,6 +80,46 @@ export function annotationAnchor(annotation: AgentAnnotation): AnnotationAnchor 
   }
 
   return null;
+}
+
+/** One note's declared target, from the surface that knows where the note was written. */
+export interface VisibleNoteTarget extends ReviewLineAddressV1 {
+  hunkIndex: number;
+}
+
+/**
+ * Builds one note the review stream draws, resolving where it hangs through core.
+ *
+ * Every kind of note goes through here — sidecar annotations, agent live comments, the
+ * reviewer's own notes, and the open draft — so ownership is decided once by the shared
+ * resolver. A note that declares its target keeps it; one that only carries ranges hangs
+ * from the line those ranges start at, and from the hunk owning the gap that line falls
+ * in when no hunk contains it at all.
+ */
+export function createVisibleAgentNote(
+  hunks: readonly ReviewHunkSpan[],
+  note: Omit<VisibleAgentNote, "anchor"> & { target?: VisibleNoteTarget },
+): VisibleAgentNote {
+  const { target, ...visible } = note;
+  const rangeAnchor = annotationAnchor(note.annotation);
+  const preferred: ReviewLineAddressV1 | undefined = target
+    ? { side: target.side, line: target.line }
+    : rangeAnchor
+      ? { side: rangeAnchor.side, line: rangeAnchor.lineNumber }
+      : undefined;
+  const fallbackOwnerHunkIndex =
+    target?.hunkIndex ??
+    (preferred ? reviewGapOwnerHunkIndex(hunks, preferred.side, preferred.line) : undefined);
+
+  return {
+    ...visible,
+    anchor: resolveReviewNoteAnchor(hunks, {
+      ...(note.annotation.oldRange ? { oldRange: note.annotation.oldRange } : {}),
+      ...(note.annotation.newRange ? { newRange: note.annotation.newRange } : {}),
+      ...(preferred ? { preferred } : {}),
+      ...(fallbackOwnerHunkIndex !== undefined ? { fallbackOwnerHunkIndex } : {}),
+    }),
+  };
 }
 
 function formatGithubStyleRange(prefix: "L" | "R", range: [number, number]) {

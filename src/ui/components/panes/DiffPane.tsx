@@ -26,7 +26,11 @@ import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
 import type { DraftReviewNote } from "../../lib/reviewProjection";
-import { reviewNoteSource, type VisibleAgentNote } from "../../lib/agentAnnotations";
+import {
+  createVisibleAgentNote,
+  reviewNoteSource,
+  type VisibleAgentNote,
+} from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
@@ -479,22 +483,26 @@ export function DiffPane({
         (annotation) =>
           reviewNoteVisibleByPolicy({ source: reviewNoteSource(annotation) }, showAgentNotes),
       );
+      // Every note kind resolves its anchor through the shared resolver here, once, so the
+      // render plan places sidecar annotations, agent comments, reviewer notes, and the open
+      // draft from one decision about where each of them hangs.
+      const hunks = file.metadata.hunks;
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);
         if (source !== "user") {
-          return {
+          return createVisibleAgentNote(hunks, {
             id: `annotation:${file.id}:${annotation.id ?? index}`,
             annotation,
-          };
+          });
         }
 
-        return {
+        return createVisibleAgentNote(hunks, {
           id: `annotation:${file.id}:${annotation.id ?? index}`,
           annotation,
           source,
           editable: true,
           onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
-        };
+        });
       });
 
       if (draftNote?.fileId === file.id) {
@@ -506,21 +514,26 @@ export function DiffPane({
           newRange: draftNote.newRange,
           editable: true,
         };
-        notes.push({
-          id: draftNote.id,
-          annotation: draftAnnotation,
-          source: "draft",
-          editable: true,
-          draft: {
-            body: draftNote.body,
-            focused: draftNoteFocused,
-            onBlur: onBlurDraftNote,
-            onCancel: onCancelDraftNote ?? (() => {}),
-            onFocus: onFocusDraftNote,
-            onInput: onUpdateDraftNote ?? (() => {}),
-            onSave: onSaveDraftNote ?? (() => {}),
-          },
-        });
+        notes.push(
+          createVisibleAgentNote(hunks, {
+            id: draftNote.id,
+            annotation: draftAnnotation,
+            // The draft knows exactly where the reviewer opened it, including on an expanded
+            // gap line no hunk contains.
+            target: { hunkIndex: draftNote.hunkIndex, side: draftNote.side, line: draftNote.line },
+            source: "draft",
+            editable: true,
+            draft: {
+              body: draftNote.body,
+              focused: draftNoteFocused,
+              onBlur: onBlurDraftNote,
+              onCancel: onCancelDraftNote ?? (() => {}),
+              onFocus: onFocusDraftNote,
+              onInput: onUpdateDraftNote ?? (() => {}),
+              onSave: onSaveDraftNote ?? (() => {}),
+            },
+          }),
+        );
       }
 
       if (notes.length > 0) {

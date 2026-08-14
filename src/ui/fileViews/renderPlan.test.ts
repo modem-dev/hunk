@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionFileViewLayout } from "../../extension-api/types";
-import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../lib/agentAnnotations";
 import { buildFileViewRenderPlan } from "./renderPlan";
 
 const layout: ExtensionFileViewLayout = {
@@ -24,10 +24,10 @@ function note(
   id: string,
   ranges: { oldRange?: [number, number]; newRange?: [number, number] },
 ): VisibleAgentNote {
-  return {
+  return createVisibleAgentNote([], {
     id,
     annotation: { id, summary: id, ...ranges },
-  };
+  });
 }
 
 describe("file-view render plan", () => {
