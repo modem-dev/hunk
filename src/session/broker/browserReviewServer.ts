@@ -57,6 +57,7 @@ import {
   HUNK_REVIEW_HTTP_PATH_PREFIX,
   isReviewCapabilityToken,
   parseReviewHttpPath,
+  reviewContentMeasurementHeaders,
   type HunkReviewClientErrorCodeV1,
   type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
@@ -68,6 +69,7 @@ import {
   parseHunkReviewActionEnvelope,
 } from "../reviewProtocol";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
+import type { LoadedReviewResource } from "./reviewResourceCache";
 import {
   ReviewGenerationRetiredError,
   ReviewResourceReadError,
@@ -346,9 +348,9 @@ export class BrowserReviewServer {
       return this.rangeNotSatisfiable(undefined);
     }
 
-    let bytes: Uint8Array;
+    let loaded: LoadedReviewResource;
     try {
-      bytes = await this.state.loadReviewResource(
+      loaded = await this.state.loadReviewResource(
         route.sessionId,
         route.generation,
         route.resourceId,
@@ -356,6 +358,7 @@ export class BrowserReviewServer {
     } catch (error) {
       return this.resourceFailure(error);
     }
+    const bytes = loaded.bytes;
 
     const range = rangeHeader === null ? undefined : parseByteRange(rangeHeader);
     if (range && (range.start >= bytes.byteLength || range.start > (range.end ?? Infinity))) {
@@ -381,6 +384,12 @@ export class BrowserReviewServer {
       headers: this.headers({
         "accept-ranges": "bytes",
         "content-type": descriptor?.contentType ?? "application/octet-stream",
+        // Every window states the measurement of the whole resource, so a reader
+        // assembling several of them holds them all to one size and digest.
+        ...reviewContentMeasurementHeaders({
+          byteLength: bytes.byteLength,
+          digest: loaded.digest,
+        }),
         ...(partial
           ? { "content-range": `bytes ${start}-${Math.max(start, end)}/${bytes.byteLength}` }
           : {}),

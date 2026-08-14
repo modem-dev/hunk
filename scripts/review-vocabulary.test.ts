@@ -22,7 +22,7 @@
  * gate's tombstone and debt lists stay easy to audit.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
 import { REVIEW_INTENT_TYPES } from "../src/core/review/intents";
@@ -42,9 +42,13 @@ const REPO_ROOT = resolve(import.meta.dir, "..");
 const REVIEW_MODEL_ROOT = join(REPO_ROOT, "src", "core", "review");
 const SESSION_ROOT = join(REPO_ROOT, "src", "session");
 const PRODUCER_ROOT = join(REPO_ROOT, "src", "app");
+const WEB_CLIENT_ROOT = join(REPO_ROOT, "src", "web");
 
-/** Every production TypeScript file below one directory. */
+/** Every production TypeScript file below one directory, tolerating an absent tree. */
 function sourceFiles(directory: string): string[] {
+  if (!existsSync(directory)) {
+    return [];
+  }
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
@@ -112,6 +116,24 @@ describe("review constant derivation", () => {
     expect(collisions).toEqual([]);
   });
 
+  // Phase 5's half of the same rule: a browser client is the tier furthest from the
+  // definitions and the one the audit found re-declaring the most — frame names, byte
+  // bounds, range sizes. It may import every shared constant, so it never needs to
+  // declare one that already exists.
+  test("no browser module re-declares a constant the shared tiers export", () => {
+    const shared = new Set([
+      ...sourceFiles(REVIEW_MODEL_ROOT).flatMap(exportedConstants),
+      ...sourceFiles(SESSION_ROOT).flatMap(exportedConstants),
+    ]);
+    const collisions = sourceFiles(WEB_CLIENT_ROOT).flatMap((path) =>
+      exportedConstants(path)
+        .filter((name) => shared.has(name))
+        .map((name) => `${repoPath(path)} -> ${name}`),
+    );
+
+    expect(collisions).toEqual([]);
+  });
+
   // The canonical digest check lives in `core/review/validation.ts`; five inline patterns
   // with differing case sensitivity are what let a writer and a reader disagree about
   // whether two digests matched. The producer tier is scanned too, because it is the side
@@ -122,6 +144,7 @@ describe("review constant derivation", () => {
       ...sourceFiles(SESSION_ROOT),
       ...sourceFiles(REVIEW_MODEL_ROOT),
       ...sourceFiles(PRODUCER_ROOT),
+      ...sourceFiles(WEB_CLIENT_ROOT),
     ]
       .filter((path) => repoPath(path) !== "src/core/review/validation.ts")
       .filter((path) => pattern.test(readFileSync(path, "utf8")))

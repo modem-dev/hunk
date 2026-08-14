@@ -28,7 +28,7 @@
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
 import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import { utf8ByteLength } from "../core/review/validation";
+import { isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
@@ -72,6 +72,60 @@ export function isReviewCapabilityToken(value: unknown): value is string {
     value.length === REVIEW_CAPABILITY_TOKEN_LENGTH &&
     /^[A-Za-z0-9_-]+$/.test(value)
   );
+}
+
+/**
+ * Headers a resource response states its whole-resource measurement in.
+ *
+ * A published catalog describes resources the producer has not measured yet — measuring
+ * one means producing its bytes — so a reader cannot get the size and digest to verify a
+ * read from the catalog it addressed the read with. They travel with the bytes instead,
+ * on every window of them, which is what lets a client hold a multi-window read to one
+ * measurement through the shared `ReviewChunkAssembler` rather than trusting whatever
+ * arrives (`docs/browser-review-seam-audit.md`, C2).
+ *
+ * Deliberately about the whole resource, never about the slice: `content-range` and
+ * `content-length` already describe the slice, and a per-window digest would let a
+ * truncated read verify.
+ */
+export const HUNK_REVIEW_CONTENT_SIZE_HEADER = "hunk-review-content-size";
+export const HUNK_REVIEW_CONTENT_DIGEST_HEADER = "hunk-review-content-digest";
+
+/** One resource's whole-content measurement, as the surface states and a reader parses it. */
+export interface HunkReviewContentMeasurement {
+  byteLength: number;
+  digest: string;
+}
+
+/** Render one measurement as the headers every window of a resource carries. */
+export function reviewContentMeasurementHeaders({
+  byteLength,
+  digest,
+}: HunkReviewContentMeasurement): Record<string, string> {
+  return {
+    [HUNK_REVIEW_CONTENT_SIZE_HEADER]: String(byteLength),
+    [HUNK_REVIEW_CONTENT_DIGEST_HEADER]: digest,
+  };
+}
+
+/**
+ * Read one measurement back off a response, or nothing when it does not state one.
+ *
+ * Validated rather than trusted: the digest must be in the canonical form the shared
+ * validator accepts, so a reader cannot adopt a measurement it would later be unable to
+ * compare against (D5).
+ */
+export function parseReviewContentMeasurementHeaders(
+  headers: Headers,
+): HunkReviewContentMeasurement | undefined {
+  const digest = headers.get(HUNK_REVIEW_CONTENT_DIGEST_HEADER);
+  const size = headers.get(HUNK_REVIEW_CONTENT_SIZE_HEADER);
+  // Read as a decimal integer rather than through `Number`, which reads an absent header
+  // as zero — a size a zero-length resource legitimately has.
+  const byteLength = size !== null && /^\d{1,15}$/.test(size) ? Number(size) : Number.NaN;
+  return isReviewSha256Digest(digest) && Number.isSafeInteger(byteLength)
+    ? { byteLength, digest }
+    : undefined;
 }
 
 /** One route on the review surface, named by what it serves rather than by its path. */

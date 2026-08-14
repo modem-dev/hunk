@@ -590,6 +590,13 @@ export interface HunkReviewResourceCatalogV1 {
    * without guessing; it retires when the surface itself adopts semantic keys.
    */
   fileKeysByRuntimeId: Record<string, string>;
+  /**
+   * Every resource this generation offers, in review order.
+   *
+   * The order is part of the contract, not an accident of how the producer built the list:
+   * a review's file order is its sidebar and stream order, and a client reading a document
+   * out of this catalog has nowhere else to learn it from.
+   */
   resources: ReviewResourceDescriptorV1[];
 }
 
