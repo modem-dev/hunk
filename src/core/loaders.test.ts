@@ -576,6 +576,34 @@ describe("loadAppBootstrap", () => {
     ]);
   });
 
+  test("reviews untracked file symlinks as links without following their targets", async () => {
+    const dir = createTempRepo("hunk-git-untracked-file-symlink-");
+
+    writeFileSync(join(dir, "target.txt"), "real contents\n");
+    git(dir, "add", "target.txt");
+    git(dir, "commit", "-m", "initial");
+
+    symlinkSync("target.txt", join(dir, "good-link"));
+    symlinkSync("missing-file", join(dir, "dangling-link"));
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const good = bootstrap.changeset.files.find((file) => file.path === "good-link");
+    expect(good?.metadata.type).toBe("new");
+    expect(good?.patch).toContain("new file mode 120000");
+    expect(good?.patch).toContain("+target.txt");
+    expect(good?.patch).not.toContain("real contents");
+
+    // A dangling symlink has no target to read, but its link line still reviews.
+    const dangling = bootstrap.changeset.files.find((file) => file.path === "dangling-link");
+    expect(dangling?.patch).toContain("new file mode 120000");
+    expect(dangling?.patch).toContain("+missing-file");
+  });
+
   test("can exclude untracked files from working tree reviews", async () => {
     const dir = createTempRepo("hunk-git-no-untracked-");
 
