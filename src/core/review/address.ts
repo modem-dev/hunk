@@ -16,6 +16,13 @@
  */
 import type { ReviewSide } from "./types";
 
+/**
+ * One addressable thing in a review, at the granularity the caller means.
+ *
+ * `file` and `hunk` name structure; `line` names a position in the content by side, which
+ * exists whether or not anything is anchored there; `note` names one anchored note by its
+ * id, which outlives the line it currently hangs from.
+ */
 export type ReviewAddress =
   | { kind: "file"; fileKey: string }
   | { kind: "hunk"; fileKey: string; hunkIndex: number }

@@ -5,12 +5,12 @@
  * index, and core cannot compute it: notes arrive from sources the semantic document does
  * not carry (a sidecar loaded with the changeset, live agent comments, the reviewer's own
  * notes), and only the consumer that merged them onto the diff model knows the full set.
- * It is therefore a caller-supplied fact (`ReviewIntentFacts.annotations`) — but the
+ * It is therefore a caller-supplied fact (`ReviewIntentFacts.annotations`), but the
  * *derivation* is shared, so the terminal and the producer hand the planner the same
  * answer instead of two that agree by coincidence.
  *
- * File membership is deliberately broader than hunk membership: a file carrying review
- * context but no note inside any hunk is still a stop on the annotated-file tour.
+ * File membership is broader than hunk membership: a file carrying review context but no
+ * note inside any hunk is still a stop on the annotated-file tour.
  */
 import { reviewHunkRanges, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
 import type { ReviewAnnotationIndex } from "./navigation";

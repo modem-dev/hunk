@@ -7,9 +7,8 @@
  * the store, the terminal's note projection, later a transport — reads the result rather
  * than the diff model behind it.
  *
- * Publication concerns (generations, resource descriptors, byte digests) deliberately do
- * not appear: they belong to the producer runtime that serves a document, not to the
- * document itself.
+ * Publication concerns (generations, resource descriptors, byte digests) do not appear:
+ * they belong to the producer runtime that serves a document, not to the document itself.
  */
 import type { DiffFile } from "../types";
 import {

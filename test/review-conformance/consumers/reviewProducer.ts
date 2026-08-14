@@ -8,8 +8,7 @@
  * that addressed a different span than the manifest advertises, fails here.
  *
  * Each fixture is also self-checked at the boundary the producer actually serves: every
- * canonical file it would hand out is compared against the manifest entry for it, which is
- * the check three prototype implementations did three different ways (D4).
+ * canonical file it would hand out is compared against the manifest entry for it (D4).
  */
 import { ReviewProducer } from "../../../src/app/review/producer";
 import { assertCanonicalFileMatchesManifest } from "../../../src/core/review/canonicalFile";

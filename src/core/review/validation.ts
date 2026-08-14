@@ -9,9 +9,9 @@
  * agree — and because none of them may reach for a platform encoder or a hashing runtime
  * to answer these questions.
  *
- * Hashing itself is deliberately *not* here: computing a SHA-256 needs a platform
- * primitive, so it arrives as an injected `ReviewDigestFn` from whichever tier owns bytes.
- * Core only names the algorithm, validates the shape, and compares two values.
+ * Hashing itself is *not* here: computing a SHA-256 needs a platform primitive, so it
+ * arrives as an injected `ReviewDigestFn` from whichever tier owns bytes. Core only names
+ * the algorithm, validates the shape, and compares two values.
  */
 
 /**
@@ -86,9 +86,9 @@ const REVIEW_SHA256_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 /**
  * Whether one value is a digest in canonical form.
  *
- * Deliberately case-sensitive: there is one canonical spelling, and accepting both is
- * what let the prototype's writer and reader disagree about whether two digests matched.
- * Anything from outside is normalized on the way in rather than validated leniently.
+ * Case-sensitive: there is one canonical spelling, and accepting both spellings is how a
+ * writer and a reader come to disagree about whether two digests matched. Anything from
+ * outside is normalized on the way in rather than validated leniently.
  */
 export function isReviewSha256Digest(value: unknown): value is string {
   return typeof value === "string" && REVIEW_SHA256_DIGEST_PATTERN.test(value);

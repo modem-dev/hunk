@@ -6,10 +6,10 @@
  * positions or renderer object identity. Every identity here is a pure function of the
  * facts it names, so two processes projecting the same content agree.
  *
- * The digest is an identity hash, not an integrity check: it is deliberately
- * platform-neutral arithmetic rather than a crypto primitive, so the shared model stays
- * importable from a browser bundle without a hashing runtime. Wire-integrity digests
- * belong beside the transport that verifies bytes, not here.
+ * The digest is an identity hash, not an integrity check: it is platform-neutral
+ * arithmetic rather than a crypto primitive, so the shared model stays importable from a
+ * browser bundle without a hashing runtime. Wire-integrity digests belong beside the
+ * transport that verifies bytes, not here.
  */
 
 /** Four independent 32-bit FNV-1a lanes, giving a 128-bit identity from one pass. */

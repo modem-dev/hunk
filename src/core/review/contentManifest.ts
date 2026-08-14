@@ -1,15 +1,13 @@
 /**
  * A deterministic semantic snapshot of one review document.
  *
- * The manifest is a parity instrument, not a validator: every consumer of the shared
- * model can be driven through the same fixture and compared against the same manifest,
- * so a renderer that re-derives geometry instead of consuming core fails visibly rather
- * than drifting quietly.
+ * The manifest exists so every consumer of the shared model can be driven through the same
+ * fixture and compared against the same snapshot, making a renderer that re-derives
+ * geometry instead of consuming core fail visibly rather than drift quietly.
  *
  * It therefore records *derived* geometry — hunk extents, gap addresses, default note
  * targets, the reason a file renders nothing — alongside the content those derivations
- * read. Renderer identity (runtime ids, rows, widths) is deliberately absent, since two
- * consumers agreeing on it would prove nothing.
+ * read. Renderer identity (runtime ids, rows, widths) is left out.
  */
 import {
   reviewExpansionSide,

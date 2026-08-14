@@ -8,7 +8,7 @@
  * client (`docs/browser-review-seam-audit.md`, B12/B10).
  *
  * It also runs the note-size corpus, because "may this note cross a boundary" is a wire
- * question the prototype answered differently from the producer (D1).
+ * question as much as a producer one, and both must answer it the same way (D1).
  */
 import { reviewNoteWithinSizeLimit } from "../../../src/core/review/noteSize";
 import { parseHunkReviewAction, toReviewIntent } from "../../../src/session/reviewProtocol";

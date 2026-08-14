@@ -19,14 +19,14 @@
  * - Within one generation, state revisions strictly increase but need **not** be
  *   contiguous: a receiver that joined late, replayed a log, or took a fresh snapshot
  *   legitimately sees jumps. A revision that repeats is a replay, not an update.
- * - Across generations, revisions are not comparable at all — a new generation may restart
- *   them — which is why a generation change is classified as its own verdict rather than
- *   folded into revision comparison.
+ * - Across generations, revisions are not comparable at all, since a new generation may
+ *   restart them. A generation change is therefore classified as its own verdict rather
+ *   than folded into revision comparison.
  *
  * Non-semantic republication (a renderer width changed, nothing about the review did) is
- * deliberately *not* modelled here. It carries no new position, so it classifies as a
- * replay; whoever needs to re-emit it decides that on its own publication key rather than
- * by loosening this comparison.
+ * *not* modelled here. It carries no new position, so it classifies as a replay; whoever
+ * needs to re-emit it decides that on its own publication key rather than by loosening
+ * this comparison.
  */
 
 export interface ReviewGenerationIdentity {

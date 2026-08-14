@@ -7,9 +7,9 @@
  * once, because a renderer that re-derives one silently disagrees with the state store
  * that validates against it (`docs/browser-review-seam-audit.md`, A3/A4/A6/A10).
  *
- * The inputs are deliberately structural rather than `ReviewFileV1`: a parsed diff hunk
- * and a projected `ReviewHunkV1` both satisfy them, so the terminal can call these
- * primitives from its render path without projecting a whole semantic document first.
+ * The inputs are structural rather than `ReviewFileV1`: a parsed diff hunk and a projected
+ * `ReviewHunkV1` both satisfy them, so the terminal can call these primitives from its
+ * render path without projecting a whole semantic document first.
  */
 import type { ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
 

@@ -7,11 +7,8 @@
  * the resnapshot a generation change forces, and `ignored` is everything the mirror
  * declined to act on.
  *
- * That indirection is the point. The prototype's mirror compared publications itself —
- * lower revisions rejected, equal ones sometimes accepted, new generations always taken —
- * and the disagreement with the rest of the system only ever surfaced as a client that
- * silently stopped updating (`docs/browser-review-seam-audit.md`, C1). Driving the same
- * fixtures through the mirror is what proves it has no rules of its own.
+ * Driving the shared fixtures through the mirror's own update path is what proves it has
+ * no comparison rules of its own (`docs/browser-review-seam-audit.md`, C1).
  */
 import type { ReviewPublicationAddress } from "../../../src/core/review/generationOrder";
 import { ReviewMirror } from "../../../src/session/broker/reviewMirror";

@@ -203,9 +203,9 @@ export interface ReviewWireParseOutcome {
 /**
  * One consumer of the wire schema.
  *
- * Two questions, both of which the prototype answered differently at different tiers: what
- * an action means once parsed (B12/B10), and whether a note may cross a boundary at all
- * (D1). A consumer joins by driving the code path it really uses.
+ * Two questions every tier must answer the same way: what an action means once parsed
+ * (B12/B10), and whether a note may cross a boundary at all (D1). A consumer joins by
+ * driving the code path it really uses.
  */
 export interface ReviewWireConsumer {
   name: string;

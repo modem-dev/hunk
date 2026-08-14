@@ -8,16 +8,14 @@
  * against the shared contract (`core/review/generationOrder.ts`) before anything is
  * published, so a producer bug fails here rather than desynchronizing a reader.
  *
- * It deliberately does *not* own the review's live state. The terminal's controller owns
- * the store today, and moving that is a behavior change rather than a seam extraction; the
- * producer attaches to whichever store the host mounted and plans intents against it,
- * supplying the caller-owned facts core refuses to invent — identity, time, and the
- * annotation index (`ReviewIntentFacts.annotations`) — through the same derivation the
- * terminal uses.
+ * It does *not* own the review's live state. The terminal's controller owns the store
+ * today, and moving that is a behavior change rather than a seam extraction; the producer
+ * attaches to whichever store the host mounted and plans intents against it, supplying the
+ * caller-owned facts core refuses to invent (identity, time, and the annotation index,
+ * `ReviewIntentFacts.annotations`) through the same derivation the terminal uses.
  *
  * No transport lives here. Serving the session surface means answering method calls; HTTP,
- * SSE, and a browser client are later phases, and their absence is what keeps this module
- * about the review rather than about a protocol.
+ * SSE, and a browser client are later phases.
  */
 import {
   assertReviewPublicationAdvance,
@@ -158,9 +156,9 @@ export class ReviewProducer {
   /**
    * The review state this producer plans against, when a host has attached one.
    *
-   * Read-only, and deliberately the *store's* state rather than a copy: a caller
-   * validating a request against the current review — does this file exist, is this the
-   * draft I opened — must see exactly what the next intent will be planned against.
+   * Read-only, and the *store's* state rather than a copy: a caller validating a request
+   * against the current review — does this file exist, is this the draft I opened — must
+   * see exactly what the next intent will be planned against.
    */
   getReviewState() {
     return this.store?.getSnapshot();
