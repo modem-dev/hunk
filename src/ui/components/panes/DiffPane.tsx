@@ -21,7 +21,12 @@ import type {
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
-import { reviewNoteVisibleByPolicy } from "../../../core/review/state";
+import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
+import {
+  reviewNoteAnchorLine,
+  reviewNoteOwnerHunkIndex,
+  reviewNoteVisibleByPolicy,
+} from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
@@ -1635,31 +1640,45 @@ export function DiffPane({
     };
   }, [fileSectionLayouts, sectionGeometry, selectedFile, selectedFileIndex, selectedHunkIndex]);
 
-  /** Absolute scroll offset and height of the first inline note in the selected hunk, if any. */
+  /**
+   * The note a note-preferring reveal aims at, named by the shared policy.
+   *
+   * The candidates are this pane's own — sidecar annotations, agent comments, the
+   * reviewer's notes, and the open draft, each hanging from the hunk its resolved anchor
+   * names — while which of them wins is the one rule every review surface answers with.
+   */
+  const revealNoteId = useMemo(() => {
+    if (!scrollToNote || !selectedFileId) {
+      return null;
+    }
+
+    const notes = allAgentNotesByFile.get(selectedFileId);
+    return notes
+      ? (resolveReviewRevealNoteId(
+          notes.flatMap((note) =>
+            reviewNoteOwnerHunkIndex(note) === selectedHunkIndex
+              ? [
+                  {
+                    id: note.id,
+                    line: reviewNoteAnchorLine(note).line,
+                    draft: note.source === "draft",
+                  },
+                ]
+              : [],
+          ),
+        ) ?? null)
+      : null;
+  }, [allAgentNotesByFile, scrollToNote, selectedFileId, selectedHunkIndex]);
+
+  /** Absolute scroll offset and height of the note that reveal aims at, once it is measured. */
   const selectedNoteBounds = useMemo(() => {
-    if (!scrollToNote || !selectedEstimatedHunkBounds || selectedFileIndex < 0) {
+    if (!revealNoteId || !selectedEstimatedHunkBounds || selectedFileIndex < 0) {
       return null;
     }
 
-    const geometry = sectionGeometry[selectedFileIndex];
-    if (!geometry) {
-      return null;
-    }
-
-    const sectionRelativeHunkTop =
-      selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
-    const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
-    const noteRow =
-      (draftNoteId
-        ? geometry.rowBoundsByStableKey.get(inlineNoteStableKey(draftNoteId))
-        : undefined) ??
-      geometry.rowBounds.find(
-        (row) =>
-          row.key.startsWith("inline-note:") &&
-          row.top >= sectionRelativeHunkTop &&
-          row.top < sectionRelativeHunkBottom,
-      );
-
+    const noteRow = sectionGeometry[selectedFileIndex]?.rowBoundsByStableKey.get(
+      inlineNoteStableKey(revealNoteId),
+    );
     if (!noteRow) {
       return null;
     }
@@ -1668,7 +1687,7 @@ export function DiffPane({
       top: selectedEstimatedHunkBounds.sectionTop + noteRow.top,
       height: noteRow.height,
     };
-  }, [draftNoteId, scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
+  }, [revealNoteId, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
   const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
   const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
   const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;

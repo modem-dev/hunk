@@ -2302,6 +2302,68 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane reveals the note the shared policy names, not the first one drawn in the hunk", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    // Two hunks far apart. Both notes hang from the second hunk and land on its first row:
+    // one is anchored there, the other to a line the collapsed gap swallowed.
+    const beforeLines = Array.from(
+      { length: 80 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[59] = "export const line60 = 6000;";
+
+    const file = createTestDiffFile(
+      "policy-note",
+      "policy-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    const hunkFirstLine = file.metadata.hunks[1]!.additionStart;
+    file.agent = {
+      path: file.path,
+      summary: "file note",
+      annotations: [
+        {
+          newRange: [hunkFirstLine, hunkFirstLine],
+          summary: "HUNK NOTE",
+          // Tall enough that revealing the note below it pushes this one off the top.
+          rationale: Array.from({ length: 6 }, (_, index) => `filler line ${index + 1}`).join(" "),
+        },
+        { newRange: [hunkFirstLine - 20, hunkFirstLine - 20], summary: "GAP NOTE" },
+      ],
+    };
+
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 40,
+      headerLabelWidth: 20,
+      selectedFileId: file.id,
+      selectedHunkIndex: 1,
+      scrollToNote: true,
+      separatorWidth: 44,
+      showAgentNotes: true,
+      showHunkHeaders: true,
+      width: 48,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 52, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      // Both notes sit on the same row, so the note drawn first is the one a scan of the
+      // hunk's rows finds. The shared policy takes the earliest anchor instead.
+      expect(frame).toContain("GAP NOTE");
+      expect(frame).not.toContain("HUNK NOTE");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
