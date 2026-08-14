@@ -23,7 +23,13 @@ import type { DiffFile } from "../../core/types";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { ValidatedLineHighlight } from "../highlights/validate";
-import { measureTextWidth, sliceTextByWidth, textClusters } from "../lib/text";
+import {
+  isPrintableAsciiText,
+  measureClusterWidth,
+  measureSanitizedTextWidth,
+  measureTextWidth,
+  textClusters,
+} from "../lib/text";
 import { expandDiffTabs } from "./codeColumns";
 import type { RenderSpan } from "./pierre";
 
@@ -330,15 +336,87 @@ function appendSpan(target: RenderSpan[], span: RenderSpan) {
   }
 }
 
-/** The tone painting one column, with later ranges winning overlaps. */
-function toneAtColumn(ranges: readonly LineHighlightColRange[], col: number) {
+/** One line's cut columns plus the tone winning each gap between them. */
+interface LineHighlightCutPlan {
+  /** Sorted unique cut columns; every painted piece begins and ends on one. */
+  readonly cuts: readonly number[];
+  /** Winning tone for `[cuts[i], cuts[i + 1])`, or `undefined` where nothing paints. */
+  readonly tones: ReadonlyArray<ExtensionLineHighlightTone | undefined>;
+}
+
+// Range lists are built once per file and shared by every row and re-render that
+// paints the line, so the plan is derived once per list rather than per row.
+const lineHighlightCutPlans = new WeakMap<readonly LineHighlightColRange[], LineHighlightCutPlan>();
+
+/**
+ * Resolve one line's ranges into cut columns and the tone winning each interval.
+ *
+ * Overlaps are resolved once per line instead of once per painted piece. The
+ * fill walks ranges from last to first — the same "later range wins" policy —
+ * and a skip pointer keeps intervals an already-applied range claimed out of
+ * every remaining range's walk, so a line carrying thousands of overlapping
+ * ranges costs about one pass over the cut list rather than one pass per piece.
+ */
+function lineHighlightCutPlan(ranges: readonly LineHighlightColRange[]): LineHighlightCutPlan {
+  const cached = lineHighlightCutPlans.get(ranges);
+  if (cached) return cached;
+
+  const cutSet = new Set<number>();
+  for (const range of ranges) {
+    cutSet.add(range.startCol);
+    cutSet.add(range.endCol);
+  }
+  const cuts = [...cutSet].sort((a, b) => a - b);
+  const columnIndex = new Map<number, number>();
+  for (const [index, cut] of cuts.entries()) columnIndex.set(cut, index);
+
+  const intervals = Math.max(0, cuts.length - 1);
+  const tones = Array.from<ExtensionLineHighlightTone | undefined>({ length: intervals });
+  // `skip[i]` points at the first interval from `i` onward that no range has
+  // claimed yet; path compression keeps repeated lookups near constant.
+  const skip = new Int32Array(intervals + 1);
+  for (let index = 0; index <= intervals; index += 1) skip[index] = index;
+  const nextUnclaimed = (index: number) => {
+    let current = index;
+    while (skip[current] !== current) {
+      skip[current] = skip[skip[current]!]!;
+      current = skip[current]!;
+    }
+    return current;
+  };
+
   for (let index = ranges.length - 1; index >= 0; index -= 1) {
     const range = ranges[index]!;
-    if (col >= range.startCol && col < range.endCol) {
-      return range.tone;
+    const to = columnIndex.get(range.endCol)!;
+    let interval = nextUnclaimed(columnIndex.get(range.startCol)!);
+    while (interval < to) {
+      tones[interval] = range.tone;
+      skip[interval] = interval + 1;
+      interval = nextUnclaimed(interval + 1);
     }
   }
-  return undefined;
+
+  const plan: LineHighlightCutPlan = { cuts, tones };
+  lineHighlightCutPlans.set(ranges, plan);
+  return plan;
+}
+
+/** The tone painting one column, with later ranges already resolved into the plan. */
+function toneAtColumn(plan: LineHighlightCutPlan, col: number) {
+  const { cuts, tones } = plan;
+  let low = 0;
+  let high = cuts.length - 1;
+  let interval = -1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (cuts[middle]! <= col) {
+      interval = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return interval >= 0 && interval < tones.length ? tones[interval] : undefined;
 }
 
 /** The resolved paint for one tone: a background, plus a foreground when the mark inverts. */
@@ -367,17 +445,30 @@ export function applyLineHighlightsToSpans(
   }
 
   // Cut at every range boundary so each emitted piece has one winning tone.
-  const cuts = new Set<number>();
-  for (const range of ranges) {
-    cuts.add(range.startCol);
-    cuts.add(range.endCol);
-  }
-
+  const plan = lineHighlightCutPlan(ranges);
+  const { cuts } = plan;
   const result: RenderSpan[] = [];
   let col = 0;
+  let cutCursor = 0;
+
+  /** Emit one piece of a span under the tone winning the column it starts at. */
+  const paint = (span: RenderSpan, text: string, startCol: number) => {
+    if (text.length === 0) return;
+    const tone = toneAtColumn(plan, startCol);
+    const style = tone === undefined ? undefined : resolveStyle(tone);
+    appendSpan(
+      result,
+      style === undefined
+        ? { ...span, text }
+        : style.fg === undefined
+          ? { ...span, text, bg: style.bg }
+          : { ...span, text, bg: style.bg, fg: style.fg },
+    );
+  };
 
   for (const span of spans) {
-    const spanWidth = measureTextWidth(span.text);
+    const safeText = sanitizeTerminalLine(span.text);
+    const spanWidth = measureSanitizedTextWidth(safeText);
     if (spanWidth === 0) {
       appendSpan(result, { ...span });
       continue;
@@ -385,39 +476,53 @@ export function applyLineHighlightsToSpans(
 
     const spanStart = col;
     const spanEnd = col + spanWidth;
-    const localCuts = [...cuts]
-      .filter((cut) => cut > spanStart && cut < spanEnd)
+    col = spanEnd;
+
+    // Spans arrive in column order, so one forward-only cursor walks the shared
+    // cut list once per row instead of rebuilding it for every span.
+    while (cutCursor < cuts.length && cuts[cutCursor]! <= spanStart) cutCursor += 1;
+    if (cutCursor >= cuts.length || cuts[cutCursor]! >= spanEnd) {
+      paint(span, span.text, spanStart);
+      continue;
+    }
+
+    let cursor = cutCursor;
+    let pieceIndex = 0;
+    let pieceCol = spanStart;
+
+    if (isPrintableAsciiText(safeText)) {
+      // One cell per code unit, so a cut column is already a string index.
+      while (cursor < cuts.length && cuts[cursor]! < spanEnd) {
+        const cut = cuts[cursor]!;
+        paint(span, safeText.slice(pieceIndex, cut - spanStart), pieceCol);
+        pieceIndex = cut - spanStart;
+        pieceCol = cut;
+        cursor += 1;
+      }
+      paint(span, safeText.slice(pieceIndex), pieceCol);
+      continue;
+    }
+
+    let clusterIndex = 0;
+    let clusterCol = spanStart;
+    for (const cluster of textClusters(safeText)) {
       // A cut inside a wide glyph would slice it into a dropped half and a pad
       // space, costing the row one column and breaking the one contract
       // everything upstream relies on: paint never changes rendered width.
       // Cluster snapping upstream should make this unreachable, but the
       // invariant is enforced here, where it could break: a mid-glyph cut is
-      // snapped away and the glyph paints whole under one tone.
-      .filter((cut) => sliceTextByWidth(span.text, 0, cut - spanStart).width === cut - spanStart)
-      .sort((a, b) => a - b);
-
-    let pieceStart = spanStart;
-    for (const boundary of [...localCuts, spanEnd]) {
-      const piece =
-        localCuts.length === 0
-          ? span.text
-          : sliceTextByWidth(span.text, pieceStart - spanStart, boundary - pieceStart).text;
-      if (piece.length > 0) {
-        const tone = toneAtColumn(ranges, pieceStart);
-        const style = tone === undefined ? undefined : resolveStyle(tone);
-        appendSpan(
-          result,
-          style === undefined
-            ? { ...span, text: piece }
-            : style.fg === undefined
-              ? { ...span, text: piece, bg: style.bg }
-              : { ...span, text: piece, bg: style.bg, fg: style.fg },
-        );
+      // passed over and the glyph paints whole under one tone.
+      while (cursor < cuts.length && cuts[cursor]! < clusterCol) cursor += 1;
+      if (cursor < cuts.length && cuts[cursor] === clusterCol) {
+        paint(span, safeText.slice(pieceIndex, clusterIndex), pieceCol);
+        pieceIndex = clusterIndex;
+        pieceCol = clusterCol;
+        cursor += 1;
       }
-      pieceStart = boundary;
+      clusterCol += measureClusterWidth(cluster);
+      clusterIndex += cluster.length;
     }
-
-    col = spanEnd;
+    paint(span, safeText.slice(pieceIndex), pieceCol);
   }
 
   return result;
