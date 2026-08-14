@@ -1,5 +1,6 @@
 /**
- * The producer's hashing implementation, kept at the edge.
+ * The Node implementation of the shared review digest (`ReviewDigestFn`), injected by
+ * whichever tier owns bytes.
  *
  * The shared review model names the algorithm and validates the shape of a digest but
  * never computes one, so that it stays importable without a hashing runtime. This is the
@@ -8,7 +9,7 @@
  * browser bundle supply Web Crypto's instead.
  */
 import { createHash } from "node:crypto";
-import { REVIEW_DIGEST_ALGORITHM, type ReviewDigestFn } from "../../core/review/validation";
+import { REVIEW_DIGEST_ALGORITHM, type ReviewDigestFn } from "../core/review/validation";
 
 /** Digest bytes with Node's implementation of the shared algorithm, in canonical form. */
 export const nodeReviewDigest: ReviewDigestFn = (bytes) =>

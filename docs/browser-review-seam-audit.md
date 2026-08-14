@@ -447,7 +447,7 @@ path suffixes, expansion retention, git-status badges).
   variant is what let a writer and a reader disagree — with `normalizeReviewDigest` for values
   arriving from outside and `reviewDigestsEqual` normalizing _both_ operands. Hashing itself is
   an injected `ReviewDigestFn` rather than inline `createHash` calls; the producer supplies
-  Node's at the edge (`src/app/review/digest.ts`), which is also what repaid the shared model's
+  Node's at the edge (`src/lib/reviewDigest.ts`), which is also what repaid the shared model's
   last node-debt entry. Resource bounds are constants in `core/review/resources.ts` that the
   producer imports rather than restates. Wire constants, the action-envelope parser, and the
   two note-filter namings are Phase 3.

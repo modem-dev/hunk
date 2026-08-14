@@ -52,7 +52,7 @@ import {
   reviewResourceId,
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
-import { nodeReviewDigest } from "../../app/review/digest";
+import { nodeReviewDigest } from "../../lib/reviewDigest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   type HunkReviewActionResultV1,
