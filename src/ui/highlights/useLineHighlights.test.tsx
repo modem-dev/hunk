@@ -7,7 +7,11 @@ import type { RegisteredLineHighlighter } from "../../extensions/types";
 import { bumpScopedEpoch } from "../lib/scopedEpochs";
 import { registeredLineHighlighterKey, type LineHighlightEpochState } from "./state";
 import { runLineHighlightRequest, useLineHighlights } from "./useLineHighlights";
-import type { ValidatedLineHighlight } from "./validate";
+import {
+  MAX_LINE_HIGHLIGHTS_PER_FILE,
+  MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE,
+  type ValidatedLineHighlight,
+} from "./validate";
 
 /** Build one registration with a test-controlled highlight callback. */
 function createTestHighlighter(
@@ -236,6 +240,52 @@ describe("useLineHighlights", () => {
       expect(latest.get(file.id)).toBeUndefined();
       expect(issues).toHaveLength(1);
       expect(issues[0]).toContain("marks dropped");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("drops the highlighter that pushes one file past the merged cap", async () => {
+    // Each highlighter stays under its own per-file cap; only the merge exceeds
+    // what paint should have to carry.
+    const issues: string[] = [];
+    const fullResult = Array.from({ length: MAX_LINE_HIGHLIGHTS_PER_FILE }, (_, index) => ({
+      side: "new" as const,
+      line: Math.floor(index / 50) + 1,
+      range: [index, index + 1] as const,
+    }));
+    const highlighters = [
+      createTestHighlighter(() => fullResult, "first"),
+      createTestHighlighter(() => fullResult, "second"),
+      createTestHighlighter(
+        () => [{ side: "new" as const, line: 1, range: [0, 1] as const }],
+        "third",
+      ),
+    ];
+    let latest: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
+
+    function Harness() {
+      latest = useLineHighlights({
+        files,
+        highlighters,
+        onIssue: (message) => issues.push(message),
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    try {
+      await act(async () => {
+        await Promise.resolve();
+        await setup.renderOnce();
+        await Promise.resolve();
+        await setup.renderOnce();
+      });
+
+      expect(latest.get(file.id)).toHaveLength(MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]).toContain('line highlighter "third"');
+      expect(issues[0]).toContain("merged ranges");
     } finally {
       await act(async () => setup.renderer.destroy());
     }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  MAX_LINE_HIGHLIGHT_INPUT_ENTRIES,
   MAX_LINE_HIGHLIGHTS_PER_FILE,
   MAX_LINE_HIGHLIGHTS_PER_LINE,
   validateLineHighlights,
@@ -63,6 +64,27 @@ describe("validateLineHighlights", () => {
     if (!validation.ok) {
       expect(validation.issue).toContain(String(MAX_LINE_HIGHLIGHTS_PER_FILE));
     }
+  });
+
+  test("rejects an oversized result without reading a single entry", () => {
+    // The mark caps count entries that survived validation, so an array of pure
+    // garbage used to cost a full structural pass at no cost to the extension.
+    const raw = Array.from({ length: MAX_LINE_HIGHLIGHT_INPUT_ENTRIES + 1 }, () => "garbage");
+    let entryReads = 0;
+    const probed = new Proxy(raw, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) entryReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const validation = validateLineHighlights(probed);
+
+    expect(validation.ok).toBe(false);
+    if (!validation.ok) {
+      expect(validation.issue).toContain(String(MAX_LINE_HIGHLIGHT_INPUT_ENTRIES));
+    }
+    expect(entryReads).toBe(0);
   });
 
   test("rejects a line exceeding the per-line cap instead of truncating", () => {

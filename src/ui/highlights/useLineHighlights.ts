@@ -6,7 +6,11 @@ import type { RegisteredLineHighlighter } from "../../extensions/types";
 import { createExtensionDocumentReader } from "../lib/extensionDocumentReader";
 import { scopedEpoch } from "../lib/scopedEpochs";
 import { registeredLineHighlighterKey, type LineHighlightEpochState } from "./state";
-import { validateLineHighlights, type ValidatedLineHighlight } from "./validate";
+import {
+  MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE,
+  validateLineHighlights,
+  type ValidatedLineHighlight,
+} from "./validate";
 
 /** Bound asynchronous third-party highlight work so marks never stall the review. */
 export const LINE_HIGHLIGHT_TIMEOUT_MS = 1_500;
@@ -201,6 +205,29 @@ export function useLineHighlights({
       if (file.isBinary || file.isTooLarge || file.metadata.hunks.length === 0) return;
 
       const parts: Array<readonly ValidatedLineHighlight[] | null> = [];
+      let mergedCount = 0;
+      /**
+       * Keep one highlighter's marks only while the file stays under the merged
+       * cap, so a late contributor cannot push paint past what it can carry.
+       */
+      const accept = (
+        registered: RegisteredLineHighlighter,
+        marks: readonly ValidatedLineHighlight[] | null,
+      ) => {
+        if (marks && mergedCount + marks.length > MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE) {
+          reportOnce(
+            registered,
+            `${file.id}:merged-cap`,
+            `Extension ${registered.extensionId} line highlighter "${registered.highlighter.id}" ` +
+              `pushed ${file.path} past ${MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE} merged ranges • marks dropped`,
+          );
+          parts.push(null);
+          return;
+        }
+        mergedCount += marks?.length ?? 0;
+        parts.push(marks);
+      };
+
       for (const registered of highlighters) {
         const key = registeredLineHighlighterKey(registered);
         const cacheKey = `${file.id}\u0000${key}\u0000${scopedEpoch(epochs, key, file.id)}`;
@@ -208,7 +235,7 @@ export function useLineHighlights({
         // A registration-aware cache hit bypasses extension code entirely.
         // A reload replaces the registration object and invalidates it.
         if (cached?.file === file && cached.registered === registered) {
-          parts.push(cached.marks);
+          accept(registered, cached.marks);
           continue;
         }
 
@@ -224,7 +251,7 @@ export function useLineHighlights({
               `${attribution} ${validation.issue} for ${file.path} • marks dropped`,
             );
             cacheResult(cache.current, cacheKey, { file, registered, marks: null });
-            parts.push(null);
+            accept(registered, null);
             continue;
           }
           if (validation.droppedInvalid > 0) {
@@ -237,7 +264,7 @@ export function useLineHighlights({
           }
           const marks = validation.marks.length > 0 ? validation.marks : null;
           cacheResult(cache.current, cacheKey, { file, registered, marks });
-          parts.push(marks);
+          accept(registered, marks);
         } catch {
           if (controller.signal.aborted || !active) return;
           reportOnce(
@@ -246,7 +273,7 @@ export function useLineHighlights({
             `${attribution} failed highlighting ${file.path} • marks dropped`,
           );
           cacheResult(cache.current, cacheKey, { file, registered, marks: null });
-          parts.push(null);
+          accept(registered, null);
         }
       }
 

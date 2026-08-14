@@ -9,6 +9,21 @@ import type { ExtensionLineHighlightTone } from "../../extension-api/types";
  */
 export const MAX_LINE_HIGHLIGHTS_PER_FILE = 2_000;
 export const MAX_LINE_HIGHLIGHTS_PER_LINE = 100;
+/**
+ * Cap on raw entries validated for one file.
+ *
+ * The caps above count marks that survived validation, so an array of pure
+ * garbage costs a full structural pass no matter how long it is. A result this
+ * long cannot yield a usable mark set anyway, so it is rejected unread.
+ */
+export const MAX_LINE_HIGHLIGHT_INPUT_ENTRIES = 10_000;
+/**
+ * Cap on the marks one file keeps after merging every highlighter's result.
+ *
+ * The per-highlighter caps bound one contributor; this bounds what paint has to
+ * carry when several contributors mark the same file at once.
+ */
+export const MAX_MERGED_LINE_HIGHLIGHTS_PER_FILE = 4_000;
 
 const LINE_HIGHLIGHT_TONES: ReadonlySet<string> = new Set([
   "match",
@@ -96,6 +111,12 @@ export function validateLineHighlights(result: unknown): LineHighlightValidation
   }
   if (!Array.isArray(result)) {
     return { ok: false, issue: "returned a non-array result" };
+  }
+  if (result.length > MAX_LINE_HIGHLIGHT_INPUT_ENTRIES) {
+    return {
+      ok: false,
+      issue: `returned more than ${MAX_LINE_HIGHLIGHT_INPUT_ENTRIES} entries for one file`,
+    };
   }
 
   const marks: ValidatedLineHighlight[] = [];
