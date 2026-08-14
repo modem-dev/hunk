@@ -26,7 +26,7 @@ describe("bundled tutor", () => {
     const configured: HunkConfigResolution = {
       input,
       customThemes: [],
-      extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
       keybindings: { "hunk.app.toggleHelp": "ctrl+h" },
     };
     const extensions = createEmptyExtensionLoadResult();
@@ -53,7 +53,7 @@ describe("bundled tutor", () => {
       expect(setup.captureCharFrame()).toContain("0/36");
       expect(setup.captureCharFrame()).toContain("Welcome to Hunk Tutor");
       expect(setup.captureCharFrame()).toContain("The diff itself is the guide");
-      expect(setup.captureCharFrame()).toContain("read the explanation");
+      expect(setup.captureCharFrame()).toContain("find the spotlight");
       expect(setup.captureCharFrame()).not.toContain("ext hunk-tutor");
 
       await act(async () => {

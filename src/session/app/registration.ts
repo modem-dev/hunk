@@ -3,12 +3,14 @@ import { spawnSync } from "node:child_process";
 import { resolveExperimentalFeatures } from "../../core/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/hunkSummary";
-import { hunkLineRange } from "../../core/liveComments";
+import { reviewHunkRanges } from "../../core/review/geometry";
+import type { ReviewPublication } from "../../app/review/publication";
 import type { AppBootstrap } from "../../core/types";
 import {
   SESSION_BROKER_REGISTRATION_VERSION,
   resolveSessionTerminalMetadata,
 } from "@hunk/session-broker-core";
+import type { HunkReviewResourceCatalogV1 } from "../reviewProtocol";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "../types";
 
 /** Resolve the TTY device path for the current process, if available. */
@@ -31,24 +33,50 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
   return isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined;
 }
 
-/** Convert the loaded changeset into the app-owned file-and-hunk review export model. */
-function buildSessionFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
-  return bootstrap.changeset.files.map((file) => ({
-    id: file.id,
+/**
+ * Convert one published generation into the app-owned file-and-hunk review export model.
+ *
+ * Projected from the semantic document rather than from the changeset behind it: the
+ * session surface is a consumer of the published review like any other, so what an agent
+ * reads through `hunk session` and what a later client reads over the wire come from the
+ * same generation instead of from two readings of the same changeset.
+ *
+ * Patch text is deliberately absent. It is published as a resource instead, read on
+ * demand in bounded verified chunks, so the daemon holds one patch at a time rather than
+ * every patch of every live session for as long as those sessions are open — and a review
+ * whose patches exceed the registration budget registers normally instead of failing to
+ * appear at all.
+ */
+function buildSessionFiles(publication: ReviewPublication): SessionReviewFile[] {
+  return publication.document.files.map((file) => ({
+    id: file.runtimeId,
     path: file.path,
     previousPath: file.previousPath,
     additions: file.stats.additions,
     deletions: file.stats.deletions,
-    hunkCount: file.metadata.hunks.length,
-    patch: file.patch,
+    hunkCount: file.hunks.length,
     // The same derivation the extension API's file views use, so the two
     // external views of a review never disagree on a hunk's header or spans.
-    hunks: file.metadata.hunks.map((hunk, index) => summarizeHunk(hunk, index)),
+    hunks: file.hunks.map((hunk, index) => summarizeHunk(hunk, index)),
   }));
 }
 
+/** Describe the generation and the resources it offers, for the broker's review mirror. */
+function buildReviewCatalog(publication: ReviewPublication): HunkReviewResourceCatalogV1 {
+  return {
+    generation: publication.generation,
+    fileKeysByRuntimeId: Object.fromEntries(
+      publication.document.files.map((file) => [file.runtimeId, file.key]),
+    ),
+    resources: [...publication.resources],
+  };
+}
+
 /** Build the broker-facing envelope for one live Hunk review session. */
-export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionRegistration {
+export function createSessionRegistration(
+  bootstrap: AppBootstrap,
+  publication: ReviewPublication,
+): HunkSessionRegistration {
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
   return {
@@ -64,7 +92,8 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
-      files: buildSessionFiles(bootstrap),
+      files: buildSessionFiles(publication),
+      reviewCatalog: buildReviewCatalog(publication),
     },
   };
 }
@@ -73,6 +102,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
 export function updateSessionRegistration(
   current: HunkSessionRegistration,
   bootstrap: AppBootstrap,
+  publication: ReviewPublication,
 ): HunkSessionRegistration {
   return {
     ...current,
@@ -83,21 +113,25 @@ export function updateSessionRegistration(
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
-      files: buildSessionFiles(bootstrap),
+      files: buildSessionFiles(publication),
+      reviewCatalog: buildReviewCatalog(publication),
     },
   };
 }
 
 /** Start with an empty-but-valid snapshot until the UI reports its first selection. */
-export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessionSnapshot {
-  const firstFile = bootstrap.changeset.files[0];
-  const firstHunk = firstFile?.metadata.hunks[0];
-  const firstRange = firstHunk ? hunkLineRange(firstHunk) : null;
+export function createInitialSessionSnapshot(
+  bootstrap: AppBootstrap,
+  publication: ReviewPublication,
+): HunkSessionSnapshot {
+  const firstFile = publication.document.files[0];
+  const firstHunk = firstFile?.hunks[0];
+  const firstRange = firstHunk ? reviewHunkRanges(firstHunk) : null;
 
   return {
     updatedAt: new Date().toISOString(),
     state: {
-      selectedFileId: firstFile?.id,
+      selectedFileId: firstFile?.runtimeId,
       selectedFilePath: firstFile?.path,
       selectedHunkIndex: 0,
       selectedHunkOldRange: firstRange?.oldRange,
@@ -107,6 +141,9 @@ export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessi
       liveComments: [],
       reviewNoteCount: 0,
       reviewNotes: [],
+      // A fresh generation starts at the store's own first revision; every later snapshot
+      // reports where the review has since moved so the mirror can order them.
+      reviewPublication: { generation: publication.generation, stateRevision: 0 },
     },
   };
 }

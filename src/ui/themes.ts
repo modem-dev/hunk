@@ -1,6 +1,6 @@
 import type { ThemeMode } from "@opentui/core";
-import { LEGACY_CUSTOM_THEME_ID } from "../core/customThemes";
-import { resolveSyntaxScopeOverrides } from "../core/legacySyntaxScopes";
+import { LEGACY_CUSTOM_THEME_ID } from "../core/theme/customThemes";
+import { resolveSyntaxScopeOverrides } from "../core/theme/legacySyntaxScopes";
 import type { NamedCustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
@@ -11,7 +11,7 @@ import {
   getBundledShikiThemeForeground,
   type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
-} from "../core/themeCatalog";
+} from "../core/theme/catalog";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
 export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";

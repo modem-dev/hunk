@@ -21,8 +21,8 @@ import {
 } from "./vcs";
 import type { VcsCatalog } from "./vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
-import { computeWatchSignature } from "./watch";
 import { getTutorDocumentText, TUTOR_PATCH } from "../tutor/content";
+import { computeWatchSignature } from "./watch/signature";
 import type {
   AppBootstrap,
   AgentContext,

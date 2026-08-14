@@ -166,6 +166,7 @@ describe("extension event dispatch", () => {
 
   test("gives lifecycle handlers live pane controls and one deprecated alias", () => {
     const opened: string[] = [];
+    const refreshed: string[] = [];
     let aliasesSame = false;
     const { result } = createTestLoadResult([
       {
@@ -175,6 +176,7 @@ describe("extension event dispatch", () => {
           aliasesSame = ctx.panes === ctx.sidebars;
           ctx.panes.open("summary");
           ctx.sidebars.open("legacy");
+          ctx.highlights.refresh("spotlight");
         },
       },
     ]);
@@ -189,8 +191,9 @@ describe("extension event dispatch", () => {
         cwd: "/repo",
         notify: () => {},
         panes,
+        highlights: { refresh: (id) => refreshed.push(`${extensionId}:${id}`) },
         sidebars: panes,
-        navigation: { selectFile: () => {}, selectHunk: () => {} },
+        navigation: { selectFile: () => {}, selectHunk: () => {}, revealLine: () => {} },
         dialogs: {
           confirm: async () => false,
           select: async () => null,
@@ -206,6 +209,7 @@ describe("extension event dispatch", () => {
 
     expect(aliasesSame).toBe(true);
     expect(opened).toEqual(["summary:summary", "summary:legacy"]);
+    expect(refreshed).toEqual(["summary:spotlight"]);
   });
 
   test("is a no-op when the session has no extensions", () => {

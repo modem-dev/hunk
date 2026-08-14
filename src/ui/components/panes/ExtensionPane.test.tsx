@@ -89,6 +89,7 @@ describe("ExtensionPaneHost actions", () => {
         notify={(message) => notifications.push(message)}
         onSelectFile={() => {}}
         onSelectHunk={(fileId, hunkIndex) => hunkSelections.push([fileId, hunkIndex])}
+        onRevealLine={() => "line"}
       />,
       async () => {
         if (!actions) {
@@ -156,6 +157,7 @@ describe("ExtensionPaneHost failure recovery", () => {
         notify={(message) => notifications.push(message)}
         onSelectFile={() => {}}
         onSelectHunk={() => {}}
+        onRevealLine={() => "line"}
       />,
       async (setup) => {
         expect(setup.captureCharFrame()).toContain("Files pane unavailable");
@@ -199,6 +201,7 @@ describe("ExtensionPaneHost failure recovery", () => {
           notify={(message) => notifications.push(message)}
           onSelectFile={() => {}}
           onSelectHunk={() => {}}
+          onRevealLine={() => "line"}
         />
       );
     }

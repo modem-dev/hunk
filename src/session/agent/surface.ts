@@ -15,8 +15,8 @@ export interface AgentCommandOption {
   readonly flag: string;
   /** Description shared by `--help` output and generated docs. */
   readonly description: string;
-  /** Parse the option value as a 1-based positive integer. */
-  readonly parse?: "positiveInt";
+  /** Parse the option value as a 1-based positive or 0-based non-negative integer. */
+  readonly parse?: "positiveInt" | "nonNegativeInt";
   /** Register with Commander as a required option. */
   readonly required?: boolean;
 }
@@ -60,7 +60,7 @@ type FlagBody<Flag extends string> = Flag extends `--${infer Name} ${string}`
 
 /** The parsed value Commander produces for one option: boolean flag, string value, or number. */
 type OptionValue<Option extends AgentCommandOption> = Option["flag"] extends `${string} <${string}>`
-  ? Option extends { readonly parse: "positiveInt" }
+  ? Option extends { readonly parse: "positiveInt" | "nonNegativeInt" }
     ? number
     : string
   : boolean;
@@ -156,6 +156,23 @@ export const COMMENT_TARGET_CONSTRAINT = {
   label: "comment target",
   flags: ["--old-line <n>", "--new-line <n>"],
 } as const satisfies AgentCommandConstraint;
+
+/** Highlight anchoring targets: callers must pass exactly one. */
+export const HIGHLIGHT_TARGET_CONSTRAINT = {
+  kind: "exactly-one",
+  label: "highlight target",
+  flags: ["--old-line <n>", "--new-line <n>"],
+} as const satisfies AgentCommandConstraint;
+
+/** The five-tone vocabulary highlight marks share with extension line highlighters. */
+export const HIGHLIGHT_TONES = ["match", "current", "info", "warning", "error"] as const;
+
+export type HighlightTone = (typeof HIGHLIGHT_TONES)[number];
+
+/** Check one CLI-provided tone value against the shared five-tone vocabulary. */
+export function isHighlightTone(value: string): value is HighlightTone {
+  return (HIGHLIGHT_TONES as readonly string[]).includes(value);
+}
 
 /** Relative comment navigation directions: callers may pass at most one. */
 export const COMMENT_DIRECTION_CONSTRAINT = {
@@ -400,6 +417,57 @@ export const SESSION_AGENT_COMMANDS = {
       `hunk session comment clear ${SESSION_SELECTOR_SYNOPSIS} [--file <path>] [--include-user|--all] --yes [--json]`,
     ],
   },
+  "highlight-add": {
+    name: "session highlight add",
+    summary: "paint one attention mark inside a diff line",
+    positionals: [{ token: "[sessionId]" }],
+    options: [
+      { ...diffFileOption, required: true },
+      {
+        flag: "--start <n>",
+        description: "0-based inclusive start offset into the line's text (UTF-16 code units)",
+        parse: "nonNegativeInt",
+        required: true,
+      },
+      {
+        flag: "--end <n>",
+        description: "exclusive end offset; must be greater than --start",
+        parse: "positiveInt",
+        required: true,
+      },
+      repoOption,
+      oldLineOption,
+      newLineOption,
+      {
+        flag: "--tone <tone>",
+        description: `mark tone: ${HIGHLIGHT_TONES.join(", ")} (default match)`,
+      },
+      { flag: "--focus", description: "add the mark and land the viewport on its line" },
+      jsonOption,
+    ],
+    constraints: [HIGHLIGHT_TARGET_CONSTRAINT],
+    synopsis: [
+      `hunk session highlight add ${SESSION_SELECTOR_SYNOPSIS} --file <path> ${constraintSynopsis(HIGHLIGHT_TARGET_CONSTRAINT)} --start <n> --end <n> [--tone <tone>] [--focus] [--json]`,
+    ],
+    examples: [
+      "hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19",
+      "hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19 --tone warning --focus",
+    ],
+  },
+  "highlight-clear": {
+    name: "session highlight clear",
+    summary: "clear agent attention marks",
+    positionals: [{ token: "[sessionId]" }],
+    options: [
+      repoOption,
+      { flag: "--file <path>", description: "clear only one diff file's marks" },
+      jsonOption,
+    ],
+    synopsis: [
+      `hunk session highlight clear ${SESSION_SELECTOR_SYNOPSIS} [--file <path>] [--json]`,
+    ],
+    examples: ["hunk session highlight clear --repo ."],
+  },
 } as const satisfies Record<SessionDaemonAction, AgentCommandSpec>;
 
 /** Specs in display order for help text and generated docs. */
@@ -409,6 +477,11 @@ export const SESSION_AGENT_COMMAND_LIST: readonly AgentCommandSpec[] =
 /** Specs for the `hunk session comment` subcommand family, in display order. */
 export const SESSION_COMMENT_COMMAND_LIST = SESSION_AGENT_COMMAND_LIST.filter((spec) =>
   spec.name.startsWith("session comment "),
+);
+
+/** Specs for the `hunk session highlight` subcommand family, in display order. */
+export const SESSION_HIGHLIGHT_COMMAND_LIST = SESSION_AGENT_COMMAND_LIST.filter((spec) =>
+  spec.name.startsWith("session highlight "),
 );
 
 /** Extract the flag name (e.g. `--old-line`) from a Commander flag definition. */

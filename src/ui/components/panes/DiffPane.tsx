@@ -21,15 +21,12 @@ import type {
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
+import { reviewNoteVisibleByPolicy } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
-import type { DraftReviewNote } from "../../hooks/useReviewController";
-import {
-  alwaysShowReviewNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import type { DraftReviewNote } from "../../lib/reviewProjection";
+import { reviewNoteSource, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
@@ -39,6 +36,7 @@ import {
   computeLineAlignmentScrollTop,
   computeLineRevealScrollTop,
   type CurrentLineAlignment,
+  type LineRevealPlacement,
 } from "../../lib/hunkScroll";
 import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
@@ -74,6 +72,7 @@ import {
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
+import type { ValidatedLineHighlight } from "../../highlights/validate";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import {
   createExtensionCurrentLinePaint,
@@ -200,6 +199,7 @@ function buildHighlightPrefetchFileIds({
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
 
@@ -210,6 +210,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
+  lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -218,7 +219,7 @@ export function DiffPane({
   selectedHunkIndex,
   cursorLine = "off",
   lineCursor = null,
-  lineCursorRevealRequestId = 0,
+  lineCursorRevealRequest = { id: 0, placement: "nearest" },
   lineCursorAlignmentRequest = { id: 0, alignment: "center" },
   scrollToNote = false,
   draftNote = null,
@@ -270,6 +271,8 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
+  /** Validated extension line marks, keyed by file id. */
+  lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -278,7 +281,7 @@ export function DiffPane({
   selectedHunkIndex: number;
   cursorLine?: CursorLine;
   lineCursor?: LineCursor | null;
-  lineCursorRevealRequestId?: number;
+  lineCursorRevealRequest?: { id: number; placement: LineRevealPlacement };
   lineCursorAlignmentRequest?: { id: number; alignment: CurrentLineAlignment };
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
@@ -471,7 +474,10 @@ export function DiffPane({
 
     files.forEach((file) => {
       const annotations = (file.agent?.annotations ?? []).filter(
-        (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
+        // One shared visibility rule over the normalized note source, so the terminal and
+        // any other surface hide the same notes when the layer is off.
+        (annotation) =>
+          reviewNoteVisibleByPolicy({ source: reviewNoteSource(annotation) }, showAgentNotes),
       );
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);
@@ -2105,13 +2111,13 @@ export function DiffPane({
     suppressViewportSelectionSync,
   ]);
 
-  const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequestId);
+  const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequest.id);
 
   useLayoutEffect(() => {
-    if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequestId) {
+    if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequest.id) {
       return;
     }
-    previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequestId;
+    previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequest.id;
 
     const scrollBox = scrollRef.current;
     if (!scrollBox || !lineCursor) {
@@ -2124,12 +2130,30 @@ export function DiffPane({
     }
 
     const viewportHeight = scrollBox.viewport.height || scrollViewport.height;
-    const revealScrollTop = computeLineRevealScrollTop({
-      lineTop: bounds.top,
-      lineHeight: bounds.height,
-      scrollTop: scrollBox.scrollTop,
-      viewportHeight,
-    });
+    // A jump lands the line where hunk and note reveals land theirs; stepping only closes the
+    // gap to the viewport edge, so a held key does not drag the whole stream past the marker.
+    const revealScrollTop =
+      lineCursorRevealRequest.placement === "reveal"
+        ? computeHunkRevealScrollTop({
+            hunkTop: bounds.top,
+            hunkHeight: bounds.height,
+            preferredTopPadding: Math.max(2, Math.floor(viewportHeight * 0.25)),
+            viewportHeight,
+          })
+        : computeLineRevealScrollTop({
+            lineTop: bounds.top,
+            lineHeight: bounds.height,
+            scrollTop: scrollBox.scrollTop,
+            viewportHeight,
+          });
+    // A named line is the final scroll policy for this request, exactly as an
+    // explicit alignment is: a cross-file reveal changes the selection, and the
+    // selection reveal it schedules would otherwise run its zero-delay retry
+    // after this layout effect and drag the viewport back to the hunk anchor.
+    // Superseding here is what keeps a reveal into another file line-exact.
+    supersedePendingSelectionReveal();
+    clearPendingFileTopAlign();
+
     if (revealScrollTop === scrollBox.scrollTop) {
       return;
     }
@@ -2138,11 +2162,13 @@ export function DiffPane({
     scrollBox.scrollTo(clampReviewScrollTop(revealScrollTop, viewportHeight));
   }, [
     clampReviewScrollTop,
+    clearPendingFileTopAlign,
     lineCursor,
     lineCursorBoundsOf,
-    lineCursorRevealRequestId,
+    lineCursorRevealRequest,
     scrollRef,
     scrollViewport.height,
+    supersedePendingSelectionReveal,
     suppressViewportSelectionSync,
   ]);
 
@@ -2293,6 +2319,7 @@ export function DiffPane({
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                        extensionLineHighlights={lineHighlights.get(file.id)}
                         file={file}
                         fileView={fileViewRenderPlans.get(file.id)?.fileView}
                         headerLabelWidth={headerLabelWidth}

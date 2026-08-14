@@ -1,10 +1,9 @@
-import type { Hunk } from "@pierre/diffs";
 import type { ExtensionDiffHunk } from "../extension-api/types";
-import { formatHunkHeader } from "./hunkHeader";
-import { hunkLineRange } from "./liveComments";
+import { formatHunkHeader, type ReviewHunkHeaderSource } from "./hunkHeader";
+import { reviewHunkRanges } from "./review/geometry";
 
 /** Report whether one hunk carries the numeric header fields ranges derive from. */
-function hasLineNumbers(hunk: Hunk) {
+function hasLineNumbers(hunk: ReviewHunkHeaderSource) {
   return (
     Number.isFinite(hunk.additionStart) &&
     Number.isFinite(hunk.additionCount) &&
@@ -26,7 +25,7 @@ function hasLineNumbers(hunk: Hunk) {
  * Such a hunk gets whatever `hunkSpecs` text it declared (or an empty header)
  * and no ranges, rather than `NaN` spans an extension would have to guard.
  */
-export function summarizeHunk(hunk: Hunk, index: number): ExtensionDiffHunk {
+export function summarizeHunk(hunk: ReviewHunkHeaderSource, index: number): ExtensionDiffHunk {
   const rangesDerivable = hasLineNumbers(hunk);
   const formattedHeader = hunk.hunkSpecs != null || rangesDerivable ? formatHunkHeader(hunk) : "";
   return {
@@ -34,6 +33,6 @@ export function summarizeHunk(hunk: Hunk, index: number): ExtensionDiffHunk {
     // Public summaries are commonly embedded in terminal-safe extension rows, so keep this
     // boundary single-line without changing the raw header formatter used by Hunk itself.
     header: formattedHeader.replace(/[\r\n]+/g, " ").trimEnd(),
-    ...(rangesDerivable ? hunkLineRange(hunk) : {}),
+    ...(rangesDerivable ? reviewHunkRanges(hunk) : {}),
   };
 }

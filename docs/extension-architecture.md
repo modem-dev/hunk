@@ -103,6 +103,46 @@ plan, and `src/ui/components/panes/FileView.tsx` windows and paints it. Extensio
 components can paint only their fixed validated rectangles; note cards,
 scrolling, hunk bounds, and navigation remain host-owned.
 
+## Line-highlight system
+
+Line highlighters mark character ranges inside Hunk's own diff rendering, so
+the system is deliberately split between a pull-based preparation half and a
+paint-only application half. `src/ui/highlights/useLineHighlights.ts` bounds
+asynchronous extension work with the same timeout/concurrency discipline as
+file views and retains only marks accepted by
+`src/ui/highlights/validate.ts`; results cache under `(file, highlighter,
+epoch)`, and each file's merged mark array keeps a stable identity while its
+inputs are unchanged so row memoization can hold. The epoch is owned by
+`src/ui/highlights/useLineHighlightsController.ts` behind
+`ctx.highlights.refresh`, using the shared scoped-epoch policy in
+`src/ui/lib/scopedEpochs.ts` — the same module `src/ui/fileViews/state.ts`
+delegates to — and the shared bounded `readDocument` capability lives in
+`src/ui/lib/extensionDocumentReader.ts`.
+
+Application is paint-time by construction. `src/ui/diff/lineHighlightPaint.ts`
+owns the one mapping from source coordinates (raw code-unit offsets) to
+terminal columns — sanitize-aware, tab-aware, snapped outward to grapheme
+clusters, with context and gap lines sharing one range list under both side
+keys — and the one span transform that repaints backgrounds without changing
+text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
+background with the word-diff minimum-contrast guarantee.
+`src/ui/diff/renderRows.tsx` applies the transform per rendered cell, which
+keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
+geometry measurement: a highlight change is a repaint, never a re-plan. The
+static pager never runs extension code, so highlights are interactive-only.
+
+Agent attention marks (`hunk session highlight add` / `clear`) join this same
+pipeline rather than growing a second one: `useReviewController.ts` validates
+each daemon-pushed mark with the same `validate.ts` contract and caps, holds
+them per file, and `src/ui/highlights/merge.ts` appends them after extension
+marks in the one map `DiffPane` paints from — so agent marks share paint,
+contrast, and geometry guarantees, and win where ranges overlap. Unlike
+extension marks, nothing re-derives agent marks after a reload, so
+`src/ui/highlights/reconcile.ts` carries them across a document replacement only
+for files whose `contentIdentity` is unchanged — those still show the same
+characters — and drops the rest. Line-target `session navigate` reuses the same
+`revealLine` landing policy `ctx.navigation.revealLine` gets.
+
 `src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
 containment. The presentation controller stores the active mode and funnels all
 exit paths through one teardown, including re-entrant handoffs.
@@ -149,6 +189,17 @@ attached around the assembled table, so keyboard dispatch, menus, and extension 
 one observation path; widget-owned modal keys remain outside the table and therefore outside the
 event.
 
+`src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
+`ctx.navigation` and a pane's `actions`, so a jump from either surface is
+validated, attributed, and reported the same way. It owns argument policy only
+— visible-file validation, hunk clamping, `revealLine`'s side and line-number
+checks — and delegates the move itself to the review controller. Where a jump
+puts a line on screen stays host policy: `useReviewController` tags each
+current-line reveal with a placement, and `DiffPane` reads it to choose between
+stepping's minimum-distance scroll and the top-padded position hunk, note, and
+`revealLine` reveals share. Extensions name a target; they never name a scroll
+position.
+
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
 `src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
@@ -170,10 +221,11 @@ must not be able to impersonate Hunk. The host derives the extension's trusted
 bundled origin from registry metadata and omits the redundant marker only for
 Hunk-owned bundled UI.
 
-Lifecycle and bus handlers receive that same attributed dialog queue plus the
-same guarded live navigation commands use. `App` installs both through the
-per-extension event-context provider; headless or pre-mount delivery resolves
-dialogs to their cancel values and refuses navigation with a warning. Session
+Lifecycle and bus handlers receive that same attributed dialog queue, the same
+guarded live navigation commands use, and scoped line-highlight refresh controls.
+`App` installs all three through the per-extension event-context provider;
+headless or pre-mount delivery resolves dialogs to their cancel values and
+refuses navigation or highlight invalidation with a warning. Session
 behavior requests are registry data too: `configureSession({ viewPreferences:
 "transient" })` makes practice and presentation view changes ephemeral without
 teaching `App` about any particular extension id.

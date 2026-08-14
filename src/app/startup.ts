@@ -12,7 +12,7 @@ import { resolveConfiguredCliInput } from "../core/config";
 import { HunkUserError } from "../core/errors";
 import { loadAppBootstrap } from "../core/loaders";
 import { looksLikePatchInput } from "../core/pager";
-import { detectTerminalThemeModeFromBackground } from "../core/themeDetection";
+import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -310,11 +310,11 @@ export async function prepareStartupPlan(
   configured = resolvedExtensions.configured;
   cliInput = configured.input;
   const extensionResult = resolvedExtensions.extensions;
-  if (cliInput.kind === "tutor" && configured.extensions.enabled) {
+  if (cliInput.kind === "tutor") {
     // UI-backed bundled extensions stay behind the interactive command path so
     // headless commands never materialize OpenTUI's embedded native library.
-    // Unlike the core bundled extensions, Tutor also respects the session's
-    // extension switch so `--no-extensions` produces a plain synthetic review.
+    // Like every bundled extension, Tutor remains available when user
+    // extensions are disabled with config or `--no-extensions`.
     const { installBundledTutorExtension } = await import("../extensions/default/ui/tutor");
     installBundledTutorExtension(extensionResult);
   }

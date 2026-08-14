@@ -58,6 +58,16 @@ export function computeLineAlignmentScrollTop({
 }
 
 /**
+ * How far a current-line reveal may move the viewport.
+ *
+ * `"nearest"` is stepping: move only as far as it takes to bring the line on screen.
+ * `"reveal"` is a jump to somewhere the reviewer was not looking, so it lands the line where
+ * hunk and note reveals land it, a little below the viewport top, even when the line already
+ * happened to be visible.
+ */
+export type LineRevealPlacement = "nearest" | "reveal";
+
+/**
  * Pick a scroll target that brings the current line just into view.
  *
  * This runs on every step key, so it moves the minimum distance and stays put while the line is

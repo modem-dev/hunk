@@ -971,6 +971,138 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session highlight add with defaults", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "highlight",
+      "add",
+      "session-1",
+      "--file",
+      "src/App.tsx",
+      "--new-line",
+      "42",
+      "--start",
+      "0",
+      "--end",
+      "13",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "highlight-add",
+      selector: { sessionId: "session-1" },
+      filePath: "src/App.tsx",
+      side: "new",
+      line: 42,
+      start: 0,
+      end: 13,
+      reveal: false,
+      output: "text",
+    });
+  });
+
+  test("parses session highlight add with tone, old side, and focus", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "highlight",
+      "add",
+      "--repo",
+      "/tmp/repo",
+      "--file",
+      "src/App.tsx",
+      "--old-line",
+      "7",
+      "--start",
+      "6",
+      "--end",
+      "19",
+      "--tone",
+      "warning",
+      "--focus",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "highlight-add",
+      selector: { repoRoot: resolve("/tmp/repo") },
+      filePath: "src/App.tsx",
+      side: "old",
+      line: 7,
+      start: 6,
+      end: 19,
+      tone: "warning",
+      reveal: true,
+      output: "json",
+    });
+  });
+
+  test("rejects session highlight add with an empty range, bad tone, or missing target", async () => {
+    const base = [
+      "bun",
+      "hunk",
+      "session",
+      "highlight",
+      "add",
+      "session-1",
+      "--file",
+      "src/App.tsx",
+    ];
+
+    await expect(
+      parseCli([...base, "--new-line", "42", "--start", "5", "--end", "5"]),
+    ).rejects.toThrow("Highlight --end must be greater than --start");
+    await expect(
+      parseCli([...base, "--new-line", "42", "--start", "0", "--end", "4", "--tone", "loud"]),
+    ).rejects.toThrow("Highlight tone must be one of match, current, info, warning, error.");
+    await expect(parseCli([...base, "--start", "0", "--end", "4"])).rejects.toThrow(
+      "Specify exactly one highlight target: --old-line <n> or --new-line <n>.",
+    );
+    await expect(
+      parseCli([...base, "--new-line", "42", "--start", "-1", "--end", "4"]),
+    ).rejects.toThrow();
+  });
+
+  test("parses session highlight clear globally and per file", async () => {
+    expect(await parseCli(["bun", "hunk", "session", "highlight", "clear", "session-1"])).toEqual({
+      kind: "session",
+      action: "highlight-clear",
+      selector: { sessionId: "session-1" },
+      output: "text",
+    });
+
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "highlight",
+        "clear",
+        "--repo",
+        "/tmp/repo",
+        "--file",
+        "src/App.tsx",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "session",
+      action: "highlight-clear",
+      selector: { repoRoot: resolve("/tmp/repo") },
+      filePath: "src/App.tsx",
+      output: "json",
+    });
+  });
+
+  test("rejects unknown session highlight subcommands", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "highlight", "paint"])).rejects.toThrow(
+      "Supported highlight subcommands are add and clear.",
+    );
+  });
+
   test("rejects session commands without an explicit target", async () => {
     await expect(parseCli(["bun", "hunk", "session", "get"])).rejects.toThrow(
       "Specify one live Hunk session with <session-id> or --repo <path>.",

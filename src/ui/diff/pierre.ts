@@ -8,6 +8,12 @@ import {
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
+import {
+  reviewLeadingGap,
+  reviewTrailingGap,
+  type ReviewGapAddress,
+  type ReviewGapPosition,
+} from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, DiffLineMoveKind } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
@@ -94,7 +100,8 @@ export interface StackLineCell {
   spans: RenderSpan[];
 }
 
-export type CollapsedGapPosition = "before" | "trailing";
+/** One vocabulary for gap positions, shared with the core gap addressing it comes from. */
+export type CollapsedGapPosition = ReviewGapPosition;
 
 export type DiffRow =
   | {
@@ -452,50 +459,22 @@ function collapsedRowText(lines: number) {
   return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
 }
 
-/** Compute the file-line ranges covered by the gap leading into one hunk. */
-function leadingCollapsedRanges(hunk: FileDiffMetadata["hunks"][number]) {
+/** Build the collapsed row one resolved gap address renders as. */
+function collapsedGapRow(
+  file: DiffFile,
+  address: ReviewGapAddress,
+  keyPrefix: string,
+): Extract<DiffRow, { type: "collapsed" }> {
   return {
-    oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1] as [
-      number,
-      number,
-    ],
-    newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1] as [
-      number,
-      number,
-    ],
+    type: "collapsed",
+    key: `${file.id}:${keyPrefix}${address.position === "trailing" ? "trailing" : address.hunkIndex}`,
+    fileId: file.id,
+    hunkIndex: address.hunkIndex,
+    text: collapsedRowText(address.lineCount),
+    position: address.position,
+    oldRange: [...address.oldRange] as [number, number],
+    newRange: [...address.newRange] as [number, number],
   };
-}
-
-/** Compute the file-line ranges covered by the trailing gap after the final hunk. */
-function trailingCollapsedRanges(
-  lastHunk: FileDiffMetadata["hunks"][number],
-  trailingLines: number,
-) {
-  const oldStart = lastHunk.deletionStart + lastHunk.deletionCount;
-  const newStart = lastHunk.additionStart + lastHunk.additionCount;
-  return {
-    oldRange: [oldStart, oldStart + trailingLines - 1] as [number, number],
-    newRange: [newStart, newStart + trailingLines - 1] as [number, number],
-  };
-}
-
-/** Count hidden unchanged lines after the final visible hunk when Pierre omits them. */
-export function trailingCollapsedLines(metadata: FileDiffMetadata) {
-  const lastHunk = metadata.hunks.at(-1);
-  if (!lastHunk || metadata.isPartial) {
-    return 0;
-  }
-
-  const additionRemaining =
-    metadata.additionLines.length - (lastHunk.additionLineIndex + lastHunk.additionCount);
-  const deletionRemaining =
-    metadata.deletionLines.length - (lastHunk.deletionLineIndex + lastHunk.deletionCount);
-
-  if (additionRemaining !== deletionRemaining) {
-    return 0;
-  }
-
-  return Math.max(additionRemaining, 0);
 }
 
 /** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
@@ -767,16 +746,9 @@ export function buildSplitRows(
   const additionLines = highlighted?.additionLines ?? [];
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    if (hunk.collapsedBefore > 0) {
-      rows.push({
-        type: "collapsed",
-        key: `${file.id}:collapsed:${hunkIndex}`,
-        fileId: file.id,
-        hunkIndex,
-        text: collapsedRowText(hunk.collapsedBefore),
-        position: "before",
-        ...leadingCollapsedRanges(hunk),
-      });
+    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (leadingGap) {
+      rows.push(collapsedGapRow(file, leadingGap, "collapsed:"));
     }
 
     rows.push({
@@ -869,18 +841,9 @@ export function buildSplitRows(
     }
   }
 
-  const trailingLines = trailingCollapsedLines(file.metadata);
-  const lastHunk = file.metadata.hunks.at(-1);
-  if (trailingLines > 0 && lastHunk) {
-    rows.push({
-      type: "collapsed",
-      key: `${file.id}:collapsed:trailing`,
-      fileId: file.id,
-      hunkIndex: file.metadata.hunks.length - 1,
-      text: collapsedRowText(trailingLines),
-      position: "trailing",
-      ...trailingCollapsedRanges(lastHunk, trailingLines),
-    });
+  const trailingGap = reviewTrailingGap(file.metadata);
+  if (trailingGap) {
+    rows.push(collapsedGapRow(file, trailingGap, "collapsed:"));
   }
 
   return rows;
@@ -898,16 +861,9 @@ export function buildStackRows(
   const additionLines = highlighted?.additionLines ?? [];
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    if (hunk.collapsedBefore > 0) {
-      rows.push({
-        type: "collapsed",
-        key: `${file.id}:stack:collapsed:${hunkIndex}`,
-        fileId: file.id,
-        hunkIndex,
-        text: collapsedRowText(hunk.collapsedBefore),
-        position: "before",
-        ...leadingCollapsedRanges(hunk),
-      });
+    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (leadingGap) {
+      rows.push(collapsedGapRow(file, leadingGap, "stack:collapsed:"));
     }
 
     rows.push({
@@ -995,18 +951,9 @@ export function buildStackRows(
     }
   }
 
-  const trailingLines = trailingCollapsedLines(file.metadata);
-  const lastHunk = file.metadata.hunks.at(-1);
-  if (trailingLines > 0 && lastHunk) {
-    rows.push({
-      type: "collapsed",
-      key: `${file.id}:stack:collapsed:trailing`,
-      fileId: file.id,
-      hunkIndex: file.metadata.hunks.length - 1,
-      text: collapsedRowText(trailingLines),
-      position: "trailing",
-      ...trailingCollapsedRanges(lastHunk, trailingLines),
-    });
+  const trailingGap = reviewTrailingGap(file.metadata);
+  if (trailingGap) {
+    rows.push(collapsedGapRow(file, trailingGap, "stack:collapsed:"));
   }
 
   return rows;

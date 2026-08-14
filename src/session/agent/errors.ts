@@ -33,6 +33,10 @@ export const RELOAD_SEPARATOR_MESSAGE =
 /** `comment apply` invoked without opting into the stdin JSON batch. */
 export const COMMENT_APPLY_STDIN_MESSAGE = "Pass --stdin to read batch comments from stdin JSON.";
 
+/** `highlight add` invoked with an empty or inverted character range. */
+export const HIGHLIGHT_RANGE_MESSAGE =
+  "Highlight --end must be greater than --start; the range is [start, end) with an exclusive end.";
+
 /** The daemon is reachable but no live Hunk session has registered with it. */
 export const NO_ACTIVE_SESSIONS_MESSAGE =
   "No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.";
@@ -40,6 +44,17 @@ export const NO_ACTIVE_SESSIONS_MESSAGE =
 /** A navigation or comment target referenced a file outside the loaded review. */
 export function noDiffFileMatchesMessage(filePath: string) {
   return `No diff file matches ${filePath}.`;
+}
+
+/**
+ * Raw diff text could not be read back from the live session that published it.
+ *
+ * `review --include-patch` reads patch bodies as review resources rather than from the
+ * registration, so this is what an agent sees when the session reloaded mid-read, went
+ * away, or served content that failed verification.
+ */
+export function reviewResourceUnavailableMessage(filePath: string) {
+  return `Could not read the raw diff for ${filePath} from the live session.`;
 }
 
 /** One skill-documented error: the quoted message (or prefix) plus the remedy agents should try. */
@@ -94,8 +109,21 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
     remedy: "pass `comment add` one of `--old-line` or `--new-line`.",
   },
   {
+    quote: "Specify exactly one highlight target",
+    remedy: "pass `highlight add` one of `--old-line` or `--new-line`.",
+  },
+  {
+    quote: "Highlight --end must be greater than --start",
+    remedy: "offsets are `[start, end)` UTF-16 code units into the line text; end is exclusive.",
+  },
+  {
     quote: "Specify either --next-comment or --prev-comment, not both.",
     remedy: "choose one comment-navigation direction.",
+  },
+  {
+    quote: "Could not read the raw diff for ...",
+    remedy:
+      "the session reloaded or closed while `--include-patch` was reading it. Re-run `review`; drop `--include-patch` if you only need file and hunk structure.",
   },
 ];
 

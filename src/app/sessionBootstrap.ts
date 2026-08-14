@@ -2,7 +2,7 @@ import type { HunkConfigResolution } from "../core/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
-import { collectSessionCustomThemes } from "../core/customThemes";
+import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import { loadAppBootstrap } from "../core/loaders";
 import type { CliInput } from "../core/types";
 import type { AppBootstrap } from "./types";

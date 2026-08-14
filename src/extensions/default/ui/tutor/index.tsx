@@ -6,16 +6,20 @@ import type {
   ExtensionPaneProps,
   HunkExtensionAPI,
 } from "../../../../extension-api/types";
+import { getTutorDocumentText } from "../../../../tutor/content";
 import { runExtensionFactory } from "../../../runExtension";
 import type { ExtensionLoadResult, ExtensionMetadata } from "../../../types";
 
 const TUTOR_EXTENSION_ID = "hunk-tutor";
+const TUTOR_HIGHLIGHTER_ID = "active-step";
 
 interface TutorTask {
   id: string;
   commandId?: string;
   label: string;
   literalKey?: string;
+  /** Exact changed text the active-step spotlight paints in the review. */
+  spotlight: string;
 }
 
 interface TutorLesson {
@@ -30,18 +34,63 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
   {
     id: "orientation",
     title: "01 · Move through a review",
-    subtitle: "Watch the highlighted row, then let each navigation step reveal its explanation.",
+    subtitle: "The current row shows where you are; the spotlight shows what this step reveals.",
     targetPath: "01-moving-through-a-review.md",
     tasks: [
-      { id: "help", commandId: "hunk.app.toggleHelp", label: "open the controls card" },
-      { id: "down", commandId: "hunk.review.stepDown", label: "move down one row" },
-      { id: "up", commandId: "hunk.review.stepUp", label: "move up one row" },
-      { id: "next-hunk", commandId: "hunk.review.nextHunk", label: "visit the next hunk" },
-      { id: "previous-hunk", commandId: "hunk.review.previousHunk", label: "return one hunk" },
-      { id: "next-file", commandId: "hunk.review.nextFile", label: "visit the next file" },
-      { id: "previous-file", commandId: "hunk.review.previousFile", label: "return one file" },
-      { id: "top", commandId: "hunk.review.jumpToTop", label: "jump to the beginning" },
-      { id: "bottom", commandId: "hunk.review.jumpToBottom", label: "jump to the end" },
+      {
+        id: "help",
+        commandId: "hunk.app.toggleHelp",
+        label: "open the controls card",
+        spotlight: "controls help",
+      },
+      {
+        id: "down",
+        commandId: "hunk.review.stepDown",
+        label: "move down one row",
+        spotlight: "Move down once",
+      },
+      {
+        id: "up",
+        commandId: "hunk.review.stepUp",
+        label: "move up one row",
+        spotlight: "back up",
+      },
+      {
+        id: "next-hunk",
+        commandId: "hunk.review.nextHunk",
+        label: "visit the next hunk",
+        spotlight: "Hunk jumps",
+      },
+      {
+        id: "previous-hunk",
+        commandId: "hunk.review.previousHunk",
+        label: "return one hunk",
+        spotlight: "A hunk groups",
+      },
+      {
+        id: "next-file",
+        commandId: "hunk.review.nextFile",
+        label: "visit the next file",
+        spotlight: "Next-file",
+      },
+      {
+        id: "previous-file",
+        commandId: "hunk.review.previousFile",
+        label: "return one file",
+        spotlight: "Previous-file",
+      },
+      {
+        id: "top",
+        commandId: "hunk.review.jumpToTop",
+        label: "jump to the beginning",
+        spotlight: "Top reveals",
+      },
+      {
+        id: "bottom",
+        commandId: "hunk.review.jumpToBottom",
+        label: "jump to the end",
+        spotlight: "Bottom previews",
+      },
     ],
   },
   {
@@ -55,28 +104,43 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
         id: "page-down",
         commandId: "hunk.review.pageDown",
         label: "page down until the PAGE CHECKPOINT appears",
+        spotlight: "PAGE CHECKPOINT",
       },
-      { id: "page-up", commandId: "hunk.review.pageUp", label: "return to the lesson heading" },
+      {
+        id: "page-up",
+        commandId: "hunk.review.pageUp",
+        label: "return to the lesson heading",
+        spotlight: "Lesson 2 — Cover distance",
+      },
       {
         id: "half-down",
         commandId: "hunk.review.halfPageDown",
         label: "find the HALF-PAGE CHECKPOINT",
+        spotlight: "HALF-PAGE CHECKPOINT",
       },
-      { id: "half-up", commandId: "hunk.review.halfPageUp", label: "return to the wide line" },
+      {
+        id: "half-up",
+        commandId: "hunk.review.halfPageUp",
+        label: "return to the wide line",
+        spotlight: "PAN RIGHT",
+      },
       {
         id: "right",
         commandId: "hunk.review.scrollCodeRight",
         label: "pan right across the wide line (Shift is faster)",
+        spotlight: "YOU FOUND IT",
       },
       {
         id: "left",
         commandId: "hunk.review.scrollCodeLeft",
         label: "pan left toward the line's beginning",
+        spotlight: "PAN RIGHT",
       },
       {
         id: "context",
         commandId: "hunk.review.toggleHunkGap",
         label: "expand the folded explanation",
+        spotlight: "YOU REVEALED THE FOLDED GUIDE",
       },
     ],
   },
@@ -86,22 +150,59 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
     subtitle: "Change the presentation and read the line that explains what each choice buys you.",
     targetPath: "03-shaping-the-view.md",
     tasks: [
-      { id: "split", commandId: "hunk.view.layoutSplit", label: "choose split diff" },
-      { id: "stack", commandId: "hunk.view.layoutStack", label: "choose stacked diff" },
-      { id: "auto", commandId: "hunk.view.layoutAuto", label: "restore responsive auto" },
-      { id: "lines", commandId: "hunk.view.toggleLineNumbers", label: "toggle line numbers" },
-      { id: "wrap", commandId: "hunk.view.toggleLineWrap", label: "wrap the long explanation" },
-      { id: "metadata", commandId: "hunk.view.toggleHunkHeaders", label: "toggle source ranges" },
+      {
+        id: "split",
+        commandId: "hunk.view.layoutSplit",
+        label: "choose split diff",
+        spotlight: "Split:",
+      },
+      {
+        id: "stack",
+        commandId: "hunk.view.layoutStack",
+        label: "choose stacked diff",
+        spotlight: "Stack:",
+      },
+      {
+        id: "auto",
+        commandId: "hunk.view.layoutAuto",
+        label: "restore responsive auto",
+        spotlight: "Auto:",
+      },
+      {
+        id: "lines",
+        commandId: "hunk.view.toggleLineNumbers",
+        label: "toggle line numbers",
+        spotlight: "Line numbers",
+      },
+      {
+        id: "wrap",
+        commandId: "hunk.view.toggleLineWrap",
+        label: "wrap the long explanation",
+        spotlight: "WRAP THIS LONG EXPLANATION",
+      },
+      {
+        id: "metadata",
+        commandId: "hunk.view.toggleHunkHeaders",
+        label: "toggle source ranges",
+        spotlight: "Hunk headers",
+      },
       {
         id: "theme",
         commandId: "hunk.view.openThemeSelector",
         label: "choose a theme with Enter",
+        spotlight: "Themes change",
       },
-      { id: "menu", commandId: "hunk.view.toggleMenuBar", label: "hide or show the menu bar" },
+      {
+        id: "menu",
+        commandId: "hunk.view.toggleMenuBar",
+        label: "hide or show the menu bar",
+        spotlight: "The menu",
+      },
       {
         id: "sidebar",
         commandId: "hunk.view.toggleSidebar",
         label: "hide this pane; finishing the lesson brings it back",
+        spotlight: "Hide Tutor",
       },
     ],
   },
@@ -112,22 +213,35 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
       "Filter the review to the file named needle, then clear it to restore the full guide.",
     targetPath: "04-find-a-file/needle.md",
     tasks: [
-      { id: "focus-filter", commandId: "hunk.review.focusFilter", label: "focus the file filter" },
+      {
+        id: "focus-filter",
+        commandId: "hunk.review.focusFilter",
+        label: "focus the file filter",
+        spotlight: "Focus the filter",
+      },
       {
         id: "filter-text",
         label: "type needle, read the isolated file, then press Escape",
         literalKey: "needle → Esc",
+        spotlight: "only visible file",
       },
       {
         id: "focus-area",
         commandId: "hunk.app.toggleFocusArea",
         label: "switch files/filter focus",
+        spotlight: "Focus switches",
       },
-      { id: "refresh", commandId: "hunk.app.refresh", label: "reload this safe synthetic review" },
+      {
+        id: "refresh",
+        commandId: "hunk.app.refresh",
+        label: "reload this safe synthetic review",
+        spotlight: "Refresh reloads",
+      },
       {
         id: "editor",
         commandId: "hunk.review.editSelectedFile",
         label: "try the editor handoff; this tutorial has no real file",
+        spotlight: "Editor handoff",
       },
     ],
   },
@@ -137,19 +251,36 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
     subtitle: "Agent rationale and human questions belong beside the exact lines they explain.",
     targetPath: "05-context-and-notes.md",
     tasks: [
-      { id: "agent-notes", commandId: "hunk.view.toggleAgentNotes", label: "reveal agent notes" },
+      {
+        id: "agent-notes",
+        commandId: "hunk.view.toggleAgentNotes",
+        label: "reveal agent notes",
+        spotlight: "Agent notes explain why",
+      },
       {
         id: "next-annotation",
         commandId: "hunk.review.nextAnnotatedHunk",
         label: "jump to the next annotated hunk",
+        spotlight: "land on explained changes",
       },
       {
         id: "previous-annotation",
         commandId: "hunk.review.previousAnnotatedHunk",
         label: "jump to the previous annotated hunk",
+        spotlight: "exact lines",
       },
-      { id: "start-note", commandId: "hunk.review.startNote", label: "start a human review note" },
-      { id: "save-note", label: "type a thought and save it", literalKey: "Ctrl+S" },
+      {
+        id: "start-note",
+        commandId: "hunk.review.startNote",
+        label: "start a human review note",
+        spotlight: "Start a note",
+      },
+      {
+        id: "save-note",
+        label: "type a thought and save it",
+        literalKey: "Ctrl+S",
+        spotlight: "Save it beside",
+      },
     ],
   },
   {
@@ -157,7 +288,14 @@ const TUTOR_LESSONS: readonly TutorLesson[] = [
     title: "06 · How the tutor works",
     subtitle: "The guide itself explains how public extensions can add behavior to Hunk.",
     targetPath: "06-how-the-tutor-works.md",
-    tasks: [{ id: "finished", label: "open the finish dialog", literalKey: "Ctrl+G" }],
+    tasks: [
+      {
+        id: "finished",
+        label: "open the finish dialog",
+        literalKey: "Ctrl+G",
+        spotlight: "Use Finish",
+      },
+    ],
   },
 ];
 
@@ -170,6 +308,60 @@ let snapshot: TutorSnapshot = { completed: new Set(), lastCompleted: null };
 const listeners = new Set<() => void>();
 const tutorFileIds = new Map<string, string>();
 let needleFilterArmed = false;
+
+/** Return the first unfinished task, optionally constrained to one lesson. */
+function findActiveTask(lesson?: TutorLesson) {
+  const tasks = lesson?.tasks ?? TUTOR_LESSONS.flatMap((candidate) => candidate.tasks);
+  return tasks.find((task) => !snapshot.completed.has(task.id));
+}
+
+/** Locate one task's spotlight in exact new-side source coordinates. */
+function resolveSpotlight(lesson: TutorLesson, task: TutorTask, document: string | null) {
+  if (!document) {
+    return null;
+  }
+
+  for (const [index, line] of document.split("\n").entries()) {
+    const start = line.indexOf(task.spotlight);
+    if (start >= 0) {
+      return {
+        path: lesson.targetPath,
+        side: "new" as const,
+        line: index + 1,
+        range: [start, start + task.spotlight.length] as const,
+      };
+    }
+  }
+  return null;
+}
+
+/** Expose the deterministic spotlight plan for focused contract tests. */
+export function getTutorSpotlightPlan() {
+  return TUTOR_LESSONS.flatMap((lesson) =>
+    lesson.tasks.flatMap((task) => {
+      const spotlight = resolveSpotlight(
+        lesson,
+        task,
+        getTutorDocumentText(lesson.targetPath, "new"),
+      );
+      return spotlight ? [{ taskId: task.id, phrase: task.spotlight, ...spotlight }] : [];
+    }),
+  );
+}
+
+/** Resolve the active task, its lesson, and its exact source-coordinate spotlight. */
+function resolveActiveSpotlight(readDocument: (path: string) => string | null) {
+  const task = findActiveTask();
+  const lesson = task
+    ? TUTOR_LESSONS.find((candidate) => candidate.tasks.some((entry) => entry.id === task.id))
+    : undefined;
+  if (!lesson || !task) {
+    return null;
+  }
+
+  const spotlight = resolveSpotlight(lesson, task, readDocument(lesson.targetPath));
+  return spotlight ? { lesson, task, spotlight } : null;
+}
 
 /** Publish one immutable progress snapshot even while the tutorial pane is closed. */
 function updateSnapshot(update: (current: TutorSnapshot) => TutorSnapshot) {
@@ -201,7 +393,17 @@ function navigateToLesson(
   ctx: ExtensionEventContext | ExtensionCommandContext,
 ) {
   const fileId = tutorFileIds.get(lesson.targetPath);
-  if (fileId) {
+  if (!fileId) {
+    return;
+  }
+
+  const task = findActiveTask(lesson);
+  const spotlight = task
+    ? resolveSpotlight(lesson, task, getTutorDocumentText(lesson.targetPath, "new"))
+    : null;
+  if (spotlight) {
+    ctx.navigation.revealLine(fileId, spotlight.side, spotlight.line);
+  } else {
     ctx.navigation.selectFile(fileId);
   }
 }
@@ -215,6 +417,7 @@ function completeTask(taskId: string, ctx?: ExtensionEventContext | ExtensionCom
   const completedBefore = new Set(snapshot.completed);
   const completed = new Set(completedBefore).add(taskId);
   updateSnapshot((current) => ({ ...current, completed, lastCompleted: taskId }));
+  ctx?.highlights.refresh(TUTOR_HIGHLIGHTER_ID);
 
   const finishedLesson = TUTOR_LESSONS.find(
     (lesson) =>
@@ -235,9 +438,10 @@ function completeTask(taskId: string, ctx?: ExtensionEventContext | ExtensionCom
 }
 
 /** Reset progress without disturbing the user's review state. */
-function resetProgress() {
+function resetProgress(ctx: ExtensionCommandContext) {
   needleFilterArmed = false;
   updateSnapshot(() => ({ completed: new Set(), lastCompleted: null }));
+  ctx.highlights.refresh(TUTOR_HIGHLIGHTER_ID);
 }
 
 /** Return every useful key label from the user's effective keymap. */
@@ -297,6 +501,13 @@ function TutorSidebar({
     TUTOR_LESSONS.find((lesson) => !lesson.tasks.every((task) => state.completed.has(task.id))) ??
     TUTOR_LESSONS.at(-1)!;
   const target = files.find((file) => file.path === activeLesson.targetPath);
+  const targetSpotlight = activeTask
+    ? resolveSpotlight(
+        activeLesson,
+        activeTask,
+        getTutorDocumentText(activeLesson.targetPath, "new"),
+      )
+    : null;
   const innerWidth = Math.max(8, width - 2);
   const barWidth = Math.max(4, Math.min(14, innerWidth - 10));
   const filled = Math.round((completeCount / allTasks.length) * barWidth);
@@ -330,7 +541,14 @@ function TutorSidebar({
         <text
           content={fitLine(` ${activeLesson.title}`, innerWidth)}
           style={{ fg: theme.text, bg: theme.panel }}
-          onMouseUp={() => target && actions.selectFile(target.id)}
+          onMouseUp={() => {
+            if (!target) return;
+            if (targetSpotlight) {
+              actions.revealLine(target.id, targetSpotlight.side, targetSpotlight.line);
+            } else {
+              actions.selectFile(target.id);
+            }
+          }}
         />
         <text
           content={fitLine(` Lesson ${lessonIndex + 1}/${TUTOR_LESSONS.length}`, innerWidth)}
@@ -366,7 +584,7 @@ function TutorSidebar({
             ))}
             <text content=" " style={{ bg: theme.panel }} />
             <text
-              content={fitLine(" Do it, then read the diff.", innerWidth)}
+              content={fitLine(" Do it, then find the spotlight.", innerWidth)}
               style={{ fg: theme.badgeAdded, bg: theme.panel }}
             />
           </>
@@ -385,7 +603,7 @@ function TutorSidebar({
         )}
         <text content=" " style={{ bg: theme.panel }} />
         <text
-          content={fitLine(" click lesson title to jump", innerWidth)}
+          content={fitLine(" click title to reveal spotlight", innerWidth)}
           style={{ fg: theme.muted, bg: theme.panel }}
         />
         <text
@@ -429,7 +647,7 @@ function annotateTutorChangeset(changeset: ExtensionChangeset): ExtensionChanges
           : file.path === "06-how-the-tutor-works.md"
             ? [
                 {
-                  newRange: [9, 11] as [number, number],
+                  newRange: [11, 13] as [number, number],
                   summary: "The tutor observes named commands, not hard-coded keys.",
                   rationale:
                     "That is why this pane follows your personal [keybindings] configuration.",
@@ -464,6 +682,25 @@ export default function registerTutor(hunk: HunkExtensionAPI) {
     badgeAdded: "#86efac",
     badgeRemoved: "#f0abfc",
   });
+  hunk.registerLineHighlighter({
+    id: TUTOR_HIGHLIGHTER_ID,
+    async highlight({ file, readDocument }) {
+      const document = await readDocument("new");
+      const active = resolveActiveSpotlight((path) => (path === file.path ? document : null));
+      if (!active || active.lesson.targetPath !== file.path) {
+        return null;
+      }
+
+      return [
+        {
+          side: active.spotlight.side,
+          line: active.spotlight.line,
+          range: active.spotlight.range,
+          tone: "current",
+        },
+      ];
+    },
+  });
   hunk.registerPane({
     id: "guide",
     title: "Hunk Tutor",
@@ -489,7 +726,7 @@ export default function registerTutor(hunk: HunkExtensionAPI) {
     },
   );
   hunk.registerCommand({ id: "restart", title: "Restart tutor progress" }, (ctx) => {
-    resetProgress();
+    resetProgress(ctx);
     ctx.panes.open("guide");
     navigateToLesson(TUTOR_LESSONS[0]!, ctx);
     ctx.notify("Tutor progress reset");
@@ -530,7 +767,7 @@ export default function registerTutor(hunk: HunkExtensionAPI) {
     navigateToLesson(TUTOR_LESSONS[0]!, ctx);
     await ctx.dialogs.confirm({
       title: "Welcome to Hunk Tutor",
-      body: "The diff itself is the guide. Follow one step in the Tutor pane, then read the explanation that your movement or view change reveals.",
+      body: "The diff itself is the guide. Follow one step in the Tutor pane, then find the spotlight on the exact text your action reveals.",
       confirmLabel: "start lesson 1",
       cancelLabel: "skip intro",
     });

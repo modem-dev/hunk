@@ -37,6 +37,7 @@ import {
   resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
 } from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
@@ -58,6 +59,7 @@ import type {
   RegisteredCommand,
   RegisteredPane,
 } from "../extensions/types";
+import type { ReviewProducer } from "../app/review/producer";
 import type {
   HunkSessionBrokerClient,
   ReloadedSessionResult,
@@ -82,7 +84,11 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import {
+  useReviewController,
+  type AgentNoteGeometrySnapshot,
+  type RevealedLineResult,
+} from "./hooks/useReviewController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
@@ -106,6 +112,9 @@ import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
+import { mergeLineHighlightMaps } from "./highlights/merge";
+import { useLineHighlights } from "./highlights/useLineHighlights";
+import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
@@ -206,6 +215,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  reviewProducer,
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
@@ -216,6 +226,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** The producer publishing this review's generations, when the host mounted one. */
+  reviewProducer?: ReviewProducer;
   watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
@@ -229,6 +241,28 @@ export function App({
     () => resolveExperimentalDiffFiles(bootstrap.changeset.files, bootstrap.input.options),
     [bootstrap.changeset.files, bootstrap.input.options.experimental],
   );
+  // App computes layout geometry below this hook call, so the controller reads
+  // the current values through a ref instead of a render-time parameter.
+  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const review = useReviewController({
+    files: reviewFiles,
+    initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+    lineCursors,
+    noteGeometry: noteGeometryRef,
+    sourceLabel: bootstrap.changeset.sourceLabel,
+    stmlEnabled,
+  });
+  // The producer plans brokered actions against the store this controller owns, so a
+  // remote action and a key press reach the same state through the same intent path.
+  // Attached before any command can arrive: the session bridge is installed by a later
+  // effect, so nothing can be dispatched into the producer until this has run.
+  useEffect(() => {
+    reviewProducer?.attachStore(review.store);
+  }, [review.store, reviewProducer]);
+  // Note-layer visibility is shared review state, so it lives in the review store
+  // alongside the notes it governs rather than in local app state.
+  const showAgentNotes = review.showAgentNotes;
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -248,7 +282,6 @@ export function App({
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -395,16 +428,6 @@ export function App({
       ? `~${path.slice(process.env.HOME.length)}`
       : path;
   }, [bootstrap.viewPreferencesConfigPath]);
-  // App computes layout geometry below this hook call, so the controller reads
-  // the current values through a ref instead of a render-time parameter.
-  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
-  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const review = useReviewController({
-    files: reviewFiles,
-    lineCursors,
-    noteGeometry: noteGeometryRef,
-    stmlEnabled,
-  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -423,6 +446,10 @@ export function App({
   );
   const sessionKeyboardModes = useMemo(
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
+    [extensions],
+  );
+  const sessionLineHighlighters = useMemo(
+    () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
     [extensions],
   );
   // The one conversion of the visible review files into the frozen views every
@@ -469,6 +496,8 @@ export function App({
   const extensionCommandNavigationRef = useRef({
     onSelectFile: (_fileId: string) => {},
     onSelectHunk: (_fileId: string, _hunkIndex: number) => {},
+    onRevealLine: (_fileId: string, _side: "old" | "new", _line: number): RevealedLineResult =>
+      "none",
   });
   // A hard session reload (`resetApp`) remounts App under an in-flight async
   // command handler, whose `ctx.navigation` closes over *this* instance's
@@ -517,22 +546,16 @@ export function App({
     () => extensionSelectionInputsRef.current.selectedFileId,
     [],
   );
-  const moveToAnnotatedFile = review.moveToAnnotatedFile;
-  const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
-  const moveToFile = review.moveToFile;
-
   const jumpToFile = useCallback(
-    (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
-      review.selectFile(fileId, nextHunkIndex, {
-        alignFileHeaderTop: options?.alignFileHeaderTop,
-      });
+    (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
+      review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
     [review.selectFile],
   );
 
   const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
+    review.setShowAgentNotes(true);
+  }, [review.setShowAgentNotes]);
 
   const showSessionNotice = useCallback((message: string) => {
     setSessionNoticeText(message);
@@ -549,6 +572,12 @@ export function App({
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
   );
+  const { epochs: lineHighlightEpochs, createControls: createLineHighlightControls } =
+    useLineHighlightsController({
+      files: reviewFiles,
+      highlighters: sessionLineHighlighters,
+      showNotice: showSessionNotice,
+    });
   const {
     activeModeTitle: keyboardModeTitle,
     createControls: createKeyboardModeControls,
@@ -558,6 +587,7 @@ export function App({
     sendModeKey: sendKeyboardModeKey,
   } = useKeyboardModeController({
     commands: extensionCommandControls,
+    createHighlightControls: createLineHighlightControls,
     cwd: extensions?.context.cwd ?? process.cwd(),
     modes: sessionKeyboardModes,
     notify: notifyExtensionMode,
@@ -674,6 +704,8 @@ export function App({
         onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
         onSelectHunk: (fileId, hunkIndex) =>
           extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
+        onRevealLine: (fileId, side, line) =>
+          extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
       }),
     [extensions],
   );
@@ -825,6 +857,7 @@ export function App({
         cwd: extensions.context.cwd,
         notify: (message, type) => extensions.context.notify(message, type),
         panes,
+        highlights: createLineHighlightControls(extensionId),
         sidebars: panes,
         navigation: createExtensionNavigation(extensionId),
         dialogs: createExtensionDialogs(extensionId),
@@ -856,6 +889,7 @@ export function App({
         panes,
         sidebars: panes,
         fileViews: createFileViewControls(registered.extensionId),
+        highlights: createLineHighlightControls(registered.extensionId),
         // Snapshot semantics: built when the key fires, so the handler sees
         // where the review was at that moment, even if it awaits and the user
         // navigates on.
@@ -892,6 +926,7 @@ export function App({
       createExtensionNavigation,
       createFileViewControls,
       createKeyboardModeControls,
+      createLineHighlightControls,
       createPaneControls,
       extensionCommandControls,
       createWorkspaceControls,
@@ -1149,9 +1184,25 @@ export function App({
       onWarning: showFileViewWarning,
     });
 
+  const extensionLineHighlights = useLineHighlights({
+    files: filteredFiles,
+    highlighters: sessionLineHighlighters,
+    epochs: lineHighlightEpochs,
+    onIssue: showFileViewWarning,
+  });
+
+  // Extension marks and agent attention marks paint through one pipeline: the
+  // merged map is the only mark source the diff pane sees.
+  const paintedLineHighlights = useMemo(
+    () => mergeLineHighlightMaps(extensionLineHighlights, review.agentLineHighlightsByFileId),
+    [extensionLineHighlights, review.agentLineHighlightsByFileId],
+  );
+
   useHunkSessionBridge({
+    addAgentLineHighlight: review.addAgentLineHighlight,
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
+    clearAgentLineHighlights: review.clearAgentLineHighlights,
     clearLiveComments: review.clearLiveComments,
     hostClient,
     liveCommentCount: review.liveCommentCount,
@@ -1161,8 +1212,10 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
+    reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
+    reviewStateRevision: review.stateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -1290,7 +1343,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
+    review.setShowAgentNotes(!showAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
@@ -1736,11 +1789,15 @@ export function App({
   extensionCommandNavigationRef.current = {
     onSelectFile: (fileId) => {
       focusFiles();
-      jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+      jumpToFile(fileId, { alignFileHeaderTop: true });
     },
     onSelectHunk: (fileId, hunkIndex) => {
       focusFiles();
       review.selectHunk(fileId, hunkIndex);
+    },
+    onRevealLine: (fileId, side, line) => {
+      focusFiles();
+      return review.revealLine(fileId, side, line);
     },
   };
 
@@ -1849,10 +1906,7 @@ export function App({
       alignCurrentLine,
       applyFilePresentationToAllMatching,
       focusFilter,
-      moveToAnnotatedFile,
-      moveToAnnotatedHunk,
-      moveToFile,
-      moveToHunk: review.moveToHunk,
+      moveSelection: review.moveSelection,
       openAgentSkill,
       openThemeSelector,
       requestQuit,
@@ -2074,11 +2128,15 @@ export function App({
           notify={(message, type) => extensions?.context.notify(message, type)}
           onSelectFile={(fileId) => {
             focusFiles();
-            jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+            jumpToFile(fileId, { alignFileHeaderTop: true });
           }}
           onSelectHunk={(fileId, hunkIndex) => {
             focusFiles();
             review.selectHunk(fileId, hunkIndex);
+          }}
+          onRevealLine={(fileId, side, line) => {
+            focusFiles();
+            return review.revealLine(fileId, side, line);
           }}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY
@@ -2186,6 +2244,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
             screenLeft={diffPaneScreenLeft}
             screenTop={diffPaneScreenTop}
@@ -2213,7 +2272,7 @@ export function App({
             selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
             cursorLine={cursorLine}
             lineCursor={review.lineCursor}
-            lineCursorRevealRequestId={review.lineCursorRevealRequestId}
+            lineCursorRevealRequest={review.lineCursorRevealRequest}
             lineCursorAlignmentRequest={lineCursorAlignmentRequest}
             theme={activeTheme}
             width={diffPaneWidth}
@@ -2234,7 +2293,7 @@ export function App({
             onSelectFile={jumpToFile}
             onToggleGap={review.toggleGap}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
-              review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
+              review.anchorSelection(fileId, hunkIndex)
             }
             onLineCursorsChange={setLineCursors}
             currentLinePaintRequested={currentLinePaintRequested}

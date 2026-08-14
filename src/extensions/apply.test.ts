@@ -21,6 +21,7 @@ import {
   resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
   resolveExtensionPanes,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
@@ -201,6 +202,22 @@ describe("extension file views", () => {
 
     expect(views).toEqual([{ extensionId: "first", view: plain }]);
     expect(issues[0]?.message).toContain('duplicate file view "first:plain"');
+  });
+});
+
+describe("extension line highlighters", () => {
+  test("keeps the first duplicate highlighter identity in registration order", () => {
+    const result = createEmptyExtensionLoadResult();
+    const matches = { id: "matches", highlight: () => null };
+    result.registry.lineHighlighters.push(
+      { extensionId: "first", highlighter: matches },
+      { extensionId: "first", highlighter: { ...matches } },
+    );
+
+    const { highlighters, issues } = resolveExtensionLineHighlighters(result.registry);
+
+    expect(highlighters).toEqual([{ extensionId: "first", highlighter: matches }]);
+    expect(issues[0]?.message).toContain('duplicate line highlighter "first:matches"');
   });
 });
 

@@ -507,3 +507,56 @@ hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--inc
 | `--json`         | emit structured JSON                                      |
 
 **Positionals:** `[sessionId]`.
+
+### `hunk session highlight add`
+
+paint one attention mark inside a diff line
+
+```bash
+hunk session highlight add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --start <n> --end <n> [--tone <tone>] [--focus] [--json]
+```
+
+| Option           | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `--file <path>`  | diff file path as shown by Hunk Required.                                         |
+| `--start <n>`    | 0-based inclusive start offset into the line's text (UTF-16 code units) Required. |
+| `--end <n>`      | exclusive end offset; must be greater than --start Required.                      |
+| `--repo <path>`  | target the live session whose repo root matches this path                         |
+| `--old-line <n>` | 1-based line number on the old side                                               |
+| `--new-line <n>` | 1-based line number on the new side                                               |
+| `--tone <tone>`  | mark tone: match, current, info, warning, error (default match)                   |
+| `--focus`        | add the mark and land the viewport on its line                                    |
+| `--json`         | emit structured JSON                                                              |
+
+**Positionals:** `[sessionId]`.
+
+**Constraints:** exactly one of `--old-line <n>`, `--new-line <n>`.
+
+**Examples:**
+
+```bash
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19 --tone warning --focus
+```
+
+### `hunk session highlight clear`
+
+clear agent attention marks
+
+```bash
+hunk session highlight clear (<session-id> | --repo <path>) [--file <path>] [--json]
+```
+
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--repo <path>` | target the live session whose repo root matches this path |
+| `--file <path>` | clear only one diff file's marks                          |
+| `--json`        | emit structured JSON                                      |
+
+**Positionals:** `[sessionId]`.
+
+**Examples:**
+
+```bash
+hunk session highlight clear --repo .
+```

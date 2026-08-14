@@ -6,6 +6,7 @@ import type {
   ExtensionKeyboardModeControls,
   ExtensionKeyboardModeKeyResult,
   ExtensionKeyEvent,
+  ExtensionLineHighlightControls,
   ExtensionNotifyType,
 } from "../../extension-api/types";
 import type { ExtensionRegistry, RegisteredKeyboardMode } from "../../extensions/types";
@@ -42,6 +43,7 @@ export interface KeyboardModeController {
 /** Own the single extension keyboard mode active across one mounted review session. */
 export function useKeyboardModeController({
   commands,
+  createHighlightControls,
   cwd,
   modes,
   notify,
@@ -49,6 +51,8 @@ export function useKeyboardModeController({
   showNotice,
 }: {
   commands: ExtensionCommandControls;
+  /** Build live host-owned line-highlight controls for one extension. */
+  createHighlightControls: (extensionId: string) => ExtensionLineHighlightControls;
   cwd: string;
   modes: readonly RegisteredKeyboardMode[];
   notify: ExtensionContext["notify"];
@@ -57,6 +61,8 @@ export function useKeyboardModeController({
 }): KeyboardModeController {
   const modesRef = useRef(modes);
   modesRef.current = modes;
+  const createHighlightControlsRef = useRef(createHighlightControls);
+  createHighlightControlsRef.current = createHighlightControls;
   const registryRef = useRef(registry);
   registryRef.current = registry;
   const cwdRef = useRef(cwd);
@@ -142,6 +148,7 @@ export function useKeyboardModeController({
         notify: (message: string, type?: ExtensionNotifyType) => notifyRef.current(message, type),
         commands: commandsRef.current,
         keyboardModes,
+        highlights: createHighlightControlsRef.current(extensionId),
       });
       const active: ActiveSessionKeyboardMode = {
         ctx,

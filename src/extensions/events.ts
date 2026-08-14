@@ -10,6 +10,7 @@ import type {
   ExtensionDiffHunk,
   ExtensionDialogs,
   ExtensionEventContext,
+  ExtensionLineHighlightControls,
   ExtensionPaneControls,
   ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
@@ -320,7 +321,22 @@ function unavailableReviewNavigation(
       `Extension ${extensionId} cannot navigate the review before the app is ready`,
       "warning",
     );
-  return { selectFile: unavailable, selectHunk: unavailable };
+  return { selectFile: unavailable, selectHunk: unavailable, revealLine: unavailable };
+}
+
+/** Highlight controls used before the mounted app can invalidate prepared marks. */
+function unavailableLineHighlights(
+  result: ExtensionLoadResult,
+  extensionId: string,
+): ExtensionLineHighlightControls {
+  return {
+    refresh(highlighterId) {
+      result.context.notify(
+        `Extension ${extensionId} cannot refresh line highlighter "${highlighterId}" before the app is ready`,
+        "warning",
+      );
+    },
+  };
 }
 
 /** Dialog controls used before the mounted app has installed its modal queue. */
@@ -361,6 +377,7 @@ function createEventContext(
   return {
     ...result.context,
     panes,
+    highlights: unavailableLineHighlights(result, extensionId),
     sidebars: panes,
     navigation: unavailableReviewNavigation(result, extensionId),
     dialogs: unavailableDialogs(result, extensionId),

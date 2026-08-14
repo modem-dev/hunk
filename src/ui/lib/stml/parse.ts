@@ -4,6 +4,8 @@
 // never throws — malformed input degrades to a best-effort tree plus a list of
 // human-readable `errors`, so a sloppy note still renders something useful.
 
+import { isRawTextStmlTag, isVoidStmlTag } from "../../../core/review/stml";
+import { utf8ByteLength } from "../../../core/review/validation";
 import { sanitizeTerminalText } from "../../../lib/terminalText";
 
 export interface StmlText {
@@ -38,14 +40,6 @@ export const DEFAULT_STML_PARSE_LIMITS = {
   maxDepth: 32,
   maxErrors: 20,
 } as const satisfies Required<StmlParseOptions>;
-
-// Tags that never have children — they may be written unclosed (`<br>`) or
-// self-closed (`<hr/>`); either way any "</tag>" is tolerated and ignored.
-const VOID_TAGS = new Set(["br", "hr", "rule", "divider", "spacer", "space"]);
-
-// Tags whose inner text is taken verbatim — no nested tags, whitespace and
-// case preserved. This is what makes <code> ergonomic.
-const RAW_TAGS = new Set(["code", "pre"]);
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: "&",
@@ -223,11 +217,11 @@ export function parseStml(input: string, options: StmlParseOptions = {}): StmlPa
     const el: StmlElement = { type: "element", tag: open.tag, attrs: open.attrs, children: [] };
     top().push(el);
 
-    if (open.selfClosing || VOID_TAGS.has(open.tag)) {
+    if (open.selfClosing || isVoidStmlTag(open.tag)) {
       continue;
     }
 
-    if (RAW_TAGS.has(open.tag)) {
+    if (isRawTextStmlTag(open.tag)) {
       const close = `</${open.tag}`;
       const end = indexOfCloser(source, i, close);
       const raw = source.slice(i, end === -1 ? n : end);
@@ -268,10 +262,6 @@ function limitedErrorCollector(errors: string[], maxErrors: number): (message: s
       errors[errors.length - 1] = `${errors[errors.length - 1]} (further parse errors omitted)`;
     }
   };
-}
-
-function utf8ByteLength(text: string): number {
-  return new TextEncoder().encode(text).length;
 }
 
 function truncateUtf8(text: string, maxBytes: number): string {

@@ -7,6 +7,7 @@ import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { ValidatedLineHighlight } from "../../highlights/validate";
 import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
@@ -19,6 +20,8 @@ import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 interface DiffSectionProps {
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
+  /** Validated extension marks for this file, in source coordinates. */
+  extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
   fileView?: ResolvedFileViewLayout;
   headerLabelWidth: number;
@@ -58,6 +61,7 @@ interface DiffSectionProps {
 function DiffSectionComponent({
   codeHorizontalOffset,
   expandedGapKeys,
+  extensionLineHighlights,
   file,
   fileView,
   headerLabelWidth,
@@ -154,6 +158,7 @@ function DiffSectionComponent({
       ) : (
         <PierreDiffView
           expandedGapKeys={expandedGapKeys}
+          extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
           showLineNumbers={showLineNumbers}
@@ -195,6 +200,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
+    previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&
     previous.headerLabelWidth === next.headerLabelWidth &&

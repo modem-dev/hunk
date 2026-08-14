@@ -278,6 +278,30 @@ export interface SessionCommentClearCommandInput {
   confirmed: boolean;
 }
 
+export interface SessionHighlightAddCommandInput {
+  kind: "session";
+  action: "highlight-add";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  filePath: string;
+  side: "old" | "new";
+  line: number;
+  /** 0-based inclusive UTF-16 code-unit offset into the line's raw text. */
+  start: number;
+  /** Exclusive end offset; must exceed `start`. */
+  end: number;
+  tone?: "match" | "current" | "info" | "warning" | "error";
+  reveal: boolean;
+}
+
+export interface SessionHighlightClearCommandInput {
+  kind: "session";
+  action: "highlight-clear";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  filePath?: string;
+}
+
 export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
@@ -288,7 +312,9 @@ export type SessionCommandInput =
   | SessionCommentApplyCommandInput
   | SessionCommentListCommandInput
   | SessionCommentRemoveCommandInput
-  | SessionCommentClearCommandInput;
+  | SessionCommentClearCommandInput
+  | SessionHighlightAddCommandInput
+  | SessionHighlightClearCommandInput;
 
 /**
  * Review requests extend the published input views rather than restating them,

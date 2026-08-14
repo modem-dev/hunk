@@ -1,7 +1,15 @@
 import type { ExperimentalFeature } from "../core/experimental";
+import type { ExtensionLineHighlightTone } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
+import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/types";
 import type { SessionReloadReason } from "../extensions/types";
+import type {
+  HunkReviewActionEnvelopeV1,
+  HunkReviewResourceCatalogV1,
+  HunkReviewResourceReadEnvelopeV1,
+  HunkReviewResultV1,
+} from "./reviewProtocol";
 import type { SessionBrokerClient } from "../session/broker/brokerClient";
 import type {
   SessionClientMessage,
@@ -31,6 +39,16 @@ export interface SessionReviewHunk {
 }
 
 export interface SessionReviewFile extends SessionFileSummary {
+  /**
+   * Raw unified diff text, present only where it has been resolved.
+   *
+   * A live session no longer embeds it in its registration: patch text is served as a
+   * review resource, read in bounded verified chunks on demand, so the daemon holds one
+   * copy of one patch at a time instead of every patch of every session at once. It is
+   * still parsed here because a session from an older build still sends it, and because
+   * the field is where reconstructed text lands before `hunk session review
+   * --include-patch` renders it.
+   */
   patch?: string;
   hunks: SessionReviewHunk[];
 }
@@ -48,6 +66,13 @@ export interface HunkSessionInfo {
   sourceLabel: string;
   experimentalFeatures?: ExperimentalFeature[];
   files: SessionReviewFile[];
+  /**
+   * The generation this registration projects, and every resource it offers.
+   *
+   * Absent from a session built before review resources existed; the broker's mirror
+   * treats that as "this session serves no resources" rather than as an invalid payload.
+   */
+  reviewCatalog?: HunkReviewResourceCatalogV1;
 }
 
 /** App-owned live state that the broker snapshots and rebroadcasts. */
@@ -64,6 +89,14 @@ export interface HunkSessionState {
   liveComments: SessionLiveCommentSummary[];
   reviewNoteCount?: number;
   reviewNotes?: SessionReviewNoteSummary[];
+  /**
+   * Where the session's review currently sits in its producer's sequence.
+   *
+   * The one fact the broker's review mirror orders on, classified through
+   * `classifyReviewPublication` rather than compared by a local rule. Absent from a
+   * session built before the mirror existed.
+   */
+  reviewPublication?: ReviewPublicationAddress;
 }
 
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;
@@ -104,6 +137,31 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
   includeUser?: boolean;
+}
+
+/** One bounded resource read, brokered to the session that published the generation. */
+export interface ReadReviewResourceToolInput
+  extends SessionTargetInput, HunkReviewResourceReadEnvelopeV1 {}
+
+/** One semantic review action, brokered to the producer that owns the review state. */
+export interface ApplyReviewActionToolInput
+  extends SessionTargetInput, HunkReviewActionEnvelopeV1 {}
+
+/** One agent-set attention mark: a character range inside one diff line. */
+export interface HighlightToolInput extends SessionTargetInput {
+  filePath: string;
+  side: DiffSide;
+  line: number;
+  /** `[start, end)` UTF-16 code-unit offsets into the line's raw source text. */
+  start: number;
+  end: number;
+  tone?: ExtensionLineHighlightTone;
+  /** Also land the viewport on the marked line. */
+  reveal?: boolean;
+}
+
+export interface ClearHighlightsToolInput extends SessionTargetInput {
+  filePath?: string;
 }
 
 export interface SessionLiveCommentSummary {
@@ -155,6 +213,31 @@ export interface NavigatedSelectionResult {
   filePath: string;
   hunkIndex: number;
   selectedHunk?: SelectedHunkSummary;
+  /** For line targets: whether the viewport landed on the exact line or fell back to its hunk. */
+  revealed?: "line" | "hunk";
+  side?: DiffSide;
+  line?: number;
+}
+
+export interface AppliedHighlightResult {
+  fileId: string;
+  filePath: string;
+  hunkIndex: number;
+  side: DiffSide;
+  line: number;
+  start: number;
+  end: number;
+  tone: ExtensionLineHighlightTone;
+  /** Agent marks now active on this file, including this one. */
+  fileMarkCount: number;
+  /** Where the optional `reveal` landed. */
+  revealed?: "line" | "hunk";
+}
+
+export interface ClearedHighlightsResult {
+  removedCount: number;
+  remainingCount: number;
+  filePath?: string;
 }
 
 export interface RemovedCommentResult {
@@ -254,7 +337,10 @@ export type HunkSessionCommandResult =
   | NavigatedSelectionResult
   | RemovedCommentResult
   | ClearedCommentsResult
-  | ReloadedSessionResult;
+  | ReloadedSessionResult
+  | HunkReviewResultV1
+  | AppliedHighlightResult
+  | ClearedHighlightsResult;
 
 export type HunkSessionClientMessage = SessionClientMessage<
   HunkSessionInfo,
@@ -275,4 +361,8 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>
   | SessionServerMessage<"reload_session", ReloadSessionToolInput>
   | SessionServerMessage<"remove_comment", RemoveCommentToolInput>
-  | SessionServerMessage<"clear_comments", ClearCommentsToolInput>;
+  | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
+  | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
+  | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
+  | SessionServerMessage<"highlight", HighlightToolInput>
+  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>;

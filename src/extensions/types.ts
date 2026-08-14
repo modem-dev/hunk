@@ -10,6 +10,7 @@ import type {
   ExtensionEventName,
   ExtensionFileView,
   ExtensionKeyboardMode,
+  ExtensionLineHighlighter,
   ExtensionNotifyType,
   ExtensionPane,
   ExtensionSessionOptions,
@@ -62,6 +63,11 @@ export type {
   ExtensionKeyboardModeContext,
   ExtensionKeyboardModeControls,
   ExtensionKeyboardModeKeyResult,
+  ExtensionLineHighlight,
+  ExtensionLineHighlightControls,
+  ExtensionLineHighlightInput,
+  ExtensionLineHighlightTone,
+  ExtensionLineHighlighter,
   ExtensionReviewNote,
   ExtensionNotifyType,
   ExtensionPaintTheme,
@@ -163,6 +169,12 @@ export interface RegisteredFileView {
   view: ExtensionFileView;
 }
 
+/** A contributor of paint-time diff line marks registered by one extension. */
+export interface RegisteredLineHighlighter {
+  extensionId: string;
+  highlighter: ExtensionLineHighlighter;
+}
+
 /** One session-scoped keyboard mode registered by an extension. */
 export interface RegisteredKeyboardMode {
   extensionId: string;
@@ -219,6 +231,7 @@ export interface ExtensionRegistry {
   changesetTransforms: RegisteredChangesetTransform[];
   panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
+  lineHighlighters: RegisteredLineHighlighter[];
   keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
@@ -304,6 +317,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     changesetTransforms: [],
     panes: [],
     fileViews: [],
+    lineHighlighters: [],
     keyboardModes: [],
     commands: [],
     eventHandlers: {

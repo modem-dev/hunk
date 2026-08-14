@@ -1,6 +1,6 @@
 ---
 name: hunk-review
-description: Interacts with live Hunk diff review sessions via CLI. Inspects review focus, navigates files and hunks, reloads session contents, and adds inline review comments. Use when the user has a Hunk session running or wants to review diffs interactively.
+description: Interacts with live Hunk diff review sessions via CLI. Inspects review focus, navigates files, hunks, and exact lines, reloads session contents, adds inline review comments, and paints attention marks on character ranges. Use when the user has a Hunk session running or wants to review diffs interactively.
 ---
 
 # Hunk Review
@@ -21,6 +21,7 @@ If no session exists, ask the user to launch Hunk in their terminal first.
 7. hunk session reload -- <command>                     # swap contents if needed
 8. hunk session comment add ...                         # leave one review note
 9. hunk session comment apply ...                       # apply many agent notes in one stdin batch
+10. hunk session highlight add ...                      # light up the exact range you are explaining
 ```
 
 ## Session selection
@@ -78,6 +79,7 @@ hunk session navigate --repo . --prev-comment
 
 - `--hunk <n>` is 1-based
 - `--new-line` / `--old-line` are 1-based line numbers on that diff side
+- A line target lands the user's viewport on that exact line (falling back to its hunk when the line is inside a collapsed region); `--hunk` lands on the hunk
 - Use either `--next-comment` or `--prev-comment`, not both
 
 ### Reload
@@ -132,6 +134,30 @@ printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tig
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
+### Attention marks
+
+Highlights paint character ranges inside the diff lines the user is looking at — use them to light up the exact expression you are explaining while you narrate.
+
+```bash
+hunk session highlight add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --start <n> --end <n> [--tone <tone>] [--focus] [--json]
+hunk session highlight clear (<session-id> | --repo <path>) [--file <path>] [--json]
+```
+
+Examples:
+
+```bash
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19 --tone warning --focus
+hunk session highlight clear --repo .
+```
+
+- `highlight add` requires `--file`, exactly one of `--old-line` or `--new-line`, and the `--start` / `--end` offsets
+- `--start` is a 0-based inclusive offset into the line's text and `--end` is exclusive, counted in UTF-16 code units — the same `[start, end)` range extensions use
+- Tones: `match` (default), `info`, `warning`, `error`; `current` renders as reverse video and is best reserved for the one range under discussion
+- Pass `--focus` to also land the viewport on the marked line
+- Marks survive scrolling, navigation, and reloads that leave the marked file's content unchanged; a reload that changes that file drops its marks, and `highlight clear` removes them explicitly (optionally per `--file`)
+- Marks are visual only — pair them with a `comment add` when the explanation should persist as a note
+
 ### Experimental rich markup notes (STML)
 
 Only use STML when `hunk session context --json` lists `stml` in `experimentalFeatures`. The user opts into that experience by launching the review with `--experimental`; do not ask a normal session to render markup.
@@ -166,6 +192,7 @@ Guidelines:
 
 - Work in the order that tells the clearest story, not necessarily file order
 - Navigate before commenting so the user sees the code you're discussing
+- Use `highlight add --focus` to steer the user's eyes to the exact expression while you explain it, and `highlight clear` before moving to the next topic
 - Use `comment apply` for agent-generated batches and `comment add` for one-off notes
 - Use `--focus` sparingly when the note itself should actively steer the review
 - Keep comments focused: intent, structure, risks, or follow-ups
@@ -181,4 +208,7 @@ Guidelines:
 - **"Pass --stdin to read batch comments from stdin JSON."** -- `comment apply` only reads its batch payload from stdin.
 - **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, or `--new-line`.
 - **"Specify exactly one comment target"** -- pass `comment add` one of `--old-line` or `--new-line`.
+- **"Specify exactly one highlight target"** -- pass `highlight add` one of `--old-line` or `--new-line`.
+- **"Highlight --end must be greater than --start"** -- offsets are `[start, end)` UTF-16 code units into the line text; end is exclusive.
 - **"Specify either --next-comment or --prev-comment, not both."** -- choose one comment-navigation direction.
+- **"Could not read the raw diff for ..."** -- the session reloaded or closed while `--include-patch` was reading it. Re-run `review`; drop `--include-patch` if you only need file and hunk structure.

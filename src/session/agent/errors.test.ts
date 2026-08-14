@@ -5,13 +5,16 @@ import {
   agentErrorQuotePrefix,
   COMMENT_APPLY_STDIN_MESSAGE,
   constraintViolationMessage,
+  HIGHLIGHT_RANGE_MESSAGE,
   NO_ACTIVE_SESSIONS_MESSAGE,
   noDiffFileMatchesMessage,
   RELOAD_SEPARATOR_MESSAGE,
+  reviewResourceUnavailableMessage,
 } from "./errors";
 import {
   COMMENT_DIRECTION_CONSTRAINT,
   COMMENT_TARGET_CONSTRAINT,
+  HIGHLIGHT_TARGET_CONSTRAINT,
   NAVIGATE_TARGET_CONSTRAINT,
 } from "./surface";
 
@@ -65,7 +68,10 @@ describe("agent error messages", () => {
       COMMENT_APPLY_STDIN_MESSAGE,
       constraintViolationMessage(NAVIGATE_TARGET_CONSTRAINT),
       constraintViolationMessage(COMMENT_TARGET_CONSTRAINT),
+      constraintViolationMessage(HIGHLIGHT_TARGET_CONSTRAINT),
+      HIGHLIGHT_RANGE_MESSAGE,
       constraintViolationMessage(COMMENT_DIRECTION_CONSTRAINT),
+      reviewResourceUnavailableMessage("src/App.tsx"),
     ];
 
     // Quotes match messages by prefix rather than array position, so reordering

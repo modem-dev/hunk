@@ -30,6 +30,8 @@ import type {
   ExtensionFileViewSourceRange,
   ExtensionKeyboardModeControls,
   ExtensionKeyboardModeKeyResult,
+  ExtensionLineHighlight,
+  ExtensionLineHighlightTone,
   ExtensionPaintTheme,
   ExtensionHorizontalPane,
   ExtensionPaneProps,
@@ -139,6 +141,25 @@ export default function (hunk: HunkExtensionAPI) {
       };
     },
   });
+  const matchTone: ExtensionLineHighlightTone = "match";
+  hunk.registerLineHighlighter({
+    id: "needles",
+    async highlight(input) {
+      const document: string | null = await input.readDocument("old");
+      hunk.log(document === null ? input.file.path : "read old side");
+      const mark: ExtensionLineHighlight = {
+        side: "new",
+        line: 1,
+        range: [0, 4],
+        tone: matchTone,
+      };
+      const invalidTone: ExtensionLineHighlightTone[] = ["current", "info", "warning", "error"];
+      hunk.log(String(invalidTone.length));
+      // @ts-expect-error Ranges are immutable tuples.
+      mark.range[0] = 2;
+      return [mark];
+    },
+  });
   hunk.registerKeyboardMode({
     id: "review-keys",
     title: "Review keys",
@@ -166,12 +187,24 @@ export default function (hunk: HunkExtensionAPI) {
       hunk.log(entered ? "mode running" : "mode refused");
     }
     ctx.fileViews.exitMode();
+    ctx.highlights.refresh("needles");
+    ctx.highlights.refresh("needles", { fileId: ctx.selection.file?.id ?? "" });
     if (!modeControls.isActive("review-keys")) {
       modeControls.enterMode("review-keys");
     }
     modeControls.exitMode();
     ctx.panes.toggle("bottom");
     if (ctx.sidebars.isOpen("legacy")) ctx.sidebars.close("legacy");
+
+    const targetFile = ctx.selection.file;
+    if (targetFile) {
+      ctx.navigation.selectFile(targetFile.id);
+      ctx.navigation.selectHunk(targetFile.id, 0);
+      ctx.navigation.revealLine(targetFile.id, "new", 211);
+      ctx.navigation.revealLine(targetFile.id, "old", 1);
+      // @ts-expect-error Only the two diff sides address a line.
+      ctx.navigation.revealLine(targetFile.id, "both", 1);
+    }
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {

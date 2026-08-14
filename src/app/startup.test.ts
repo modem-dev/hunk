@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
+import { toReadOnlyFileViews } from "../extensions/events";
+import { getTutorDocumentText } from "../tutor/content";
 import type { HunkConfigResolution } from "../core/config";
 import { HunkUserError } from "../core/errors";
 import { prepareStartupPlan } from "./startup";
@@ -67,6 +69,24 @@ describe("startup planning", () => {
     expect(plan.bootstrap.extensions?.registry.panes).toMatchObject([
       { extensionId: "hunk-tutor", pane: { id: "guide", replaces: "hunk:files" } },
     ]);
+    expect(plan.bootstrap.extensions?.registry.lineHighlighters).toMatchObject([
+      { extensionId: "hunk-tutor", highlighter: { id: "active-step" } },
+    ]);
+    const lesson = plan.bootstrap.changeset.files.find(
+      (file) => file.path === "01-moving-through-a-review.md",
+    );
+    const highlighter = plan.bootstrap.extensions?.registry.lineHighlighters[0]?.highlighter;
+    if (!lesson || !highlighter) {
+      throw new Error("Expected the tutor lesson and active-step highlighter.");
+    }
+    const [publicLesson] = toReadOnlyFileViews([lesson]);
+    expect(
+      await highlighter.highlight({
+        file: publicLesson!,
+        signal: new AbortController().signal,
+        readDocument: async (side) => getTutorDocumentText(lesson.path, side),
+      }),
+    ).toEqual([{ side: "new", line: 4, range: [5, 18], tone: "current" }]);
     expect(plan.bootstrap.customThemes?.map((theme) => theme.id)).toContain("hunk-tutor");
     expect(
       plan.bootstrap.changeset.files.find((file) => file.path.includes("context-and-notes"))?.agent
@@ -74,7 +94,7 @@ describe("startup planning", () => {
     ).toHaveLength(2);
   });
 
-  test("does not install the bundled tutor extension when extensions are disabled", async () => {
+  test("keeps the bundled tutor installed when user extensions are disabled", async () => {
     const cliInput: CliInput = { kind: "tutor", options: { extensions: false } };
     const extensionResult = createEmptyExtensionLoadResult();
 
@@ -93,9 +113,13 @@ describe("startup planning", () => {
       throw new Error("Expected app startup plan.");
     }
 
-    expect(plan.bootstrap.extensions?.loaded).toEqual([]);
-    expect(plan.bootstrap.extensions?.registry.panes).toEqual([]);
-    expect(plan.bootstrap.customThemes).toEqual([]);
+    expect(plan.bootstrap.extensions?.loaded.map((extension) => extension.id)).toEqual([
+      "hunk-tutor",
+    ]);
+    expect(plan.bootstrap.extensions?.registry.panes).toMatchObject([
+      { extensionId: "hunk-tutor", pane: { id: "guide" } },
+    ]);
+    expect(plan.bootstrap.customThemes?.map((theme) => theme.id)).toContain("hunk-tutor");
   });
 
   test("returns help output without entering app startup", async () => {

@@ -58,11 +58,62 @@ describe("session daemon request validation", () => {
       { action: "comment-list", selector: { sessionId: "s-1" }, type: "user" },
       { action: "comment-rm", selector: { sessionId: "s-1" }, commentId: "c-1" },
       { action: "comment-clear", selector: { sessionId: "s-1" }, includeUser: true },
+      {
+        action: "highlight-add",
+        selector: { sessionId: "s-1" },
+        filePath: "a.ts",
+        side: "new",
+        line: 12,
+        start: 0,
+        end: 8,
+        tone: "warning",
+        reveal: true,
+      },
+      {
+        action: "highlight-add",
+        selector: { repoRoot: "/repo" },
+        filePath: "a.ts",
+        side: "old",
+        line: 3,
+        start: 4,
+        end: 9,
+        reveal: false,
+      },
+      { action: "highlight-clear", selector: { sessionId: "s-1" }, filePath: "a.ts" },
+      { action: "highlight-clear", selector: { sessionId: "s-1" } },
     ];
 
     for (const request of requests) {
       expect(() => parseSessionDaemonRequest(request)).not.toThrow();
     }
+  });
+
+  test("rejects malformed highlight payloads", () => {
+    expect(() =>
+      parseSessionDaemonRequest({
+        action: "highlight-add",
+        selector: { sessionId: "s-1" },
+        filePath: "a.ts",
+        side: "new",
+        line: 12,
+        start: -1,
+        end: 8,
+        reveal: false,
+      }),
+    ).toThrow(/start/);
+    expect(() =>
+      parseSessionDaemonRequest({
+        action: "highlight-add",
+        selector: { sessionId: "s-1" },
+        filePath: "a.ts",
+        side: "new",
+        line: 12,
+        start: 0,
+        end: 8,
+        tone: "loud",
+        reveal: false,
+      }),
+    ).toThrow(/tone/);
   });
 
   test("rejects unknown actions with a readable error", () => {

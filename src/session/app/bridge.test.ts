@@ -45,6 +45,22 @@ function createHandlers() {
       removed: true,
       remainingCommentCount: 0,
     })),
+    addAgentLineHighlight: mock((input) => ({
+      fileId: "file-1",
+      filePath: input.filePath,
+      hunkIndex: 0,
+      side: input.side,
+      line: input.line,
+      start: input.start,
+      end: input.end,
+      tone: input.tone ?? ("match" as const),
+      fileMarkCount: 1,
+    })),
+    clearAgentLineHighlights: mock((filePath?: string) => ({
+      removedCount: filePath ? 1 : 2,
+      remainingCount: 0,
+      filePath,
+    })),
   };
 }
 

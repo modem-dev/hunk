@@ -6,7 +6,7 @@ import { createFileViewInput } from "../ui/fileViews/host";
 import { validateFileViewLayout } from "../ui/fileViews/layout";
 import { formatHunkHeader } from "./hunkHeader";
 import { summarizeHunk } from "./hunkSummary";
-import { hunkLineRange } from "./liveComments";
+import { reviewHunkRanges } from "./review/geometry";
 
 describe("summarizeHunk", () => {
   test("summarizes every hunk Pierre parses with its header and inclusive spans", () => {
@@ -29,7 +29,7 @@ describe("summarizeHunk", () => {
         header: formatHunkHeader(hunk)
           .replace(/[\r\n]+/g, " ")
           .trimEnd(),
-        ...hunkLineRange(hunk),
+        ...reviewHunkRanges(hunk),
       });
       expect(summaries[index]!.header).toMatch(/^@@ -\d/);
       expect(summaries[index]!.header).not.toMatch(/[\r\n]/);

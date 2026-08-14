@@ -16,6 +16,7 @@ import {
   type ExtensionSessionOptions,
   type ExtensionFileView,
   type ExtensionKeyboardMode,
+  type ExtensionLineHighlighter,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
@@ -223,6 +224,7 @@ interface RegistrySnapshot {
   changesetTransforms: number;
   panes: number;
   fileViews: number;
+  lineHighlighters: number;
   keyboardModes: number;
   commands: number;
   eventHandlers: Record<string, number>;
@@ -245,6 +247,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     changesetTransforms: registry.changesetTransforms.length,
     panes: registry.panes.length,
     fileViews: registry.fileViews.length,
+    lineHighlighters: registry.lineHighlighters.length,
     keyboardModes: registry.keyboardModes.length,
     commands: registry.commands.length,
     eventHandlers,
@@ -267,6 +270,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.changesetTransforms.length = snapshot.changesetTransforms;
   registry.panes.length = snapshot.panes;
   registry.fileViews.length = snapshot.fileViews;
+  registry.lineHighlighters.length = snapshot.lineHighlighters;
   registry.keyboardModes.length = snapshot.keyboardModes;
   registry.commands.length = snapshot.commands;
   registry.customEventHandlers.length = snapshot.customEventHandlers;
@@ -465,6 +469,18 @@ export function createExtensionApi(
       }
 
       registry.fileViews.push({ extensionId: metadata.id, view });
+    },
+    registerLineHighlighter(highlighter: ExtensionLineHighlighter) {
+      assertOpen("registerLineHighlighter");
+      assertNonEmptyString(
+        highlighter?.id,
+        "registerLineHighlighter requires a highlighter with a non-empty id.",
+      );
+      if (typeof highlighter.highlight !== "function") {
+        throw new Error("registerLineHighlighter requires a highlight() function.");
+      }
+
+      registry.lineHighlighters.push({ extensionId: metadata.id, highlighter });
     },
     registerKeyboardMode(mode: ExtensionKeyboardMode) {
       assertOpen("registerKeyboardMode");

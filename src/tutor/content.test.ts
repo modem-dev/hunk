@@ -7,6 +7,8 @@ describe("tutor content", () => {
     expect(TUTOR_PATCH).toContain("This diff is the tutorial.");
     expect(TUTOR_PATCH).toContain("You are not editing a project.");
     expect(TUTOR_PATCH).toContain("Shortcuts serve one question:");
+    expect(TUTOR_PATCH).toContain("It spotlights exact diff text.");
+    expect(TUTOR_PATCH).toContain("Drag diff text to copy it.");
     expect(TUTOR_PATCH).not.toContain("starship");
     expect(TUTOR_PATCH).not.toContain("autopilot");
   });

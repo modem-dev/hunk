@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { expandCollapsedRows, gapKey, selectGapForKeyboardToggle } from "./expandCollapsedRows";
+import { reviewGapId } from "../../core/review/expansion";
+import { expandCollapsedRows } from "./expandCollapsedRows";
 import type { DiffRow } from "./pierre";
 
 function makeCollapsedRow(
@@ -64,7 +65,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: undefined,
       side: "new",
     });
@@ -83,7 +84,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loading" },
       side: "new",
     });
@@ -101,7 +102,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "error" },
       side: "new",
     });
@@ -119,7 +120,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "error", reason: "too-large" },
       side: "new",
     });
@@ -136,7 +137,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -158,7 +159,7 @@ describe("expandCollapsedRows", () => {
     expect(first.right.lineNumber).toBe(1);
     expect(first.left.spans[0]?.text).toBe("alpha");
     expect(first.right.spans[0]?.text).toBe("alpha");
-    expect(first.expandedGapKey).toBe(gapKey("before", 0));
+    expect(first.expandedGapKey).toBe(reviewGapId("before", 0));
 
     const third = inserted[2];
     if (!third || third.type !== "split-line") {
@@ -173,7 +174,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -189,7 +190,7 @@ describe("expandCollapsedRows", () => {
     expect(first.cell.oldLineNumber).toBe(2);
     expect(first.cell.newLineNumber).toBe(2);
     expect(first.cell.spans[0]?.text).toBe("beta");
-    expect(first.expandedGapKey).toBe(gapKey("before", 0));
+    expect(first.expandedGapKey).toBe(reviewGapId("before", 0));
   });
 
   test("changes the collapsed-row label to indicate expansion", () => {
@@ -197,7 +198,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -214,7 +215,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("trailing", 0)]),
+      expandedKeys: new Set([reviewGapId("trailing", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -233,7 +234,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "old",
     });
@@ -255,7 +256,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithCrlf },
       side: "new",
     });
@@ -273,7 +274,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithControls },
       side: "new",
     });
@@ -296,7 +297,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
       tabWidth: 4,
       side: "new",
@@ -315,7 +316,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       sourceLineSpans: (line, sourceLineNumber) => {
         calls.push({ line, sourceLineNumber });
@@ -341,7 +342,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "new",
     });
@@ -360,7 +361,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "old",
     });
@@ -371,38 +372,5 @@ describe("expandCollapsedRows", () => {
       throw new Error("expected first row to be collapsed");
     }
     expect(collapsed.text.toLowerCase()).toContain("could not load");
-  });
-});
-
-describe("selectGapForKeyboardToggle", () => {
-  test("returns the leading gap of the selected hunk when one exists", () => {
-    const hunks = [{ collapsedBefore: 3 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBe(gapKey("before", 0));
-  });
-
-  test("falls forward to the next hunk's leading gap when the selected hunk has none", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 5 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBe(gapKey("before", 1));
-  });
-
-  test("falls back to the trailing gap when no later leading gap exists", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, true)).toBe(gapKey("trailing", 1));
-  });
-
-  test("returns null when no leading or trailing gap is reachable", () => {
-    const hunks = [{ collapsedBefore: 0 }, { collapsedBefore: 0 }];
-    expect(selectGapForKeyboardToggle(hunks, 0, false)).toBeNull();
-  });
-
-  test("returns null for an empty hunk list", () => {
-    expect(selectGapForKeyboardToggle([], 0, false)).toBeNull();
-  });
-
-  test("clamps a stale selectedHunkIndex into the valid range", () => {
-    const hunks = [{ collapsedBefore: 4 }, { collapsedBefore: 0 }];
-    // Stale index 99 clamps to the last hunk (1); that hunk has no leading gap,
-    // so the trailing gap is the only reachable target.
-    expect(selectGapForKeyboardToggle(hunks, 99, true)).toBe(gapKey("trailing", 1));
   });
 });
