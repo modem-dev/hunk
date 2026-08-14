@@ -105,7 +105,7 @@ describe("GitVcsAdapter", () => {
     expect(result.title).toContain("working tree");
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
-    expect(result.extraFiles?.map((file) => file.path)).toContain("untracked.txt");
+    expect(result.untrackedPaths).toContain("untracked.txt");
     expect(result.sourceCacheKey).toContain("git-source-v1");
 
     const equivalentResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
@@ -125,12 +125,10 @@ describe("GitVcsAdapter", () => {
     });
     expect(changedIndexResult.sourceCacheKey).not.toBe(result.sourceCacheKey);
 
-    // The untracked file is reported as its own one-file patch rather than as a
-    // path Hunk reads back, so Git's own binary detection and quoting decide
-    // what it says.
-    const untracked = result.extraFiles?.find((file) => file.path === "untracked.txt");
-    expect(untracked?.kind).toBe("patch");
-    expect(untracked?.isUntracked).toBe(true);
+    // Untracked files come back as paths for Hunk to synthesize in-process:
+    // one `git status` covers all of them instead of one `git diff --no-index`
+    // subprocess per file, which made review scale with the untracked count.
+    expect(result.extraFiles ?? []).toHaveLength(0);
   });
 
   test("loads revision and stash patches through adapter operations", async () => {

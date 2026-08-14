@@ -7,7 +7,6 @@ import {
   type ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "./largeFile";
-import { escapeUntrackedPatchPath } from "../patch/normalize";
 import { normalizePathForOS } from "../../lib/osPath";
 
 /**
@@ -222,21 +221,6 @@ export function buildGitIgnoredDirectoryArgs() {
     "--directory",
     "-z",
   ];
-}
-
-/** Build the synthetic patch used to render one untracked file as a new-file diff. */
-function buildGitNewFileDiffArgs(filePath: string) {
-  // `--no-ext-diff` keeps user-configured `diff.external` tools (difftastic, delta, etc.)
-  // from replacing the unified-diff output Pierre needs to parse this synthetic patch.
-  return withNormalizedDiffPrefixes([
-    "diff",
-    "--no-ext-diff",
-    "--no-index",
-    "--no-color",
-    "--",
-    "/dev/null",
-    filePath,
-  ]);
 }
 
 /** Build the exact `git show` arguments used for commit review. */
@@ -660,7 +644,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
   try {
     pathInfo = fs.lstatSync(absolutePath);
   } catch {
-    // If the path disappeared after `git status`, let the downstream Git diff
+    // If the path disappeared after `git status`, let downstream synthesis
     // surface the same error path users would have seen before this filter.
     return true;
   }
@@ -674,8 +658,8 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
   }
 
   try {
-    // Git reports directory symlinks as untracked paths, but `git diff --no-index`
-    // cannot synthesize a parseable file patch for them.
+    // Git reports directory symlinks as untracked paths, but Hunk cannot
+    // synthesize a file patch from a directory's contents.
     return !fs.statSync(absolutePath).isDirectory();
   } catch {
     // Broken symlinks still diff as reviewable path entries, so keep them.
@@ -715,52 +699,6 @@ export function listGitUntrackedFiles(
   return untrackedFiles.filter((filePath) =>
     isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
-}
-
-/** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
-export function normalizeUntrackedPatchHeaders(patchText: string, filePath: string) {
-  const safePath = escapeUntrackedPatchPath(filePath);
-
-  return patchText
-    .replaceAll("\r\n", "\n")
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("diff --git ")) {
-        return `diff --git a/${safePath} b/${safePath}`;
-      }
-
-      if (line.startsWith("+++ ")) {
-        return `+++ b/${safePath}`;
-      }
-
-      if (line.startsWith("Binary files /dev/null and ")) {
-        return `Binary files /dev/null and b/${safePath} differ`;
-      }
-
-      return line;
-    })
-    .join("\n");
-}
-
-/** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
-export function runGitUntrackedFileDiffText(
-  input: ExtensionVcsDiffInput,
-  filePath: string,
-  {
-    cwd = process.cwd(),
-    repoRoot,
-    gitExecutable = "git",
-  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
-) {
-  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
-
-  return runGitCommand({
-    input,
-    args: buildGitNewFileDiffArgs(filePath),
-    cwd: normalizedRepoRoot,
-    gitExecutable,
-    acceptedExitCodes: [0, 1],
-  }).stdout;
 }
 
 export interface GitMetadata {
