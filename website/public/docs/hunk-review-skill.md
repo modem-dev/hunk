@@ -182,3 +182,4 @@ Guidelines:
 - **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, or `--new-line`.
 - **"Specify exactly one comment target"** -- pass `comment add` one of `--old-line` or `--new-line`.
 - **"Specify either --next-comment or --prev-comment, not both."** -- choose one comment-navigation direction.
+- **"Could not read the raw diff for ..."** -- the session reloaded or closed while `--include-patch` was reading it. Re-run `review`; drop `--include-patch` if you only need file and hunk structure.
