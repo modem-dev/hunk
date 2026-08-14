@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
@@ -602,6 +610,31 @@ describe("loadAppBootstrap", () => {
     const dangling = bootstrap.changeset.files.find((file) => file.path === "dangling-link");
     expect(dangling?.patch).toContain("new file mode 120000");
     expect(dangling?.patch).toContain("+missing-file");
+  });
+
+  // Windows has no Unix execute bits, so the mode distinction only exists on POSIX.
+  const unixTest = platform() === "win32" ? test.skip : test;
+  unixTest("reports untracked executable files with git's 100755 mode", async () => {
+    const dir = createTempRepo("hunk-git-untracked-exec-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "script.sh"), "#!/bin/sh\necho hi\n");
+    chmodSync(join(dir, "script.sh"), 0o755);
+    writeFileSync(join(dir, "plain.txt"), "not executable\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const script = bootstrap.changeset.files.find((file) => file.path === "script.sh");
+    expect(script?.patch).toContain("new file mode 100755");
+    const plain = bootstrap.changeset.files.find((file) => file.path === "plain.txt");
+    expect(plain?.patch).toContain("new file mode 100644");
   });
 
   test("can exclude untracked files from working tree reviews", async () => {

@@ -97,7 +97,17 @@ export function buildFilesystemUntrackedDiffFile(
     );
   }
 
-  const patch = buildUntrackedPatchText(safePath, "100644", fs.readFileSync(absolutePath, "utf8"));
+  // Git records exactly two regular-file modes: 100755 when any execute bit
+  // is set, 100644 otherwise.
+  let mode = "100644";
+  try {
+    if (fs.statSync(absolutePath).mode & 0o111) {
+      mode = "100755";
+    }
+  } catch {
+    // A vanished path surfaces its missing-file error from the read below.
+  }
+  const patch = buildUntrackedPatchText(safePath, mode, fs.readFileSync(absolutePath, "utf8"));
 
   return buildDiffFile(parseSingleFilePatch(patch, filePath), patch, index, sourcePrefix, null, {
     isUntracked: true,
