@@ -10,6 +10,7 @@ import {
   isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
+import { BrowserReviewServer } from "./browserReviewServer";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import type {
   AppliedCommentBatchResult,
@@ -464,6 +465,8 @@ export function serveSessionBrokerDaemon(
   const staleSessionSweepIntervalMs =
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
   const state = createHunkSessionBrokerState();
+  // One loopback process serves every attached review, rather than a port per terminal.
+  const browserReview = new BrowserReviewServer(state);
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
@@ -518,6 +521,14 @@ export function serveSessionBrokerDaemon(
         return handleSessionApiRequest(state, request);
       }
 
+      // The review surface authorizes every one of its own routes with a per-session
+      // capability, so it is mounted after the daemon's host/origin checks and before the
+      // legacy tombstone; it declines anything that is not a review route.
+      const review = await browserReview.handle(request);
+      if (review) {
+        return review;
+      }
+
       if (url.pathname === LEGACY_MCP_PATH) {
         // Preserve an explicit tombstone for the removed MCP route so stale automation gets a clear
         // upgrade message instead of a generic 404.
@@ -534,6 +545,7 @@ export function serveSessionBrokerDaemon(
   const shutdown = () => {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
+    browserReview.close();
     server.stop(true);
   };
 

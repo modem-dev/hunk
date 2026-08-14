@@ -52,12 +52,14 @@ import {
   reviewResourceId,
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
+import { isReviewSha256Digest } from "../../core/review/validation";
 import { nodeReviewDigest } from "../../lib/reviewDigest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   type HunkReviewActionResultV1,
   type HunkReviewActionV1,
   type HunkReviewActorV1,
+  type HunkReviewFailureCodeV1,
   type HunkReviewResourceReadResultV1,
 } from "../reviewProtocol";
 import {
@@ -98,6 +100,46 @@ export class ReviewGenerationRetiredError extends Error {
     );
   }
 }
+
+/**
+ * Raised when one resource read fails, carrying the code that says how.
+ *
+ * The code travels with the error because the tiers above this one answer differently for
+ * each: a reader retrying an "unknown" resource is the wrong response to corruption, which
+ * is why the two are separate codes in the first place
+ * (`docs/browser-review-seam-audit.md`, C2/D5).
+ */
+export class ReviewResourceReadError extends Error {
+  override readonly name = "ReviewResourceReadError";
+
+  constructor(
+    readonly code: HunkReviewFailureCodeV1,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * What one session's review did, as a watcher sees it.
+ *
+ * Only the two facts a watcher can act on: the session published something new, or it is
+ * gone. What changed is deliberately not described — a watcher re-reads the publication
+ * rather than being told a delta, so there is no second description of a review to keep in
+ * step with the mirror's.
+ */
+export type ReviewPublicationEvent =
+  | { kind: "published"; sessionId: string }
+  | { kind: "retired"; sessionId: string };
+
+/** Read the capability verifier out of one raw registration payload. */
+function readRegistrationReviewCapabilityDigest(registrationInput: unknown): string | undefined {
+  const info = (registrationInput as { info?: HunkSessionInfo } | null | undefined)?.info;
+  return isReviewSha256Digest(info?.reviewCapabilityDigest)
+    ? info.reviewCapabilityDigest
+    : undefined;
+}
+
 
 /** Run one bounded-parallel pass over a work list, in the shared load concurrency. */
 async function inBoundedParallel<Item, Result>(
@@ -145,6 +187,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly resources: ReviewResourceCache;
   /** One load per resource; concurrent callers await the same assembly. */
   private readonly loads = new Map<string, Promise<Uint8Array>>();
+  /** Capability verifiers by session, as their registrations declared them. */
+  private readonly capabilityDigests = new Map<string, string>();
+  private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
 
   constructor(resources = new ReviewResourceCache()) {
     super(hunkSessionBrokerView);
@@ -164,6 +209,12 @@ export class HunkSessionBrokerState extends SessionBrokerState<
 
     const sessionId = (registrationInput as { sessionId?: unknown })?.sessionId;
     if (typeof sessionId === "string") {
+      const digest = readRegistrationReviewCapabilityDigest(registrationInput);
+      if (digest) {
+        this.capabilityDigests.set(sessionId, digest);
+      } else {
+        this.capabilityDigests.delete(sessionId);
+      }
       this.observePublication(
         sessionId,
         readRegistrationReviewCatalog(registrationInput),
@@ -202,15 +253,44 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   }
 
   override shutdown(error?: Error) {
+    const watched = this.mirror.sessionIds();
     super.shutdown(error);
     this.mirror.clear();
     this.resources.clear();
     this.loads.clear();
+    this.capabilityDigests.clear();
+    for (const sessionId of watched) {
+      this.notifyPublicationWatchers({ kind: "retired", sessionId });
+    }
+    this.publicationWatchers.clear();
   }
 
   /** What the daemon believes one session is currently publishing. */
   getReviewPublication(sessionId: string): MirroredReviewPublication | undefined {
     return this.mirror.get(sessionId);
+  }
+
+  /**
+   * The capability verifier one session registered, if it registered one.
+   *
+   * A digest, so a caller can check a presented capability without the daemon ever being
+   * able to produce one.
+   */
+  getReviewCapabilityDigest(sessionId: string): string | undefined {
+    return this.capabilityDigests.get(sessionId);
+  }
+
+  /**
+   * Watch every session's review publications.
+   *
+   * The daemon already learns about them while mirroring; a watcher gets the same
+   * observations rather than polling for them. Returns the unsubscribe.
+   */
+  subscribeReviewPublications(watcher: (event: ReviewPublicationEvent) => void): () => void {
+    this.publicationWatchers.add(watcher);
+    return () => {
+      this.publicationWatchers.delete(watcher);
+    };
   }
 
   /** Retained and reserved resource bytes, for lifecycle assertions. */
@@ -335,15 +415,36 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       // of it can only produce bytes nobody wants.
       this.resources.evictGeneration(sessionId, update.previousGeneration);
     }
+    if (update.kind !== "ignored") {
+      this.notifyPublicationWatchers({ kind: "published", sessionId });
+    }
   }
 
   /** Drop mirrored publications and cached bytes for sessions the core no longer holds. */
   private reconcileMirroredSessions() {
     const live = new Set(this.listSessions().map((session) => session.sessionId));
+    for (const sessionId of this.capabilityDigests.keys()) {
+      if (!live.has(sessionId)) {
+        this.capabilityDigests.delete(sessionId);
+      }
+    }
     for (const sessionId of this.mirror.sessionIds()) {
       if (!live.has(sessionId)) {
         this.mirror.forget(sessionId);
         this.resources.evictSession(sessionId);
+        this.notifyPublicationWatchers({ kind: "retired", sessionId });
+      }
+    }
+  }
+
+  /** Tell every watcher what one session's review just did, isolating their failures. */
+  private notifyPublicationWatchers(event: ReviewPublicationEvent) {
+    for (const watcher of Array.from(this.publicationWatchers)) {
+      try {
+        watcher(event);
+      } catch {
+        // A watcher that throws is a watcher's bug; the daemon keeps mirroring for the
+        // rest of them rather than losing a publication over it.
       }
     }
   }
@@ -353,7 +454,10 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     const publication = this.assertGenerationActive(sessionId, generation);
     const descriptor = publication.catalog.resources.find((resource) => resource.id === resourceId);
     if (!descriptor) {
-      throw new Error(`Review resource ${resourceId} is not part of generation ${generation}.`);
+      throw new ReviewResourceReadError(
+        "unknown-resource",
+        `Review resource ${resourceId} is not part of generation ${generation}.`,
+      );
     }
     return descriptor;
   }
@@ -401,14 +505,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         this.assertGenerationActive(key.sessionId, key.generation);
         const result = await this.readChunk(key, assembler.nextOffset);
         if (!result.ok) {
-          throw new Error(`${result.code}: ${result.message}`);
+          throw new ReviewResourceReadError(result.code, result.message);
         }
         const step = assembler.accept({
           chunk: result.chunk,
           bytes: new Uint8Array(Buffer.from(result.chunk.data, "base64")),
         });
         if (!step.ok) {
-          throw new Error(`${step.code}: ${step.message}`);
+          throw new ReviewResourceReadError(step.code, step.message);
         }
         // The declared size is only known once a chunk has arrived; hold the reservation
         // to it before the next window is requested.
@@ -420,7 +524,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
 
       const assembled = assembler.finish();
       if (!assembled.ok) {
-        throw new Error(`${assembled.code}: ${assembled.message}`);
+        throw new ReviewResourceReadError(assembled.code, assembled.message);
       }
       this.assertGenerationActive(key.sessionId, key.generation);
       this.resources.store(key, assembled.bytes);
