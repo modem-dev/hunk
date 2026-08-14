@@ -20,6 +20,25 @@ describe("review generation identity", () => {
     expect(parseReviewGeneration(generation(7))).toEqual({ producerId: producer, sequence: 7 });
   });
 
+  // Intent: the parser's digit bound was narrower than the range the formatter accepts, so
+  // a producer that lived long enough to pass 10^15 would publish generations nothing could
+  // read back. Every sequence the formatter writes must parse.
+  test("round-trips every sequence the formatter accepts", () => {
+    for (const sequence of [
+      0,
+      999_999_999_999_999,
+      1_000_000_000_000_000,
+      Number.MAX_SAFE_INTEGER,
+    ]) {
+      const formatted = formatReviewGeneration({ producerId: producer, sequence });
+      expect(parseReviewGeneration(formatted)).toEqual({ producerId: producer, sequence });
+    }
+  });
+
+  test("rejects a sequence past the safe-integer range", () => {
+    expect(parseReviewGeneration(`generation:${producer}:9007199254740993`)).toBeUndefined();
+  });
+
   test("rejects identities outside the grammar", () => {
     for (const value of [
       "generation:p1",

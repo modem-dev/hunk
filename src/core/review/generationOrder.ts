@@ -40,7 +40,20 @@ export interface ReviewGenerationIdentity {
 const REVIEW_GENERATION_PREFIX = "generation";
 
 /** Producer ids are opaque but may not contain the separator the serialized form uses. */
-const REVIEW_PRODUCER_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+const REVIEW_PRODUCER_ID_BODY = "[A-Za-z0-9._-]+";
+const REVIEW_PRODUCER_ID_PATTERN = new RegExp(`^${REVIEW_PRODUCER_ID_BODY}$`);
+
+/**
+ * The serialized form, built from the prefix and producer-id rule the formatter writes by.
+ *
+ * A hand-written twin of this is what let the two disagree: a sequence the formatter
+ * accepted could be one the parser refused. The digit bound is only wide enough to keep
+ * the match cheap — every safe integer fits in sixteen digits — and `Number.isSafeInteger`
+ * below remains the actual gate on the value.
+ */
+const REVIEW_GENERATION_PATTERN = new RegExp(
+  `^${REVIEW_GENERATION_PREFIX}:(${REVIEW_PRODUCER_ID_BODY}):(\\d{1,16})$`,
+);
 
 /** Render one generation identity as the opaque string every surface passes around. */
 export function formatReviewGeneration({ producerId, sequence }: ReviewGenerationIdentity) {
@@ -58,7 +71,7 @@ export function parseReviewGeneration(value: unknown): ReviewGenerationIdentity 
   if (typeof value !== "string") {
     return undefined;
   }
-  const match = /^generation:([A-Za-z0-9._-]+):(\d{1,15})$/.exec(value);
+  const match = REVIEW_GENERATION_PATTERN.exec(value);
   if (!match) {
     return undefined;
   }
