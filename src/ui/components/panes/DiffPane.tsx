@@ -494,15 +494,18 @@ export function DiffPane({
       const hunks = file.metadata.hunks;
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);
+        // Explicit ids and synthesized index ids live in disjoint namespaces so an
+        // annotation named "3" can never collide with an id-less annotation at index 3 —
+        // reveal resolves rows by this id, and a collision would aim it at the wrong note.
+        const id = annotation.id
+          ? `annotation:${file.id}:id:${annotation.id}`
+          : `annotation:${file.id}:at:${index}`;
         if (source !== "user") {
-          return createVisibleAgentNote(hunks, {
-            id: `annotation:${file.id}:${annotation.id ?? index}`,
-            annotation,
-          });
+          return createVisibleAgentNote(hunks, { id, annotation });
         }
 
         return createVisibleAgentNote(hunks, {
-          id: `annotation:${file.id}:${annotation.id ?? index}`,
+          id,
           annotation,
           source,
           editable: true,
