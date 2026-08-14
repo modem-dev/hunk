@@ -450,8 +450,10 @@ export interface ExtensionFileView {
  * against the background it sits on, which differs per line kind (added,
  * removed, context) and per theme. The host owns that resolution, applying the
  * same minimum-contrast guarantee its own word-diff emphasis uses, so a mark
- * is never invisible on a green line. `"current"` is the emphatic variant of
- * `"match"` — search uses it for the match the user is on.
+ * is never invisible on a green line. A transparent cell has no color to blend
+ * against, so the host resolves the tint against the background it assumes the
+ * terminal shows. `"current"` is the emphatic variant of `"match"` — search
+ * uses it for the match the user is on.
  */
 export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning" | "error";
 
@@ -476,6 +478,10 @@ export interface ExtensionLineHighlight {
    * yields usable offsets directly. The host maps them to terminal columns and
    * widens them to grapheme-cluster boundaries, so an offset inside an emoji or
    * a CJK character marks the whole visible glyph rather than tearing it.
+   *
+   * Marks paint terminal columns, so a range covering only characters that
+   * occupy none — bidi controls, zero-width spaces and joiners — paints
+   * nothing.
    */
   range: readonly [number, number];
   /** What the mark means. Defaults to `"match"`. */
@@ -1724,7 +1730,8 @@ export interface HunkExtensionAPI {
    * its own diff rendering — syntax highlighting, word diff, and layout stay
    * intact. The host resolves each mark's `tone` against the active theme and
    * line kind, guaranteeing visible contrast the way its own word-diff
-   * emphasis does.
+   * emphasis does, and against an assumed background where the cell itself is
+   * transparent.
    */
   registerLineHighlighter(highlighter: ExtensionLineHighlighter): void;
   /**

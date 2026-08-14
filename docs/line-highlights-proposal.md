@@ -97,9 +97,12 @@ Tinted tone anchors map to existing semantic theme tokens (`accent`,
 above word diff's, backing off only where the code on top would stop being
 readable. `current` renders as reverse video — theme text as the block, theme
 background as the glyphs — the `less`/vim convention for the active hit, which
-sidesteps the tint-versus-readability tug-of-war entirely. Surfaces that
-cannot take a blend (transparent, non-hex) decline the mark — the same
-degradation word diff uses.
+sidesteps the tint-versus-readability tug-of-war entirely. A transparent cell
+has no color to blend against, so resolution falls back to the theme's
+background and then to the appearance's extreme: the mark stays visible, but
+its distance floor is measured against an assumed surface rather than the one
+the terminal actually shows. Only a theme whose own colors cannot take a blend
+(non-hex) declines the mark — the same degradation word diff uses.
 
 ## Where it plugs in
 
@@ -214,10 +217,13 @@ Search is the weakest justification on this list.
   here" during review rather than in CI later.
 - **Secret scanning.** Mark the exact token that tripped a rule, instead of
   naming the line in a pane.
-- **Trojan-source defense.** Bidi control characters, homoglyphs, and
-  zero-width characters are invisible _by construction_ in a diff viewer.
-  Marking those ranges is a security feature a review tool is uniquely placed
-  to offer.
+- **Homoglyph marking.** Marking the confusable identifier characters that read
+  as ASCII but are not. (Trojan-source defense more broadly does _not_ work
+  yet, and listing it here was a mistake: a bidi control or zero-width
+  character occupies no terminal column, so a range covering only those
+  characters resolves to zero columns and paints nothing. Making invisible
+  characters visible needs a separate mechanism — a gutter or margin marker, or
+  rendering a visible stand-in glyph — that this API does not have.)
 - **Coverage.** Uncovered added ranges, straight from an lcov file.
 - **Provenance.** Which ranges an agent wrote versus a human — squarely in
   Hunk's stated purpose of understanding coding-agent changesets.
@@ -232,6 +238,14 @@ Search is the weakest justification on this list.
   commands into live sessions, an agent answering "where does this change
   behavior?" could light up the ranges in the user's terminal as it explains.
   Nothing else in the ecosystem can do that.
+
+## Follow-ups
+
+- **Zero-width ranges are silently invisible.** A mark covering only characters
+  that occupy no terminal column (bidi controls, ZWSP, ZWJ) resolves to an
+  empty column range and paints nothing. It is the one case where a valid mark
+  on a rendered line still shows nothing, and it wants its own mechanism rather
+  than a background tint.
 
 ## Companion gap (separate PR)
 

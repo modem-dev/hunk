@@ -1054,8 +1054,8 @@ callback failure warns without breaking the review.
 A line highlighter marks **character ranges inside Hunk's own diff rendering**
 — syntax highlighting, word diff, and layout stay exactly as they are, and the
 marked characters get a resolved background. It is the lever for search hits,
-diagnostics mapped onto changed lines, secret or bidi-character scanning,
-coverage, and anything else that wants to say “these exact characters, here.”
+diagnostics mapped onto changed lines, secret scanning, coverage, and anything
+else that wants to say “these exact characters, here.”
 For a whole alternate presentation, use `registerFileView` instead.
 
 ```ts
@@ -1094,7 +1094,9 @@ That addressing survives split vs stack layout, line wrapping, horizontal
 scrolling, and collapsed-context expansion, and the extension never learns
 Hunk's row model. A context line may be addressed through either side's line
 number; split view mirrors the mark onto both halves of the row. Offsets that
-land inside an emoji or a wide character widen outward to the whole glyph.
+land inside an emoji or a wide character widen outward to the whole glyph. A
+mark paints terminal columns, so a range covering only characters that occupy
+no column — bidi controls, zero-width spaces and joiners — paints nothing.
 
 The `tone` says what a mark means — `"match"` (the default), `"current"` for
 the one hit a search is standing on, `"info"`, `"warning"`, or `"error"`.
@@ -1104,9 +1106,12 @@ invisible on an added line's green. Hunk resolves each tinted tone against the
 actual background of each marked line until it clears a minimum perceptual
 distance — stronger than its own word-diff emphasis, backing off only before
 the code on top would stop being readable — per theme, so a mark is never
-invisible. `"current"` renders as reverse video (theme text as the block,
-theme background as the glyphs), the convention `less` and vim use for the
-active hit.
+invisible on a line kind or a theme. On a transparent cell there is no color to
+blend against, so resolution falls back to the theme background and then to the
+appearance's own extreme: the mark still paints, chosen against the surface
+Hunk assumes rather than the one behind the terminal. `"current"` renders as
+reverse video (theme text as the block, theme background as the glyphs), the
+convention `less` and vim use for the active hit.
 
 `highlight({ file, signal, readDocument })` may be sync or async, and returns
 the complete set of marks for one file — or `null` for none. Hunk calls it per
@@ -1134,9 +1139,11 @@ Containment matches the rest of the system. Marks addressing lines the review
 is not showing — inside a collapsed gap, absent from a partial patch — are
 silently invisible rather than errors; expanding a gap reveals marks addressed
 into it when the file's source is loaded. Structurally invalid entries are
-dropped with one warning per file; a result larger than 2,000 ranges per file
-or 100 per line is rejected whole rather than truncated silently; overlapping
-ranges resolve deterministically with the later range winning. A throwing,
+dropped with one warning per file; a raw result longer than 10,000 entries, or
+one larger than 2,000 ranges per file or 100 per line, is rejected whole rather
+than truncated silently; a highlighter whose marks would push one file past
+4,000 merged ranges across every highlighter is dropped for that file;
+overlapping ranges resolve deterministically with the later range winning. A throwing,
 rejecting, or timed-out `highlight` costs that file's marks from that
 highlighter and nothing else. Because highlights are paint-only — they change
 colors, never text or geometry — the failure mode is always “no marks,” never
