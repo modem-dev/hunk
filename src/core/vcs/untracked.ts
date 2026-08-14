@@ -1,4 +1,3 @@
-import { createTwoFilesPatch } from "diff";
 import fs from "node:fs";
 import { join } from "node:path";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../binary";
@@ -32,22 +31,31 @@ export function buildSkippedLargeUntrackedDiffFile(
   });
 }
 
-/** Wrap synthesized added-file hunks in the git-style header patch consumers parse. */
+/** Build the linear added-file patch every patch consumer parses. */
 function buildUntrackedPatchText(safePath: string, mode: string, contents: string) {
-  const body = createTwoFilesPatch("/dev/null", safePath, "", contents, "", "", {
-    context: 3,
-  }).replaceAll("\r\n", "\n");
+  const normalizedContents = contents.replaceAll("\r\n", "\n");
+  const endsWithNewline = normalizedContents.endsWith("\n");
+  const lines = normalizedContents === "" ? [] : normalizedContents.split("\n");
+  if (endsWithNewline) {
+    lines.pop();
+  }
 
-  // Replace jsdiff's "===" banner with the git-style header every patch
-  // consumer parses, so the file is typed as an addition, not a change.
-  return [
+  const patch = [
     `diff --git a/${safePath} b/${safePath}`,
     `new file mode ${mode}`,
-    ...body
-      .split("\n")
-      .slice(1)
-      .map((line) => (line.startsWith("+++ ") ? `+++ b/${safePath}` : line)),
-  ].join("\n");
+    "--- /dev/null\t",
+    `+++ b/${safePath}`,
+  ];
+  if (lines.length > 0) {
+    patch.push(`@@ -0,0 +1,${lines.length} @@`, ...lines.map((line) => `+${line}`));
+    if (!endsWithNewline) {
+      patch.push("\\ No newline at end of file");
+    }
+  }
+
+  // A new file has no matching lines to diff, so direct linear synthesis avoids
+  // generic LCS work while preserving jsdiff's normalized patch shape.
+  return `${patch.join("\n")}\n`;
 }
 
 /** Build one filesystem-backed untracked file diff from its current contents. */
