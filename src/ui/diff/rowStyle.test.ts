@@ -79,11 +79,36 @@ describe("lineHighlightToneStyle", () => {
     }
   });
 
-  test("declines transparent surfaces instead of blending toward black", () => {
-    const theme = withTransparentSurfaces(THEMES[0]!);
-    const contextBg = stackCellPalette("context", theme).contentBg;
-    expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
-    expect(lineHighlightToneStyle("match", contextBg, theme)).toBeUndefined();
+  test("paints a visible readable mark on transparent surfaces", () => {
+    // Most themes render context content transparent under the transparent
+    // surface option, and most search hits land on context lines — so declining
+    // this case silently painted nothing in the common case.
+    for (const base of THEMES) {
+      const theme = withTransparentSurfaces(base);
+      const contextBg = stackCellPalette("context", theme).contentBg;
+      expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
+      const assumed = theme.appearance === "dark" ? "#000000" : "#ffffff";
+
+      for (const tone of TINTED_TONES) {
+        const resolved = lineHighlightToneStyle(tone, contextBg, theme);
+        expect(resolved).toBeDefined();
+        expect(resolved!.bg).not.toBe(TRANSPARENT_BACKGROUND);
+        // Visible against the surface the terminal effectively shows, and still
+        // readable under the code painted on top of it.
+        expect(hexColorDistance(resolved!.bg, assumed)).toBeGreaterThanOrEqual(60);
+        expect(contrastRatio(theme.text, resolved!.bg)).toBeGreaterThan(3);
+      }
+    }
+  });
+
+  test("keeps the current mark reverse video on transparent surfaces", () => {
+    for (const base of THEMES) {
+      const theme = withTransparentSurfaces(base);
+      const current = lineHighlightToneStyle("current", TRANSPARENT_BACKGROUND, theme)!;
+      expect(current.bg).toBe(theme.text);
+      expect(current.fg).not.toBe(TRANSPARENT_BACKGROUND);
+      expect(contrastRatio(current.fg!, current.bg)).toBeGreaterThan(3);
+    }
   });
 
   test("keeps code readable over every resolved tinted background", () => {

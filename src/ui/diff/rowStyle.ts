@@ -216,6 +216,21 @@ function isHexThemeColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color);
 }
 
+/**
+ * Resolve the background a mark actually sits on into blendable hex.
+ *
+ * A transparent cell shows whatever is behind the terminal, so there is no
+ * color to blend against. Fall back to the theme's own background, and then —
+ * when that is transparent too, which is the whole point of the transparent
+ * surface option — to the appearance's extreme, exactly as the cursor-line
+ * marker does. The mark then paints an opaque tint instead of nothing at all.
+ */
+function effectiveHighlightBackground(baseBg: string, theme: AppTheme) {
+  if (isHexThemeColor(baseBg)) return baseBg;
+  if (isHexThemeColor(theme.background)) return theme.background;
+  return theme.appearance === "dark" ? "#000000" : "#ffffff";
+}
+
 /** The theme color one tinted highlight tone pulls the line background toward. */
 function lineHighlightToneAnchor(tone: ExtensionLineHighlightTone, theme: AppTheme) {
   switch (tone) {
@@ -270,9 +285,12 @@ function strengthenLineHighlightBg(
  * context lines alike. `"current"` inverts instead: theme text as the
  * background, theme background as the foreground — the reverse-video
  * convention `less` and vim use for the active hit, unmistakable and readable
- * by construction. Returns `undefined` — leave the spans untouched — for
- * surfaces that cannot take a blend (transparent or non-hex theme colors),
- * the same degradation word-diff emphasis uses.
+ * by construction. A transparent cell has no color to blend against, so
+ * resolution falls back to the background the terminal effectively shows
+ * rather than painting nothing — the tint is then chosen against an assumed
+ * surface, not the real one. Returns `undefined` — leave the spans untouched —
+ * only when the theme's own colors cannot take a blend at all, the same
+ * degradation word-diff emphasis uses.
  */
 export function lineHighlightToneStyle(
   tone: ExtensionLineHighlightTone,
@@ -300,22 +318,22 @@ function resolveLineHighlightToneStyle(
   baseBg: string,
   theme: AppTheme,
 ): LineHighlightStyle | undefined {
-  if (tone === "current" && isHexThemeColor(theme.text) && isHexThemeColor(theme.background)) {
-    return { bg: theme.text, fg: theme.background };
+  if (tone === "current" && isHexThemeColor(theme.text)) {
+    return { bg: theme.text, fg: effectiveHighlightBackground(theme.background, theme) };
   }
 
   const anchor = lineHighlightToneAnchor(tone, theme);
-  if (
-    baseBg === TRANSPARENT_BACKGROUND ||
-    !isHexThemeColor(baseBg) ||
-    !isHexThemeColor(anchor) ||
-    !isHexThemeColor(theme.text)
-  ) {
+  if (!isHexThemeColor(anchor) || !isHexThemeColor(theme.text)) {
     return undefined;
   }
 
   return {
-    bg: strengthenLineHighlightBg(baseBg, anchor, MIN_LINE_HIGHLIGHT_BG_DISTANCE, theme.text),
+    bg: strengthenLineHighlightBg(
+      effectiveHighlightBackground(baseBg, theme),
+      anchor,
+      MIN_LINE_HIGHLIGHT_BG_DISTANCE,
+      theme.text,
+    ),
   };
 }
 
