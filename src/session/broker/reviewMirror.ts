@@ -6,15 +6,12 @@
  * actions to it. That is the whole of what is mirrored — a position and a catalog. The
  * review itself stays with the session that owns it.
  *
- * The one rule this module implements is *ordering*, and it implements it by asking
- * `classifyReviewPublication` and doing what it says. The prototype's mirror had its own
- * comparison — accept a lower revision never, an equal revision sometimes, a new
- * generation always — which is one of the five disagreeing acceptance rules the audit
- * found (`docs/browser-review-seam-audit.md`, C1). There is exactly one call to the
- * classifier here and no other comparison of two publications anywhere in the daemon.
+ * The one rule this module implements is *ordering*, and ordering is what
+ * `classifyReviewPublication` says, applied verbatim — the mirror has no comparison of its
+ * own (`docs/browser-review-seam-audit.md`, C1).
  *
- * A session that publishes nothing — one built before the mirror existed — is mirrored as
- * nothing. That is deliberately not an error: the daemon still lists it, still brokers its
+ * A session that publishes nothing, such as one built before the mirror existed, is
+ * mirrored as nothing. That is not an error: the daemon still lists it, still brokers its
  * comment commands, and simply has no resources to offer on its behalf.
  */
 import {

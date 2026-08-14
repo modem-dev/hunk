@@ -13,17 +13,17 @@
  *   attached surface sees the result. Its effect is declared as data rather than as a
  *   function, which is what lets the same declaration drive the terminal's handler, an
  *   agent command, and later a wire action.
- * - `client-local` — deliberately per-client view state (scrolling, layout, theme, help).
+ * - `client-local` — per-client view state (scrolling, layout, theme, help).
  *   Each client implements its own handler; sharing identity is what keeps help screens
  *   and palettes agreeing about what the command is called and what it is bound to.
  * - `host-only` — it runs where the review is hosted (quitting, reloading the source,
- *   opening `$EDITOR`). Not invocable from a remote client without an explicit allowlist,
- *   which is a scope boundary rather than a missing feature (audit F4).
+ *   opening `$EDITOR`). Not invocable from a remote client without an explicit allowlist
+ *   (audit F4).
  *
- * This module is deliberately renderer-neutral and dependency-light: no OpenTUI, no React,
- * no Node builtins, chords as plain strings. It is not part of `src/core/review` because
- * it describes UI vocabulary rather than review semantics, and that module stays purely
- * about what a review *is*.
+ * This module is renderer-neutral and dependency-light: no OpenTUI, no React, no Node
+ * builtins, chords as plain strings. It is not part of `src/core/review` because it
+ * describes UI vocabulary rather than review semantics, and that module stays purely about
+ * what a review *is*.
  */
 import type { ReviewIntent } from "./review/intents";
 import type { ReviewSelectionScope } from "./review/navigation";

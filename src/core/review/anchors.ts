@@ -6,10 +6,10 @@
  * this resolver placed through its fallback is not silently dropped by a consumer that
  * re-derives placement (`docs/browser-review-seam-audit.md`, D3/B8).
  *
- * Resolution is deliberately permissive: an imported note may name a line the current
- * patch no longer shows, and losing it entirely would be worse than hanging it from the
- * nearest real hunk. Callers that must reject an unbacked target validate before
- * anchoring rather than reading a verdict out of the anchor.
+ * Resolution is permissive: an imported note may name a line the current patch no longer
+ * shows, and losing it entirely would be worse than hanging it from the nearest real hunk.
+ * Callers that must reject an unbacked target validate before anchoring rather than
+ * reading a verdict out of the anchor.
  */
 import { reviewHunkRange, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
 import type { ReviewLineRange, ReviewRangeAnchorV1, ReviewSide } from "./types";
@@ -17,6 +17,10 @@ import type { ReviewLineRange, ReviewRangeAnchorV1, ReviewSide } from "./types";
 export interface ReviewNoteAnchorInput {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;
+  /**
+   * The line the note was placed on. When it lands inside a hunk it decides ownership,
+   * ahead of any range that also intersects one.
+   */
   preferred?: { side: ReviewSide; line: number };
   /**
    * The hunk that owns the note when no range intersects one — an expanded-gap line, or

@@ -1,7 +1,7 @@
 /**
  * Materializing and serving one generation's resources.
  *
- * Three rules shape this module, each of them a defect the prototype shipped:
+ * Three rules shape this module:
  *
  * - **Single flight per resource.** A resource is produced at most once per generation,
  *   and concurrent readers share that one production. It is not a cache bolted on top: a

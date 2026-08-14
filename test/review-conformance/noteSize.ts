@@ -1,12 +1,10 @@
 /**
  * The note-size corpus: one note, one measurement, at the boundary.
  *
- * The prototype measured a note twice — `body` and `markup` checked separately when the
- * note was admitted, the whole serialized note checked when it was published — so a note
- * could pass the first check and then fail the second, taking the entire snapshot with it
- * (`docs/browser-review-seam-audit.md`, D1). These fixtures are the cases that split the
- * two rules apart, written from the semantics: each states the field sizes and whether the
- * whole note fits.
+ * A note is measured whole, once, by `src/core/review/noteSize.ts`
+ * (`docs/browser-review-seam-audit.md`, D1). These fixtures are the cases that would split
+ * a whole-note measurement apart from a per-field one, written from the semantics: each
+ * states the field sizes and whether the whole note fits.
  *
  * Sizes are stated relative to the shared bound rather than as literals, so the corpus
  * still means the same thing if the bound moves.

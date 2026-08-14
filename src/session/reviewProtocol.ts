@@ -17,9 +17,8 @@
  *   of a bound that exists elsewhere.
  * - **Nothing is re-derived.** A caller addressing a line inside an expanded gap sends
  *   the proof it holds (B10); the producer resolves it through `resolveReviewExpandedLine`
- *   and the shared anchor path. The wire never computes hunk intersections or ownership,
- *   which is exactly what the prototype's broker copy got wrong — its re-derivation
- *   omitted the fallback branch and rejected legal notes (D3).
+ *   and the shared anchor path. The wire never computes hunk intersections or ownership
+ *   (D3).
  *
  * The module is browser-safe by construction and gated as such: it imports from
  * `src/core/review/` and nothing else — no Node builtins, no broker package, no

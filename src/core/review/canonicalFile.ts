@@ -2,11 +2,7 @@
  * Does this serialized file still describe the review it came from?
  *
  * A producer serves each reviewed file as a canonical JSON resource, and a reader has to
- * be able to check that what it received matches the review it was published with. The
- * prototype checked this three times with three different field lists — seventeen fields
- * at the producer, twelve in the browser, ten in the broker — and the browser's compared
- * two of them by `JSON.stringify`, so a lazily inserted key could spuriously fail a file
- * that had not changed at all. None of the three compared hunk *content*
+ * be able to check that what it received matches the review it was published with
  * (`docs/browser-review-seam-audit.md`, D4).
  *
  * There is one check here, and it does not carry a field list of its own: it projects the

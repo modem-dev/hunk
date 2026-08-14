@@ -149,6 +149,11 @@ export interface ReviewExpandedGapState {
   expanded: boolean;
 }
 
+/**
+ * Everything a review is, semantically, at one moment: the document plus what the reviewer
+ * has done to it. Rows, scroll offsets, widths, and themes belong to the surface drawing
+ * it, not here.
+ */
 export interface ReviewState {
   document: ReviewDocumentV1;
   /** Monotonic counter advanced by every state-changing dispatch. */

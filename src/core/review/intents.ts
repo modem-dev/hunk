@@ -38,6 +38,13 @@ import {
 import type { ReviewStore } from "./store";
 import type { ReviewFileV1, ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
 
+/**
+ * The facts core refuses to invent, supplied by whoever submits an intent.
+ *
+ * Identity, time, and the annotation index all depend on the runtime a review is hosted
+ * in, so planning reads them from here instead of reaching for a clock, a UUID source, or
+ * a note set the semantic document does not carry.
+ */
 export interface ReviewIntentFacts {
   /** Caller-allocated identity for a newly persisted note. */
   noteId?: string;
@@ -62,6 +69,7 @@ export interface ReviewIntentFacts {
 }
 
 export type ReviewIntent =
+  /** Select one hunk outright, revealing it the way the caller asks. */
   | { type: "selection/select"; fileKey: string; hunkIndex: number; reveal: ReviewRevealRequest }
   /** Step the selection through one navigable scope; the scope decides wrap and reveal. */
   | { type: "selection/move"; scope: ReviewSelectionScope; delta: number }
@@ -69,7 +77,9 @@ export type ReviewIntent =
   | { type: "selection/select-file"; fileKey: string; reveal?: ReviewRevealRequest }
   /** Adopt the position a renderer's viewport settled on, without moving any viewport. */
   | { type: "selection/anchor"; fileKey: string; hunkIndex: number }
+  /** Replace the review's file filter, which decides the visible stream. */
   | { type: "filter/set"; filter: string }
+  /** Set whether agent notes are shown; reviewer-authored notes stay visible either way. */
   | { type: "notes/set-visibility"; visible: boolean }
   /** Open a draft at one hunk, defaulting to the line a whole-hunk note hangs from. */
   | {
@@ -81,7 +91,9 @@ export type ReviewIntent =
     }
   /** Persist the active draft; a blank body retires the draft instead. */
   | { type: "notes/create-user"; consumeDraft: true }
+  /** Delete one reviewer-authored note by id. */
   | { type: "notes/remove-user"; noteId: string }
+  /** Dismiss one live agent note by id, leaving reviewer notes untouched. */
   | { type: "notes/remove-live"; noteId: string }
   | { type: "notes/clear"; fileKey?: string; includeUser?: boolean }
   /** Flip one addressable collapsed gap between collapsed and expanded. */
@@ -90,12 +102,11 @@ export type ReviewIntent =
 /**
  * Every intent type, as a value rather than only as a type.
  *
- * The wire vocabulary is derived from this list instead of restated beside it: the
- * prototype hand-copied the action union into three more places, so an intent added to
- * one was silently unreachable from the others (`docs/browser-review-seam-audit.md`,
- * B12). The assertion below makes the list total — adding a member to `ReviewIntent`
- * without naming it here fails to typecheck — and `src/session/reviewProtocol.ts`
- * subtracts a named exclusion list from it rather than writing its own.
+ * The wire vocabulary is derived from this list instead of restated beside it
+ * (`docs/browser-review-seam-audit.md`, B12). The assertion below makes the list total —
+ * adding a member to `ReviewIntent` without naming it here fails to typecheck — and
+ * `src/session/reviewProtocol.ts` subtracts a named exclusion list from it rather than
+ * writing its own.
  */
 export const REVIEW_INTENT_TYPES = [
   "selection/select",
