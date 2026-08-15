@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findAgentFileContext, loadAgentContext } from "./agent";
+import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 
 const tempDirs: string[] = [];
 
@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("agent context", () => {
   test("returns null when no sidecar path is provided", async () => {
-    await expect(loadAgentContext()).resolves.toBeNull();
+    await expect(loadSidecarContext()).resolves.toBeNull();
   });
 
   test("loads and matches annotations by current or previous path", async () => {
@@ -47,14 +47,14 @@ describe("agent context", () => {
       }),
     );
 
-    const context = await loadAgentContext(contextPath);
+    const context = await loadSidecarContext(contextPath);
 
     expect(context?.summary).toBe("Agent summary");
-    expect(findAgentFileContext(context, "src/example.ts")?.annotations).toHaveLength(1);
-    expect(findAgentFileContext(context, "src/example.ts")?.annotations[0]?.tags).toEqual([
+    expect(findSidecarFileContext(context, "src/example.ts")?.annotations).toHaveLength(1);
+    expect(findSidecarFileContext(context, "src/example.ts")?.annotations[0]?.tags).toEqual([
       "review",
     ]);
-    expect(findAgentFileContext(context, "src/renamed.ts", "src/example.ts")?.summary).toBe(
+    expect(findSidecarFileContext(context, "src/renamed.ts", "src/example.ts")?.summary).toBe(
       "Explains the file change",
     );
   });
@@ -72,7 +72,7 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(invalidFilePath)).rejects.toThrow(
+    await expect(loadSidecarContext(invalidFilePath)).rejects.toThrow(
       "Agent context file entries require a non-empty path.",
     );
 
@@ -90,7 +90,7 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(invalidRangePath)).rejects.toThrow(
+    await expect(loadSidecarContext(invalidRangePath)).rejects.toThrow(
       "Annotation ranges must be integer tuples.",
     );
 
@@ -108,7 +108,7 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(negativeRangePath)).rejects.toThrow(
+    await expect(loadSidecarContext(negativeRangePath)).rejects.toThrow(
       "Annotation ranges must use positive 1-based line numbers.",
     );
 
@@ -126,7 +126,7 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(reversedRangePath)).rejects.toThrow(
+    await expect(loadSidecarContext(reversedRangePath)).rejects.toThrow(
       "Annotation ranges must be ordered start..end tuples.",
     );
   });

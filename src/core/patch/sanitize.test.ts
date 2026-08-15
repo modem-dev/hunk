@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { escapeUntrackedPatchPath, normalizePatchText, stripTerminalControl } from "./normalize";
+import { escapeUntrackedPatchPath, sanitizePatchText, stripTerminalControl } from "./sanitize";
 
 describe("escapeUntrackedPatchPath", () => {
   test("escapes backslashes before whitespace so escape markers are not doubled", () => {
@@ -43,16 +43,16 @@ describe("stripTerminalControl", () => {
   });
 });
 
-describe("normalizePatchText", () => {
+describe("sanitizePatchText", () => {
   test("converts CRLF to LF and canonicalizes git prefixes in one pass", () => {
-    expect(normalizePatchText("diff --git foo foo\r\n--- foo\r\n+++ foo\r\n")).toBe(
+    expect(sanitizePatchText("diff --git foo foo\r\n--- foo\r\n+++ foo\r\n")).toBe(
       "diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n",
     );
   });
 
   test("strips color codes from pager-style colored patch input before parsing", () => {
     const colored = "\x1b[1mdiff --git foo foo\x1b[0m\n--- foo\n+++ foo\n";
-    expect(normalizePatchText(colored)).toBe("diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n");
+    expect(sanitizePatchText(colored)).toBe("diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n");
   });
 
   test("strips git-log commit metadata ahead of the diff body", () => {
@@ -68,6 +68,6 @@ describe("normalizePatchText", () => {
       "+++ b/f",
       "",
     ].join("\n");
-    expect(normalizePatchText(log)).toBe("diff --git a/f b/f\n--- a/f\n+++ b/f\n");
+    expect(sanitizePatchText(log)).toBe("diff --git a/f b/f\n--- a/f\n+++ b/f\n");
   });
 });

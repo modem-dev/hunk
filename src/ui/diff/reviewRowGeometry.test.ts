@@ -6,7 +6,7 @@ import {
   measurePlannedSectionGeometry,
   plannedReviewRowHeight,
   plannedReviewRowVisible,
-} from "./plannedReviewRows";
+} from "./reviewRowGeometry";
 
 const baseOptions = {
   showHunkHeaders: true,

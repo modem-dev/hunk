@@ -38,7 +38,8 @@ export interface UserNoteLineTarget {
   line: number;
 }
 
-export interface AgentContext {
+/** One loaded review sidecar: the changeset summary plus every annotated file it names. */
+export interface SidecarContext {
   version: number;
   summary?: string;
   files: AgentFileContext[];

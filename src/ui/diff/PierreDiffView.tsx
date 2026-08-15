@@ -12,7 +12,7 @@ import { type FileSourceStatus } from "./expandCollapsedRows";
 import { buildLineHighlightPaintIndex } from "./lineHighlightPaint";
 import type { ValidatedLineHighlight } from "../highlights/validate";
 import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
-import { plannedReviewRowVisible } from "./plannedReviewRows";
+import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import {

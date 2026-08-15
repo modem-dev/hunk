@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readHunkStateRecord, updateHunkStateRecord, writeHunkStateRecord } from "./hunkState";
+import { readAppStateRecord, updateAppStateRecord, writeAppStateRecord } from "./appStateFile";
 
 const tempDirs: string[] = [];
 
@@ -35,68 +35,68 @@ describe("hunk state file", () => {
     const { dir } = createTempStatePath();
     const nested = join(dir, "nested", "state.json");
 
-    writeHunkStateRecord(nested, { extensionTrust: { "/repo": "trusted" } });
+    writeAppStateRecord(nested, { extensionTrust: { "/repo": "trusted" } });
 
-    expect(readHunkStateRecord(nested)).toEqual({ extensionTrust: { "/repo": "trusted" } });
+    expect(readAppStateRecord(nested)).toEqual({ extensionTrust: { "/repo": "trusted" } });
   });
 
   test("reads a missing or empty file as an empty record", () => {
     const { path } = createTempStatePath();
 
-    expect(readHunkStateRecord(path)).toEqual({});
+    expect(readAppStateRecord(path)).toEqual({});
 
     writeFileSync(path, "   \n");
-    expect(readHunkStateRecord(path)).toEqual({});
+    expect(readAppStateRecord(path)).toEqual({});
   });
 
   test("merges a patch without disturbing unrelated keys", () => {
     const { path } = createTempStatePath();
-    writeHunkStateRecord(path, {
+    writeAppStateRecord(path, {
       updateNotice: { lastCheck: 1 },
       extensionTrust: { "/a": "denied" },
     });
 
-    const next = updateHunkStateRecord(path, { extensionTrust: { "/b": "trusted" } });
+    const next = updateAppStateRecord(path, { extensionTrust: { "/b": "trusted" } });
 
     expect(next).toEqual({ updateNotice: { lastCheck: 1 }, extensionTrust: { "/b": "trusted" } });
-    expect(readHunkStateRecord(path)).toEqual(next);
+    expect(readAppStateRecord(path)).toEqual(next);
   });
 
   test("preserves a corrupt file instead of overwriting it silently", () => {
     const { path } = createTempStatePath();
     writeFileSync(path, '{"extensionTrust": {"/repo": "trus');
 
-    updateHunkStateRecord(path, { extensionTrust: { "/repo": "denied" } });
+    updateAppStateRecord(path, { extensionTrust: { "/repo": "denied" } });
 
     // The damaged bytes stay recoverable next to the state file...
     expect(readFileSync(`${path}.corrupt`, "utf8")).toBe('{"extensionTrust": {"/repo": "trus');
     // ...and the session can still record new decisions.
-    expect(readHunkStateRecord(path)).toEqual({ extensionTrust: { "/repo": "denied" } });
+    expect(readAppStateRecord(path)).toEqual({ extensionTrust: { "/repo": "denied" } });
   });
 
   test("treats a non-object JSON document as corrupt", () => {
     const { path } = createTempStatePath();
     writeFileSync(path, "[1, 2, 3]");
 
-    expect(readHunkStateRecord(path)).toEqual({});
+    expect(readAppStateRecord(path)).toEqual({});
 
-    updateHunkStateRecord(path, { updateNotice: { lastCheck: 2 } });
+    updateAppStateRecord(path, { updateNotice: { lastCheck: 2 } });
 
     expect(existsSync(`${path}.corrupt`)).toBe(true);
-    expect(readHunkStateRecord(path)).toEqual({ updateNotice: { lastCheck: 2 } });
+    expect(readAppStateRecord(path)).toEqual({ updateNotice: { lastCheck: 2 } });
   });
 
   test("stages writes in a sibling temp file and leaves none behind", () => {
     const { dir, path } = createTempStatePath();
 
-    writeHunkStateRecord(path, { updateNotice: { lastCheck: 1 } });
-    writeHunkStateRecord(path, { updateNotice: { lastCheck: 2 } });
+    writeAppStateRecord(path, { updateNotice: { lastCheck: 1 } });
+    writeAppStateRecord(path, { updateNotice: { lastCheck: 2 } });
 
     // A leftover temp file means the rename step did not run, which is also the
     // shape a torn write would leave behind.
     expect(readdirSync(dir).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
     expect(readdirSync(dir)).toEqual(["state.json"]);
-    expect(readHunkStateRecord(path)).toEqual({ updateNotice: { lastCheck: 2 } });
+    expect(readAppStateRecord(path)).toEqual({ updateNotice: { lastCheck: 2 } });
   });
 
   test("keeps the state file owner-only on POSIX", () => {
@@ -106,7 +106,7 @@ describe("hunk state file", () => {
     }
 
     const { path } = createTempStatePath();
-    writeHunkStateRecord(path, { extensionTrust: {} });
+    writeAppStateRecord(path, { extensionTrust: {} });
 
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });

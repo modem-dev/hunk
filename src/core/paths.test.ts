@@ -8,7 +8,7 @@ import {
   resolveBundledSkillPath,
   resolveCanonicalPath,
   resolveGlobalConfigPath,
-  resolveHunkStatePath,
+  resolveAppStatePath,
 } from "./paths";
 
 function createTempRoot(prefix: string) {
@@ -20,7 +20,7 @@ describe("paths", () => {
     const env = { XDG_CONFIG_HOME: join("/tmp", "xdg-home") } as NodeJS.ProcessEnv;
 
     expect(resolveGlobalConfigPath(env)).toBe(join("/tmp", "xdg-home", "hunk", "config.toml"));
-    expect(resolveHunkStatePath(env)).toBe(join("/tmp", "xdg-home", "hunk", "state.json"));
+    expect(resolveAppStatePath(env)).toBe(join("/tmp", "xdg-home", "hunk", "state.json"));
   });
 
   test("falls back to HOME for config and state paths", () => {
@@ -29,7 +29,7 @@ describe("paths", () => {
     expect(resolveGlobalConfigPath(env)).toBe(
       join("/tmp", "home", ".config", "hunk", "config.toml"),
     );
-    expect(resolveHunkStatePath(env)).toBe(join("/tmp", "home", ".config", "hunk", "state.json"));
+    expect(resolveAppStatePath(env)).toBe(join("/tmp", "home", ".config", "hunk", "state.json"));
   });
 
   test("falls back to USERPROFILE when HOME is unavailable", () => {
@@ -38,7 +38,7 @@ describe("paths", () => {
     expect(resolveGlobalConfigPath(env)).toBe(
       join("/tmp", "windows-profile", ".config", "hunk", "config.toml"),
     );
-    expect(resolveHunkStatePath(env)).toBe(
+    expect(resolveAppStatePath(env)).toBe(
       join("/tmp", "windows-profile", ".config", "hunk", "state.json"),
     );
   });

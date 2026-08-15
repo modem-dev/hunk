@@ -6,12 +6,12 @@ import {
 } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
 import { resolve as resolvePath } from "node:path";
-import { findAgentFileContext, loadAgentContext } from "./agent";
+import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { normalizePatch, stripTerminalControl } from "./patch/normalize";
+import { sanitizePatch, stripTerminalControl } from "./patch/sanitize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import {
   getConfiguredVcsAdapter,
@@ -24,7 +24,7 @@ import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
 import { computeWatchSignature } from "./watch/signature";
 import type {
   AppBootstrap,
-  AgentContext,
+  SidecarContext,
   Changeset,
   CliInput,
   NamedCustomThemeConfig,
@@ -179,14 +179,14 @@ function hasLineMoveKinds(moveKinds: DiffLineMoveKinds | undefined) {
 }
 
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
-export function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
-  if (!agentContext || agentContext.files.length === 0) {
+export function orderDiffFiles(files: DiffFile[], sidecar: SidecarContext | null) {
+  if (!sidecar || sidecar.files.length === 0) {
     return files;
   }
 
   const ranks = new Map<string, number>();
 
-  agentContext.files.forEach((file, index) => {
+  sidecar.files.forEach((file, index) => {
     if (!ranks.has(file.path)) {
       ranks.set(file.path, index);
     }
@@ -216,33 +216,33 @@ export function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | n
 }
 
 /** Parse raw patch text into the shared changeset model used by the app. */
-function normalizePatchChangeset(
+function changesetFromPatch(
   patchText: string,
   title: string,
   sourceLabel: string,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
   perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
   const lineMoveKinds = collectLineMoveKinds(patchText);
-  const normalizedPatch = normalizePatch(patchText);
-  const normalizedPatchText = normalizedPatch.text;
+  const sanitizedPatch = sanitizePatch(patchText);
+  const sanitizedPatchText = sanitizedPatch.text;
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
-    parsedPatches = parsePatchFiles(normalizedPatchText, "patch", true);
+    parsedPatches = parsePatchFiles(sanitizedPatchText, "patch", true);
   } catch {
     return {
       id: `changeset:${Date.now()}`,
       sourceLabel,
       title,
-      summary: normalizedPatchText.trim() || undefined,
-      agentSummary: agentContext?.summary,
+      summary: sanitizedPatchText.trim() || undefined,
+      agentSummary: sidecar?.summary,
       files: [],
     };
   }
 
   const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
-  const chunks = splitPatchIntoFileChunks(normalizedPatchText);
+  const chunks = splitPatchIntoFileChunks(sanitizedPatchText);
 
   return {
     id: `changeset:${Date.now()}`,
@@ -253,9 +253,9 @@ function normalizePatchChangeset(
         .map((entry) => entry.patchMetadata)
         .filter(Boolean)
         .join("\n\n") || undefined,
-    agentSummary: agentContext?.summary,
+    agentSummary: sidecar?.summary,
     files: metadataFiles.map((metadata, index) => {
-      const decodedPaths = normalizedPatch.filePaths[index];
+      const decodedPaths = sanitizedPatch.filePaths[index];
       const normalizedMetadata = decodedPaths
         ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
         : metadata;
@@ -265,7 +265,7 @@ function normalizePatchChangeset(
         findPatchChunk(metadata, chunks, index),
         index,
         sourceLabel,
-        agentContext,
+        sidecar,
         {
           ...perFileOptions,
           pathsAreExact: Boolean(decodedPaths),
@@ -299,20 +299,20 @@ function buildBinaryFileDiffChangeset(
   title: string,
   leftPath: string,
   rightPath: string,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
 ) {
   return {
     id: `pair:${displayPath}`,
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title,
-    agentSummary: agentContext?.summary,
+    agentSummary: sidecar?.summary,
     files: [
       buildDiffFile(
         createSkippedBinaryMetadata(displayPath, resolveBinaryComparisonType(leftPath, rightPath)),
         `Binary file skipped: ${basename(input.left)} ↔ ${basename(input.right)}\n`,
         0,
         displayPath,
-        agentContext,
+        sidecar,
         {
           previousPath: basename(input.left),
           isBinary: true,
@@ -325,7 +325,7 @@ function buildBinaryFileDiffChangeset(
 /** Build a changeset by diffing two concrete files on disk. */
 async function loadFileDiffChangeset(
   input: FileCommandInput | DiffToolCommandInput,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
   cwd = process.cwd(),
 ) {
   const leftPath = resolvePath(cwd, input.left);
@@ -340,14 +340,7 @@ async function loadFileDiffChangeset(
         : `${basename(input.left)} ↔ ${basename(input.right)}`;
 
   if (isProbablyBinaryFile(leftPath) || isProbablyBinaryFile(rightPath)) {
-    return buildBinaryFileDiffChangeset(
-      input,
-      displayPath,
-      title,
-      leftPath,
-      rightPath,
-      agentContext,
-    );
+    return buildBinaryFileDiffChangeset(input, displayPath, title, leftPath, rightPath, sidecar);
   }
 
   const leftText = await Bun.file(leftPath).text();
@@ -372,9 +365,9 @@ async function loadFileDiffChangeset(
     id: `pair:${displayPath}`,
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title,
-    agentSummary: agentContext?.summary,
+    agentSummary: sidecar?.summary,
     files: [
-      buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
+      buildDiffFile(metadata, patch, 0, displayPath, sidecar, {
         previousPath: basename(input.left),
         sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
           old: { kind: "fs", absolutePath: leftPath },
@@ -388,18 +381,18 @@ async function loadFileDiffChangeset(
 /** Build a changeset from an adapter-backed VCS review operation. */
 async function loadVcsChangeset(
   input: VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
   cwd: string,
   vcsCatalog: VcsCatalog,
 ) {
   const adapter = getConfiguredVcsAdapter(input.options.vcs, vcsCatalog);
   const operation = operationFromInput(input);
   const result = await loadVcsReview(adapter, operation, { cwd }, vcsCatalog);
-  const parsedChangeset = normalizePatchChangeset(
+  const parsedChangeset = changesetFromPatch(
     result.patchText,
     result.title,
     result.sourceLabel,
-    agentContext,
+    sidecar,
     result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
   );
   // Two published ways to review a file the patch does not contain, and both
@@ -419,7 +412,7 @@ async function loadVcsChangeset(
   const adapterFiles = [...(result.extraFiles ?? []), ...untrackedFiles].map((file, index) => ({
     ...file,
     id: `${file.id}:extra:${index}`,
-    agent: findAgentFileContext(agentContext, file.path, file.previousPath),
+    agent: findSidecarFileContext(sidecar, file.path, file.previousPath),
   }));
   return {
     changeset: {
@@ -433,7 +426,7 @@ async function loadVcsChangeset(
 /** Build a changeset from patch text supplied by file or stdin. */
 async function loadPatchChangeset(
   input: PatchCommandInput,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
   cwd = process.cwd(),
 ) {
   const patchText =
@@ -443,12 +436,7 @@ async function loadPatchChangeset(
       : await Bun.file(resolvePath(cwd, input.file)).text());
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
-  return normalizePatchChangeset(
-    patchText,
-    `Patch review: ${basename(label)}`,
-    label,
-    agentContext,
-  );
+  return changesetFromPatch(patchText, `Patch review: ${basename(label)}`, label, sidecar);
 }
 
 /** Resolve CLI input into the fully loaded app bootstrap state. */
@@ -468,7 +456,7 @@ export async function loadAppBootstrap(
     }
   }
 
-  const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
+  const sidecar = await loadSidecarContext(input.options.agentContext, { cwd });
 
   let changeset: Changeset;
   let repoRoot: string | undefined;
@@ -481,25 +469,25 @@ export async function loadAppBootstrap(
         if (!vcsCatalog) {
           throw new Error("VCS-backed reviews require a composed VCS catalog.");
         }
-        const result = await loadVcsChangeset(input, agentContext, cwd, vcsCatalog);
+        const result = await loadVcsChangeset(input, sidecar, cwd, vcsCatalog);
         changeset = result.changeset;
         repoRoot = result.repoRoot;
       }
       break;
     case "diff":
-      changeset = await loadFileDiffChangeset(input, agentContext, cwd);
+      changeset = await loadFileDiffChangeset(input, sidecar, cwd);
       break;
     case "patch":
-      changeset = await loadPatchChangeset(input, agentContext, cwd);
+      changeset = await loadPatchChangeset(input, sidecar, cwd);
       break;
     case "difftool":
-      changeset = await loadFileDiffChangeset(input, agentContext, cwd);
+      changeset = await loadFileDiffChangeset(input, sidecar, cwd);
       break;
   }
 
   changeset = {
     ...changeset,
-    files: orderDiffFiles(changeset.files, agentContext),
+    files: orderDiffFiles(changeset.files, sidecar),
   };
 
   return {
