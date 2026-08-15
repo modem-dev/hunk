@@ -1,0 +1,632 @@
+From 0713de6adfec5c747b77a5edb322d7db997305fe Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 15 Aug 2026 18:04:54 +0000
+Subject: [PATCH] feat(diffs): support windowed syntax highlighting
+
+renderDiffWithHighlighter accepts startingLine/totalLines but discards
+them unless forcePlainText is set, so a caller that wants highlighting
+has to render the whole diff in one call. On a large added file that is
+a single uninterruptible tokenize pass, which is what a virtualizing
+caller most wants to break up.
+
+The range was discarded because a window tokenized on its own starts
+from an empty rule stack and mis-colors anything inside a construct that
+opened earlier in the file. Shiki can already continue from a saved
+state, and this package already relies on that in shiki-stream, so the
+window only needs somewhere to carry it.
+
+Add an opt-in windowedHighlight flag that honors the range while
+highlighting, and a per-side grammarState that the caller threads from
+one window into the next. State also flows bucket to bucket inside a
+call, since a window buckets per hunk.
+
+Windowed highlighting walks the split axis rather than 'both'. 'both'
+advances the unified and split row counters independently and emits a
+line landing in either window, so windows overlap wherever the counts
+diverge and each side line is rendered several times. Split keeps a
+change's two sides on one row, which the word-level diff decorations are
+computed from.
+
+Passing no window is unchanged, and windowed output is asserted equal to
+the whole-diff render across window sizes.
+---
+ packages/diffs/src/types.ts                   |  30 ++
+ .../src/utils/renderDiffWithHighlighter.ts    | 102 ++++--
+ .../renderDiffWithHighlighterWindowed.test.ts | 324 ++++++++++++++++++
+ 3 files changed, 435 insertions(+), 21 deletions(-)
+ create mode 100644 packages/diffs/test/renderDiffWithHighlighterWindowed.test.ts
+
+diff --git a/packages/diffs/src/types.ts b/packages/diffs/src/types.ts
+index 67c013c..d2a60af 100644
+--- a/packages/diffs/src/types.ts
++++ b/packages/diffs/src/types.ts
+@@ -5,6 +5,7 @@ import type {
+   BundledTheme,
+   CodeToHastOptions,
+   DecorationItem,
++  GrammarState,
+   HighlighterGeneric,
+   LanguageRegistration,
+   ShikiTransformer,
+@@ -772,6 +773,20 @@ export interface ThemedDiffResult {
+   code: RenderDiffFilesResult;
+   themeStyles: string;
+   baseThemeType: 'light' | 'dark' | undefined;
++  /** Grammar state each side finished in, produced only for windowed
++   * highlights. Pass it back as `grammarState` on the next window so that
++   * window continues tokenizing from here instead of from an empty rule
++   * stack. */
++  grammarState?: DiffGrammarState;
++}
++
++/**
++ * TextMate grammar state for one diff, tracked per side because the deletion
++ * and addition sides are tokenized as two separate documents.
++ */
++export interface DiffGrammarState {
++  deletion: GrammarState | undefined;
++  addition: GrammarState | undefined;
+ }
+ 
+ export interface HunkExpansionRegion {
+@@ -785,6 +800,21 @@ export interface ForceDiffPlainTextOptions {
+   totalLines?: number;
+   expandedHunks?: Map<number, HunkExpansionRegion> | true;
+   collapsedContextThreshold?: number;
++  /**
++   * Honor `startingLine`/`totalLines` while still syntax highlighting, instead
++   * of ignoring them and rendering the whole diff. Rendering a window in
++   * isolation would normally mis-color anything inside a construct that opened
++   * earlier in the file, so a caller that sets this must feed each window's
++   * returned `grammarState` into the next one.
++   *
++   * Only valid when consecutive windows cover the file contiguously: pass
++   * `expandedHunks: true` so no context is skipped, and do not use this on a
++   * partial diff, whose lines are not contiguous in the real file.
++   */
++  windowedHighlight?: boolean;
++  /** Grammar state returned by the previous window's render. Omit for the
++   * first window. Ignored unless `windowedHighlight` is set. */
++  grammarState?: DiffGrammarState;
+ }
+ 
+ export interface ForceFilePlainTextOptions {
+diff --git a/packages/diffs/src/utils/renderDiffWithHighlighter.ts b/packages/diffs/src/utils/renderDiffWithHighlighter.ts
+index 709c659..568412e 100644
+--- a/packages/diffs/src/utils/renderDiffWithHighlighter.ts
++++ b/packages/diffs/src/utils/renderDiffWithHighlighter.ts
+@@ -7,6 +7,7 @@ import {
+ import type {
+   CodeToHastOptions,
+   DecorationItem,
++  DiffGrammarState,
+   DiffsHighlighter,
+   DiffsThemeNames,
+   FileContents,
+@@ -45,15 +46,21 @@ export function renderDiffWithHighlighter(
+     totalLines,
+     expandedHunks,
+     collapsedContextThreshold = DEFAULT_COLLAPSED_CONTEXT_THRESHOLD,
++    windowedHighlight = false,
++    grammarState,
+   }: ForceDiffPlainTextOptions = DEFAULT_PLAIN_TEXT_OPTIONS
+ ): ThemedDiffResult {
+-  if (forcePlainText) {
++  // A highlighted window is only correct if the caller carries grammar state
++  // from one window to the next, so it stays opt-in rather than being inferred
++  // from a range being present.
++  const isHighlightedWindow = !forcePlainText && windowedHighlight;
++  if (forcePlainText || isHighlightedWindow) {
+     startingLine ??= 0;
+     totalLines ??= Infinity;
+   } else {
+-    // If we aren't forcing plain text, then we intentionally do not support
+-    // ranges for highlighting as that could break the syntax highlighting, we
+-    // we override any values that may have been passed in.  Maybe one day we
++    // Without plain text or an explicit windowed highlight we do not support
++    // ranges, as rendering a range in isolation breaks syntax highlighting, so
++    // we override any values that may have been passed in. Maybe one day we
+     // warn about this?
+     startingLine = 0;
+     totalLines = Infinity;
+@@ -85,8 +92,13 @@ export function renderDiffWithHighlighter(
+   };
+ 
+   const { maxLineDiffLength } = options;
+-  const shouldGroupAll = !forcePlainText && !diff.isPartial;
+-  const expandedHunksForIteration = forcePlainText ? expandedHunks : undefined;
++  // A window writes its lines into sparse target indexes through the segment
++  // path below, so it can never take the shortcut of replacing the whole array
++  // with a single bucket's lines.
++  const shouldGroupAll =
++    !forcePlainText && !isWindowedHighlight && !diff.isPartial;
++  const expandedHunksForIteration =
++    forcePlainText || isHighlightedWindow ? expandedHunks : undefined;
+   const buckets = new Map<number, RenderBucket>();
+   function getBucketForHunk(hunkIndex: number) {
+     const index = shouldGroupAll ? 0 : hunkIndex;
+@@ -121,7 +133,14 @@ export function renderDiffWithHighlighter(
+ 
+   iterateOverDiff({
+     diff,
+-    diffStyle: 'both',
++    // 'both' advances the unified and split row counters independently and
++    // emits a line that lands in either window, so consecutive windows overlap
++    // wherever the two counts diverge. A highlighted window has to see each
++    // side line exactly once for its grammar state to be meaningful, so it
++    // walks one axis. Split is the one to walk: it keeps a change's deletion
++    // and addition on the same row, which is what the word-level diff
++    // decorations below are computed from.
++    diffStyle: isHighlightedWindow ? 'split' : 'both',
+     startingLine,
+     totalLines,
+     expandedHunks: isWindowedHighlight ? expandedHunksForIteration : true,
+@@ -184,6 +203,10 @@ export function renderDiffWithHighlighter(
+     },
+   });
+ 
++  // A window buckets per hunk, so grammar state has to flow from bucket to
++  // bucket within this call as well as from window to window across calls.
++  let nextGrammarState = grammarState;
++
+   for (const bucket of buckets.values()) {
+     if (
+       bucket.deletionContent.length === 0 &&
+@@ -200,7 +223,11 @@ export function renderDiffWithHighlighter(
+       name: diff.name,
+       contents: bucket.additionContent.value,
+     };
+-    const { deletionLines, additionLines } = renderTwoFiles({
++    const {
++      deletionLines,
++      additionLines,
++      grammarState: bucketGrammarState,
++    } = renderTwoFiles({
+       deletionFile,
+       deletionInfo: bucket.deletionInfo,
+       deletionDecorations: bucket.deletionDecorations,
+@@ -212,7 +239,10 @@ export function renderDiffWithHighlighter(
+       highlighter,
+       options,
+       languageOverride: forcePlainText ? 'text' : diff.lang,
++      grammarState: isHighlightedWindow ? nextGrammarState : undefined,
++      trackGrammarState: isHighlightedWindow,
+     });
++    nextGrammarState = bucketGrammarState;
+ 
+     if (shouldGroupAll) {
+       code.deletionLines = deletionLines;
+@@ -242,7 +272,9 @@ export function renderDiffWithHighlighter(
+     }
+   }
+ 
+-  return { code, themeStyles, baseThemeType };
++  return isHighlightedWindow
++    ? { code, themeStyles, baseThemeType, grammarState: nextGrammarState }
++    : { code, themeStyles, baseThemeType };
+ }
+ 
+ interface ProcessLineDiffProps {
+@@ -403,6 +435,15 @@ interface RenderTwoFilesProps {
+   options: RenderDiffOptions;
+   highlighter: DiffsHighlighter;
+   languageOverride: SupportedLanguages | undefined;
++  /** Grammar state each side should continue tokenizing from. */
++  grammarState: DiffGrammarState | undefined;
++  /** Whether to read back the state each side finished in. Reading it costs a
++   * map lookup per side, so only windowed highlights pay for it. */
++  trackGrammarState: boolean;
++}
++
++interface RenderTwoFilesResult extends RenderDiffFilesResult {
++  grammarState: DiffGrammarState | undefined;
+ }
+ 
+ function renderTwoFiles({
+@@ -414,8 +455,10 @@ function renderTwoFiles({
+   deletionDecorations,
+   additionDecorations,
+   languageOverride,
++  grammarState,
++  trackGrammarState,
+   options: { theme: themeOrThemes = DEFAULT_THEMES, ...options },
+-}: RenderTwoFilesProps): RenderDiffFilesResult {
++}: RenderTwoFilesProps): RenderTwoFilesResult {
+   const deletionLang =
+     languageOverride ?? getFiletypeFromFileName(deletionFile.name);
+   const additionLang =
+@@ -451,6 +494,13 @@ function renderTwoFiles({
+         };
+   })();
+ 
++  // A side that contributed no lines here has not advanced through the file,
++  // so it keeps the state it came in with rather than resetting to undefined.
++  const nextGrammarState: DiffGrammarState = {
++    deletion: grammarState?.deletion,
++    addition: grammarState?.addition,
++  };
++
+   const deletionLines = (() => {
+     if (deletionFile.contents === '') {
+       return [];
+@@ -458,12 +508,15 @@ function renderTwoFiles({
+     hastConfig.lang = deletionLang;
+     state.lineInfo = deletionInfo;
+     hastConfig.decorations = deletionDecorations;
+-    return getLineNodes(
+-      highlighter.codeToHast(
+-        cleanLastNewline(deletionFile.contents),
+-        hastConfig
+-      )
++    hastConfig.grammarState = grammarState?.deletion;
++    const hast = highlighter.codeToHast(
++      cleanLastNewline(deletionFile.contents),
++      hastConfig
+     );
++    if (trackGrammarState) {
++      nextGrammarState.deletion = highlighter.getLastGrammarState(hast);
++    }
++    return getLineNodes(hast);
+   })();
+   const additionLines = (() => {
+     if (additionFile.contents === '') {
+@@ -472,13 +525,20 @@ function renderTwoFiles({
+     hastConfig.lang = additionLang;
+     hastConfig.decorations = additionDecorations;
+     state.lineInfo = additionInfo;
+-    return getLineNodes(
+-      highlighter.codeToHast(
+-        cleanLastNewline(additionFile.contents),
+-        hastConfig
+-      )
++    hastConfig.grammarState = grammarState?.addition;
++    const hast = highlighter.codeToHast(
++      cleanLastNewline(additionFile.contents),
++      hastConfig
+     );
++    if (trackGrammarState) {
++      nextGrammarState.addition = highlighter.getLastGrammarState(hast);
++    }
++    return getLineNodes(hast);
+   })();
+ 
+-  return { deletionLines, additionLines };
++  return {
++    deletionLines,
++    additionLines,
++    grammarState: trackGrammarState ? nextGrammarState : undefined,
++  };
+ }
+diff --git a/packages/diffs/test/renderDiffWithHighlighterWindowed.test.ts b/packages/diffs/test/renderDiffWithHighlighterWindowed.test.ts
+new file mode 100644
+index 0000000..da7f3c6
+--- /dev/null
++++ b/packages/diffs/test/renderDiffWithHighlighterWindowed.test.ts
+@@ -0,0 +1,324 @@
++import { afterEach, describe, expect, test } from 'bun:test';
++
++import {
++  disposeHighlighter,
++  getSharedHighlighter,
++} from '../src/highlighter/shared_highlighter';
++import type {
++  DiffGrammarState,
++  DiffsHighlighter,
++  FileDiffMetadata,
++  RenderDiffFilesResult,
++  RenderDiffOptions,
++} from '../src/types';
++import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
++import { parsePatchFiles } from '../src/utils/parsePatchFiles';
++import { renderDiffWithHighlighter } from '../src/utils/renderDiffWithHighlighter';
++import { assertDefined } from './testUtils';
++
++const RENDER_OPTIONS: RenderDiffOptions = {
++  theme: 'pierre-dark',
++  useTokenTransformer: false,
++  tokenizeMaxLineLength: 1000,
++  lineDiffType: 'word-alt',
++  maxLineDiffLength: 10000,
++};
++
++afterEach(async () => {
++  await disposeHighlighter();
++});
++
++function createHighlighter(): Promise<DiffsHighlighter> {
++  return getSharedHighlighter({
++    themes: ['pierre-dark'],
++    langs: ['typescript'],
++    preferredHighlighter: 'shiki-js',
++  });
++}
++
++/**
++ * Builds TypeScript whose lexical state deliberately outlives a single window:
++ * every block opens a multi-line comment and a multi-line template literal, so
++ * a window that started from an empty rule stack would colour the lines after a
++ * boundary as ordinary code instead of as comment or string content.
++ */
++function sourceWithSpanningConstructs(
++  blocks: number,
++  seed: number,
++  // Adds a line to every other block so change blocks end up with unequal
++  // deletion and addition counts, which is what drives unified and split row
++  // counts apart.
++  padEveryOtherBlock = false
++): string {
++  const lines: string[] = [];
++  for (let index = seed; index < seed + blocks; index++) {
++    lines.push(`/* comment ${index} opens here`);
++    lines.push(`   and closes several lines later */`);
++    lines.push(`export const value${index} = \`template ${index}`);
++    lines.push(`  second line of the template\`;`);
++    lines.push(`export function fn${index}(input: number): number {`);
++    if (padEveryOtherBlock && index % 2 === 0) {
++      lines.push(`  const doubled = input * 2;`);
++      lines.push(`  return doubled + ${index};`);
++    } else {
++      lines.push(`  return input + ${index};`);
++    }
++    lines.push(`}`);
++    lines.push('');
++  }
++  return `${lines.join('\n')}\n`;
++}
++
++/**
++ * Renders a diff as a sequence of windows, feeding each window's grammar state
++ * into the next, and merges the sparse per-window output into one result the
++ * way a virtualizing caller would.
++ */
++function renderInWindows({
++  diff,
++  highlighter,
++  windowSize,
++  chainGrammarState = true,
++}: {
++  diff: FileDiffMetadata;
++  highlighter: DiffsHighlighter;
++  windowSize: number;
++  chainGrammarState?: boolean;
++}): RenderDiffFilesResult {
++  const code: RenderDiffFilesResult = { deletionLines: [], additionLines: [] };
++  const rows = Math.max(diff.unifiedLineCount, diff.splitLineCount);
++  let grammarState: DiffGrammarState | undefined;
++
++  for (let startingLine = 0; startingLine < rows; startingLine += windowSize) {
++    const result = renderDiffWithHighlighter(
++      diff,
++      highlighter,
++      RENDER_OPTIONS,
++      {
++        forcePlainText: false,
++        windowedHighlight: true,
++        startingLine,
++        totalLines: windowSize,
++        expandedHunks: true,
++        grammarState: chainGrammarState ? grammarState : undefined,
++      }
++    );
++    grammarState = result.grammarState;
++
++    result.code.deletionLines.forEach((line, index) => {
++      if (line != null) code.deletionLines[index] = line;
++    });
++    result.code.additionLines.forEach((line, index) => {
++      if (line != null) code.additionLines[index] = line;
++    });
++  }
++
++  return code;
++}
++
++/** Counts how many windows each side line is emitted into. */
++function countEmissionsPerLine({
++  diff,
++  highlighter,
++  windowSize,
++}: {
++  diff: FileDiffMetadata;
++  highlighter: DiffsHighlighter;
++  windowSize: number;
++}) {
++  const deletionCounts = new Array<number>(diff.deletionLines.length).fill(0);
++  const additionCounts = new Array<number>(diff.additionLines.length).fill(0);
++  const rows = Math.max(diff.unifiedLineCount, diff.splitLineCount);
++
++  for (let startingLine = 0; startingLine < rows; startingLine += windowSize) {
++    const result = renderDiffWithHighlighter(
++      diff,
++      highlighter,
++      RENDER_OPTIONS,
++      {
++        forcePlainText: false,
++        windowedHighlight: true,
++        startingLine,
++        totalLines: windowSize,
++        expandedHunks: true,
++      }
++    );
++    result.code.deletionLines.forEach((line, index) => {
++      if (line != null) deletionCounts[index]++;
++    });
++    result.code.additionLines.forEach((line, index) => {
++      if (line != null) additionCounts[index]++;
++    });
++  }
++
++  return { deletionCounts, additionCounts };
++}
++
++describe('renderDiffWithHighlighter windowed highlighting', () => {
++  const newFile = parseDiffFromFile(
++    { name: 'sample.ts', contents: '' },
++    { name: 'sample.ts', contents: sourceWithSpanningConstructs(60, 0) }
++  );
++  const rewrite = parseDiffFromFile(
++    { name: 'sample.ts', contents: sourceWithSpanningConstructs(60, 0) },
++    { name: 'sample.ts', contents: sourceWithSpanningConstructs(60, 20, true) }
++  );
++
++  test('ignores a range unless windowedHighlight is set', async () => {
++    const highlighter = await createHighlighter();
++
++    const result = renderDiffWithHighlighter(
++      newFile,
++      highlighter,
++      RENDER_OPTIONS,
++      { forcePlainText: false, startingLine: 0, totalLines: 10 }
++    );
++
++    // Existing callers that pass a range with highlighting on still get the
++    // whole diff back, and no grammar state to mistake for a usable one.
++    expect(result.code.additionLines.length).toBe(newFile.additionLines.length);
++    expect(result.grammarState).toBeUndefined();
++  });
++
++  test('renders only the requested window when windowedHighlight is set', async () => {
++    const highlighter = await createHighlighter();
++
++    const result = renderDiffWithHighlighter(
++      newFile,
++      highlighter,
++      RENDER_OPTIONS,
++      {
++        forcePlainText: false,
++        windowedHighlight: true,
++        startingLine: 0,
++        totalLines: 10,
++        expandedHunks: true,
++      }
++    );
++
++    const rendered = result.code.additionLines.filter((line) => line != null);
++    expect(rendered.length).toBe(10);
++    expect(result.grammarState).toBeDefined();
++  });
++
++  test('windows write each side line exactly once', async () => {
++    const highlighter = await createHighlighter();
++
++    // Unified and split row counts diverge on this diff, which is what makes
++    // the single-axis walk load-bearing: a two-axis walk admits a line that
++    // falls in either window and emits boundary lines into both neighbours.
++    expect(rewrite.unifiedLineCount).not.toBe(rewrite.splitLineCount);
++
++    const { deletionCounts, additionCounts } = countEmissionsPerLine({
++      diff: rewrite,
++      highlighter,
++      windowSize: 25,
++    });
++
++    expect(deletionCounts.every((count) => count === 1)).toBe(true);
++    expect(additionCounts.every((count) => count === 1)).toBe(true);
++  });
++
++  test.each([13, 25, 100])(
++    'windows of %i rows match the whole-diff render for a new file',
++    async (windowSize) => {
++      const highlighter = await createHighlighter();
++
++      const whole = renderDiffWithHighlighter(
++        newFile,
++        highlighter,
++        RENDER_OPTIONS
++      );
++      const code = renderInWindows({
++        diff: newFile,
++        highlighter,
++        windowSize,
++      });
++
++      expect(code.additionLines).toEqual(whole.code.additionLines);
++      expect(code.deletionLines).toEqual(whole.code.deletionLines);
++    }
++  );
++
++  test.each([13, 25, 100])(
++    'windows of %i rows match the whole-diff render for a rewrite',
++    async (windowSize) => {
++      const highlighter = await createHighlighter();
++
++      const whole = renderDiffWithHighlighter(
++        rewrite,
++        highlighter,
++        RENDER_OPTIONS
++      );
++      const code = renderInWindows({
++        diff: rewrite,
++        highlighter,
++        windowSize,
++      });
++
++      expect(code.additionLines).toEqual(whole.code.additionLines);
++      expect(code.deletionLines).toEqual(whole.code.deletionLines);
++    }
++  );
++
++  test('dropping the grammar state mis-colours lines after the first window', async () => {
++    const highlighter = await createHighlighter();
++
++    const whole = renderDiffWithHighlighter(
++      newFile,
++      highlighter,
++      RENDER_OPTIONS
++    );
++    const code = renderInWindows({
++      diff: newFile,
++      highlighter,
++      windowSize: 25,
++      chainGrammarState: false,
++    });
++
++    // This is the reason the option carries state rather than just a range:
++    // without it each window restarts from an empty rule stack and lines
++    // inside a construct that opened earlier come out as ordinary code.
++    expect(code.additionLines).not.toEqual(whole.code.additionLines);
++  });
++
++  test('a partial diff still renders its window correctly', async () => {
++    const highlighter = await createHighlighter();
++    const patch = `diff --git a/sample.ts b/sample.ts
++--- a/sample.ts
+++++ b/sample.ts
++@@ -10,4 +10,4 @@ context
++ const a = 1;
++ const b = 2;
++-const c = 3;
+++const c = 33;
++ const d = 4;
++@@ -40,4 +40,4 @@ context
++ const e = 5;
++ const f = 6;
++-const g = 7;
+++const g = 77;
++ const h = 8;
++`;
++    const parsed = parsePatchFiles(patch, 'test', true)[0]?.files[0];
++    assertDefined(parsed, 'expected the patch to parse into one file');
++    expect(parsed.isPartial).toBe(true);
++
++    const whole = renderDiffWithHighlighter(
++      parsed,
++      highlighter,
++      RENDER_OPTIONS
++    );
++    // A partial diff's lines are not contiguous in the real file, so its
++    // windows must start cold; Pierre already buckets these per hunk.
++    const code = renderInWindows({
++      diff: parsed,
++      highlighter,
++      windowSize: 4,
++      chainGrammarState: false,
++    });
++
++    expect(code.additionLines).toEqual(whole.code.additionLines);
++    expect(code.deletionLines).toEqual(whole.code.deletionLines);
++  });
++});
+-- 
+2.43.0
+
