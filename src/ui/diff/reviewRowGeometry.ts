@@ -1,3 +1,10 @@
+/**
+ * Measures planned review rows into the terminal geometry scrolling and windowing read.
+ *
+ * `reviewRenderPlan.ts` decides which rows exist; this module decides how tall they are and
+ * where each hunk's visible extent falls. Heights resolve before mount, which is why note
+ * markup has to lay out deterministically from `(markup, width)` alone.
+ */
 import type { LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";

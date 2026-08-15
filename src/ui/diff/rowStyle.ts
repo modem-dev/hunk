@@ -1,7 +1,7 @@
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { blendHex, contrastRatio, hexColorDistance } from "../lib/color";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
-import type { SplitLineCell, StackLineCell } from "./pierre";
+import type { SplitLineCell, StackLineCell } from "./diffRows";
 
 const INACTIVE_RAIL_BLEND = 0.35;
 const SELECTION_BG_BLEND = 0.75;
@@ -185,7 +185,7 @@ export function stackCellPalette(
   };
 }
 
-// Word-diff emphasis guarantees 28 (`MIN_WORD_DIFF_BG_DISTANCE` in pierre.ts),
+// Word-diff emphasis guarantees 28 (`MIN_WORD_DIFF_BG_DISTANCE` in diffRows.ts),
 // but that floor is tuned for subtle tinting inside already-tinted lines.
 // Extension marks are things the user is looking *for* — search hits,
 // diagnostics — so they target a substantially higher floor: distances are

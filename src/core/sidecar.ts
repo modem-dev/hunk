@@ -1,7 +1,15 @@
+/**
+ * Loads and validates the optional review sidecar JSON (`--agent-context`).
+ *
+ * "Sidecar" names the file and its loader; "agent" names what the file carries. The notes
+ * inside it stay `AgentAnnotation` / `AgentFileContext` because that is both the published
+ * extension contract and the term the UI shows. Keeping the two apart leaves `agent` free to
+ * mean the coding-agent command surface in `src/session/agent/`.
+ */
 import { resolve as resolvePath } from "node:path";
-import type { AgentContext, AgentFileContext } from "./types";
+import type { SidecarContext, AgentFileContext } from "./types";
 
-interface AgentContextLoadOptions {
+interface SidecarLoadOptions {
   cwd?: string;
 }
 
@@ -84,10 +92,10 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
 }
 
 /** Load the optional agent-context sidecar from a file path or stdin. */
-export async function loadAgentContext(
+export async function loadSidecarContext(
   pathOrDash?: string,
-  { cwd = process.cwd() }: AgentContextLoadOptions = {},
-): Promise<AgentContext | null> {
+  { cwd = process.cwd() }: SidecarLoadOptions = {},
+): Promise<SidecarContext | null> {
   if (!pathOrDash) {
     return null;
   }
@@ -113,17 +121,17 @@ export async function loadAgentContext(
 }
 
 /** Match agent context to a diff file by current path first, then previous path for renames. */
-export function findAgentFileContext(
-  agentContext: AgentContext | null,
+export function findSidecarFileContext(
+  sidecar: SidecarContext | null,
   currentPath: string,
   previousPath?: string,
 ): AgentFileContext | null {
-  if (!agentContext) {
+  if (!sidecar) {
     return null;
   }
 
   return (
-    agentContext.files.find(
+    sidecar.files.find(
       (file) => file.path === currentPath || (previousPath ? file.path === previousPath : false),
     ) ?? null
   );

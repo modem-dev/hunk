@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { readHunkStateRecord, writeHunkStateRecord } from "../../core/hunkState";
+import { readAppStateRecord, writeAppStateRecord } from "../../core/appStateFile";
 
 /**
  * What `hunk extension install` remembers about one managed install.
@@ -62,7 +62,7 @@ function normalizeRecord(value: unknown): ExtensionInstallRecord | undefined {
 
 /** Read every install record, treating a missing or damaged file as empty. */
 export function readInstallRecords(installedRoot: string): ExtensionInstallRecordMap {
-  const stored = readHunkStateRecord(resolveInstallRecordsPath(installedRoot)).installs;
+  const stored = readAppStateRecord(resolveInstallRecordsPath(installedRoot)).installs;
   if (typeof stored !== "object" || stored === null || Array.isArray(stored)) {
     return {};
   }
@@ -80,5 +80,5 @@ export function readInstallRecords(installedRoot: string): ExtensionInstallRecor
 
 /** Persist the full install record map. */
 export function writeInstallRecords(installedRoot: string, records: ExtensionInstallRecordMap) {
-  writeHunkStateRecord(resolveInstallRecordsPath(installedRoot), { installs: records });
+  writeAppStateRecord(resolveInstallRecordsPath(installedRoot), { installs: records });
 }

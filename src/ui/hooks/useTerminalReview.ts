@@ -8,7 +8,7 @@
  * the measured current-line cursor, and the source loading a gap expansion triggers.
  *
  * `App` uses it for rendering and keyboard or menu actions; the session bridge uses the
- * same controller for daemon-driven navigation and agent notes.
+ * same hook for daemon-driven navigation and agent notes.
  */
 import {
   useCallback,
@@ -97,7 +97,7 @@ import {
   storedNoteToUserNote,
   type DraftReviewNote,
   type UserReviewNote,
-} from "../lib/reviewProjection";
+} from "../lib/reviewNoteMapping";
 import { buildReviewAnnotationIndex } from "../../core/review/annotations";
 import {
   buildReviewStreamState,
@@ -196,7 +196,7 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
   };
 }
 
-export interface ReviewController {
+export interface TerminalReview {
   allFiles: DiffFile[];
   /**
    * The semantic review store this controller owns.
@@ -286,7 +286,7 @@ export interface AgentNoteGeometrySnapshot {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({
+export function useTerminalReview({
   files,
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
@@ -319,7 +319,7 @@ export function useReviewController({
    * daemon commands arrive asynchronously, so reads always see fresh state.
    */
   noteGeometry?: { current: AgentNoteGeometrySnapshot | null };
-}): ReviewController {
+}): TerminalReview {
   const document = useMemo(
     () => projectReviewDocument(files, { sourceLabel }),
     [files, sourceLabel],

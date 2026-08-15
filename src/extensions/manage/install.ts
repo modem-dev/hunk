@@ -249,7 +249,7 @@ function promoteStagedClone(stagingDir: string, directory: string) {
  * because a clone sits between the two: merging over that stale snapshot
  * would silently drop any record another process wrote in the meantime. The
  * remaining read-to-write window matches the accepted posture of Hunk's
- * state file (see `updateHunkStateRecord`).
+ * state file (see `updateAppStateRecord`).
  */
 function saveRecord(context: ExtensionManageContext, name: string, record: ExtensionInstallRecord) {
   writeInstallRecords(context.installedRoot, {

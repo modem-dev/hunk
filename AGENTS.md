@@ -42,8 +42,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **State:** `state.ts` is semantic state; `actions.ts` transitions; `reducer.ts` pure/no-I/O;
   `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
   operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
-- **Surfaces/publishers:** `useReviewController.ts` is the TUI adapter and
-  `reviewProjection.ts` is terminal-only; `src/web/` is the browser client — read-only today
+- **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
+  `reviewNoteMapping.ts` is terminal-only; `src/web/` is the browser client — read-only today
   — where `reviewApiClient`/`reviewMirror` speak the Phase 4 HTTP contracts and
   `pierreDocument`/`ReviewStream` render with Pierre. Rows, measurement, scrolling, layout,
   themes, DOM mechanics, and source I/O stay local to each surface. `useHunkSessionBridge.ts` publishes the current terminal

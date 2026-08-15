@@ -13,7 +13,7 @@ import {
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
 import { resolveTheme } from "../themes";
-import { useReviewController, type ReviewController } from "./useReviewController";
+import { useTerminalReview, type TerminalReview } from "./useTerminalReview";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
 function createDiffFile(
@@ -153,7 +153,7 @@ function expectValue<T>(value: T): NonNullable<T> {
   return value as NonNullable<T>;
 }
 
-function ReviewControllerHarness({
+function TerminalReviewHarness({
   initialFiles,
   noteGeometry,
   publishLineCursors = true,
@@ -163,21 +163,21 @@ function ReviewControllerHarness({
   onSetFiles,
 }: {
   initialFiles: DiffFile[];
-  noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
+  noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
   /** Publish measured stops, as the diff pane does unless the current-line marker is off. */
   publishLineCursors?: boolean;
   stmlEnabled?: boolean;
-  onController: (controller: ReviewController) => void;
+  onController: (controller: TerminalReview) => void;
   /** Receive the first render's controller, before any cursors were published. */
-  onFirstController?: (controller: ReviewController) => void;
+  onFirstController?: (controller: TerminalReview) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
+  const controller = useTerminalReview({ files, lineCursors, noteGeometry, stmlEnabled });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
-  const firstControllerRef = useRef<ReviewController | null>(null);
+  const firstControllerRef = useRef<TerminalReview | null>(null);
   if (firstControllerRef.current === null) {
     firstControllerRef.current = controller;
     onFirstController?.(controller);
@@ -223,7 +223,7 @@ function ReviewControllerHarness({
 }
 
 /** Render the controller hook and expose its latest state to tests. */
-async function renderReviewController(
+async function renderTerminalReview(
   initialFiles: DiffFile[],
   {
     strictMode = false,
@@ -233,16 +233,16 @@ async function renderReviewController(
     onFirstController,
   }: {
     strictMode?: boolean;
-    noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
+    noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
     publishLineCursors?: boolean;
     stmlEnabled?: boolean;
-    onFirstController?: (controller: ReviewController) => void;
+    onFirstController?: (controller: TerminalReview) => void;
   } = {},
 ) {
-  const controllerRef: { current: ReviewController | null } = { current: null };
+  const controllerRef: { current: TerminalReview | null } = { current: null };
   const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
   const harness = (
-    <ReviewControllerHarness
+    <TerminalReviewHarness
       initialFiles={initialFiles}
       noteGeometry={noteGeometry}
       publishLineCursors={publishLineCursors}
@@ -264,9 +264,9 @@ async function renderReviewController(
   return { controllerRef, setFilesRef, setup };
 }
 
-describe("useReviewController", () => {
+describe("useTerminalReview", () => {
   test("preserves a filtered-out selection until the reviewer clears the filter", async () => {
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createDiffFile(
         "beta",
@@ -311,9 +311,7 @@ describe("useReviewController", () => {
   });
 
   test("clamps the selected hunk index when files update under a soft reload", async () => {
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
-      createTwoHunkFile(),
-    ]);
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -340,7 +338,7 @@ describe("useReviewController", () => {
   });
 
   test("keeps review stream identities stable across selection-only navigation", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -362,9 +360,9 @@ describe("useReviewController", () => {
   });
 
   test("moves through visible files with clamped file-header alignment", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
+    const controllerRef: { current: TerminalReview | null } = { current: null };
     const setup = await testRender(
-      <ReviewControllerHarness
+      <TerminalReviewHarness
         initialFiles={[
           createTwoHunkFile(),
           createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
@@ -453,7 +451,7 @@ describe("useReviewController", () => {
   });
 
   test("moves across several files in one counted selection request", async () => {
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createAlphaFile(),
       createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
       createDiffFile("gamma", "gamma.ts", "export const gamma = 1;\n", "export const gamma = 2;\n"),
@@ -481,7 +479,7 @@ describe("useReviewController", () => {
   });
 
   test("live comment mutations update annotated navigation without remounting the app", async () => {
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
     ]);
@@ -542,7 +540,7 @@ describe("useReviewController", () => {
     const noteGeometry: { current: { layout: "split" | "stack"; width: number } | null } = {
       current: { layout: "stack", width: 120 },
     };
-    const { controllerRef, setup } = await renderReviewController(
+    const { controllerRef, setup } = await renderTerminalReview(
       [
         createDiffFile(
           "alpha",
@@ -600,7 +598,7 @@ describe("useReviewController", () => {
   });
 
   test("live comments with degraded markup return render notes for the agent", async () => {
-    const { controllerRef, setup } = await renderReviewController(
+    const { controllerRef, setup } = await renderTerminalReview(
       [
         createDiffFile(
           "alpha",
@@ -653,7 +651,7 @@ describe("useReviewController", () => {
   });
 
   test("normal sessions reject STML live comments without mutating review state", async () => {
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
 
     try {
       await flush(setup);
@@ -693,7 +691,7 @@ describe("useReviewController", () => {
   });
 
   test("batch live comments validate together and reveal the first applied hunk", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -733,7 +731,7 @@ describe("useReviewController", () => {
   });
 
   test("batch live comments do not mutate state when any target is invalid", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -769,9 +767,9 @@ describe("useReviewController", () => {
   });
 
   test("sidecar annotations are exposed as AI review notes", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
+    const controllerRef: { current: TerminalReview | null } = { current: null };
     const setup = await testRender(
-      <ReviewControllerHarness
+      <TerminalReviewHarness
         initialFiles={[
           createDiffFile(
             "alpha",
@@ -822,9 +820,9 @@ describe("useReviewController", () => {
   });
 
   test("user note drafts can be saved, removed, and exposed as review notes", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
+    const controllerRef: { current: TerminalReview | null } = { current: null };
     const setup = await testRender(
-      <ReviewControllerHarness
+      <TerminalReviewHarness
         initialFiles={[
           createDiffFile(
             "alpha",
@@ -891,7 +889,7 @@ describe("useReviewController", () => {
   });
 
   test("rapid duplicate saves persist exactly one user note with a unique id", async () => {
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
     const fixedNow = 1_700_000_000_000;
     const dateNowSpy = spyOn(Date, "now").mockReturnValue(fixedNow);
 
@@ -945,7 +943,7 @@ describe("useReviewController", () => {
   });
 
   test("session clear can include human user notes", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1043,7 +1041,7 @@ describe("useReviewController", () => {
       side === "new" ? "alpha\nbeta\ngamma\n" : null,
     );
 
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile(fakeFetcher)]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(fakeFetcher)]);
 
     try {
       await flush(setup);
@@ -1082,9 +1080,7 @@ describe("useReviewController", () => {
     const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
     sourceLines[9] = "line 10 changed";
     sourceLines[39] = "line 40 changed";
-    const { controllerRef, setup } = await renderReviewController([
-      createTwoGapFile(sourceFetcher),
-    ]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoGapFile(sourceFetcher)]);
 
     try {
       await flush(setup);
@@ -1117,7 +1113,7 @@ describe("useReviewController", () => {
     const deferred = createTestDeferred<string | null>();
     const fakeFetcher = createTestSourceFetcher(() => deferred.promise);
 
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile(fakeFetcher)], {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(fakeFetcher)], {
       strictMode: true,
     });
 
@@ -1149,7 +1145,7 @@ describe("useReviewController", () => {
   });
 
   test("toggleGap is a no-op for files without a source fetcher", async () => {
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
 
     try {
       await flush(setup);
@@ -1199,7 +1195,7 @@ describe("useReviewController", () => {
       createTestSourceFetcher((side) => (side === "new" ? after : null)),
     );
 
-    const { controllerRef, setup } = await renderReviewController([file]);
+    const { controllerRef, setup } = await renderTerminalReview([file]);
 
     try {
       await flush(setup);
@@ -1265,7 +1261,7 @@ describe("useReviewController", () => {
       sourceFetcher,
     });
 
-    const { controllerRef, setup } = await renderReviewController([file]);
+    const { controllerRef, setup } = await renderTerminalReview([file]);
 
     try {
       await flush(setup);
@@ -1288,9 +1284,7 @@ describe("useReviewController", () => {
   test("toggleGap surfaces an error status when the fetcher resolves null", async () => {
     const failingFetcher = createTestSourceFetcher(() => null);
 
-    const { controllerRef, setup } = await renderReviewController([
-      createAlphaFile(failingFetcher),
-    ]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(failingFetcher)]);
 
     try {
       await flush(setup);
@@ -1320,9 +1314,7 @@ describe("useReviewController", () => {
       throw new Error("source unavailable");
     });
 
-    const { controllerRef, setup } = await renderReviewController([
-      createAlphaFile(failingFetcher),
-    ]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(failingFetcher)]);
 
     try {
       await flush(setup);
@@ -1349,9 +1341,7 @@ describe("useReviewController", () => {
       throw new SourceTextTooLargeError(5);
     });
 
-    const { controllerRef, setup } = await renderReviewController([
-      createAlphaFile(tooLargeFetcher),
-    ]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(tooLargeFetcher)]);
 
     try {
       await flush(setup);
@@ -1377,9 +1367,7 @@ describe("useReviewController", () => {
       return side === "new" ? `read-${readCount}\n` : null;
     });
 
-    const { controllerRef, setup } = await renderReviewController([
-      createAlphaFile(trackedFetcher),
-    ]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile(trackedFetcher)]);
 
     try {
       await flush(setup);
@@ -1420,7 +1408,7 @@ describe("useReviewController", () => {
   test("toggleGap has nothing to expand on a fully deleted file", async () => {
     const trackedFetcher = createTestSourceFetcher((side) => (side === "old" ? "removed\n" : null));
 
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("removed", "removed.ts", "removed\n", "", null, trackedFetcher),
     ]);
 
@@ -1444,7 +1432,7 @@ describe("useReviewController", () => {
   });
 
   test("a soft reload that changed nothing keeps the reviewer's expanded gap open", async () => {
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
       createAlphaFile(createTestSourceFetcher(() => "first\n")),
     ]);
 
@@ -1479,7 +1467,7 @@ describe("useReviewController", () => {
   test("a soft reload that changed the file invalidates cached source and expansion", async () => {
     const firstFetcher = createTestSourceFetcher((side) => (side === "new" ? "first\n" : null));
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
       createAlphaFile(firstFetcher),
     ]);
 
@@ -1535,7 +1523,7 @@ describe("useReviewController", () => {
     const firstLoad = createTestDeferred<string | null>();
     const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
       createAlphaFile(firstFetcher),
     ]);
 
@@ -1596,7 +1584,7 @@ describe("useReviewController", () => {
     const firstLoad = createTestDeferred<string | null>();
     const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
     const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
       createAlphaFile(firstFetcher),
     ]);
 
@@ -1632,7 +1620,7 @@ describe("useReviewController", () => {
   });
 
   test("seeds the current line at the selected hunk so the indicator is visible on launch", async () => {
-    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
 
     try {
       await flush(setup);
@@ -1648,7 +1636,7 @@ describe("useReviewController", () => {
   });
 
   test("moves the current line one row at a time and clamps at the top of the stream", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1680,7 +1668,7 @@ describe("useReviewController", () => {
   });
 
   test("requests a reveal every time the current line moves", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1719,7 +1707,7 @@ describe("useReviewController", () => {
         ),
       ],
     );
-    const { controllerRef, setup } = await renderReviewController([file]);
+    const { controllerRef, setup } = await renderTerminalReview([file]);
 
     try {
       await flush(setup);
@@ -1748,7 +1736,7 @@ describe("useReviewController", () => {
   });
 
   test("carries hunk selection along as the current line crosses a hunk boundary", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1772,7 +1760,7 @@ describe("useReviewController", () => {
   });
 
   test("moves the current line to the row a note is started on", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1797,7 +1785,7 @@ describe("useReviewController", () => {
   });
 
   test("moves across several hunks with one reveal request", async () => {
-    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createThreeHunkFile()]);
 
     try {
       await flush(setup);
@@ -1822,7 +1810,7 @@ describe("useReviewController", () => {
   });
 
   test("carries the current line along when hunk navigation moves the selection", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1843,9 +1831,7 @@ describe("useReviewController", () => {
   });
 
   test("recovers the current line when a reload retires the hunk it was on", async () => {
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([
-      createTwoHunkFile(),
-    ]);
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -1872,7 +1858,7 @@ describe("useReviewController", () => {
   });
 
   test("clears the line cursor while its selected file is filtered out", async () => {
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createDiffFile(
         "beta",
@@ -1909,7 +1895,7 @@ describe("useReviewController", () => {
   test("reveals one line of another file and asks for the reveal placement", async () => {
     // Cursors are measured for every visible file, so a cross-file jump resolves in the same
     // pass as a local one — no pending second reveal once the target file renders.
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
       createThreeHunkFile("beta", "beta.ts"),
     ]);
@@ -1948,7 +1934,7 @@ describe("useReviewController", () => {
   test("falls back to the containing hunk when nothing measured a row for the line", async () => {
     // With the current-line marker off the pane publishes no stops at all, so there is no
     // measured row to scroll to; the hunk covering the line is the closest honest landing spot.
-    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()], {
+    const { controllerRef, setup } = await renderTerminalReview([createThreeHunkFile()], {
       publishLineCursors: false,
     });
 
@@ -1980,8 +1966,8 @@ describe("useReviewController", () => {
     // stops live: the session's first deferred search jump used to silently
     // degrade to the hunk fallback because its closure still saw the empty
     // pre-measurement list.
-    const firstControllerRef: { current: ReviewController | null } = { current: null };
-    const { controllerRef, setup } = await renderReviewController([createThreeHunkFile()], {
+    const firstControllerRef: { current: TerminalReview | null } = { current: null };
+    const { controllerRef, setup } = await renderTerminalReview([createThreeHunkFile()], {
       onFirstController: (controller) => {
         firstControllerRef.current = controller;
       },
@@ -2015,7 +2001,7 @@ describe("useReviewController", () => {
   });
 
   test("reports a line no hunk of the file covers instead of moving the review", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -2036,13 +2022,13 @@ describe("useReviewController", () => {
   });
 
   test("paints one validated agent attention mark and reveals its line on focus", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
       const before = expectValue(controllerRef.current).lineCursorRevealRequest;
 
-      let result: ReturnType<ReviewController["addAgentLineHighlight"]> | undefined;
+      let result: ReturnType<TerminalReview["addAgentLineHighlight"]> | undefined;
       await act(async () => {
         result = expectValue(controllerRef.current).addAgentLineHighlight({
           filePath: "alpha.ts",
@@ -2089,13 +2075,13 @@ describe("useReviewController", () => {
   });
 
   test("defaults agent marks to the match tone without moving the viewport", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
       const before = expectValue(controllerRef.current).lineCursorRevealRequest;
 
-      let result: ReturnType<ReviewController["addAgentLineHighlight"]> | undefined;
+      let result: ReturnType<TerminalReview["addAgentLineHighlight"]> | undefined;
       await act(async () => {
         result = expectValue(controllerRef.current).addAgentLineHighlight({
           filePath: "alpha.ts",
@@ -2118,7 +2104,7 @@ describe("useReviewController", () => {
   });
 
   test("rejects agent marks on unknown files, uncovered lines, and empty ranges", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -2163,7 +2149,7 @@ describe("useReviewController", () => {
   });
 
   test("clears agent marks per file and globally with honest counts", async () => {
-    const { controllerRef, setup } = await renderReviewController([
+    const { controllerRef, setup } = await renderTerminalReview([
       createTwoHunkFile(),
       createThreeHunkFile("beta", "beta.ts"),
     ]);
@@ -2197,7 +2183,7 @@ describe("useReviewController", () => {
       });
       await flush(setup);
 
-      let cleared: ReturnType<ReviewController["clearAgentLineHighlights"]> | undefined;
+      let cleared: ReturnType<TerminalReview["clearAgentLineHighlights"]> | undefined;
       await act(async () => {
         cleared = expectValue(controllerRef.current).clearAgentLineHighlights("alpha.ts");
       });
@@ -2223,7 +2209,7 @@ describe("useReviewController", () => {
   test("a reload keeps agent attention marks on files whose content is unchanged", async () => {
     // A refresh that finds nothing changed on disk still rebuilds the file list, and the marks
     // it carries still name the same characters, so they survive and re-key onto the new ids.
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createAlphaFile()]);
 
     try {
       await flush(setup);
@@ -2253,7 +2239,7 @@ describe("useReviewController", () => {
         { side: "new", line: 8, start: 0, end: 6, tone: "match" },
       ]);
 
-      let cleared: ReturnType<ReviewController["clearAgentLineHighlights"]> | undefined;
+      let cleared: ReturnType<TerminalReview["clearAgentLineHighlights"]> | undefined;
       await act(async () => {
         cleared = expectValue(controllerRef.current).clearAgentLineHighlights();
       });
@@ -2268,7 +2254,7 @@ describe("useReviewController", () => {
   test("a session reload clears agent attention marks on files whose content changed", async () => {
     // Marks address exact character offsets; after a reload nothing re-derives them the way
     // extension highlighters re-run, so a stale mark would light up different text.
-    const { controllerRef, setFilesRef, setup } = await renderReviewController([createAlphaFile()]);
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createAlphaFile()]);
 
     try {
       await flush(setup);
@@ -2298,13 +2284,13 @@ describe("useReviewController", () => {
   });
 
   test("navigate line targets land the viewport on the exact line", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
     try {
       await flush(setup);
       const before = expectValue(controllerRef.current).lineCursorRevealRequest;
 
-      let result: ReturnType<ReviewController["navigateToLocation"]> | undefined;
+      let result: ReturnType<TerminalReview["navigateToLocation"]> | undefined;
       await act(async () => {
         result = expectValue(controllerRef.current).navigateToLocation({
           filePath: "alpha.ts",
@@ -2339,14 +2325,14 @@ describe("useReviewController", () => {
   });
 
   test("navigate line targets fall back to the hunk when no row is measured", async () => {
-    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()], {
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()], {
       publishLineCursors: false,
     });
 
     try {
       await flush(setup);
 
-      let result: ReturnType<ReviewController["navigateToLocation"]> | undefined;
+      let result: ReturnType<TerminalReview["navigateToLocation"]> | undefined;
       await act(async () => {
         result = expectValue(controllerRef.current).navigateToLocation({
           filePath: "alpha.ts",

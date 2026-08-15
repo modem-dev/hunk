@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentContext } from "./types";
-import { orderDiffFiles } from "./loaders";
+import type { SidecarContext } from "./types";
+import { orderDiffFiles } from "./changesetLoaders";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
-function agentContext(...paths: string[]): AgentContext {
+function sidecar(...paths: string[]): SidecarContext {
   return {
     files: paths.map((path) => ({ annotations: [], path })),
     version: 1,
@@ -18,7 +18,7 @@ describe("orderDiffFiles", () => {
       createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
     ];
 
-    const ordered = orderDiffFiles(files, agentContext("alpha.ts", "gamma.ts"));
+    const ordered = orderDiffFiles(files, sidecar("alpha.ts", "gamma.ts"));
 
     expect(ordered.map((file) => file.path)).toEqual(["alpha.ts", "gamma.ts", "beta.ts"]);
   });
@@ -31,7 +31,7 @@ describe("orderDiffFiles", () => {
       createTestDiffFile({ id: "gamma", path: "gamma.ts" }),
     ];
 
-    const ordered = orderDiffFiles(files, agentContext("gamma.ts"));
+    const ordered = orderDiffFiles(files, sidecar("gamma.ts"));
 
     expect(ordered.map((file) => file.path)).toEqual([
       "gamma.ts",
@@ -48,7 +48,7 @@ describe("orderDiffFiles", () => {
     ];
 
     expect(orderDiffFiles(files, null).map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
-    expect(orderDiffFiles(files, agentContext()).map((file) => file.path)).toEqual([
+    expect(orderDiffFiles(files, sidecar()).map((file) => file.path)).toEqual([
       "alpha.ts",
       "beta.ts",
     ]);
@@ -61,7 +61,7 @@ describe("orderDiffFiles", () => {
       createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
     ];
 
-    const ordered = orderDiffFiles(files, agentContext("alpha.ts", "old-name.ts"));
+    const ordered = orderDiffFiles(files, sidecar("alpha.ts", "old-name.ts"));
 
     expect(ordered.map((file) => file.path)).toEqual(["alpha.ts", "new-name.ts", "beta.ts"]);
   });

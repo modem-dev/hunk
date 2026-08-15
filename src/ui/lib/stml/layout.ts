@@ -2,7 +2,7 @@
 // fixed-width line/span rows.
 //
 // Hunk's review stream is row-windowed: every planned row must know its exact
-// terminal height before it mounts (see plannedReviewRows.ts). A flexbox
+// terminal height before it mounts (see reviewRowGeometry.ts). A flexbox
 // renderer cannot promise that, so this is a small deterministic layout
 // engine instead — the same (markup, width) input always produces the same
 // lines, and a note's height is simply `lines.length`.
@@ -801,7 +801,7 @@ export function layoutStml(markup: string, width: number): StmlLayoutResult {
   return { lines, errors: errors.messages };
 }
 
-// Layout is recomputed by both measurement (plannedReviewRows) and rendering
+// Layout is recomputed by both measurement (reviewRowGeometry) and rendering
 // (AgentInlineNote) on every plan pass, so memoize per (markup, width).
 const layoutCache = new Map<string, StmlLayoutResult>();
 const LAYOUT_CACHE_LIMIT = 256;

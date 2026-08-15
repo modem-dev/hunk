@@ -12,7 +12,7 @@ import { reviewGapId } from "../../../src/core/review/expansion";
 import type { DiffFile } from "../../../src/core/types";
 import { buildDiffSectionRowPlan } from "../../../src/ui/diff/diffSectionRowPlan";
 import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/renderRows";
-import type { DiffRow } from "../../../src/ui/diff/pierre";
+import type { DiffRow } from "../../../src/ui/diff/diffRows";
 import { buildSelectedHunkSummary } from "../../../src/ui/lib/reviewState";
 import { resolveTheme } from "../../../src/ui/themes";
 import type {

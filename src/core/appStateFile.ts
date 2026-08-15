@@ -1,20 +1,27 @@
+/**
+ * Reads and writes the app's persisted state file (`state.json`).
+ *
+ * This is app state, not diff state: "hunk" here is the product, so the module is named for
+ * the file it owns rather than for the diff concept its `hunkHeader` / `hunkSummary`
+ * neighbours describe.
+ */
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 /**
- * Single read/write seam for the persisted Hunk state file (`state.json`).
+ * One parsed state file.
  *
  * Several unrelated features (update notices, extension trust) keep small
  * records in the same file, so every writer must merge instead of overwrite.
  */
-export type HunkStateRecord = Record<string, unknown>;
+export type AppStateRecord = Record<string, unknown>;
 
 /** Suffix a state file is moved aside to when its contents cannot be parsed. */
 const CORRUPT_STATE_SUFFIX = ".corrupt";
 
 /** What one read of the state file found on disk. */
-interface HunkStateFileRead {
-  record: HunkStateRecord;
+interface AppStateFileRead {
+  record: AppStateRecord;
   /**
    * True when the file existed with content Hunk could not parse.
    *
@@ -26,7 +33,7 @@ interface HunkStateFileRead {
 }
 
 /** Read and classify the state file without deciding what to do about damage. */
-function readHunkStateFile(path: string): HunkStateFileRead {
+function readAppStateFile(path: string): AppStateFileRead {
   let contents: string;
   try {
     contents = readFileSync(path, "utf8");
@@ -50,12 +57,12 @@ function readHunkStateFile(path: string): HunkStateFileRead {
     return { record: {}, corrupt: true };
   }
 
-  return { record: parsed as HunkStateRecord, corrupt: false };
+  return { record: parsed as AppStateRecord, corrupt: false };
 }
 
 /** Read the persisted state record, treating missing or malformed files as empty. */
-export function readHunkStateRecord(path: string): HunkStateRecord {
-  return readHunkStateFile(path).record;
+export function readAppStateRecord(path: string): AppStateRecord {
+  return readAppStateFile(path).record;
 }
 
 /**
@@ -66,7 +73,7 @@ export function readHunkStateRecord(path: string): HunkStateRecord {
  * either the old state or the new one. The temp file is a sibling so the rename
  * stays within one filesystem, which is what makes it atomic.
  */
-export function writeHunkStateRecord(path: string, record: HunkStateRecord) {
+export function writeAppStateRecord(path: string, record: AppStateRecord) {
   mkdirSync(dirname(path), { recursive: true });
   const serialized = JSON.stringify(record, null, 2);
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
@@ -115,13 +122,13 @@ function quarantineCorruptStateFile(path: string) {
  * small and the cost is one lost record, so it is accepted rather than paid for
  * with a lock file that has to be reaped after crashes.
  */
-export function updateHunkStateRecord(path: string, patch: HunkStateRecord) {
-  const { record, corrupt } = readHunkStateFile(path);
+export function updateAppStateRecord(path: string, patch: AppStateRecord) {
+  const { record, corrupt } = readAppStateFile(path);
   if (corrupt) {
     quarantineCorruptStateFile(path);
   }
 
   const next = { ...record, ...patch };
-  writeHunkStateRecord(path, next);
+  writeAppStateRecord(path, next);
   return next;
 }

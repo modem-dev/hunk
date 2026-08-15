@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeGitPatch, normalizeGitPatchPrefixes } from "./gitFormat";
+import { sanitizeGitPatch, sanitizeGitPatchText } from "./gitFormat";
 
 /** Build a one-file `diff --git` block with the given header and body lines. */
 function patch(...lines: string[]) {
   return lines.join("\n");
 }
 
-describe("normalizeGitPatchPrefixes", () => {
+describe("sanitizeGitPatchText", () => {
   test("returns text untouched when it contains no git header", () => {
     const text = "hello\nworld\n--- not a real header";
-    expect(normalizeGitPatchPrefixes(text)).toBe(text);
+    expect(sanitizeGitPatchText(text)).toBe(text);
   });
 
   test("leaves already-canonical a/ b/ headers unchanged", () => {
@@ -21,7 +21,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "-a",
       "+b",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(input);
+    expect(sanitizeGitPatchText(input)).toBe(input);
   });
 
   test("adds a/ b/ prefixes to a noprefix non-rename block", () => {
@@ -33,7 +33,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "-a",
       "+b",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/foo.ts b/foo.ts",
         "--- a/foo.ts",
@@ -54,7 +54,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "-a",
       "+b",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/foo.ts b/foo.ts",
         "--- a/foo.ts",
@@ -74,7 +74,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "--- old.ts",
       "+++ new.ts",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/old.ts b/new.ts",
         "rename from old.ts",
@@ -91,14 +91,14 @@ describe("normalizeGitPatchPrefixes", () => {
       '--- "a/foo bar.ts"',
       '+++ "b/foo bar.ts"',
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch("diff --git a/foo bar.ts b/foo bar.ts", "--- a/foo bar.ts", "+++ b/foo bar.ts"),
     );
   });
 
   test("adds prefixes to quoted noprefix paths containing spaces", () => {
     const input = patch('diff --git "foo bar.ts" "foo bar.ts"', "--- foo bar.ts", "+++ foo bar.ts");
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch("diff --git a/foo bar.ts b/foo bar.ts", "--- a/foo bar.ts", "+++ b/foo bar.ts"),
     );
   });
@@ -111,7 +111,7 @@ describe("normalizeGitPatchPrefixes", () => {
       `+++ "b/${escapedPath}"`,
     );
 
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/国際化/日本語-변경-🧪.txt b/国際化/日本語-변경-🧪.txt",
         "--- a/国際化/日本語-변경-🧪.txt",
@@ -130,7 +130,7 @@ describe("normalizeGitPatchPrefixes", () => {
       `rename to "${escapedNewPath}"`,
     );
 
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/日本語.txt b/한국어🧪.txt",
         "similarity index 100%",
@@ -142,7 +142,7 @@ describe("normalizeGitPatchPrefixes", () => {
 
   test("preserves a real top-level a directory in quoted noprefix paths", () => {
     const path = String.raw`a/tab\t.txt`;
-    const normalized = normalizeGitPatch(
+    const normalized = sanitizeGitPatch(
       patch(`diff --git "${path}" "${path}"`, `--- "${path}"`, `+++ "${path}"`),
     );
 
@@ -159,7 +159,7 @@ describe("normalizeGitPatchPrefixes", () => {
   test("uses copy metadata to preserve real mnemonic-looking directories", () => {
     const escapedOldPath = String.raw`i/\346\227\245\346\234\254\350\252\236.txt`;
     const escapedNewPath = String.raw`w/\355\225\234\352\265\255\354\226\264.txt`;
-    const normalized = normalizeGitPatch(
+    const normalized = sanitizeGitPatch(
       patch(
         `diff --git "${escapedOldPath}" "${escapedNewPath}"`,
         "similarity index 100%",
@@ -181,7 +181,7 @@ describe("normalizeGitPatchPrefixes", () => {
 
   test("retains exact C-style decoded paths beside parser-safe patch text", () => {
     const escapedPath = String.raw`a/\345\233\275\351\232\233\345\214\226/tab\tquote\"back\\\360\237\247\252.txt`;
-    const normalized = normalizeGitPatch(
+    const normalized = sanitizeGitPatch(
       patch(
         `diff --git "${escapedPath}" "${escapedPath.replace("a/", "b/")}"`,
         `--- "${escapedPath}"`,
@@ -196,7 +196,7 @@ describe("normalizeGitPatchPrefixes", () => {
   test("keeps decoded path metadata aligned across multiple file blocks", () => {
     const firstPath = String.raw`\346\227\245\346\234\254\350\252\236.txt`;
     const secondPath = String.raw`\355\225\234\352\265\255\354\226\264.txt`;
-    const normalized = normalizeGitPatch(
+    const normalized = sanitizeGitPatch(
       patch(
         `diff --git "a/${firstPath}" "b/${firstPath}"`,
         `--- "a/${firstPath}"`,
@@ -224,7 +224,7 @@ describe("normalizeGitPatchPrefixes", () => {
       `+++ "${invalidPath.replace("a/", "b/")}"`,
     );
 
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         String.raw`diff --git a/bad\377-overflow\433-csi\302\233-name\\345.txt b/bad\377-overflow\433-csi\302\233-name\\345.txt`,
         String.raw`--- a/bad\377-overflow\433-csi\302\233-name\\345.txt`,
@@ -242,7 +242,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "-diff --git x y",
       "+changed",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/foo.ts b/foo.ts",
         "--- a/foo.ts",
@@ -263,7 +263,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "@@ -0,0 +1 @@",
       "+a",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch("diff --git a/new.ts b/new.ts", "--- /dev/null", "+++ b/new.ts", "@@ -0,0 +1 @@", "+a"),
     );
   });
@@ -283,7 +283,7 @@ describe("normalizeGitPatchPrefixes", () => {
       "-p",
       "+q",
     );
-    expect(normalizeGitPatchPrefixes(input)).toBe(
+    expect(sanitizeGitPatchText(input)).toBe(
       patch(
         "diff --git a/one.ts b/one.ts",
         "--- a/one.ts",

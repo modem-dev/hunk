@@ -49,8 +49,8 @@ function revealFromTransition(before: ReviewState, after: ReviewState) {
   };
 }
 
-export const terminalReviewControllerNavigationConsumer: ReviewNavigationConsumer = {
-  name: "terminal review controller",
+export const terminalReviewNavigationConsumer: ReviewNavigationConsumer = {
+  name: "terminal review",
   phase: "Phase 1 PR 3",
   project(fixture: ReviewNavigationFixture) {
     const document = projectReviewDocument(fixture.build());
@@ -67,7 +67,7 @@ export const terminalReviewControllerNavigationConsumer: ReviewNavigationConsume
 
     return {
       moves: fixture.moves.map((move) => {
-        // This is the same semantic-intent call `useReviewController` makes for its
+        // This is the same semantic-intent call `useTerminalReview` makes for its
         // keyboard and session navigation handlers.
         const store = createTestReviewStore(stateAt(move.from));
         const before = store.getSnapshot();

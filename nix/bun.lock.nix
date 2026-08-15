@@ -34,45 +34,45 @@
   "@hunk/session-broker-core" = copyPathToStore ../packages/session-broker-core;
   "@hunk/session-broker-node" = copyPathToStore ../packages/session-broker-node;
   "@hunk/term-video" = copyPathToStore ../packages/term-video;
-  "@opentui/core-darwin-arm64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-darwin-arm64/-/core-darwin-arm64-0.4.3.tgz";
-    hash = "sha512-p5+7AAxpxGuDGagyQfewKtmTFnN7THvTVY4FyKqUtJomNaHdQXPHztapNNzMx0DGWbwOUbVKzpL+yc3CZY3chQ==";
+  "@opentui/core-darwin-arm64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-darwin-arm64/-/core-darwin-arm64-0.5.1.tgz";
+    hash = "sha512-Yl3JBLYRrBN+SxXY/gYaqCT/JNrN50K4xO7hYC+/Si8/FgOrBlbRmfJIUNQdZMMLUvOMA+I813+hDw3xfarBzQ==";
   };
-  "@opentui/core-darwin-x64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-darwin-x64/-/core-darwin-x64-0.4.3.tgz";
-    hash = "sha512-+fh0vEUE0lwVC7RW5ijYLRlTLp5NfvCRj8SzxDVd7IL2j2ssB6YXcfIbXq2EW7UGnrejwPRXf1tgUrIXW9KmOw==";
+  "@opentui/core-darwin-x64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-darwin-x64/-/core-darwin-x64-0.5.1.tgz";
+    hash = "sha512-kqMVu+LGuHSCxYFkVJtmuyLLLTMztILSNnlx1eSpHHUiDV4PMc+zkxwRIXO+o0TFTW3gNUKleKUkggriYje7Vw==";
   };
-  "@opentui/core-linux-arm64-musl@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.4.3.tgz";
-    hash = "sha512-8p8g8/AEq/xFGpQ7XcIFKcAqjc0QwsZcv+Ll9RbCDpUA56FGH6jfLDir0KYTNTgYXJTIrBIENI9K46VuxMUMQA==";
+  "@opentui/core-linux-arm64-musl@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.5.1.tgz";
+    hash = "sha512-rmFMtiCm8I0fESB834sTN/ewoI+QDSber588ZO+i08JR6mbv7hkiKW2H/MhiAY1GxGK4nXApleBMyGVOlVDvgQ==";
   };
-  "@opentui/core-linux-arm64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-arm64/-/core-linux-arm64-0.4.3.tgz";
-    hash = "sha512-gl6qA5QJy6u8Cbt7gOtHbhhfMZ4qQDb0kEwFXHcMGmbnKzz4OHoq74D6tNjyvSQB9saoC7C6C0tvn2DcJOuNog==";
+  "@opentui/core-linux-arm64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-arm64/-/core-linux-arm64-0.5.1.tgz";
+    hash = "sha512-PpE1nCHRkxEvSYyZFMToPHjQoVh50A7+BbgetlTX/5ImXzo6iSO83a+7M/1WgZnNu+uZJf5GZKAAcLoRrvQl3Q==";
   };
-  "@opentui/core-linux-x64-musl@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-x64-musl/-/core-linux-x64-musl-0.4.3.tgz";
-    hash = "sha512-/QiFpCrpU2O7vy8QYmLIQYbvAtKDgmqcVjR7dGtqSzkiQk3ktNJoo5RozG7ueXnjung1Wp0nKldKxo2Csg/OrA==";
+  "@opentui/core-linux-x64-musl@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-x64-musl/-/core-linux-x64-musl-0.5.1.tgz";
+    hash = "sha512-WO8RjhqKyqW/7P0xHdEVT8JGfU2MO7RlK0kdkNnRSnAEVwsTNd2ibhmKDPLGpo/DKaLuA00CsnrNiLGZZiQJKQ==";
   };
-  "@opentui/core-linux-x64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-x64/-/core-linux-x64-0.4.3.tgz";
-    hash = "sha512-dXpJitiZdYE3hq2Pvx6e9I0uPQSOcnaLLp1pDgWAHv+3kvKSHEX//9Yr/pV/Ua6qqT7p+2D/K4vXNap/NKVo2w==";
+  "@opentui/core-linux-x64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-x64/-/core-linux-x64-0.5.1.tgz";
+    hash = "sha512-/CxFxFv+ffMof2nYQrpgEfNkWKkKxYUSfwdt2RdDN5fZRhcxjE949743rV0Oovw5Az63qxPgbyfcZVNVO2HVNg==";
   };
-  "@opentui/core-win32-arm64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-win32-arm64/-/core-win32-arm64-0.4.3.tgz";
-    hash = "sha512-Mx2zuOjrhm/z2SDS6RExIyjP/SnN/8QhhagxURUw0jQi/NssGSeAllu1cBAFFnhobJL5QLTE4FU4CRhUK9svgg==";
+  "@opentui/core-win32-arm64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-win32-arm64/-/core-win32-arm64-0.5.1.tgz";
+    hash = "sha512-AgeTjZbdMxSiuBjyLvcug91qd1Ds6Dlg5z4lCInqL7mPQicDEnKZs5lF2FAaktcU7RPi2wLybbQ/vM0NbpXYmw==";
   };
-  "@opentui/core-win32-x64@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.4.3.tgz";
-    hash = "sha512-NuoqvWKGXaYnmlqvu7Gg2lLI6yVMnS9OfWBvxp+7Q+McSgHFSTQmYBXaPpvQ8HikpQXE1nCeMPtuSG4PdZHe2w==";
+  "@opentui/core-win32-x64@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.5.1.tgz";
+    hash = "sha512-VttbQHVoZQ5uW5IcQeUHPEx/WFQ2mMflukhhbBjpNSdZOPdzmmC4QGFPQznJVwuzXTnjQ2Nll4AY0ROJ/Q3nkw==";
   };
-  "@opentui/core@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core/-/core-0.4.3.tgz";
-    hash = "sha512-rrJfAk13tALDqldYjhc78eWQ+aKq1iknJgffIOg3OwyZoqQo+p6gtuqyhmWvXIfQzlNUbpgpCPcxbXlhMnlaHQ==";
+  "@opentui/core@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core/-/core-0.5.1.tgz";
+    hash = "sha512-mIBFyqIP4rkhQ35uldLXWawWQ6S9tvNWvmxGmDJ7W9cLXjegG6gKEfZ/4NyIMma755ERs/sqO/pIh3Ytf3DDFg==";
   };
-  "@opentui/react@0.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/react/-/react-0.4.3.tgz";
-    hash = "sha512-HtC/+lMURaZlifiJNVsn84YqKMywXQmkeSNbUTlbbeS6YM6reahaacnZEYZdnEUgklO6+r/J1tG8UBhqO26X7Q==";
+  "@opentui/react@0.5.1" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/react/-/react-0.5.1.tgz";
+    hash = "sha512-cGuVz8Pjpmq2GUKtZUSWWevX2Vjg3//sTulk8SgXPatIFlmZdBi3aoT3nmzn7ePbdI0IHWxQ8BLegsZiPAF2yg==";
   };
   "@oven/bun-darwin-aarch64@1.3.14" = fetchurl {
     url = "https://registry.npmjs.org/@oven/bun-darwin-aarch64/-/bun-darwin-aarch64-1.3.14.tgz";
@@ -422,9 +422,9 @@
     url = "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz";
     hash = "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==";
   };
-  "bun-ffi-structs@0.2.4" = fetchurl {
-    url = "https://registry.npmjs.org/bun-ffi-structs/-/bun-ffi-structs-0.2.4.tgz";
-    hash = "sha512-AJzsqoVFs1KBbJbWHIYrVZLDC3NhTqqh25awRXqzoLzmBAKr5oqk6+CwuYHAekKx+VBCYVohBoKuRq40dV+TYg==";
+  "bun-ffi-structs@0.3.1" = fetchurl {
+    url = "https://registry.npmjs.org/bun-ffi-structs/-/bun-ffi-structs-0.3.1.tgz";
+    hash = "sha512-3gM7PpVWLyrwxWjcilSiGuhWanhZivvo6l0u573NziPH6f/gwk6McbaYgn7oJWov6pKGRTDbrg94W5DcJsKTtQ==";
   };
   "bun-types@1.3.14" = fetchurl {
     url = "https://registry.npmjs.org/bun-types/-/bun-types-1.3.14.tgz";

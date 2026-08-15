@@ -1,6 +1,6 @@
 import { posix, win32 } from "node:path";
-import { readHunkStateRecord, updateHunkStateRecord } from "./hunkState";
-import { resolveHunkStatePath } from "./paths";
+import { readAppStateRecord, updateAppStateRecord } from "./appStateFile";
+import { resolveAppStatePath } from "./paths";
 import type { StartupNotice } from "./startupNotice";
 import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./version";
 
@@ -234,7 +234,7 @@ function createFetchTimeoutSignal(timeoutMs: number) {
 
 /** Read the persisted startup state from disk, falling back cleanly on missing or invalid files. */
 function readPersistedStartupState(path: string): PersistedStartupState {
-  const record = readHunkStateRecord(path);
+  const record = readAppStateRecord(path);
   return {
     version: typeof record.version === "number" ? record.version : STARTUP_STATE_VERSION,
     lastSeenCliVersion:
@@ -244,7 +244,7 @@ function readPersistedStartupState(path: string): PersistedStartupState {
 
 /** Persist the current installed CLI version without discarding unrelated state keys. */
 function writePersistedStartupState(path: string, installedVersion: string) {
-  updateHunkStateRecord(path, {
+  updateAppStateRecord(path, {
     version: STARTUP_STATE_VERSION,
     lastSeenCliVersion: installedVersion,
   } satisfies PersistedStartupState);
@@ -263,7 +263,7 @@ function resolveStartupSkillRefreshNotice(deps: UpdateNoticeDeps = {}): StartupN
     return null;
   }
 
-  const statePath = deps.statePath ?? resolveHunkStatePath(deps.env ?? process.env);
+  const statePath = deps.statePath ?? resolveAppStatePath(deps.env ?? process.env);
   if (!statePath) {
     return null;
   }

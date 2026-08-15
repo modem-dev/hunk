@@ -11,7 +11,7 @@ import { type FileSourceStatus } from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
-} from "./plannedReviewRows";
+} from "./reviewRowGeometry";
 import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
@@ -259,7 +259,7 @@ function measurePlannedDiffSectionRowHeight(
   );
 }
 
-/** Measure one file section from the same render plan used by PierreDiffView. */
+/** Measure one file section from the same render plan used by DiffSectionBody. */
 export function measureDiffSectionGeometry(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,

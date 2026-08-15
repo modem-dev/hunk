@@ -17,7 +17,7 @@ import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
 import { reviewWireConsumer } from "./consumers/reviewWire";
-import { terminalReviewControllerNavigationConsumer } from "./consumers/terminalReviewController";
+import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type {
   ReviewEventConsumer,
@@ -43,7 +43,7 @@ export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
  */
 export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = [
   intentPlannerNavigationConsumer,
-  terminalReviewControllerNavigationConsumer,
+  terminalReviewNavigationConsumer,
 ];
 
 /**

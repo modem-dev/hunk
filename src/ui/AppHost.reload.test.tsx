@@ -15,7 +15,7 @@ import type {
 } from "../session/types";
 
 const { getBundledVcsCatalog } = await import("../app/vcsCatalog");
-const { loadAppBootstrap } = await import("../core/loaders");
+const { loadAppBootstrap } = await import("../core/changesetLoaders");
 const { AppHost } = await import("./AppHost");
 
 /** Stand in for the session daemon so a test can send the commands agents send. */

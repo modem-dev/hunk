@@ -9,7 +9,7 @@ import {
   loadHighlightedSourceLines,
   spansForHighlightedSourceLine,
   type DiffRow,
-} from "./pierre";
+} from "./diffRows";
 import { resolveSplitPaneWidths } from "./codeColumns";
 import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./renderRows";
 import { stackCellPalette } from "./rowStyle";

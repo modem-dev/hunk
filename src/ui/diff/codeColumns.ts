@@ -1,7 +1,7 @@
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureTextWidth } from "../lib/text";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 export const DIFF_RAIL_PREFIX_WIDTH = 1;
 export const DIFF_SPLIT_SEPARATOR_WIDTH = 1;
