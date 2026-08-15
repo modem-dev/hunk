@@ -425,6 +425,73 @@ describe("reload keeps launch extension authority", () => {
   });
 });
 
+describe("mounted lifecycle ordering", () => {
+  test("delivers same-runtime reload events after the new review commits", async () => {
+    const repo = createTestRepo("hunk-apphost-lifecycle-order-");
+    const logPath = join(repo, "lifecycle.log");
+    const extPath = join(repo, "lifecycle.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+        `  hunk.on("startup", () => log("lifecycle:startup"));\n` +
+        `  hunk.on("changeset_loaded", () => log("lifecycle:changeset_loaded"));\n` +
+        `  hunk.on("session_reload", ({ changeset }, ctx) => {\n` +
+        `    log("lifecycle:session_reload");\n` +
+        `    const added = changeset.files.find((file) => file.path === "gamma.txt");\n` +
+        `    if (added) ctx.navigation.selectFile(added.id);\n` +
+        `  });\n` +
+        `  hunk.on("file_viewed", ({ file }) => log("viewed:" + file.path));\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { cwd: repo },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: repo,
+      cliExtensionPaths: [extPath],
+    });
+    expect(bootstrap.extensions.issues).toEqual([]);
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("lifecycle:changeset_loaded"),
+          "the initial mounted lifecycle",
+        );
+        expect(readProbeLog(logPath).slice(0, 2)).toEqual([
+          "lifecycle:startup",
+          "lifecycle:changeset_loaded",
+        ]);
+
+        writeFileSync(join(repo, "gamma.txt"), "new file\n");
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("viewed:gamma.txt"),
+          "the committed review to accept lifecycle navigation",
+        );
+
+        expect(readProbeLog(logPath).filter((line) => line.startsWith("lifecycle:"))).toEqual([
+          "lifecycle:startup",
+          "lifecycle:changeset_loaded",
+          "lifecycle:changeset_loaded",
+          "lifecycle:session_reload",
+        ]);
+      },
+      broker.client,
+    );
+  });
+});
+
 describe("file_viewed events", () => {
   test("fires again when a soft reload replaces the selected file with the same id", async () => {
     const repo = createTestRepo("hunk-apphost-file-viewed-");
@@ -619,6 +686,62 @@ describe("startup for extensions loaded mid-session", () => {
       },
       broker.client,
     );
+  });
+
+  test("revokes retained panes and dialogs before a soft replacement shuts down", async () => {
+    const repo = createTestRepo("hunk-apphost-retired-controls-");
+    const logPath = join(repo, "retired.log");
+    const extPath = join(repo, "retired.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  const paneText = ["RETIRED", "CONTROL", "PANE"].join(" ");\n` +
+        `  const dialogTitle = ["RETIRED", "CONTROL", "DIALOG"].join(" ");\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "retired", title: "Retired", placement: "right", width: { preferred: 20, min: 10, max: 40 },\n` +
+        `    component: () => createElement("text", { content: paneText }),\n` +
+        `  });\n` +
+        `  hunk.on("startup", () => appendFileSync(${JSON.stringify(logPath)}, "startup\\n"));\n` +
+        `  hunk.on("shutdown", async (_payload, ctx) => {\n` +
+        `    ctx.panes.open("retired");\n` +
+        `    ctx.navigation.selectFile("retired-file");\n` +
+        `    const answer = await ctx.dialogs.confirm({ title: dialogTitle });\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "shutdown:" + answer + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    expect(bootstrap.extensions.issues).toEqual([]);
+
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("startup"),
+        "the retiring extension to receive startup",
+      );
+      await act(async () => {
+        await setup.mockInput.typeText("r");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("shutdown:false"),
+        "retired shutdown controls to resolve without entering replacement UI",
+      );
+
+      const frame = setup.captureCharFrame();
+      expect(frame).not.toContain("RETIRED CONTROL DIALOG");
+      expect(frame).not.toContain("RETIRED CONTROL PANE");
+      expect(frame).toContain("ignored — the review session was reloaded");
+    });
   });
 
   test("shuts down and starts each replacement extension instance", async () => {

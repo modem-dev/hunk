@@ -38,6 +38,7 @@ import {
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
   resolveExtensionLineHighlighters,
+  resolveExtensionSessionOptions,
 } from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
@@ -95,10 +96,12 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  observeAppCommandDispatch,
   type AppCommand,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { createExtensionCapabilityLease } from "./lib/extensionCapabilityLease";
 import { createExtensionCommandControls } from "./lib/extensionCommandControls";
 import {
   applyExtensionCurrentLinePaintUpdate,
@@ -452,6 +455,13 @@ export function App({
     () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
     [extensions],
   );
+  const extensionSessionOptions = useMemo(
+    () =>
+      extensions
+        ? resolveExtensionSessionOptions(extensions.registry)
+        : { transientViewPreferences: false },
+    [extensions],
+  );
   // The one conversion of the visible review files into the frozen views every
   // extension surface sees: sidebar props and command-handler selection both
   // read from this list, so they can never describe the review differently.
@@ -510,19 +520,33 @@ export function App({
   // created each handler. Retain the current registry separately so controls
   // captured by a retired async handler cannot drive the replacement registry.
   const activeExtensionRegistryRef = useRef(extensions?.registry);
+  const activeReviewGenerationRef = useRef(bootstrap);
   useLayoutEffect(() => {
     activeExtensionRegistryRef.current = extensions?.registry;
-  }, [extensions?.registry]);
+    activeReviewGenerationRef.current = bootstrap;
+  }, [bootstrap, extensions?.registry]);
   const extensionCommandControls = useMemo(() => {
-    const owningRegistry = extensions?.registry;
+    const lease = createExtensionCapabilityLease({
+      owningRegistry: extensions?.registry,
+      getActiveRegistry: () => activeExtensionRegistryRef.current,
+      isAppAlive: () => appAliveForNavigationRef.current,
+    });
     return createExtensionCommandControls({
       getCommands: () => extensionHostCommandsRef.current,
-      isLive: () =>
-        appAliveForNavigationRef.current &&
-        owningRegistry?.eventBusPhase !== "closed" &&
-        activeExtensionRegistryRef.current === owningRegistry,
+      isLive: lease.isLive,
     });
   }, [extensions?.registry]);
+  /** Mint controls that expire with their runtime, App instance, or review generation. */
+  const createReviewCapabilityLease = useCallback(
+    () =>
+      createExtensionCapabilityLease({
+        owningRegistry: extensions?.registry,
+        getActiveRegistry: () => activeExtensionRegistryRef.current,
+        isAppAlive: () => appAliveForNavigationRef.current,
+        isReviewCurrent: () => activeReviewGenerationRef.current === bootstrap,
+      }),
+    [bootstrap, extensions?.registry],
+  );
   useEffect(() => {
     // StrictMode replays setup/cleanup/setup while the same App remains mounted.
     appAliveForNavigationRef.current = true;
@@ -629,12 +653,6 @@ export function App({
     };
   }, []);
 
-  useEffect(() => {
-    // Every load produces a fresh changeset object, so this covers the first
-    // review plus soft reloads; hard reloads remount App and land here again.
-    emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
-  }, [bootstrap.changeset, extensions]);
-
   const setPaneOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
     setPaneOpenState((current) => {
       const isOpen = current.open.includes(key);
@@ -650,6 +668,15 @@ export function App({
   /** Build the canonical pane controls; deprecated sidebar controls share this object. */
   const createPaneControls = useCallback(
     (extensionId: string): ExtensionPaneControls => {
+      const lease = createReviewCapabilityLease();
+      const hasAuthority = (method: string) => {
+        if (lease.isLive()) return true;
+        extensions?.context.notify(
+          `Extension ${extensionId} ${method} ignored — the review session was reloaded`,
+          "warning",
+        );
+        return false;
+      };
       const resolve = (method: string, id: string) => {
         const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
         if (!key)
@@ -666,6 +693,7 @@ export function App({
       };
       return {
         open(id) {
+          if (!hasAuthority("panes.open")) return;
           const key = resolve("panes.open", id);
           if (key) {
             setPaneOpen(key, true);
@@ -673,10 +701,12 @@ export function App({
           }
         },
         close(id) {
+          if (!hasAuthority("panes.close")) return;
           const key = resolve("panes.close", id);
           if (key) setPaneOpen(key, false);
         },
         toggle(id) {
+          if (!hasAuthority("panes.toggle")) return;
           const key = resolve("panes.toggle", id);
           if (key) {
             const opens = !paneOpenStateRef.current.open.includes(key);
@@ -685,27 +715,32 @@ export function App({
           }
         },
         isOpen(id) {
+          if (!lease.isLive()) return false;
           const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
           return key !== undefined && paneOpenStateRef.current.open.includes(key);
         },
       };
     },
-    [extensions, setPaneOpen],
+    [createReviewCapabilityLease, extensions, setPaneOpen],
   );
 
   /** Build live, guarded review navigation for one extension-owned handler. */
   const createExtensionNavigation = useCallback(
-    (extensionId: string) =>
-      createGuardedReviewNavigation({
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createGuardedReviewNavigation({
         extensionId,
         getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
-        isLive: () => appAliveForNavigationRef.current,
+        isLive: lease.isLive,
         notify: (message, type) => extensions?.context.notify(message, type),
         onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
         onSelectHunk: (fileId, hunkIndex) =>
           extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
-      }),
-    [extensions],
+        onRevealLine: (fileId, side, line) =>
+          extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
+      });
+    },
+    [createReviewCapabilityLease, extensions],
   );
 
   /**
@@ -736,17 +771,27 @@ export function App({
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
       const bundled = extensions?.registry.extensions.some(
         (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
       );
-      return createQueuedExtensionDialogs(extensionId, { showAttribution: !bundled });
+      return createQueuedExtensionDialogs(extensionId, {
+        isLive: lease.isLive,
+        showAttribution: !bundled,
+      });
     },
-    [createQueuedExtensionDialogs, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
   );
 
   /** Build host-mediated reviewed-document read and write controls for one extension command. */
   const createWorkspaceControls = useCallback(
     (extensionId: string): ExtensionWorkspace => {
+      const lease = createReviewCapabilityLease();
+      const expired = (): ExtensionWorkspaceWriteResult => ({
+        ok: false,
+        reason: "unavailable",
+        detail: "The review reloaded before this extension operation could finish.",
+      });
       const resolveTarget = (fileId: string) =>
         resolveExtensionWorkspaceWriteTarget({
           fileId,
@@ -755,6 +800,7 @@ export function App({
 
       return {
         async readDocument(fileId: string, side: ExtensionFileSide) {
+          if (!lease.isLive()) return null;
           // Unlike a write, a read asks nothing of the user and nothing of the
           // review kind: it hands back the document the review is already
           // showing. Only a malformed side throws, from inside the policy.
@@ -771,7 +817,7 @@ export function App({
           // The probe answers for anything, including an id that is not even a
           // string: an affordance question should not throw at a caller who is
           // only deciding whether to offer the action.
-          return typeof fileId === "string" && resolveTarget(fileId).writable;
+          return lease.isLive() && typeof fileId === "string" && resolveTarget(fileId).writable;
         },
         async writeDocument(
           request: ExtensionWorkspaceWriteRequest,
@@ -779,6 +825,7 @@ export function App({
           // Throws rather than resolving a reason: a malformed request is a bug
           // in the extension, not an answer about this review.
           const { fileId, text } = normalizeWorkspaceWriteRequest(request);
+          if (!lease.isLive()) return expired();
           const target = resolveTarget(fileId);
           if (!target.writable) {
             return { ok: false, reason: "unavailable", detail: target.detail };
@@ -797,6 +844,7 @@ export function App({
               root,
             });
           const refusal = await verifyTarget();
+          if (!lease.isLive()) return expired();
           if (refusal) {
             return { ok: false, reason: "unavailable", detail: refusal };
           }
@@ -809,6 +857,7 @@ export function App({
             body: `Extension ${extensionId} will replace this file's contents on disk.`,
             confirmLabel: "write",
           });
+          if (!lease.isLive()) return expired();
           if (!confirmed) {
             return {
               ok: false,
@@ -818,6 +867,7 @@ export function App({
           }
 
           const changedTargetRefusal = await verifyTarget();
+          if (!lease.isLive()) return expired();
           if (changedTargetRefusal) {
             return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
@@ -843,7 +893,7 @@ export function App({
         },
       };
     },
-    [createExtensionDialogs],
+    [createExtensionDialogs, createReviewCapabilityLease],
   );
 
   // Lifecycle and bus listeners receive the same pane, navigation, and dialog
@@ -1718,12 +1768,9 @@ export function App({
 
   /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
   const requestQuit = useCallback(() => {
-    const transientViewPreferences = extensions?.registry.sessionOptions.some(
-      ({ options }) => options.viewPreferences === "transient",
-    );
     if (
       !pagerMode &&
-      !transientViewPreferences &&
+      !extensionSessionOptions.transientViewPreferences &&
       bootstrap.input.options.promptSaveViewPreferences !== false &&
       hasUnsavedViewPreferences
     ) {
@@ -1735,7 +1782,7 @@ export function App({
     onQuit();
   }, [
     bootstrap.input.options.promptSaveViewPreferences,
-    extensions,
+    extensionSessionOptions.transientViewPreferences,
     hasUnsavedViewPreferences,
     onQuit,
     pagerMode,
@@ -1904,46 +1951,43 @@ export function App({
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
   // win a key and extension order follows load order.
-  const appCommands = [
-    ...buildAppCommands({
-      canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
-      canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
-      canRefreshCurrentInput,
-      alignCurrentLine,
-      applyFilePresentationToAllMatching,
-      focusFilter,
-      moveSelection: review.moveSelection,
-      openAgentSkill,
-      openThemeSelector,
-      requestQuit,
-      resolvedKeys: resolvedCommandKeys,
-      scrollCodeHorizontally,
-      scrollDiff,
-      stepDiffLine,
-      selectCursorLine: setCursorLine,
-      selectLayoutMode,
-      startUserNote: () => startUserNote(),
-      toggleAgentNotes,
-      toggleCopyDecorations,
-      toggleFocusArea,
-      toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
-      toggleHelp,
-      toggleHunkHeaders,
-      toggleLineNumbers,
-      toggleLineWrap,
-      toggleMenuBar,
-      toggleSidebar,
-      triggerEditSelectedFile,
-      triggerRefreshCurrentInput,
-    }),
-    ...extensionAppCommands.commands,
-  ].map((command) => ({
-    ...command,
-    run: (...args: Parameters<typeof command.run>) => {
-      command.run(...args);
-      emitExtensionEvent(extensions, "command_executed", { commandId: command.id });
-    },
-  }));
+  const appCommands = observeAppCommandDispatch(
+    [
+      ...buildAppCommands({
+        canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
+        canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        canRefreshCurrentInput,
+        alignCurrentLine,
+        applyFilePresentationToAllMatching,
+        focusFilter,
+        moveSelection: review.moveSelection,
+        openAgentSkill,
+        openThemeSelector,
+        requestQuit,
+        resolvedKeys: resolvedCommandKeys,
+        scrollCodeHorizontally,
+        scrollDiff,
+        stepDiffLine,
+        selectCursorLine: setCursorLine,
+        selectLayoutMode,
+        startUserNote: () => startUserNote(),
+        toggleAgentNotes,
+        toggleCopyDecorations,
+        toggleFocusArea,
+        toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+        toggleHelp,
+        toggleHunkHeaders,
+        toggleLineNumbers,
+        toggleLineWrap,
+        toggleMenuBar,
+        toggleSidebar,
+        triggerEditSelectedFile,
+        triggerRefreshCurrentInput,
+      }),
+      ...extensionAppCommands.commands,
+    ],
+    (commandId) => emitExtensionEvent(extensions, "command_executed", { commandId }),
+  );
   extensionHostCommandsRef.current = appCommands;
 
   // Menus name commands rather than repeating them: every item's key hint and

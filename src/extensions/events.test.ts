@@ -190,7 +190,7 @@ describe("extension event dispatch", () => {
         notify: () => {},
         panes,
         sidebars: panes,
-        navigation: { selectFile: () => {}, selectHunk: () => {} },
+        navigation: { selectFile: () => {}, selectHunk: () => {}, revealLine: () => {} },
         dialogs: {
           confirm: async () => false,
           select: async () => null,
@@ -248,6 +248,33 @@ describe("extension event bus", () => {
 
     releaseShutdown();
     await retirement;
+  });
+
+  test("drops ordinary lifecycle events after revocation and runs shutdown once", async () => {
+    const seen: string[] = [];
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "probe",
+        event: "selection_changed",
+        handler: () => {
+          seen.push("selection");
+        },
+      },
+      {
+        extensionId: "probe",
+        event: "shutdown",
+        handler: () => {
+          seen.push("shutdown");
+        },
+      },
+    ]);
+    bindExtensionEventBus(result);
+
+    await retireExtensionLoadResult(result);
+    emitExtensionEvent(result, "selection_changed", { fileId: null, hunkIndex: null });
+    await retireExtensionLoadResult(result);
+
+    expect(seen).toEqual(["shutdown"]);
   });
 
   test("delivers a namespaced event to every listener and isolates failures", async () => {

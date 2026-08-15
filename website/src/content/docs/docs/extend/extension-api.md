@@ -270,13 +270,13 @@ Writes require a reloadable, unstaged working-tree review and a writable reviewe
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads/writes return `null`/`unavailable`.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once, after the app mounts with its first changeset      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                              |
-| `command_executed`     | `{ commandId }`         | whenever a named built-in or extension command runs      |
+| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host   |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)     |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
@@ -288,11 +288,12 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                  |
 | `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
 
+- A newly mounted instance receives `startup` before its first `changeset_loaded`; reloads deliver `changeset_loaded` before `session_reload` after the matching review commits.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
-- `command_executed` reports stable command ids after invocation from a key, menu, or another host command surface. It follows remapped keys; widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not commands.
+- `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
 - `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes — an accumulated list is not a complete review record.
-- `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing.
+- `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing. UI authority has already been revoked, so shutdown is for releasing extension-owned resources rather than navigation or dialogs.
 
 ## `hunk.events`
 

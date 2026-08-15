@@ -75,6 +75,27 @@ export interface AppCommand {
   closesMenu?: boolean;
 }
 
+/**
+ * Observe successful terminal dispatch without moving command identity into review state.
+ *
+ * Keyboard dispatch, menus, and extension command controls all invoke these
+ * entries, while browser/session actions correctly continue through ReviewIntent.
+ */
+export function observeAppCommandDispatch(
+  commands: readonly AppCommand[],
+  onDispatched: (commandId: string) => void,
+): AppCommand[] {
+  return commands.map((command) => ({
+    ...command,
+    run(key, count) {
+      command.run(key, count);
+      // AppCommand is deliberately synchronous. Extension handlers may have
+      // detached async work still running after terminal dispatch returns.
+      onDispatched(command.id);
+    },
+  }));
+}
+
 /** What the terminal does for one catalogued command. */
 interface BuiltinCommandHandler {
   /** Report whether the command may run right now; skipped when false. */

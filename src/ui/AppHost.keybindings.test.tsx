@@ -200,6 +200,64 @@ describe("user keybindings", () => {
     });
   });
 
+  test("observes commands invoked through extension command controls exactly once", async () => {
+    const repo = createTestRepo("hunk-keybindings-programmatic-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.commands.push({
+      extensionId: "coach",
+      command: { id: "toggle-lines", title: "Toggle lines", key: "y" },
+      handler: (ctx) => {
+        ctx.commands.execute("hunk.view.toggleLineNumbers");
+      },
+    });
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.view.toggleLineNumbers", "coach.toggle-lines"]);
+    });
+  });
+
+  test("observes quit before shutdown remains the terminal lifecycle event", async () => {
+    const repo = createTestRepo("hunk-keybindings-quit-event-order-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(`command:${commandId}`);
+      },
+    });
+    extensions.registry.eventHandlers.shutdown.push({
+      extensionId: "coach",
+      handler: () => {
+        seen.push("shutdown");
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup, quits) => {
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["command:hunk.app.quit", "shutdown"]);
+      expect(quits()).toBe(1);
+    });
+  });
+
   test("emits command_executed when Tab leaves the focused file filter", async () => {
     const repo = createTestRepo("hunk-keybindings-focused-command-event-");
     const bootstrap = await launchWithConfig(repo, "");

@@ -93,22 +93,22 @@ bad or duplicate id is skipped with a startup notice.
 
 ## Pick the touchpoint
 
-| To do this                                               | Call                                               |
-| -------------------------------------------------------- | -------------------------------------------------- |
-| Keep demo/training view settings temporary               | `hunk.configureSession(options)`                   |
-| Add a selectable color theme                             | `hunk.registerTheme(theme)`                        |
-| Highlight an unrecognized file extension                 | `hunk.registerFileLanguage(ext, lang)`             |
-| Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`                 |
-| Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                          |
-| Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental)       |
-| Mark character ranges inside diff lines                  | `hunk.registerLineHighlighter(highlighter)`        |
-| Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`                  |
-| Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`           |
-| Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                      |
-| React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                          |
-| Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`              |
-| Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)           |
-| Branch on the API generation (currently `6`)             | `hunk.apiVersion`                                  |
+| To do this                                               | Call                                         |
+| -------------------------------------------------------- | -------------------------------------------- |
+| Keep demo/training view settings temporary               | `hunk.configureSession(options)`             |
+| Add a selectable color theme                             | `hunk.registerTheme(theme)`                  |
+| Highlight an unrecognized file extension                 | `hunk.registerFileLanguage(ext, lang)`       |
+| Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`           |
+| Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                    |
+| Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
+| Mark character ranges inside diff lines                  | `hunk.registerLineHighlighter(highlighter)`  |
+| Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`            |
+| Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`     |
+| Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
+| React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
+| Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
+| Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
+| Branch on the API generation (currently `6`)             | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -176,6 +176,10 @@ Most extension bugs are one of these:
 - **Handler state must live outside the component.** Panes unmount when closed;
   bridge module-level state into React with `useSyncExternalStore` and immutable
   snapshots (`review-triage/index.tsx` is the working version).
+- **Retained review controls expire on reload.** An old handler cannot control
+  replacement content: pane/navigation calls become inert, dialogs cancel, and
+  workspace reads/writes return `null`/`unavailable`. `shutdown` runs after that
+  revocation, so use it only to release extension-owned resources.
 - **A reload keeps your factory and renames the files.** Factories re-run only
   after a trust grant or a cwd change, so module state survives — but a file's
   `id` encodes its position in the changeset, so a reload that adds or drops a

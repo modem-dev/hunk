@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 5;
+export const HUNK_EXTENSION_API_VERSION = 6;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1611,8 +1611,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
   /**
    * Ask the user a question and await the answer.
    *
-   * Valid for the whole life of the handler's promise, so a handler may open
-   * several dialogs in sequence with work in between.
+   * Valid for the handler's promise while this review generation remains
+   * current, so a handler may open several dialogs in sequence with work in
+   * between. A reload expires retained controls and returns cancel values.
    */
   readonly dialogs: ExtensionDialogs;
   /**
@@ -1620,7 +1621,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * user's consent.
    *
    * Host-mediated on purpose: the file is named by review id, a write asks the
-   * user first, and the review reloads after a successful write.
+   * user first, and the review reloads after a successful write. Retained
+   * controls expire with this review generation (`null`/`"unavailable"`).
    */
   readonly workspace: ExtensionWorkspace;
 }
@@ -1648,7 +1650,7 @@ export interface ExtensionEventBus {
   emit<Payload = unknown>(event: string, payload: Payload): void;
 }
 
-/** Context lifecycle and bus listeners receive, including live host controls. */
+/** Context lifecycle and bus listeners receive, with controls scoped to this review generation. */
 export interface ExtensionEventContext extends ExtensionContext {
   panes: ExtensionPaneControls;
   /** @deprecated Use panes. */
@@ -1693,7 +1695,7 @@ export interface ExtensionReviewNote {
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
-  /** A named built-in or extension command was invoked by key, menu, or another host surface. */
+  /** A named built-in or extension command was dispatched in this terminal host. */
   command_executed: { commandId: string };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */

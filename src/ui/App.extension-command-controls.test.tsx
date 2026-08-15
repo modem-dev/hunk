@@ -4,7 +4,7 @@ import { act, StrictMode, useState } from "react";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import type { AppBootstrap } from "../app/types";
-import type { ExtensionCommandControls } from "../extension-api/types";
+import type { ExtensionCommandControls, ExtensionWorkspace } from "../extension-api/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { App } from "./App";
 
@@ -32,12 +32,14 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 describe("extension command control authority", () => {
   test("retires captured controls only when a soft reload replaces the extension registry", async () => {
     let capturedControls: ExtensionCommandControls | null = null;
+    let capturedWorkspace: ExtensionWorkspace | null = null;
     const initial = createBootstrap();
     initial.extensions!.registry.commands.push({
       extensionId: "probe",
       command: { id: "capture", title: "Capture controls", key: "y" },
       handler(ctx) {
         capturedControls = ctx.commands;
+        capturedWorkspace = ctx.workspace;
       },
     });
     let replaceBootstrap: (next: AppBootstrap) => void = () => {};
@@ -76,12 +78,21 @@ describe("extension command control authority", () => {
       expect(capturedControls).not.toBeNull();
       expect(capturedControls!.isEnabled("hunk.review.nextHunk")).toBe(true);
 
-      // Ordinary content reloads retain the extension registry and its async authority.
+      // Runtime-level command controls survive a content reload, while
+      // review-bound workspace authority expires with the old generation.
       await act(async () => {
         replaceBootstrap({ ...createBootstrap(), extensions: initial.extensions });
       });
       await flush(setup);
       expect(capturedControls!.isEnabled("hunk.review.nextHunk")).toBe(true);
+      expect(capturedWorkspace).not.toBeNull();
+      expect(
+        await capturedWorkspace!.writeDocument({ fileId: "alpha", text: "replacement" }),
+      ).toEqual({
+        ok: false,
+        reason: "unavailable",
+        detail: "The review reloaded before this extension operation could finish.",
+      });
 
       // AppHost closes the old registry before its async replacement load finishes.
       // Captured controls lose authority at that boundary, before App receives new props.

@@ -145,6 +145,24 @@ describe("createExtensionDialogQueue", () => {
     expect(await again).toBe(true);
   });
 
+  test("refuses retained controls and cancels acceptance after their lease expires", async () => {
+    const queue = createExtensionDialogQueue();
+    let live = true;
+    const retired = queue.createDialogs("retired", { isLive: () => live });
+
+    const open = retired.confirm({ title: "Still current?" });
+    live = false;
+    queue.accept(queue.current()!.id);
+    expect(await open).toBe(false);
+    expect(await retired.input({ title: "Too late" })).toBeNull();
+    expect(queue.current()).toBeNull();
+
+    const replacement = queue.createDialogs("replacement", { isLive: () => true });
+    const next = replacement.confirm({ title: "Current" });
+    queue.accept(queue.current()!.id);
+    expect(await next).toBe(true);
+  });
+
   test("cancels the pending and queued dialogs on shutdown, and refuses later ones", async () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("probe");

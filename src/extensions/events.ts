@@ -320,7 +320,7 @@ function unavailableReviewNavigation(
       `Extension ${extensionId} cannot navigate the review before the app is ready`,
       "warning",
     );
-  return { selectFile: unavailable, selectHunk: unavailable };
+  return { selectFile: unavailable, selectHunk: unavailable, revealLine: unavailable };
 }
 
 /** Dialog controls used before the mounted app has installed its modal queue. */
@@ -386,6 +386,12 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
 ): Promise<void>[] {
   const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
+
+  // Revocation closes ordinary lifecycle delivery synchronously. Retirement is
+  // the sole exception: shutdown runs once after authority has become inert.
+  if (result.registry.eventBusPhase === "closed" && event !== "shutdown") {
+    return settled;
+  }
 
   if (handlers.length === 0) {
     return settled;

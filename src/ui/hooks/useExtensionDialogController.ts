@@ -12,7 +12,7 @@ export interface ExtensionDialogController {
   request: ExtensionDialogRequest | null;
   selectedIndex: number;
   inputValue: string;
-  accept: () => void;
+  accept: (selectedIndexOverride?: number) => void;
   cancel: () => void;
   moveSelection: (delta: number) => void;
   pickOption: (index: number) => void;
@@ -53,11 +53,11 @@ export function useExtensionDialogController({
   }, [queue]);
 
   /** Answer the visible request with the state appropriate to its dialog kind. */
-  const accept = () => {
+  const accept = (selectedIndexOverride?: number) => {
     if (!request) return;
 
     if (request.kind === "select") {
-      queue.accept(request.id, request.options[selectedIndex]);
+      queue.accept(request.id, request.options[selectedIndexOverride ?? selectedIndex]);
       return;
     }
 

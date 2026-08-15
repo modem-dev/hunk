@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
@@ -13,11 +13,7 @@ import {
   reportExtensionApplyIssues,
   resolveExtensionVcsAdapters,
 } from "../extensions/apply";
-import {
-  emitExtensionEvent,
-  emitExtensionEventBounded,
-  retireExtensionLoadResult,
-} from "../extensions/events";
+import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
 import { extendVcsCatalog } from "../core/vcs";
 import {
   createInitialSessionSnapshot,
@@ -100,11 +96,13 @@ export function AppHost({
   const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
   const initialExtensionStartupPendingRef = useRef(true);
   const reloadTailRef = useRef<Promise<void>>(Promise.resolve());
-  const pendingReplacementLifecycleRef = useRef<{
+  const quitRequestedRef = useRef(false);
+  const pendingReloadLifecycleRef = useRef<{
     extensions: ExtensionLoadResult;
     cwd: string;
     changeset: AppBootstrap["changeset"];
     reason: NonNullable<ReloadSessionOptions["reason"]>;
+    emitStartup: boolean;
     resolveMounted: () => void;
   } | null>(null);
   const startupNoticeText = useStartupNotices({
@@ -113,23 +111,31 @@ export function AppHost({
     resolver: startupNoticeResolver,
   });
 
-  useEffect(() => {
-    // Child effects run before the parent's, so by the time this fires the review
-    // UI has rendered the matching bootstrap and installed live extension controls.
+  useLayoutEffect(() => {
+    // Child layout effects run before the parent's, so controls and generation
+    // leases are live here; passive UI events still wait until this order lands.
     if (initialExtensionStartupPendingRef.current) {
       initialExtensionStartupPendingRef.current = false;
       emitExtensionEvent(extensionsRef.current, "startup", {
         cwd: initialBootstrap.reloadContext.cwd,
       });
+      emitExtensionEvent(extensionsRef.current, "changeset_loaded", {
+        changeset: initialBootstrap.changeset,
+      });
       return;
     }
 
-    const pending = pendingReplacementLifecycleRef.current;
+    const pending = pendingReloadLifecycleRef.current;
     if (!pending) {
       return;
     }
-    pendingReplacementLifecycleRef.current = null;
-    emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+    pendingReloadLifecycleRef.current = null;
+    if (pending.emitStartup) {
+      emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+    }
+    emitExtensionEvent(pending.extensions, "changeset_loaded", {
+      changeset: pending.changeset,
+    });
     emitExtensionEvent(pending.extensions, "session_reload", {
       changeset: pending.changeset,
       reason: pending.reason,
@@ -234,7 +240,6 @@ export function AppHost({
       })();
       const { nextBootstrap, nextSnapshot, sessionId } = preparedReload;
 
-      let replacementMounted: Promise<void> | undefined;
       let currentExtensionsRetired: Promise<void> | undefined;
       if (replacementExtensions) {
         // Only retire the visible runtime after its replacement review is known-good.
@@ -244,16 +249,19 @@ export function AppHost({
         currentExtensionsRetired = retireExtensionLoadResult(currentExtensions);
         extensionsRef.current = replacementExtensions;
         extensionsCwdRef.current = cwd;
-        replacementMounted = new Promise<void>((resolveMounted) => {
-          pendingReplacementLifecycleRef.current = {
-            extensions: replacementExtensions,
-            cwd,
-            changeset: nextBootstrap.changeset,
-            reason: options?.reason ?? "daemon",
-            resolveMounted,
-          };
-        });
       }
+      const reloadMounted = extensions
+        ? new Promise<void>((resolveMounted) => {
+            pendingReloadLifecycleRef.current = {
+              extensions,
+              cwd,
+              changeset: nextBootstrap.changeset,
+              reason: options?.reason ?? "daemon",
+              emitStartup: replacementExtensions !== undefined,
+              resolveMounted,
+            };
+          })
+        : undefined;
 
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
@@ -262,16 +270,9 @@ export function AppHost({
         setAppVersion((current) => current + 1);
       }
 
-      if (!replacementExtensions) {
-        emitExtensionEvent(extensions, "session_reload", {
-          changeset: nextBootstrap.changeset,
-          reason: options?.reason ?? "daemon",
-        });
-      } else {
-        // Keep the reload queue held until React commits the matching App and
-        // the replacement receives startup/session_reload through live controls.
-        await Promise.all([replacementMounted, currentExtensionsRetired]);
-      }
+      // Keep the reload queue held until React commits the matching App and
+      // lifecycle handlers receive controls leased to that review generation.
+      await Promise.all([reloadMounted, currentExtensionsRetired]);
 
       return {
         sessionId,
@@ -306,9 +307,13 @@ export function AppHost({
     [performReloadSession],
   );
 
-  /** Give `shutdown` handlers a bounded window, then leave regardless. */
+  /** Observe the triggering command, then revoke authority and leave after bounded shutdown. */
   const quitAfterShutdownEvent = useCallback(() => {
-    void emitExtensionEventBounded(extensionsRef.current, "shutdown", {}).finally(onQuit);
+    if (quitRequestedRef.current) return;
+    quitRequestedRef.current = true;
+    queueMicrotask(() => {
+      void retireExtensionLoadResult(extensionsRef.current).finally(onQuit);
+    });
   }, [onQuit]);
 
   return (

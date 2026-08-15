@@ -1607,12 +1607,16 @@ one focused welcome question and navigate to its first example, while a
 `changeset_loaded` handler can reveal a pane when it finds something worth
 showing — no keypress required. Dialog calls made before the mounted app is
 ready resolve to their cancel value with a warning rather than opening later.
+Controls retained across a review or extension-registry replacement expire:
+navigation and pane mutations warn and do nothing, dialogs resolve to their
+normal cancel value, and workspace reads/writes return `null`/`unavailable`
+instead of acting on replacement content.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
-| `command_executed`     | `{ commandId }`         | whenever a named built-in or extension command runs       |
+| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
@@ -1624,14 +1628,21 @@ ready resolve to their cancel value with a warning rather than opening later.
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
 | `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
+A newly mounted extension instance receives `startup` before its first
+`changeset_loaded`; reloads then deliver `changeset_loaded` before
+`session_reload` once the matching review generation has committed.
+
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
 
-`command_executed` reports the stable command id after its handler is invoked, whether the user
-reached it through a key, a menu, or another host-owned command surface. Listen for ids rather
-than key chords so behavior follows the user's live `[keybindings]` table. Modal widget keys such
-as Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not commands and do not emit it.
+`command_executed` reports the stable command id after the terminal dispatcher invokes it,
+whether the user reached it through a key, a menu, or `ctx.commands.execute`. Extension commands
+may still have detached async work in flight; this event observes the accepted user action, not
+promise settlement. Listen for ids rather than key chords so behavior follows the user's live
+`[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal
+commands and do not emit this event. Modal widget keys such as Escape, Enter, note-editor Ctrl-S,
+and F10 menu navigation are also not commands.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
 `"daemon"` (an agent command through the session broker), or `"manual"` (the
@@ -1646,6 +1657,8 @@ here this session", not a complete review record; present it as such.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.
+Host-mediated UI authority is already revoked when shutdown begins: use the
+event to release extension-owned resources, not to navigate or open dialogs.
 The replacement instance receives `startup` after its review is mounted.
 
 ### `hunk.events`
