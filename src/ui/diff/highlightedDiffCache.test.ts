@@ -12,7 +12,8 @@ function createTestHighlightedDiffCode(lines: number): HighlightedDiffCode {
 
 describe("highlighted diff cache", () => {
   test("evicts the least recently used entry rather than the oldest highlight", () => {
-    const cache = createHighlightedDiffCache(20);
+    // Three 10-line results cost 18 each with per-entry overhead, so two fit and a third evicts.
+    const cache = createHighlightedDiffCache(40);
     const onScreen = createTestHighlightedDiffCode(10);
     const scrolledPast = createTestHighlightedDiffCode(10);
     const prefetched = createTestHighlightedDiffCode(10);
@@ -30,7 +31,7 @@ describe("highlighted diff cache", () => {
   });
 
   test("peeking does not protect an entry from eviction", () => {
-    const cache = createHighlightedDiffCache(10);
+    const cache = createHighlightedDiffCache(20);
     const first = createTestHighlightedDiffCode(10);
     const second = createTestHighlightedDiffCode(10);
 
@@ -43,7 +44,7 @@ describe("highlighted diff cache", () => {
   });
 
   test("holds far more small files than large ones under the same budget", () => {
-    const cache = createHighlightedDiffCache(100);
+    const cache = createHighlightedDiffCache(600);
 
     // A window of one-line fixes is what a lint or import sweep looks like.
     for (let index = 0; index < 50; index += 1) {
@@ -85,6 +86,19 @@ describe("highlighted diff cache", () => {
 
     expect(cache.peek("reloaded")).toBe(reloaded);
     expect(cache.peek("kept")).toBe(kept);
+  });
+
+  test("reclaims entries that retain no lines at all", () => {
+    const cache = createHighlightedDiffCache(100);
+
+    // Diffs past the highlight ceiling cache an empty result. A watch session reloading one
+    // produces a fresh key per reload, so these have to age out like any other entry.
+    for (let index = 0; index < 200; index += 1) {
+      cache.set(`skipped-${index}`, createTestHighlightedDiffCode(0));
+    }
+
+    expect(cache.peek("skipped-199")).toBeDefined();
+    expect(cache.peek("skipped-0")).toBeUndefined();
   });
 
   test("keeps one entry when given a degenerate budget", () => {

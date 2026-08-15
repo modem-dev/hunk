@@ -24,14 +24,28 @@ export interface HighlightedDiffCache {
   set: (key: string, value: HighlightedDiffCode) => void;
 }
 
+/**
+ * Bookkeeping charged to every entry, in line-equivalents.
+ *
+ * A skipped or failed highlight retains no lines but still holds a cache key and an entry object.
+ * Charged nothing, those never reach the eviction loop, so a long watch session reloading an
+ * oversized file would accumulate keys the budget could never reclaim.
+ */
+const ENTRY_OVERHEAD_LINES = 8;
+
 interface HighlightedDiffCacheEntry {
-  lines: number;
+  cost: number;
   value: HighlightedDiffCode;
 }
 
 /** Count the highlighted lines one result retains, across both diff sides. */
 function highlightedLineCount(value: HighlightedDiffCode) {
   return value.deletionLines.length + value.additionLines.length;
+}
+
+/** Charge one result its retained lines plus per-entry bookkeeping. */
+function entryCost(value: HighlightedDiffCode) {
+  return highlightedLineCount(value) + ENTRY_OVERHEAD_LINES;
 }
 
 /**
@@ -50,7 +64,7 @@ export function createHighlightedDiffCache(
 ): HighlightedDiffCache {
   const entries = new Map<string, HighlightedDiffCacheEntry>();
   const budget = Math.max(1, Math.floor(maxLines));
-  let cachedLines = 0;
+  let cachedCost = 0;
 
   /** Move one key to the most-recently-used end of Map iteration order. */
   const touch = (key: string, entry: HighlightedDiffCacheEntry) => {
@@ -74,16 +88,16 @@ export function createHighlightedDiffCache(
     },
 
     set(key, value) {
-      cachedLines -= entries.get(key)?.lines ?? 0;
+      cachedCost -= entries.get(key)?.cost ?? 0;
 
-      const lines = highlightedLineCount(value);
-      touch(key, { lines, value });
-      cachedLines += lines;
+      const cost = entryCost(value);
+      touch(key, { cost, value });
+      cachedCost += cost;
 
       // Map iteration order is insertion order and every read re-inserts, so the first keys are the
       // least recently used. Stop at one entry so the result just stored survives its own eviction
       // pass even when it alone exceeds the budget.
-      while (cachedLines > budget && entries.size > 1) {
+      while (cachedCost > budget && entries.size > 1) {
         const leastRecentlyUsed = entries.entries().next().value;
         if (leastRecentlyUsed === undefined) {
           return;
@@ -91,7 +105,7 @@ export function createHighlightedDiffCache(
 
         const [evictedKey, evictedEntry] = leastRecentlyUsed;
         entries.delete(evictedKey);
-        cachedLines -= evictedEntry.lines;
+        cachedCost -= evictedEntry.cost;
       }
     },
   };
