@@ -22,6 +22,16 @@
 import type { PersistedViewPreferences } from "../types";
 
 /**
+ * How a surface lays a diff out.
+ *
+ * One vocabulary for both tiers: `auto` is responsive — two columns when there is room for
+ * them — and an explicit choice overrides it. It lives with the option classification
+ * because a layout is one of the options being classified, and a browser that declared its
+ * own three-word union would be free to drift from the terminal's on what `auto` means.
+ */
+export type LayoutMode = "auto" | "split" | "stack";
+
+/**
  * Where one option's value lives.
  *
  * - `review` — part of the review every attached surface sees; changing it is a review

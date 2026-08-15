@@ -16,7 +16,10 @@ import type {
   ReviewPublicationAddress,
   ReviewPublicationOrder,
 } from "../../../src/core/review/generationOrder";
-import { reviewResourceId } from "../../../src/core/review/resources";
+import {
+  REVIEW_CANONICAL_FILE_CONTENT_TYPE,
+  reviewResourceId,
+} from "../../../src/core/review/resources";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../../src/session/reviewProtocol";
 import type { HunkReviewPublicationBodyV1 } from "../../../src/session/reviewHttpProtocol";
 import type { ReviewEventHandlers } from "../../../src/web/reviewApiClient";
@@ -41,7 +44,7 @@ function publicationFor(address: ReviewPublicationAddress): HunkReviewPublicatio
           generation: address.generation,
           fileKey: FILE_KEY,
           kind: "canonical-file",
-          contentType: "application/vnd.hunk.review-file+json; charset=utf-8",
+          contentType: REVIEW_CANONICAL_FILE_CONTENT_TYPE,
         },
       ],
     },
