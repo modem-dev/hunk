@@ -10,7 +10,7 @@ import type {
   SessionLiveCommentSummary,
   SessionReviewNoteSummary,
 } from "../../session/types";
-import type { ReviewController } from "./useReviewController";
+import type { TerminalReview } from "./useTerminalReview";
 
 /** Bridge one live Hunk review session to the local session daemon. */
 export function useHunkSessionBridge({
@@ -36,15 +36,15 @@ export function useHunkSessionBridge({
   selectedHunkIndex,
   showAgentNotes,
 }: {
-  addAgentLineHighlight: ReviewController["addAgentLineHighlight"];
-  addLiveComment: ReviewController["addLiveComment"];
-  addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
-  clearAgentLineHighlights: ReviewController["clearAgentLineHighlights"];
-  clearLiveComments: ReviewController["clearLiveComments"];
+  addAgentLineHighlight: TerminalReview["addAgentLineHighlight"];
+  addLiveComment: TerminalReview["addLiveComment"];
+  addLiveCommentBatch: TerminalReview["addLiveCommentBatch"];
+  clearAgentLineHighlights: TerminalReview["clearAgentLineHighlights"];
+  clearLiveComments: TerminalReview["clearLiveComments"];
   hostClient?: HunkSessionBrokerClient;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
-  navigateToLocation: ReviewController["navigateToLocation"];
+  navigateToLocation: TerminalReview["navigateToLocation"];
   /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
   noteMarkupWidth?: number;
   openAgentNotes: () => void;
@@ -52,7 +52,7 @@ export function useHunkSessionBridge({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
-  removeLiveComment: ReviewController["removeLiveComment"];
+  removeLiveComment: TerminalReview["removeLiveComment"];
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
   /** The producer that answers brokered review resource reads and actions for this session. */

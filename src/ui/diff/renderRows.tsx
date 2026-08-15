@@ -9,7 +9,7 @@ import {
 } from "./codeColumns";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../../core/review/document";
 import { reviewGapId } from "../../core/review/expansion";
-import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
+import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRows";
 import {
   applyLineHighlightsToSpans,
   lineHighlightPaintKey,
@@ -2298,7 +2298,7 @@ interface DiffRowViewProps {
 /**
  * Render one diff row, memoized to avoid unnecessary rerenders.
  *
- * The comparator checks every handler by reference, so callers (PierreDiffView) must pass
+ * The comparator checks every handler by reference, so callers (DiffSectionBody) must pass
  * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
  * silently degrades to re-rendering every visible row per parent render.
  */

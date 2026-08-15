@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import { findMaxLineNumber } from "../ui/diff/codeColumns";
-import { buildSplitRows, buildStackRows } from "../ui/diff/pierre";
+import { buildSplitRows, buildStackRows } from "../ui/diff/diffRows";
 import { diffMessage, DiffRowView, fitText } from "../ui/diff/renderRows";
 import { useHighlightedDiff } from "../ui/diff/useHighlightedDiff";
 import { resolveTheme } from "../ui/themes";

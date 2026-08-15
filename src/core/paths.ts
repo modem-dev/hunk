@@ -93,7 +93,7 @@ export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /** Resolve the persisted Hunk state file path from the current environment. */
-export function resolveHunkStatePath(env: NodeJS.ProcessEnv = process.env) {
+export function resolveAppStatePath(env: NodeJS.ProcessEnv = process.env) {
   const configDir = resolveUserConfigDir(env);
   return configDir ? join(configDir, "hunk", "state.json") : undefined;
 }

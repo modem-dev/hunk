@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
-import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./pierre";
+import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./diffRows";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
 interface HighlightedSourceState {

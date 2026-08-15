@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { reviewGapId } from "../../core/review/expansion";
 import { expandCollapsedRows } from "./expandCollapsedRows";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 function makeCollapsedRow(
   position: "before" | "trailing",

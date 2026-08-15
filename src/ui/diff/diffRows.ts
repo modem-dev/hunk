@@ -1,3 +1,10 @@
+/**
+ * Turns a parsed diff into the terminal row model every review surface draws from.
+ *
+ * `DiffRow` is the unit the rest of the UI measures, windows, and paints, so this module is
+ * named for that role rather than for Pierre, whose highlighter it calls to build the spans
+ * each row carries.
+ */
 import {
   cleanLastNewline,
   getHighlighterOptions,

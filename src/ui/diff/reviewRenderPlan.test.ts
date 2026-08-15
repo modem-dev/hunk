@@ -11,7 +11,7 @@ import {
 } from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
-const { buildSplitRows, buildStackRows } = await import("./pierre");
+const { buildSplitRows, buildStackRows } = await import("./diffRows");
 const { buildReviewRenderPlan } = await import("./reviewRenderPlan");
 
 function lines(...values: string[]) {

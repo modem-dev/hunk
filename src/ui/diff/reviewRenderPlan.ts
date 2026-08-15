@@ -3,7 +3,7 @@ import type { ReviewRangeAnchorV1 } from "../../core/review/types";
 import type { AgentAnnotation, UserNoteLineTarget } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();

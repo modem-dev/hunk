@@ -9,7 +9,7 @@ import {
   buildLineHighlightPaintIndex,
   lineHighlightPaintKey,
 } from "./lineHighlightPaint";
-import type { RenderSpan } from "./pierre";
+import type { RenderSpan } from "./diffRows";
 
 /** Shorthand for one validated mark. */
 function mark(

@@ -1,3 +1,9 @@
+/**
+ * Renders one file section's diff body: its planned rows, windowed to what is on screen.
+ *
+ * `DiffSection` owns the file header and picks a body; this is the diff-row body it picks
+ * for a normal review, beside `FileView` for the alternate file views.
+ */
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
@@ -11,8 +17,8 @@ import type { AppTheme } from "../themes";
 import { type FileSourceStatus } from "./expandCollapsedRows";
 import { buildLineHighlightPaintIndex } from "./lineHighlightPaint";
 import type { ValidatedLineHighlight } from "../highlights/validate";
-import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
-import { plannedReviewRowVisible } from "./plannedReviewRows";
+import { spansForHighlightedSourceLine, type DiffRow } from "./diffRows";
+import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import {
@@ -67,7 +73,7 @@ function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance
 }
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
-export function PierreDiffView({
+export function DiffSectionBody({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,

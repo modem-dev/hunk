@@ -10,7 +10,7 @@ import {
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
-} from "./reviewProjection";
+} from "./reviewNoteMapping";
 
 /** Hunk spans placing new line 4 — the test live comment's line — in hunk 2. */
 const testHunks: ReviewHunkSpan[] = [

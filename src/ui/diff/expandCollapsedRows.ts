@@ -9,7 +9,7 @@ import type {
   RenderSpan,
   SplitLineCell,
   StackLineCell,
-} from "./pierre";
+} from "./diffRows";
 
 export type ExpansionLayout = "split" | "stack";
 
