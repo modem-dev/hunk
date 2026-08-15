@@ -48,7 +48,11 @@ function render(width = 1_400) {
 }
 
 /** One opened collapsed region, rendered the way the stream places it around a hunk. */
-function renderOpenGap(options: { source: ReviewSourceEntry; showHeader?: boolean }) {
+function renderOpenGap(options: {
+  source: ReviewSourceEntry;
+  showHeader?: boolean;
+  showLineNumbers?: boolean;
+}) {
   const file = documentFor().files[0]!;
   const gap = buildReviewFileRenderModel(file).gaps[0]!;
   return renderToStaticMarkup(
@@ -59,6 +63,7 @@ function renderOpenGap(options: { source: ReviewSourceEntry; showHeader?: boolea
       source={options.source}
       onToggle={() => undefined}
       showHeader={options.showHeader ?? false}
+      showLineNumbers={options.showLineNumbers ?? false}
     />,
   );
 }
@@ -107,6 +112,29 @@ describe("ReviewStream", () => {
     }
     // Closed until a reader opens it: nothing is fetched for a region nobody looked at.
     expect(markup).toContain('aria-expanded="false"');
+  });
+
+  test("numbers the lines an opened gap reveals when line numbers are on", () => {
+    const markup = renderOpenGap({
+      source: { status: "ready", text: BASE },
+      showLineNumbers: true,
+      showHeader: false,
+    });
+
+    expect(markup).toContain("review-gap-line-numbers");
+    // The two options are separate: the range label belongs to the hunk-header option.
+    expect(markup).not.toContain("review-gap-range");
+  });
+
+  test("leaves them off when line numbers are off, whatever the hunk headers say", () => {
+    const markup = renderOpenGap({
+      source: { status: "ready", text: BASE },
+      showLineNumbers: false,
+      showHeader: true,
+    });
+
+    expect(markup).not.toContain("review-gap-line-numbers");
+    expect(markup).toContain("review-gap-range");
   });
 
   test("says why an opened gap has no lines instead of loading them forever", () => {

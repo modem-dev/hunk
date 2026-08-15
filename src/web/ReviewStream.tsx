@@ -17,7 +17,7 @@
  *   `expansion/toggle` intent instead, and this component reads the answer rather than
  *   holding it.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FileDiff } from "@pierre/diffs/react";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
 import { formatReviewAddress } from "../core/review/address";
@@ -93,7 +93,10 @@ function ReviewFileSection({
   source,
   onRequestSource,
 }: ReviewFileSectionProps) {
-  const model = buildReviewFileRenderModel(file);
+  // Built from the file's content and nothing else — not from the width, which only reaches
+  // Pierre — so a resize re-renders the stream without rebuilding every file's model and
+  // handing Pierre fresh object identities to re-highlight.
+  const model = useMemo(() => buildReviewFileRenderModel(file), [file]);
   const [openGaps, setOpenGaps] = useState<ReadonlySet<string>>(() => new Set());
 
   // A reload replaces the file behind this section; gap ids address the geometry that was
@@ -150,6 +153,7 @@ function ReviewFileSection({
               source={source}
               onToggle={toggleGap}
               showHeader={view.showHunkHeaders}
+              showLineNumbers={view.showLineNumbers}
             />
             <FileDiff
               fileDiff={hunk.fileDiff}
@@ -171,6 +175,7 @@ function ReviewFileSection({
         source={source}
         onToggle={toggleGap}
         showHeader={view.showHunkHeaders}
+        showLineNumbers={view.showLineNumbers}
       />
     </section>
   );
@@ -210,6 +215,8 @@ export interface GapStripProps {
   onToggle: (gapId: string) => void;
   /** Whether the strip states the range it covers, as a hunk header would. */
   showHeader: boolean;
+  /** Whether the lines it reveals carry their line numbers, as the diff rows do. */
+  showLineNumbers: boolean;
 }
 
 /**
@@ -218,7 +225,15 @@ export interface GapStripProps {
  * The line labels are the gap's own addresses and the text is the shared source splitter's,
  * so an expanded line here is the same line the producer would accept a note on.
  */
-export function GapStrip({ gap, open, file, source, onToggle, showHeader }: GapStripProps) {
+export function GapStrip({
+  gap,
+  open,
+  file,
+  source,
+  onToggle,
+  showHeader,
+  showLineNumbers,
+}: GapStripProps) {
   if (!gap) {
     return null;
   }
@@ -242,7 +257,7 @@ export function GapStrip({ gap, open, file, source, onToggle, showHeader }: GapS
       {isOpen ? (
         <ExpandedRows
           rows={rows}
-          showLineNumbers={showHeader}
+          showLineNumbers={showLineNumbers}
           {...(source?.status === "failed" && source.failure
             ? { failure: source.failure.message }
             : {})}
