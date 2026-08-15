@@ -3,9 +3,12 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatReviewAddress } from "../core/review/address";
 import { projectReviewDocument } from "../core/review/document";
-import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { buildReviewFileRenderModel } from "./pierreDocument";
-import { ReviewStream } from "./ReviewStream";
+import { reviewClientFailure } from "./reviewApiClient";
+import type { ReviewSourceEntry } from "./reviewSources";
+import { GapStrip, ReviewStream } from "./ReviewStream";
 import { DEFAULT_BROWSER_VIEW_OPTIONS } from "./viewOptions";
 
 const BASE = `${Array.from({ length: 24 }, (_unused, index) => `line ${index + 1}`).join("\n")}\n`;
@@ -21,6 +24,7 @@ function documentFor() {
         before: BASE,
         after: CHANGED,
         context: 3,
+        sourceFetcher: createTestSourceFetcher(() => BASE),
       }),
       createTestDiffFile({ id: "beta", path: "src/beta.ts", before: BASE, after: BASE }),
     ],
@@ -41,6 +45,22 @@ function render(width = 1_400) {
       />,
     ),
   };
+}
+
+/** One opened collapsed region, rendered the way the stream places it around a hunk. */
+function renderOpenGap(options: { source: ReviewSourceEntry; showHeader?: boolean }) {
+  const file = documentFor().files[0]!;
+  const gap = buildReviewFileRenderModel(file).gaps[0]!;
+  return renderToStaticMarkup(
+    <GapStrip
+      gap={gap}
+      open={new Set([gap.gapId])}
+      file={file}
+      source={options.source}
+      onToggle={() => undefined}
+      showHeader={options.showHeader ?? false}
+    />,
+  );
 }
 
 describe("ReviewStream", () => {
@@ -87,5 +107,14 @@ describe("ReviewStream", () => {
     }
     // Closed until a reader opens it: nothing is fetched for a region nobody looked at.
     expect(markup).toContain('aria-expanded="false"');
+  });
+
+  test("says why an opened gap has no lines instead of loading them forever", () => {
+    const failure = reviewClientFailure("resource-unavailable");
+
+    const markup = renderOpenGap({ source: { status: "failed", failure } });
+
+    expect(markup).toContain(reviewErrorMessage("resource-unavailable"));
+    expect(markup).not.toContain("Loading unchanged lines…");
   });
 });

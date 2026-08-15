@@ -10,14 +10,13 @@
  * The sidebar is navigation only, as it is in the terminal: selecting a file moves the
  * stream to that file rather than collapsing the stream to it.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatReviewAddress } from "../core/review/address";
-import { reviewExpansionSide } from "../core/review/expansion";
 import { reviewFileStatBadges } from "../core/review/presentation";
-import { reviewResourceId } from "../core/review/resources";
 import type { ReviewFileV1 } from "../core/review/types";
 import type { ReviewApiClient } from "./reviewApiClient";
 import type { ReviewMirror, ReviewMirrorSnapshot } from "./reviewMirror";
+import { ReviewSourceStore, type ReviewSourceEntries } from "./reviewSources";
 import { ReviewStream } from "./ReviewStream";
 import {
   resolveBrowserViewOptions,
@@ -41,6 +40,15 @@ function useReviewMirror(mirror: ReviewMirror): ReviewMirrorSnapshot {
   );
 }
 
+/** Watch one source store the same way, so a read that lands re-renders the gaps it fills. */
+function useReviewSources(sources: ReviewSourceStore): ReviewSourceEntries {
+  return useSyncExternalStore(
+    useCallback((notify) => sources.subscribe(notify), [sources]),
+    useCallback(() => sources.getSnapshot(), [sources]),
+    useCallback(() => sources.getSnapshot(), [sources]),
+  );
+}
+
 /** Track the viewport width the responsive layout decides from. */
 function useViewportWidth() {
   const [width, setWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
@@ -56,8 +64,11 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
   const snapshot = useReviewMirror(mirror);
   const viewportWidth = useViewportWidth();
   const [view] = useState<BrowserViewOptions>(() => resolveBrowserViewOptions(hostViewDefaults));
-  const [sourceByFileKey, setSourceByFileKey] = useState<Record<string, string>>({});
+  const sources = useMemo(() => new ReviewSourceStore(client), [client]);
+  const sourceByFileKey = useReviewSources(sources);
 
+  // The page owns the mirror's attachment for as long as it is on screen; the mirror can be
+  // attached again, so a remount picks the same review back up rather than going dark.
   useEffect(() => {
     mirror.start();
     return () => mirror.stop();
@@ -67,35 +78,10 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
   // new content is different text.
   const generation = snapshot.publication?.generation;
   useEffect(() => {
-    setSourceByFileKey({});
-  }, [generation]);
+    sources.setGeneration(generation);
+  }, [sources, generation]);
 
-  const requestSource = useCallback(
-    (file: ReviewFileV1) => {
-      if (!generation || file.sourceIdentity === undefined) {
-        return;
-      }
-      void client
-        .readResource({
-          id: reviewResourceId({
-            kind: "source",
-            fileKey: file.key,
-            side: reviewExpansionSide(file.changeKind),
-          }),
-          generation,
-          kind: "source",
-        })
-        .then((result) => {
-          if (result.ok) {
-            setSourceByFileKey((sources) => ({
-              ...sources,
-              [file.key]: new TextDecoder().decode(result.value),
-            }));
-          }
-        });
-    },
-    [client, generation],
-  );
+  const requestSource = useCallback((file: ReviewFileV1) => sources.request(file), [sources]);
 
   return (
     <div className="review-app">

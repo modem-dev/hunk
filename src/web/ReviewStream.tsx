@@ -28,6 +28,7 @@ import {
   type ReviewFileRenderModel,
   type ReviewRenderGap,
 } from "./pierreDocument";
+import type { ReviewSourceEntry } from "./reviewSources";
 import { resolveBrowserDiffStyle, type BrowserViewOptions } from "./viewOptions";
 
 /** What a file with no rows says about itself, in this surface's wording. */
@@ -45,9 +46,9 @@ export interface ReviewStreamProps {
   view: BrowserViewOptions;
   /** Width the responsive layout decides from; the window's, in a real page. */
   viewportWidth: number;
-  /** Full source text per file key, for the gaps a reader has opened. */
-  sourceByFileKey?: Record<string, string>;
-  /** Asked for the source behind one file the first time a gap in it is opened. */
+  /** Each file's source text, or why it could not be read, for the gaps a reader opened. */
+  sourceByFileKey?: Record<string, ReviewSourceEntry>;
+  /** Asked for the source behind one file whenever a gap in it is opened. */
   onRequestSource?: (file: ReviewFileV1) => void;
 }
 
@@ -80,7 +81,7 @@ interface ReviewFileSectionProps {
   file: ReviewFileV1;
   view: BrowserViewOptions;
   diffStyle: "split" | "unified";
-  source?: string;
+  source?: ReviewSourceEntry;
   onRequestSource?: (file: ReviewFileV1) => void;
 }
 
@@ -103,16 +104,23 @@ function ReviewFileSection({
 
   const toggleGap = useCallback(
     (gapId: string) => {
+      const opening = !openGaps.has(gapId);
       setOpenGaps((open) => {
         const next = new Set(open);
-        if (!next.delete(gapId)) {
-          next.add(gapId);
-          onRequestSource?.(file);
+        if (next.delete(gapId)) {
+          return next;
         }
+        next.add(gapId);
         return next;
       });
+      // Asked outside the updater, which React may run more than once. The request is the
+      // reader's ask for this file's text and also the retry after one that failed; the
+      // store is what decides whether it costs a read.
+      if (opening) {
+        onRequestSource?.(file);
+      }
     },
-    [file, onRequestSource],
+    [file, onRequestSource, openGaps],
   );
 
   return (
@@ -193,12 +201,14 @@ function ReviewFileHeader({ model }: { model: ReviewFileRenderModel }) {
   );
 }
 
-interface GapStripProps {
+export interface GapStripProps {
   gap: ReviewRenderGap | undefined;
   open: ReadonlySet<string>;
   file: ReviewFileV1;
-  source: string | undefined;
+  /** This file's source, once it has been read, or why it could not be. */
+  source: ReviewSourceEntry | undefined;
   onToggle: (gapId: string) => void;
+  /** Whether the strip states the range it covers, as a hunk header would. */
   showHeader: boolean;
 }
 
@@ -208,13 +218,15 @@ interface GapStripProps {
  * The line labels are the gap's own addresses and the text is the shared source splitter's,
  * so an expanded line here is the same line the producer would accept a note on.
  */
-function GapStrip({ gap, open, file, source, onToggle, showHeader }: GapStripProps) {
+export function GapStrip({ gap, open, file, source, onToggle, showHeader }: GapStripProps) {
   if (!gap) {
     return null;
   }
   const isOpen = open.has(gap.gapId);
   const rows =
-    isOpen && source !== undefined ? reviewExpandedGapRows(file, gap.gapId, source) : undefined;
+    isOpen && source?.text !== undefined
+      ? reviewExpandedGapRows(file, gap.gapId, source.text)
+      : undefined;
   return (
     <div className="review-gap">
       <button
@@ -227,7 +239,15 @@ function GapStrip({ gap, open, file, source, onToggle, showHeader }: GapStripPro
         {gap.lineCount === 1 ? "line" : "lines"}
         {showHeader ? <span className="review-gap-range"> @@ {rangeLabel(gap)}</span> : null}
       </button>
-      {isOpen ? <ExpandedRows rows={rows} showLineNumbers={showHeader} /> : null}
+      {isOpen ? (
+        <ExpandedRows
+          rows={rows}
+          showLineNumbers={showHeader}
+          {...(source?.status === "failed" && source.failure
+            ? { failure: source.failure.message }
+            : {})}
+        />
+      ) : null}
     </div>
   );
 }
@@ -241,10 +261,18 @@ function rangeLabel(gap: ReviewRenderGap) {
 function ExpandedRows({
   rows,
   showLineNumbers,
+  failure,
 }: {
   rows: ReviewExpandedRow[] | undefined;
   showLineNumbers: boolean;
+  /** Why the source behind these lines could not be read, in the catalog's words. */
+  failure?: string;
 }): ReactNode {
+  if (failure) {
+    // Said once, in the refusal's own wording: a read that will not come back must not look
+    // like one that is still on its way. Opening the gap again asks for it again.
+    return <p className="review-gap-failure">{failure}</p>;
+  }
   if (!rows) {
     return <p className="review-gap-pending">Loading unchanged lines…</p>;
   }
