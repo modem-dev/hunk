@@ -5,9 +5,9 @@ description: Produces Hunk videos by driving the real TUI headlessly in a PTY, c
 
 # Hunk video pipeline
 
-Maintainer-only: requires a hunk source checkout (the pipeline lives in
-`scripts/launch-video/`, which never ships to npm). Unix-only — the capture
-scripts exec `/bin/bash`.
+Source-checkout only: the pipeline lives in `scripts/launch-video/`, which never ships to npm.
+It can be used for pull-request demos as well as maintainer release videos. Unix-only — the
+capture scripts exec `/bin/bash`.
 
 Generates product videos where every terminal frame is the real Hunk TUI —
 no screen recording, no mockups. Three stages:
@@ -48,7 +48,7 @@ timeout (or in the background); each logs per-snap / per-shot progress.
 `compose.mjs` needs node ≥ 18 on PATH (bun alone is not enough).
 
 ```sh
-# 0. dependencies (tuistory + ghostty-opentui are devDependencies)
+# 0. dependencies (tuistory is a devDependency; ghostty-opentui arrives transitively)
 bun install    # if a postinstall hook fails in a sandbox, retry with --ignore-scripts
 
 # 1. capture keyframes. Output defaults to <repo>/.video-work/ regardless of
@@ -117,15 +117,17 @@ the scene for that feature:
    node scripts/launch-video/compose-one-feature.mjs .video-work
    cd .video-work
    ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
-     -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-0.18-line-review.mp4
+     -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-feature-demo.mp4
    ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
-     -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-0.18-line-review.webm
+     -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-feature-demo.webm
    cd ..
    rm scripts/launch-video/compose-one-feature.mjs
    ```
 
 Keep the scratch compositor uncommitted. The canonical `compose.mjs` remains
-the checked-in reference storyboard.
+the checked-in reference storyboard. If you added a capture scene only to make
+PR evidence, revert that scene after encoding; retain it only when it is useful
+checked-in demo coverage and belongs to the submitted change.
 
 ## Full-release recipe
 
@@ -300,12 +302,21 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
 - Eyeball keyframes in `.video-work/frames/` (Read renders PNGs) after
   capture — especially new scenes — before compositing.
-- After encoding, extract spot frames with
-  `ffmpeg -y -ss <t> -i launch.mp4 -frames:v 1 check.png` at: a mid-animation
-  point (captions must persist), each new scene, and the outro. Check duration
-  with `ffprobe -show_entries format=duration`.
-- Outputs land at `.video-work/launch.mp4` and `.video-work/launch.webm`.
-  `.video-work/` is gitignored — never commit the video or its frames. Send
-  both files to the user directly (mp4: social/Slack; webm: web embeds),
-  report duration and file sizes, and flag if the mp4 exceeds ~10 MB (Slack)
-  or ~15 MB (X). Copy them elsewhere only if the user names a destination.
+- After encoding, return to the repository root, set `VIDEO` to the produced
+  MP4, and inspect a mid-animation point, each new scene, and the outro:
+
+  ```sh
+  VIDEO=.video-work/hunk-feature-demo.mp4 # or .video-work/launch.mp4
+  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 check.png
+  ffprobe -show_entries format=duration "$VIDEO"
+  ```
+
+  Captions must persist through the extracted animation frames.
+
+- Outputs stay under `.video-work/`: the full-release recipe creates
+  `launch.mp4`/`launch.webm`, while the single-feature recipe above creates
+  `hunk-feature-demo.mp4`/`hunk-feature-demo.webm`. `.video-work/` is
+  gitignored — never commit the video or its frames. Send both files to the
+  user directly (mp4: social/Slack; webm: web embeds), report duration and file
+  sizes, and flag if the mp4 exceeds ~10 MB (Slack) or ~15 MB (X). Copy them
+  elsewhere only if the user names a destination.
