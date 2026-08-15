@@ -20,6 +20,7 @@ import {
   parseReviewEventEnd,
   parseReviewEventFrame,
   ReviewEventAssembler,
+  ReviewEventSseDecoder,
 } from "../../../src/session/reviewEventProtocol";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -77,30 +78,24 @@ function mirrorFixture(state: HunkSessionBrokerState, fixture: ReviewEventFixtur
 /** Read SSE records until one complete event has arrived, then stop. */
 async function readOneEvent(response: Response) {
   const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
+  const textDecoder = new TextDecoder();
+  const records = new ReviewEventSseDecoder();
   const frames: DecodedFrame[] = [];
-  let buffer = "";
   let complete = false;
   while (!complete) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const lines = buffer.slice(0, boundary).split("\n");
-      buffer = buffer.slice(boundary + 2);
-      const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
-      const event = lines.find((line) => line.startsWith("event: "))?.slice(7);
-      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
-      if (event && data !== undefined) {
-        frames.push({ ...(id ? { id } : {}), event, data: JSON.parse(data) as unknown });
-        // Only a frame that completes an event carries an id, which is how a reader knows
-        // where an event ends without knowing whether it was chunked.
-        complete ||= id !== undefined;
-      }
-      boundary = buffer.indexOf("\n\n");
+    for (const record of records.push(textDecoder.decode(value, { stream: true }))) {
+      frames.push({
+        ...(record.id === undefined ? {} : { id: record.id }),
+        event: record.event,
+        data: JSON.parse(record.data) as unknown,
+      });
+      // Only a frame that completes an event carries an id, which is how a reader knows
+      // where an event ends without knowing whether it was chunked.
+      complete ||= record.id !== undefined;
     }
   }
   await reader.cancel();

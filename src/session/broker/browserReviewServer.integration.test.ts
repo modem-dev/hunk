@@ -26,6 +26,7 @@ import {
   parseReviewEventFrame,
   parseReviewEventFrameName,
   ReviewEventAssembler,
+  ReviewEventSseDecoder,
   reviewEventId,
 } from "../reviewEventProtocol";
 import {
@@ -491,29 +492,22 @@ describe("browser review surface: actions", () => {
  */
 async function readEvents(response: Response, events: number) {
   const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
+  const textDecoder = new TextDecoder();
+  const records = new ReviewEventSseDecoder();
   const frames: Array<{ id?: string; event: string; data: unknown }> = [];
   let complete = 0;
-  let buffer = "";
   while (complete < events) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const record = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const lines = record.split("\n");
-      const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
-      const event = lines.find((line) => line.startsWith("event: "))?.slice(7);
-      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
-      if (event && data !== undefined) {
-        frames.push({ ...(id ? { id } : {}), event, data: JSON.parse(data) as unknown });
-        complete += id ? 1 : 0;
-      }
-      boundary = buffer.indexOf("\n\n");
+    for (const record of records.push(textDecoder.decode(value, { stream: true }))) {
+      frames.push({
+        ...(record.id === undefined ? {} : { id: record.id }),
+        event: record.event,
+        data: JSON.parse(record.data) as unknown,
+      });
+      complete += record.id === undefined ? 0 : 1;
     }
   }
   await reader.cancel();

@@ -41,6 +41,8 @@ import {
   parseReviewEventFrame,
   parseReviewEventFrameName,
   ReviewEventAssembler,
+  ReviewEventSseDecoder,
+  type ReviewEventSseRecord,
   type ReviewEventTypeV1,
 } from "../session/reviewEventProtocol";
 import {
@@ -389,44 +391,28 @@ export class ReviewApiClient {
   }
 }
 
-/** One decoded server-sent record: the fields this stream uses, and nothing else. */
-interface ServerSentRecord {
-  id?: string;
-  event: string;
-  data: string;
-}
-
 /**
- * Split one byte stream into server-sent records.
+ * Read one byte stream as the records the review event protocol wrote.
  *
- * Only the three fields this protocol emits are read — `id`, `event`, `data` — and a
- * comment line (the heartbeat) carries none of them, so it falls out for free.
+ * The record grammar itself is the protocol's, beside the writer that produces it; what
+ * this adds is the browser's half — decoding bytes to text and releasing the reader when
+ * the caller is done with the stream.
  */
 async function readServerSentRecords(
   body: ReadableStream<Uint8Array>,
-  onRecord: (record: ServerSentRecord) => void,
+  onRecord: (record: ReviewEventSseRecord) => void,
 ) {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const textDecoder = new TextDecoder();
+  const records = new ReviewEventSseDecoder();
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) {
         break;
       }
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary >= 0) {
-        const lines = buffer.slice(0, boundary).split("\n");
-        buffer = buffer.slice(boundary + 2);
-        const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
-        const event = lines.find((line) => line.startsWith("event: "))?.slice(7);
-        const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
-        if (event !== undefined && data !== undefined) {
-          onRecord({ ...(id === undefined ? {} : { id }), event, data });
-        }
-        boundary = buffer.indexOf("\n\n");
+      for (const record of records.push(textDecoder.decode(value, { stream: true }))) {
+        onRecord(record);
       }
     }
   } finally {
@@ -452,7 +438,7 @@ class ReviewEventStreamReader {
   ) {}
 
   /** Take one record, dispatching whatever it completes. */
-  accept(record: ServerSentRecord) {
+  accept(record: ReviewEventSseRecord) {
     const frame = parseReviewEventFrameName(record.event);
     if (!frame) {
       return;
