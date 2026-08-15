@@ -172,3 +172,9 @@ one.
 4. **Naming.** `windowedHighlight` sits on `ForceDiffPlainTextOptions`, which is now doing more than
    its name suggests. Renaming the interface is breaking; adding a sibling options bag is not. No
    strong opinion.
+5. **`isHighlightedWindow` needs a different name.** It sits beside the pre-existing
+   `isWindowedHighlight`, and the two are near-anagrams meaning different things: the existing one
+   asks whether a range is in effect at all, the new one whether the caller opted into highlighting
+   that range. Two separate reviewers have read the patch and concluded the new flag was a typo for
+   the old one, which is a strong signal to rename before this goes upstream. The new flag is the
+   one that should move — something like `honorHighlightWindow`.
