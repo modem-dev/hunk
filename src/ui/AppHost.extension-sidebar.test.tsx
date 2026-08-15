@@ -512,6 +512,24 @@ describe("extension sidebar views", () => {
         () => setup.captureCharFrame().includes("M alpha.txt"),
         "the built-in sidebar to reopen after the crash",
       );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
+        "the s key to close the visible built-in fallback",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("M alpha.txt"),
+        "the s key to reopen the built-in fallback",
+      );
     });
   });
 

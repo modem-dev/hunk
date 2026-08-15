@@ -1457,12 +1457,19 @@ export function App({
   /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleSidebar = () => {
     const replacement = sessionPanes.find(
-      (pane) => pane.registered.pane.replaces === HUNK_FILES_PANE_KEY,
+      (pane) =>
+        pane.registered.pane.replaces === HUNK_FILES_PANE_KEY &&
+        !paneAvailabilityQuarantineRef.current.has(pane.registered),
     );
     const filesPaneKey = replacement?.key ?? HUNK_FILES_PANE_KEY;
-    const filesPaneIsOpen = paneOpenStateRef.current.open.includes(filesPaneKey);
+
+    if (!sidebarAreaVisible) {
+      setPaneOpen(filesPaneKey, true);
+      revealSidebarAreaRef.current();
+      return;
+    }
+
     setPaneOpen(filesPaneKey, "toggle");
-    if (!filesPaneIsOpen) revealSidebarAreaRef.current();
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
@@ -2114,6 +2121,8 @@ export function App({
               : () => {
                   paneAvailabilityQuarantineRef.current.add(pane.registered);
                   if (pane.registered.pane.replaces === HUNK_FILES_PANE_KEY) {
+                    setPaneOpen(pane.key, false);
+                    setPaneOpen(HUNK_FILES_PANE_KEY, true);
                     revealSidebarAreaRef.current();
                   }
                   setPaneFailureEpoch((value) => value + 1);
