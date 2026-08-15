@@ -607,6 +607,13 @@ path suffixes, expansion retention, git-status badges).
   `theme` is classified as a per-client option in `REVIEW_VIEW_OPTION_LOCUS`, which is the
   part that was mechanical; whether a browser should adopt the terminal's chosen theme is
   still the product decision, due before PR 2.
+  _Decided (before Phase 5 PR 2)_: the browser follows the terminal's theme, delivered as a
+  host default over the wire through the same locus mechanism view options already use — the
+  session publishes its active theme, the client renders it, and a client-side override is
+  per-client state under G1's persistence rules. Shared by wire, not by import: `src/web`
+  still imports nothing from `src/ui/themes`, so there is no second palette to drift; the
+  served theme arrives as semantic tokens, and Pierre's own palette remains the fallback for
+  a client that has not yet received a default.
 
 ## F. Commands and keybindings (preemptive — the prototype browser had none)
 
@@ -729,6 +736,14 @@ implementation does.
   minting a per-client identity belongs with the client that needs one — Phase 5, beside the
   selection policy that is the only thing which will read it. Parts (2) and (3) are
   unchanged.
+  _Decided (before Phase 5 PR 2, part 2)_: selection is per-client with optional follow.
+  Each client owns its own selection; the terminal session's selection travels in the
+  published review state as it already does, and the browser offers a follow-the-terminal
+  mode that tracks it without ever writing it back. No client's navigation moves another
+  client's cursor — the fight B11 documented cannot recur — and nothing needs to arbitrate
+  concurrent moves because every action already carries its explicit target rather than
+  reading a shared cursor. Part (3) is unchanged by this: note authorship still defaults
+  from the actor tag on the action that composed the note.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
