@@ -22,13 +22,13 @@ import { FileDiff } from "@pierre/diffs/react";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
 import { formatReviewAddress } from "../core/review/address";
 import {
-  buildReviewFileRenderModel,
-  reviewExpandedGapRows,
-  type ReviewExpandedRow,
-  type ReviewFileRenderModel,
-  type ReviewRenderGap,
+  buildBrowserReviewFileRenderModel,
+  browserReviewExpandedGapRows,
+  type BrowserReviewExpandedRow,
+  type BrowserReviewFileRenderModel,
+  type BrowserReviewRenderGap,
 } from "./pierreDocument";
-import type { ReviewSourceEntry } from "./reviewSources";
+import type { BrowserReviewSourceEntry } from "./reviewSources";
 import { resolveBrowserDiffStyle, type BrowserViewOptions } from "./viewOptions";
 
 /** What a file with no rows says about itself, in this surface's wording. */
@@ -41,25 +41,25 @@ const EMPTY_DIFF_MESSAGES = {
   "no-hunks": "No changes to show.",
 } as const;
 
-export interface ReviewStreamProps {
+export interface BrowserReviewStreamProps {
   document: ReviewDocumentV1;
   view: BrowserViewOptions;
   /** Width the responsive layout decides from; the window's, in a real page. */
   viewportWidth: number;
   /** Each file's source text, or why it could not be read, for the gaps a reader opened. */
-  sourceByFileKey?: Record<string, ReviewSourceEntry>;
+  sourceByFileKey?: Record<string, BrowserReviewSourceEntry>;
   /** Asked for the source behind one file whenever a gap in it is opened. */
   onRequestSource?: (file: ReviewFileV1) => void;
 }
 
 /** The whole review, in the order the document lists it. */
-export function ReviewStream({
+export function BrowserReviewStream({
   document,
   view,
   viewportWidth,
   sourceByFileKey = {},
   onRequestSource,
-}: ReviewStreamProps) {
+}: BrowserReviewStreamProps) {
   const diffStyle = resolveBrowserDiffStyle(view.layout, viewportWidth);
   return (
     <main className="review-stream">
@@ -81,7 +81,7 @@ interface ReviewFileSectionProps {
   file: ReviewFileV1;
   view: BrowserViewOptions;
   diffStyle: "split" | "unified";
-  source?: ReviewSourceEntry;
+  source?: BrowserReviewSourceEntry;
   onRequestSource?: (file: ReviewFileV1) => void;
 }
 
@@ -96,7 +96,7 @@ function ReviewFileSection({
   // Built from the file's content and nothing else — not from the width, which only reaches
   // Pierre — so a resize re-renders the stream without rebuilding every file's model and
   // handing Pierre fresh object identities to re-highlight.
-  const model = useMemo(() => buildReviewFileRenderModel(file), [file]);
+  const model = useMemo(() => buildBrowserReviewFileRenderModel(file), [file]);
   const [openGaps, setOpenGaps] = useState<ReadonlySet<string>>(() => new Set());
 
   // A reload replaces the file behind this section; gap ids address the geometry that was
@@ -146,7 +146,7 @@ function ReviewFileSection({
               hunkIndex: hunk.index,
             })}
           >
-            <GapStrip
+            <BrowserGapStrip
               gap={gapBefore(model, hunk.index)}
               open={openGaps}
               file={file}
@@ -168,7 +168,7 @@ function ReviewFileSection({
           </div>
         ))
       )}
-      <GapStrip
+      <BrowserGapStrip
         gap={model.gaps.find((gap) => gap.position === "trailing")}
         open={openGaps}
         file={file}
@@ -182,12 +182,15 @@ function ReviewFileSection({
 }
 
 /** The collapsed region immediately before one hunk, when the file has one. */
-function gapBefore(model: ReviewFileRenderModel, hunkIndex: number): ReviewRenderGap | undefined {
+function gapBefore(
+  model: BrowserReviewFileRenderModel,
+  hunkIndex: number,
+): BrowserReviewRenderGap | undefined {
   return model.gaps.find((gap) => gap.position === "before" && gap.hunkIndex === hunkIndex);
 }
 
 /** One file's identity row: where it is, where it came from, and how much it changed. */
-function ReviewFileHeader({ model }: { model: ReviewFileRenderModel }) {
+function ReviewFileHeader({ model }: { model: BrowserReviewFileRenderModel }) {
   return (
     <header className="review-file-header">
       <span className="review-file-path">{model.path}</span>
@@ -206,12 +209,12 @@ function ReviewFileHeader({ model }: { model: ReviewFileRenderModel }) {
   );
 }
 
-export interface GapStripProps {
-  gap: ReviewRenderGap | undefined;
+export interface BrowserGapStripProps {
+  gap: BrowserReviewRenderGap | undefined;
   open: ReadonlySet<string>;
   file: ReviewFileV1;
   /** This file's source, once it has been read, or why it could not be. */
-  source: ReviewSourceEntry | undefined;
+  source: BrowserReviewSourceEntry | undefined;
   onToggle: (gapId: string) => void;
   /** Whether the strip states the range it covers, as a hunk header would. */
   showHeader: boolean;
@@ -225,7 +228,7 @@ export interface GapStripProps {
  * The line labels are the gap's own addresses and the text is the shared source splitter's,
  * so an expanded line here is the same line the producer would accept a note on.
  */
-export function GapStrip({
+export function BrowserGapStrip({
   gap,
   open,
   file,
@@ -233,14 +236,14 @@ export function GapStrip({
   onToggle,
   showHeader,
   showLineNumbers,
-}: GapStripProps) {
+}: BrowserGapStripProps) {
   if (!gap) {
     return null;
   }
   const isOpen = open.has(gap.gapId);
   const rows =
     isOpen && source?.text !== undefined
-      ? reviewExpandedGapRows(file, gap.gapId, source.text)
+      ? browserReviewExpandedGapRows(file, gap.gapId, source.text)
       : undefined;
   return (
     <div className="review-gap">
@@ -268,7 +271,7 @@ export function GapStrip({
 }
 
 /** The `-old +new` label one gap covers, in the ranges core addressed it by. */
-function rangeLabel(gap: ReviewRenderGap) {
+function rangeLabel(gap: BrowserReviewRenderGap) {
   return `-${gap.oldRange[0]},${gap.lineCount} +${gap.newRange[0]},${gap.lineCount}`;
 }
 
@@ -278,7 +281,7 @@ function ExpandedRows({
   showLineNumbers,
   failure,
 }: {
-  rows: ReviewExpandedRow[] | undefined;
+  rows: BrowserReviewExpandedRow[] | undefined;
   showLineNumbers: boolean;
   /** Why the source behind these lines could not be read, in the catalog's words. */
   failure?: string;

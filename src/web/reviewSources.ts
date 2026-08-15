@@ -21,35 +21,35 @@
 import { reviewExpansionSide } from "../core/review/expansion";
 import { reviewResourceId } from "../core/review/resources";
 import type { ReviewFileV1 } from "../core/review/types";
-import type { ReviewApiClient, ReviewClientFailure } from "./reviewApiClient";
+import type { BrowserReviewApiClient, BrowserReviewFailure } from "./reviewApiClient";
 
 /** What the page knows about one file's source text. */
-export interface ReviewSourceEntry {
+export interface BrowserReviewSourceEntry {
   status: "loading" | "ready" | "failed";
   /** The file's whole source text, once it has been read. */
   text?: string;
   /** Why the read was refused, in the shared vocabulary and wording. */
-  failure?: ReviewClientFailure;
+  failure?: BrowserReviewFailure;
 }
 
 /** Every file's source state, keyed the way the review addresses files. */
-export type ReviewSourceEntries = Readonly<Record<string, ReviewSourceEntry>>;
+export type BrowserReviewSourceEntries = Readonly<Record<string, BrowserReviewSourceEntry>>;
 
 /** What the store holds, and the generation every entry in it was read for. */
-export interface ReviewSourceSnapshot {
+export interface BrowserReviewSourceSnapshot {
   /** Absent until the page knows which generation it is showing. */
   generation: string | undefined;
-  entries: ReviewSourceEntries;
+  entries: BrowserReviewSourceEntries;
 }
 
 /** What this store needs from a transport: one resource read. */
-export type ReviewSourceReader = Pick<ReviewApiClient, "readResource">;
+export type BrowserReviewSourceReader = Pick<BrowserReviewApiClient, "readResource">;
 
-export class ReviewSourceStore {
-  private snapshot: ReviewSourceSnapshot = { generation: undefined, entries: {} };
+export class BrowserReviewSourceStore {
+  private snapshot: BrowserReviewSourceSnapshot = { generation: undefined, entries: {} };
   private readonly listeners = new Set<() => void>();
 
-  constructor(private readonly client: ReviewSourceReader) {}
+  constructor(private readonly client: BrowserReviewSourceReader) {}
 
   /**
    * The current source state, safe to render directly.
@@ -59,7 +59,7 @@ export class ReviewSourceStore {
    * clearing this store could run, and stale text under a live file key is wrong lines
    * rather than a missing one.
    */
-  getSnapshot(): ReviewSourceSnapshot {
+  getSnapshot(): BrowserReviewSourceSnapshot {
     return this.snapshot;
   }
 
@@ -124,7 +124,7 @@ export class ReviewSourceStore {
   }
 
   /** Record one file's state and tell everyone watching. */
-  private put(fileKey: string, entry: ReviewSourceEntry) {
+  private put(fileKey: string, entry: BrowserReviewSourceEntry) {
     this.snapshot = {
       ...this.snapshot,
       entries: { ...this.snapshot.entries, [fileKey]: entry },

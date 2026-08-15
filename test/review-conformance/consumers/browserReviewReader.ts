@@ -14,10 +14,10 @@
  */
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../../src/app/review/capability";
-import { BrowserReviewServer } from "../../../src/session/broker/browserReviewServer";
+import { WebReviewServer } from "../../../src/session/broker/webReviewServer";
 import { HunkSessionBrokerState } from "../../../src/session/broker/state";
 import { ReviewEventSseDecoder } from "../../../src/session/reviewEventProtocol";
-import { ReviewApiClient } from "../../../src/web/reviewApiClient";
+import { BrowserReviewApiClient } from "../../../src/web/reviewApiClient";
 import { EVENT_FIXTURE_SESSION_ID } from "../eventFixtures";
 import { collapseChunkRun, resolveFixtureChunkBytes } from "../eventFraming";
 import type { ReviewEventConsumer, ReviewEventFixture } from "../types";
@@ -71,7 +71,7 @@ export const browserReviewReaderEventConsumer: ReviewEventConsumer = {
     const serialized = JSON.stringify(fixture.body);
     const state = new HunkSessionBrokerState();
     mirrorFixture(state, fixture);
-    const review = new BrowserReviewServer(state, {
+    const review = new WebReviewServer(state, {
       eventChunkBytes: resolveFixtureChunkBytes(
         fixture,
         new TextEncoder().encode(serialized).byteLength,
@@ -86,7 +86,7 @@ export const browserReviewReaderEventConsumer: ReviewEventConsumer = {
     });
 
     let observed = "";
-    const client = new ReviewApiClient({
+    const client = new BrowserReviewApiClient({
       origin: `http://127.0.0.1:${server.port}`,
       sessionId: EVENT_FIXTURE_SESSION_ID,
       capability: reviewProcessCapability().token,

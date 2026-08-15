@@ -109,7 +109,7 @@ projection` consumer answers `hunk-with-leading-context` beside the terminal.
   _Repaid (Phase 1 PR 2)_: `normalizedReviewSourceLines` in `core/review/geometry.ts`;
   `expandCollapsedRows.ts` `sliceLines` deleted; `splitSourceLines` carries the comment saying why
   it is legitimately different; fixtures `crlf-source` and `source-without-trailing-newline`.
-  _Closed (Phase 5 PR 1, browser site)_: `reviewExpandedGapRows` splits the source it read
+  _Closed (Phase 5 PR 1, browser site)_: `browserReviewExpandedGapRows` splits the source it read
   with the shared splitter, and the `browser review projection` consumer answers both
   fixtures — the bare `split("\n")` the finding names never existed in this client.
 - **A5. Expansion side policy `deleted ? "old" : "new"` — 3 copies.** Core `intents.ts`
@@ -127,7 +127,7 @@ projection` consumer answers `hunk-with-leading-context` beside the terminal.
   _Repaid (Phase 1 PR 2, terminal site)_: `rebaseReviewHunk` in `core/review/geometry.ts`, adopted
   by `sourceBackedHighlight.ts`. It returns the per-side end indices so a caller can slice or
   validate without re-walking.
-  _Closed (Phase 5 PR 1, browser site)_: `isolateReviewHunk` in `src/web/pierreDocument.ts` is
+  _Closed (Phase 5 PR 1, browser site)_: `isolateBrowserReviewHunk` in `src/web/pierreDocument.ts` is
   the shared walk plus two slices taken with the indices it reports, so the browser cannot
   disagree with the terminal about where a hunk's lines end. The stream renders one Pierre
   view per hunk — which is what makes a collapsed-region strip land between the right two
@@ -139,7 +139,7 @@ projection` consumer answers `hunk-with-leading-context` beside the terminal.
   hunk spans. Fix: carry both on `ReviewFileV1`.
   _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
   `ReviewFileV1` by `core/review/document.ts`.
-  _Closed (Phase 5 PR 1, browser site)_: `buildReviewFileRenderModel` reads both off the file.
+  _Closed (Phase 5 PR 1, browser site)_: `buildBrowserReviewFileRenderModel` reads both off the file.
   `pierreDocument.test.ts` asserts they differ from the sum over hunks on a real parse, which
   is the mis-sizing the prototype's reduction produced.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
@@ -422,7 +422,7 @@ path suffixes, expansion retention, git-status badges).
   parallel loads. Single flight is one map keyed by session, generation, and resource id;
   concurrent callers await the same assembly. `src/session/broker/reviewResources.integration.test.ts`
   drives the whole path with only the socket replaced.
-  _Closed (Phase 5 PR 1, browser site)_: `ReviewApiClient.readResource` asks for windows and
+  _Closed (Phase 5 PR 1, browser site)_: `BrowserReviewApiClient.readResource` asks for windows and
   hands each one to a `ReviewChunkAssembler`; it has no loop of its own beyond "ask for the
   next offset", and the four copies with three in-flight key formats are now one class.
   Two transport facts stay at the edge, as the finding says they should: the first window
@@ -445,7 +445,7 @@ path suffixes, expansion retention, git-status badges).
   anti-spin constant, because a superseded load is abandoned rather than retried.
   Extracting a primitive for a single consumer is the thing this seam's rules warn about.
 - **C4. SSE event contract defined on both ends.** Frame names (`${type}-begin/-chunk/-end`),
-  begin/end envelopes, and the event-id grammar are built in `browserReviewServer.ts` and
+  begin/end envelopes, and the event-id grammar are built in `webReviewServer.ts` and
   re-declared/regex-parsed in `mirror.ts`/`apiClient.ts`; client bounds (12 MiB / 1024 chunks)
   are unlinked from server bounds and only coincidentally compatible. Fix:
   `src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
@@ -456,7 +456,7 @@ path suffixes, expansion retention, git-status badges).
   protocol's envelope bound, `REVIEW_EVENT_CHUNK_BYTES` is the shared resource chunk size,
   and `MAX_REVIEW_EVENT_CHUNKS` is the quotient, so a sender asking for smaller windows is
   clamped to the ceiling a reader is allowed to hold rather than emitting frames the reader
-  will refuse. `browserReviewServer.ts` imports all of it and declares none of it; the
+  will refuse. `webReviewServer.ts` imports all of it and declares none of it; the
   browser client imports the same module unchanged in Phase 5, which
   `scripts/source-boundaries.test.ts` keeps possible by gating the module's transitive
   closure platform-free. Two decisions differ from the prototype deliberately: a chunked
@@ -467,7 +467,7 @@ path suffixes, expansion retention, git-status badges).
   `publication-exactly-one-window` and `publication-one-byte-over-a-window` in
   `test/review-conformance/eventFixtures.ts` pin the boundary the two ends must agree on,
   and both the protocol and the real HTTP surface are registered as event consumers.
-  _Closed (Phase 5 PR 1, client side)_: `ReviewApiClient.streamEvents` reads the stream with
+  _Closed (Phase 5 PR 1, client side)_: `BrowserReviewApiClient.streamEvents` reads the stream with
   `fetch` and parses it with `parseReviewEventFrameName`, `parseReviewEventFrame`,
   `parseReviewEventBegin`/`Chunk`/`End`, and `ReviewEventAssembler` — it declares no frame
   name, no envelope, no id pattern, and no bound. `browser review client reader` is
@@ -554,7 +554,7 @@ path suffixes, expansion retention, git-status badges).
 - **D5. Validator/constant hygiene.** `isReviewSha256Digest` exists but is bypassed by five
   inline regexes with case-sensitivity drift; raw `createHash("sha256")` at seven sites
   instead of `reviewDigest`; `hasExactKeys` private while the pattern is inlined ~10×;
-  action-envelope parsing duplicated between `reviewProtocol.ts` and `browserReviewServer.ts`;
+  action-envelope parsing duplicated between `reviewProtocol.ts` and `webReviewServer.ts`;
   wire constants re-declared as literals (client range size vs server response cap, snapshot
   bounds, filter length cap) and re-typed in tests. Fix: export the validators/helpers from
   `reviewProtocol`/`brokerWireParsers`; import constants everywhere, and derive coupled bounds
@@ -776,7 +776,7 @@ implementation does.
   of the thing under test. Messages carry no interpolated caller input, so they can be
   rendered anywhere, including where echoing a request back would be wrong; the HTTP surface
   uses a catalog message unless the producer supplied a more specific one. The status map
-  lives with the transport (`browserReviewServer.ts`) rather than in the catalog, because a
+  lives with the transport (`webReviewServer.ts`) rather than in the catalog, because a
   client reads codes and an HTTP status is not something to tell a person. The agent surface
   keeps its own wording — its codes are `hunk session` CLI failures rather than these, and
   the two vocabularies do not yet overlap.

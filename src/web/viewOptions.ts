@@ -44,7 +44,7 @@ export const DEFAULT_BROWSER_VIEW_OPTIONS: BrowserViewOptions = {
 };
 
 /** The host's resolved defaults, as far as they are this client's to adopt. */
-export interface HostViewDefaults {
+export interface BrowserHostViewDefaults {
   mode?: LayoutMode;
   showLineNumbers?: boolean;
   wrapLines?: boolean;
@@ -70,7 +70,7 @@ const CLIENT_OPTION_SOURCES = {
  * shared state is how two surfaces come to disagree about one review.
  */
 export function resolveBrowserViewOptions(
-  hostDefaults: HostViewDefaults = {},
+  hostDefaults: BrowserHostViewDefaults = {},
   overrides: Partial<BrowserViewOptions> = {},
 ): BrowserViewOptions {
   const resolved = { ...DEFAULT_BROWSER_VIEW_OPTIONS };
@@ -80,7 +80,7 @@ export function resolveBrowserViewOptions(
     if (!isClientReviewViewOption(source)) {
       continue;
     }
-    const hostValue = hostDefaults[source as keyof HostViewDefaults];
+    const hostValue = hostDefaults[source as keyof BrowserHostViewDefaults];
     const override = overrides[option];
     const value = override ?? hostValue ?? resolved[option];
     Object.assign(resolved, { [option]: value });

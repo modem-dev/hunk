@@ -47,7 +47,7 @@ import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
 import type { HunkReviewResourceCatalogV1 } from "../session/reviewProtocol";
-import type { ReviewApiClient, ReviewClientFailure } from "./reviewApiClient";
+import type { BrowserReviewApiClient, BrowserReviewFailure } from "./reviewApiClient";
 
 /**
  * How soon a dropped stream is retried, and how far apart retries grow.
@@ -62,7 +62,7 @@ const RECONNECT_MAX_DELAY_MS = 15_000;
 const RECONNECT_JITTER = 0.25;
 
 /** What this mirror is doing, in the terms a screen has to say something about. */
-export type ReviewMirrorStatus =
+export type BrowserReviewMirrorStatus =
   /** Nothing has been asked for yet. */
   | "idle"
   /** Attached, and reading the document one publication describes. */
@@ -76,14 +76,14 @@ export type ReviewMirrorStatus =
   /** The session ended. Nothing further is coming, and no retry will help. */
   | "disconnected";
 
-export interface ReviewMirrorSnapshot {
-  status: ReviewMirrorStatus;
+export interface BrowserReviewMirrorSnapshot {
+  status: BrowserReviewMirrorStatus;
   /** Where the review is, as of the last publication accepted. */
   publication?: ReviewPublicationAddress;
   /** The document behind that publication, once every file has been read and verified. */
   document?: ReviewDocumentV1;
   /** Why the last attempt failed, in the shared vocabulary and wording. */
-  failure?: ReviewClientFailure;
+  failure?: BrowserReviewFailure;
 }
 
 /**
@@ -92,16 +92,19 @@ export interface ReviewMirrorSnapshot {
  * Named as the two methods rather than as the client class so the ordering rules can be
  * driven without a listener, which is how the conformance harness asks them.
  */
-export type ReviewMirrorSource = Pick<ReviewApiClient, "readResource" | "streamEvents">;
+export type BrowserReviewMirrorSource = Pick<
+  BrowserReviewApiClient,
+  "readResource" | "streamEvents"
+>;
 
-export interface ReviewMirrorOptions {
+export interface BrowserReviewMirrorOptions {
   /** Injected so a test can drive time instead of waiting for it. */
   timers?: Parameters<typeof createReconnectScheduler>[0]["timers"];
 }
 
-export class ReviewMirror {
-  private snapshot: ReviewMirrorSnapshot = { status: "idle" };
-  private readonly listeners = new Set<(snapshot: ReviewMirrorSnapshot) => void>();
+export class BrowserReviewMirror {
+  private snapshot: BrowserReviewMirrorSnapshot = { status: "idle" };
+  private readonly listeners = new Set<(snapshot: BrowserReviewMirrorSnapshot) => void>();
   private readonly reconnect: ReturnType<typeof createReconnectScheduler>;
   private streamAbort: AbortController | undefined;
   /**
@@ -124,8 +127,8 @@ export class ReviewMirror {
   private stopped = false;
 
   constructor(
-    private readonly client: ReviewMirrorSource,
-    options: ReviewMirrorOptions = {},
+    private readonly client: BrowserReviewMirrorSource,
+    options: BrowserReviewMirrorOptions = {},
   ) {
     this.reconnect = createReconnectScheduler({
       delayMs: RECONNECT_DELAY_MS,
@@ -138,12 +141,12 @@ export class ReviewMirror {
   }
 
   /** The current view of the review, safe to render directly. */
-  getSnapshot(): ReviewMirrorSnapshot {
+  getSnapshot(): BrowserReviewMirrorSnapshot {
     return this.snapshot;
   }
 
   /** Watch the mirror. The listener is not called for the state it already sees. */
-  subscribe(listener: (snapshot: ReviewMirrorSnapshot) => void) {
+  subscribe(listener: (snapshot: BrowserReviewMirrorSnapshot) => void) {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
@@ -329,7 +332,7 @@ export class ReviewMirror {
    */
   private async readDocumentFiles(
     catalog: HunkReviewResourceCatalogV1,
-  ): Promise<{ ok: true; value: ReviewFileV1[] } | ReviewClientFailure> {
+  ): Promise<{ ok: true; value: ReviewFileV1[] } | BrowserReviewFailure> {
     const descriptors = catalog.resources.filter(
       (resource): resource is Extract<typeof resource, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
@@ -360,7 +363,7 @@ export class ReviewMirror {
    */
   private async readCanonicalFile(
     descriptor: HunkReviewResourceCatalogV1["resources"][number],
-  ): Promise<{ ok: true; value: ReviewFileV1 } | ReviewClientFailure> {
+  ): Promise<{ ok: true; value: ReviewFileV1 } | BrowserReviewFailure> {
     const bytes = await this.client.readResource(descriptor);
     if (!bytes.ok) {
       return bytes;
@@ -394,7 +397,7 @@ export class ReviewMirror {
    * the retry is pending, and the next publication over the new stream restores `ready`.
    * Without a document there is nothing to keep reading, and that is `failed`.
    */
-  private fail(failure: ReviewClientFailure) {
+  private fail(failure: BrowserReviewFailure) {
     if (this.snapshot.status === "disconnected") {
       return;
     }
@@ -415,7 +418,7 @@ export class ReviewMirror {
   }
 
   /** Move to one snapshot and tell everyone watching. */
-  private publish(snapshot: ReviewMirrorSnapshot) {
+  private publish(snapshot: BrowserReviewMirrorSnapshot) {
     this.snapshot = snapshot;
     // A copy, so a listener that unsubscribes while being told does not skip the next one.
     for (const listener of Array.from(this.listeners)) {

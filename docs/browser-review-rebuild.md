@@ -73,7 +73,7 @@ parallel-load test; vocabulary derivation checks active (rung 5).
 
 ## Phase 4 — HTTP surface, no client (landed)
 
-`browserReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
+`webReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
 Four routes per live session, mounted inside the existing daemon rather than on a port per
 terminal: the current publication (position plus resource catalog), bounded digest-verified
 resource reads through the existing mirror and cache, an SSE stream, and action submission
@@ -98,7 +98,7 @@ this PR alone.
 ## Phase 5 — browser client (two PRs)
 
 1. **Read-only mirror (landed)**: `src/web/` — `reviewApiClient` / `reviewMirror` /
-   `pierreDocument` / `ReviewStream` rendering a publication with Pierre, built on the
+   `pierreDocument` / `BrowserReviewStream` rendering a publication with Pierre, built on the
    shared geometry/selector/ordering primitives from day one (no `sideRange`, no local
    acceptance rules, no bare `split("\n")`). No actions, no note editing.
 

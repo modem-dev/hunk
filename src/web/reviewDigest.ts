@@ -111,7 +111,7 @@ function sha256State(message: Uint8Array) {
  * case-insensitive comparison is what let a writer and a reader disagree about whether two
  * digests matched (`docs/browser-review-seam-audit.md`, D5).
  */
-export const webReviewDigest: ReviewDigestFn = (bytes: Uint8Array) => {
+export const browserReviewDigest: ReviewDigestFn = (bytes: Uint8Array) => {
   const state = sha256State(bytes);
   let hex = "";
   for (const word of state) {

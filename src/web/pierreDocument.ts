@@ -48,7 +48,7 @@ import type {
 } from "../core/review/types";
 
 /** One hunk, as the stream needs to place it and address it. */
-export interface ReviewRenderHunk {
+export interface BrowserReviewRenderHunk {
   index: number;
   /** Inclusive per-side extents, so a note or a highlight lands inside its own hunk. */
   oldRange: ReviewLineRange;
@@ -66,12 +66,12 @@ export interface ReviewRenderHunk {
 }
 
 /** One collapsed region, addressed the way every consumer addresses it. */
-export interface ReviewRenderGap extends ReviewGapAddress {
+export interface BrowserReviewRenderGap extends ReviewGapAddress {
   gapId: string;
 }
 
 /** Everything the stream needs to draw one file, and nothing it has to derive itself. */
-export interface ReviewFileRenderModel {
+export interface BrowserReviewFileRenderModel {
   fileKey: string;
   path: string;
   previousPath?: string;
@@ -84,14 +84,14 @@ export interface ReviewFileRenderModel {
   expansionSide: ReviewSide;
   /** Identity of that source, so an expansion knows which text it read. */
   sourceIdentity?: string;
-  gaps: ReviewRenderGap[];
-  hunks: ReviewRenderHunk[];
+  gaps: BrowserReviewRenderGap[];
+  hunks: BrowserReviewRenderHunk[];
   /** Why there is nothing to draw, for a file with no rows (A8). */
   emptyDiffReason?: ReviewEmptyDiffReason;
 }
 
 /** One row an expanded gap reveals: the labels on each side, and the text between them. */
-export interface ReviewExpandedRow {
+export interface BrowserReviewExpandedRow {
   oldLine: number;
   newLine: number;
   text: string;
@@ -131,7 +131,7 @@ function pierreHunk(hunk: ReviewHunkV1): Hunk {
  * ends — so the lines are sliced with the same numbers the re-basing used, instead of by a
  * second count that could disagree with it (A6).
  */
-export function isolateReviewHunk(file: ReviewFileV1, hunk: ReviewHunkV1): FileDiffMetadata {
+export function isolateBrowserReviewHunk(file: ReviewFileV1, hunk: ReviewHunkV1): FileDiffMetadata {
   const rebased = rebaseReviewHunk(hunk, { additionLineIndex: 0, deletionLineIndex: 0 });
   return {
     ...pierreFileHeader(file),
@@ -162,7 +162,7 @@ export function isolateReviewHunk(file: ReviewFileV1, hunk: ReviewHunkV1): FileD
 }
 
 /** Every collapsed region in one file, in the order a top-to-bottom reader meets them. */
-export function reviewRenderGaps(file: ReviewFileV1): ReviewRenderGap[] {
+export function browserReviewRenderGaps(file: ReviewFileV1): BrowserReviewRenderGap[] {
   const source = reviewGapSourceForFile(file);
   const leading = file.hunks.flatMap((_hunk, index) => {
     const gap = reviewLeadingGap(source, index);
@@ -175,7 +175,9 @@ export function reviewRenderGaps(file: ReviewFileV1): ReviewRenderGap[] {
 }
 
 /** Build everything the stream draws one file from. */
-export function buildReviewFileRenderModel(file: ReviewFileV1): ReviewFileRenderModel {
+export function buildBrowserReviewFileRenderModel(
+  file: ReviewFileV1,
+): BrowserReviewFileRenderModel {
   return {
     fileKey: file.key,
     path: file.path,
@@ -186,7 +188,7 @@ export function buildReviewFileRenderModel(file: ReviewFileV1): ReviewFileRender
     unifiedLineCount: file.unifiedLineCount,
     expansionSide: reviewExpansionSide(file.changeKind),
     ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
-    gaps: reviewRenderGaps(file),
+    gaps: browserReviewRenderGaps(file),
     hunks: file.hunks.map((hunk) => {
       const revealTarget = reviewCanonicalHunkLine(hunk);
       return {
@@ -194,7 +196,7 @@ export function buildReviewFileRenderModel(file: ReviewFileV1): ReviewFileRender
         ...reviewHunkRanges(hunk),
         noteTarget: reviewDefaultHunkLineTarget(hunk),
         ...(revealTarget ? { revealTarget } : {}),
-        fileDiff: isolateReviewHunk(file, hunk),
+        fileDiff: isolateBrowserReviewHunk(file, hunk),
       };
     }),
     ...(file.hunks.length === 0
@@ -220,11 +222,11 @@ export function buildReviewFileRenderModel(file: ReviewFileV1): ReviewFileRender
  * Undefined when the gap addresses nothing in this file, which is what a reload that moved
  * the diff looks like from a client still holding the old gap id.
  */
-export function reviewExpandedGapRows(
+export function browserReviewExpandedGapRows(
   file: ReviewFileV1,
   gapId: string,
   sourceText: string,
-): ReviewExpandedRow[] | undefined {
+): BrowserReviewExpandedRow[] | undefined {
   const address = reviewGapAddress(reviewGapSourceForFile(file), gapId);
   if (!address) {
     return undefined;

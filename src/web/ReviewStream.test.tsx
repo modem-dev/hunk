@@ -5,10 +5,10 @@ import { formatReviewAddress } from "../core/review/address";
 import { projectReviewDocument } from "../core/review/document";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { buildReviewFileRenderModel } from "./pierreDocument";
+import { buildBrowserReviewFileRenderModel } from "./pierreDocument";
 import { reviewHttpFailure } from "../session/reviewHttpProtocol";
-import type { ReviewSourceEntry } from "./reviewSources";
-import { GapStrip, ReviewStream } from "./ReviewStream";
+import type { BrowserReviewSourceEntry } from "./reviewSources";
+import { BrowserGapStrip, BrowserReviewStream } from "./ReviewStream";
 import { DEFAULT_BROWSER_VIEW_OPTIONS } from "./viewOptions";
 
 const BASE = `${Array.from({ length: 24 }, (_unused, index) => `line ${index + 1}`).join("\n")}\n`;
@@ -38,7 +38,7 @@ function render(width = 1_400) {
   return {
     document,
     markup: renderToStaticMarkup(
-      <ReviewStream
+      <BrowserReviewStream
         document={document}
         view={DEFAULT_BROWSER_VIEW_OPTIONS}
         viewportWidth={width}
@@ -49,14 +49,14 @@ function render(width = 1_400) {
 
 /** One opened collapsed region, rendered the way the stream places it around a hunk. */
 function renderOpenGap(options: {
-  source: ReviewSourceEntry;
+  source: BrowserReviewSourceEntry;
   showHeader?: boolean;
   showLineNumbers?: boolean;
 }) {
   const file = documentFor().files[0]!;
-  const gap = buildReviewFileRenderModel(file).gaps[0]!;
+  const gap = buildBrowserReviewFileRenderModel(file).gaps[0]!;
   return renderToStaticMarkup(
-    <GapStrip
+    <BrowserGapStrip
       gap={gap}
       open={new Set([gap.gapId])}
       file={file}
@@ -68,7 +68,7 @@ function renderOpenGap(options: {
   );
 }
 
-describe("ReviewStream", () => {
+describe("BrowserReviewStream", () => {
   test("renders every file, in the document's order", () => {
     const { markup } = render();
 
@@ -102,7 +102,7 @@ describe("ReviewStream", () => {
 
   test("offers each collapsed region by the line count core addressed it with", () => {
     const { document, markup } = render();
-    const gaps = buildReviewFileRenderModel(document.files[0]!).gaps;
+    const gaps = buildBrowserReviewFileRenderModel(document.files[0]!).gaps;
 
     expect(gaps).not.toHaveLength(0);
     for (const gap of gaps) {
