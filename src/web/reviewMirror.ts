@@ -44,6 +44,7 @@ import {
 import { reviewFileContentIdentityOf } from "../core/review/document";
 import { REVIEW_RESOURCE_LOAD_CONCURRENCY } from "../core/review/resources";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
 import type { HunkReviewResourceCatalogV1 } from "../session/reviewProtocol";
 import type { ReviewApiClient, ReviewClientFailure } from "./reviewApiClient";
@@ -374,10 +375,12 @@ export class ReviewMirror {
         throw new Error("its content does not hash to the identity it declares");
       }
     } catch (error) {
+      // The catalog says what a mismatched read means and what to do about it; the file
+      // and the reason it failed are what this mirror can add (G4).
       return reviewHttpFailure("resource-integrity", {
-        message: `The review served a file for ${descriptor.fileKey} that could not be read${
-          error instanceof Error ? `: ${error.message}` : ""
-        }.`,
+        message: `${reviewErrorMessage("resource-integrity")} (the review served a file for ${
+          descriptor.fileKey
+        } that could not be read${error instanceof Error ? `: ${error.message}` : ""})`,
       });
     }
     return { ok: true, value: file };
