@@ -7,12 +7,9 @@ import { reviewResourceId } from "../core/review/resources";
 import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
+import { reviewHttpFailure } from "../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import {
-  reviewClientFailure,
-  type ReviewApiClient,
-  type ReviewEventHandlers,
-} from "./reviewApiClient";
+import type { ReviewApiClient, ReviewEventHandlers } from "./reviewApiClient";
 import { ReviewApp } from "./ReviewApp";
 import { ReviewMirror, type ReviewMirrorSource } from "./reviewMirror";
 
@@ -145,7 +142,7 @@ describe("ReviewApp", () => {
     const files = documentFiles();
     const { mirror, handlers } = await settledMirror(files, serveFiles(files));
 
-    handlers.onError?.(reviewClientFailure("resource-unavailable"));
+    handlers.onError?.(reviewHttpFailure("resource-unavailable"));
     const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
 
     expect(markup).toContain('data-status="reconnecting"');

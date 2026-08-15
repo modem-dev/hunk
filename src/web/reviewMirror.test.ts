@@ -8,12 +8,8 @@ import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   type HunkReviewResourceCatalogV1,
 } from "../session/reviewProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
-import {
-  reviewClientFailure,
-  type ReviewClientResult,
-  type ReviewEventHandlers,
-} from "./reviewApiClient";
+import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
+import type { ReviewClientResult, ReviewEventHandlers } from "./reviewApiClient";
 import { ReviewMirror, type ReviewMirrorSnapshot, type ReviewMirrorSource } from "./reviewMirror";
 
 const SESSION_ID = "session-1";
@@ -92,7 +88,7 @@ function createTestSource() {
       );
       return file
         ? { ok: true, value: encoder.encode(JSON.stringify(file)) }
-        : reviewClientFailure("unknown-resource");
+        : reviewHttpFailure("unknown-resource");
     },
     streamEvents(next, signal) {
       streams += 1;
@@ -128,7 +124,7 @@ function createTestSource() {
     },
     /** Drop the stream the way the real client does: an error, then the read ending. */
     dropStream() {
-      handlers?.onError?.(reviewClientFailure("resource-unavailable"));
+      handlers?.onError?.(reviewHttpFailure("resource-unavailable"));
       handlers = undefined;
       endStream?.();
       endStream = undefined;

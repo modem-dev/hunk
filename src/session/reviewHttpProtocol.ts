@@ -29,6 +29,7 @@ import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "
 import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import { isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
+import { reviewErrorMessage } from "./reviewErrorCatalog";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
@@ -272,6 +273,82 @@ export interface HunkReviewHttpFailureV1 {
   message: string;
   /** What the session is serving now, when the failure was about being out of date. */
   currentGeneration?: string;
+}
+
+/**
+ * HTTP status each failure is reported with.
+ *
+ * Total over the code union, so a code added to any tier's vocabulary cannot reach this
+ * surface without someone deciding what it means to a client. It lives with the rest of
+ * the HTTP contract rather than in the server, because a client reading a body-less
+ * refusal has to answer the same question in the other direction.
+ */
+export const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
+  "stale-generation": 409,
+  "invalid-request": 400,
+  "unsupported-action": 400,
+  "file-not-found": 404,
+  "hunk-not-found": 404,
+  "gap-not-found": 404,
+  "draft-missing": 409,
+  "note-not-found": 404,
+  "missing-fact": 400,
+  "unknown-resource": 404,
+  "resource-unavailable": 502,
+  "resource-too-large": 413,
+  "resource-integrity": 502,
+  "invalid-range": 416,
+  unauthorized: 401,
+  "no-publication": 409,
+  "payload-too-large": 413,
+  "method-not-allowed": 405,
+  "unsupported-media-type": 415,
+  "forbidden-origin": 403,
+  "too-many-streams": 503,
+};
+
+/** Statuses exactly one code claims, derived from the table rather than listed again. */
+const REVIEW_ERROR_STATUS_INVERSE: ReadonlyMap<number, HunkReviewClientErrorCodeV1> = (() => {
+  const claims = new Map<number, HunkReviewClientErrorCodeV1[]>();
+  for (const [code, status] of Object.entries(REVIEW_ERROR_STATUS) as Array<
+    [HunkReviewClientErrorCodeV1, number]
+  >) {
+    claims.set(status, [...(claims.get(status) ?? []), code]);
+  }
+  return new Map(
+    [...claims].flatMap(([status, codes]) => (codes.length === 1 ? [[status, codes[0]!]] : [])),
+  );
+})();
+
+/**
+ * The one code a status stands for, when the table gives it only one.
+ *
+ * A route that refuses without a body — an unsatisfiable range is answered with a bare 416
+ * — leaves a client nothing but the status to read. Several codes share 400, 404, and 409,
+ * and picking one of those would be inventing an answer, so this reports only where the
+ * table is unambiguous and leaves the caller to say what an ambiguous status means to it.
+ */
+export function reviewErrorCodeForStatus(status: number): HunkReviewClientErrorCodeV1 | undefined {
+  return REVIEW_ERROR_STATUS_INVERSE.get(status);
+}
+
+/**
+ * Build one refusal in the shape every review route answers with.
+ *
+ * The message comes from the shared catalog unless a tier supplied a more specific one, so
+ * no consumer — the surface answering, or a client rebuilding what it was told — has to
+ * invent wording for a code (`docs/browser-review-seam-audit.md`, G4).
+ */
+export function reviewHttpFailure(
+  code: HunkReviewClientErrorCodeV1,
+  details: { message?: string; currentGeneration?: string } = {},
+): HunkReviewHttpFailureV1 {
+  return {
+    ok: false,
+    code,
+    message: details.message ?? reviewErrorMessage(code),
+    ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
+  };
 }
 
 /**

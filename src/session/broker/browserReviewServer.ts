@@ -42,7 +42,6 @@ import { nodeReviewDigest } from "../../core/reviewDigest";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../core/review/resources";
 import type { ReviewPublicationAddress } from "../../core/review/generationOrder";
 import { isReviewSha256Digest } from "../../core/review/validation";
-import { reviewErrorMessage } from "../reviewErrorCatalog";
 import {
   encodeReviewEventFrame,
   planReviewEventFrames,
@@ -58,8 +57,9 @@ import {
   isReviewCapabilityToken,
   parseReviewHttpPath,
   reviewContentMeasurementHeaders,
+  REVIEW_ERROR_STATUS,
+  reviewHttpFailure,
   type HunkReviewClientErrorCodeV1,
-  type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
 } from "../reviewHttpProtocol";
@@ -76,36 +76,6 @@ import {
   type HunkSessionBrokerState,
   type ReviewPublicationEvent,
 } from "./state";
-
-/**
- * HTTP status each failure is reported with.
- *
- * Total over the code union, so a code added to any tier's vocabulary cannot reach this
- * surface without someone deciding what it means to a client.
- */
-const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
-  "stale-generation": 409,
-  "invalid-request": 400,
-  "unsupported-action": 400,
-  "file-not-found": 404,
-  "hunk-not-found": 404,
-  "gap-not-found": 404,
-  "draft-missing": 409,
-  "note-not-found": 404,
-  "missing-fact": 400,
-  "unknown-resource": 404,
-  "resource-unavailable": 502,
-  "resource-too-large": 413,
-  "resource-integrity": 502,
-  "invalid-range": 416,
-  unauthorized: 401,
-  "no-publication": 409,
-  "payload-too-large": 413,
-  "method-not-allowed": 405,
-  "unsupported-media-type": 415,
-  "forbidden-origin": 403,
-  "too-many-streams": 503,
-};
 
 /**
  * Headers every review response carries.
@@ -672,20 +642,14 @@ export class BrowserReviewServer {
   /**
    * Answer one failure in the shape every review route uses.
    *
-   * The message comes from the shared catalog unless the producer supplied a more specific
-   * one, so a client never has to invent wording for a code (G4).
+   * Both the body and the status are the HTTP contract's, so the client rebuilding this
+   * refusal and the surface writing it cannot disagree about either (G4).
    */
   private failure(
     code: HunkReviewClientErrorCodeV1,
     details: { message?: string; currentGeneration?: string } = {},
   ) {
-    const body: HunkReviewHttpFailureV1 = {
-      ok: false,
-      code,
-      message: details.message ?? reviewErrorMessage(code),
-      ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
-    };
-    return this.json(body, REVIEW_ERROR_STATUS[code]);
+    return this.json(reviewHttpFailure(code, details), REVIEW_ERROR_STATUS[code]);
   }
 
   /** Report one resource read failure with the code that says how it failed. */
