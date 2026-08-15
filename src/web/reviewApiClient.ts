@@ -64,7 +64,7 @@ import {
   parseHunkReviewPublicationAddress,
   parseHunkReviewResourceCatalog,
 } from "../session/reviewProtocol";
-import { webReviewDigest } from "./reviewDigest";
+import { browserReviewDigest } from "./reviewDigest";
 
 /**
  * One refusal, exactly as the surface answers it.
@@ -73,9 +73,9 @@ import { webReviewDigest } from "./reviewDigest";
  * client reports is one the review surface either sent or would have sent, so there is no
  * second shape to keep in step (G4). `reviewHttpFailure` builds them, on both ends.
  */
-export type ReviewClientFailure = HunkReviewHttpFailureV1;
+export type BrowserReviewFailure = HunkReviewHttpFailureV1;
 
-export type ReviewClientResult<Value> = { ok: true; value: Value } | ReviewClientFailure;
+export type BrowserReviewResult<Value> = { ok: true; value: Value } | BrowserReviewFailure;
 
 /**
  * The catalog's sentence for one code, with what this client can add about this instance.
@@ -89,14 +89,14 @@ function withDetail(code: HunkReviewClientErrorCodeV1, detail: string) {
 }
 
 /** What the client was told, or the fact that it could not be told anything. */
-function transportFailure(error: unknown): ReviewClientFailure {
+function transportFailure(error: unknown): BrowserReviewFailure {
   return reviewHttpFailure("resource-unavailable", {
     message: withDetail("resource-unavailable", error instanceof Error ? error.message : ""),
   });
 }
 
 /** Where this client is talking, and who it says it is. */
-export interface ReviewApiClientOptions {
+export interface BrowserReviewApiClientOptions {
   /** Origin the review surface is served from, e.g. `http://127.0.0.1:4300`. */
   origin: string;
   sessionId: string;
@@ -109,13 +109,13 @@ export interface ReviewApiClientOptions {
 }
 
 /** What one review event stream reports to whoever opened it. */
-export interface ReviewEventHandlers {
+export interface BrowserReviewEventHandlers {
   /** The review's current position and catalog, complete every time. */
   onPublication: (body: HunkReviewPublicationBodyV1) => void;
   /** The session behind the stream is gone; no further event is coming. */
   onDisconnect?: () => void;
   /** The stream ended or could not be read. Reconnecting is the caller's decision. */
-  onError?: (failure: ReviewClientFailure) => void;
+  onError?: (failure: BrowserReviewFailure) => void;
 }
 
 /**
@@ -124,7 +124,7 @@ export interface ReviewEventHandlers {
  * The session id comes from the path and the capability from the fragment, both through
  * the shared grammar, so a URL this cannot read is one the session never wrote.
  */
-export function parseReviewLocation(
+export function parseBrowserReviewLocation(
   location: Pick<URL, "origin" | "pathname" | "hash">,
 ): { origin: string; sessionId: string; capability: string } | undefined {
   const capability = parseReviewCapabilityFragment(location.hash);
@@ -148,13 +148,13 @@ export function parseReviewLocation(
   return sessionId ? { origin: location.origin, sessionId, capability } : undefined;
 }
 
-export class ReviewApiClient {
+export class BrowserReviewApiClient {
   private readonly fetch: typeof globalThis.fetch;
   private readonly digest: ReviewDigestFn;
 
-  constructor(private readonly options: ReviewApiClientOptions) {
+  constructor(private readonly options: BrowserReviewApiClientOptions) {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
-    this.digest = options.digest ?? webReviewDigest;
+    this.digest = options.digest ?? browserReviewDigest;
   }
 
   get sessionId() {
@@ -170,7 +170,7 @@ export class ReviewApiClient {
    */
   async readPublication(
     signal?: AbortSignal,
-  ): Promise<ReviewClientResult<HunkReviewPublicationBodyV1>> {
+  ): Promise<BrowserReviewResult<HunkReviewPublicationBodyV1>> {
     let response: Response;
     try {
       response = await this.request({ kind: "publication", sessionId: this.sessionId }, { signal });
@@ -193,7 +193,7 @@ export class ReviewApiClient {
   async readResource(
     descriptor: Pick<ReviewResourceDescriptorV1, "id" | "generation" | "kind">,
     signal?: AbortSignal,
-  ): Promise<ReviewClientResult<Uint8Array>> {
+  ): Promise<BrowserReviewResult<Uint8Array>> {
     const assembler = new ReviewChunkAssembler({
       resourceId: descriptor.id,
       generation: descriptor.generation,
@@ -247,7 +247,7 @@ export class ReviewApiClient {
    * caller aborted, or because reading failed. Whether and when to open another one is the
    * caller's, which is what keeps reconnect policy in one place instead of two.
    */
-  async streamEvents(handlers: ReviewEventHandlers, signal?: AbortSignal): Promise<void> {
+  async streamEvents(handlers: BrowserReviewEventHandlers, signal?: AbortSignal): Promise<void> {
     let response: Response;
     try {
       response = await this.request(
@@ -276,7 +276,7 @@ export class ReviewApiClient {
   }
 
   /** Narrow one publication body, refusing anything the wire protocol would not carry. */
-  private parsePublication(value: unknown): ReviewClientResult<HunkReviewPublicationBodyV1> {
+  private parsePublication(value: unknown): BrowserReviewResult<HunkReviewPublicationBodyV1> {
     const record =
       value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
     const publication = parseHunkReviewPublicationAddress(record?.publication);
@@ -308,7 +308,7 @@ export class ReviewApiClient {
     offset: number,
     signal: AbortSignal | undefined,
   ): Promise<
-    ReviewClientResult<{ bytes: Uint8Array; measurement: { byteLength: number; digest: string } }>
+    BrowserReviewResult<{ bytes: Uint8Array; measurement: { byteLength: number; digest: string } }>
   > {
     let response: Response;
     try {
@@ -373,9 +373,9 @@ export class ReviewApiClient {
    * response that is not in that shape is reported by its status rather than guessed at,
    * because a body this client cannot read is not one it should quote.
    */
-  private async readFailure(response: Response): Promise<ReviewClientFailure> {
+  private async readFailure(response: Response): Promise<BrowserReviewFailure> {
     const body = (await response.json().catch(() => undefined)) as
-      | Partial<ReviewClientFailure>
+      | Partial<BrowserReviewFailure>
       | undefined;
     if (body?.ok === false && typeof body.code === "string") {
       return reviewHttpFailure(body.code, {
@@ -436,7 +436,7 @@ class ReviewEventStreamReader {
 
   constructor(
     private readonly digest: ReviewDigestFn,
-    private readonly handlers: ReviewEventHandlers,
+    private readonly handlers: BrowserReviewEventHandlers,
   ) {}
 
   /** Take one record, dispatching whatever it completes. */

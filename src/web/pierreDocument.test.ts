@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { projectReviewDocument } from "../core/review/document";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import {
-  buildReviewFileRenderModel,
-  isolateReviewHunk,
-  reviewExpandedGapRows,
+  buildBrowserReviewFileRenderModel,
+  isolateBrowserReviewHunk,
+  browserReviewExpandedGapRows,
 } from "./pierreDocument";
 
 const BASE = Array.from({ length: 24 }, (_unused, index) => `line ${index + 1}`).join("\n") + "\n";
@@ -17,10 +17,10 @@ function modelFor(before: string, after: string) {
     [createTestDiffFile({ id: "alpha", path: "src/alpha.ts", before, after, context: 3 })],
     { sourceLabel: "/repo" },
   );
-  return { file: document.files[0]!, model: buildReviewFileRenderModel(document.files[0]!) };
+  return { file: document.files[0]!, model: buildBrowserReviewFileRenderModel(document.files[0]!) };
 }
 
-describe("buildReviewFileRenderModel", () => {
+describe("buildBrowserReviewFileRenderModel", () => {
   test("carries the row totals the parser measured rather than reducing over hunks", () => {
     const { file, model } = modelFor(BASE, CHANGED);
     const reduced = file.hunks.reduce((total, hunk) => total + hunk.splitLineCount, 0);
@@ -55,16 +55,16 @@ describe("buildReviewFileRenderModel", () => {
       { sourceLabel: "/repo" },
     );
 
-    expect(buildReviewFileRenderModel(document.files[0]!).emptyDiffReason).toBe("binary");
+    expect(buildBrowserReviewFileRenderModel(document.files[0]!).emptyDiffReason).toBe("binary");
   });
 });
 
-describe("isolateReviewHunk", () => {
+describe("isolateBrowserReviewHunk", () => {
   test("slices exactly the lines the shared re-basing walk consumed", () => {
     const { file } = modelFor(BASE, CHANGED);
 
     for (const hunk of file.hunks) {
-      const isolated = isolateReviewHunk(file, hunk);
+      const isolated = isolateBrowserReviewHunk(file, hunk);
       const only = isolated.hunks[0]!;
 
       // A6: origins are zero and the sliced arrays are exactly as long as the hunk's own
@@ -86,22 +86,24 @@ describe("isolateReviewHunk", () => {
   test("keeps the file's identity in the highlight cache key", () => {
     const { file } = modelFor(BASE, CHANGED);
 
-    expect(isolateReviewHunk(file, file.hunks[0]!).cacheKey).toBe(`${file.contentIdentity}:0`);
+    expect(isolateBrowserReviewHunk(file, file.hunks[0]!).cacheKey).toBe(
+      `${file.contentIdentity}:0`,
+    );
   });
 
   test("stays partial: a review file carries the patch's lines, not the file's", () => {
     const { file } = modelFor(BASE, CHANGED);
 
-    expect(isolateReviewHunk(file, file.hunks[0]!).isPartial).toBe(true);
+    expect(isolateBrowserReviewHunk(file, file.hunks[0]!).isPartial).toBe(true);
   });
 });
 
-describe("reviewExpandedGapRows", () => {
+describe("browserReviewExpandedGapRows", () => {
   test("labels each revealed line with the gap's own addresses", () => {
     const { file, model } = modelFor(BASE, CHANGED);
     const gap = model.gaps[0]!;
 
-    const rows = reviewExpandedGapRows(file, gap.gapId, CHANGED)!;
+    const rows = browserReviewExpandedGapRows(file, gap.gapId, CHANGED)!;
 
     expect(rows).toHaveLength(gap.lineCount);
     expect(rows[0]).toEqual({
@@ -117,7 +119,7 @@ describe("reviewExpandedGapRows", () => {
       CHANGED.replaceAll("\n", "\r\n"),
     );
 
-    const rows = reviewExpandedGapRows(
+    const rows = browserReviewExpandedGapRows(
       file,
       model.gaps[0]!.gapId,
       CHANGED.replaceAll("\n", "\r\n"),
@@ -129,6 +131,6 @@ describe("reviewExpandedGapRows", () => {
   test("reveals nothing for a gap this file does not have", () => {
     const { file } = modelFor(BASE, CHANGED);
 
-    expect(reviewExpandedGapRows(file, "before:99", CHANGED)).toBeUndefined();
+    expect(browserReviewExpandedGapRows(file, "before:99", CHANGED)).toBeUndefined();
   });
 });

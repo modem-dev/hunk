@@ -14,29 +14,29 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { formatReviewAddress } from "../core/review/address";
 import { reviewFileStatBadges } from "../core/review/presentation";
 import type { ReviewFileV1 } from "../core/review/types";
-import type { ReviewApiClient } from "./reviewApiClient";
-import type { ReviewMirror, ReviewMirrorSnapshot } from "./reviewMirror";
+import type { BrowserReviewApiClient } from "./reviewApiClient";
+import type { BrowserReviewMirror, BrowserReviewMirrorSnapshot } from "./reviewMirror";
 import {
-  ReviewSourceStore,
-  type ReviewSourceEntries,
-  type ReviewSourceSnapshot,
+  BrowserReviewSourceStore,
+  type BrowserReviewSourceEntries,
+  type BrowserReviewSourceSnapshot,
 } from "./reviewSources";
-import { ReviewStream } from "./ReviewStream";
+import { BrowserReviewStream } from "./ReviewStream";
 import {
   resolveBrowserViewOptions,
   type BrowserViewOptions,
-  type HostViewDefaults,
+  type BrowserHostViewDefaults,
 } from "./viewOptions";
 
-export interface ReviewAppProps {
-  mirror: ReviewMirror;
-  client: ReviewApiClient;
+export interface BrowserReviewAppProps {
+  mirror: BrowserReviewMirror;
+  client: BrowserReviewApiClient;
   /** The host's resolved view defaults, when the page was served with them (G1). */
-  hostViewDefaults?: HostViewDefaults;
+  hostViewDefaults?: BrowserHostViewDefaults;
 }
 
 /** Watch one mirror as a React store, without copying its state into component state. */
-function useReviewMirror(mirror: ReviewMirror): ReviewMirrorSnapshot {
+function useReviewMirror(mirror: BrowserReviewMirror): BrowserReviewMirrorSnapshot {
   return useSyncExternalStore(
     useCallback((notify) => mirror.subscribe(notify), [mirror]),
     useCallback(() => mirror.getSnapshot(), [mirror]),
@@ -45,10 +45,10 @@ function useReviewMirror(mirror: ReviewMirror): ReviewMirrorSnapshot {
 }
 
 /** No source read yet, and a stable identity so an empty render is not a new object. */
-const NO_SOURCES: ReviewSourceEntries = {};
+const NO_SOURCES: BrowserReviewSourceEntries = {};
 
 /** Watch one source store the same way, so a read that lands re-renders the gaps it fills. */
-function useReviewSources(sources: ReviewSourceStore): ReviewSourceSnapshot {
+function useReviewSources(sources: BrowserReviewSourceStore): BrowserReviewSourceSnapshot {
   return useSyncExternalStore(
     useCallback((notify) => sources.subscribe(notify), [sources]),
     useCallback(() => sources.getSnapshot(), [sources]),
@@ -67,11 +67,11 @@ function useViewportWidth() {
   return width;
 }
 
-export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) {
+export function BrowserReviewApp({ mirror, client, hostViewDefaults }: BrowserReviewAppProps) {
   const snapshot = useReviewMirror(mirror);
   const viewportWidth = useViewportWidth();
   const [view] = useState<BrowserViewOptions>(() => resolveBrowserViewOptions(hostViewDefaults));
-  const sources = useMemo(() => new ReviewSourceStore(client), [client]);
+  const sources = useMemo(() => new BrowserReviewSourceStore(client), [client]);
   const sourceSnapshot = useReviewSources(sources);
 
   // The page owns the mirror's attachment for as long as it is on screen; the mirror can be
@@ -100,7 +100,7 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
       {snapshot.document ? (
         <div className="review-body">
           <ReviewFileList files={snapshot.document.files} />
-          <ReviewStream
+          <BrowserReviewStream
             document={snapshot.document}
             view={view}
             viewportWidth={viewportWidth}
@@ -114,7 +114,7 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
 }
 
 /** What the connection is doing, in the shared catalog's words when it went wrong. */
-function ReviewStatus({ snapshot }: { snapshot: ReviewMirrorSnapshot }) {
+function ReviewStatus({ snapshot }: { snapshot: BrowserReviewMirrorSnapshot }) {
   return (
     <header className="review-status" data-status={snapshot.status}>
       {snapshot.status === "loading" ? <span>Loading the review…</span> : null}

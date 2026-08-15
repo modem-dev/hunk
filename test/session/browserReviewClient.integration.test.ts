@@ -3,7 +3,7 @@
  *
  * A real producer publishes a real generation, a real broker state mirrors it, the review
  * surface is mounted on a real loopback listener, and the client under test is the one the
- * browser bundle runs — same `ReviewApiClient`, same `ReviewMirror`, same synchronous
+ * browser bundle runs — same `BrowserReviewApiClient`, same `BrowserReviewMirror`, same synchronous
  * digest. Nothing between the two ends is stubbed, so what is asserted here is the loop the
  * whole phase is about: a publication read over HTTP, a document read out of the catalog it
  * names, and a new publication arriving on the event stream.
@@ -11,16 +11,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { reviewProcessCapability } from "../../src/app/review/capability";
 import { reviewResourceId } from "../../src/core/review/resources";
-import { BrowserReviewServer } from "../../src/session/broker/browserReviewServer";
+import { WebReviewServer } from "../../src/session/broker/webReviewServer";
 import { reviewHttpPath, reviewUrl } from "../../src/session/reviewHttpProtocol";
-import { ReviewApiClient, parseReviewLocation } from "../../src/web/reviewApiClient";
-import { ReviewMirror, type ReviewMirrorSnapshot } from "../../src/web/reviewMirror";
+import { BrowserReviewApiClient, parseBrowserReviewLocation } from "../../src/web/reviewApiClient";
+import { BrowserReviewMirror, type BrowserReviewMirrorSnapshot } from "../../src/web/reviewMirror";
 import { connectReviewSession, createTestPatchFile } from "../helpers/review-session-harness";
 
 const SESSION_ID = "session-web-1";
 
-const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
-  [];
+const running: Array<{ review: WebReviewServer; server: { stop: (force?: boolean) => void } }> = [];
 
 afterEach(() => {
   for (const entry of running.splice(0)) {
@@ -35,7 +34,7 @@ function start(files = [createTestPatchFile("alpha", 4), createTestPatchFile("be
   const registration = harness.register();
   // The registration the session first published, so a reload can update it in place the
   // way a live session does.
-  const review = new BrowserReviewServer(harness.state);
+  const review = new WebReviewServer(harness.state);
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -46,19 +45,19 @@ function start(files = [createTestPatchFile("alpha", 4), createTestPatchFile("be
 
   const origin = `http://127.0.0.1:${server.port}`;
   // Built the way a browser gets it: parse the URL the session would print.
-  const location = parseReviewLocation(
+  const location = parseBrowserReviewLocation(
     new URL(reviewUrl(origin, SESSION_ID, reviewProcessCapability().token)),
   )!;
-  return { harness, registration, origin, client: new ReviewApiClient(location) };
+  return { harness, registration, origin, client: new BrowserReviewApiClient(location) };
 }
 
 /** Wait for the mirror to reach a snapshot, failing loudly rather than hanging forever. */
 async function waitFor(
-  mirror: ReviewMirror,
+  mirror: BrowserReviewMirror,
   describeWanted: string,
-  wanted: (snapshot: ReviewMirrorSnapshot) => boolean,
+  wanted: (snapshot: BrowserReviewMirrorSnapshot) => boolean,
 ) {
-  return await new Promise<ReviewMirrorSnapshot>((resolve, reject) => {
+  return await new Promise<BrowserReviewMirrorSnapshot>((resolve, reject) => {
     const timer = setTimeout(() => {
       unsubscribe();
       reject(
@@ -67,7 +66,7 @@ async function waitFor(
         ),
       );
     }, 5_000);
-    const settle = (snapshot: ReviewMirrorSnapshot) => {
+    const settle = (snapshot: BrowserReviewMirrorSnapshot) => {
       if (!wanted(snapshot)) {
         return;
       }
@@ -81,7 +80,7 @@ async function waitFor(
 }
 
 /** Wait for the mirror to hold a complete document. */
-function waitForReady(mirror: ReviewMirror) {
+function waitForReady(mirror: BrowserReviewMirror) {
   return waitFor(mirror, "a complete document", (snapshot) => snapshot.status === "ready");
 }
 
@@ -101,7 +100,11 @@ describe("browser review client", () => {
 
   test("refuses a publication read without the capability", async () => {
     const { origin } = start();
-    const anonymous = new ReviewApiClient({ origin, sessionId: SESSION_ID, capability: "x" });
+    const anonymous = new BrowserReviewApiClient({
+      origin,
+      sessionId: SESSION_ID,
+      capability: "x",
+    });
 
     const result = await anonymous.readPublication();
 
@@ -139,7 +142,7 @@ describe("browser review client", () => {
 
   test("mirrors the whole document, in review order, from the stream's first event", async () => {
     const { harness, client } = start();
-    const mirror = new ReviewMirror(client);
+    const mirror = new BrowserReviewMirror(client);
 
     mirror.start();
     const ready = await waitForReady(mirror);
@@ -157,7 +160,7 @@ describe("browser review client", () => {
 
   test("resyncs onto a new generation when the session reloads", async () => {
     const { harness, client, registration } = start();
-    const mirror = new ReviewMirror(client);
+    const mirror = new BrowserReviewMirror(client);
 
     mirror.start();
     const first = await waitForReady(mirror);
@@ -188,7 +191,7 @@ describe("browser review client", () => {
       corruptResourceChunks: true,
     });
     harness.register();
-    const review = new BrowserReviewServer(harness.state);
+    const review = new WebReviewServer(harness.state);
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -197,7 +200,7 @@ describe("browser review client", () => {
         (await review.handle(request)) ?? new Response(null, { status: 404 }),
     });
     running.push({ review, server });
-    const client = new ReviewApiClient({
+    const client = new BrowserReviewApiClient({
       origin: `http://127.0.0.1:${server.port}`,
       sessionId: SESSION_ID,
       capability: reviewProcessCapability().token,

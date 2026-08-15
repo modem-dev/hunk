@@ -39,7 +39,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
   `reviewNoteMapping.ts` is terminal-only; `src/web/` is the browser client — read-only today
   — where `reviewApiClient`/`reviewMirror` speak the Phase 4 HTTP contracts and
-  `pierreDocument`/`ReviewStream` render with Pierre. Rows, measurement, scrolling, layout,
+  `pierreDocument`/`BrowserReviewStream` render with Pierre. Rows, measurement, scrolling, layout,
   themes, DOM mechanics, and source I/O stay local to each surface. `useHunkSessionBridge.ts` publishes the current terminal
   session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
   agent commands. This broker export is not a full `ReviewState` mirror.

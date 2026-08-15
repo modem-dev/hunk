@@ -9,8 +9,12 @@ import {
   type HunkReviewResourceCatalogV1,
 } from "../session/reviewProtocol";
 import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
-import type { ReviewClientResult, ReviewEventHandlers } from "./reviewApiClient";
-import { ReviewMirror, type ReviewMirrorSnapshot, type ReviewMirrorSource } from "./reviewMirror";
+import type { BrowserReviewResult, BrowserReviewEventHandlers } from "./reviewApiClient";
+import {
+  BrowserReviewMirror,
+  type BrowserReviewMirrorSnapshot,
+  type BrowserReviewMirrorSource,
+} from "./reviewMirror";
 
 const SESSION_ID = "session-1";
 
@@ -68,14 +72,14 @@ function createTestSource() {
   const encoder = new TextEncoder();
   const filesByKey = new Map<string, ReviewFileV1>();
   const reads: string[] = [];
-  let handlers: ReviewEventHandlers | undefined;
+  let handlers: BrowserReviewEventHandlers | undefined;
   let endStream: (() => void) | undefined;
   let pendingRead: (() => void) | undefined;
   let holdReads = false;
   let streams = 0;
 
-  const source: ReviewMirrorSource = {
-    async readResource(descriptor): Promise<ReviewClientResult<Uint8Array>> {
+  const source: BrowserReviewMirrorSource = {
+    async readResource(descriptor): Promise<BrowserReviewResult<Uint8Array>> {
       reads.push(descriptor.id);
       if (holdReads) {
         await new Promise<void>((resolve) => {
@@ -180,13 +184,13 @@ function createTestTimers() {
 function createMirror() {
   const transport = createTestSource();
   const { timers, reconnectNow } = createTestTimers();
-  const mirror = new ReviewMirror(transport.source, { timers });
-  const seen: ReviewMirrorSnapshot[] = [];
+  const mirror = new BrowserReviewMirror(transport.source, { timers });
+  const seen: BrowserReviewMirrorSnapshot[] = [];
   mirror.subscribe((snapshot) => seen.push(snapshot));
   return { ...transport, mirror, seen, reconnectNow };
 }
 
-describe("ReviewMirror", () => {
+describe("BrowserReviewMirror", () => {
   test("loads the document the first publication describes, in review order", async () => {
     const files = documentFor(["src/alpha.ts", "src/beta.ts"]);
     const harness = createMirror();

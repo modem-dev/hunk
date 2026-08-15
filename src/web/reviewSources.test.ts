@@ -4,8 +4,8 @@ import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure } from "../session/reviewHttpProtocol";
-import type { ReviewClientResult } from "./reviewApiClient";
-import { ReviewSourceStore, type ReviewSourceReader } from "./reviewSources";
+import type { BrowserReviewResult } from "./reviewApiClient";
+import { BrowserReviewSourceStore, type BrowserReviewSourceReader } from "./reviewSources";
 
 const BASE = `${Array.from({ length: 12 }, (_unused, index) => `line ${index + 1}`).join("\n")}\n`;
 
@@ -30,11 +30,11 @@ function testFile(): ReviewFileV1 {
 /** A reader a test resolves by hand, so a read can be left in flight. */
 function createTestReader() {
   const requests: string[] = [];
-  const pending: Array<(result: ReviewClientResult<Uint8Array>) => void> = [];
-  const reader: ReviewSourceReader = {
+  const pending: Array<(result: BrowserReviewResult<Uint8Array>) => void> = [];
+  const reader: BrowserReviewSourceReader = {
     readResource(descriptor) {
       requests.push(descriptor.id);
-      return new Promise<ReviewClientResult<Uint8Array>>((resolve) => {
+      return new Promise<BrowserReviewResult<Uint8Array>>((resolve) => {
         pending.push(resolve);
       });
     },
@@ -43,7 +43,7 @@ function createTestReader() {
     reader,
     requests,
     /** Answer the oldest read still waiting. */
-    resolve(result: ReviewClientResult<Uint8Array>) {
+    resolve(result: BrowserReviewResult<Uint8Array>) {
       pending.shift()?.(result);
     },
   };
@@ -56,11 +56,11 @@ async function settle() {
   }
 }
 
-describe("ReviewSourceStore", () => {
+describe("BrowserReviewSourceStore", () => {
   test("keeps the text one read returned, for the file it was read for", async () => {
     const file = testFile();
     const { reader, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
 
     store.request(file);
@@ -74,7 +74,7 @@ describe("ReviewSourceStore", () => {
   test("drops a read that lands after the review moved to another generation", async () => {
     const file = testFile();
     const { reader, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
     store.request(file);
 
@@ -90,7 +90,7 @@ describe("ReviewSourceStore", () => {
   test("says which generation the text it holds was read for", async () => {
     const file = testFile();
     const { reader, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
     store.request(file);
     resolve({ ok: true, value: new TextEncoder().encode(BASE) });
@@ -108,7 +108,7 @@ describe("ReviewSourceStore", () => {
   test("reads a file's source once, however many gaps in it are opened", async () => {
     const file = testFile();
     const { reader, requests, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
 
     store.request(file);
@@ -125,7 +125,7 @@ describe("ReviewSourceStore", () => {
   test("remembers why a read was refused, in the catalog's words", async () => {
     const file = testFile();
     const { reader, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
 
     store.request(file);
@@ -144,7 +144,7 @@ describe("ReviewSourceStore", () => {
   test("reads again after a failure, since asking again is the reader's retry", async () => {
     const file = testFile();
     const { reader, requests, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
 
     store.request(file);
@@ -161,7 +161,7 @@ describe("ReviewSourceStore", () => {
   test("tells watchers when a file's source state changes", async () => {
     const file = testFile();
     const { reader, resolve } = createTestReader();
-    const store = new ReviewSourceStore(reader);
+    const store = new BrowserReviewSourceStore(reader);
     store.setGeneration("generation:p1:0");
     let notices = 0;
     store.subscribe(() => {

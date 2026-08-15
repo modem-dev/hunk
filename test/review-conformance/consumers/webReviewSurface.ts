@@ -12,7 +12,7 @@
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../../src/app/review/capability";
 import { nodeReviewDigest } from "../../../src/core/reviewDigest";
-import { BrowserReviewServer } from "../../../src/session/broker/browserReviewServer";
+import { WebReviewServer } from "../../../src/session/broker/webReviewServer";
 import { HunkSessionBrokerState } from "../../../src/session/broker/state";
 import {
   parseReviewEventBegin,
@@ -123,14 +123,14 @@ function roundTripsTo(frames: DecodedFrame[], expected: string) {
   return assembled.ok && new TextDecoder().decode(assembled.bytes) === expected;
 }
 
-export const browserReviewSurfaceEventConsumer: ReviewEventConsumer = {
-  name: "browser review HTTP surface",
+export const webReviewSurfaceEventConsumer: ReviewEventConsumer = {
+  name: "web review HTTP surface",
   phase: "Phase 4",
   async frame(fixture: ReviewEventFixture) {
     const serialized = JSON.stringify(fixture.body);
     const state = new HunkSessionBrokerState();
     mirrorFixture(state, fixture);
-    const review = new BrowserReviewServer(state, {
+    const review = new WebReviewServer(state, {
       eventChunkBytes: resolveFixtureChunkBytes(
         fixture,
         new TextEncoder().encode(serialized).byteLength,

@@ -14,11 +14,14 @@
  * asks the browser's own code the questions.
  */
 import { projectReviewDocument } from "../../../src/core/review/document";
-import { buildReviewFileRenderModel, reviewExpandedGapRows } from "../../../src/web/pierreDocument";
+import {
+  buildBrowserReviewFileRenderModel,
+  browserReviewExpandedGapRows,
+} from "../../../src/web/pierreDocument";
 import type { ConformanceGap, ReviewGeometryConsumer, ReviewGeometryFixture } from "../types";
 
 /** Read the gaps the stream would draw, in the order it would draw them. */
-function gapsOf(model: ReturnType<typeof buildReviewFileRenderModel>): ConformanceGap[] {
+function gapsOf(model: ReturnType<typeof buildBrowserReviewFileRenderModel>): ConformanceGap[] {
   return model.gaps.map((gap) => ({
     gapId: gap.gapId,
     oldRange: [...gap.oldRange] as [number, number],
@@ -34,7 +37,7 @@ export const browserReviewProjectionConsumer: ReviewGeometryConsumer = {
     const document = projectReviewDocument(fixture.build());
     return {
       files: document.files.map((file, fileIndex) => {
-        const model = buildReviewFileRenderModel(file);
+        const model = buildBrowserReviewFileRenderModel(file);
         const expansion =
           fixture.expansion?.fileIndex === fileIndex ? fixture.expansion : undefined;
         return {
@@ -49,7 +52,7 @@ export const browserReviewProjectionConsumer: ReviewGeometryConsumer = {
           ...(expansion
             ? {
                 expandedRows:
-                  reviewExpandedGapRows(file, expansion.gapId, expansion.sourceText) ?? [],
+                  browserReviewExpandedGapRows(file, expansion.gapId, expansion.sourceText) ?? [],
               }
             : {}),
         };

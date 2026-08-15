@@ -76,7 +76,7 @@ describe("review conformance corpus", () => {
     ]);
     expect(REVIEW_EVENT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review event protocol",
-      "browser review HTTP surface",
+      "web review HTTP surface",
       "browser review client reader",
     ]);
   });

@@ -9,9 +9,9 @@ import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure } from "../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import type { ReviewApiClient, ReviewEventHandlers } from "./reviewApiClient";
-import { ReviewApp } from "./ReviewApp";
-import { ReviewMirror, type ReviewMirrorSource } from "./reviewMirror";
+import type { BrowserReviewApiClient, BrowserReviewEventHandlers } from "./reviewApiClient";
+import { BrowserReviewApp } from "./ReviewApp";
+import { BrowserReviewMirror, type BrowserReviewMirrorSource } from "./reviewMirror";
 
 const SESSION_ID = "session-1";
 const GENERATION = "generation:p1:0";
@@ -41,16 +41,19 @@ function documentFiles(): ReviewFileV1[] {
 }
 
 /** A mirror driven through its real transport seam until it has settled. */
-async function settledMirror(files: ReviewFileV1[], serve: ReviewMirrorSource["readResource"]) {
-  let handlers: ReviewEventHandlers | undefined;
-  const source: ReviewMirrorSource = {
+async function settledMirror(
+  files: ReviewFileV1[],
+  serve: BrowserReviewMirrorSource["readResource"],
+) {
+  let handlers: BrowserReviewEventHandlers | undefined;
+  const source: BrowserReviewMirrorSource = {
     readResource: serve,
     streamEvents(next) {
       handlers = next;
       return new Promise<void>(() => undefined);
     },
   };
-  const mirror = new ReviewMirror(source, {
+  const mirror = new BrowserReviewMirror(source, {
     timers: { setTimeout: () => 1, clearTimeout: () => undefined },
   });
   mirror.start();
@@ -77,7 +80,7 @@ async function settledMirror(files: ReviewFileV1[], serve: ReviewMirrorSource["r
 }
 
 /** Serve each file's canonical form, as the surface would. */
-function serveFiles(files: ReviewFileV1[]): ReviewMirrorSource["readResource"] {
+function serveFiles(files: ReviewFileV1[]): BrowserReviewMirrorSource["readResource"] {
   const encoder = new TextEncoder();
   return async (descriptor) => {
     const file = files.find(
@@ -91,14 +94,16 @@ function serveFiles(files: ReviewFileV1[]): ReviewMirrorSource["readResource"] {
 }
 
 /** The client the page would fetch source with; nothing static-rendered reaches it. */
-const UNUSED_CLIENT = {} as ReviewApiClient;
+const UNUSED_CLIENT = {} as BrowserReviewApiClient;
 
-describe("ReviewApp", () => {
+describe("BrowserReviewApp", () => {
   test("lists every file in review order, linking to its place in the stream", async () => {
     const files = documentFiles();
     const { mirror } = await settledMirror(files, serveFiles(files));
 
-    const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
+    const markup = renderToStaticMarkup(
+      <BrowserReviewApp mirror={mirror} client={UNUSED_CLIENT} />,
+    );
 
     const [first, second] = files;
     expect(markup).toContain(
@@ -109,7 +114,7 @@ describe("ReviewApp", () => {
   });
 
   test("says nothing about a review it has not loaded yet", () => {
-    const idle = new ReviewMirror(
+    const idle = new BrowserReviewMirror(
       {
         readResource: async () => ({ ok: false, code: "unknown-resource", message: "idle" }),
         streamEvents: () => new Promise<void>(() => undefined),
@@ -117,7 +122,7 @@ describe("ReviewApp", () => {
       { timers: { setTimeout: () => 1, clearTimeout: () => undefined } },
     );
 
-    const markup = renderToStaticMarkup(<ReviewApp mirror={idle} client={UNUSED_CLIENT} />);
+    const markup = renderToStaticMarkup(<BrowserReviewApp mirror={idle} client={UNUSED_CLIENT} />);
 
     expect(markup).toContain('data-status="idle"');
     expect(markup).not.toContain("review-file-list");
@@ -132,7 +137,9 @@ describe("ReviewApp", () => {
       message: failure,
     }));
 
-    const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
+    const markup = renderToStaticMarkup(
+      <BrowserReviewApp mirror={mirror} client={UNUSED_CLIENT} />,
+    );
 
     expect(markup).toContain('data-status="failed"');
     expect(markup).toContain(failure);
@@ -143,7 +150,9 @@ describe("ReviewApp", () => {
     const { mirror, handlers } = await settledMirror(files, serveFiles(files));
 
     handlers.onError?.(reviewHttpFailure("resource-unavailable"));
-    const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
+    const markup = renderToStaticMarkup(
+      <BrowserReviewApp mirror={mirror} client={UNUSED_CLIENT} />,
+    );
 
     expect(markup).toContain('data-status="reconnecting"');
     expect(markup).toContain("Reconnecting to the review…");

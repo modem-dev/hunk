@@ -14,8 +14,8 @@ import {
   type HunkReviewPublicationBodyV1,
 } from "../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import { parseReviewLocation, ReviewApiClient } from "./reviewApiClient";
-import { webReviewDigest } from "./reviewDigest";
+import { parseBrowserReviewLocation, BrowserReviewApiClient } from "./reviewApiClient";
+import { browserReviewDigest } from "./reviewDigest";
 
 const ORIGIN = "http://127.0.0.1:4300";
 const SESSION_ID = "session-1";
@@ -46,11 +46,11 @@ const PUBLICATION: HunkReviewPublicationBodyV1 = {
 /** Build a client over a `fetch` that answers from a table of route handlers. */
 function clientOver(handle: (request: Request) => Response | Promise<Response>) {
   const requests: Request[] = [];
-  const client = new ReviewApiClient({
+  const client = new BrowserReviewApiClient({
     origin: ORIGIN,
     sessionId: SESSION_ID,
     capability: CAPABILITY,
-    digest: webReviewDigest,
+    digest: browserReviewDigest,
     fetch: Object.assign(
       async (input: unknown, init: RequestInit | undefined) => {
         const request = new Request(input as string, init);
@@ -80,17 +80,17 @@ function serveResource(bytes: Uint8Array, options: { measure?: boolean } = {}) {
           ? {}
           : reviewContentMeasurementHeaders({
               byteLength: bytes.byteLength,
-              digest: webReviewDigest(bytes),
+              digest: browserReviewDigest(bytes),
             }),
     });
   };
 }
 
-describe("parseReviewLocation", () => {
+describe("parseBrowserReviewLocation", () => {
   test("reads the session and capability out of a review URL", () => {
     const url = new URL(reviewUrl(ORIGIN, SESSION_ID, CAPABILITY));
 
-    expect(parseReviewLocation(url)).toEqual({
+    expect(parseBrowserReviewLocation(url)).toEqual({
       origin: ORIGIN,
       sessionId: SESSION_ID,
       capability: CAPABILITY,
@@ -98,7 +98,7 @@ describe("parseReviewLocation", () => {
   });
 
   test("refuses a URL carrying no capability", () => {
-    expect(parseReviewLocation(new URL(`${ORIGIN}/review/${SESSION_ID}/`))).toBeUndefined();
+    expect(parseBrowserReviewLocation(new URL(`${ORIGIN}/review/${SESSION_ID}/`))).toBeUndefined();
   });
 
   test("refuses a malformed path as an answer, not an exception", () => {
@@ -108,11 +108,11 @@ describe("parseReviewLocation", () => {
     const url = new URL(reviewUrl(ORIGIN, SESSION_ID, CAPABILITY));
     const malformed = { ...url, origin: url.origin, hash: url.hash, pathname: "/review/%E0%A4%A/" };
 
-    expect(parseReviewLocation(malformed)).toBeUndefined();
+    expect(parseBrowserReviewLocation(malformed)).toBeUndefined();
   });
 });
 
-describe("ReviewApiClient.readPublication", () => {
+describe("BrowserReviewApiClient.readPublication", () => {
   test("presents the capability in a header and nowhere else", async () => {
     const { client, requests } = clientOver(() => Response.json(PUBLICATION));
 
@@ -170,7 +170,7 @@ describe("ReviewApiClient.readPublication", () => {
   });
 });
 
-describe("ReviewApiClient.readResource", () => {
+describe("BrowserReviewApiClient.readResource", () => {
   const descriptor = { id: RESOURCE_ID, generation: GENERATION, kind: "patch" } as const;
 
   test("joins several windows into one verified resource", async () => {
@@ -204,7 +204,7 @@ describe("ReviewApiClient.readResource", () => {
         new Response(new TextEncoder().encode("the p4tch"), {
           headers: reviewContentMeasurementHeaders({
             byteLength: bytes.byteLength,
-            digest: webReviewDigest(bytes),
+            digest: browserReviewDigest(bytes),
           }),
         }),
     );
@@ -223,8 +223,8 @@ describe("ReviewApiClient.readResource", () => {
       const bytes = whole.slice(0, REVIEW_RESOURCE_CHUNK_BYTES);
       const measurement =
         window === 0
-          ? { byteLength: whole.byteLength, digest: webReviewDigest(whole) }
-          : { byteLength: whole.byteLength, digest: webReviewDigest(first) };
+          ? { byteLength: whole.byteLength, digest: browserReviewDigest(whole) }
+          : { byteLength: whole.byteLength, digest: browserReviewDigest(first) };
       window += 1;
       return new Response(bytes, {
         status: 206,
@@ -248,7 +248,7 @@ describe("ReviewApiClient.readResource", () => {
   });
 });
 
-describe("ReviewApiClient.streamEvents", () => {
+describe("BrowserReviewApiClient.streamEvents", () => {
   /** Serve one event stream built by the shared framer, as the surface builds it. */
   function serveEvents(body: unknown, chunkBytes?: number) {
     const payload = new TextEncoder().encode(JSON.stringify(body));
@@ -257,7 +257,7 @@ describe("ReviewApiClient.streamEvents", () => {
       address: PUBLICATION.publication,
       body,
       payload,
-      contentDigest: webReviewDigest(payload),
+      contentDigest: browserReviewDigest(payload),
       encodeChunk: (bytes) => btoa(String.fromCharCode(...bytes)),
       ...(chunkBytes === undefined ? {} : { chunkBytes }),
     });

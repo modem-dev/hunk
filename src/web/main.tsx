@@ -14,10 +14,10 @@
 import { createRoot } from "react-dom/client";
 import "../core/changeset/fileLanguage";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { ReviewApiClient, parseReviewLocation } from "./reviewApiClient";
-import { ReviewMirror } from "./reviewMirror";
-import { ReviewApp } from "./ReviewApp";
-import type { HostViewDefaults } from "./viewOptions";
+import { BrowserReviewApiClient, parseBrowserReviewLocation } from "./reviewApiClient";
+import { BrowserReviewMirror } from "./reviewMirror";
+import { BrowserReviewApp } from "./ReviewApp";
+import type { BrowserHostViewDefaults } from "./viewOptions";
 
 /**
  * The host's resolved view defaults, when the page was served with them.
@@ -28,13 +28,13 @@ import type { HostViewDefaults } from "./viewOptions";
  */
 declare global {
   interface Window {
-    __hunkReviewViewDefaults?: HostViewDefaults;
+    __hunkReviewViewDefaults?: BrowserHostViewDefaults;
   }
 }
 
 /** Mount the review page, or say why there is nothing to mount. */
-export function mountReviewPage(container: HTMLElement) {
-  const location = parseReviewLocation(new URL(window.location.href));
+export function mountBrowserReviewPage(container: HTMLElement) {
+  const location = parseBrowserReviewLocation(new URL(window.location.href));
   if (!location) {
     // A link this client cannot read is one no session would honor, so it is the
     // catalog's `unauthorized` wording rather than a sentence written here (G4).
@@ -42,10 +42,10 @@ export function mountReviewPage(container: HTMLElement) {
     return;
   }
 
-  const client = new ReviewApiClient(location);
-  const mirror = new ReviewMirror(client);
+  const client = new BrowserReviewApiClient(location);
+  const mirror = new BrowserReviewMirror(client);
   createRoot(container).render(
-    <ReviewApp
+    <BrowserReviewApp
       mirror={mirror}
       client={client}
       {...(window.__hunkReviewViewDefaults
@@ -57,5 +57,5 @@ export function mountReviewPage(container: HTMLElement) {
 
 const container = document.getElementById("hunk-review");
 if (container) {
-  mountReviewPage(container);
+  mountBrowserReviewPage(container);
 }

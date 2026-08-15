@@ -10,7 +10,7 @@ import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
 import { browserMirrorOrderingConsumer } from "./consumers/browserReviewMirror";
 import { browserReviewProjectionConsumer } from "./consumers/browserReviewProjection";
 import { browserReviewReaderEventConsumer } from "./consumers/browserReviewReader";
-import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
+import { webReviewSurfaceEventConsumer } from "./consumers/webReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
 import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnapshot";
@@ -84,6 +84,6 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
  */
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
-  browserReviewSurfaceEventConsumer,
+  webReviewSurfaceEventConsumer,
   browserReviewReaderEventConsumer,
 ];

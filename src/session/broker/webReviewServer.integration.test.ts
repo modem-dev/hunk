@@ -36,13 +36,12 @@ import {
   type HunkReviewHttpRoute,
 } from "../reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
-import { BrowserReviewServer, type BrowserReviewServerOptions } from "./browserReviewServer";
+import { WebReviewServer, type WebReviewServerOptions } from "./webReviewServer";
 
 const SESSION_ID = "session-http-1";
 const ACTOR = { clientId: "test-client", kind: "browser" } as const;
 
-const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
-  [];
+const running: Array<{ review: WebReviewServer; server: { stop: (force?: boolean) => void } }> = [];
 
 afterEach(() => {
   for (const entry of running.splice(0)) {
@@ -54,9 +53,9 @@ afterEach(() => {
 /** Mount the review surface on a real loopback listener. */
 function serve(
   harness: ReturnType<typeof connectReviewSession>,
-  options: BrowserReviewServerOptions = {},
+  options: WebReviewServerOptions = {},
 ) {
-  const review = new BrowserReviewServer(harness.state, options);
+  const review = new WebReviewServer(harness.state, options);
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -68,10 +67,7 @@ function serve(
 }
 
 /** Connect a session, register it, and mount the surface over it. */
-function start(
-  files = [createTestPatchFile("alpha", 4)],
-  options: BrowserReviewServerOptions = {},
-) {
+function start(files = [createTestPatchFile("alpha", 4)], options: WebReviewServerOptions = {}) {
   const harness = connectReviewSession(files, { sessionId: SESSION_ID });
   harness.register();
   return { harness, ...serve(harness, options) };

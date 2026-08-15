@@ -22,8 +22,8 @@ import {
 } from "../../../src/core/review/resources";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../../src/session/reviewProtocol";
 import type { HunkReviewPublicationBodyV1 } from "../../../src/session/reviewHttpProtocol";
-import type { ReviewEventHandlers } from "../../../src/web/reviewApiClient";
-import { ReviewMirror, type ReviewMirrorSource } from "../../../src/web/reviewMirror";
+import type { BrowserReviewEventHandlers } from "../../../src/web/reviewApiClient";
+import { BrowserReviewMirror, type BrowserReviewMirrorSource } from "../../../src/web/reviewMirror";
 import type { ReviewOrderingConsumer } from "../types";
 
 const SESSION_ID = "session-conformance";
@@ -55,9 +55,9 @@ export const browserMirrorOrderingConsumer: ReviewOrderingConsumer = {
   name: "browser review mirror",
   phase: "Phase 5 PR 1",
   classify(current: ReviewPublicationAddress, incoming: ReviewPublicationAddress) {
-    let handlers: ReviewEventHandlers | undefined;
+    let handlers: BrowserReviewEventHandlers | undefined;
     const readGenerations: string[] = [];
-    const source: ReviewMirrorSource = {
+    const source: BrowserReviewMirrorSource = {
       async readResource(descriptor) {
         readGenerations.push(descriptor.generation);
         // The bytes are irrelevant to ordering; refusing them keeps the adapter from
@@ -69,7 +69,7 @@ export const browserMirrorOrderingConsumer: ReviewOrderingConsumer = {
         return new Promise<void>(() => undefined);
       },
     };
-    const mirror = new ReviewMirror(source, {
+    const mirror = new BrowserReviewMirror(source, {
       timers: { setTimeout: () => 1, clearTimeout: () => undefined },
     });
 

@@ -108,7 +108,7 @@ const DEFAULT_MAX_STREAMS_PER_SESSION = 8;
  */
 const DEFAULT_MAX_STREAM_BUFFER_BYTES = 2 * MAX_HUNK_REVIEW_ENVELOPE_BYTES;
 
-export interface BrowserReviewServerOptions {
+export interface WebReviewServerOptions {
   heartbeatMs?: number;
   maxStreams?: number;
   maxStreamsPerSession?: number;
@@ -157,7 +157,7 @@ function digestsMatchInConstantTime(presented: string, expected: string | undefi
 }
 
 /** Serve one daemon's review surface: publication, resources, events, and actions. */
-export class BrowserReviewServer {
+export class WebReviewServer {
   private readonly streams = new Set<ReviewEventStream>();
   private readonly unsubscribe: () => void;
   private readonly heartbeat: ReturnType<typeof setInterval>;
@@ -165,7 +165,7 @@ export class BrowserReviewServer {
 
   constructor(
     private readonly state: HunkSessionBrokerState,
-    private readonly options: BrowserReviewServerOptions = {},
+    private readonly options: WebReviewServerOptions = {},
   ) {
     this.unsubscribe = state.subscribeReviewPublications((event) => this.observe(event));
     this.heartbeat = setInterval(
