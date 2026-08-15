@@ -22,8 +22,11 @@ import {
 } from "../../../src/core/review/resources";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../../src/session/reviewProtocol";
 import type { HunkReviewPublicationBodyV1 } from "../../../src/session/reviewHttpProtocol";
-import type { BrowserReviewEventHandlers } from "../../../src/web/reviewApiClient";
-import { BrowserReviewMirror, type BrowserReviewMirrorSource } from "../../../src/web/reviewMirror";
+import type { BrowserReviewEventHandlers } from "../../../src/web/browserReviewApiClient";
+import {
+  BrowserReviewMirror,
+  type BrowserReviewMirrorSource,
+} from "../../../src/web/browserReviewMirror";
 import type { ReviewOrderingConsumer } from "../types";
 
 const SESSION_ID = "session-conformance";

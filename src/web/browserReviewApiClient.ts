@@ -64,7 +64,7 @@ import {
   parseHunkReviewPublicationAddress,
   parseHunkReviewResourceCatalog,
 } from "../session/reviewProtocol";
-import { browserReviewDigest } from "./reviewDigest";
+import { browserReviewDigest } from "./browserReviewDigest";
 
 /**
  * One refusal, exactly as the surface answers it.

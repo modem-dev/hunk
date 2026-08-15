@@ -9,12 +9,12 @@ import {
   type HunkReviewResourceCatalogV1,
 } from "../session/reviewProtocol";
 import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
-import type { BrowserReviewResult, BrowserReviewEventHandlers } from "./reviewApiClient";
+import type { BrowserReviewResult, BrowserReviewEventHandlers } from "./browserReviewApiClient";
 import {
   BrowserReviewMirror,
   type BrowserReviewMirrorSnapshot,
   type BrowserReviewMirrorSource,
-} from "./reviewMirror";
+} from "./browserReviewMirror";
 
 const SESSION_ID = "session-1";
 

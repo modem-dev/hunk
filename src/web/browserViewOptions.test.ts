@@ -4,7 +4,7 @@ import {
   DEFAULT_BROWSER_VIEW_OPTIONS,
   resolveBrowserDiffStyle,
   resolveBrowserViewOptions,
-} from "./viewOptions";
+} from "./browserViewOptions";
 
 describe("resolveBrowserViewOptions", () => {
   test("starts from the built-in defaults when the host supplied none", () => {

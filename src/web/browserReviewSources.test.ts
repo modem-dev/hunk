@@ -4,8 +4,8 @@ import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure } from "../session/reviewHttpProtocol";
-import type { BrowserReviewResult } from "./reviewApiClient";
-import { BrowserReviewSourceStore, type BrowserReviewSourceReader } from "./reviewSources";
+import type { BrowserReviewResult } from "./browserReviewApiClient";
+import { BrowserReviewSourceStore, type BrowserReviewSourceReader } from "./browserReviewSources";
 
 const BASE = `${Array.from({ length: 12 }, (_unused, index) => `line ${index + 1}`).join("\n")}\n`;
 

@@ -14,10 +14,10 @@
 import { createRoot } from "react-dom/client";
 import "../core/fileLanguage";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { BrowserReviewApiClient, parseBrowserReviewLocation } from "./reviewApiClient";
-import { BrowserReviewMirror } from "./reviewMirror";
-import { BrowserReviewApp } from "./ReviewApp";
-import type { BrowserHostViewDefaults } from "./viewOptions";
+import { BrowserReviewApiClient, parseBrowserReviewLocation } from "./browserReviewApiClient";
+import { BrowserReviewMirror } from "./browserReviewMirror";
+import { BrowserReviewApp } from "./BrowserReviewApp";
+import type { BrowserHostViewDefaults } from "./browserViewOptions";
 
 /**
  * The host's resolved view defaults, when the page was served with them.

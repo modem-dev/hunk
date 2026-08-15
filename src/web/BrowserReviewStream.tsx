@@ -27,9 +27,9 @@ import {
   type BrowserReviewExpandedRow,
   type BrowserReviewFileRenderModel,
   type BrowserReviewRenderGap,
-} from "./pierreDocument";
-import type { BrowserReviewSourceEntry } from "./reviewSources";
-import { resolveBrowserDiffStyle, type BrowserViewOptions } from "./viewOptions";
+} from "./browserPierreDocument";
+import type { BrowserReviewSourceEntry } from "./browserReviewSources";
+import { resolveBrowserDiffStyle, type BrowserViewOptions } from "./browserViewOptions";
 
 /** What a file with no rows says about itself, in this surface's wording. */
 const EMPTY_DIFF_MESSAGES = {
