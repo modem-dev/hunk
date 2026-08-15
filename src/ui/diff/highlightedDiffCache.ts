@@ -7,9 +7,16 @@ import type { HighlightedDiffCode } from "./diffRows";
  * in lines bounds memory directly where a file count could not: 40 files of a 2400-line diff is
  * ~130MB, while 40 single-line fixes is a rounding error. Lines are also the unit the prefetch
  * window is measured in, so the files it warms always fit — a window spans about seven viewport
- * heights of rows, leaving this budget an order of magnitude of headroom for scrolling back.
+ * heights of rows, a rounding error against this budget.
+ *
+ * The ceiling is set high enough to hold a generated file alongside the source files around it.
+ * Below that, an entry too large for the budget evicts its own neighbors, which then evict it back
+ * on the next scroll, re-highlighting tens of thousands of lines per step. Worst case is ~84MB at
+ * the measured rate, and well under that in practice: the files that approach the budget are
+ * lockfiles and generated output, whose lines carry far fewer spans than the dense source the rate
+ * was measured on.
  */
-const MAX_HIGHLIGHTED_DIFF_CACHE_LINES = 12_000;
+const MAX_HIGHLIGHTED_DIFF_CACHE_LINES = 60_000;
 
 export interface HighlightedDiffCache {
   /** Read one result and mark it most recently used. */
