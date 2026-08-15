@@ -1,5 +1,46 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "test/**/*.{ts,tsx}", "bin/**/*.cjs"],
-  "ignoreDependencies": ["bun"]
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/extension-api/index.ts",
+        "src/opentui/index.ts",
+        "src/web/main.tsx",
+        "src/**/*.test.{ts,tsx}",
+        "scripts/**/*.test.ts",
+        "test/**/*.test.{ts,tsx}",
+        "test/cli/fixtures/compiled-opentui-positive-control.ts",
+        "scripts/launch-video/*.{ts,mjs}",
+        "scripts/probe-terminal-theme.ts",
+        "scripts/test-large-untracked-render.tsx",
+        "examples/extensions/**/index.{ts,tsx}",
+        "examples/extensions/**/run.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "scripts/**/*.{ts,tsx,mjs}",
+        "test/**/*.{ts,tsx}",
+        "benchmarks/**/*.ts",
+        "examples/extensions/**/*.{ts,tsx}",
+        "bin/**/*.cjs"
+      ],
+      "ignore": ["examples/extensions/**/fixtures/**"],
+      "ignoreBinaries": ["nix"],
+      "ignoreDependencies": ["@changesets/changelog-github"],
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/session-broker*": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/term-video": {
+      "entry": ["src/plan.test.ts"],
+      "project": ["src/**/*.{ts,mts,mjs}"],
+      "ignoreDependencies": ["playwright-core"]
+    }
+  },
+  "ignoreIssues": {
+    "src/app/review/capability.ts": ["exports"],
+    "src/extension-api/types.ts": ["duplicates"]
+  }
 }

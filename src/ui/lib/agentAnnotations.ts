@@ -58,11 +58,6 @@ export function getSelectedAnnotations(file: DiffFile | undefined, hunk: Hunk | 
   );
 }
 
-/** Format an inclusive line range for note labels. */
-function formatRange(range: [number, number]) {
-  return range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`;
-}
-
 /** Resolve the primary visual anchor for an annotation. */
 export function annotationAnchor(annotation: AgentAnnotation): AnnotationAnchor | null {
   if (annotation.newRange) {
@@ -142,20 +137,4 @@ export function annotationRangeLabel(annotation: AgentAnnotation, file?: DiffFil
 
   const location = locationParts.join(" → ") || "hunk";
   return file ? `${fileLabel(file)} ${location}` : location;
-}
-
-/** Build the compact file-and-lines label shown on a framed agent note card. */
-export function annotationLocationLabel(file: DiffFile, annotation: AgentAnnotation) {
-  const locationParts: string[] = [];
-
-  if (annotation.oldRange) {
-    locationParts.push(`-${formatRange(annotation.oldRange)}`);
-  }
-
-  if (annotation.newRange) {
-    locationParts.push(`+${formatRange(annotation.newRange)}`);
-  }
-
-  const location = locationParts.length > 0 ? ` ${locationParts.join(" ")}` : "";
-  return `${fileLabel(file)}${location}`;
 }

@@ -12,7 +12,6 @@ import type {
 } from "./reviewProtocol";
 import type { SessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  SessionClientMessage,
   SessionRegistration,
   SessionServerMessage,
   SessionSnapshot,
@@ -133,10 +132,6 @@ export interface NavigateToHunkToolInput extends SessionTargetInput {
 export interface ReloadSessionToolInput extends SessionTargetInput {
   nextInput: CliInput;
   sourcePath?: string;
-}
-
-export interface ListCommentsToolInput extends SessionTargetInput {
-  filePath?: string;
 }
 
 export interface RemoveCommentToolInput extends SessionTargetInput {
@@ -350,12 +345,6 @@ export type HunkSessionCommandResult =
   | HunkReviewResultV1
   | AppliedHighlightResult
   | ClearedHighlightsResult;
-
-export type HunkSessionClientMessage = SessionClientMessage<
-  HunkSessionInfo,
-  HunkSessionState,
-  HunkSessionCommandResult
->;
 
 export type HunkSessionBrokerClient = SessionBrokerClient<
   HunkSessionInfo,

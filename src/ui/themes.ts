@@ -9,12 +9,11 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
-  type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
 } from "../core/theme/catalog";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
-export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
+export type { AppTheme } from "./themes/types";
 
 export const TRANSPARENT_BACKGROUND = "transparent";
 export const DEFAULT_DARK_THEME_ID = "github-dark-default";
@@ -350,11 +349,6 @@ export function resolveTheme(
   }
 
   return fallbackTheme(themeMode);
-}
-
-/** Return known semantic diff colors for a bundled Shiki-backed theme. */
-export function bundledThemeDiffColors(themeId: string): BundledShikiThemeDiffColors | undefined {
-  return getBundledShikiThemeDiffColors(themeId);
 }
 
 /**
