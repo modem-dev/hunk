@@ -44,13 +44,9 @@ import {
 import { reviewFileContentIdentityOf } from "../core/review/document";
 import { REVIEW_RESOURCE_LOAD_CONCURRENCY } from "../core/review/resources";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
-import type { HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
+import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
 import type { HunkReviewResourceCatalogV1 } from "../session/reviewProtocol";
-import {
-  reviewClientFailure,
-  type ReviewApiClient,
-  type ReviewClientFailure,
-} from "./reviewApiClient";
+import type { ReviewApiClient, ReviewClientFailure } from "./reviewApiClient";
 
 /**
  * How soon a dropped stream is retried, and how far apart retries grow.
@@ -378,7 +374,7 @@ export class ReviewMirror {
         throw new Error("its content does not hash to the identity it declares");
       }
     } catch (error) {
-      return reviewClientFailure("resource-integrity", {
+      return reviewHttpFailure("resource-integrity", {
         message: `The review served a file for ${descriptor.fileKey} that could not be read${
           error instanceof Error ? `: ${error.message}` : ""
         }.`,

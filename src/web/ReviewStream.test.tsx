@@ -6,7 +6,7 @@ import { projectReviewDocument } from "../core/review/document";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { buildReviewFileRenderModel } from "./pierreDocument";
-import { reviewClientFailure } from "./reviewApiClient";
+import { reviewHttpFailure } from "../session/reviewHttpProtocol";
 import type { ReviewSourceEntry } from "./reviewSources";
 import { GapStrip, ReviewStream } from "./ReviewStream";
 import { DEFAULT_BROWSER_VIEW_OPTIONS } from "./viewOptions";
@@ -138,7 +138,7 @@ describe("ReviewStream", () => {
   });
 
   test("says why an opened gap has no lines instead of loading them forever", () => {
-    const failure = reviewClientFailure("resource-unavailable");
+    const failure = reviewHttpFailure("resource-unavailable");
 
     const markup = renderOpenGap({ source: { status: "failed", failure } });
 

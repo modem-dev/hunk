@@ -3,7 +3,8 @@ import { projectReviewDocument } from "../core/review/document";
 import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { reviewClientFailure, type ReviewClientResult } from "./reviewApiClient";
+import { reviewHttpFailure } from "../session/reviewHttpProtocol";
+import type { ReviewClientResult } from "./reviewApiClient";
 import { ReviewSourceStore, type ReviewSourceReader } from "./reviewSources";
 
 const BASE = `${Array.from({ length: 12 }, (_unused, index) => `line ${index + 1}`).join("\n")}\n`;
@@ -128,7 +129,7 @@ describe("ReviewSourceStore", () => {
     store.setGeneration("generation:p1:0");
 
     store.request(file);
-    resolve(reviewClientFailure("resource-unavailable"));
+    resolve(reviewHttpFailure("resource-unavailable"));
     await settle();
 
     expect(store.getSnapshot().entries[file.key]).toMatchObject({
@@ -147,7 +148,7 @@ describe("ReviewSourceStore", () => {
     store.setGeneration("generation:p1:0");
 
     store.request(file);
-    resolve(reviewClientFailure("resource-unavailable"));
+    resolve(reviewHttpFailure("resource-unavailable"));
     await settle();
     store.request(file);
     resolve({ ok: true, value: new TextEncoder().encode(BASE) });

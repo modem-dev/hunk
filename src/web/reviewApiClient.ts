@@ -49,9 +49,11 @@ import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   parseReviewContentMeasurementHeaders,
   parseReviewCapabilityFragment,
+  reviewErrorCodeForStatus,
+  reviewHttpFailure,
   reviewHttpPath,
   reviewPagePath,
-  type HunkReviewClientErrorCodeV1,
+  type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
 } from "../session/reviewHttpProtocol";
@@ -62,33 +64,20 @@ import {
 } from "../session/reviewProtocol";
 import { webReviewDigest } from "./reviewDigest";
 
-/** One refusal, in the shared vocabulary and with the shared wording. */
-export interface ReviewClientFailure {
-  ok: false;
-  code: HunkReviewClientErrorCodeV1;
-  message: string;
-  /** What the session is serving now, when the failure was about being out of date. */
-  currentGeneration?: string;
-}
+/**
+ * One refusal, exactly as the surface answers it.
+ *
+ * The wire type itself rather than a client-side restatement of its fields: a refusal this
+ * client reports is one the review surface either sent or would have sent, so there is no
+ * second shape to keep in step (G4). `reviewHttpFailure` builds them, on both ends.
+ */
+export type ReviewClientFailure = HunkReviewHttpFailureV1;
 
 export type ReviewClientResult<Value> = { ok: true; value: Value } | ReviewClientFailure;
 
-/** Build one failure, taking the catalog's wording unless the surface sent its own. */
-export function reviewClientFailure(
-  code: HunkReviewClientErrorCodeV1,
-  details: { message?: string; currentGeneration?: string } = {},
-): ReviewClientFailure {
-  return {
-    ok: false,
-    code,
-    message: details.message ?? reviewErrorMessage(code),
-    ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
-  };
-}
-
 /** What the client was told, or the fact that it could not be told anything. */
 function transportFailure(error: unknown): ReviewClientFailure {
-  return reviewClientFailure("resource-unavailable", {
+  return reviewHttpFailure("resource-unavailable", {
     message: `${reviewErrorMessage("resource-unavailable")}${
       error instanceof Error ? ` (${error.message})` : ""
     }`,
@@ -227,7 +216,7 @@ export class ReviewApiClient {
         bytes,
       });
       if (!step.ok) {
-        return reviewClientFailure(step.code, { message: step.message });
+        return reviewHttpFailure(step.code, { message: step.message });
       }
       if (step.done) {
         break;
@@ -237,7 +226,7 @@ export class ReviewApiClient {
     const assembled = assembler.finish();
     return assembled.ok
       ? { ok: true, value: assembled.bytes }
-      : reviewClientFailure(assembled.code, { message: assembled.message });
+      : reviewHttpFailure(assembled.code, { message: assembled.message });
   }
 
   /**
@@ -289,7 +278,7 @@ export class ReviewApiClient {
       !catalog ||
       catalog.generation !== publication.generation
     ) {
-      return reviewClientFailure("invalid-request");
+      return reviewHttpFailure("invalid-request");
     }
     return {
       ok: true,
@@ -344,7 +333,7 @@ export class ReviewApiClient {
     if (!measurement) {
       // Without a measurement there is nothing to verify against, and serving bytes that
       // cannot be checked is worse than refusing them.
-      return reviewClientFailure("resource-integrity");
+      return reviewHttpFailure("resource-integrity");
     }
     return {
       ok: true,
@@ -378,7 +367,7 @@ export class ReviewApiClient {
       | Partial<ReviewClientFailure>
       | undefined;
     if (body?.ok === false && typeof body.code === "string") {
-      return reviewClientFailure(body.code, {
+      return reviewHttpFailure(body.code, {
         ...(typeof body.message === "string" ? { message: body.message } : {}),
         ...(typeof body.currentGeneration === "string"
           ? { currentGeneration: body.currentGeneration }
@@ -386,8 +375,10 @@ export class ReviewApiClient {
       });
     }
     // One route answers without a body: an unsatisfiable range is refused with a bare
-    // 416 and a `content-range` stating the size that should have been asked within.
-    return reviewClientFailure(response.status === 416 ? "invalid-range" : "invalid-request");
+    // 416 and a `content-range` stating the size that should have been asked within. The
+    // status is read through the shared table, so this client holds no opinion about
+    // which code a status means; a status several codes share is not guessed at.
+    return reviewHttpFailure(reviewErrorCodeForStatus(response.status) ?? "invalid-request");
   }
 }
 
@@ -505,7 +496,7 @@ class ReviewEventStreamReader {
   finishStream() {
     if (!this.disconnected) {
       this.handlers.onError?.(
-        reviewClientFailure("resource-unavailable", {
+        reviewHttpFailure("resource-unavailable", {
           message: "The review event stream ended.",
         }),
       );
@@ -526,7 +517,7 @@ class ReviewEventStreamReader {
 
   private fail(message: string) {
     this.assembler = undefined;
-    this.handlers.onError?.(reviewClientFailure("resource-integrity", { message }));
+    this.handlers.onError?.(reviewHttpFailure("resource-integrity", { message }));
   }
 }
 
