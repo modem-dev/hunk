@@ -105,7 +105,7 @@ describe("extension file languages", () => {
   });
 
   test("lets the last extension registration win for the same file extension", async () => {
-    const { getFiletypeFromFileName } = await import("../core/fileLanguage");
+    const { fileLanguageForPath } = await import("../core/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       { extensionId: "first", extension: "hunkfixture", language: "python" },
@@ -113,7 +113,7 @@ describe("extension file languages", () => {
     );
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
-    expect(getFiletypeFromFileName("sample.hunkfixture")).toBe("ruby");
+    expect(fileLanguageForPath("sample.hunkfixture")).toBe("ruby");
   });
 });
 
