@@ -325,6 +325,75 @@ export function encodeReviewEventFrame(frame: ReviewEventSseFrame): string {
   return `${frame.id ? `id: ${frame.id}\n` : ""}event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}\n\n`;
 }
 
+/** One record read back off the wire: the three fields this protocol writes, and nothing else. */
+export interface ReviewEventSseRecord {
+  /** Present only on a record that completes an event, exactly as `encodeReviewEventFrame` writes it. */
+  id?: string;
+  event: string;
+  /** The `data:` line as text; parsing it is the reader's, since only it knows the frame. */
+  data: string;
+}
+
+/** The record separator and per-field prefixes `encodeReviewEventFrame` writes. */
+const SSE_RECORD_SEPARATOR = "\n\n";
+const SSE_FIELD_PREFIXES = { id: "id: ", event: "event: ", data: "data: " } as const;
+
+/** Read one field off a record's lines, or undefined when the record does not carry it. */
+function readSseField(lines: readonly string[], field: keyof typeof SSE_FIELD_PREFIXES) {
+  const prefix = SSE_FIELD_PREFIXES[field];
+  return lines.find((line) => line.startsWith(prefix))?.slice(prefix.length);
+}
+
+/**
+ * Read one complete record's text into the fields it carries.
+ *
+ * A record without both an `event` and a `data` is not one this protocol wrote — the
+ * heartbeat is a bare comment line — so it is dropped rather than half-read.
+ */
+function parseReviewEventSseRecord(text: string): ReviewEventSseRecord | undefined {
+  const lines = text.split("\n");
+  const event = readSseField(lines, "event");
+  const data = readSseField(lines, "data");
+  if (event === undefined || data === undefined) {
+    return undefined;
+  }
+  const id = readSseField(lines, "id");
+  return { ...(id === undefined ? {} : { id }), event, data };
+}
+
+/**
+ * Split a stream of text into the records it carries, across as many reads as it takes.
+ *
+ * The counterpart of `encodeReviewEventFrame`, and the reason it lives beside it: a
+ * transport reads whatever bytes arrive, so a record can be split across two reads and two
+ * records can arrive in one. The splitter keeps the tail that has no separator yet and
+ * emits nothing until it does, which is what makes a partial `data:` line impossible to
+ * mistake for a whole one. Every consumer that reads this stream — the browser client and
+ * the suites that watch the server — decodes with this rather than re-deriving the
+ * prefixes and offsets (`docs/browser-review-seam-audit.md`, C4).
+ */
+export class ReviewEventSseDecoder {
+  private buffer = "";
+
+  /** Take one more piece of stream text, returning every record it completed. */
+  push(text: string): ReviewEventSseRecord[] {
+    this.buffer += text;
+    const records: ReviewEventSseRecord[] = [];
+    for (
+      let boundary = this.buffer.indexOf(SSE_RECORD_SEPARATOR);
+      boundary >= 0;
+      boundary = this.buffer.indexOf(SSE_RECORD_SEPARATOR)
+    ) {
+      const record = parseReviewEventSseRecord(this.buffer.slice(0, boundary));
+      this.buffer = this.buffer.slice(boundary + SSE_RECORD_SEPARATOR.length);
+      if (record) {
+        records.push(record);
+      }
+    }
+    return records;
+  }
+}
+
 /** How many chunks one payload of the given size is sent as. */
 export function reviewEventChunkCount(contentSize: number) {
   return Math.max(1, Math.ceil(contentSize / REVIEW_EVENT_CHUNK_BYTES));

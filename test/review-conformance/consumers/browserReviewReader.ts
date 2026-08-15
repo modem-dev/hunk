@@ -16,6 +16,7 @@ import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../../src/app/review/capability";
 import { BrowserReviewServer } from "../../../src/session/broker/browserReviewServer";
 import { HunkSessionBrokerState } from "../../../src/session/broker/state";
+import { ReviewEventSseDecoder } from "../../../src/session/reviewEventProtocol";
 import { ReviewApiClient } from "../../../src/web/reviewApiClient";
 import { EVENT_FIXTURE_SESSION_ID } from "../eventFixtures";
 import { collapseChunkRun, resolveFixtureChunkBytes } from "../eventFraming";
@@ -53,18 +54,14 @@ function mirrorFixture(state: HunkSessionBrokerState, fixture: ReviewEventFixtur
   );
 }
 
-/** Split the observed stream text into the record fields this protocol emits. */
+/** Read the observed stream text with the protocol's own record decoder. */
 function observedRecords(text: string) {
-  return text
-    .split("\n\n")
-    .filter((record) => record.includes("event: "))
-    .map((record) => {
-      const lines = record.split("\n");
-      return {
-        event: lines.find((line) => line.startsWith("event: "))!.slice(7),
-        resumable: lines.some((line) => line.startsWith("id: ")),
-      };
-    });
+  return new ReviewEventSseDecoder().push(text).map((record) => ({
+    event: record.event,
+    // Only a record that completes an event carries an id, which is the protocol's rule
+    // rather than this adapter's reading of one.
+    resumable: record.id !== undefined,
+  }));
 }
 
 export const browserReviewReaderEventConsumer: ReviewEventConsumer = {
