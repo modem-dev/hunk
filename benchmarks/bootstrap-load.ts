@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
+import { getBundledVcsCatalog } from "../src/app/vcsCatalog";
 import { loadAppBootstrap } from "../src/core/loaders";
 
 const FILE_COUNT = 64;
@@ -107,11 +108,14 @@ async function measureGitBootstrap(repoDir: string) {
 
   try {
     const endToEndStart = performance.now();
-    const bootstrap = await loadAppBootstrap({
-      kind: "vcs",
-      staged: false,
-      options: { mode: "auto" },
-    });
+    const bootstrap = await loadAppBootstrap(
+      {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "auto" },
+      },
+      { vcsCatalog: getBundledVcsCatalog() },
+    );
     const endToEndMs = performance.now() - endToEndStart;
 
     const gitDiffStart = performance.now();
