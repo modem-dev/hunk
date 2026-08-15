@@ -10,7 +10,7 @@ import {
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
-import { loadAppBootstrap } from "./changesetSources";
+import { loadAppBootstrap } from "./changesetLoaders";
 import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "./startupNotice";
 
 const tempDirs: string[] = [];

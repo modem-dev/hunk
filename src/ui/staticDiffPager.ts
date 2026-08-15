@@ -14,7 +14,7 @@
  * here. If the static renderer cannot parse or render safely, callers fall back to the original patch
  * text so pager pipelines keep working.
  */
-import { loadAppBootstrap } from "../core/changesetSources";
+import { loadAppBootstrap } from "../core/changesetLoaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type { CommonOptions, DiffFile, NamedCustomThemeConfig } from "../core/types";

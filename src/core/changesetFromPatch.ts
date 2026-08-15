@@ -3,7 +3,7 @@
  *
  * Every input mode converges here: a VCS spawn, a two-file comparison, and a patch read from
  * disk or stdin all end up as text, and this module is the one that turns text into
- * `DiffFile`s. Keeping it apart from `changesetSources.ts` keeps the parse pure — the
+ * `DiffFile`s. Keeping it apart from `changesetLoaders.ts` keeps the parse pure — the
  * loaders own the I/O, this owns the model.
  *
  * Moved-line capture has to run before sanitizing: Git marks moved lines only through SGR

@@ -18,7 +18,7 @@ import { createVcsCatalog } from "./vcs";
 import {
   loadAppBootstrap as loadCoreAppBootstrap,
   type LoadAppBootstrapOptions,
-} from "./changesetSources";
+} from "./changesetLoaders";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 import { computeWatchSignature } from "./watch/signature";

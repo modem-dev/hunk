@@ -10,7 +10,7 @@ import {
 } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/config";
 import { HunkUserError } from "../core/errors";
-import { loadAppBootstrap } from "../core/changesetSources";
+import { loadAppBootstrap } from "../core/changesetLoaders";
 import { looksLikePatchInput } from "../core/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {

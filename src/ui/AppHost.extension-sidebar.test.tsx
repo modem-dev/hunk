@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetSources";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";

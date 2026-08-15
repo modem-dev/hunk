@@ -19,7 +19,7 @@ import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpe
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
-const { loadAppBootstrap } = await import("../core/changesetSources");
+const { loadAppBootstrap } = await import("../core/changesetLoaders");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";

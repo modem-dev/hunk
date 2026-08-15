@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
-import { loadAppBootstrap } from "../src/core/changesetSources";
+import { loadAppBootstrap } from "../src/core/changesetLoaders";
 
 const FILE_COUNT = 64;
 const LINES_PER_FILE = 420;
