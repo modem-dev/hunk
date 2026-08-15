@@ -16,7 +16,11 @@ import { reviewFileStatBadges } from "../core/review/presentation";
 import type { ReviewFileV1 } from "../core/review/types";
 import type { ReviewApiClient } from "./reviewApiClient";
 import type { ReviewMirror, ReviewMirrorSnapshot } from "./reviewMirror";
-import { ReviewSourceStore, type ReviewSourceEntries } from "./reviewSources";
+import {
+  ReviewSourceStore,
+  type ReviewSourceEntries,
+  type ReviewSourceSnapshot,
+} from "./reviewSources";
 import { ReviewStream } from "./ReviewStream";
 import {
   resolveBrowserViewOptions,
@@ -40,8 +44,11 @@ function useReviewMirror(mirror: ReviewMirror): ReviewMirrorSnapshot {
   );
 }
 
+/** No source read yet, and a stable identity so an empty render is not a new object. */
+const NO_SOURCES: ReviewSourceEntries = {};
+
 /** Watch one source store the same way, so a read that lands re-renders the gaps it fills. */
-function useReviewSources(sources: ReviewSourceStore): ReviewSourceEntries {
+function useReviewSources(sources: ReviewSourceStore): ReviewSourceSnapshot {
   return useSyncExternalStore(
     useCallback((notify) => sources.subscribe(notify), [sources]),
     useCallback(() => sources.getSnapshot(), [sources]),
@@ -65,7 +72,7 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
   const viewportWidth = useViewportWidth();
   const [view] = useState<BrowserViewOptions>(() => resolveBrowserViewOptions(hostViewDefaults));
   const sources = useMemo(() => new ReviewSourceStore(client), [client]);
-  const sourceByFileKey = useReviewSources(sources);
+  const sourceSnapshot = useReviewSources(sources);
 
   // The page owns the mirror's attachment for as long as it is on screen; the mirror can be
   // attached again, so a remount picks the same review back up rather than going dark.
@@ -75,11 +82,15 @@ export function ReviewApp({ mirror, client, hostViewDefaults }: ReviewAppProps) 
   }, [mirror]);
 
   // A generation change invalidates every source it was read for: the same file key over
-  // new content is different text.
+  // new content is different text. The store is pointed at the new generation in an effect,
+  // which runs after this render, so what is drawn is guarded on the generation the entries
+  // were read for rather than on the effect having caught up.
   const generation = snapshot.publication?.generation;
   useEffect(() => {
     sources.setGeneration(generation);
   }, [sources, generation]);
+  const sourceByFileKey =
+    sourceSnapshot.generation === generation ? sourceSnapshot.entries : NO_SOURCES;
 
   const requestSource = useCallback((file: ReviewFileV1) => sources.request(file), [sources]);
 

@@ -63,11 +63,11 @@ describe("ReviewSourceStore", () => {
     store.setGeneration("generation:p1:0");
 
     store.request(file);
-    expect(store.getSnapshot()[file.key]?.status).toBe("loading");
+    expect(store.getSnapshot().entries[file.key]?.status).toBe("loading");
     resolve({ ok: true, value: new TextEncoder().encode(BASE) });
     await settle();
 
-    expect(store.getSnapshot()[file.key]).toEqual({ status: "ready", text: BASE });
+    expect(store.getSnapshot().entries[file.key]).toEqual({ status: "ready", text: BASE });
   });
 
   test("drops a read that lands after the review moved to another generation", async () => {
@@ -83,7 +83,25 @@ describe("ReviewSourceStore", () => {
     resolve({ ok: true, value: new TextEncoder().encode(BASE) });
     await settle();
 
-    expect(store.getSnapshot()[file.key]).toBeUndefined();
+    expect(store.getSnapshot().entries[file.key]).toBeUndefined();
+  });
+
+  test("says which generation the text it holds was read for", async () => {
+    const file = testFile();
+    const { reader, resolve } = createTestReader();
+    const store = new ReviewSourceStore(reader);
+    store.setGeneration("generation:p1:0");
+    store.request(file);
+    resolve({ ok: true, value: new TextEncoder().encode(BASE) });
+    await settle();
+
+    expect(store.getSnapshot().generation).toBe("generation:p1:0");
+
+    // A page renders the new generation's document before any effect can clear this store,
+    // so what it holds has to say which review it belongs to.
+    store.setGeneration("generation:p1:1");
+
+    expect(store.getSnapshot()).toEqual({ generation: "generation:p1:1", entries: {} });
   });
 
   test("reads a file's source once, however many gaps in it are opened", async () => {
@@ -113,7 +131,7 @@ describe("ReviewSourceStore", () => {
     resolve(reviewClientFailure("resource-unavailable"));
     await settle();
 
-    expect(store.getSnapshot()[file.key]).toMatchObject({
+    expect(store.getSnapshot().entries[file.key]).toMatchObject({
       status: "failed",
       failure: {
         code: "resource-unavailable",
@@ -136,7 +154,7 @@ describe("ReviewSourceStore", () => {
     await settle();
 
     expect(requests).toHaveLength(2);
-    expect(store.getSnapshot()[file.key]).toEqual({ status: "ready", text: BASE });
+    expect(store.getSnapshot().entries[file.key]).toEqual({ status: "ready", text: BASE });
   });
 
   test("tells watchers when a file's source state changes", async () => {
