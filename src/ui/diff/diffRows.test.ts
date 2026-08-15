@@ -5,8 +5,10 @@ import type { DiffFile } from "../../core/types";
 import {
   buildSplitRows,
   buildStackRows,
+  highlightedDiffLineCount,
   loadHighlightedDiff,
   loadHighlightedSourceLines,
+  shouldHighlightDiff,
   spansForHighlightedSourceLine,
   type DiffRow,
 } from "./diffRows";
@@ -45,6 +47,26 @@ function createDiffFile(): DiffFile {
       additions: 2,
       deletions: 1,
     },
+    metadata,
+    agent: null,
+  };
+}
+
+/** Build an added-file diff whose every line lands on the addition side, as generated output does. */
+function createGeneratedFileDiff(contents: string): DiffFile {
+  const metadata = parseDiffFromFile(
+    { name: "bun.lock", contents: "", cacheKey: "generated:before" },
+    { name: "bun.lock", contents, cacheKey: "generated:after" },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "generated",
+    path: "bun.lock",
+    patch: "",
+    language: "json",
+    stats: { additions: metadata.additionLines.length, deletions: 0 },
     metadata,
     agent: null,
   };
@@ -167,6 +189,30 @@ describe("Pierre diff rows", () => {
         (span) => span.text.includes("export") && typeof span.fg === "string",
       ),
     ).toBe(true);
+  });
+
+  test("renders a generated-scale diff as plain rows instead of highlighting it", async () => {
+    const generatedLines = Array.from(
+      { length: 12_000 },
+      (_, index) => `  "package-${index}": "npm:package-${index}@1.0.${index}",`,
+    ).join("\n");
+    const file = createGeneratedFileDiff(`{\n${generatedLines}\n}\n`);
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(shouldHighlightDiff(file)).toBe(false);
+    expect(highlightedDiffLineCount(file.metadata)).toBeGreaterThan(10_000);
+
+    const highlighted = await loadHighlightedDiff(file, theme);
+
+    expect(highlighted.deletionLines).toHaveLength(0);
+    expect(highlighted.additionLines).toHaveLength(0);
+
+    // Plain rows still carry the diff itself, so the file stays reviewable without color.
+    const rows = buildStackRows(file, highlighted, theme);
+    expect(rows.some((row) => row.type === "stack-line")).toBe(true);
+
+    // A source file of ordinary size is unaffected.
+    expect(shouldHighlightDiff(createDiffFile())).toBe(true);
   });
 
   test("uses full source to keep partial Elixir hunks inside the correct heredoc state", async () => {

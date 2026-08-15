@@ -9,12 +9,9 @@ import type { HighlightedDiffCode } from "./diffRows";
  * window is measured in, so the files it warms always fit — a window spans about seven viewport
  * heights of rows, a rounding error against this budget.
  *
- * The ceiling is set high enough to hold a generated file alongside the source files around it.
- * Below that, an entry too large for the budget evicts its own neighbors, which then evict it back
- * on the next scroll, re-highlighting tens of thousands of lines per step. Worst case is ~84MB at
- * the measured rate, and well under that in practice: the files that approach the budget are
- * lockfiles and generated output, whose lines carry far fewer spans than the dense source the rate
- * was measured on.
+ * The budget holds several of the largest highlightable files at once. `MAX_HIGHLIGHTED_DIFF_LINES`
+ * caps any single entry well below it, which is what keeps one file from evicting its own neighbors
+ * and being evicted back on the next scroll. Worst case is ~84MB at the measured rate.
  */
 const MAX_HIGHLIGHTED_DIFF_CACHE_LINES = 60_000;
 
