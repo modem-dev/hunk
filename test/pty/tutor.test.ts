@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
@@ -11,6 +12,14 @@ setDefaultTimeout(30_000);
 afterEach(() => {
   harness.cleanup();
 });
+
+/** Find the terminal-native color run that paints one visible tutor phrase. */
+function findRenderedSpan(session: Session, phrase: string) {
+  return session
+    .getTerminalData()
+    .lines.flatMap((line) => line.spans)
+    .find((span) => span.text.includes(phrase));
+}
 
 describe("PTY tutor", () => {
   test("teaches the live keymap and advances one instructional step at a time", async () => {
@@ -69,6 +78,17 @@ describe("PTY tutor", () => {
         await Bun.sleep(120);
       }
       await session.waitForText(/02 · Cover distance/, { timeout: 5_000 });
+      const lessonTwo = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("PAGE CHECKPOINT"),
+        5_000,
+      );
+      const checkpointRow = lessonTwo
+        .split("\n")
+        .findIndex((line) => line.includes("PAGE CHECKPOINT — page-down works"));
+      expect(checkpointRow).toBeGreaterThan(0);
+      expect(checkpointRow).toBeLessThan(20);
+      expect(findRenderedSpan(session, "PAGE CHECKPOINT")?.bg).toBeDefined();
 
       const distanceKeys: Array<Parameters<typeof session.press>[0]> = ["space", "b", "d", "u"];
       for (const key of distanceKeys) {
@@ -135,6 +155,44 @@ describe("PTY tutor", () => {
 
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
       expect(saved).toContain("Reserve math deserves a test.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keeps the last payoff visible beside the next spotlight at 80 columns", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const session = await harness.launchHunk({
+      args: ["tutor", "--mode", "stack"],
+      cols: 80,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Welcome to Hunk Tutor/, { timeout: 20_000 });
+      await session.press("enter");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("NEXT STEP") && text.includes("controls help"),
+        20_000,
+      );
+
+      const firstSpotlight = findRenderedSpan(session, "controls help");
+      expect(firstSpotlight?.bg).toBeDefined();
+      expect(firstSpotlight?.fg).toBeDefined();
+
+      await session.press("?");
+      await session.waitForText(/Controls help/, { timeout: 5_000 });
+      await session.press("escape");
+      await session.waitForText(/move down one row/, { timeout: 5_000 });
+
+      const completedPayoff = findRenderedSpan(session, "controls help");
+      const nextSpotlight = findRenderedSpan(session, "Move down once");
+      expect(completedPayoff?.bg).toBeDefined();
+      expect(nextSpotlight?.bg).toBeDefined();
+      expect(completedPayoff?.bg).not.toBe(nextSpotlight?.bg);
+      expect(nextSpotlight?.fg).not.toBe(completedPayoff?.fg);
     } finally {
       session.close();
     }

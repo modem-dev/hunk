@@ -352,9 +352,15 @@ export function getTutorSpotlightPlan() {
 /** Resolve the active task, its lesson, and its exact source-coordinate spotlight. */
 function resolveActiveSpotlight(readDocument: (path: string) => string | null) {
   const task = findActiveTask();
-  const lesson = task
-    ? TUTOR_LESSONS.find((candidate) => candidate.tasks.some((entry) => entry.id === task.id))
-    : undefined;
+  return task ? resolveTaskSpotlight(task.id, readDocument) : null;
+}
+
+/** Resolve any task by id so the latest completed payoff can remain visible. */
+function resolveTaskSpotlight(taskId: string, readDocument: (path: string) => string | null) {
+  const lesson = TUTOR_LESSONS.find((candidate) =>
+    candidate.tasks.some((entry) => entry.id === taskId),
+  );
+  const task = lesson?.tasks.find((entry) => entry.id === taskId);
   if (!lesson || !task) {
     return null;
   }
@@ -584,7 +590,11 @@ function TutorSidebar({
             ))}
             <text content=" " style={{ bg: theme.panel }} />
             <text
-              content={fitLine(" Do it, then find the spotlight.", innerWidth)}
+              content={fitLine(" Bright = next step", innerWidth)}
+              style={{ fg: theme.badgeAdded, bg: theme.panel }}
+            />
+            <text
+              content={fitLine(" Tint = last result", innerWidth)}
               style={{ fg: theme.badgeAdded, bg: theme.panel }}
             />
           </>
@@ -686,19 +696,29 @@ export default function registerTutor(hunk: HunkExtensionAPI) {
     id: TUTOR_HIGHLIGHTER_ID,
     async highlight({ file, readDocument }) {
       const document = await readDocument("new");
-      const active = resolveActiveSpotlight((path) => (path === file.path ? document : null));
-      if (!active || active.lesson.targetPath !== file.path) {
-        return null;
+      const readCurrentDocument = (path: string) => (path === file.path ? document : null);
+      const active = resolveActiveSpotlight(readCurrentDocument);
+      const completed = snapshot.lastCompleted
+        ? resolveTaskSpotlight(snapshot.lastCompleted, readCurrentDocument)
+        : null;
+      const marks = [];
+      if (completed?.lesson.targetPath === file.path) {
+        marks.push({
+          side: completed.spotlight.side,
+          line: completed.spotlight.line,
+          range: completed.spotlight.range,
+          tone: "info" as const,
+        });
       }
-
-      return [
-        {
+      if (active?.lesson.targetPath === file.path) {
+        marks.push({
           side: active.spotlight.side,
           line: active.spotlight.line,
           range: active.spotlight.range,
-          tone: "current",
-        },
-      ];
+          tone: "current" as const,
+        });
+      }
+      return marks.length > 0 ? marks : null;
     },
   });
   hunk.registerPane({
