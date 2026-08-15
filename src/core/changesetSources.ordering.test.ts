@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SidecarContext } from "./types";
-import { orderDiffFiles } from "./loaders";
+import { orderDiffFiles } from "./changesetSources";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 function sidecar(...paths: string[]): SidecarContext {

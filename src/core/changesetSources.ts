@@ -1,17 +1,20 @@
-import {
-  parseDiffFromFile,
-  parsePatchFiles,
-  type FileContents,
-  type FileDiffMetadata,
-} from "@pierre/diffs";
+/**
+ * Acquires a changeset from whichever source the CLI selected, and assembles the app's
+ * bootstrap around it.
+ *
+ * One loader per source shape — a VCS review, a direct file comparison, a patch file or
+ * stdin — and each ends by handing text to `changesetFromPatch`. This module owns the I/O
+ * (spawning, reading, stat-ing); the model it produces is built next door.
+ */
+import { parseDiffFromFile, type FileContents, type FileDiffMetadata } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
 import { resolve as resolvePath } from "node:path";
 import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
-import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { sanitizePatch, stripTerminalControl } from "./patch/sanitize";
+import { changesetFromPatch } from "./changesetFromPatch";
+
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import {
   getConfiguredVcsAdapter,
@@ -29,8 +32,6 @@ import type {
   CliInput,
   NamedCustomThemeConfig,
   DiffFile,
-  DiffLineMoveKind,
-  DiffLineMoveKinds,
   DiffToolCommandInput,
   FileCommandInput,
   PatchCommandInput,
@@ -71,113 +72,6 @@ function createSourceFetcherBuilder(
   };
 }
 
-/** Return SGR parameter strings that Git emitted before one diff line marker. */
-function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {
-  const parameters: string[] = [];
-  let index = 0;
-
-  while (index < rawLine.length) {
-    if (rawLine[index] === "\x1b") {
-      const csi = rawLine.slice(index).match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
-      if (csi) {
-        if (csi[3] === "m") {
-          parameters.push(csi[1] ?? "");
-        }
-        index += csi[0].length;
-        continue;
-      }
-    }
-
-    return rawLine[index] === expectedSign ? parameters : [];
-  }
-
-  return [];
-}
-
-/** Return whether one SGR parameter list contains the Git color Hunk reserves for moved lines. */
-function sgrContainsColor(parameters: string[], colorCode: "35" | "36") {
-  return parameters.some((parameter) => parameter.split(";").includes(colorCode));
-}
-
-/** Classify one ANSI-colored Git diff line as moved when it carries Hunk's reserved color. */
-function movedLineKindFromAnsi(
-  rawLine: string,
-  side: "addition" | "deletion",
-): DiffLineMoveKind | undefined {
-  const colorCode = side === "addition" ? "36" : "35";
-  const sign = side === "addition" ? "+" : "-";
-  return sgrContainsColor(leadingSgrParameters(rawLine, sign), colorCode) ? "moved" : undefined;
-}
-
-/** Capture Git's color-moved ANSI classes before the normal patch parser strips colors. */
-function collectLineMoveKinds(patchText: string): DiffLineMoveKinds[] {
-  const files: DiffLineMoveKinds[] = [];
-  let current: DiffLineMoveKinds | null = null;
-  let inHunk = false;
-  let additionLineIndex = 0;
-  let deletionLineIndex = 0;
-
-  const createFileMoveKinds = () => {
-    const moveKinds: DiffLineMoveKinds = { additionLines: [], deletionLines: [] };
-    files.push(moveKinds);
-    inHunk = false;
-    additionLineIndex = 0;
-    deletionLineIndex = 0;
-    return moveKinds;
-  };
-
-  for (const rawLine of patchText.replaceAll("\r\n", "\n").split("\n")) {
-    const plainLine = stripTerminalControl(rawLine);
-
-    if (plainLine.startsWith("diff --git ")) {
-      current = createFileMoveKinds();
-      continue;
-    }
-
-    if (!current && (plainLine.startsWith("--- ") || plainLine.startsWith("@@ "))) {
-      current = createFileMoveKinds();
-    }
-
-    const activeMoveKinds = current;
-    if (!activeMoveKinds) {
-      continue;
-    }
-
-    if (plainLine.startsWith("@@ ")) {
-      inHunk = true;
-      continue;
-    }
-
-    if (!inHunk) {
-      continue;
-    }
-
-    if (plainLine.startsWith("+") && !plainLine.startsWith("+++")) {
-      activeMoveKinds.additionLines[additionLineIndex] = movedLineKindFromAnsi(rawLine, "addition");
-      additionLineIndex += 1;
-      continue;
-    }
-
-    if (plainLine.startsWith("-") && !plainLine.startsWith("---")) {
-      activeMoveKinds.deletionLines[deletionLineIndex] = movedLineKindFromAnsi(rawLine, "deletion");
-      deletionLineIndex += 1;
-      continue;
-    }
-
-    if (plainLine.startsWith(" ")) {
-      additionLineIndex += 1;
-      deletionLineIndex += 1;
-    }
-  }
-
-  return files;
-}
-
-/** Return whether one file has any captured moved-line classifications. */
-function hasLineMoveKinds(moveKinds: DiffLineMoveKinds | undefined) {
-  return Boolean(moveKinds?.additionLines.some(Boolean) || moveKinds?.deletionLines.some(Boolean));
-}
-
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
 export function orderDiffFiles(files: DiffFile[], sidecar: SidecarContext | null) {
   if (!sidecar || sidecar.files.length === 0) {
@@ -213,67 +107,6 @@ export function orderDiffFiles(files: DiffFile[], sidecar: SidecarContext | null
       return left.index - right.index;
     })
     .map((entry) => entry.file);
-}
-
-/** Parse raw patch text into the shared changeset model used by the app. */
-function changesetFromPatch(
-  patchText: string,
-  title: string,
-  sourceLabel: string,
-  sidecar: SidecarContext | null,
-  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
-): Changeset {
-  const lineMoveKinds = collectLineMoveKinds(patchText);
-  const sanitizedPatch = sanitizePatch(patchText);
-  const sanitizedPatchText = sanitizedPatch.text;
-
-  let parsedPatches: ReturnType<typeof parsePatchFiles>;
-  try {
-    parsedPatches = parsePatchFiles(sanitizedPatchText, "patch", true);
-  } catch {
-    return {
-      id: `changeset:${Date.now()}`,
-      sourceLabel,
-      title,
-      summary: sanitizedPatchText.trim() || undefined,
-      agentSummary: sidecar?.summary,
-      files: [],
-    };
-  }
-
-  const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
-  const chunks = splitPatchIntoFileChunks(sanitizedPatchText);
-
-  return {
-    id: `changeset:${Date.now()}`,
-    sourceLabel,
-    title,
-    summary:
-      parsedPatches
-        .map((entry) => entry.patchMetadata)
-        .filter(Boolean)
-        .join("\n\n") || undefined,
-    agentSummary: sidecar?.summary,
-    files: metadataFiles.map((metadata, index) => {
-      const decodedPaths = sanitizedPatch.filePaths[index];
-      const normalizedMetadata = decodedPaths
-        ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
-        : metadata;
-
-      return buildDiffFile(
-        normalizedMetadata,
-        findPatchChunk(metadata, chunks, index),
-        index,
-        sourceLabel,
-        sidecar,
-        {
-          ...perFileOptions,
-          pathsAreExact: Boolean(decodedPaths),
-          lineMoveKinds: hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
-        },
-      );
-    }),
-  };
 }
 
 /** Return the change type to show when direct file comparison skips binary contents. */

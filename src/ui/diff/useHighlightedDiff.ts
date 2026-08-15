@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
-import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
+import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
 /**

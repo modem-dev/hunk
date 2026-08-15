@@ -78,17 +78,17 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
-import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
+import type { ActiveAddNoteAffordance } from "./diff/DiffSectionBody";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import {
-  useReviewController,
+  useTerminalReview,
   type AgentNoteGeometrySnapshot,
   type RevealedLineResult,
-} from "./hooks/useReviewController";
+} from "./hooks/useTerminalReview";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
@@ -245,7 +245,7 @@ export function App({
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const review = useReviewController({
+  const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,

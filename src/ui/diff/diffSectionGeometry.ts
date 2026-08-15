@@ -259,7 +259,7 @@ function measurePlannedDiffSectionRowHeight(
   );
 }
 
-/** Measure one file section from the same render plan used by PierreDiffView. */
+/** Measure one file section from the same render plan used by DiffSectionBody. */
 export function measureDiffSectionGeometry(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,

@@ -1,7 +1,7 @@
 import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
-import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import { DiffSectionBody, type ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
@@ -156,7 +156,7 @@ function DiffSectionComponent({
           onRowFailure={onFileViewRowFailure}
         />
       ) : (
-        <PierreDiffView
+        <DiffSectionBody
           expandedGapKeys={expandedGapKeys}
           extensionLineHighlights={extensionLineHighlights}
           file={file}

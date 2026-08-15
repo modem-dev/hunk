@@ -8,7 +8,7 @@ import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/loaders";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetSources";
 import type { CliInput } from "../core/types";
 
 import type { HunkSessionBrokerClient } from "../session/types";

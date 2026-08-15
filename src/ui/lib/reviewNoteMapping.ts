@@ -6,8 +6,9 @@
  * Every crossing between the two goes through this module, so no component re-derives
  * the mapping inline and no note loses a field on the way across.
  *
- * Projection of the document itself lives in `core/review/document`; what remains here is
- * the terminal's own note and draft shapes, which no other surface renders.
+ * Projecting the document itself is `projectReviewDocument` in `core/review/document`, a
+ * different operation entirely; what remains here is the terminal's own note and draft
+ * shapes, which no other surface renders.
  */
 import type { LiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";

@@ -1,6 +1,6 @@
 // Benchmark git-backed working-tree loading, including untracked file handling.
 import { performance } from "perf_hooks";
-import { loadAppBootstrap } from "../src/core/loaders";
+import { loadAppBootstrap } from "../src/core/changesetSources";
 import { addUntrackedFiles, createChangedRepo } from "./lib/fixtures";
 
 interface Scenario {

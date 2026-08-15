@@ -28,9 +28,9 @@ import {
   reviewNoteVisibleByPolicy,
 } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
-import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/renderRows";
-import type { DraftReviewNote } from "../../lib/reviewProjection";
+import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
   reviewNoteSource,

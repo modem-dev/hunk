@@ -1,7 +1,7 @@
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { blendHex, contrastRatio, hexColorDistance } from "../lib/color";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
-import type { SplitLineCell, StackLineCell } from "./pierre";
+import type { SplitLineCell, StackLineCell } from "./diffRows";
 
 const INACTIVE_RAIL_BLEND = 0.35;
 const SELECTION_BG_BLEND = 0.75;

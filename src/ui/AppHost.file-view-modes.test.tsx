@@ -8,7 +8,7 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
-import { loadAppBootstrap } from "../core/loaders";
+import { loadAppBootstrap } from "../core/changesetSources";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 
