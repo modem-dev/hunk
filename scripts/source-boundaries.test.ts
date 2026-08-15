@@ -174,9 +174,9 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   symbol: string;
   finding: string;
 }> = [
-  { file: "src/ui/diff/pierre.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedLines", finding: "A2" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedLines", finding: "A2" },
   { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "sliceLines", finding: "A4" },
   { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "gapKey", finding: "A1" },
   { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },

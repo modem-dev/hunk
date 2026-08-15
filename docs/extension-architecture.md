@@ -128,7 +128,7 @@ geometry measurement: a highlight change is a repaint, never a re-plan. The
 static pager never runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
-pipeline rather than growing a second one: `useReviewController.ts` validates
+pipeline rather than growing a second one: `useTerminalReview.ts` validates
 each daemon-pushed mark with the same `validate.ts` contract and caps, holds
 them per file, and `src/ui/highlights/merge.ts` appends them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
@@ -184,8 +184,8 @@ panes render. App reads it through a ref so the dispatch table stays stable.
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only
 — visible-file validation, hunk clamping, `revealLine`'s side and line-number
-checks — and delegates the move itself to the review controller. Where a jump
-puts a line on screen stays host policy: `useReviewController` tags each
+checks — and delegates the move itself to the terminal review adapter. Where a
+jump puts a line on screen stays host policy: `useTerminalReview` tags each
 current-line reveal with a placement, and `DiffPane` reads it to choose between
 stepping's minimum-distance scroll and the top-padded position hunk, note, and
 `revealLine` reveals share. Extensions name a target; they never name a scroll

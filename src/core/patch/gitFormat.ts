@@ -1,5 +1,5 @@
 /**
- * Helpers for normalizing Git-format patch syntax.
+ * Helpers for sanitizing Git-format patch syntax.
  *
  * These helpers are not tied to Git repositories: Jujutsu and other VCS backends can emit
  * the same `diff --git` patch format, so the app loader and public OpenTUI API share them.
@@ -177,7 +177,7 @@ export function sanitizeGitPatch(patchText: string): SanitizedGitPatch {
   return { text: normalizedLines.join("\n"), filePaths };
 }
 
-/** Preserve the existing text-only normalizer for callers that do not parse file metadata. */
+/** Preserve the existing text-only sanitizer for callers that do not parse file metadata. */
 export function sanitizeGitPatchText(patchText: string) {
   return sanitizeGitPatch(patchText).text;
 }
