@@ -1454,23 +1454,15 @@ export function App({
     acceptThemeSelectorItem(themeSelectorState.selectedIndex);
   }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
 
-  /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
+  /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleSidebar = () => {
-    if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
-      setForceSidebarOpen(false);
-      return;
-    }
-
-    if (sidebarVisible && !responsiveLayout.showSidebar) {
-      if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
-      }
-      return;
-    }
-
-    setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    const replacement = sessionPanes.find(
+      (pane) => pane.registered.pane.replaces === HUNK_FILES_PANE_KEY,
+    );
+    const filesPaneKey = replacement?.key ?? HUNK_FILES_PANE_KEY;
+    const filesPaneIsOpen = paneOpenStateRef.current.open.includes(filesPaneKey);
+    setPaneOpen(filesPaneKey, "toggle");
+    if (!filesPaneIsOpen) revealSidebarAreaRef.current();
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */

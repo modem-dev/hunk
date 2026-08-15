@@ -302,7 +302,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.view.toggleSidebar",
-    title: "Toggle sidebar",
+    title: "Toggle files pane",
     category: "view",
     defaultKeys: ["s"],
     locus: "client-local",

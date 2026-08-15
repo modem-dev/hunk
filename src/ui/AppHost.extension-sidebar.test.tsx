@@ -319,7 +319,7 @@ describe("extension sidebar views", () => {
     });
   });
 
-  test("opening a view through a command reveals a sidebar area hidden with s", async () => {
+  test("files and extension panes toggle independently", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-reveal-");
     const extPath = join(createTempDir("hunk-ext-sidebar-reveal-ext-"), "ext.ts");
     writeFileSync(
@@ -355,8 +355,8 @@ describe("extension sidebar views", () => {
         "the s key to hide the sidebar area",
       );
 
-      // Opening a view is a request to see it: the hidden area reveals again,
-      // with the extension pane beside the still-open files pane.
+      // Opening an extension pane reveals only that pane; `s` closed the files
+      // pane rather than hiding one shared area around both pane states.
       await act(async () => {
         await setup.mockInput.typeText("y");
       });
@@ -364,9 +364,33 @@ describe("extension sidebar views", () => {
         setup,
         () => {
           const frame = setup.captureCharFrame();
+          return frame.includes("EXTSIDEBAR") && !frame.includes("M alpha.txt");
+        },
+        "the command to open only the extension pane",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
           return frame.includes("EXTSIDEBAR") && frame.includes("M alpha.txt");
         },
-        "the command to reveal the sidebar area with the opened view",
+        "the s key to reopen files without closing the extension pane",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
+          return frame.includes("EXTSIDEBAR") && !frame.includes("M alpha.txt");
+        },
+        "the s key to close files without closing the extension pane",
       );
     });
   });

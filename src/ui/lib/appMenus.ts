@@ -8,7 +8,7 @@ import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appComma
  * A menu item is a command plus presentation: nothing here re-implements an
  * action or re-states which key runs it. Labels and checkbox state are the two
  * things the menu genuinely owns — a menu reads "Sidebar" under "View" where
- * the command is titled "Toggle sidebar", and only App knows whether the
+ * the command is titled "Toggle files pane", and only App knows whether the
  * sidebar is currently showing — so those are declared per entry and everything
  * else is derived from the command the entry names.
  */

@@ -85,7 +85,7 @@ The built-in commands and the keys they ship with:
 | `hunk.view.toggleLineNumbers`                  | Toggle line numbers                            | `l`                          |
 | `hunk.view.toggleLineWrap`                     | Toggle line wrapping                           | `w`                          |
 | `hunk.view.toggleMenuBar`                      | Toggle menu bar                                | `M`                          |
-| `hunk.view.toggleSidebar`                      | Toggle sidebar                                 | `s`                          |
+| `hunk.view.toggleSidebar`                      | Toggle files pane                              | `s`                          |
 
 Commands marked _(none)_ ship without a key: they remain callable by command id
 and can be assigned a shortcut through `[keybindings]`. Some also appear in a
