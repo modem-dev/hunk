@@ -210,7 +210,9 @@ describe("static diff pager", () => {
 
     const plain = stripAnsi(await renderStaticDiffPager(patchText));
 
-    expect(plain).toContain("new.txt new file 100644 +1 -0");
+    // A zero count is not a badge here either: the shared review formatter states the
+    // churn the sidebar and the diff header state, so a pure addition says only `+1`.
+    expect(plain.split("\n")[0]).toBe("new.txt new file 100644 +1");
     expect(plain).not.toContain("diff --git");
     expect(plain).not.toContain("index 0000000");
   });

@@ -16,9 +16,10 @@
  */
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
-import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
+import { reviewFileStatBadges } from "../core/review/presentation";
 import type { DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
+import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import {
   buildSplitRows,
@@ -362,9 +363,23 @@ async function renderStaticFile(
       ? buildSplitRows(file, highlighted, theme, tabWidth)
       : buildStackRows(file, highlighted, theme, tabWidth);
   const lineNumberWidth = maxLineNumberWidth(file, rows);
-  const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
+  // Badge text is the shared review formatter's, so a paged file states the same churn as
+  // the sidebar and the diff header, zero counts included — that is, omitted (E1).
+  const badges = reviewFileStatBadges({
+    additions: file.stats.additions,
+    deletions: file.stats.deletions,
+    ...(file.statsTruncated !== undefined ? { truncated: file.statsTruncated } : {}),
+  });
+  const stats = [
+    badges.additionsText === null ? null : colorText(badges.additionsText, theme.badgeAdded),
+    badges.deletionsText === null ? null : colorText(badges.deletionsText, theme.badgeRemoved),
+  ]
+    .filter((badge): badge is string => badge !== null)
+    .join(" ");
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);
-  const header = `${colorText(fileDisplayPath(file), theme.text)} ${status} ${stats}`;
+  const header = [colorText(fileDisplayPath(file), theme.text), status, stats]
+    .filter((part) => part.length > 0)
+    .join(" ");
 
   if (rows.length === 0) {
     return [header, colorText(`  ${staticEmptyDiffMessage(file)}`, theme.muted)].join("\n");

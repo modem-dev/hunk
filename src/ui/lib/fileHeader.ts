@@ -1,3 +1,4 @@
+import { reviewFileStatBadges } from "../../core/review/presentation";
 import type { DiffFile } from "../../core/changeset/model";
 import { fileLabelParts } from "./files";
 import { fitText, measureTextWidth } from "./text";
@@ -5,11 +6,24 @@ import { fitText, measureTextWidth } from "./text";
 /** The explicit overflow marker used for file paths in review headers. */
 export const FILE_HEADER_OVERFLOW_MARKER = "...";
 
-/** Build the styled text fragments and measured width for one file's line counts. */
+/**
+ * Build the styled text fragments and measured width for one file's line counts.
+ *
+ * The badge text is the shared review formatter's, so the diff header states the same
+ * churn as the sidebar and a browser reading the same file (E1) — a zero count is absent
+ * rather than printed as `+0`. Each present badge is trailed by one space, which is what
+ * the header row draws and what the copied text has to reproduce cell for cell.
+ */
 export function fileHeaderStats(file: Pick<DiffFile, "stats" | "statsTruncated">) {
-  const additionsText = `+${file.stats.additions}${file.statsTruncated ? "+" : ""}`;
-  const deletionsText = `-${file.stats.deletions}`;
-  const text = `${additionsText} ${deletionsText} `;
+  const { additionsText, deletionsText } = reviewFileStatBadges({
+    additions: file.stats.additions,
+    deletions: file.stats.deletions,
+    ...(file.statsTruncated !== undefined ? { truncated: file.statsTruncated } : {}),
+  });
+  const text = [additionsText, deletionsText]
+    .filter((badge): badge is string => badge !== null)
+    .map((badge) => `${badge} `)
+    .join("");
 
   return {
     additionsText,

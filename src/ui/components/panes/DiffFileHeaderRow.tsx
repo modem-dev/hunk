@@ -48,10 +48,20 @@ export function DiffFileHeaderRow({
           justifyContent: "flex-end",
         }}
       >
-        <text fg={theme.badgeAdded}>{additionsText}</text>
-        <text fg={theme.muted}> </text>
-        <text fg={theme.badgeRemoved}>{deletionsText}</text>
-        <text fg={theme.muted}> </text>
+        {/* A badge is drawn only when it states a real delta, each trailed by the one
+            space `fileHeaderStats` measured, so the row and the copied text agree. */}
+        {additionsText !== null && (
+          <>
+            <text fg={theme.badgeAdded}>{additionsText}</text>
+            <text fg={theme.muted}> </text>
+          </>
+        )}
+        {deletionsText !== null && (
+          <>
+            <text fg={theme.badgeRemoved}>{deletionsText}</text>
+            <text fg={theme.muted}> </text>
+          </>
+        )}
       </box>
     </box>
   );
