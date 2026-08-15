@@ -47,3 +47,6 @@ autoresearch.jsonl
 autoresearch.ideas.md
 result
 .video-work/
+
+# Rust spike build artifacts
+crates/*/target/
