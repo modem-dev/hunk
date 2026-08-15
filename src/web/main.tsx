@@ -13,6 +13,7 @@
  */
 import { createRoot } from "react-dom/client";
 import "../core/changeset/fileLanguage";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { ReviewApiClient, parseReviewLocation } from "./reviewApiClient";
 import { ReviewMirror } from "./reviewMirror";
 import { ReviewApp } from "./ReviewApp";
@@ -35,8 +36,9 @@ declare global {
 export function mountReviewPage(container: HTMLElement) {
   const location = parseReviewLocation(new URL(window.location.href));
   if (!location) {
-    container.textContent =
-      "This review link is incomplete. Open the review from the terminal running it to get a current link.";
+    // A link this client cannot read is one no session would honor, so it is the
+    // catalog's `unauthorized` wording rather than a sentence written here (G4).
+    container.textContent = reviewErrorMessage("unauthorized");
     return;
   }
 

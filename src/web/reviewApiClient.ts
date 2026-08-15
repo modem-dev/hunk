@@ -53,6 +53,7 @@ import {
   reviewHttpFailure,
   reviewHttpPath,
   reviewPagePath,
+  type HunkReviewClientErrorCodeV1,
   type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
@@ -75,12 +76,21 @@ export type ReviewClientFailure = HunkReviewHttpFailureV1;
 
 export type ReviewClientResult<Value> = { ok: true; value: Value } | ReviewClientFailure;
 
+/**
+ * The catalog's sentence for one code, with what this client can add about this instance.
+ *
+ * The catalog states what happened and what to do about it; a client knows which read or
+ * which frame it was. Appending rather than replacing is what keeps the browser and the
+ * terminal explaining the same failure the same way (G4).
+ */
+function withDetail(code: HunkReviewClientErrorCodeV1, detail: string) {
+  return detail ? `${reviewErrorMessage(code)} (${detail})` : reviewErrorMessage(code);
+}
+
 /** What the client was told, or the fact that it could not be told anything. */
 function transportFailure(error: unknown): ReviewClientFailure {
   return reviewHttpFailure("resource-unavailable", {
-    message: `${reviewErrorMessage("resource-unavailable")}${
-      error instanceof Error ? ` (${error.message})` : ""
-    }`,
+    message: withDetail("resource-unavailable", error instanceof Error ? error.message : ""),
   });
 }
 
@@ -438,14 +448,14 @@ class ReviewEventStreamReader {
     try {
       data = JSON.parse(record.data);
     } catch {
-      this.fail("A review event arrived that could not be read.");
+      this.fail("a review event arrived that could not be read");
       return;
     }
 
     if (frame.phase === undefined) {
       const parsed = parseReviewEventFrame(data);
       if (!parsed) {
-        this.fail("A review event arrived in a shape this client does not accept.");
+        this.fail("a review event arrived in a shape this client does not accept");
         return;
       }
       this.dispatch(frame.type, parsed.payload);
@@ -454,7 +464,7 @@ class ReviewEventStreamReader {
     if (frame.phase === "begin") {
       const begin = parseReviewEventBegin(data);
       if (!begin) {
-        this.fail("A chunked review event began in a shape this client does not accept.");
+        this.fail("a chunked review event began in a shape this client does not accept");
         return;
       }
       this.assembler = new ReviewEventAssembler({ begin, digest: this.digest });
@@ -464,7 +474,7 @@ class ReviewEventStreamReader {
     if (frame.phase === "chunk") {
       const chunk = parseReviewEventChunk(data);
       if (!chunk || !this.assembler) {
-        this.fail("A review event chunk arrived without a payload to belong to.");
+        this.fail("a review event chunk arrived without a payload to belong to");
         return;
       }
       const step = this.assembler.accept(chunk, decodeBase64(chunk.data));
@@ -476,7 +486,7 @@ class ReviewEventStreamReader {
 
     const end = parseReviewEventEnd(data);
     if (!end || !this.assembler || this.assemblingType !== frame.type) {
-      this.fail("A review event ended without a payload to complete.");
+      this.fail("a review event ended without a payload to complete");
       return;
     }
     const assembled = this.assembler.finish(end);
@@ -488,7 +498,7 @@ class ReviewEventStreamReader {
     try {
       this.dispatch(frame.type, JSON.parse(new TextDecoder().decode(assembled.bytes)));
     } catch {
-      this.fail("A review event carried a payload that could not be read.");
+      this.fail("a review event carried a payload that could not be read");
     }
   }
 
@@ -497,7 +507,7 @@ class ReviewEventStreamReader {
     if (!this.disconnected) {
       this.handlers.onError?.(
         reviewHttpFailure("resource-unavailable", {
-          message: "The review event stream ended.",
+          message: withDetail("resource-unavailable", "the review event stream ended"),
         }),
       );
     }
@@ -515,9 +525,13 @@ class ReviewEventStreamReader {
     this.handlers.onPublication(payload as HunkReviewPublicationBodyV1);
   }
 
-  private fail(message: string) {
+  private fail(detail: string) {
     this.assembler = undefined;
-    this.handlers.onError?.(reviewHttpFailure("resource-integrity", { message }));
+    this.handlers.onError?.(
+      reviewHttpFailure("resource-integrity", {
+        message: withDetail("resource-integrity", detail),
+      }),
+    );
   }
 }
 
