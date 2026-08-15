@@ -2,32 +2,13 @@ import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
+import { createHighlightedDiffCache } from "./highlightedDiffCache";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
-/**
- * Maximum cached highlight results.
- *
- * Highlighted HAST nodes and their flattened render spans are expensive enough that a whole-review
- * cache can dominate memory while navigating large changesets. Keep a viewport-local working set
- * instead of retaining every file the user has visited in the current review.
- */
-const MAX_CACHE_ENTRIES = 40;
-
-const SHARED_HIGHLIGHTED_DIFF_CACHE = new Map<string, HighlightedDiffCode>();
+const SHARED_HIGHLIGHTED_DIFF_CACHE = createHighlightedDiffCache();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
 const sourceFetcherIds = new WeakMap<NonNullable<DiffFile["sourceFetcher"]>, number>();
 let nextSourceFetcherId = 1;
-
-/** Evict the oldest entries when the cache exceeds MAX_CACHE_ENTRIES.
- *  Map iteration order is insertion order, so the first keys are the oldest. */
-function enforceCacheLimit() {
-  while (SHARED_HIGHLIGHTED_DIFF_CACHE.size > MAX_CACHE_ENTRIES) {
-    const oldest = SHARED_HIGHLIGHTED_DIFF_CACHE.keys().next().value;
-    if (oldest !== undefined) {
-      SHARED_HIGHLIGHTED_DIFF_CACHE.delete(oldest);
-    }
-  }
-}
 
 /** Summarize rendered diff lines without serializing whole arrays into the cache key. */
 function lineSetFingerprint(lines: string[] | undefined) {
@@ -118,7 +99,6 @@ function commitHighlightResult(
 
   SHARED_HIGHLIGHT_PROMISES.delete(cacheKey);
   SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
-  enforceCacheLimit();
   return true;
 }
 
@@ -128,6 +108,9 @@ function ensureHighlightedDiffLoaded(
   theme: AppTheme,
   cacheKey = highlightedDiffCacheKey(theme, file),
 ) {
+  // Viewport prefetch calls this for every file in its halo on each scroll, so this read is also
+  // what keeps the files around the viewport at the recent end of the cache while files entering
+  // the halo evict older ones.
   const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(cacheKey);
   if (cached) {
     return Promise.resolve(cached);
@@ -180,7 +163,9 @@ function resolveHighlightedSnapshot({
     return highlighted;
   }
 
-  return SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey) ?? null;
+  // Peek rather than read: render stays side-effect free, and the layout effect below refreshes
+  // recency for this same key during commit.
+  return SHARED_HIGHLIGHTED_DIFF_CACHE.peek(appearanceCacheKey) ?? null;
 }
 
 /** Resolve highlighted diff content with shared caching and background prefetch support. */
