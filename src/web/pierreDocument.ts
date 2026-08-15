@@ -22,6 +22,7 @@
 import type { FileDiffMetadata, Hunk, SupportedLanguages } from "@pierre/diffs";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
 import {
+  reviewExpandedGapLines,
   reviewExpansionSide,
   reviewGapAddress,
   reviewGapId,
@@ -229,11 +230,9 @@ export function reviewExpandedGapRows(
     return undefined;
   }
   const lines = normalizedReviewSourceLines(sourceText);
-  const [start] =
-    reviewExpansionSide(file.changeKind) === "old" ? address.oldRange : address.newRange;
-  return Array.from({ length: address.lineCount }, (_unused, offset) => ({
-    oldLine: address.oldRange[0] + offset,
-    newLine: address.newRange[0] + offset,
-    text: lines[start + offset - 1] ?? "",
+  return reviewExpandedGapLines(address, reviewExpansionSide(file.changeKind)).map((line) => ({
+    oldLine: line.oldLine,
+    newLine: line.newLine,
+    text: lines[line.sourceLine - 1] ?? "",
   }));
 }
