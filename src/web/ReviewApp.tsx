@@ -121,6 +121,8 @@ function ReviewStatus({ snapshot }: { snapshot: ReviewMirrorSnapshot }) {
   return (
     <header className="review-status" data-status={snapshot.status}>
       {snapshot.status === "loading" ? <span>Loading the review…</span> : null}
+      {/* The diff below is still the one this review published; only the link dropped. */}
+      {snapshot.status === "reconnecting" ? <span>Reconnecting to the review…</span> : null}
       {snapshot.status === "disconnected" ? <span>This review session has ended.</span> : null}
       {snapshot.failure ? (
         <span className="review-status-failure">{snapshot.failure.message}</span>
