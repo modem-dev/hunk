@@ -39,12 +39,47 @@ import {
   type CompactCode,
 } from "./lib/compactHighlight";
 
-const SIZES = (process.env.LINES ?? "2000,8000,30000").split(",").map(Number);
-const REPEATS = Number(process.env.REPEATS ?? 5);
+/**
+ * Read a positive integer from the environment, matching the `HUNK_BENCH_*` naming the other
+ * benchmarks use. A malformed value fails here with the offending input rather than turning into
+ * NaN and quietly producing a run that measures nothing.
+ */
+function positiveIntFromEnv(name: string, fallback: number) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+
+  return value;
+}
+
+/** Parse the comma-separated file sizes to measure, rejecting malformed entries. */
+function sizesFromEnv(name: string, fallback: number[]) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+
+  return raw.split(",").map((entry) => {
+    const value = Number(entry.trim());
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`${name} entries must be positive integers, got ${JSON.stringify(entry)}`);
+    }
+    return value;
+  });
+}
+
+const SIZES = sizesFromEnv("HUNK_BENCH_LINES", [2000, 8000, 30000]);
+const REPEATS = positiveIntFromEnv("HUNK_BENCH_REPEATS", 5);
 const TAB_WIDTH = 4;
 // A terminal draws tens of rows whatever the file size, so this is what a windowed consumer needs
 // rebuilt before the next paint.
-const VIEWPORT_ROWS = Number(process.env.VIEWPORT_ROWS ?? 60);
+const VIEWPORT_ROWS = positiveIntFromEnv("HUNK_BENCH_VIEWPORT_ROWS", 60);
 
 const renderOptions = {
   theme: "pierre-dark" as const,
