@@ -125,7 +125,7 @@ For a user-visible change, add a Changeset targeting `hunkdiff`:
 bun run changeset
 ```
 
-Use `patch` for fixes, `minor` for features, and `major` for breaking changes. For maintenance-only work, create an empty Changeset with `bun run changeset -- --empty`. Keep its summary to one user-facing sentence, and do not edit `CHANGELOG.md` directly.
+Use `patch` for fixes, `minor` for features, and `major` for breaking changes. Keep non-empty Changeset summaries to one user-facing sentence. For maintenance-only work, create an empty Changeset with `bun run changeset -- --empty`, and do not edit `CHANGELOG.md` directly.
 
 Before requesting review, read the final diff once more. Make sure it solves one clear problem, does not duplicate an existing path, removes anything it supersedes, includes relevant evidence, and reports validation honestly.
 

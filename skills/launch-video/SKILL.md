@@ -307,7 +307,7 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
   ```sh
   VIDEO=.video-work/hunk-feature-demo.mp4 # or .video-work/launch.mp4
-  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 check.png
+  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 .video-work/check.png
   ffprobe -show_entries format=duration "$VIDEO"
   ```
 
