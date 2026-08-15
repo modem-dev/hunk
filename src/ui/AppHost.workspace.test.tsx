@@ -19,6 +19,7 @@ import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
+import type { HunkSessionBrokerClient } from "../session/types";
 import { AppHost } from "./AppHost";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
@@ -215,15 +216,49 @@ async function launchWithExtension(
   return bootstrap;
 }
 
+/** Capture the daemon bridge App registers so tests can replace a review generation. */
+function createTestBrokerClient() {
+  let bridge: { dispatchCommand: (message: unknown) => Promise<unknown> } | null = null;
+  const client = {
+    setBridge(next: typeof bridge) {
+      bridge = next;
+    },
+    getRegistration() {
+      return { sessionId: "test-session" };
+    },
+    replaceSession() {},
+    updateSnapshot() {},
+    updateRegistration() {},
+    close() {},
+  } as unknown as HunkSessionBrokerClient;
+
+  return {
+    client,
+    reload: async (nextInput: CliInput) => {
+      if (!bridge) throw new Error("App never registered a session bridge.");
+      return await bridge.dispatchCommand({
+        type: "command",
+        requestId: "test-request",
+        command: "reload_session",
+        input: { sessionId: "test-session", nextInput },
+      });
+    },
+  };
+}
+
 /** Mount one AppHost, run the body, and tear down. */
 async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>) => Promise<void>,
+  hostClient?: HunkSessionBrokerClient,
 ) {
-  const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
-    width: 140,
-    height: 30,
-  });
+  const setup = await testRender(
+    <AppHost bootstrap={bootstrap} hostClient={hostClient} onQuit={() => {}} />,
+    {
+      width: 140,
+      height: 30,
+    },
+  );
 
   try {
     await flush(setup);
@@ -236,6 +271,70 @@ async function withAppHost(
 }
 
 describe("extension workspace reads", () => {
+  test("returns null when a deferred read finishes after the review reloads", async () => {
+    const repo = createTestRepo("hunk-ext-read-reload-race-");
+    const extDir = createTempDir("hunk-ext-read-reload-race-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerCommand({ id: "read", title: "Read", key: "y" }, async (ctx) => {\n` +
+        `    const file = ctx.selection.file;\n` +
+        `    if (!file) return;\n` +
+        `    const text = await ctx.workspace.readDocument(file.id, "new");\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "read " + JSON.stringify(text) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let finishRead!: (text: string) => void;
+    const deferredRead = new Promise<string>((resolve) => {
+      finishRead = resolve;
+    });
+    bootstrap.changeset.files[0]!.sourceFetcher = {
+      cacheKey: "deferred-read",
+      async getFullText() {
+        markReadStarted();
+        return await deferredRead;
+      },
+    };
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => setup.mockInput.typeText("y"));
+        await readStarted;
+
+        let reloadFinished = false;
+        const reload = broker
+          .reload({ kind: "vcs", staged: false, options: {} })
+          .then(() => (reloadFinished = true));
+        await flushUntil(setup, () => reloadFinished, "the replacement review to commit");
+
+        finishRead("stale review text");
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("read null"),
+          "the retired read to resolve as unavailable",
+        );
+        await reload;
+      },
+      broker.client,
+    );
+  });
+
   test("reads the working tree's current document for a working-tree review", async () => {
     const repo = createTestRepo("hunk-ext-read-worktree-");
     const extDir = createTempDir("hunk-ext-read-worktree-ext-");

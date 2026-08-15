@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
@@ -31,6 +31,7 @@ import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
   bootstrap,
+  externalQuitSignal,
   hostClient,
   onQuit = () => process.exit(0),
   reviewProducer,
@@ -38,6 +39,8 @@ export function AppHost({
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
+  /** Process and terminal interrupts routed through host-owned extension retirement. */
+  externalQuitSignal?: AbortSignal;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
   /**
@@ -307,7 +310,7 @@ export function AppHost({
     [performReloadSession],
   );
 
-  /** Observe the triggering command, then revoke authority and leave after bounded shutdown. */
+  /** Revoke extension authority and leave after bounded shutdown. */
   const quitAfterShutdownEvent = useCallback(() => {
     if (quitRequestedRef.current) return;
     quitRequestedRef.current = true;
@@ -315,6 +318,19 @@ export function AppHost({
       void retireExtensionLoadResult(extensionsRef.current).finally(onQuit);
     });
   }, [onQuit]);
+
+  useEffect(() => {
+    if (!externalQuitSignal) return;
+
+    const requestQuit = () => quitAfterShutdownEvent();
+    if (externalQuitSignal.aborted) {
+      requestQuit();
+      return;
+    }
+
+    externalQuitSignal.addEventListener("abort", requestQuit, { once: true });
+    return () => externalQuitSignal.removeEventListener("abort", requestQuit);
+  }, [externalQuitSignal, quitAfterShutdownEvent]);
 
   return (
     <App

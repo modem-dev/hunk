@@ -96,10 +96,15 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
+  externalQuitSignal?: AbortSignal,
 ) {
   let quitCount = 0;
   const setup = await testRender(
-    <AppHost bootstrap={bootstrap} onQuit={() => (quitCount += 1)} />,
+    <AppHost
+      bootstrap={bootstrap}
+      externalQuitSignal={externalQuitSignal}
+      onQuit={() => (quitCount += 1)}
+    />,
     { width: 120, height: 24 },
   );
 
@@ -256,6 +261,32 @@ describe("user keybindings", () => {
       expect(seen).toEqual(["command:hunk.app.quit", "shutdown"]);
       expect(quits()).toBe(1);
     });
+  });
+
+  test("retires extensions before an external terminal interrupt quits", async () => {
+    const repo = createTestRepo("hunk-keybindings-interrupt-shutdown-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const quitController = new AbortController();
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.shutdown.push({
+      extensionId: "coach",
+      handler: () => {
+        seen.push("shutdown");
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(
+      bootstrap,
+      async (setup, quits) => {
+        await act(async () => quitController.abort());
+        await flush(setup);
+        expect(seen).toEqual(["shutdown"]);
+        expect(quits()).toBe(1);
+      },
+      quitController.signal,
+    );
   });
 
   test("emits command_executed when Tab leaves the focused file filter", async () => {

@@ -33,3 +33,14 @@ export function createExtensionCapabilityLease({
       (isReviewCurrent?.() ?? true),
   });
 }
+
+/** Run one async host operation only while its capability remains live at both boundaries. */
+export async function runWithExtensionCapabilityLease<Result>(
+  lease: ExtensionCapabilityLease,
+  operation: () => Promise<Result>,
+  expired: () => Result,
+): Promise<Result> {
+  if (!lease.isLive()) return expired();
+  const result = await operation();
+  return lease.isLive() ? result : expired();
+}

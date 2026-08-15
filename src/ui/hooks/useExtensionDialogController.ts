@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   createExtensionDialogQueue,
   type ExtensionDialogQueue,
@@ -40,9 +40,12 @@ export function useExtensionDialogController({
   }, [initialInput, requestId]);
 
   const previousReviewGenerationRef = useRef(reviewGeneration);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousReviewGenerationRef.current !== reviewGeneration) {
       previousReviewGenerationRef.current = reviewGeneration;
+      // Child layout effects run before AppHost publishes lifecycle events for
+      // the committed generation. Drain only the retired review's requests so
+      // a session_reload handler can safely open the replacement's first dialog.
       queue.cancelAll();
     }
   }, [queue, reviewGeneration]);

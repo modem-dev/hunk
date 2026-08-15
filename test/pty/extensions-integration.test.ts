@@ -53,6 +53,14 @@ const NOTIFY_EXTENSION_SOURCE = `export default function (hunk) {
 }
 `;
 
+/** An extension that records whether terminal interrupts deliver graceful shutdown. */
+const INTERRUPT_SHUTDOWN_EXTENSION_SOURCE = `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  hunk.on("startup", (_payload, ctx) => ctx.notify("INTERRUPT FIXTURE READY"));
+  hunk.on("shutdown", () => appendFileSync(".hunk-shutdown.log", "shutdown\\n"));
+}
+`;
+
 /**
  * An extension contributing an extra sidebar opened by a registered command.
  *
@@ -258,6 +266,34 @@ describe("PTY extensions", () => {
       expect(reloaded).toContain("alpha.ts");
 
       expect(readTrustState(configHome)[fixture.dir]).toBe("trusted");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Ctrl-C delivers extension shutdown before the terminal exits", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(INTERRUPT_SHUTDOWN_EXTENSION_SOURCE);
+    const shutdownLog = join(fixture.dir, ".hunk-shutdown.log");
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await session.press("t");
+      await session.waitForText(/INTERRUPT FIXTURE READY/, { timeout: 20_000 });
+
+      session.sendKey(["ctrl", "c"]);
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(shutdownLog) && Date.now() < deadline) {
+        await Bun.sleep(20);
+      }
+      expect(readFileSync(shutdownLog, "utf8")).toBe("shutdown\n");
     } finally {
       session.close();
     }

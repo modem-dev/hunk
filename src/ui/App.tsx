@@ -101,7 +101,10 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { createExtensionCapabilityLease } from "./lib/extensionCapabilityLease";
+import {
+  createExtensionCapabilityLease,
+  runWithExtensionCapabilityLease,
+} from "./lib/extensionCapabilityLease";
 import { createExtensionCommandControls } from "./lib/extensionCommandControls";
 import {
   applyExtensionCurrentLinePaintUpdate,
@@ -810,8 +813,13 @@ export function App({
             side,
           });
           // Every failure the fetcher can raise — a missing side, a read error,
-          // the host's source-size cap — is the same "no document" answer.
-          return read ? read().catch(() => null) : null;
+          // the host's source-size cap — is the same "no document" answer. Recheck
+          // after the fetch so a retired generation cannot publish stale text.
+          return runWithExtensionCapabilityLease(
+            lease,
+            () => (read ? read().catch(() => null) : Promise.resolve(null)),
+            () => null,
+          );
         },
         canWriteDocument(fileId: string) {
           // The probe answers for anything, including an id that is not even a
@@ -872,17 +880,25 @@ export function App({
             return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
 
-          try {
-            await writeFile(target.absolutePath, text, "utf8");
-          } catch (error) {
-            return {
-              ok: false,
-              reason: "failed",
-              detail: `Failed to write ${target.path} • ${
-                error instanceof Error ? error.message || error.name : String(error)
-              }`,
-            };
-          }
+          const writeFailure = await runWithExtensionCapabilityLease(
+            lease,
+            async (): Promise<ExtensionWorkspaceWriteResult | null> => {
+              try {
+                await writeFile(target.absolutePath, text, "utf8");
+                return null;
+              } catch (error) {
+                return {
+                  ok: false,
+                  reason: "failed",
+                  detail: `Failed to write ${target.path} • ${
+                    error instanceof Error ? error.message || error.name : String(error)
+                  }`,
+                };
+              }
+            },
+            expired,
+          );
+          if (writeFailure) return writeFailure;
 
           // Fire-and-forget the reload so the result settles on the write
           // itself. In a `--watch` session the watcher sees the same write and

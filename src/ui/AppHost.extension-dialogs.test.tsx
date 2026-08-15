@@ -527,4 +527,53 @@ describe("extension dialogs", () => {
       broker.client,
     );
   });
+
+  test("keeps a dialog opened by the replacement generation's reload lifecycle", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-reload-lifecycle-");
+    const extDir = createTempDir("hunk-ext-dialog-reload-lifecycle-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.on("session_reload", async (_payload, ctx) => {\n` +
+        `    const answer = await ctx.dialogs.confirm({ title: "Review reloaded" });\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "answer " + String(answer) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const broker = createTestBrokerClient();
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("alpha.txt"),
+          "the initial review to render",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Review reloaded"),
+          "the replacement lifecycle dialog to remain open",
+        );
+        await reload;
+        expect(readProbeLog(logPath)).toEqual([]);
+
+        await act(async () => {
+          await setup.mockInput.pressEnter();
+        });
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("answer true"),
+          "the replacement lifecycle dialog to resolve normally",
+        );
+      },
+      broker.client,
+    );
+  });
 });
