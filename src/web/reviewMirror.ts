@@ -17,9 +17,18 @@
  *   generation the document cannot change — only the review's position in it — so an
  *   `accepted` publication advances the position and reads nothing. A new generation
  *   replaces everything derived from the old one.
- * - **One load at a time, and the newest wins.** A resync belongs to the generation that
- *   started it; when a later generation arrives the in-flight one is abandoned rather than
- *   allowed to finish and overwrite what came after it.
+ * - **One load at a time, and the newest wins.** A resync belongs to the attachment and
+ *   generation that started it; when a later generation arrives, or the mirror is detached,
+ *   the in-flight load is abandoned rather than allowed to finish and overwrite what came
+ *   after it.
+ *
+ * Ordering is only half of what the mirror tracks, and conflating the two halves is what
+ * left the first version with no way back from a failure: what publication is *current* is
+ * the classifier's answer, and what the document on screen was *read for* is load state
+ * (`loadedGeneration`). Read together they say when a publication has to be read again —
+ * a new generation, or a generation whose document the mirror does not have — and when a
+ * publication is merely news that the link is working, which is how a dropped stream comes
+ * back without re-reading a document that was never invalidated.
  *
  * What a publication does *not* carry is worth stating, because it is the question Phase 5
  * was told to answer first: selection, filter, expansion, and notes live in the producer's
@@ -63,7 +72,9 @@ export type ReviewMirrorStatus =
   | "loading"
   /** Holding a complete document for the publication below. */
   | "ready"
-  /** The last attempt failed; a retry may be pending. */
+  /** The stream dropped over a document that is still good; a retry is pending. */
+  | "reconnecting"
+  /** The last attempt failed, and there is no document to show; a retry may be pending. */
   | "failed"
   /** The session ended. Nothing further is coming, and no retry will help. */
   | "disconnected";
@@ -119,13 +130,22 @@ export class ReviewMirror {
   private readonly reconnect: ReturnType<typeof createReconnectScheduler>;
   private streamAbort: AbortController | undefined;
   /**
-   * The generation a load is being performed for.
+   * The load in flight, if any, and the token that says it is still the one wanted.
    *
-   * This is the whole supersede rule: a load checks that it is still the current one
-   * before it publishes anything, so a newer generation arriving mid-load simply makes the
-   * older load's result unwanted rather than something to cancel and unwind.
+   * This is the whole supersede rule: a load checks that its token is still the pending one
+   * before it publishes anything, so a newer load or a `stop` simply makes the older load's
+   * result unwanted rather than something to cancel and unwind. A token rather than a
+   * generation, because a failed load is retried for the generation it already had.
    */
-  private loadingGeneration: string | undefined;
+  private pendingLoad: { token: number; publication: ReviewPublicationAddress } | undefined;
+  private loadCount = 0;
+  /**
+   * The generation the document on screen was read for.
+   *
+   * Load state, not ordering: it says which publications the mirror can answer without
+   * reading anything, and is absent whenever there is no document to answer with.
+   */
+  private loadedGeneration: string | undefined;
   private stopped = false;
 
   constructor(
@@ -161,20 +181,32 @@ export class ReviewMirror {
    * Only the event stream is opened: its first frame is always a complete publication, so
    * a separate initial fetch would ask the same question twice and give the two answers a
    * chance to disagree.
+   *
+   * Attaching again after `stop` is deliberate. A view that mounts twice — React's
+   * development double-mount, a route left and returned to — asks the same mirror to start
+   * twice, and a mirror that could only be detached would leave the second mount blank. A
+   * session that said goodbye is the exception: there is nothing left to attach to.
    */
   start() {
-    if (this.streamAbort || this.stopped) {
+    if (this.streamAbort || this.snapshot.status === "disconnected") {
       return;
     }
+    this.stopped = false;
+    this.reconnect.reset();
     void this.connect();
   }
 
-  /** Detach for good. */
+  /** Detach: end the stream, abandon any load in flight, and retry nothing until `start`. */
   stop() {
     this.stopped = true;
-    this.reconnect.stop();
+    // Cancelled rather than stopped: the shared scheduler cannot be restarted and this
+    // mirror can, so refusing later retries is this flag's job rather than the timer's.
+    this.reconnect.cancel();
     this.streamAbort?.abort();
     this.streamAbort = undefined;
+    // A load belongs to the attachment that started it; whatever it returns after this
+    // describes a review nobody is watching.
+    this.pendingLoad = undefined;
   }
 
   /** Open one event stream and follow it until it ends. */
@@ -187,19 +219,34 @@ export class ReviewMirror {
     await this.client.streamEvents(
       {
         onPublication: (body) => {
+          if (abort.signal.aborted) {
+            return;
+          }
           // A stream that delivers anything is a working stream; the next failure starts
           // its backoff from the beginning rather than from where the last one left off.
           this.reconnect.reset();
           this.observe(body);
         },
         onDisconnect: () => {
-          this.reconnect.stop();
+          if (abort.signal.aborted) {
+            return;
+          }
+          this.reconnect.cancel();
           this.publish({ ...this.snapshot, status: "disconnected" });
         },
-        onError: (failure) => this.fail(failure),
+        onError: (failure) => {
+          if (!abort.signal.aborted) {
+            this.fail(failure);
+          }
+        },
       },
       abort.signal,
     );
+    if (this.streamAbort !== abort) {
+      // Detached, or replaced by a later attachment: this stream ending says nothing about
+      // the one that took its place, and scheduling from here would open a second.
+      return;
+    }
     this.streamAbort = undefined;
     if (!this.stopped && this.snapshot.status !== "disconnected") {
       this.reconnect.schedule();
@@ -210,7 +257,10 @@ export class ReviewMirror {
    * Take one arriving publication.
    *
    * The first one has nothing to be ordered against, so it is adopted; every later one is
-   * classified, and only the classifier decides what happens to it.
+   * classified, and only the classifier decides where it sits. What that verdict means for
+   * the *document* is then load state's question: a publication whose generation the mirror
+   * has no document for has to be read, whether it advances the position or merely repeats
+   * it, and that is the retry after a load that failed.
    */
   private observe(body: HunkReviewPublicationBodyV1) {
     const current = this.snapshot.publication;
@@ -218,40 +268,81 @@ export class ReviewMirror {
       void this.load(body);
       return;
     }
-    switch (classifyReviewPublication(current, body.publication)) {
-      case "accepted":
-        // A later revision of the generation already held: the document behind it cannot
-        // have changed, so this is a position and nothing to read.
-        this.publish({ ...this.snapshot, publication: body.publication });
-        return;
-      case "gap":
-        void this.load(body);
-        return;
-      case "stale":
-        return;
+    const order = classifyReviewPublication(current, body.publication);
+    if (order === "gap") {
+      // A later generation: nothing derived from the old one carries over, document first.
+      void this.load(body);
+      return;
+    }
+    if (order === "stale" && body.publication.generation !== current.generation) {
+      // Behind, replayed from another producer, or an identity that does not parse. Not a
+      // position this mirror is on, and not a document it should adopt.
+      return;
+    }
+    const document =
+      this.loadedGeneration === body.publication.generation ? this.snapshot.document : undefined;
+    if (!document && !this.pendingLoad) {
+      void this.load(body);
+      return;
+    }
+    if (document) {
+      // The document is the one this generation names, so the publication is a position and
+      // proof the link works: a stream that dropped and came back recovers here rather than
+      // staying failed, and a replay of a position already held only does that much.
+      if (order === "accepted" || this.snapshot.status !== "ready") {
+        this.publish({
+          status: "ready",
+          publication: order === "accepted" ? body.publication : current,
+          document,
+        });
+      }
+      return;
+    }
+    if (order === "accepted") {
+      // A load for this generation is already reading; this only moves the position it will
+      // publish at when it finishes.
+      this.publish({ ...this.snapshot, publication: body.publication });
     }
   }
 
   /** Read the whole document one publication describes, unless a newer one arrives first. */
   private async load(body: HunkReviewPublicationBodyV1) {
-    this.loadingGeneration = body.publication.generation;
+    this.loadCount += 1;
+    const token = this.loadCount;
+    this.pendingLoad = { token, publication: body.publication };
+    this.loadedGeneration = undefined;
     this.publish({ status: "loading", publication: body.publication });
 
     const files = await this.readDocumentFiles(body.catalog);
-    if (this.loadingGeneration !== body.publication.generation || this.stopped) {
-      // Superseded while it was reading: a later generation is already being loaded, and
-      // this document describes a review nobody is looking at any more.
+    if (this.pendingLoad?.token !== token) {
+      // Superseded while it was reading — by a later load, or by a `stop` — so this
+      // document describes a review nobody is looking at any more.
       return;
     }
+    this.pendingLoad = undefined;
     if (!files.ok) {
       this.fail(files);
       return;
     }
+    this.loadedGeneration = body.publication.generation;
     this.publish({
       status: "ready",
-      publication: body.publication,
+      publication: this.furthestPublication(body.publication),
       document: { files: files.value },
     });
+  }
+
+  /**
+   * The further along of where this load started and where the mirror has moved since.
+   *
+   * A load takes time, and the review may advance within its generation while it reads. The
+   * document is the same either way, so finishing must not carry the position back to where
+   * the read began — and which of the two is further along is the shared classifier's
+   * answer, not a comparison of this module's own.
+   */
+  private furthestPublication(loaded: ReviewPublicationAddress): ReviewPublicationAddress {
+    const held = this.snapshot.publication;
+    return held && classifyReviewPublication(loaded, held) === "accepted" ? held : loaded;
   }
 
   /**
@@ -318,11 +409,32 @@ export class ReviewMirror {
     return { ok: true, value: file };
   }
 
-  /** Record one failure, keeping whatever document is still on screen. */
+  /**
+   * Record one failure, keeping whatever document is still on screen.
+   *
+   * A dropped stream over a document the review never invalidated is a link problem rather
+   * than a lost review, so it degrades to `reconnecting` — the diff stays readable while
+   * the retry is pending, and the next publication over the new stream restores `ready`.
+   * Without a document there is nothing to keep reading, and that is `failed`.
+   */
   private fail(failure: ReviewClientFailure) {
-    if (this.snapshot.status !== "disconnected") {
-      this.publish({ ...this.snapshot, status: "failed", failure });
+    if (this.snapshot.status === "disconnected") {
+      return;
     }
+    this.publish({
+      ...this.snapshot,
+      status: this.holdsLoadedDocument() ? "reconnecting" : "failed",
+      failure,
+    });
+  }
+
+  /** Whether the document on screen is the one the current publication's generation names. */
+  private holdsLoadedDocument() {
+    return (
+      this.snapshot.document !== undefined &&
+      this.loadedGeneration !== undefined &&
+      this.loadedGeneration === this.snapshot.publication?.generation
+    );
   }
 
   /** Move to one snapshot and tell everyone watching. */

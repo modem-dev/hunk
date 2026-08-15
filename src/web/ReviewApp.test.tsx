@@ -8,7 +8,11 @@ import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import type { ReviewApiClient, ReviewEventHandlers } from "./reviewApiClient";
+import {
+  reviewClientFailure,
+  type ReviewApiClient,
+  type ReviewEventHandlers,
+} from "./reviewApiClient";
 import { ReviewApp } from "./ReviewApp";
 import { ReviewMirror, type ReviewMirrorSource } from "./reviewMirror";
 
@@ -72,7 +76,7 @@ async function settledMirror(files: ReviewFileV1[], serve: ReviewMirrorSource["r
   for (let turn = 0; turn < 8; turn += 1) {
     await Promise.resolve();
   }
-  return mirror;
+  return { mirror, handlers: handlers! };
 }
 
 /** Serve each file's canonical form, as the surface would. */
@@ -95,7 +99,7 @@ const UNUSED_CLIENT = {} as ReviewApiClient;
 describe("ReviewApp", () => {
   test("lists every file in review order, linking to its place in the stream", async () => {
     const files = documentFiles();
-    const mirror = await settledMirror(files, serveFiles(files));
+    const { mirror } = await settledMirror(files, serveFiles(files));
 
     const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
 
@@ -125,7 +129,7 @@ describe("ReviewApp", () => {
   test("shows a failure in the words the mirror was given, not its own", async () => {
     const files = documentFiles();
     const failure = reviewErrorMessage("resource-unavailable");
-    const mirror = await settledMirror(files, async () => ({
+    const { mirror } = await settledMirror(files, async () => ({
       ok: false,
       code: "resource-unavailable",
       message: failure,
@@ -135,5 +139,17 @@ describe("ReviewApp", () => {
 
     expect(markup).toContain('data-status="failed"');
     expect(markup).toContain(failure);
+  });
+
+  test("keeps the diff on screen while the dropped stream is reconnecting", async () => {
+    const files = documentFiles();
+    const { mirror, handlers } = await settledMirror(files, serveFiles(files));
+
+    handlers.onError?.(reviewClientFailure("resource-unavailable"));
+    const markup = renderToStaticMarkup(<ReviewApp mirror={mirror} client={UNUSED_CLIENT} />);
+
+    expect(markup).toContain('data-status="reconnecting"');
+    expect(markup).toContain("Reconnecting to the review…");
+    expect(markup).toContain("src/alpha.ts");
   });
 });
