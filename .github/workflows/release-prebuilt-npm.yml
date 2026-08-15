@@ -98,8 +98,10 @@ jobs:
         include:
           - package_name: hunkdiff-linux-arm64
             runner: ubuntu-24.04-arm
+            target_triple: bun-linux-arm64-musl
           - package_name: hunkdiff-linux-x64
             runner: ubuntu-latest
+            target_triple: bun-linux-x64-musl
           - package_name: hunkdiff-windows-x64
             runner: windows-latest
           - package_name: hunkdiff-darwin-x64
@@ -119,6 +121,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build host artifact
+        env:
+          HUNK_TARGET_TRIPLE: ${{ matrix.target_triple }}
         run: |
           bun run build:bin
           bun run ./scripts/build-prebuilt-artifact.ts --expect-package "${{ matrix.package_name }}"
