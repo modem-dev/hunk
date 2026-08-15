@@ -100,6 +100,16 @@ describe("parseReviewLocation", () => {
   test("refuses a URL carrying no capability", () => {
     expect(parseReviewLocation(new URL(`${ORIGIN}/review/${SESSION_ID}/`))).toBeUndefined();
   });
+
+  test("refuses a malformed path as an answer, not an exception", () => {
+    // "%E0%A4%A" is truncated percent-encoding: decodeURIComponent throws on it. A
+    // hand-edited link must land on the invalid-link message, so the parser answers
+    // undefined instead of aborting whoever mounted the page.
+    const url = new URL(reviewUrl(ORIGIN, SESSION_ID, CAPABILITY));
+    const malformed = { ...url, origin: url.origin, hash: url.hash, pathname: "/review/%E0%A4%A/" };
+
+    expect(parseReviewLocation(malformed)).toBeUndefined();
+  });
 });
 
 describe("ReviewApiClient.readPublication", () => {

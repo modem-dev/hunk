@@ -130,10 +130,18 @@ export function parseReviewLocation(
     return undefined;
   }
   // Recognized by rebuilding the page path from each candidate segment rather than by
-  // matching a pattern this module would then own a second copy of.
+  // matching a pattern this module would then own a second copy of. A segment whose
+  // percent-encoding does not decode is not a candidate rather than an error: this
+  // function answers "is this a review URL?", and a malformed one is not.
   const segments = location.pathname.split("/").filter((segment) => segment.length > 0);
   const sessionId = segments
-    .map((segment) => decodeURIComponent(segment))
+    .flatMap((segment) => {
+      try {
+        return [decodeURIComponent(segment)];
+      } catch {
+        return [];
+      }
+    })
     .find((candidate) => location.pathname.startsWith(reviewPagePath(candidate)));
   return sessionId ? { origin: location.origin, sessionId, capability } : undefined;
 }
