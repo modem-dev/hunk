@@ -73,6 +73,11 @@ export const browserMirrorOrderingConsumer: ReviewOrderingConsumer = {
     mirror.start();
     handlers!.onPublication(publicationFor(current));
     const readsBefore = readGenerations.length;
+    // Delivered without settling the first read, deliberately: the mirror reads a
+    // generation again when it holds no document for it and none is on the way, which is
+    // how a failed load is retried. Letting the refusal above land first would make that
+    // retry look like a resync, so the second publication arrives while the first read is
+    // still in flight and only a real `gap` reads anything.
     handlers!.onPublication(publicationFor(incoming));
     mirror.stop();
 
