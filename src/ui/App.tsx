@@ -1461,7 +1461,14 @@ export function App({
         pane.registered.pane.replaces === HUNK_FILES_PANE_KEY &&
         !paneAvailabilityQuarantineRef.current.has(pane.registered),
     );
-    const filesPaneKey = replacement?.key ?? HUNK_FILES_PANE_KEY;
+    const replacementIsOpen =
+      replacement !== undefined && paneOpenStateRef.current.open.includes(replacement.key);
+    const builtInIsOpen = paneOpenStateRef.current.open.includes(HUNK_FILES_PANE_KEY);
+    const filesPaneKey = replacementIsOpen
+      ? replacement.key
+      : builtInIsOpen
+        ? HUNK_FILES_PANE_KEY
+        : (replacement?.key ?? HUNK_FILES_PANE_KEY);
 
     if (!sidebarAreaVisible) {
       setPaneOpen(filesPaneKey, true);

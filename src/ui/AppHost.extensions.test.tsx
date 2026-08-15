@@ -243,9 +243,10 @@ async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>) => Promise<void>,
   hostClient?: HunkSessionBrokerClient,
+  width = 120,
 ) {
   const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
-    width: 120,
+    width,
     height: 24,
   });
 
@@ -340,6 +341,62 @@ describe("reload keeps launch extension authority", () => {
         expect(events.filter((line) => line === "startup")).toHaveLength(1);
       },
       broker.client,
+    );
+  });
+
+  test("a reloaded files replacement does not take toggle control from the open fallback", async () => {
+    const repo = createTestRepo("hunk-apphost-sidebar-fallback-reload-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "broken",\n` +
+        `    replacesDefault: true,\n` +
+        `    component: () => { throw new Error("sidebar exploded"); },\n` +
+        `  });\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+
+    const broker = createTestBrokerClient();
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => (setup.captureCharFrame().match(/a\.txt/g) ?? []).length === 2,
+          "the built-in fallback to replace the crashed pane",
+        );
+
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "factory").length === 2,
+          "the replacement extension to register again",
+        );
+
+        await act(async () => {
+          await setup.mockInput.typeText("s");
+        });
+        await flushUntil(
+          setup,
+          () => (setup.captureCharFrame().match(/a\.txt/g) ?? []).length === 1,
+          "the s key to close the visible built-in fallback",
+        );
+      },
+      broker.client,
+      240,
     );
   });
 
