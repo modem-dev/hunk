@@ -67,6 +67,7 @@ import {
   type HunkReviewResourceReadResultV1,
 } from "../reviewProtocol";
 import {
+  inBoundedParallel,
   SessionBrokerState,
   type SessionBrokerViewAdapter,
   type SessionTargetInput,
@@ -142,23 +143,6 @@ function readRegistrationReviewCapabilityDigest(registrationInput: unknown): str
   return isReviewSha256Digest(info?.reviewCapabilityDigest)
     ? info.reviewCapabilityDigest
     : undefined;
-}
-
-/** Run one bounded-parallel pass over a work list, in the shared load concurrency. */
-async function inBoundedParallel<Item, Result>(
-  items: readonly Item[],
-  limit: number,
-  run: (item: Item) => Promise<Result>,
-): Promise<Result[]> {
-  const results = Array.from({ length: items.length }) as Result[];
-  let next = 0;
-  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
-    for (let index = next++; index < items.length; index = next++) {
-      results[index] = await run(items[index]!);
-    }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 /** The generic broker this state specializes, named once so the overrides stay readable. */

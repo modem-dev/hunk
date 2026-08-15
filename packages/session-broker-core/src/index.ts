@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./canonicalJson";
 export * from "./auth";
 export * from "./brokerWire";
+export * from "./concurrency";
 export * from "./limits";
 export * from "./reconnect";
 export * from "./brokerState";
