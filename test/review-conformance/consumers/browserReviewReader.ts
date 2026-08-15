@@ -17,7 +17,7 @@ import { reviewProcessCapability } from "../../../src/app/review/capability";
 import { WebReviewServer } from "../../../src/session/broker/webReviewServer";
 import { HunkSessionBrokerState } from "../../../src/session/broker/state";
 import { ReviewEventSseDecoder } from "../../../src/session/reviewEventProtocol";
-import { BrowserReviewApiClient } from "../../../src/web/reviewApiClient";
+import { BrowserReviewApiClient } from "../../../src/web/browserReviewApiClient";
 import { EVENT_FIXTURE_SESSION_ID } from "../eventFixtures";
 import { collapseChunkRun, resolveFixtureChunkBytes } from "../eventFraming";
 import type { ReviewEventConsumer, ReviewEventFixture } from "../types";

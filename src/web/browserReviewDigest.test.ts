@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { isReviewSha256Digest } from "../core/review/validation";
-import { browserReviewDigest } from "./reviewDigest";
+import { browserReviewDigest } from "./browserReviewDigest";
 
 /** What the session's own edge would compute for the same bytes. */
 function nodeDigest(bytes: Uint8Array) {

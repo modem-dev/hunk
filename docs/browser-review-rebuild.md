@@ -99,8 +99,8 @@ this PR alone.
 
 ## Phase 5 — browser client (two PRs)
 
-1. **Read-only mirror (landed)**: `src/web/` — `reviewApiClient` / `reviewMirror` /
-   `pierreDocument` / `BrowserReviewStream` rendering a publication with Pierre, built on the
+1. **Read-only mirror (landed)**: `src/web/` — `browserReviewApiClient` / `browserReviewMirror` /
+   `browserPierreDocument` / `BrowserReviewStream` rendering a publication with Pierre, built on the
    shared geometry/selector/ordering primitives from day one (no `sideRange`, no local
    acceptance rules, no bare `split("\n")`). No actions, no note editing.
 

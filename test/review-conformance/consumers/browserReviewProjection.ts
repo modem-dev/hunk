@@ -17,7 +17,7 @@ import { projectReviewDocument } from "../../../src/core/review/document";
 import {
   buildBrowserReviewFileRenderModel,
   browserReviewExpandedGapRows,
-} from "../../../src/web/pierreDocument";
+} from "../../../src/web/browserPierreDocument";
 import type { ConformanceGap, ReviewGeometryConsumer, ReviewGeometryFixture } from "../types";
 
 /** Read the gaps the stream would draw, in the order it would draw them. */

@@ -21,7 +21,7 @@
 import { reviewExpansionSide } from "../core/review/expansion";
 import { reviewResourceId } from "../core/review/resources";
 import type { ReviewFileV1 } from "../core/review/types";
-import type { BrowserReviewApiClient, BrowserReviewFailure } from "./reviewApiClient";
+import type { BrowserReviewApiClient, BrowserReviewFailure } from "./browserReviewApiClient";
 
 /** What the page knows about one file's source text. */
 export interface BrowserReviewSourceEntry {

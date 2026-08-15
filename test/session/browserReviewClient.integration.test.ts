@@ -13,8 +13,14 @@ import { reviewProcessCapability } from "../../src/app/review/capability";
 import { reviewResourceId } from "../../src/core/review/resources";
 import { WebReviewServer } from "../../src/session/broker/webReviewServer";
 import { reviewHttpPath, reviewUrl } from "../../src/session/reviewHttpProtocol";
-import { BrowserReviewApiClient, parseBrowserReviewLocation } from "../../src/web/reviewApiClient";
-import { BrowserReviewMirror, type BrowserReviewMirrorSnapshot } from "../../src/web/reviewMirror";
+import {
+  BrowserReviewApiClient,
+  parseBrowserReviewLocation,
+} from "../../src/web/browserReviewApiClient";
+import {
+  BrowserReviewMirror,
+  type BrowserReviewMirrorSnapshot,
+} from "../../src/web/browserReviewMirror";
 import { connectReviewSession, createTestPatchFile } from "../helpers/review-session-harness";
 
 const SESSION_ID = "session-web-1";

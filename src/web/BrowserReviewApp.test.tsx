@@ -9,9 +9,9 @@ import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { reviewHttpFailure } from "../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import type { BrowserReviewApiClient, BrowserReviewEventHandlers } from "./reviewApiClient";
-import { BrowserReviewApp } from "./ReviewApp";
-import { BrowserReviewMirror, type BrowserReviewMirrorSource } from "./reviewMirror";
+import type { BrowserReviewApiClient, BrowserReviewEventHandlers } from "./browserReviewApiClient";
+import { BrowserReviewApp } from "./BrowserReviewApp";
+import { BrowserReviewMirror, type BrowserReviewMirrorSource } from "./browserReviewMirror";
 
 const SESSION_ID = "session-1";
 const GENERATION = "generation:p1:0";

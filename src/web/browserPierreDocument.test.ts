@@ -5,7 +5,7 @@ import {
   buildBrowserReviewFileRenderModel,
   isolateBrowserReviewHunk,
   browserReviewExpandedGapRows,
-} from "./pierreDocument";
+} from "./browserPierreDocument";
 
 const BASE = Array.from({ length: 24 }, (_unused, index) => `line ${index + 1}`).join("\n") + "\n";
 /** Two changes far enough apart to parse as two hunks, with context between them. */

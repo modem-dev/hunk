@@ -27,7 +27,7 @@ open, and where the plan puts it:
   duplication this seam exists to prevent.
 - **C3 is closed by there being one machine, not by unifying two.** The finding paired the
   prototype's browser snapshot recovery with a runtime reload queue that never landed in
-  the rebuild. The mirror's supersede rule (`src/web/reviewMirror.ts`) is now the only one
+  the rebuild. The mirror's supersede rule (`src/web/browserReviewMirror.ts`) is now the only one
   in the repo: a load belongs to the generation that started it and checks that it is still
   current before publishing anything, so a newer generation makes an older load's result
   unwanted rather than something to cancel and unwind. Nothing to extract; a primitive with
@@ -125,7 +125,7 @@ projection` consumer answers `hunk-with-leading-context` beside the terminal.
   _Repaid (Phase 1 PR 2, terminal site)_: `rebaseReviewHunk` in `core/review/geometry.ts`, adopted
   by `sourceBackedHighlight.ts`. It returns the per-side end indices so a caller can slice or
   validate without re-walking.
-  _Closed (Phase 5 PR 1, browser site)_: `isolateBrowserReviewHunk` in `src/web/pierreDocument.ts` is
+  _Closed (Phase 5 PR 1, browser site)_: `isolateBrowserReviewHunk` in `src/web/browserPierreDocument.ts` is
   the shared walk plus two slices taken with the indices it reports, so the browser cannot
   disagree with the terminal about where a hunk's lines end. The stream renders one Pierre
   view per hunk — which is what makes a collapsed-region strip land between the right two
@@ -381,7 +381,7 @@ path suffixes, expansion retention, git-status badges).
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
   which is what proves it has no rules of its own.
-  _Closed (Phase 5 PR 1, browser site)_: `src/web/reviewMirror.ts` makes one
+  _Closed (Phase 5 PR 1, browser site)_: `src/web/browserReviewMirror.ts` makes one
   `classifyReviewPublication` call and acts on the verdict — `accepted` advances the
   position and reads nothing (a generation's document is immutable, so there is nothing to
   re-read), `gap` resyncs, `stale` is ignored. The prototype's contiguous `+1` revision
@@ -702,7 +702,7 @@ implementation does.
   locus fails to typecheck rather than being treated as per-client by whichever surface
   reads it first. The rule behind the table is stated with it: an option is the review's
   when it changes what the review is _about_, and a client's when it changes only how one
-  screen draws it. `src/web/viewOptions.ts` resolves the client-locus options only, over the
+  screen draws it. `src/web/browserViewOptions.ts` resolves the client-locus options only, over the
   host's resolved defaults when the page carries them, and asks the predicate rather than
   assuming — a host default for `showAgentNotes` or the filter is ignored rather than copied
   into per-client state. Part (b)'s remaining half — how a client persists its own

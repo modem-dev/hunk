@@ -14,8 +14,8 @@ import {
   type HunkReviewPublicationBodyV1,
 } from "../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
-import { parseBrowserReviewLocation, BrowserReviewApiClient } from "./reviewApiClient";
-import { browserReviewDigest } from "./reviewDigest";
+import { parseBrowserReviewLocation, BrowserReviewApiClient } from "./browserReviewApiClient";
+import { browserReviewDigest } from "./browserReviewDigest";
 
 const ORIGIN = "http://127.0.0.1:4300";
 const SESSION_ID = "session-1";

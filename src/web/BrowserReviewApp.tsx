@@ -14,19 +14,19 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { formatReviewAddress } from "../core/review/address";
 import { reviewFileStatBadges } from "../core/review/presentation";
 import type { ReviewFileV1 } from "../core/review/types";
-import type { BrowserReviewApiClient } from "./reviewApiClient";
-import type { BrowserReviewMirror, BrowserReviewMirrorSnapshot } from "./reviewMirror";
+import type { BrowserReviewApiClient } from "./browserReviewApiClient";
+import type { BrowserReviewMirror, BrowserReviewMirrorSnapshot } from "./browserReviewMirror";
 import {
   BrowserReviewSourceStore,
   type BrowserReviewSourceEntries,
   type BrowserReviewSourceSnapshot,
-} from "./reviewSources";
-import { BrowserReviewStream } from "./ReviewStream";
+} from "./browserReviewSources";
+import { BrowserReviewStream } from "./BrowserReviewStream";
 import {
   resolveBrowserViewOptions,
   type BrowserViewOptions,
   type BrowserHostViewDefaults,
-} from "./viewOptions";
+} from "./browserViewOptions";
 
 export interface BrowserReviewAppProps {
   mirror: BrowserReviewMirror;
