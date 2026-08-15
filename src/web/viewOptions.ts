@@ -17,13 +17,14 @@
  * product decision (E2), so this client renders in Pierre's own palette and adopts nothing
  * from `src/ui/themes` by default.
  */
-import { isClientReviewViewOption, REVIEW_VIEW_OPTION_LOCUS } from "../core/review/viewOptions";
-
-/** How the browser lays a diff out; the same vocabulary the terminal's layout modes use. */
-export type BrowserReviewLayout = "auto" | "split" | "stack";
+import {
+  isClientReviewViewOption,
+  REVIEW_VIEW_OPTION_LOCUS,
+  type LayoutMode,
+} from "../core/review/viewOptions";
 
 export interface BrowserViewOptions {
-  layout: BrowserReviewLayout;
+  layout: LayoutMode;
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
@@ -44,7 +45,7 @@ export const DEFAULT_BROWSER_VIEW_OPTIONS: BrowserViewOptions = {
 
 /** The host's resolved defaults, as far as they are this client's to adopt. */
 export interface HostViewDefaults {
-  mode?: BrowserReviewLayout;
+  mode?: LayoutMode;
   showLineNumbers?: boolean;
   wrapLines?: boolean;
   showHunkHeaders?: boolean;
@@ -96,7 +97,7 @@ export function resolveBrowserViewOptions(
 export const BROWSER_SPLIT_LAYOUT_MIN_WIDTH = 1_000;
 
 export function resolveBrowserDiffStyle(
-  layout: BrowserReviewLayout,
+  layout: LayoutMode,
   viewportWidth: number,
 ): "split" | "unified" {
   if (layout === "split") {

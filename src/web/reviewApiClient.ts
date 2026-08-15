@@ -40,6 +40,7 @@ import {
   parseReviewEventEnd,
   parseReviewEventFrame,
   parseReviewEventFrameName,
+  REVIEW_EVENT_STREAM_CONTENT_TYPE,
   ReviewEventAssembler,
   ReviewEventSseDecoder,
   type ReviewEventSseRecord,
@@ -251,7 +252,7 @@ export class ReviewApiClient {
     try {
       response = await this.request(
         { kind: "events", sessionId: this.sessionId },
-        { signal, headers: { accept: "text/event-stream" } },
+        { signal, headers: { accept: REVIEW_EVENT_STREAM_CONTENT_TYPE } },
       );
     } catch (error) {
       handlers.onError?.(transportFailure(error));
