@@ -425,23 +425,3 @@ export function estimateDiffSectionBodyRows(
 ) {
   return measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).bodyHeight;
 }
-
-/** Estimate the body-row position for the anchor that should represent the selected hunk. */
-export function estimateHunkAnchorBodyRow(
-  file: DiffFile,
-  layout: Exclude<LayoutMode, "auto">,
-  showHunkHeaders: boolean,
-  hunkIndex: number,
-  theme: AppTheme,
-) {
-  if (file.metadata.hunks.length === 0) {
-    return 0;
-  }
-
-  const clampedHunkIndex = Math.max(0, Math.min(hunkIndex, file.metadata.hunks.length - 1));
-  return (
-    measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).hunkAnchorRows.get(
-      clampedHunkIndex,
-    ) ?? 0
-  );
-}

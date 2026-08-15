@@ -4,7 +4,7 @@ import type {
   ExtensionFileViewRow,
   ExtensionFileViewSourceRange,
 } from "../../extension-api/types";
-import { measureSanitizedTextWidth, wrapSanitizedTextByWidth } from "../lib/text";
+import { wrapSanitizedTextByWidth } from "../lib/text";
 
 /** Resource limits keep one extension layout from exhausting the review stream. */
 export const FILE_VIEW_MAX_ROWS = 10_000;
@@ -336,15 +336,4 @@ export function validateFileViewSourceRanges(
     }
   }
   return null;
-}
-
-/** Return a terminal-safe line representation for a symbolic row. */
-export function fileViewRowText(row: ExtensionFileViewRow, width: number) {
-  const text = row.spans.map((span) => span.text).join("");
-  return wrapSanitizedTextByWidth(text, Math.max(1, width));
-}
-
-/** Exposed only for tests that ensure terminal measurement treats wide text as cells, not UTF-16. */
-export function measureFileViewRowWidth(row: ExtensionFileViewRow) {
-  return measureSanitizedTextWidth(row.spans.map((span) => span.text).join(""));
 }

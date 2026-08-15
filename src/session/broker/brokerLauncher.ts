@@ -403,24 +403,6 @@ export async function waitForSessionBrokerShutdown({
   return false;
 }
 
-/** Wait briefly for a just-launched daemon to become reachable on its health endpoint. */
-export async function waitForSessionBrokerHealth({
-  config = resolveSessionBrokerConfig(),
-  timeoutMs = DEFAULT_DAEMON_STARTUP_TIMEOUT_MS,
-  intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
-}: {
-  config?: ResolvedSessionBrokerConfig;
-  timeoutMs?: number;
-  intervalMs?: number;
-}) {
-  return waitForDaemonHealthWithCheck({
-    config,
-    timeoutMs,
-    intervalMs,
-    isHealthy: (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
-  });
-}
-
 /** Launch the broker daemon in the background without tying it to the current TTY session. */
 export function launchSessionBrokerDaemon({
   cwd = process.cwd(),

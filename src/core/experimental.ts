@@ -1,4 +1,4 @@
-import type { SidecarContext, AgentFileContext, CommonOptions, DiffFile } from "./types";
+import type { AgentFileContext, CommonOptions, DiffFile } from "./types";
 
 export const EXPERIMENTAL_FEATURES = ["stml"] as const;
 export type ExperimentalFeature = (typeof EXPERIMENTAL_FEATURES)[number];
@@ -27,21 +27,6 @@ function resolveExperimentalAgentFileContext(file: AgentFileContext): AgentFileC
       delete resolved.markup;
       return resolved;
     }),
-  };
-}
-
-/** Remove disabled STML bodies while preserving their required plain-text fallbacks. */
-export function resolveExperimentalSidecarContext(
-  context: SidecarContext | null,
-  options: Pick<CommonOptions, "experimental">,
-): SidecarContext | null {
-  if (!context || experimentalFeatureEnabled(options, "stml")) {
-    return context;
-  }
-
-  return {
-    ...context,
-    files: context.files.map(resolveExperimentalAgentFileContext),
   };
 }
 
