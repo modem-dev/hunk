@@ -36,7 +36,7 @@
  * therefore a mirror of the review's *content*; sharing its semantic position needs more
  * on the wire than a publication has, which is Phase 5 PR 2's work.
  */
-import { createReconnectScheduler } from "@hunk/session-broker-core";
+import { createReconnectScheduler, inBoundedParallel } from "@hunk/session-broker-core";
 import {
   classifyReviewPublication,
   type ReviewPublicationAddress,
@@ -100,28 +100,6 @@ export type ReviewMirrorSource = Pick<ReviewApiClient, "readResource" | "streamE
 export interface ReviewMirrorOptions {
   /** Injected so a test can drive time instead of waiting for it. */
   timers?: Parameters<typeof createReconnectScheduler>[0]["timers"];
-}
-
-/** Run one bounded-parallel pass over a list, preserving the order of the results. */
-async function mapWithConcurrency<Item, Result>(
-  items: readonly Item[],
-  limit: number,
-  run: (item: Item, index: number) => Promise<Result>,
-): Promise<Result[]> {
-  const results = Array.from({ length: items.length }) as Result[];
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      const index = next;
-      next += 1;
-      if (index >= items.length) {
-        return;
-      }
-      results[index] = await run(items[index]!, index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 export class ReviewMirror {
@@ -359,7 +337,7 @@ export class ReviewMirror {
       (resource): resource is Extract<typeof resource, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
     );
-    const loaded = await mapWithConcurrency(
+    const loaded = await inBoundedParallel(
       descriptors,
       REVIEW_RESOURCE_LOAD_CONCURRENCY,
       (descriptor) => this.readCanonicalFile(descriptor),

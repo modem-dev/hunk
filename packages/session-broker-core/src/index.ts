@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./brokerWire";
+export * from "./concurrency";
 export * from "./limits";
 export * from "./reconnect";
 export * from "./brokerState";
