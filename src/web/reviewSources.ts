@@ -35,19 +35,32 @@ export interface ReviewSourceEntry {
 /** Every file's source state, keyed the way the review addresses files. */
 export type ReviewSourceEntries = Readonly<Record<string, ReviewSourceEntry>>;
 
+/** What the store holds, and the generation every entry in it was read for. */
+export interface ReviewSourceSnapshot {
+  /** Absent until the page knows which generation it is showing. */
+  generation: string | undefined;
+  entries: ReviewSourceEntries;
+}
+
 /** What this store needs from a transport: one resource read. */
 export type ReviewSourceReader = Pick<ReviewApiClient, "readResource">;
 
 export class ReviewSourceStore {
-  private entries: ReviewSourceEntries = {};
-  private generation: string | undefined;
+  private snapshot: ReviewSourceSnapshot = { generation: undefined, entries: {} };
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly client: ReviewSourceReader) {}
 
-  /** The current source state, safe to render directly. */
-  getSnapshot(): ReviewSourceEntries {
-    return this.entries;
+  /**
+   * The current source state, safe to render directly.
+   *
+   * The generation rides with the entries so a caller can tell at render time whether they
+   * belong to the review it is drawing — a document arrives one render before any effect
+   * clearing this store could run, and stale text under a live file key is wrong lines
+   * rather than a missing one.
+   */
+  getSnapshot(): ReviewSourceSnapshot {
+    return this.snapshot;
   }
 
   /** Watch the store. The listener is not called for the state it already sees. */
@@ -65,11 +78,10 @@ export class ReviewSourceStore {
    * return is dropped, because they were asked of a review that has since moved on.
    */
   setGeneration(generation: string | undefined) {
-    if (this.generation === generation) {
+    if (this.snapshot.generation === generation) {
       return;
     }
-    this.generation = generation;
-    this.entries = {};
+    this.snapshot = { generation, entries: {} };
     this.notify();
   }
 
@@ -80,14 +92,11 @@ export class ReviewSourceStore {
    * gap again is the only retry gesture a read-only page has, and nothing retries on its own.
    */
   request(file: ReviewFileV1) {
-    const generation = this.generation;
+    const { generation, entries } = this.snapshot;
     if (!generation || file.sourceIdentity === undefined) {
       return;
     }
-    if (
-      this.entries[file.key]?.status === "loading" ||
-      this.entries[file.key]?.status === "ready"
-    ) {
+    if (entries[file.key]?.status === "loading" || entries[file.key]?.status === "ready") {
       return;
     }
     this.put(file.key, { status: "loading" });
@@ -102,7 +111,7 @@ export class ReviewSourceStore {
         kind: "source",
       })
       .then((result) => {
-        if (this.generation !== generation) {
+        if (this.snapshot.generation !== generation) {
           return;
         }
         this.put(
@@ -116,7 +125,10 @@ export class ReviewSourceStore {
 
   /** Record one file's state and tell everyone watching. */
   private put(fileKey: string, entry: ReviewSourceEntry) {
-    this.entries = { ...this.entries, [fileKey]: entry };
+    this.snapshot = {
+      ...this.snapshot,
+      entries: { ...this.snapshot.entries, [fileKey]: entry },
+    };
     this.notify();
   }
 
