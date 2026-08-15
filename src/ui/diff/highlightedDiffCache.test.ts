@@ -2,17 +2,20 @@ import { describe, expect, test } from "bun:test";
 import type { HighlightedDiffCode } from "./diffRows";
 import { createHighlightedDiffCache } from "./highlightedDiffCache";
 
-/** Build a distinguishable cache value; identity is all these tests compare. */
-function createTestHighlightedDiffCode(): HighlightedDiffCode {
-  return { deletionLines: [], additionLines: [] };
+/** Build a result retaining a known line count; identity is what these tests compare. */
+function createTestHighlightedDiffCode(lines: number): HighlightedDiffCode {
+  return {
+    deletionLines: Array.from({ length: lines }, () => undefined),
+    additionLines: [],
+  };
 }
 
 describe("highlighted diff cache", () => {
   test("evicts the least recently used entry rather than the oldest highlight", () => {
-    const cache = createHighlightedDiffCache(2);
-    const onScreen = createTestHighlightedDiffCode();
-    const scrolledPast = createTestHighlightedDiffCode();
-    const prefetched = createTestHighlightedDiffCode();
+    const cache = createHighlightedDiffCache(20);
+    const onScreen = createTestHighlightedDiffCode(10);
+    const scrolledPast = createTestHighlightedDiffCode(10);
+    const prefetched = createTestHighlightedDiffCode(10);
 
     cache.set("on-screen", onScreen);
     cache.set("scrolled-past", scrolledPast);
@@ -27,9 +30,9 @@ describe("highlighted diff cache", () => {
   });
 
   test("peeking does not protect an entry from eviction", () => {
-    const cache = createHighlightedDiffCache(1);
-    const first = createTestHighlightedDiffCode();
-    const second = createTestHighlightedDiffCode();
+    const cache = createHighlightedDiffCache(10);
+    const first = createTestHighlightedDiffCode(10);
+    const second = createTestHighlightedDiffCode(10);
 
     cache.set("first", first);
     expect(cache.peek("first")).toBe(first);
@@ -39,25 +42,54 @@ describe("highlighted diff cache", () => {
     expect(cache.peek("second")).toBe(second);
   });
 
-  test("re-storing a key refreshes recency without growing past the budget", () => {
-    const cache = createHighlightedDiffCache(2);
-    const replaced = createTestHighlightedDiffCode();
-    const kept = createTestHighlightedDiffCode();
-    const added = createTestHighlightedDiffCode();
+  test("holds far more small files than large ones under the same budget", () => {
+    const cache = createHighlightedDiffCache(100);
 
-    cache.set("reloaded", createTestHighlightedDiffCode());
-    cache.set("kept", kept);
-    cache.set("reloaded", replaced);
-    cache.set("added", added);
+    // A window of one-line fixes is what a lint or import sweep looks like.
+    for (let index = 0; index < 50; index += 1) {
+      cache.set(`small-${index}`, createTestHighlightedDiffCode(2));
+    }
+    expect(cache.peek("small-0")).toBeDefined();
+    expect(cache.peek("small-49")).toBeDefined();
 
-    expect(cache.peek("reloaded")).toBe(replaced);
-    expect(cache.peek("added")).toBe(added);
-    expect(cache.peek("kept")).toBeUndefined();
+    // The same count of generated files cannot fit, and the recent ones win.
+    for (let index = 0; index < 50; index += 1) {
+      cache.set(`large-${index}`, createTestHighlightedDiffCode(60));
+    }
+    expect(cache.peek("large-49")).toBeDefined();
+    expect(cache.peek("large-0")).toBeUndefined();
+    expect(cache.peek("small-0")).toBeUndefined();
   });
 
-  test("keeps at least one entry when given a degenerate budget", () => {
+  test("keeps a result larger than the whole budget rather than dropping it", () => {
+    const cache = createHighlightedDiffCache(100);
+    const neighbor = createTestHighlightedDiffCode(50);
+    const generated = createTestHighlightedDiffCode(5000);
+
+    cache.set("neighbor", neighbor);
+    cache.set("generated", generated);
+
+    expect(cache.peek("generated")).toBe(generated);
+    expect(cache.peek("neighbor")).toBeUndefined();
+  });
+
+  test("releases the budget a replaced result was holding", () => {
+    const cache = createHighlightedDiffCache(100);
+    const reloaded = createTestHighlightedDiffCode(4);
+    const kept = createTestHighlightedDiffCode(40);
+
+    // A file whose diff shrinks between reloads must not keep charging its old size.
+    cache.set("reloaded", createTestHighlightedDiffCode(90));
+    cache.set("reloaded", reloaded);
+    cache.set("kept", kept);
+
+    expect(cache.peek("reloaded")).toBe(reloaded);
+    expect(cache.peek("kept")).toBe(kept);
+  });
+
+  test("keeps one entry when given a degenerate budget", () => {
     const cache = createHighlightedDiffCache(0);
-    const only = createTestHighlightedDiffCode();
+    const only = createTestHighlightedDiffCode(5);
 
     cache.set("only", only);
 
