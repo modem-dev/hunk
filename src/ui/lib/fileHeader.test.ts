@@ -16,9 +16,35 @@ describe("file header layout", () => {
     large.stats = { additions: 1234, deletions: 56 };
     large.statsTruncated = true;
 
-    expect(fileHeaderStats(small)).toMatchObject({ text: "+1 -0 ", width: 6 });
+    expect(fileHeaderStats(small)).toMatchObject({ text: "+1 ", width: 3 });
     expect(fileHeaderStats(large)).toMatchObject({ text: "+1234+ -56 ", width: 11 });
     expect(maxFileHeaderStatsWidth([small, large])).toBe(11);
+  });
+
+  test("states the churn the shared formatter states, so a zero count is not a badge", () => {
+    const added = createTestDiffFile({ id: "added", path: "added.ts" });
+    const removed = createTestDiffFile({ id: "removed", path: "removed.ts" });
+    const unchanged = createTestDiffFile({ id: "unchanged", path: "unchanged.ts" });
+    added.stats = { additions: 3, deletions: 0 };
+    removed.stats = { additions: 0, deletions: 7 };
+    unchanged.stats = { additions: 0, deletions: 0 };
+
+    expect(fileHeaderStats(added)).toMatchObject({
+      additionsText: "+3",
+      deletionsText: null,
+      text: "+3 ",
+    });
+    expect(fileHeaderStats(removed)).toMatchObject({
+      additionsText: null,
+      deletionsText: "-7",
+      text: "-7 ",
+    });
+    expect(fileHeaderStats(unchanged)).toMatchObject({
+      additionsText: null,
+      deletionsText: null,
+      text: "",
+      width: 0,
+    });
   });
 
   test("fits long paths with three dots while preserving terminal-cell width", () => {

@@ -18,6 +18,7 @@
  * The store belongs to one publication, so a new generation starts with nothing cached and
  * the previous generation's bytes become collectable as soon as it is retired.
  */
+import { ConcurrencyGate } from "@hunk/session-broker-core";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import {
   isMaterializedReviewResource,
@@ -79,15 +80,14 @@ export interface ReviewResourceStoreOptions {
 export class ReviewResourceStore {
   private readonly publication: ReviewPublication;
   private readonly digest: ReviewDigestFn;
-  private readonly concurrency: number;
+  /** The store's load slots, bounded by the shared gate rather than a local counter. */
+  private readonly loadSlots: ConcurrencyGate;
   private readonly maxCacheBytes: number;
   /** Settled bytes, oldest first, so eviction is a plain iteration order. */
   private readonly materialized = new Map<string, MaterializedReviewResource>();
   /** One production per resource id; concurrent readers await this exact promise. */
   private readonly inFlight = new Map<string, Promise<ReviewResourceLoad>>();
   private cachedBytes = 0;
-  private active = 0;
-  private readonly waiting: Array<() => void> = [];
 
   constructor({
     publication,
@@ -97,7 +97,7 @@ export class ReviewResourceStore {
   }: ReviewResourceStoreOptions) {
     this.publication = publication;
     this.digest = digest;
-    this.concurrency = Math.max(1, concurrency);
+    this.loadSlots = new ConcurrencyGate(concurrency);
     this.maxCacheBytes = maxCacheBytes;
   }
 
@@ -162,11 +162,11 @@ export class ReviewResourceStore {
     const results = new Map<string, ReviewResourceLoad>();
     await Promise.all(
       [...new Set(resourceIds)].map(async (resourceId) => {
-        await this.acquire();
+        await this.loadSlots.acquire();
         try {
           results.set(resourceId, await this.materialize(resourceId));
         } finally {
-          this.release();
+          this.loadSlots.release();
         }
       }),
     );
@@ -333,25 +333,5 @@ export class ReviewResourceStore {
   private touch(resourceId: string, resource: MaterializedReviewResource) {
     this.materialized.delete(resourceId);
     this.materialized.set(resourceId, resource);
-  }
-
-  /** Take one of the concurrency limit's slots, waiting when they are all in use. */
-  private acquire(): Promise<void> {
-    if (this.active < this.concurrency) {
-      this.active += 1;
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-      this.waiting.push(() => {
-        this.active += 1;
-        resolve();
-      });
-    });
-  }
-
-  /** Give one slot back to the next waiting load. */
-  private release() {
-    this.active -= 1;
-    this.waiting.shift()?.();
   }
 }

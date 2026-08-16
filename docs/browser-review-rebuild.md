@@ -73,7 +73,7 @@ parallel-load test; vocabulary derivation checks active (rung 5).
 
 ## Phase 4 — HTTP surface, no client (landed)
 
-`browserReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
+`webReviewServer` + capability auth + SSE, loopback-only, tested with plain `fetch`.
 Four routes per live session, mounted inside the existing daemon rather than on a port per
 terminal: the current publication (position plus resource catalog), bounded digest-verified
 resource reads through the existing mirror and cache, an SSE stream, and action submission
@@ -97,10 +97,21 @@ this PR alone.
 
 ## Phase 5 — browser client (two PRs)
 
-1. **Read-only mirror**: `apiClient` / `mirror` / `pierreDocument` / review stream rendering a
-   snapshot with Pierre — built on the shared geometry/selector/ordering primitives from day
-   one (no `sideRange`, no local acceptance rules, no bare `split("\n")`). No actions, no note
-   editing.
+1. **Read-only mirror (landed)**: `src/web/` — `browserReviewApiClient` / `browserReviewMirror` /
+   `browserPierreDocument` / `BrowserReviewStream` rendering a publication with Pierre, built on the
+   shared geometry/selector/ordering primitives from day one (no `sideRange`, no local
+   acceptance rules, no bare `split("\n")`). No actions, no note editing.
+
+   Two findings the PR settled rather than inherited. First, the question the Phase 4 run
+   boundary left open: a publication is a position plus a resource catalog, and the
+   catalog's content resources carry no selection, filter, expansion, or notes — so a
+   read-only client mirrors a review's _content_ and nothing about its semantic position,
+   and every note-shaped browser finding waits on PR 2 putting review state on the wire.
+   Second, a gap in the Phase 4 surface only a client could find: catalog descriptors are
+   unmeasured until the producer materializes them, so a resource response now states the
+   whole resource's size and digest in headers declared beside the routes, and the daemon
+   keeps the digest its own assembly verified against.
+
 2. **Interactivity**: action dispatch through the broker, selection sync (G2 policy decided
    before this PR), note editing, watch/reload generation swaps, browser key bindings and the
    command palette rendered from the shared catalog.
@@ -108,10 +119,20 @@ this PR alone.
 Repays: A11, C3, C5, E1, G1; the browser sites of A/B/C/D findings left open in earlier
 phases; F browser bindings; G3/G4 browser adoption. E2 and the G2 selection policy must be
 decided (not necessarily built) before PR 2.
+PR 1 closed: A6, A7, A11, C1's browser site, C2's browser site, C3, C4's client half, C5,
+D4's browser site, E1, G4's browser adoption, and G1 part (a); A3/A4/A5/A8/A10 and B6's
+geometry half are answered by the browser projection beside the terminal. Left for PR 2:
+B3–B6's state halves, B7/B8, B10's client, D1's composers, D3, A9's parser relocation, E2,
+F1–F3's browser halves, G1's persistence half, G2's policy, and G3's deep-link navigation.
 Gate: browser projection joins the conformance harness — the same fixtures every other
 consumer runs, closing the renderer-parity loop (note placement, gap addressing, reveal
 targets, default note targets); web boundary gates and the browser-closure node-free gate
 active; command-parity check (both clients render command surfaces from the shared catalog).
+PR 1's half of that gate is met: `browser review projection` (geometry), `browser review
+mirror` (ordering), and `browser review client reader` (events) are registered and run the
+whole corpus, and `scripts/review-vocabulary.test.ts` now scans `src/web` for re-declared
+constants. Navigation and wire consumers stay unregistered rather than hollow — a read-only
+client plans no moves and sends no actions — and join with PR 2.
 
 ## Phase 6 — entry points and packaging
 
@@ -218,7 +239,7 @@ re-derive. Every phase therefore passes the same five-rung ladder, and each rung
    one golden fixture corpus under `test/review-conformance/`, with every consumer registering
    a suite against the _same_ fixtures as it lands — terminal render planning (Phase 1),
    producer projection (Phase 2), broker mirror and wire round-trip (Phase 3), HTTP surface
-   (Phase 4), browser projection (Phase 5). A phase's gate is that all previously registered
+   (Phase 4), browser projection, mirror, and event reader (Phase 5 PR 1). A phase's gate is that all previously registered
    suites still pass plus its own joins.
 3. **Adversarial fixtures from the audit**: every audit finding that documented a divergence
    contributes the fixture its old copy got wrong — pure-insertion hunks and zero-count sides

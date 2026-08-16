@@ -7,6 +7,7 @@ import type {
   NamedCustomThemeConfig,
 } from "../extension-api/types";
 import type { FileSourceFetcher } from "./fileSource";
+import type { LayoutMode } from "./review/viewOptions";
 import type { StartupNotice } from "./startupNotice";
 import type { VcsCatalog } from "./vcs/types";
 
@@ -25,7 +26,8 @@ export type {
   NamedCustomThemeConfig,
 } from "../extension-api/types";
 
-export type LayoutMode = "auto" | "split" | "stack";
+// Declared with the shared view-option classification so both tiers name one union.
+export type { LayoutMode };
 export type CursorLine = "row" | "number" | "off";
 export type VcsMode = string;
 export type TerminalThemeMode = "light" | "dark";

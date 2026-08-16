@@ -10,7 +10,7 @@ import {
   isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
-import { BrowserReviewServer } from "./browserReviewServer";
+import { WebReviewServer } from "./webReviewServer";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import type {
   AppliedCommentBatchResult,
@@ -466,7 +466,7 @@ export function serveSessionBrokerDaemon(
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
   const state = createHunkSessionBrokerState();
   // One loopback process serves every attached review, rather than a port per terminal.
-  const browserReview = new BrowserReviewServer(state);
+  const browserReview = new WebReviewServer(state);
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {

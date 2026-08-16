@@ -4,10 +4,12 @@ import {
   type SessionBrokerConnectionBridge,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
-import type {
-  SessionRegistration,
-  SessionServerMessage,
-  SessionSnapshot,
+import {
+  createReconnectScheduler,
+  type ReconnectScheduler,
+  type SessionRegistration,
+  type SessionServerMessage,
+  type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_SOCKET_PATH,
@@ -57,7 +59,7 @@ export class SessionBrokerClient<
     Result
   > | null = null;
   private bridge: SessionAppBridge<ServerMessage, Result> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly reconnect: ReconnectScheduler;
   private stopped = false;
   private startupPromise: Promise<void> | null = null;
   private lastConnectionWarning: string | null = null;
@@ -66,7 +68,15 @@ export class SessionBrokerClient<
     private registration: SessionRegistration<Info>,
     private snapshot: SessionSnapshot<State>,
     private timing: SessionBrokerClientTiming = {},
-  ) {}
+  ) {
+    // The daemon may not be up yet, which is a different failure from a dropped socket —
+    // but it is retried by the same shared timer, so this client no longer re-implements
+    // the scheduler of the connection it configures (C5).
+    this.reconnect = createReconnectScheduler({
+      delayMs: timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
+      onDue: () => void this.start(),
+    });
+  }
 
   start() {
     if (process.env.HUNK_MCP_DISABLE === "1") {
@@ -95,10 +105,7 @@ export class SessionBrokerClient<
 
   stop() {
     this.stopped = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    this.reconnect.stop();
 
     this.connection?.stop();
     this.connection = null;
@@ -226,16 +233,10 @@ export class SessionBrokerClient<
     this.connection.start();
   }
 
-  private scheduleReconnect(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
-    if (this.reconnectTimer || this.stopped) {
-      return;
+  private scheduleReconnect(delayMs?: number) {
+    if (!this.stopped) {
+      this.reconnect.schedule(delayMs);
     }
-
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.start();
-    }, delayMs);
-    this.reconnectTimer.unref?.();
   }
 
   /** Return whether the daemon explicitly rejected this session as incompatible after an upgrade. */

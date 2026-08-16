@@ -1,4 +1,4 @@
-import { reviewGapId } from "../../core/review/expansion";
+import { reviewExpandedGapLines, reviewGapId } from "../../core/review/expansion";
 import { normalizedReviewSourceLines } from "../../core/review/geometry";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
@@ -185,10 +185,16 @@ export function expandCollapsedRows(
       text: expandedRowText(lineCount),
     });
 
-    for (let offset = 0; offset < lineCount; offset += 1) {
-      const oldLineNumber = row.oldRange[0] + offset;
-      const newLineNumber = row.newRange[0] + offset;
-      const sourceLineNumber = (side === "old" ? oldLineNumber : newLineNumber) - 1;
+    // Which line each revealed row shows is the shared derivation's, not this renderer's:
+    // pairing the two sides against the expansion side by hand is what let three copies of
+    // this loop label expanded lines differently (A6).
+    const revealed = reviewExpandedGapLines(
+      { oldRange: row.oldRange, newRange: row.newRange, lineCount },
+      side,
+    );
+    for (const [offset, line] of revealed.entries()) {
+      const { oldLine: oldLineNumber, newLine: newLineNumber } = line;
+      const sourceLineNumber = line.sourceLine - 1;
       if (sourceLineNumber < 0 || sourceLineNumber >= sourceLines.length) {
         break;
       }

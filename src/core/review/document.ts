@@ -11,12 +11,7 @@
  * they belong to the producer runtime that serves a document, not to the document itself.
  */
 import type { DiffFile } from "../types";
-import {
-  reviewFileContentIdentity,
-  reviewFileKey,
-  reviewSourceIdentity,
-  type ReviewFileContentIdentityInput,
-} from "./identity";
+import { reviewFileContentIdentity, reviewFileKey, reviewSourceIdentity } from "./identity";
 import type {
   ReviewDocumentV1,
   ReviewFileChangeKind,
@@ -86,32 +81,34 @@ function hunkSignature(hunks: readonly ReviewHunkV1[]) {
     .join(";");
 }
 
-/** Collect the renderer-neutral facts one file's content identity is hashed from. */
-function contentIdentityInput(
-  file: DiffFile,
-  hunks: readonly ReviewHunkV1[],
-): ReviewFileContentIdentityInput {
-  return {
+/**
+ * Recompute one already-projected file's content identity from the file itself.
+ *
+ * A reader that received a serialized `ReviewFileV1` needs to know that what arrived still
+ * describes the content it claims to. It cannot ask the manifest — that stays with the
+ * producer — but it can rehash the file and compare, and rehashing reads exactly the fields
+ * the model says a file's content is. That is the point: a reader with a field list of its
+ * own drifts from the producer's, which is how the prototype's `parseCanonicalReviewFile`
+ * came to check twelve fields against the producer's seventeen
+ * (`docs/browser-review-seam-audit.md`, D4).
+ *
+ * Projection uses the same function, so producer and reader cannot compute it differently.
+ */
+export function reviewFileContentIdentityOf(
+  file: Omit<ReviewFileV1, "contentIdentity" | "key" | "runtimeId">,
+): string {
+  return reviewFileContentIdentity({
     path: file.path,
     ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
-    changeKind: file.metadata.type,
+    changeKind: file.changeKind,
     ...(file.language !== undefined ? { language: file.language } : {}),
     patch: file.patch,
-    stats: {
-      additions: file.stats.additions,
-      deletions: file.stats.deletions,
-      truncated: Boolean(file.statsTruncated),
-    },
-    flags: {
-      untracked: Boolean(file.isUntracked),
-      binary: Boolean(file.isBinary),
-      tooLarge: Boolean(file.isTooLarge),
-      partial: Boolean(file.metadata.isPartial),
-    },
-    hunkSignature: hunkSignature(hunks),
-    additionLines: file.metadata.additionLines,
-    deletionLines: file.metadata.deletionLines,
-  };
+    stats: file.stats,
+    flags: file.flags,
+    hunkSignature: hunkSignature(file.hunks),
+    additionLines: file.additionLines,
+    deletionLines: file.deletionLines,
+  });
 }
 
 export interface ProjectReviewDocumentOptions {
@@ -125,8 +122,44 @@ export interface ProjectReviewDocumentOptions {
 /** Project one diff file into the semantic file the review model addresses. */
 function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: number) {
   const hunks = file.metadata.hunks.map(projectReviewHunk);
-  const identityInput = contentIdentityInput(file, hunks);
-  const contentIdentity = reviewFileContentIdentity(identityInput);
+  // The content half of the file is assembled first and then hashed, so the identity is a
+  // function of the projected file rather than of a parallel description of it — which is
+  // what lets a reader recompute it from what arrived (D4).
+  const content = {
+    path: file.path,
+    ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
+    changeKind: file.metadata.type as ReviewFileChangeKind,
+    ...(file.language !== undefined ? { language: file.language } : {}),
+    ...(file.agent?.summary !== undefined ? { agentSummary: file.agent.summary } : {}),
+    stats: {
+      additions: file.stats.additions,
+      deletions: file.stats.deletions,
+      truncated: Boolean(file.statsTruncated),
+    },
+    flags: {
+      untracked: Boolean(file.isUntracked),
+      binary: Boolean(file.isBinary),
+      tooLarge: Boolean(file.isTooLarge),
+      partial: Boolean(file.metadata.isPartial),
+    },
+    patch: file.patch,
+    splitLineCount: file.metadata.splitLineCount,
+    unifiedLineCount: file.metadata.unifiedLineCount,
+    // Copied, not referenced: an extension that retains and later mutates the model it
+    // returned must not change a document the store already published.
+    additionLines: [...file.metadata.additionLines],
+    deletionLines: [...file.metadata.deletionLines],
+    ...(file.lineMoveKinds
+      ? {
+          lineMoveKinds: {
+            additionLines: file.lineMoveKinds.additionLines.map((kind) => kind ?? null),
+            deletionLines: file.lineMoveKinds.deletionLines.map((kind) => kind ?? null),
+          },
+        }
+      : {}),
+    hunks,
+  };
+  const contentIdentity = reviewFileContentIdentityOf(content);
   const sourceIdentity = file.sourceFetcher
     ? reviewSourceIdentity({
         path: file.path,
@@ -149,29 +182,7 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
       duplicateIndex,
     }),
     runtimeId: file.id,
-    path: file.path,
-    ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
-    changeKind: identityInput.changeKind as ReviewFileChangeKind,
-    ...(file.language !== undefined ? { language: file.language } : {}),
-    ...(file.agent?.summary !== undefined ? { agentSummary: file.agent.summary } : {}),
-    stats: identityInput.stats,
-    flags: identityInput.flags,
-    patch: file.patch,
-    splitLineCount: file.metadata.splitLineCount,
-    unifiedLineCount: file.metadata.unifiedLineCount,
-    // Copied, not referenced: an extension that retains and later mutates the model it
-    // returned must not change a document the store already published.
-    additionLines: [...file.metadata.additionLines],
-    deletionLines: [...file.metadata.deletionLines],
-    ...(file.lineMoveKinds
-      ? {
-          lineMoveKinds: {
-            additionLines: file.lineMoveKinds.additionLines.map((kind) => kind ?? null),
-            deletionLines: file.lineMoveKinds.deletionLines.map((kind) => kind ?? null),
-          },
-        }
-      : {}),
-    hunks,
+    ...content,
     contentIdentity,
     ...(sourceIdentity !== undefined ? { sourceIdentity, sourceAttested } : {}),
   } satisfies ReviewFileV1;

@@ -12,6 +12,8 @@ import {
   parseReviewEventFrameName,
   parseReviewEventId,
   planReviewEventFrames,
+  REVIEW_EVENT_HEARTBEAT_FRAME,
+  ReviewEventSseDecoder,
   ReviewEventAssembler,
   ReviewEventTooLargeError,
   reviewEventChunkCount,
@@ -297,5 +299,87 @@ describe("review event envelope parsing", () => {
     expect(parseReviewEventEnd(end)).toEqual(end);
     const { chunkCount: _dropped, ...withoutCount } = end;
     expect(parseReviewEventEnd(withoutCount)).toBeUndefined();
+  });
+});
+
+describe("review event record decoding", () => {
+  /** Feed one text stream through the decoder in fixed-size reads, as a transport does. */
+  function decodeInReads(text: string, readSize: number) {
+    const decoder = new ReviewEventSseDecoder();
+    const records = [];
+    for (let offset = 0; offset < text.length; offset += readSize) {
+      records.push(...decoder.push(text.slice(offset, offset + readSize)));
+    }
+    return records;
+  }
+
+  test("reads back exactly the fields one encoded frame carries", () => {
+    const written = { id: "revent:x", event: "publication", data: { a: 1, b: "two" } };
+    const [record] = new ReviewEventSseDecoder().push(encodeReviewEventFrame(written));
+
+    expect(record).toEqual({ id: "revent:x", event: "publication", data: '{"a":1,"b":"two"}' });
+    expect(JSON.parse(record!.data)).toEqual(written.data);
+  });
+
+  test("leaves off the id when the frame that was written had none", () => {
+    const [record] = new ReviewEventSseDecoder().push(
+      encodeReviewEventFrame({ event: "publication-chunk", data: { offset: 0 } }),
+    );
+
+    expect(record).toEqual({ event: "publication-chunk", data: '{"offset":0}' });
+    expect("id" in record!).toBe(false);
+  });
+
+  test("reads every frame of a chunked event out of one write", () => {
+    const frames = frame({ value: "z".repeat(200) }, 32);
+    const text = frames.map(encodeReviewEventFrame).join("");
+
+    const records = new ReviewEventSseDecoder().push(text);
+
+    expect(records.map((record) => record.event)).toEqual(frames.map((entry) => entry.event));
+    expect(records.map((record) => record.id)).toEqual(frames.map((entry) => entry.id));
+  });
+
+  // A transport hands over whatever bytes arrived, so every record boundary has to survive
+  // landing in the middle of a read — the split that a re-derived grammar gets wrong.
+  test("holds a record until the read that completes it", () => {
+    const frames = frame({ value: "w".repeat(200) }, 48);
+    const text = frames.map(encodeReviewEventFrame).join("");
+    const whole = new ReviewEventSseDecoder().push(text);
+
+    for (const readSize of [1, 3, 7, 64, text.length]) {
+      expect(decodeInReads(text, readSize)).toEqual(whole);
+    }
+  });
+
+  test("emits nothing for a record whose separator has not arrived", () => {
+    const decoder = new ReviewEventSseDecoder();
+    const text = encodeReviewEventFrame({ id: "revent:y", event: "publication", data: 1 });
+
+    expect(decoder.push(text.slice(0, -1))).toEqual([]);
+    expect(decoder.push(text.slice(-1))).toEqual([
+      { id: "revent:y", event: "publication", data: "1" },
+    ]);
+  });
+
+  test("drops the heartbeat, which carries no event or data of its own", () => {
+    const decoder = new ReviewEventSseDecoder();
+    const framed = encodeReviewEventFrame({ event: "disconnect", data: {} });
+
+    expect(decoder.push(`${REVIEW_EVENT_HEARTBEAT_FRAME}${framed}`)).toEqual([
+      { event: "disconnect", data: "{}" },
+    ]);
+  });
+
+  // The writer escapes every newline into the `data:` line, so a payload containing a
+  // record separator must still read back as exactly one record.
+  test("keeps a payload that contains a record separator in one record", () => {
+    const data = { note: "one\n\ntwo" };
+    const records = new ReviewEventSseDecoder().push(
+      encodeReviewEventFrame({ event: "publication", data }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(JSON.parse(records[0]!.data)).toEqual(data);
   });
 });

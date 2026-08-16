@@ -210,6 +210,44 @@ export function resolveReviewExpandedLine(
 }
 
 /**
+ * One line an expanded gap reveals.
+ *
+ * Both sides are named because a gap renders as paired rows, and `sourceLine` says which
+ * line of the file's full text fills them — the same 1-based numbering
+ * `normalizedReviewSourceLines` produces.
+ */
+export interface ReviewExpandedGapLine {
+  oldLine: number;
+  newLine: number;
+  /** 1-based line number in the side's full source text. */
+  sourceLine: number;
+}
+
+/**
+ * Which source line each row of an expanded gap shows.
+ *
+ * The forward direction of `resolveReviewExpandedLine`: that answers "which gap does this
+ * line belong to", this answers "which lines does this gap reveal". Three renderers had
+ * derived it themselves, each pairing the two sides' ranges with the expansion side's by
+ * hand (`docs/browser-review-seam-audit.md`, A6), which is one offset error away from
+ * labelling every expanded line wrongly on one side.
+ *
+ * Deliberately text-free: it reports line numbers, and slicing the source with them —
+ * including what an out-of-range line means — stays with the surface that holds the text.
+ */
+export function reviewExpandedGapLines(
+  address: Pick<ReviewGapAddress, "oldRange" | "newRange" | "lineCount">,
+  side: ReviewSide,
+): ReviewExpandedGapLine[] {
+  const [sourceStart] = side === "old" ? address.oldRange : address.newRange;
+  return Array.from({ length: Math.max(0, address.lineCount) }, (_unused, offset) => ({
+    oldLine: address.oldRange[0] + offset,
+    newLine: address.newRange[0] + offset,
+    sourceLine: sourceStart + offset,
+  }));
+}
+
+/**
  * Which side's full source text fills this file's expanded gaps.
  *
  * A deleted file has no new side to read, so its gaps come from the old one. Both ranges

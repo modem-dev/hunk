@@ -8,6 +8,7 @@
  */
 import { projectReviewDocument, reviewEmptyDiffReason } from "../../../src/core/review/document";
 import {
+  reviewExpandedGapLines,
   reviewExpansionSide,
   reviewGapAddress,
   reviewGapId,
@@ -68,13 +69,11 @@ function expandedRowsOf(
   if (!address) {
     return undefined;
   }
-  const side = reviewExpansionSide(file.changeKind);
   const sourceLines = normalizedReviewSourceLines(expansion.sourceText);
-  const range = side === "old" ? address.oldRange : address.newRange;
-  return Array.from({ length: address.lineCount }, (_unused, offset) => ({
-    oldLine: address.oldRange[0] + offset,
-    newLine: address.newRange[0] + offset,
-    text: sourceLines[range[0] + offset - 1] ?? "",
+  return reviewExpandedGapLines(address, reviewExpansionSide(file.changeKind)).map((line) => ({
+    oldLine: line.oldLine,
+    newLine: line.newLine,
+    text: sourceLines[line.sourceLine - 1] ?? "",
   }));
 }
 
