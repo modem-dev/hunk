@@ -226,6 +226,17 @@ function splitOnHeadings(markdown: string, marker: string) {
 }
 
 /**
+ * Report whether a line is a Markdown link-reference definition such as `[0.9.1]: https://…`.
+ *
+ * `CHANGELOG.md` closes with a block of these linking every legacy version heading to its compare
+ * view. They are document metadata belonging to no release, and folding them into prose would
+ * publish the whole table as the text of the oldest release's last entry.
+ */
+function isLinkReferenceDefinition(line: string) {
+  return /^\[[^\]]+\]:\s+\S+/.test(line.trim());
+}
+
+/**
  * Collect the `- ` bullets in one section body.
  *
  * Wrapped continuation lines fold into the bullet above them, but an indented sub-bullet keeps its
@@ -247,6 +258,11 @@ function parseEntries(body: string): ChangeEntry[] {
 
     if (fence === undefined && line.startsWith("- ")) {
       entries.push(line.slice(2));
+      continue;
+    }
+    // Reference definitions are document metadata, not prose, but only outside a fence where an
+    // example of one would be content.
+    if (fence === undefined && isLinkReferenceDefinition(line)) {
       continue;
     }
     if (entries.length === 0) {
@@ -297,7 +313,12 @@ export function parseChangelog(markdown: string): ReleaseEntry[] {
       const sectionBody = sectionNewline === -1 ? "" : sectionBlock.slice(sectionNewline + 1);
 
       if (title === "Highlights") {
-        highlights = sectionBody.trim();
+        // Taken raw rather than parsed into entries, so the reference block is filtered here too.
+        highlights = sectionBody
+          .split("\n")
+          .filter((line) => !isLinkReferenceDefinition(line))
+          .join("\n")
+          .trim();
         continue;
       }
 

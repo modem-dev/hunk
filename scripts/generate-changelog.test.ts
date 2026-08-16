@@ -690,3 +690,60 @@ describe("prereleases stay on GitHub", () => {
     expect(Object.keys(betaOnly).some((path) => path.endsWith("0.20.md"))).toBe(false);
   });
 });
+
+describe("link reference definitions", () => {
+  // CHANGELOG.md closes with a block of `[0.9.1]: https://…` definitions linking every legacy
+  // heading to its compare view. They belong to no release and previously folded into the prose of
+  // the oldest release's last entry, publishing the whole table as release text.
+  const withReferences = [
+    "## 0.1.0",
+    "",
+    "### Fixed",
+    "",
+    "- Stabilized diff repainting.",
+    "",
+    "[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.3...HEAD",
+    "[0.1.0]: https://github.com/modem-dev/hunk/tree/v0.1.0",
+    "",
+  ].join("\n");
+
+  test("keeps the reference block out of the last entry", () => {
+    const entries = parseChangelog(withReferences)[0]?.sections[0]?.entries ?? [];
+    expect(entries).toEqual([{ description: "Stabilized diff repainting." }]);
+  });
+
+  test("keeps it out of a Highlights block too", () => {
+    const releases = parseChangelog(
+      [
+        "## 0.1.0",
+        "",
+        "### Highlights",
+        "",
+        "A lead.",
+        "",
+        "[0.1.0]: https://x/tree/v0.1.0",
+        "",
+      ].join("\n"),
+    );
+    expect(releases[0]?.highlights).toBe("A lead.");
+  });
+
+  test("still treats one inside a fence as content", () => {
+    const entries =
+      parseChangelog(
+        [
+          "## 0.1.0",
+          "",
+          "### Fixed",
+          "",
+          "- Document the reference syntax:",
+          "",
+          "```md",
+          "[label]: https://example.com",
+          "```",
+          "",
+        ].join("\n"),
+      )[0]?.sections[0]?.entries ?? [];
+    expect(entries[0]?.description).toContain("[label]: https://example.com");
+  });
+});
