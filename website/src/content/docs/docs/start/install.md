@@ -32,12 +32,14 @@ brew install hunk
 
 ## mise
 
-[mise](https://mise.jdx.dev) knows Hunk by the short name `hunk` (alias `hunkdiff`) and installs the prebuilt binary on macOS and Linux:
+[mise](https://mise.jdx.dev) knows Hunk by the short name `hunk` (alias `hunkdiff`) and installs the prebuilt binary on macOS, Linux, and Windows:
 
 ```bash
 mise use -g hunk
 hunk --version
 ```
+
+On Windows, use mise 2026.8.6 or newer; earlier releases fail with `unsupported env: windows/amd64`.
 
 Hunk also ships as a default tool in [Omarchy](https://omarchy.org), which installs it through mise.
 
