@@ -315,10 +315,25 @@ starlight-menu-button button {
    followed by a plain-paragraph meta line, then h4 sections of change bullets. The rules below
    turn that structure into a scannable release list without any per-page markup. */
 [data-changelog] .sl-markdown-content h3 {
-  margin-top: 2.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--hunk-rule);
   font-size: var(--sl-text-2xl);
+}
+
+/*
+ * Rule between releases. Starlight renders headings inline inside a wrapper element, so a border
+ * on the heading spans only its text; the generated anchor above each release is a full-width
+ * block and carries it instead. It also gives `#v0-18-2` somewhere to land above the heading.
+ */
+[data-changelog] .sl-markdown-content .release-separator {
+  display: block;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--hunk-rule);
+}
+
+/* The dateline opening a release page: date span and release count. */
+[data-changelog] .sl-markdown-content > p:first-child {
+  margin-bottom: 0.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
 }
 
 /* The line directly under a version heading is its date and channel. */

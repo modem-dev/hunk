@@ -396,17 +396,16 @@ export function resolveDates(
   recorded: Record<string, string>,
   lookup: (version: string) => string | undefined = tagDate,
 ): Record<string, string> {
-  const resolved: Record<string, string> = { ...recorded };
+  const resolved: Record<string, string> = {};
   for (const release of releases) {
-    if (resolved[release.version]) {
-      continue;
-    }
-    const date = release.headingDate ?? lookup(release.version);
+    // Carry a recorded date forward untouched; only a version without one consults the lookup.
+    const date = recorded[release.version] ?? release.headingDate ?? lookup(release.version);
     if (date) {
       resolved[release.version] = date;
     }
   }
-  // Keep the committed file diff-stable regardless of discovery order.
+  // Built from the release list rather than merged onto it, so a version that leaves CHANGELOG.md
+  // — or a prerelease, which the site does not publish — does not linger in the committed map.
   return Object.fromEntries(
     Object.entries(resolved).sort(([a], [b]) => compareVersionsDescending(a, b)),
   );
@@ -614,6 +613,10 @@ export function renderSeriesPage({
   older?: string;
   latestReleasedVersion?: string;
 }) {
+  // The page body carries a summary only when one was actually written. The factual fallback still
+  // fills the frontmatter description, which search results need, but as a paragraph it would just
+  // restate the dateline directly above it.
+  const editorialSummary = seriesSummary(series, notes);
   const summary = resolveSummary(series, notes, dates);
   const newestHighlights = series.releases.find((release) => release.highlights)?.highlights;
   const highlightBullets = newestHighlights ? splitHighlights(newestHighlights).body : undefined;
@@ -622,18 +625,27 @@ export function renderSeriesPage({
   const installable = publishedReleases(series, dates)[0]?.version;
   const isCurrent = latestReleasedVersion !== undefined && installable === latestReleasedVersion;
 
+  const releaseCount = series.releases.filter((release) => !release.prerelease).length;
+  const dateline = [
+    seriesSpan(series, dates) ?? "Unreleased",
+    `${releaseCount} release${releaseCount === 1 ? "" : "s"}`,
+  ].join(" · ");
+
   const lines: string[] = [
     "---",
     `title: Hunk ${series.minor}`,
     `description: ${yamlString(truncate(toPlainText(summary), 155))}`,
     // Astro slugifies the filename and would drop the dot, publishing `0.18` as `/changelog/018/`.
     `slug: changelog/${series.minor}`,
+    // The page is generated; an edit link would invite hand-edits that regeneration overwrites.
+    "editUrl: false",
     "---",
     "",
     GENERATED_NOTICE,
     "",
-    summary,
+    dateline,
     "",
+    ...(editorialSummary ? [editorialSummary, ""] : []),
   ];
 
   if (notes?.video) {
@@ -644,6 +656,9 @@ export function renderSeriesPage({
     lines.push(
       "```sh",
       `npm i -g hunkdiff@${installable}`,
+      // Homebrew always tracks the newest formula, so it can only be offered for the current
+      // release; on a superseded series it would quietly install something else.
+      ...(isCurrent ? ["brew update && brew upgrade hunk"] : []),
       "```",
       "",
       isCurrent
@@ -670,17 +685,14 @@ export function renderSeriesPage({
 
   for (const release of series.releases) {
     const date = dates[release.version];
-    const meta = [
-      date ? formatDate(date) : "Unreleased",
-      release.prerelease ? "prerelease" : undefined,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    const meta = date ? formatDate(date) : "Unreleased";
 
     // Astro derives `#0182` from the heading text. Emit a stable, readable anchor beside it so a
     // single patch release can be linked from an issue, a release body, or the update notice.
+    // It doubles as the rule between releases: Starlight renders headings inline inside a wrapper,
+    // so a border on the heading itself would only span its text.
     lines.push(
-      `<a id="${versionAnchor(release.version)}"></a>`,
+      `<a class="release-separator" id="${versionAnchor(release.version)}"></a>`,
       "",
       `### ${release.version}`,
       "",
@@ -724,6 +736,7 @@ export function renderIndexPage({
   const lines: string[] = [
     "---",
     "title: Changelog",
+    "editUrl: false",
     "description: " +
       yamlString(
         "Every Hunk release, newest first — features, fixes, and performance work in the terminal diff viewer.",
@@ -733,9 +746,8 @@ export function renderIndexPage({
     "",
     GENERATED_NOTICE,
     "",
-    "Every Hunk release, newest first. Each page collects a whole minor series, so one page covers",
-    `a release and every patch that followed it. Subscribe with [RSS](${SITE_ORIGIN}/changelog/rss.xml),`,
-    `or read the raw source in [CHANGELOG.md](${REPO_URL}/blob/main/CHANGELOG.md).`,
+    // The page structure explains itself; only the two off-page destinations need stating.
+    `[RSS](${SITE_ORIGIN}/changelog/rss.xml) · [CHANGELOG.md](${REPO_URL}/blob/main/CHANGELOG.md)`,
     "",
   ];
 
@@ -863,7 +875,9 @@ export function generateChangelogArtifacts({
   recordedDates?: Record<string, string>;
   lookupDate?: (version: string) => string | undefined;
 } = {}) {
-  const releases = parseChangelog(markdown);
+  // Prereleases stay on GitHub. Dropping them here rather than in each renderer means a series
+  // that has only reached beta produces no page, no index row, and no feed item at all.
+  const releases = parseChangelog(markdown).filter((release) => !release.prerelease);
   const dates = resolveDates(releases, recordedDates, lookupDate);
   const seriesList = groupIntoSeries(releases);
   const latestReleasedVersion = releases.find((release) => isPublished(release, dates))?.version;

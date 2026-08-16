@@ -151,6 +151,8 @@ git diff --stat -- website
 
 This backfills the new tag's date, adds the install command to the series page, and moves the landing-page ribbon to the new version. Commit it to `main` — the diff should only touch `website/releases/` and `website/src/content/docs/changelog/`. Skip this for a prerelease or a backport: neither advances the published latest release.
 
+Prereleases are never published to `hunk.dev/changelog`; they stay on GitHub. The generator drops them, so a beta produces no page, no index row, and no feed item, and a series that has only reached beta has no page at all until its stable release ships.
+
 ## 5. Add the release video and final notes
 
 Only after publication verifies, create a detached worktree at the released tag and follow `skills/hunk-launch-video/SKILL.md`'s full-release recipe:

@@ -26,6 +26,10 @@ all releases are single-bullet patches, and a URL per version would produce most
 rank for nothing. Grouping yields around twenty substantial pages and matches how the question is
 asked — what is in 0.18, not what is in 0.18.2.
 
+Prereleases are not published here at all — betas stay on GitHub. The generator drops them before
+anything renders, so a beta contributes no page, index row, or feed item, and a series that has only
+reached beta has no page until its stable release ships.
+
 ```text
 /changelog/                 index over every series
 /changelog/0.18/            series page
@@ -69,6 +73,9 @@ Two rules handle this without a draft state or an extra publication step:
   that matters — contributes no install command. The notes are accurate the moment they merge; only
   the instruction to install a nonexistent version is withheld.
 
+`website/releases/dates.json` is rebuilt from the release list rather than merged onto it, so a
+version that leaves `CHANGELOG.md` — or a prerelease — does not linger in the committed map.
+
 Step 4 of `skills/hunk-release/SKILL.md` regenerates after the tag exists, which backfills the date,
 adds the install command, and advances the landing-page ribbon.
 
@@ -81,7 +88,11 @@ Presentation lives in the site:
   route, because Starlight renders the changelog and the docs through the same shell.
 - `DocsMarkdownContent.astro` marks changelog articles with `data-changelog`, which is what lets
   `starlight.css` style the generated structure — an h3 per version, a meta line, h4 change sections
-  — as a release list without per-page markup.
+  — as a release list without per-page markup. Starlight renders headings inline inside a wrapper,
+  so the rule between releases sits on the generated `.release-separator` anchor rather than on the
+  heading, where a border would span only its text.
+- Generated pages set `editUrl: false`; an edit link would invite hand-edits that regeneration
+  silently overwrites.
 - The landing page imports `website/releases/latest.json` for its release ribbon, so the current
   version is a static import rather than a build-time parse of generated Markdown.
 

@@ -279,6 +279,18 @@ describe("series page", () => {
     expect(page).not.toContain("npm i -g");
   });
 
+  test("offers Homebrew only on the current release, which is all it can install", () => {
+    const current =
+      series &&
+      renderSeriesPage({ series, notes: undefined, dates, latestReleasedVersion: "0.19.0" });
+    const superseded =
+      series &&
+      renderSeriesPage({ series, notes: undefined, dates, latestReleasedVersion: "0.20.0" });
+    expect(current).toContain("brew update && brew upgrade hunk");
+    expect(superseded).not.toContain("brew");
+    expect(superseded).toContain("npm i -g hunkdiff@0.19.0");
+  });
+
   test("marks the series current only when it holds the latest release", () => {
     const current =
       series &&
@@ -290,10 +302,23 @@ describe("series page", () => {
     expect(superseded).toContain("no longer the current release");
   });
 
-  test("emits a stable anchor and a labelled prerelease", () => {
+  test("emits a stable anchor for each release", () => {
     const page = series && renderSeriesPage({ series, notes: undefined, dates });
-    expect(page).toContain('<a id="v0-19-0-beta-0"></a>');
-    expect(page).toContain("prerelease");
+    expect(page).toContain('<a class="release-separator" id="v0-19-0"></a>');
+  });
+
+  test("omits a body summary when none was written, keeping it in the description", () => {
+    const bare = groupIntoSeries(parseChangelog("## 0.9.0\n\n### Fixed\n\n- A fix.\n"))[0];
+    const page = bare && renderSeriesPage({ series: bare, notes: undefined, dates: {} });
+    expect(page).toContain('description: "Release notes for Hunk 0.9');
+    const body = page?.split("-->")[1]?.split("## ")[0] ?? "";
+    expect(body).not.toContain("Release notes for Hunk 0.9");
+  });
+
+  test("opens with a dateline and suppresses the edit link on generated pages", () => {
+    const page = series && renderSeriesPage({ series, notes: undefined, dates });
+    expect(page).toContain("editUrl: false");
+    expect(page).toContain("August 16, 2026 · 1 release");
   });
 
   test("does not repeat the lead paragraph inside Highlights", () => {
@@ -333,6 +358,14 @@ describe("index page", () => {
   test("omits a summary paragraph for a series with no editorial summary", () => {
     const page = renderIndexPage({ seriesList, notes: {}, dates });
     expect(page).not.toContain("Release notes for Hunk 0.15:");
+  });
+
+  test("keeps the intro to the two off-page links", () => {
+    const page = renderIndexPage({ seriesList, notes: {}, dates });
+    const intro = page.split("---")[2]?.split("## ")[0] ?? "";
+    expect(intro).toContain("[RSS](https://hunk.dev/changelog/rss.xml)");
+    expect(intro).toContain("CHANGELOG.md");
+    expect(intro).not.toContain("newest first");
   });
 
   test("links every series", () => {
@@ -615,5 +648,45 @@ describe("orphan cleanup safety", () => {
         artifacts: { ...artifacts, [firstPath as string]: "stale" },
       }),
     ).toEqual([firstPath as string]);
+  });
+});
+
+describe("prereleases stay on GitHub", () => {
+  // Betas are published as GitHub releases only. Filtering them at the artifact boundary keeps
+  // them out of every surface at once rather than relying on each renderer to skip them.
+  const artifacts = generateChangelogArtifacts({
+    markdown: SAMPLE,
+    notes: {},
+    recordedDates: { "0.19.0": "2026-08-16", "0.19.0-beta.0": "2026-08-10" },
+    lookupDate: NO_LOOKUP,
+  });
+  const page = Object.entries(artifacts).find(([path]) => path.endsWith("0.19.md"))?.[1] ?? "";
+
+  test("renders no prerelease section on the series page", () => {
+    expect(page).toContain("### 0.19.0");
+    expect(page).not.toContain("0.19.0-beta.0");
+    expect(page).not.toContain("prerelease");
+  });
+
+  test("counts only real releases in the dateline", () => {
+    expect(page).toContain("1 release");
+  });
+
+  test("prunes prerelease dates from the committed map", () => {
+    const recorded = Object.entries(artifacts).find(([path]) =>
+      path.endsWith("dates.json"),
+    )?.[1] as string;
+    // 0.15.3 keeps its legacy heading date; only the prerelease is dropped.
+    expect(JSON.parse(recorded)).toEqual({ "0.19.0": "2026-08-16", "0.15.3": "2026-06-13" });
+  });
+
+  test("publishes no page at all for a series that has only reached beta", () => {
+    const betaOnly = generateChangelogArtifacts({
+      markdown: "# Changelog\n\n## 0.20.0-beta.0\n\n### Patch Changes\n\n- 1234567: Early.\n",
+      notes: {},
+      recordedDates: { "0.20.0-beta.0": "2026-09-01" },
+      lookupDate: NO_LOOKUP,
+    });
+    expect(Object.keys(betaOnly).some((path) => path.endsWith("0.20.md"))).toBe(false);
   });
 });
