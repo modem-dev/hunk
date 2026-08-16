@@ -34,6 +34,12 @@ export interface InteractiveAppInput {
   controllingTerminal: ControllingTerminal | null;
 }
 
+// Leave fatal process faults to their default OS disposition.
+const APP_SHUTDOWN_SIGNALS: NodeJS.Signals[] =
+  process.platform === "win32"
+    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
+    : ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT", "SIGPIPE"];
+
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
 export async function runInteractiveApp({
   bootstrap,
@@ -59,7 +65,6 @@ export async function runInteractiveApp({
   hostClient.start();
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
-  // Resolve OpenTUI stdin explicitly (since OpenTUI fallbacks to process.stdin internally)
   const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
   const renderer = await createCliRenderer({
     stdin: rendererStdin,
@@ -69,13 +74,14 @@ export async function runInteractiveApp({
     }),
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
+    // OpenTUI's destroy-only handlers can strand sessions with active broker handles.
+    exitSignals: [],
     openConsoleOnError: true,
     onDestroy: () => controllingTerminal?.close(),
   });
 
   const appRenderer = renderer;
   const root = createRoot(appRenderer);
-  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
@@ -88,7 +94,7 @@ export async function runInteractiveApp({
     }
 
     shuttingDown = true;
-    for (const signal of shutdownSignals) {
+    for (const signal of APP_SHUTDOWN_SIGNALS) {
       process.off(signal, shutdown);
     }
     jobControlInterruptSupport.dispose();
@@ -98,7 +104,7 @@ export async function runInteractiveApp({
     shutdownSession({ root, renderer: appRenderer });
   }
 
-  for (const signal of shutdownSignals) {
+  for (const signal of APP_SHUTDOWN_SIGNALS) {
     process.once(signal, shutdown);
   }
   // Istalled after the renderer so a disconnect closes a session cleanly, instead of racing renderer.
