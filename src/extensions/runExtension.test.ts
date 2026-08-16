@@ -85,6 +85,27 @@ describe("runExtensionFactory", () => {
     expect(issues.map((issue) => issue.message)).toEqual(["late failure"]);
   });
 
+  test("isolates a factory result whose then getter throws", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    const pending = runExtensionFactory({
+      metadata: bundledMetadata("hostile-thenable"),
+      registry,
+      issues,
+      factory: () =>
+        Object.defineProperty({}, ["th", "en"].join(""), {
+          get() {
+            throw new Error("then exploded");
+          },
+        }) as Promise<void>,
+    });
+
+    expect(pending).toBeUndefined();
+    expect(registry.extensions).toEqual([]);
+    expect(issues.map((issue) => issue.message)).toEqual(["then exploded"]);
+  });
+
   test("seals the API so a deferred callback cannot register later", async () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];

@@ -50,6 +50,7 @@ describe("extension command control authority", () => {
       return (
         <App
           bootstrap={bootstrap}
+          onRegisterWorkspaceRefreshRequest={() => () => {}}
           onReloadSession={async () => ({
             sessionId: "test",
             inputKind: bootstrap.input.kind,
@@ -58,6 +59,11 @@ describe("extension command control authority", () => {
             fileCount: bootstrap.changeset.files.length,
             selectedHunkIndex: 0,
           })}
+          onWorkspaceWriteCompleted={() => {}}
+          runWorkspaceWrite={async (write) => {
+            await write();
+            return true;
+          }}
         />
       );
     }

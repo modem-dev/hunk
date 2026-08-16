@@ -250,6 +250,28 @@ describe("extension event bus", () => {
     await retirement;
   });
 
+  test("shares one retirement completion while shutdown is still pending", async () => {
+    const { result } = createTestLoadResult();
+    let releaseShutdown!: () => void;
+    result.registry.eventHandlers.shutdown.push({
+      extensionId: "probe",
+      handler: () => new Promise<void>((resolve) => (releaseShutdown = resolve)),
+    });
+    bindExtensionEventBus(result);
+
+    const first = retireExtensionLoadResult(result);
+    const second = retireExtensionLoadResult({ ...result });
+    expect(second).toBe(first);
+
+    let settled = false;
+    void second.then(() => (settled = true));
+    await Bun.sleep(0);
+    expect(settled).toBe(false);
+
+    releaseShutdown();
+    await Promise.all([first, second]);
+  });
+
   test("drops ordinary lifecycle events after revocation and runs shutdown once", async () => {
     const seen: string[] = [];
     const { result } = createTestLoadResult([

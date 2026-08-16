@@ -202,6 +202,8 @@ export interface ExtensionRegistry {
   eventBusPhase: "loading" | "ready" | "closed";
   /** Bound after loading so hunk.events.emit can dispatch at runtime. */
   emitCustomEvent?: (event: string, payload: unknown) => void;
+  /** Shared completion for the one terminal retirement of this registry. */
+  retirementPromise?: Promise<void>;
   logs: ExtensionLogEntry[];
 }
 

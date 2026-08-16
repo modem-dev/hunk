@@ -293,9 +293,9 @@ export function createExtensionApi(
 ): ExtensionApiHandle {
   let sealed = false;
 
-  /** Guard one registration call against use after the load pass finished. */
+  /** Guard one registration call against use after the load pass finished or retired. */
   const assertOpen = (method: string) => {
-    if (sealed) {
+    if (sealed || registry.eventBusPhase === "closed") {
       throw new Error(
         `${metadata.id}: hunk.${method}() can only be called while the extension is loading.`,
       );
@@ -629,19 +629,38 @@ export function runExtensionFactory({
     return;
   }
 
-  if (!isThenable(pending)) {
+  let thenable: boolean;
+  try {
+    thenable = isThenable(pending);
+  } catch (error) {
     seal();
-    registry.extensions.push(metadata);
+    fail(error);
     return;
   }
 
-  return pending.then(
+  if (!thenable) {
+    seal();
+    if (registry.eventBusPhase !== "closed") registry.extensions.push(metadata);
+    return;
+  }
+
+  // Promise assimilation turns a throwing or otherwise hostile `then` access
+  // into the ordinary rejection path instead of leaking out of the load pass.
+  return Promise.resolve(pending).then(
     () => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       registry.extensions.push(metadata);
     },
     (error: unknown) => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       fail(error);
     },
   );

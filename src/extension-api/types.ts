@@ -1553,9 +1553,13 @@ export interface ExtensionWorkspace {
    * On success Hunk reloads the session the same way the refresh key does, so
    * the review an extension sees afterwards reflects what it wrote. That holds
    * for every write that can happen: a session whose review could not be
-   * rebuilt refuses writes rather than accepting one it would then hide. The
-   * returned promise settles on the write itself, not on the reload — a handler
-   * that resumes immediately is looking at the changeset it was called with.
+   * rebuilt refuses writes rather than accepting one it would then hide.
+   * Authority is checked immediately before the filesystem call; once that
+   * irreversible write starts, the promise reports its actual outcome even if
+   * another reload wins meanwhile, and success reconciles the review then active.
+   * Graceful shutdown waits for a started write to settle. The promise settles
+   * on the write itself, not on its follow-up reload — a handler that
+   * resumes immediately is looking at the changeset it was called with.
    *
    * A filesystem that refuses the write resolves `"failed"` with a
    * human-readable `detail`. The promise **rejects** only for a malformed
@@ -1621,8 +1625,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * user's consent.
    *
    * Host-mediated on purpose: the file is named by review id, a write asks the
-   * user first, and the review reloads after a successful write. Retained
-   * controls expire with this review generation (`null`/`"unavailable"`).
+   * user first, and the review reloads after a successful write. Retained reads
+   * and writes that have not started expire with this review generation
+   * (`null`/`"unavailable"`); an irreversible write already in progress reports
+   * its real filesystem outcome.
    */
   readonly workspace: ExtensionWorkspace;
 }

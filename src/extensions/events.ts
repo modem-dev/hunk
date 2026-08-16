@@ -472,6 +472,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   }
 
   const { registry } = result;
+  if (registry.eventBusPhase === "closed") return false;
   registry.emitCustomEvent = (event, payload) => {
     emitExtensionCustomEvent(result, event, payload);
   };
@@ -482,6 +483,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   for (const { event, payload } of registry.pendingCustomEvents.splice(0)) {
     emitExtensionCustomEvent(result, event, payload);
   }
+  return true;
 }
 
 /**
@@ -550,13 +552,13 @@ export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefine
   return true;
 }
 
-/** Shut down one retired extension runtime after synchronously revoking its authority. */
-export async function retireExtensionLoadResult(
-  result: ExtensionLoadResult | undefined,
-): Promise<void> {
-  if (!revokeExtensionLoadResult(result)) {
-    return;
-  }
+/** Shut down one retired extension runtime through the registry's shared completion. */
+export function retireExtensionLoadResult(result: ExtensionLoadResult | undefined): Promise<void> {
+  if (!result) return Promise.resolve();
+  const { registry } = result;
+  if (registry.retirementPromise) return registry.retirementPromise;
+  if (!revokeExtensionLoadResult(result)) return Promise.resolve();
 
-  await emitExtensionEventBounded(result, "shutdown", {});
+  registry.retirementPromise = emitExtensionEventBounded(result, "shutdown", {});
+  return registry.retirementPromise;
 }

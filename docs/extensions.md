@@ -1556,9 +1556,12 @@ has moved or become unsafe.
 
 `writeDocument` verifies the target, asks for consent through the attributed
 `ctx.dialogs` queue, then verifies it again before writing. The second check
-prevents deletion and symlink-swap races while the dialog is open. A successful
-write starts a session reload; the write promise may settle before that reload
-finishes.
+prevents deletion and symlink-swap races while the dialog is open. Authority is
+checked immediately before the filesystem call; once that irreversible write
+starts, its actual success or failure wins even if another reload happens, and
+graceful shutdown waits for it to settle. A successful write queues
+reconciliation of the review then active, and the write promise may settle
+before that reload finishes.
 
 A declined prompt returns `cancelled`, an ineligible or unsafe target returns
 `unavailable`, and an attempted write failure returns `failed` with a
@@ -1609,8 +1612,10 @@ showing — no keypress required. Dialog calls made before the mounted app is
 ready resolve to their cancel value with a warning rather than opening later.
 Controls retained across a review or extension-registry replacement expire:
 navigation and pane mutations warn and do nothing, dialogs resolve to their
-normal cancel value, and workspace reads/writes return `null`/`unavailable`
-instead of acting on replacement content.
+normal cancel value, and workspace reads or not-yet-started writes return
+`null`/`unavailable` instead of acting on replacement content. Once a consented
+filesystem write starts, it reports its actual outcome and success reconciles
+the review then active.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |

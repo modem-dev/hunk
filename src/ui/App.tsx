@@ -101,10 +101,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import {
-  createExtensionCapabilityLease,
-  runWithExtensionCapabilityLease,
-} from "./lib/extensionCapabilityLease";
+import { createExtensionCapabilityLease } from "./lib/extensionCapabilityLease";
 import { createExtensionCommandControls } from "./lib/extensionCommandControls";
 import {
   applyExtensionCurrentLinePaintUpdate,
@@ -214,27 +211,55 @@ function withCurrentViewOptions(
   };
 }
 
+/** Current mounted review descriptor AppHost dereferences when reconciling a completed write. */
+export interface WorkspaceRefreshRequest {
+  nextInput: CliInput;
+  sourcePath?: string;
+}
+
+/** Filesystem write implementation used by the host-mediated extension workspace. */
+export type WorkspaceFileWriter = (absolutePath: string, text: string) => Promise<void>;
+
+/** Host-owned boundary that tracks irreversible writes through graceful shutdown. */
+export type WorkspaceWriteRunner = (write: () => Promise<void>) => Promise<boolean>;
+
+/** Write UTF-8 text through the production filesystem implementation. */
+const writeWorkspaceFile: WorkspaceFileWriter = async (absolutePath, text) => {
+  await writeFile(absolutePath, text, "utf8");
+};
+
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
+  onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onWorkspaceWriteCompleted,
   reviewProducer,
+  runWorkspaceWrite,
   watchRuntime,
+  workspaceFileWriter = writeWorkspaceFile,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
+  /** Register the mounted review descriptor AppHost should reconcile after a completed write. */
+  onRegisterWorkspaceRefreshRequest: (request: WorkspaceRefreshRequest) => () => void;
   onReloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Reconcile the currently mounted review after a consented filesystem write succeeds. */
+  onWorkspaceWriteCompleted: () => void;
   /** The producer publishing this review's generations, when the host mounted one. */
   reviewProducer?: ReviewProducer;
+  /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
+  runWorkspaceWrite: WorkspaceWriteRunner;
   watchRuntime?: WatchedInputRuntime;
+  workspaceFileWriter?: WorkspaceFileWriter;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -261,11 +286,11 @@ export function App({
   });
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
-  // Attached before any command can arrive: the session bridge is installed by a later
-  // effect, so nothing can be dispatched into the producer until this has run.
-  useEffect(() => {
+  // AppHost detaches the previous store while committing a reload; this child layout
+  // effect installs the matching store before parent lifecycle handlers can use it.
+  useLayoutEffect(() => {
     reviewProducer?.attachStore(review.store);
-  }, [review.store, reviewProducer]);
+  }, [bootstrap.changeset, review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -752,13 +777,6 @@ export function App({
    */
   const revealSidebarAreaRef = useRef<() => void>(() => {});
 
-  /**
-   * Reload the review after a host-mediated write, assigned each render because
-   * the refresh callback is built further down the component than the extension
-   * controls that trigger it.
-   */
-  const reloadAfterWorkspaceWriteRef = useRef<() => void>(() => {});
-
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
@@ -815,11 +833,8 @@ export function App({
           // Every failure the fetcher can raise — a missing side, a read error,
           // the host's source-size cap — is the same "no document" answer. Recheck
           // after the fetch so a retired generation cannot publish stale text.
-          return runWithExtensionCapabilityLease(
-            lease,
-            () => (read ? read().catch(() => null) : Promise.resolve(null)),
-            () => null,
-          );
+          const document = read ? await read().catch(() => null) : null;
+          return lease.isLive() ? document : null;
         },
         canWriteDocument(fileId: string) {
           // The probe answers for anything, including an id that is not even a
@@ -880,36 +895,39 @@ export function App({
             return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
 
-          const writeFailure = await runWithExtensionCapabilityLease(
-            lease,
-            async (): Promise<ExtensionWorkspaceWriteResult | null> => {
-              try {
-                await writeFile(target.absolutePath, text, "utf8");
-                return null;
-              } catch (error) {
-                return {
-                  ok: false,
-                  reason: "failed",
-                  detail: `Failed to write ${target.path} • ${
-                    error instanceof Error ? error.message || error.name : String(error)
-                  }`,
-                };
-              }
-            },
-            expired,
-          );
-          if (writeFailure) return writeFailure;
+          // This is the final revocable boundary. Once the irreversible write
+          // starts, its real filesystem outcome wins even if the review changes.
+          if (!lease.isLive()) return expired();
+          try {
+            const started = await runWorkspaceWrite(() =>
+              workspaceFileWriter(target.absolutePath, text),
+            );
+            if (!started) return expired();
+          } catch (error) {
+            return {
+              ok: false,
+              reason: "failed",
+              detail: `Failed to write ${target.path} • ${
+                error instanceof Error ? error.message || error.name : String(error)
+              }`,
+            };
+          }
 
-          // Fire-and-forget the reload so the result settles on the write
-          // itself. In a `--watch` session the watcher sees the same write and
-          // reloads too; a reload replaces the review silently, so a second one
-          // costs a rebuild rather than a duplicated notice.
-          reloadAfterWorkspaceWriteRef.current();
+          // AppHost dereferences the mounted review descriptor only when this
+          // reconciliation reaches the reload queue, so a retired App cannot
+          // restore the source or view options it started from.
+          onWorkspaceWriteCompleted();
           return { ok: true };
         },
       };
     },
-    [createExtensionDialogs, createReviewCapabilityLease],
+    [
+      createExtensionDialogs,
+      createReviewCapabilityLease,
+      onWorkspaceWriteCompleted,
+      runWorkspaceWrite,
+      workspaceFileWriter,
+    ],
   );
 
   // Lifecycle and bus listeners receive the same pane, navigation, and dialog
@@ -1568,15 +1586,11 @@ export function App({
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
+  const workspaceRefreshRequest = useMemo<WorkspaceRefreshRequest | null>(() => {
+    if (!canRefreshCurrentInput) return null;
 
-  /** Rebuild the current diff source while preserving the active app view options. */
-  const refreshCurrentInput = useCallback(
-    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
-      if (!canRefreshCurrentInput) {
-        return;
-      }
-
-      const nextInput = withCurrentViewOptions(bootstrap.input, {
+    return {
+      nextInput: withCurrentViewOptions(bootstrap.input, {
         layoutMode,
         themeId,
         showAgentNotes,
@@ -1584,27 +1598,39 @@ export function App({
         showLineNumbers,
         showMenuBar,
         wrapLines,
-      });
+      }),
+      sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
+    };
+  }, [
+    bootstrap.changeset.sourceLabel,
+    bootstrap.input,
+    canRefreshCurrentInput,
+    layoutMode,
+    showAgentNotes,
+    showHunkHeaders,
+    showLineNumbers,
+    showMenuBar,
+    themeId,
+    wrapLines,
+  ]);
 
-      await onReloadSession(nextInput, {
+  useLayoutEffect(() => {
+    if (!workspaceRefreshRequest) return;
+    return onRegisterWorkspaceRefreshRequest(workspaceRefreshRequest);
+  }, [onRegisterWorkspaceRefreshRequest, workspaceRefreshRequest]);
+
+  /** Rebuild the current diff source while preserving the active app view options. */
+  const refreshCurrentInput = useCallback(
+    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
+      if (!workspaceRefreshRequest) return;
+
+      await onReloadSession(workspaceRefreshRequest.nextInput, {
         ...options,
         resetApp: false,
-        sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
+        sourcePath: workspaceRefreshRequest.sourcePath,
       });
     },
-    [
-      bootstrap.changeset.sourceLabel,
-      bootstrap.input,
-      canRefreshCurrentInput,
-      layoutMode,
-      onReloadSession,
-      showAgentNotes,
-      showHunkHeaders,
-      showLineNumbers,
-      showMenuBar,
-      themeId,
-      wrapLines,
-    ],
+    [onReloadSession, workspaceRefreshRequest],
   );
 
   const triggerRefreshCurrentInput = useCallback(() => {
@@ -1612,10 +1638,6 @@ export function App({
       console.error("Failed to reload the current diff.", error);
     });
   }, [refreshCurrentInput]);
-
-  // A completed extension write is a source change the user did not make in an
-  // editor, so it reloads through exactly the path the refresh key takes.
-  reloadAfterWorkspaceWriteRef.current = triggerRefreshCurrentInput;
 
   /** Reload because the watcher saw the reviewed source change on disk. */
   const refreshWatchedInput = useCallback(

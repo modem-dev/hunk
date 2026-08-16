@@ -178,8 +178,11 @@ Most extension bugs are one of these:
   snapshots (`review-triage/index.tsx` is the working version).
 - **Retained review controls expire on reload.** An old handler cannot control
   replacement content: pane/navigation calls become inert, dialogs cancel, and
-  workspace reads/writes return `null`/`unavailable`. `shutdown` runs after that
-  revocation, so use it only to release extension-owned resources.
+  workspace reads or not-yet-started writes return `null`/`unavailable`. A
+  consented write already in progress reports its real outcome, holds graceful
+  exit until it settles, and reconciles the active review on success. `shutdown`
+  runs after revocation, so use it only
+  to release extension-owned resources.
 - **A reload keeps your factory and renames the files.** Factories re-run only
   after a trust grant or a cwd change, so module state survives — but a file's
   `id` encodes its position in the changeset, so a reload that adds or drops a
