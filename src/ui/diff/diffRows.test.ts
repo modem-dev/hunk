@@ -156,6 +156,32 @@ function createLargeDiffFile(): DiffFile {
   };
 }
 
+/** Build a large partial source diff that must remap compact full-source ranges onto its patch. */
+function createLargeSourceBackedDiffFile(): DiffFile {
+  const prefix = Array.from(
+    { length: HIGHLIGHT_WORKER_MIN_LINES },
+    (_, index) => `  value${index} = ${index}`,
+  ).join("\n");
+  const before = `${prefix}\n${ELIXIR_HEREDOC_BEFORE}`;
+  const after = before.replace("Line five.", "Line five, edited.");
+  const patch = createTwoFilesPatch("large.ex", "large.ex", before, after, "", "", { context: 3 });
+  const metadata = parsePatchFiles(patch, "large-source", true)[0]?.files[0];
+  if (!metadata) {
+    throw new Error("Expected large source-backed metadata");
+  }
+
+  return {
+    id: "large-source",
+    path: "large.ex",
+    patch,
+    language: "elixir",
+    stats: { additions: 1, deletions: 1 },
+    metadata,
+    agent: null,
+    sourceFetcher: createTestSourceFetcher((side) => (side === "old" ? before : after)),
+  };
+}
+
 /** Register a worker double that reports a startup failure as soon as it receives work. */
 function registerFailingHighlightWorkerForTest() {
   const worker = {
@@ -279,6 +305,9 @@ describe("Pierre diff rows", () => {
     const inlineRows = buildSplitRows(file, inline, theme);
     const workerRows = buildSplitRows(file, offloaded, theme);
 
+    expect(offloaded.deletionLines).toEqual([]);
+    expect(offloaded.additionLines).toEqual([]);
+    expect(offloaded.compact?.payload.foregroundPalette.length).toBeGreaterThan(0);
     expect(workerRows).toEqual(inlineRows);
     const changedRow = workerRows.find(
       (row) =>
@@ -287,6 +316,20 @@ describe("Pierre diff rows", () => {
     expect(
       changedRow?.type === "split-line" && changedRow.right.spans.some((span) => span.bg),
     ).toBe(true);
+  }, 30_000);
+
+  test("maps compact full-source worker ranges back onto a partial patch", async () => {
+    const file = createLargeSourceBackedDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+
+    const [inline, offloaded] = await Promise.all([
+      loadHighlightedDiff(file, theme),
+      loadHighlightedDiff(file, theme, { offloadLargeDiff: true }),
+    ]);
+
+    expect(offloaded.compact?.deletionLineMap).toHaveLength(file.metadata.deletionLines.length);
+    expect(offloaded.compact?.additionLineMap).toHaveLength(file.metadata.additionLines.length);
+    expect(buildStackRows(file, offloaded, theme)).toEqual(buildStackRows(file, inline, theme));
   }, 30_000);
 
   test("falls back to plain text when the large-diff worker fails", async () => {

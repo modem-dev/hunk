@@ -40,6 +40,15 @@ interface HighlightedDiffCacheEntry {
 
 /** Count the highlighted lines one result retains, across both diff sides. */
 function highlightedLineCount(value: HighlightedDiffCode) {
+  if (value.compact) {
+    return (
+      (value.compact.deletionLineMap?.length ??
+        value.compact.payload.deletion.lineOffsets.length - 1) +
+      (value.compact.additionLineMap?.length ??
+        value.compact.payload.addition.lineOffsets.length - 1)
+    );
+  }
+
   return value.deletionLines.length + value.additionLines.length;
 }
 

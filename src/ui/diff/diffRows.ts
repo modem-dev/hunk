@@ -28,6 +28,12 @@ import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
+import {
+  compactHighlightRunsForLine,
+  validateCompactHighlightedDiff,
+  type CompactHighlightedDiff,
+  type CompactHighlightRun,
+} from "./highlightCompact";
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
 import { highlightDiffInWorker } from "./highlightWorkerClient";
 import {
@@ -70,9 +76,18 @@ type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
 
+export interface CompactHighlightedDiffCode {
+  payload: CompactHighlightedDiff;
+  /** Map visible patch-side indexes to full-source payload indexes when source context was used. */
+  deletionLineMap?: readonly number[];
+  additionLineMap?: readonly number[];
+}
+
 export interface HighlightedDiffCode {
   deletionLines: Array<HastNode | undefined>;
   additionLines: Array<HastNode | undefined>;
+  /** Holds the worker's compact result without reconstructing a HAST response tree. */
+  compact?: CompactHighlightedDiffCode;
 }
 
 export interface HighlightedSourceCode {
@@ -301,6 +316,55 @@ function flattenHighlightedLine(
   return spans;
 }
 
+/** Flatten compact worker ranges against local text without rebuilding a HAST response tree. */
+function flattenCompactHighlightedLine(
+  rawLine: string | undefined,
+  runs: CompactHighlightRun[],
+  emphasisBg: string,
+  tabWidth: number,
+) {
+  const source = cleanLastNewline(rawLine ?? "");
+  const spans: RenderSpan[] = [];
+  let sourceColumn = 0;
+  let codeColumn = 0;
+
+  const appendText = (text: string, fg?: string, bg?: string) => {
+    const tabified = tabify(text, tabWidth, codeColumn);
+    mergeSpan(spans, { text: tabified, fg, bg });
+    codeColumn += measureTextWidth(tabified);
+  };
+
+  for (const run of runs) {
+    appendText(source.slice(sourceColumn, run.start));
+    appendText(source.slice(run.start, run.end), run.fg, run.wordDiff ? emphasisBg : undefined);
+    sourceColumn = run.end;
+  }
+  appendText(source.slice(sourceColumn));
+
+  return spans;
+}
+
+/** Resolve the compact worker runs for one visible patch-side line when present. */
+function compactRunsForHighlightedLine(
+  highlighted: HighlightedDiffCode | null,
+  side: "deletion" | "addition",
+  lineIndex: number,
+) {
+  const compact = highlighted?.compact;
+  if (!compact) {
+    return undefined;
+  }
+
+  const sourceIndex =
+    (side === "deletion" ? compact.deletionLineMap : compact.additionLineMap)?.[lineIndex] ??
+    lineIndex;
+  if (!Number.isInteger(sourceIndex) || sourceIndex < 0) {
+    return undefined;
+  }
+
+  return compactHighlightRunsForLine(compact.payload, side, sourceIndex);
+}
+
 /** Normalize one raw diff line before rendering. */
 function cleanDiffLine(line: string | undefined, tabWidth: number) {
   return tabify(cleanLastNewline(line ?? ""), tabWidth);
@@ -315,6 +379,7 @@ function makeSplitCell(
   theme: AppTheme,
   tabWidth: number,
   moveKind?: DiffLineMoveKind,
+  compactRuns?: CompactHighlightRun[],
 ) {
   if (kind === "empty") {
     return {
@@ -324,25 +389,30 @@ function makeSplitCell(
     } satisfies SplitLineCell;
   }
 
-  // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
-  // Once highlighted spans are available, avoid touching the raw source line unless flattening
-  // produced nothing. That keeps newline stripping + tab expansion off the hot path.
+  // Startup renders often build rows before any highlight result exists, so keep that plain-text
+  // path cheap. HAST wins for inline work; worker responses decode compact ranges against raw text.
   let spans: RenderSpan[];
-  if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine, tabWidth);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-  } else {
+  if (highlightedLine !== undefined) {
     spans = flattenHighlightedLine(
       highlightedLine,
       theme,
       wordDiffHighlightBg(kind, theme),
       tabWidth,
     );
+  } else if (compactRuns !== undefined) {
+    spans = flattenCompactHighlightedLine(
+      rawLine,
+      compactRuns,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
+  } else {
+    spans = [];
+  }
 
-    if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine, tabWidth);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-    }
+  if (spans.length === 0) {
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   }
 
   return {
@@ -364,25 +434,32 @@ function makeStackCell(
   theme: AppTheme,
   tabWidth: number,
   moveKind?: DiffLineMoveKind,
+  compactRuns?: CompactHighlightRun[],
 ) {
-  // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
-  // need the plain-text fallback, not when highlighted spans are already ready to reuse.
+  // Same lazy-fallback strategy as split cells: only normalize raw text when no HAST or compact
+  // syntax run is available, or the selected highlighter produced no spans.
   let spans: RenderSpan[];
-  if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine, tabWidth);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-  } else {
+  if (highlightedLine !== undefined) {
     spans = flattenHighlightedLine(
       highlightedLine,
       theme,
       wordDiffHighlightBg(kind, theme),
       tabWidth,
     );
+  } else if (compactRuns !== undefined) {
+    spans = flattenCompactHighlightedLine(
+      rawLine,
+      compactRuns,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
+  } else {
+    spans = [];
+  }
 
-    if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine, tabWidth);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-    }
+  if (spans.length === 0) {
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   }
 
   return {
@@ -628,6 +705,14 @@ export function shouldOffloadHighlight(
   );
 }
 
+/** Return terminal-projected source lengths for compact UTF-16 range validation. */
+function compactHighlightLineLengths(metadata: FileDiffMetadata) {
+  return {
+    deletion: metadata.deletionLines.map((line) => cleanLastNewline(line).length),
+    addition: metadata.additionLines.map((line) => cleanLastNewline(line).length),
+  };
+}
+
 /** Highlight one eligible metadata snapshot off the terminal event loop. */
 async function loadWorkerHighlightedDiff(
   file: DiffFile,
@@ -635,12 +720,23 @@ async function loadWorkerHighlightedDiff(
   theme: AppTheme,
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
-  const code = await highlightDiffInWorker({
+  const payload = await highlightDiffInWorker({
+    appearance: theme.appearance,
     language: file.language ?? "text",
     metadata,
     theme: syntaxHighlightThemeName(theme),
   });
-  return finalizeHighlightedDiff(file, sourcePlan, { code });
+  validateCompactHighlightedDiff(payload, compactHighlightLineLengths(metadata));
+
+  return {
+    deletionLines: [],
+    additionLines: [],
+    compact: {
+      payload,
+      deletionLineMap: sourcePlan?.deletionLineMap,
+      additionLineMap: sourcePlan?.additionLineMap,
+    },
+  } satisfies HighlightedDiffCode;
 }
 
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
@@ -800,6 +896,8 @@ export function buildSplitRows(
               deletionLines[deletionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
             ),
             right: makeSplitCell(
               "context",
@@ -808,6 +906,8 @@ export function buildSplitRows(
               additionLines[additionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
             ),
           });
         }
@@ -839,6 +939,7 @@ export function buildSplitRows(
                 theme,
                 tabWidth,
                 file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
+                compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
           right: hasAddition
@@ -850,6 +951,7 @@ export function buildSplitRows(
                 theme,
                 tabWidth,
                 file.lineMoveKinds?.additionLines[additionLineIndex + offset],
+                compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
         });
@@ -916,6 +1018,8 @@ export function buildStackRows(
               additionLines[additionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
             ),
           });
         }
@@ -942,6 +1046,7 @@ export function buildStackRows(
             theme,
             tabWidth,
             file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
+            compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
           ),
         });
       }
@@ -961,6 +1066,7 @@ export function buildStackRows(
             theme,
             tabWidth,
             file.lineMoveKinds?.additionLines[additionLineIndex + offset],
+            compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
           ),
         });
       }

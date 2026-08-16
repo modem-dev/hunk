@@ -4,7 +4,11 @@
 import { performance } from "node:perf_hooks";
 import { cleanLastNewline, parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../src/core/types";
-import { loadHighlightedDiff, type HighlightedDiffCode } from "../src/ui/diff/diffRows";
+import {
+  buildSplitRows,
+  loadHighlightedDiff,
+  type HighlightedDiffCode,
+} from "../src/ui/diff/diffRows";
 import {
   compactHighlightRunsForLine,
   compactHighlightTransferList,
@@ -29,6 +33,30 @@ function percentile(values: number[], percentileValue: number) {
 
 function metric(name: string, value: number) {
   console.log(`METRIC ${name}=${value.toFixed(2)}`);
+}
+
+/** Measure the largest interval delay while an operation runs on the terminal event loop. */
+function createStallProbe() {
+  let last = performance.now();
+  let worst = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    worst = Math.max(worst, now - last);
+    last = now;
+  }, 1);
+
+  return {
+    reset() {
+      last = performance.now();
+      worst = 0;
+    },
+    read() {
+      return worst;
+    },
+    stop() {
+      clearInterval(timer);
+    },
+  };
 }
 
 /** Build one added TypeScript file within Hunk's current 10k-line highlighting ceiling. */
@@ -79,12 +107,55 @@ function decodeAllCompactLines(payload: ReturnType<typeof encodeCompactHighlight
   }
 }
 
+/** Measure the production load plus first split-row materialization for one worker mode. */
+async function measureHighlightOperation({
+  file,
+  theme,
+  offloadLargeDiff,
+}: {
+  file: DiffFile;
+  theme: ReturnType<typeof resolveTheme>;
+  offloadLargeDiff: boolean;
+}) {
+  const wall: number[] = [];
+  const stalls: number[] = [];
+  const probe = createStallProbe();
+
+  try {
+    for (let sample = 0; sample < SAMPLES; sample += 1) {
+      await Bun.sleep(40);
+      probe.reset();
+      const started = performance.now();
+      const highlighted = await loadHighlightedDiff(
+        file,
+        theme,
+        offloadLargeDiff ? { offloadLargeDiff: true } : undefined,
+      );
+      buildSplitRows(file, highlighted, theme);
+      wall.push(performance.now() - started);
+      // Let the interval observe work that ended just before this await.
+      await Bun.sleep(25);
+      stalls.push(probe.read());
+    }
+  } finally {
+    probe.stop();
+  }
+
+  return {
+    wallMedian: median(wall),
+    wallP95: percentile(wall, 0.95),
+    stallMedian: median(stalls),
+    stallP95: percentile(stalls, 0.95),
+  };
+}
+
 const file = createLargeDiffFile(LINE_COUNT);
 const theme = resolveTheme("github-dark-default", null);
 const lineLengths = compactLineLengths(file);
 
-// Warm Shiki/Pierre before timing response handling.
+// Warm Shiki/Pierre and the reusable worker before timing response handling or operations.
 const warmResult = await loadHighlightedDiff(file, theme);
+await loadHighlightedDiff(file, theme, { offloadLargeDiff: true });
 const rawHastBytes = jsonByteLength(warmResult);
 const rawCloneMs: number[] = [];
 const compactEncodeMs: number[] = [];
@@ -128,3 +199,18 @@ metric("compact_transfer_ms_p95", percentile(compactTransferMs, 0.95));
 metric("compact_decode_all_ms_median", median(compactDecodeMs));
 metric("compact_decode_all_ms_p95", percentile(compactDecodeMs, 0.95));
 metric("compact_response_byte_ratio", median(compactBytes) / rawHastBytes);
+
+const inlineOperation = await measureHighlightOperation({ file, theme, offloadLargeDiff: false });
+const compactWorkerOperation = await measureHighlightOperation({
+  file,
+  theme,
+  offloadLargeDiff: true,
+});
+metric("inline_operation_wall_ms_median", inlineOperation.wallMedian);
+metric("inline_operation_wall_ms_p95", inlineOperation.wallP95);
+metric("inline_operation_stall_ms_median", inlineOperation.stallMedian);
+metric("inline_operation_stall_ms_p95", inlineOperation.stallP95);
+metric("compact_worker_operation_wall_ms_median", compactWorkerOperation.wallMedian);
+metric("compact_worker_operation_wall_ms_p95", compactWorkerOperation.wallP95);
+metric("compact_worker_operation_stall_ms_median", compactWorkerOperation.stallMedian);
+metric("compact_worker_operation_stall_ms_p95", compactWorkerOperation.stallP95);
