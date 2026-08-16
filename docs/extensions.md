@@ -278,8 +278,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `6`). Branch on it if you want
-one file to support several Hunk versions. Version 6 adds session behavior,
+The API generation this Hunk speaks (currently `7`). Branch on it if you want
+one file to support several Hunk versions. Version 7 adds the current source
+line to command selection snapshots. Version 6 adds session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
 version 4 added keyboard modes and docked panes, with API-v3 sidebar names
@@ -1352,13 +1353,16 @@ hunk.registerCommand(
 ```
 
 `selection.file` is a frozen read-only view, identical to the entries in a
-pane's `files` prop. Hunk keeps the selection inside the visible files, so
-it is `null` only when nothing is visible at all — a filter that matches no
-files. `selection.hunkIndex` is that file's
-selected hunk, and `null` whenever `file` is — or when the file has no hunks to
-select. The values are captured when the command fires: a handler that awaits
-still sees the selection it was run from, not wherever the user navigated to
-meanwhile.
+pane's `files` prop. Extensions only receive visible files, so it is `null`
+when filtering hides the selected file or when no files are visible.
+`selection.hunkIndex` is that file's selected hunk, and `null` whenever `file`
+is — or when the file has no hunks to select. `selection.currentLine` is the
+one-based `{ side, line }` source address carrying the current-line marker, or
+`null` when the marker is off or the review has not settled on a rendered line.
+It belongs to this file and hunk, uses Hunk's canonical new-side address for a
+context row, and can be passed directly to `navigation.revealLine`. The values
+are captured when the command fires: a handler that awaits still sees the
+selection it was run from, not wherever the user navigated to meanwhile.
 
 `ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
 table used by the keyboard, menus, and help:

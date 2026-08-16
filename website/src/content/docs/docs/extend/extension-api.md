@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `6`). Branch on it if you want one file to support several Hunk versions. Version 6 adds session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `7`). Branch on it if you want one file to support several Hunk versions. Version 7 adds the current source line to command selection snapshots. Version 6 adds session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
 
 ## `hunk.configureSession(options)`
 
@@ -179,7 +179,7 @@ hunk.registerCommand(
 );
 ```
 
-`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` only when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. The values are captured when the command fires, so an async handler keeps the selection it started from.
+`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` when filtering hides the selected file or when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. `selection.currentLine` is the one-based `{ side, line }` source address carrying the current-line marker, or `null` when that marker is off or the review has not settled on a rendered line. It belongs to this file and hunk, uses Hunk's canonical new-side address for context rows, and can be passed directly to `navigation.revealLine`. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
 `ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
 

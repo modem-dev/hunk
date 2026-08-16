@@ -108,7 +108,7 @@ bad or duplicate id is skipped with a startup notice.
 | React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `6`)             | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `7`)             | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -124,8 +124,9 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   `ctx.events.emit`. `ctx.sidebars` is a deprecated alias for `ctx.panes`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.highlights` (refresh prepared line marks,
-  whole or `{ fileId }`-scoped), `ctx.selection` (a snapshot of file + hunk index),
-  `ctx.navigation` (live, guarded `selectFile`/`selectHunk`/`revealLine`, the
+  whole or `{ fileId }`-scoped), `ctx.selection` (a snapshot of file, hunk index,
+  and nullable current `{ side, line }` source address), `ctx.navigation` (live,
+  guarded `selectFile`/`selectHunk`/`revealLine`, the
   last landing one exact `(side, line)` near the viewport top), `ctx.commands`
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.dialogs`

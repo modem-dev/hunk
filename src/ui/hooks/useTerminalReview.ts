@@ -219,6 +219,10 @@ export interface TerminalReview {
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
+  /** Read the current cursor synchronously between terminal key events. */
+  getLineCursor: () => LineCursor | null;
+  /** Read the current normalized selection synchronously with the cursor. */
+  getSelection: () => { fileId: string | null; hunkIndex: number | null };
   lineCursorRevealRequest: LineCursorRevealRequest;
   anchorLineCursor: (cursor: LineCursor) => void;
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
@@ -384,6 +388,8 @@ export function useTerminalReview({
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
+  /** Read the latest cursor without waiting for React to publish a render. */
+  const getLineCursor = useCallback(() => lineCursorRef.current, []);
   const [lineCursorRevealRequest, setLineCursorRevealRequest] = useState<LineCursorRevealRequest>({
     id: 0,
     placement: "nearest",
@@ -476,6 +482,13 @@ export function useTerminalReview({
     ? fileByKey.get(normalizedSelection.fileKey)
     : undefined;
   const selectedHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
+
+  /** Read the normalized selection from the store without waiting for a React render. */
+  const getSelection = useCallback(() => {
+    const selection = selectNormalizedSelection(store.getSnapshot());
+    const file = selection.fileKey ? fileByKey.get(selection.fileKey) : undefined;
+    return { fileId: file?.id ?? null, hunkIndex: file ? selection.hunkIndex : null };
+  }, [fileByKey, store]);
 
   /** Run one semantic intent against the review store. */
   const runIntent = useCallback(
@@ -1428,6 +1441,8 @@ export function useTerminalReview({
     liveCommentSummaries,
     liveCommentsByFileId,
     lineCursor,
+    getLineCursor,
+    getSelection,
     lineCursorRevealRequest,
     reviewNoteCount: reviewNoteSummaries.length,
     reviewNoteSummaries,

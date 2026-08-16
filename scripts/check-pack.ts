@@ -51,8 +51,13 @@ import type {
 export default function (hunk: HunkExtensionAPI) {
   const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
   hunk.configureSession(sessionOptions);
-  const noSelection: ExtensionReviewSelection = { file: null, hunkIndex: null };
+  const noSelection: ExtensionReviewSelection = {
+    file: null,
+    hunkIndex: null,
+    currentLine: null,
+  };
   hunk.log(noSelection.file === null ? "nothing selected" : noSelection.file.path);
+  hunk.log(noSelection.currentLine?.side ?? "no current line");
 
   const theme: NamedCustomThemeConfig = {
     id: "midnight-review",

@@ -9,6 +9,7 @@
  */
 import { readMetadataHunkCount } from "../../extensions/events";
 import type { ExtensionDiffFile, ExtensionReviewSelection } from "../../extension-api/types";
+import type { LineCursor } from "./lineCursors";
 
 export interface BuildExtensionReviewSelectionOptions {
   /**
@@ -21,6 +22,8 @@ export interface BuildExtensionReviewSelectionOptions {
   files: readonly ExtensionDiffFile[];
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
+  /** The visible current-line cursor, after App applies the cursor-line preference. */
+  lineCursor?: Pick<LineCursor, "fileId" | "hunkIndex" | "target"> | null;
 }
 
 /**
@@ -37,6 +40,7 @@ export function buildExtensionReviewSelection({
   files,
   selectedFileId,
   selectedHunkIndex,
+  lineCursor = null,
 }: BuildExtensionReviewSelectionOptions): ExtensionReviewSelection {
   const file =
     selectedFileId === null
@@ -44,10 +48,28 @@ export function buildExtensionReviewSelection({
       : files.find((candidate) => candidate.id === selectedFileId);
 
   if (!file) {
-    return Object.freeze({ file: null, hunkIndex: null });
+    return Object.freeze({ file: null, hunkIndex: null, currentLine: null });
   }
 
-  return Object.freeze({ file, hunkIndex: resolveHunkIndex(file, selectedHunkIndex) });
+  const hunkIndex = resolveHunkIndex(file, selectedHunkIndex);
+  return Object.freeze({
+    file,
+    hunkIndex,
+    currentLine: selectedLineCursor(file.id, hunkIndex, lineCursor),
+  });
+}
+
+/** Copy the current source target only when it belongs to this public selection. */
+function selectedLineCursor(
+  fileId: string,
+  hunkIndex: number | null,
+  lineCursor: Pick<LineCursor, "fileId" | "hunkIndex" | "target"> | null,
+) {
+  if (!lineCursor || lineCursor.fileId !== fileId || lineCursor.hunkIndex !== hunkIndex) {
+    return null;
+  }
+
+  return Object.freeze({ side: lineCursor.target.side, line: lineCursor.target.line });
 }
 
 /** Clamp one selected hunk index into a file's real hunk range, or drop it. */

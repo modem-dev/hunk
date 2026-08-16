@@ -520,8 +520,16 @@ export function App({
     source: typeof filteredFiles;
     views: ReturnType<typeof toReadOnlyFileViews>;
   } | null>(null);
-  const extensionSelectionInputsRef = useRef({ filteredFiles, selectedFileId, selectedHunkIndex });
-  extensionSelectionInputsRef.current = { filteredFiles, selectedFileId, selectedHunkIndex };
+  const extensionSelectionInputsRef = useRef({
+    filteredFiles,
+    getSelection: review.getSelection,
+    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
+  });
+  extensionSelectionInputsRef.current = {
+    filteredFiles,
+    getSelection: review.getSelection,
+    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
+  };
   // What `ctx.workspace` decides against, re-read on every render because a soft
   // reload swaps the bootstrap under a mounted App: the input can change what is
   // writable at all, and the changeset decides which ids exist and which source
@@ -604,17 +612,18 @@ export function App({
 
   /** Build the selection snapshot a command handler receives, at invocation. */
   const getExtensionSelection = useCallback(() => {
-    const { selectedFileId: fileId, selectedHunkIndex: hunkIndex } =
-      extensionSelectionInputsRef.current;
+    const { getSelection, getActiveLineCursor } = extensionSelectionInputsRef.current;
+    const { fileId, hunkIndex } = getSelection();
     return buildExtensionReviewSelection({
       files: getExtensionFileViews(),
       selectedFileId: fileId,
       selectedHunkIndex: hunkIndex,
+      lineCursor: getActiveLineCursor(),
     });
   }, [getExtensionFileViews]);
   /** Read the live internal selection id independently from the frozen public selection. */
   const getSelectedFileId = useCallback(
-    () => extensionSelectionInputsRef.current.selectedFileId,
+    () => extensionSelectionInputsRef.current.getSelection().fileId,
     [],
   );
   const jumpToFile = useCallback(

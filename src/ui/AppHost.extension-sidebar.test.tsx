@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { KeyEvent, type ParsedKey } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
@@ -41,6 +42,23 @@ function createTempDir(prefix: string) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
+}
+
+/** Build one key event to publish without allowing a render between input events. */
+function createTestKeyEvent(fields: Partial<ParsedKey>): KeyEvent {
+  return new KeyEvent({
+    name: "",
+    sequence: "",
+    raw: "",
+    ctrl: false,
+    meta: false,
+    option: false,
+    shift: false,
+    number: false,
+    eventType: "press",
+    source: "raw",
+    ...fields,
+  });
 }
 
 /** Create a Git checkout with two committed files carrying working-tree changes. */
@@ -274,11 +292,18 @@ describe("extension sidebar views", () => {
         `export default function (hunk) {\n` +
         `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "y" }, (ctx) => {\n` +
         `    const file = ctx.selection.file;\n` +
+        `    const line = ctx.selection.currentLine;\n` +
         `    appendFileSync(\n` +
         `      ${JSON.stringify(logPath)},\n` +
         `      "selection " + (file ? file.path : "none") + "#" + ctx.selection.hunkIndex +\n` +
-        `        " frozen=" + Object.isFrozen(file) + "\\n",\n` +
+        `        " line=" + (line ? line.side + ":" + line.line : "none") +\n` +
+        `        " frozen=" + Object.isFrozen(file) + "/" + Object.isFrozen(line) + "\\n",\n` +
         `    );\n` +
+        `  });\n` +
+        `  hunk.registerCommand({ id: "delayed", title: "Probe delayed selection", key: "x" }, async (ctx) => {\n` +
+        `    const line = ctx.selection.currentLine;\n` +
+        `    await Bun.sleep(100);\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "delayed " + (line ? line.side + ":" + line.line : "none") + "\\n");\n` +
         `  });\n` +
         `}\n`,
     );
@@ -298,24 +323,86 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => readProbeLog(logPath).includes("selection alpha.txt#0 frozen=true"),
+        () => readProbeLog(logPath).some((line) => line.startsWith("selection alpha.txt#0 line=")),
         "the command to report the startup selection",
       );
+      const initialSelection = readProbeLog(logPath).find((line) =>
+        line.startsWith("selection alpha.txt#0 line="),
+      );
+      expect(initialSelection).toMatch(/line=new:1 frozen=true\/true$/);
 
-      // `]` moves the review stream to the next hunk, which is the one hunk of
-      // the second file; the next run reports the new selection rather than a
-      // snapshot captured when the command was registered.
+      // These events share one input flush. The line move updates the review
+      // controller's ref before React renders, so the following command must
+      // still observe line 2 instead of the previous rendered line.
       await act(async () => {
-        await setup.mockInput.typeText("]");
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "x", sequence: "x" }));
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "j", sequence: "j" }));
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "y", sequence: "y" }));
       });
-      await flush(setup);
+      await flushUntil(
+        setup,
+        () =>
+          readProbeLog(logPath).filter((line) => line.startsWith("selection alpha.txt#0")).length >=
+          2,
+        "the command to report the moved current line",
+      );
+      const alphaSelections = readProbeLog(logPath).filter((line) =>
+        line.startsWith("selection alpha.txt#0"),
+      );
+      expect(alphaSelections[1]).toBe("selection alpha.txt#0 line=new:2 frozen=true/true");
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("delayed new:1"),
+        "the delayed handler to retain its invocation-time current line",
+      );
+
+      // Crossing into beta updates both the cursor and semantic selection in
+      // one input flush. The command must receive them as one coherent address.
+      await act(async () => {
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "j", sequence: "j" }));
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "y", sequence: "y" }));
+      });
+      await flushUntil(
+        setup,
+        () =>
+          readProbeLog(logPath).some((line) =>
+            /^selection beta\.txt#0 line=new:1 frozen=true\/true$/.test(line),
+          ),
+        "the command to report the current line and selection after crossing files",
+      );
+    });
+  });
+
+  test("a command handler reports no current line when the marker is off", async () => {
+    const repo = createTestRepo("hunk-ext-selection-line-off-");
+    const extDir = createTempDir("hunk-ext-selection-line-off-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "y" }, (ctx) => {\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, String(ctx.selection.currentLine === null) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    bootstrap.initialCursorLine = "off";
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render with its current-line marker disabled",
+      );
       await act(async () => {
         await setup.mockInput.typeText("y");
       });
       await flushUntil(
         setup,
-        () => readProbeLog(logPath).includes("selection beta.txt#0 frozen=true"),
-        "the command to report the selection after navigating",
+        () => readProbeLog(logPath).includes("true"),
+        "the command to receive a null current line",
       );
     });
   });

@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 6;
+export const HUNK_EXTENSION_API_VERSION = 7;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1376,11 +1376,9 @@ export interface ExtensionReviewSelection {
    * The selected file among the currently visible (filtered) files, or `null`.
    *
    * The same frozen read-only view a pane component receives in its `files`
-   * prop, so holding or mutating it cannot reach the review model. Hunk keeps
-   * the selection inside the visible list — filtering away the selected file
-   * immediately reselects the first visible one — so in practice this is
-   * `null` only when nothing is visible at all, such as a filter matching no
-   * files.
+   * prop, so holding or mutating it cannot reach the review model. Extensions
+   * only receive visible files, so this is `null` when filtering hides the
+   * selected file or when no files are visible.
    */
   readonly file: ExtensionDiffFile | null;
   /**
@@ -1389,6 +1387,19 @@ export interface ExtensionReviewSelection {
    * hunks to select (a binary or skipped file).
    */
   readonly hunkIndex: number | null;
+  /**
+   * The source line carrying Hunk's current-line marker, or `null` when line
+   * navigation is off or the review has not settled on a rendered line yet.
+   *
+   * `line` is one-based on `side`, matching patch line numbers and
+   * `navigation.revealLine`. Context rows use Hunk's canonical new-side
+   * address. This copied, frozen target belongs to `file` and `hunkIndex` in
+   * this same snapshot; it never exposes renderer cursor state.
+   */
+  readonly currentLine: {
+    readonly side: ExtensionFileSide;
+    readonly line: number;
+  } | null;
 }
 
 /** One question put to the user as a modal confirm dialog. */

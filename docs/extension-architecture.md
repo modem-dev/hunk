@@ -179,7 +179,9 @@ commands. Extension
 chord at a time and detected by probing matchers with a synthesized event
 (`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
 `src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
-panes render. App reads it through a ref so the dispatch table stays stable.
+panes render plus a copied source address for the active current-line cursor.
+App reads it through a ref so the dispatch table stays stable while line
+navigation moves.
 
 `src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is

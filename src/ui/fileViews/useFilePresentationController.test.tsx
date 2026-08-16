@@ -67,6 +67,7 @@ async function renderController(initial: HarnessState) {
           files: live.current.visibleFileViews,
           selectedFileId: live.current.state.selectedFileId,
           selectedHunkIndex: 0,
+          lineCursor: null,
         }),
       [],
     );
