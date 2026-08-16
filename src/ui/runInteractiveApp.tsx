@@ -23,6 +23,7 @@ import type {
 } from "../session/types";
 import { SessionBrokerClient } from "../session/broker/brokerClient";
 import { AppHost } from "./AppHost";
+import { disposeHighlightWorker } from "./diff/worker";
 
 export interface InteractiveAppInput {
   bootstrap: AppBootstrap;
@@ -92,6 +93,10 @@ export async function runInteractiveApp({
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
     hostClient.stop();
+    // Release the syntax worker here rather than from the executable entrypoint: this function
+    // returns once the app is mounted, so an entrypoint-side dispose would fire before the first
+    // eligible diff ever asked for the worker.
+    disposeHighlightWorker();
     shutdownSession({ root, renderer: appRenderer });
   }
 
