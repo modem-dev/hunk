@@ -28,6 +28,7 @@ import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
+import { highlightDiffInWorker } from "./highlightWorkerClient";
 import {
   createSourceBackedHighlightPlan,
   remapSourceBackedHighlight,
@@ -39,6 +40,13 @@ import {
 } from "./syntaxHighlightTheme";
 
 type HighlightThemeInput = AppTheme | AppTheme["appearance"];
+
+export const HIGHLIGHT_WORKER_MIN_LINES = 2_000;
+
+export interface LoadHighlightedDiffOptions {
+  /** Allow the interactive TUI to move eligible large-file work into the Bun worker. */
+  offloadLargeDiff?: boolean;
+}
 
 /** Return the light/dark mode for a theme object or legacy appearance argument. */
 function highlightThemeAppearance(theme: HighlightThemeInput) {
@@ -611,7 +619,7 @@ async function loadSourceBackedHighlightPlan(file: DiffFile) {
 function finalizeHighlightedDiff(
   file: DiffFile,
   sourcePlan: SourceBackedHighlightPlan | null,
-  highlighted: ReturnType<typeof renderDiffWithHighlighter>,
+  highlighted: { code: { deletionLines: unknown[]; additionLines: unknown[] } },
 ): HighlightedDiffCode {
   const code = {
     deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -668,15 +676,52 @@ export function highlightedDiffLineCount(metadata: FileDiffMetadata) {
   return (metadata.deletionLines?.length ?? 0) + (metadata.additionLines?.length ?? 0);
 }
 
+/** Return whether one metadata snapshot is small enough that highlighting it is worth the work. */
+function shouldHighlightMetadata(metadata: FileDiffMetadata) {
+  return highlightedDiffLineCount(metadata) <= MAX_HIGHLIGHTED_DIFF_LINES;
+}
+
 /** Return whether one file's diff is small enough that highlighting it is worth the work. */
 export function shouldHighlightDiff(file: DiffFile) {
-  return highlightedDiffLineCount(file.metadata) <= MAX_HIGHLIGHTED_DIFF_LINES;
+  return shouldHighlightMetadata(file.metadata);
+}
+
+/** Return whether this interactive diff can use the bundled-theme worker path. */
+export function shouldOffloadHighlight(
+  metadata: FileDiffMetadata,
+  theme: HighlightThemeInput,
+  options: LoadHighlightedDiffOptions,
+) {
+  return (
+    options.offloadLargeDiff === true &&
+    typeof theme !== "string" &&
+    Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0 &&
+    shouldHighlightMetadata(metadata) &&
+    Math.max(metadata.deletionLines.length, metadata.additionLines.length) >=
+      HIGHLIGHT_WORKER_MIN_LINES
+  );
+}
+
+/** Highlight one eligible metadata snapshot off the terminal event loop. */
+async function loadWorkerHighlightedDiff(
+  file: DiffFile,
+  metadata: FileDiffMetadata,
+  theme: AppTheme,
+  sourcePlan: SourceBackedHighlightPlan | null,
+) {
+  const code = await highlightDiffInWorker({
+    language: file.language ?? "text",
+    metadata,
+    theme: syntaxHighlightThemeName(theme),
+  });
+  return finalizeHighlightedDiff(file, sourcePlan, { code });
 }
 
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
   theme: HighlightThemeInput = "dark",
+  options: LoadHighlightedDiffOptions = {},
 ): Promise<HighlightedDiffCode> {
   // Checked before the source read so an oversized file costs neither I/O nor queue time.
   if (!shouldHighlightDiff(file)) {
@@ -684,17 +729,25 @@ export async function loadHighlightedDiff(
   }
 
   const sourcePlan = await loadSourceBackedHighlightPlan(file);
+  const metadata = sourcePlan?.metadata ?? file.metadata;
+  if (!shouldHighlightMetadata(metadata)) {
+    return UNHIGHLIGHTED_DIFF;
+  }
+
+  if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
+    try {
+      return await loadWorkerHighlightedDiff(file, metadata, theme, sourcePlan);
+    } catch {
+      // Do not repeat a multi-second highlight on the event loop after a worker failure. The
+      // existing row builders render plain text when no HAST line is available.
+      return { deletionLines: [], additionLines: [] };
+    }
+  }
 
   try {
     const highlighter = await prepareHighlighter(file.language, theme);
     try {
-      return await renderHighlightedDiff(
-        file,
-        sourcePlan?.metadata ?? file.metadata,
-        highlighter,
-        theme,
-        sourcePlan,
-      );
+      return await renderHighlightedDiff(file, metadata, highlighter, theme, sourcePlan);
     } catch (error) {
       if (!sourcePlan) {
         throw error;

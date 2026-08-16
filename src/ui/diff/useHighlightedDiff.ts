@@ -122,7 +122,7 @@ function ensureHighlightedDiffLoaded(
   }
 
   let pending: Promise<HighlightedDiffCode>;
-  pending = loadHighlightedDiff(file, theme)
+  pending = loadHighlightedDiff(file, theme, { offloadLargeDiff: true })
     .then((nextHighlighted) => {
       commitHighlightResult(cacheKey, pending, nextHighlighted);
       return nextHighlighted;

@@ -5,8 +5,10 @@ import type { DiffFile } from "../../core/types";
 import {
   buildSplitRows,
   buildStackRows,
+  HIGHLIGHT_WORKER_MIN_LINES,
   highlightedDiffLineCount,
   loadHighlightedDiff,
+  shouldOffloadHighlight,
   loadHighlightedSourceLines,
   shouldHighlightDiff,
   spansForHighlightedSourceLine,
@@ -20,6 +22,7 @@ import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
 import { createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import { createTestCustomThemes } from "../../../test/helpers/theme-helpers";
+import { registerHighlightWorker } from "./highlightWorkerClient";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -121,6 +124,54 @@ function createElixirHeredocDiffFile(sourceFetcher?: DiffFile["sourceFetcher"]):
   };
 }
 
+/** Build a large changed TypeScript file that crosses the interactive worker threshold. */
+function createLargeDiffFile(): DiffFile {
+  const additions = Array.from(
+    { length: HIGHLIGHT_WORKER_MIN_LINES },
+    (_, index) => `export const generated${index} = ${index};`,
+  ).join("\n");
+  const metadata = parseDiffFromFile(
+    {
+      name: "large.ts",
+      contents: "export const changed = 1;\n",
+      cacheKey: "large-before",
+    },
+    {
+      name: "large.ts",
+      contents: `export const changed = 2;\n${additions}\n`,
+      cacheKey: "large-after",
+    },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "large",
+    path: "large.ts",
+    patch: "",
+    language: "typescript",
+    stats: { additions: HIGHLIGHT_WORKER_MIN_LINES + 1, deletions: 1 },
+    metadata,
+    agent: null,
+  };
+}
+
+/** Register a worker double that reports a startup failure as soon as it receives work. */
+function registerFailingHighlightWorkerForTest() {
+  const worker = {
+    onmessage: null as ((event: MessageEvent) => void) | null,
+    onerror: null as ((event: ErrorEvent) => void) | null,
+    postMessage() {
+      this.onerror?.({ message: "test worker failure" } as ErrorEvent);
+    },
+    terminate() {
+      return Promise.resolve(0);
+    },
+    unref() {},
+  };
+  registerHighlightWorker(worker as unknown as Worker);
+}
+
 function createEmptyLineDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
     {
@@ -213,6 +264,40 @@ describe("Pierre diff rows", () => {
 
     // A source file of ordinary size is unaffected.
     expect(shouldHighlightDiff(createDiffFile())).toBe(true);
+  });
+
+  test("matches inline spans when a large bundled-theme diff uses the worker", async () => {
+    const file = createLargeDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(shouldOffloadHighlight(file.metadata, theme, { offloadLargeDiff: true })).toBe(true);
+
+    const [inline, offloaded] = await Promise.all([
+      loadHighlightedDiff(file, theme),
+      loadHighlightedDiff(file, theme, { offloadLargeDiff: true }),
+    ]);
+    const inlineRows = buildSplitRows(file, inline, theme);
+    const workerRows = buildSplitRows(file, offloaded, theme);
+
+    expect(workerRows).toEqual(inlineRows);
+    const changedRow = workerRows.find(
+      (row) =>
+        row.type === "split-line" && row.left.kind === "deletion" && row.right.kind === "addition",
+    );
+    expect(
+      changedRow?.type === "split-line" && changedRow.right.spans.some((span) => span.bg),
+    ).toBe(true);
+  }, 30_000);
+
+  test("falls back to plain text when the large-diff worker fails", async () => {
+    registerFailingHighlightWorkerForTest();
+    const file = createLargeDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+
+    await expect(loadHighlightedDiff(file, theme, { offloadLargeDiff: true })).resolves.toEqual({
+      deletionLines: [],
+      additionLines: [],
+    });
   });
 
   test("uses full source to keep partial Elixir hunks inside the correct heredoc state", async () => {
