@@ -44,7 +44,7 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
-Or with [mise](https://mise.jdx.dev) (on Windows, use mise 2026.8.6 or newer):
+Or with [mise](https://mise.jdx.dev) (Windows requires mise 2026.8.6 or newer):
 
 ```bash
 mise use -g hunk
