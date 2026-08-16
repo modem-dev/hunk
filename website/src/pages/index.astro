@@ -7,6 +7,7 @@ import FeatureShowcase from "../components/marketing/FeatureShowcase.astro";
 import MoreFeatures from "../components/marketing/MoreFeatures.astro";
 import PlatformIcons from "../components/marketing/PlatformIcons.astro";
 import ThemeShot from "../components/marketing/ThemeShot.astro";
+import latestRelease from "../../releases/latest.json";
 import "../styles/marketing.css";
 
 const REPO = "https://github.com/modem-dev/hunk";
@@ -135,6 +136,17 @@ const formattedStars =
               }
             </a>
           </div>
+          {
+            latestRelease && (
+              <a class="release-ribbon" href={`/changelog/${latestRelease.minor}/`}>
+                <span class="rv">v{latestRelease.version}</span>
+                <span class="rs">{latestRelease.summary}</span>
+                <span class="ra" aria-hidden="true">
+                  →
+                </span>
+              </a>
+            )
+          }
         </section>
 
         <section class="paper" aria-label="Hunk theme preview">

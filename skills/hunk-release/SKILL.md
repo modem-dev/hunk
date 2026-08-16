@@ -37,14 +37,24 @@ bun install --frozen-lockfile
 bun run changeset:status
 ```
 
-Read the pending Changesets, then generate metadata:
+Read the pending Changesets, then generate metadata and the published release notes:
 
 ```sh
 bun run release:version
-git diff -- package.json packages CHANGELOG.md .changeset
+bun run generate:changelog
+git diff -- package.json packages CHANGELOG.md .changeset website
 ```
 
 Verify the intended versions, consumed Changesets, and new changelog section. Do not force a bump by hand-editing generated versions.
+
+`generate:changelog` projects `CHANGELOG.md` into `hunk.dev/changelog`. Never hand-edit its output under `website/src/content/docs/changelog/`, `website/public/changelog/`, `website/releases/dates.json`, or `website/releases/latest.json`. For a minor or major release, add the hand-authored parts to `website/releases/notes.json` under the `major.minor` key and regenerate:
+
+- `summary` — one sentence; replaces the changelog's `### Highlights` lead paragraph on the page.
+- `tagline` — short phrase for the landing-page release ribbon.
+- `links` — docs pages the highlights describe, rendered as "Related documentation".
+- `video` — `mp4` plus optional `webm`, `poster`, `duration`, and `title`, filled in at step 5.
+
+The release tag does not exist yet at this point, so the new version is rendered as `Unreleased` and is deliberately given no install command; the tag date is picked up by the next generation. Recorded dates in `website/releases/dates.json` are never recomputed, which is what lets `check:changelog` gate CI without Git tags.
 
 Generate and compare the committed release benchmark:
 
@@ -59,6 +69,7 @@ Run the validation required by `AGENTS.md`, plus the release packaging checks:
 
 ```sh
 bun run check:docs
+bun run check:changelog
 bun run check:pack
 bun run build:prebuilt:npm
 bun run check:prebuilt-pack
@@ -131,6 +142,15 @@ gh release view "$tag" --json tagName,name,isPrerelease,url,assets,body
 
 Stop if versions, channel, tag, archives, or attestations disagree.
 
+Then record the tag date and publish the release notes. The published page is what the update notice and the GitHub release body point at, so it is part of the release, not follow-up work:
+
+```sh
+bun run generate:changelog
+git diff --stat -- website
+```
+
+This backfills the new tag's date, adds the install command to the series page, and moves the landing-page ribbon to the new version. Commit it to `main` — the diff should only touch `website/releases/` and `website/src/content/docs/changelog/`. Skip this for a prerelease or a backport: neither advances the published latest release.
+
 ## 5. Add the release video and final notes
 
 Only after publication verifies, create a detached worktree at the released tag and follow `skills/hunk-launch-video/SKILL.md`'s full-release recipe:
@@ -141,7 +161,9 @@ git worktree add --detach "../hunk-release-video-$version" "$tag"
 
 That skill owns capture, encoding, and media checks. Keep generated media out of Git and Git LFS. Preserve storyboard edits only with separate approval.
 
-Draft the final body from the released changelog and actual branch diff:
+Publish the video so the release page can carry it, then record it in `website/releases/notes.json` under the series' `video` key and regenerate. Host it where the site can serve it rather than committing it: the 1080p master stays out of Git and Git LFS.
+
+Draft the final body from the released changelog and actual branch diff. Keep it short and point at `hunk.dev`, which carries the full notes, the video, and the docs links:
 
 ```md
 ## What's Changed
@@ -152,6 +174,7 @@ https://github.com/user-attachments/assets/<video-id>
 
 - <concise shipped change> by @<author> in <PR URL>
 
+**Release notes**: https://hunk.dev/changelog/<major.minor>/
 **Full Changelog**: https://github.com/modem-dev/hunk/compare/<previous-tag>...<new-tag>
 ```
 

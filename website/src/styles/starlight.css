@@ -310,3 +310,43 @@ starlight-menu-button button {
     box-shadow: 3px 3px 0 var(--hunk-shadow);
   }
 }
+
+/* Changelog pages. Generated Markdown, so the structure is fixed: an h3 per released version
+   followed by a plain-paragraph meta line, then h4 sections of change bullets. The rules below
+   turn that structure into a scannable release list without any per-page markup. */
+[data-changelog] .sl-markdown-content h3 {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--hunk-rule);
+  font-size: var(--sl-text-2xl);
+}
+
+/* The line directly under a version heading is its date and channel. */
+[data-changelog] .sl-markdown-content h3 + p {
+  margin-top: 0.35rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+[data-changelog] .sl-markdown-content h4 {
+  margin-top: 1.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-changelog] .sl-markdown-content h2 + p {
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+.changelog-video {
+  display: block;
+  width: 100%;
+  margin: 1.5rem 0;
+  border: 1px solid var(--hunk-strong-border);
+  border-radius: 8px;
+  background: var(--hunk-panel);
+}
