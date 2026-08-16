@@ -752,14 +752,15 @@ export async function loadHighlightedDiff(
   }
 
   const sourcePlan = await loadSourceBackedHighlightPlan(file);
-  const metadata = sourcePlan?.metadata ?? file.metadata;
-  if (!shouldHighlightMetadata(metadata)) {
-    return UNHIGHLIGHTED_DIFF;
-  }
+  // A source graft includes every line before the visible hunk. Keep its work bounded, but fall
+  // back to the already-eligible patch fragment instead of blanking a small review diff.
+  const highlightSourcePlan =
+    sourcePlan && shouldHighlightMetadata(sourcePlan.metadata) ? sourcePlan : null;
+  const metadata = highlightSourcePlan?.metadata ?? file.metadata;
 
   if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
     try {
-      return await loadWorkerHighlightedDiff(file, metadata, theme, sourcePlan);
+      return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
     } catch {
       // Do not repeat a multi-second highlight on the event loop after a worker failure. The
       // existing row builders render plain text when no HAST line is available.
@@ -770,9 +771,9 @@ export async function loadHighlightedDiff(
   try {
     const highlighter = await prepareHighlighter(file.language, theme);
     try {
-      return await renderHighlightedDiff(file, metadata, highlighter, theme, sourcePlan);
+      return await renderHighlightedDiff(file, metadata, highlighter, theme, highlightSourcePlan);
     } catch (error) {
-      if (!sourcePlan) {
+      if (!highlightSourcePlan) {
         throw error;
       }
 

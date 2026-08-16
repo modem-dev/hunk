@@ -157,9 +157,9 @@ function createLargeDiffFile(): DiffFile {
 }
 
 /** Build a large partial source diff that must remap compact full-source ranges onto its patch. */
-function createLargeSourceBackedDiffFile(): DiffFile {
+function createLargeSourceBackedDiffFile(prefixLineCount = HIGHLIGHT_WORKER_MIN_LINES): DiffFile {
   const prefix = Array.from(
-    { length: HIGHLIGHT_WORKER_MIN_LINES },
+    { length: prefixLineCount },
     (_, index) => `  value${index} = ${index}`,
   ).join("\n");
   const before = `${prefix}\n${ELIXIR_HEREDOC_BEFORE}`;
@@ -331,6 +331,27 @@ describe("Pierre diff rows", () => {
     expect(offloaded.compact?.additionLineMap).toHaveLength(file.metadata.additionLines.length);
     expect(buildStackRows(file, offloaded, theme)).toEqual(buildStackRows(file, inline, theme));
   }, 30_000);
+
+  test("falls back to patch highlighting when source-backed metadata exceeds the cap", async () => {
+    // A 6,000-line file produces 12,000 full-source side lines, although the visible patch has
+    // only one changed line. It should use the safe patch fragment rather than render plain rows.
+    const file = createLargeSourceBackedDiffFile(HIGHLIGHT_WORKER_MIN_LINES * 3);
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const rows = buildStackRows(file, highlighted, theme);
+    const functionRow = rows.find(
+      (row) =>
+        row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes("def hello")),
+    );
+
+    expect(shouldHighlightDiff(file)).toBe(true);
+    expect(highlighted.deletionLines).toHaveLength(file.metadata.deletionLines.length);
+    expect(highlighted.additionLines).toHaveLength(file.metadata.additionLines.length);
+    expect(functionRow?.type).toBe("stack-line");
+    expect(functionRow?.type === "stack-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
+      "#A5D6FF",
+    );
+  });
 
   test("falls back to plain text when the large-diff worker fails", async () => {
     registerFailingHighlightWorkerForTest();
