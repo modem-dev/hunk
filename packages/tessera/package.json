@@ -20,6 +20,22 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./atlas": {
+      "types": "./src/atlas/atlas.ts",
+      "import": "./src/atlas/atlas.ts"
+    },
+    "./opentui": {
+      "types": "./src/opentui/index.ts",
+      "import": "./src/opentui/index.ts"
+    }
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": {
+      "optional": true
     }
   },
   "engines": {

@@ -103,13 +103,78 @@ Dependency-free apart from `node:zlib`. The PNG encoder is about 120 lines and u
 scanline filtering, which is not optional: on a gradient, filtered PNG came out roughly twelve times
 smaller than the same pixels deflated raw.
 
+## Sprite atlas
+
+Transmission is expensive and placement is nearly free, so the efficient shape is one image sent
+once plus a placement per element selecting a source rectangle out of it.
+
+```ts
+const atlas = new AtlasBuilder({ padding: 2 })
+  .add("chip-ok", 96, 26, (pm, rect) => fillPill(pm, rect, verticalGradient("#6ebe82", "#3f8a58")))
+  .add("panel", 160, 96, (pm, rect) => {
+    /* … */
+  })
+  .bake();
+
+encodePlace({ id: 1, ...spriteSource(atlas, "chip-ok"), cols: 12, rows: 2, z: -1 });
+```
+
+Sizes are declared up front and drawing is deferred until packing is done, so each sprite is drawn
+straight into its final position rather than rasterized separately and copied in. Measured by
+`examples/atlas.ts` — 40 elements from a 7-sprite atlas:
+
+| approach                         | wire cost |
+| -------------------------------- | --------: |
+| 40 separately transmitted images |     47.0K |
+| one atlas + 40 placements        | **11.4K** |
+
+## OpenTUI
+
+`tessera/opentui` is a separate entry point with `@opentui/core` as an optional peer dependency.
+
+**It deliberately does not use tessera's own protocol, capability, or blocks backends.** OpenTUI
+already owns everything below the pixels: it probes `kitty_graphics` at runtime rather than sniffing
+environment variables, decodes and resizes natively, and falls back across kitty, sixel and blocks
+on its own. Reimplementing that under OpenTUI would be a second, worse copy. What OpenTUI has no
+equivalent for is a rasterizer — nothing in it draws a gradient, a rounded corner, or a shadow.
+
+So: **tessera draws, OpenTUI delivers.** The seam is PNG bytes, which is `ImageRenderable`'s public
+`source` type.
+
+```ts
+import { renderChromeLayer, chromeIsWorthwhile } from "tessera/opentui";
+
+const layer = renderChromeLayer({ cols, rows }, (surface) => {
+  surface.panel({ x: 2, y: 1, width: 36, height: 9 }, { radius: 12, shadow: { dy: 3, blur: 5 } });
+});
+
+// then, in React:  <image source={layer.source} fit="fill" />
+```
+
+As an actual plugin, contributed into a host app's slot registry:
+
+```ts
+const { plugin, invalidate } = createChromePlugin({
+  slot: "background",
+  draw: (surface) => surface.panel(/* … */),
+});
+registerCorePlugin(registry, plugin);
+```
+
+The layer is cached and re-rasterized only when the grid size changes; call `invalidate()` for the
+changes a resize cannot reveal, such as a theme switch. `chromeIsWorthwhile()` reports whether the
+terminal can render pixels at all — when it can only manage block glyphs the plugin draws nothing,
+since a blocky gradient is usually worse than a plain box border.
+
 ## Status
 
-Early. The drawing primitives cover panels, pills, meters, borders, bevels and shadows; sprite atlas
-packing, 9-slice scaling, and image-file decoding are not implemented yet. Unicode placeholder cells
-are implemented and tested but have not been exercised against a live terminal.
+Early. Drawing covers panels, pills, meters, borders, bevels and shadows, plus atlas packing.
+Nine-slice scaling and image-file decoding are not implemented — under OpenTUI, `NativeImage`
+already covers decoding. Unicode placeholder cells are implemented and tested but have not been
+exercised against a live terminal.
 
 ```
-bun test      # 95 tests
+bun test                        # 119 tests
 bun run examples/dashboard.ts
+bun run examples/atlas.ts
 ```

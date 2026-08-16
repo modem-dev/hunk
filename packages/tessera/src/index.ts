@@ -89,3 +89,7 @@ export {
 } from "./protocol/passthrough";
 export type { Multiplexer } from "./protocol/passthrough";
 export { MAX_PLACEHOLDER_INDEX } from "./protocol/diacritics";
+
+// Atlas
+export { AtlasBuilder, atlasOccupancy, spriteRect, spriteSource } from "./atlas/atlas";
+export type { AtlasOptions, BakedAtlas, Sprite, SpriteDraw } from "./atlas/atlas";
