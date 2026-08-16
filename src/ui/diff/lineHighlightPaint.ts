@@ -311,11 +311,6 @@ export function buildLineHighlightPaintIndex({
     }
   }
 
-  for (const [key, bucket] of index) {
-    if (bucket.length === 0) {
-      index.delete(key);
-    }
-  }
   if (index.size === 0) {
     return undefined;
   }

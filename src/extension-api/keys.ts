@@ -122,10 +122,6 @@ export function parseKeyChord(chord: string): ParsedKeyChord | { error: string }
     parsed.base = named;
   }
 
-  if (parsed.base.length === 0) {
-    return { error: `Key chord "${chord}" names only modifiers` };
-  }
-
   // Shifted symbols and digits have no layout-independent identity (shift+1 is
   // "!" on some keyboards and something else on others), so matching them by
   // modifier would be a guess. Refuse the form and ask for the character the

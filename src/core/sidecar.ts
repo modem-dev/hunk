@@ -7,10 +7,91 @@
  * mean the coding-agent command surface in `src/session/agent/`.
  */
 import { resolve as resolvePath } from "node:path";
-import type { SidecarContext, AgentFileContext } from "./types";
+import type { AgentAnnotation, AgentFileContext, SidecarContext } from "./types";
 
 interface SidecarLoadOptions {
   cwd?: string;
+}
+
+type AnnotationConfidence = NonNullable<AgentAnnotation["confidence"]>;
+
+const annotationConfidenceValues = [
+  "low",
+  "medium",
+  "high",
+] as const satisfies readonly AnnotationConfidence[];
+
+/** Return an optional string field without repeating sidecar coercion policy. */
+function optionalString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+/** Return an optional non-empty string field. */
+function optionalNonEmptyString(value: unknown) {
+  const text = optionalString(value);
+  return text?.length ? text : undefined;
+}
+
+/** Return a supported annotation confidence without widening untrusted input. */
+function optionalAnnotationConfidence(value: unknown): AnnotationConfidence | undefined {
+  return annotationConfidenceValues.find((confidence) => confidence === value);
+}
+
+/** Normalize a line-range tuple if the sidecar provides one. */
+function normalizeRange(range: unknown): [number, number] | undefined {
+  if (!Array.isArray(range) || range.length !== 2) {
+    return undefined;
+  }
+
+  const [start, end] = range;
+
+  if (
+    typeof start !== "number" ||
+    typeof end !== "number" ||
+    !Number.isInteger(start) ||
+    !Number.isInteger(end)
+  ) {
+    throw new Error("Annotation ranges must be integer tuples.");
+  }
+
+  if (start < 1 || end < 1) {
+    throw new Error("Annotation ranges must use positive 1-based line numbers.");
+  }
+
+  if (end < start) {
+    throw new Error("Annotation ranges must be ordered start..end tuples.");
+  }
+
+  return [start, end];
+}
+
+/** Normalize one note from the optional agent-context sidecar JSON. */
+function normalizeAnnotation(annotation: unknown): AgentAnnotation {
+  if (!annotation || typeof annotation !== "object") {
+    throw new Error("Agent annotations must be objects.");
+  }
+
+  const item = annotation as Record<string, unknown>;
+  const summary = optionalNonEmptyString(item.summary);
+  if (summary === undefined) {
+    throw new Error("Each agent annotation requires a summary.");
+  }
+
+  return {
+    id: optionalString(item.id),
+    oldRange: normalizeRange(item.oldRange),
+    newRange: normalizeRange(item.newRange),
+    summary,
+    rationale: optionalString(item.rationale),
+    markup: optionalNonEmptyString(item.markup),
+    tags: Array.isArray(item.tags)
+      ? item.tags.filter((tag): tag is string => typeof tag === "string")
+      : undefined,
+    confidence: optionalAnnotationConfidence(item.confidence),
+    source: optionalString(item.source),
+    author: optionalString(item.author),
+    createdAt: optionalString(item.createdAt),
+  };
 }
 
 /** Normalize one file entry from the optional agent-context sidecar JSON. */
@@ -20,74 +101,16 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
   }
 
   const value = file as Record<string, unknown>;
-
-  if (typeof value.path !== "string" || value.path.length === 0) {
+  const path = optionalNonEmptyString(value.path);
+  if (path === undefined) {
     throw new Error("Agent context file entries require a non-empty path.");
   }
 
   const annotations = Array.isArray(value.annotations) ? value.annotations : [];
-
   return {
-    path: value.path,
-    summary: typeof value.summary === "string" ? value.summary : undefined,
-    annotations: annotations.map((annotation) => {
-      if (!annotation || typeof annotation !== "object") {
-        throw new Error("Agent annotations must be objects.");
-      }
-
-      const item = annotation as Record<string, unknown>;
-
-      if (typeof item.summary !== "string" || item.summary.length === 0) {
-        throw new Error("Each agent annotation requires a summary.");
-      }
-
-      /** Normalize a line-range tuple if the sidecar provides one. */
-      const normalizeRange = (range: unknown) => {
-        if (!Array.isArray(range) || range.length !== 2) {
-          return undefined;
-        }
-
-        const [start, end] = range;
-
-        if (
-          typeof start !== "number" ||
-          typeof end !== "number" ||
-          !Number.isInteger(start) ||
-          !Number.isInteger(end)
-        ) {
-          throw new Error("Annotation ranges must be integer tuples.");
-        }
-
-        if (start < 1 || end < 1) {
-          throw new Error("Annotation ranges must use positive 1-based line numbers.");
-        }
-
-        if (end < start) {
-          throw new Error("Annotation ranges must be ordered start..end tuples.");
-        }
-
-        return [start, end] as [number, number];
-      };
-
-      return {
-        id: typeof item.id === "string" ? item.id : undefined,
-        oldRange: normalizeRange(item.oldRange),
-        newRange: normalizeRange(item.newRange),
-        summary: item.summary,
-        rationale: typeof item.rationale === "string" ? item.rationale : undefined,
-        markup: typeof item.markup === "string" && item.markup.length > 0 ? item.markup : undefined,
-        tags: Array.isArray(item.tags)
-          ? item.tags.filter((tag): tag is string => typeof tag === "string")
-          : undefined,
-        confidence:
-          item.confidence === "low" || item.confidence === "medium" || item.confidence === "high"
-            ? item.confidence
-            : undefined,
-        source: typeof item.source === "string" ? item.source : undefined,
-        author: typeof item.author === "string" ? item.author : undefined,
-        createdAt: typeof item.createdAt === "string" ? item.createdAt : undefined,
-      };
-    }),
+    path,
+    summary: optionalString(value.summary),
+    annotations: annotations.map(normalizeAnnotation),
   };
 }
 
@@ -131,8 +154,6 @@ export function findSidecarFileContext(
   }
 
   return (
-    sidecar.files.find(
-      (file) => file.path === currentPath || (previousPath ? file.path === previousPath : false),
-    ) ?? null
+    sidecar.files.find((file) => file.path === currentPath || file.path === previousPath) ?? null
   );
 }

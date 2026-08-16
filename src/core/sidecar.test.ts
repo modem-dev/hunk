@@ -41,6 +41,10 @@ describe("agent context", () => {
                 confidence: "high",
                 tags: ["review", 7],
               },
+              {
+                summary: "Unknown confidence is omitted",
+                confidence: "certain",
+              },
             ],
           },
         ],
@@ -50,10 +54,14 @@ describe("agent context", () => {
     const context = await loadSidecarContext(contextPath);
 
     expect(context?.summary).toBe("Agent summary");
-    expect(findSidecarFileContext(context, "src/example.ts")?.annotations).toHaveLength(1);
-    expect(findSidecarFileContext(context, "src/example.ts")?.annotations[0]?.tags).toEqual([
-      "review",
-    ]);
+    expect(findSidecarFileContext(context, "src/example.ts")?.annotations).toHaveLength(2);
+    expect(findSidecarFileContext(context, "src/example.ts")?.annotations[0]).toMatchObject({
+      confidence: "high",
+      tags: ["review"],
+    });
+    expect(
+      findSidecarFileContext(context, "src/example.ts")?.annotations[1]?.confidence,
+    ).toBeUndefined();
     expect(findSidecarFileContext(context, "src/renamed.ts", "src/example.ts")?.summary).toBe(
       "Explains the file change",
     );

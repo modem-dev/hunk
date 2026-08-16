@@ -6,21 +6,52 @@
 import type { AppTheme } from "../../themes";
 
 /** Fixed fallback palette for ANSI-style color names in agent markup. */
-const NAMED_COLORS: Record<string, string> = {
-  black: "#1c1c1c",
-  red: "#e05252",
-  green: "#4fb469",
-  yellow: "#d9a331",
-  blue: "#4f8fd9",
-  magenta: "#b969d9",
-  cyan: "#3fb5b5",
-  white: "#e8e8e8",
-  gray: "#8a8a8a",
-  grey: "#8a8a8a",
-  orange: "#e0873d",
-  purple: "#9a6fd0",
-  pink: "#d9699a",
-};
+const NAMED_COLORS = new Map<string, string>([
+  ["black", "#1c1c1c"],
+  ["red", "#e05252"],
+  ["green", "#4fb469"],
+  ["yellow", "#d9a331"],
+  ["blue", "#4f8fd9"],
+  ["magenta", "#b969d9"],
+  ["cyan", "#3fb5b5"],
+  ["white", "#e8e8e8"],
+  ["gray", "#8a8a8a"],
+  ["grey", "#8a8a8a"],
+  ["orange", "#e0873d"],
+  ["purple", "#9a6fd0"],
+  ["pink", "#d9699a"],
+]);
+
+type StmlThemeColorKey =
+  | "accent"
+  | "accentMuted"
+  | "addedSignColor"
+  | "removedSignColor"
+  | "fileModified"
+  | "muted"
+  | "panelAlt"
+  | "text"
+  | "panel"
+  | "noteBorder"
+  | "background";
+
+/** Theme field selected by each semantic STML color token. */
+const THEME_COLOR_KEY_BY_TOKEN = new Map<string, StmlThemeColorKey>([
+  ["accent", "accent"],
+  ["info", "accentMuted"],
+  ["success", "addedSignColor"],
+  ["danger", "removedSignColor"],
+  ["error", "removedSignColor"],
+  ["warning", "fileModified"],
+  ["muted", "muted"],
+  ["subtle", "panelAlt"],
+  ["heading", "text"],
+  ["text", "text"],
+  ["panel", "panel"],
+  ["bg", "panel"],
+  ["note-border", "noteBorder"],
+  ["badge-text", "background"],
+]);
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -39,41 +70,16 @@ export function resolveStmlColor(token: string | undefined, theme: AppTheme): st
 
   const value = token.trim().toLowerCase();
 
-  switch (value) {
-    case "accent":
-      return theme.accent;
-    case "info":
-      return theme.accentMuted;
-    case "success":
-      return theme.addedSignColor;
-    case "danger":
-    case "error":
-      return theme.removedSignColor;
-    case "warning":
-      return theme.fileModified;
-    case "muted":
-      return theme.muted;
-    case "subtle":
-      return theme.panelAlt;
-    case "heading":
-    case "text":
-      return theme.text;
-    case "panel":
-    case "bg":
-      return theme.panel;
-    case "note-border":
-      return theme.noteBorder;
-    case "badge-text":
-      // Badge glyphs sit on a bright badge background, so the app background
-      // is the highest-contrast text color on both light and dark themes.
-      return theme.background;
-    default:
-      break;
+  const themeColorKey = THEME_COLOR_KEY_BY_TOKEN.get(value);
+  if (themeColorKey !== undefined) {
+    // `badge-text` maps to the app background because badge glyphs sit on a bright
+    // background and need the highest-contrast text color in both theme modes.
+    return theme[themeColorKey];
   }
 
   if (HEX_COLOR.test(value)) {
     return value;
   }
 
-  return NAMED_COLORS[value] ?? null;
+  return NAMED_COLORS.get(value) ?? null;
 }
