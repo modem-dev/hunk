@@ -96,21 +96,62 @@ const MONTHS = [
   "December",
 ] as const;
 
-/** Split a version into comparable numeric parts, treating a prerelease as preceding its release. */
+/** Matches a release heading exactly, so trailing prose can never be mistaken for a version. */
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
+
+/**
+ * Split a version into comparable numeric parts, treating a prerelease as preceding its release.
+ *
+ * Prerelease identifiers compare pairwise, so `beta.2` precedes `beta.10` and `alpha` precedes
+ * `beta`. Every component is a finite number: a comparator that returns `NaN` makes `sort`
+ * behave arbitrarily, which previously let `0.19.0-rc` outrank `0.19.0`.
+ */
 function versionSortKey(version: string) {
   const [core = "", pre] = version.split("-", 2);
   const [major = "0", minor = "0", patch = "0"] = core.split(".");
-  // A release sorts above its own prereleases, so absent prerelease metadata ranks highest.
-  const preRank = pre === undefined ? Number.MAX_SAFE_INTEGER : Number(pre.split(".").at(-1) ?? 0);
-  return [Number(major), Number(minor), Number(patch), preRank];
+  return {
+    core: [major, minor, patch].map((part) => Number(part) || 0),
+    // A release outranks all of its own prereleases, so absent prerelease metadata ranks highest.
+    pre: pre === undefined ? undefined : pre.split("."),
+  };
 }
 
-/** Order two versions newest first. */
+/** Compare two prerelease identifiers: numbers rank below strings, matching semver. */
+function comparePrereleaseParts(a: string | undefined, b: string | undefined) {
+  if (a === undefined || b === undefined) {
+    // A shorter identifier list precedes a longer one with the same prefix (`beta` before `beta.1`).
+    return a === undefined ? (b === undefined ? 0 : -1) : 1;
+  }
+  const aNumber = /^\d+$/.test(a) ? Number(a) : undefined;
+  const bNumber = /^\d+$/.test(b) ? Number(b) : undefined;
+  if (aNumber !== undefined && bNumber !== undefined) {
+    return aNumber - bNumber;
+  }
+  if (aNumber !== undefined || bNumber !== undefined) {
+    return aNumber === undefined ? 1 : -1;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Order two versions newest first. Always returns a finite number. */
 export function compareVersionsDescending(a: string, b: string) {
   const left = versionSortKey(a);
   const right = versionSortKey(b);
-  for (let index = 0; index < left.length; index += 1) {
-    const difference = (right[index] ?? 0) - (left[index] ?? 0);
+
+  for (let index = 0; index < left.core.length; index += 1) {
+    const difference = (right.core[index] ?? 0) - (left.core[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+
+  if (left.pre === undefined || right.pre === undefined) {
+    return left.pre === undefined ? (right.pre === undefined ? 0 : -1) : 1;
+  }
+
+  const length = Math.max(left.pre.length, right.pre.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = comparePrereleaseParts(right.pre[index], left.pre[index]);
     if (difference !== 0) {
       return difference;
     }
@@ -152,19 +193,75 @@ export function parseChangeEntry(raw: string): ChangeEntry {
     : { description: rest.trim(), pullRequest };
 }
 
-/** Collect the `- ` bullets in one section body, joining wrapped continuation lines. */
+/**
+ * Split Markdown into top-level blocks at headings of one depth, ignoring fenced code.
+ *
+ * A changeset description may contain a fenced block whose lines start with `#` or `-`. Splitting
+ * on a bare regex would treat those as structure and silently discard everything after them, so
+ * fences are tracked and their contents are never treated as headings.
+ */
+function splitOnHeadings(markdown: string, marker: string) {
+  const blocks: string[][] = [];
+  let fence: string | undefined;
+
+  for (const line of markdown.split("\n")) {
+    const fenceMatch = line.match(/^\s*(```+|~~~+)/);
+    if (fenceMatch?.[1]) {
+      // A fence closes only on its own delimiter, so ``` inside a ~~~ block stays content.
+      if (fence === undefined) {
+        fence = fenceMatch[1][0];
+      } else if (fenceMatch[1].startsWith(fence)) {
+        fence = undefined;
+      }
+    }
+
+    if (fence === undefined && line.startsWith(marker)) {
+      blocks.push([line.slice(marker.length)]);
+      continue;
+    }
+    blocks.at(-1)?.push(line);
+  }
+
+  return blocks.map((lines) => lines.join("\n"));
+}
+
+/**
+ * Collect the `- ` bullets in one section body.
+ *
+ * Wrapped continuation lines fold into the bullet above them, but an indented sub-bullet keeps its
+ * own line so a nested list renders as a list rather than as run-on prose with stray dashes.
+ */
 function parseEntries(body: string): ChangeEntry[] {
   const entries: string[] = [];
+  let fence: string | undefined;
+
   for (const line of body.split("\n")) {
-    if (line.startsWith("- ")) {
+    const fenceMatch = line.match(/^\s*(```+|~~~+)/);
+    if (fenceMatch?.[1]) {
+      if (fence === undefined) {
+        fence = fenceMatch[1][0];
+      } else if (fenceMatch[1].startsWith(fence)) {
+        fence = undefined;
+      }
+    }
+
+    if (fence === undefined && line.startsWith("- ")) {
       entries.push(line.slice(2));
       continue;
     }
-    // A non-blank, non-bullet line continues the bullet above it.
-    if (line.trim() !== "" && entries.length > 0) {
+    if (entries.length === 0) {
+      continue;
+    }
+    // Inside a fence, blank lines and indentation are content and must survive verbatim.
+    if (fence !== undefined || /^\s+[-*] /.test(line)) {
+      entries[entries.length - 1] += `\n${line}`;
+      continue;
+    }
+    if (line.trim() !== "") {
       entries[entries.length - 1] += ` ${line.trim()}`;
     }
   }
+
   return entries.map(parseChangeEntry).filter((entry) => entry.description !== "");
 }
 
@@ -176,23 +273,23 @@ function parseEntries(body: string): ChangeEntry[] {
  */
 export function parseChangelog(markdown: string): ReleaseEntry[] {
   const releases: ReleaseEntry[] = [];
-  // Split on `## ` headings while keeping each heading with its body.
-  const blocks = markdown.split(/^## /m).slice(1);
 
-  for (const block of blocks) {
+  for (const block of splitOnHeadings(markdown, "## ")) {
     const newline = block.indexOf("\n");
     const heading = (newline === -1 ? block : block.slice(0, newline)).trim();
     const body = newline === -1 ? "" : block.slice(newline + 1);
 
     const legacy = heading.match(/^\[([^\]]+)\]\s*-\s*(\d{4}-\d{2}-\d{2})$/);
     const version = legacy?.[1] ?? heading;
-    if (!/^\d+\.\d+\.\d+/.test(version)) {
+    // Matched in full: a heading like `## 1.2.3 (hotfix)` must not become a version whose text
+    // then flows into anchors, install commands, and page URLs.
+    if (!VERSION_PATTERN.test(version)) {
       continue;
     }
 
     const sections: ChangeSection[] = [];
     let highlights: string | undefined;
-    for (const sectionBlock of body.split(/^### /m).slice(1)) {
+    for (const sectionBlock of splitOnHeadings(body, "### ")) {
       const sectionNewline = sectionBlock.indexOf("\n");
       const title = (
         sectionNewline === -1 ? sectionBlock : sectionBlock.slice(0, sectionNewline)
@@ -244,21 +341,27 @@ export function groupIntoSeries(releases: readonly ReleaseEntry[]): ReleaseSerie
     .sort((a, b) => compareVersionsDescending(`${a.minor}.0`, `${b.minor}.0`));
 }
 
-/** Read the committed release-date map, tolerating a missing file on first generation. */
-function readDates(): Record<string, string> {
+/**
+ * Read one committed JSON input, treating only a missing file as empty.
+ *
+ * Malformed JSON fails loudly instead: silently reading a corrupted `dates.json` as `{}` would
+ * mark every release unreleased, dropping the whole feed and every install command with no
+ * diagnostic and a clean exit code.
+ */
+function readJsonInput<T>(path: string): T | Record<string, never> {
+  let text: string;
   try {
-    return JSON.parse(readFileSync(RELEASE_DATES_SOURCE, "utf8")) as Record<string, string>;
-  } catch {
-    return {};
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {};
+    }
+    throw error;
   }
-}
-
-/** Read the hand-authored overlay, tolerating a missing file. */
-function readNotes(): Record<string, SeriesNotes> {
   try {
-    return JSON.parse(readFileSync(RELEASE_NOTES_SOURCE, "utf8")) as Record<string, SeriesNotes>;
-  } catch {
-    return {};
+    return JSON.parse(text) as T;
+  } catch (error) {
+    throw new Error(`${path} is not valid JSON: ${(error as Error).message}`);
   }
 }
 
@@ -312,6 +415,23 @@ export function resolveDates(
 /** Build the stable in-page anchor for one version, e.g. `0.18.2` becomes `v0-18-2`. */
 export function versionAnchor(version: string) {
   return `v${version.replaceAll(".", "-")}`;
+}
+
+/**
+ * Report whether a release is published — a real release with a recorded date.
+ *
+ * Publication is derived from the recorded date rather than from position in `CHANGELOG.md`,
+ * because a version-preparation branch describes a release before its tag and npm publication
+ * exist. Every surface that must not advertise an uninstallable version asks this question, so
+ * they all ask it here.
+ */
+export function isPublished(release: ReleaseEntry, dates: Record<string, string>) {
+  return !release.prerelease && dates[release.version] !== undefined;
+}
+
+/** List a series' published releases, newest first. */
+function publishedReleases(series: ReleaseSeries, dates: Record<string, string>) {
+  return series.releases.filter((release) => isPublished(release, dates));
 }
 
 /** Render `2026-08-16` as `August 16, 2026`. */
@@ -398,9 +518,9 @@ export function seriesSummary(series: ReleaseSeries, notes: SeriesNotes | undefi
 
 /** Describe a series' published span as a single phrase, or `undefined` when no release is dated. */
 function seriesSpan(series: ReleaseSeries, dates: Record<string, string>) {
-  const published = series.releases
-    .filter((release) => !release.prerelease && dates[release.version])
-    .map((release) => dates[release.version] as string);
+  const published = publishedReleases(series, dates).map(
+    (release) => dates[release.version] as string,
+  );
   const newest = published[0];
   const oldest = published.at(-1);
   if (!newest || !oldest) {
@@ -437,6 +557,21 @@ function renderEntry(entry: ChangeEntry) {
   return `- ${entry.description}${suffix}`;
 }
 
+/** Escape a value for an HTML double-quoted attribute. */
+function attribute(value: string) {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+/**
+ * Serialize a value for embedding inside a `<script>` element.
+ *
+ * `JSON.stringify` leaves `</script>` intact, which would close the element early and turn the
+ * remainder of the payload into markup.
+ */
+function jsonForScript(value: unknown) {
+  return JSON.stringify(value).replaceAll("<", "\\u003c").replaceAll("\u2028", "\\u2028");
+}
+
 /** Render the self-hosted release video, including the schema search engines index it by. */
 function renderVideo(video: NonNullable<SeriesNotes["video"]>, minor: string, summary: string) {
   const schema = {
@@ -450,16 +585,16 @@ function renderVideo(video: NonNullable<SeriesNotes["video"]>, minor: string, su
   };
 
   const sources = [
-    video.webm ? `    <source src="${video.webm}" type="video/webm" />` : undefined,
-    `    <source src="${video.mp4}" type="video/mp4" />`,
+    video.webm ? `    <source src="${attribute(video.webm)}" type="video/webm" />` : undefined,
+    `    <source src="${attribute(video.mp4)}" type="video/mp4" />`,
   ].filter(Boolean);
 
   return [
-    `<video class="changelog-video" controls preload="none"${video.poster ? ` poster="${video.poster}"` : ""}>`,
+    `<video class="changelog-video" controls preload="none"${video.poster ? ` poster="${attribute(video.poster)}"` : ""}>`,
     ...sources,
     "  </video>",
     "",
-    `<script type="application/ld+json" is:inline>${JSON.stringify(schema)}</script>`,
+    `<script type="application/ld+json" is:inline>${jsonForScript(schema)}</script>`,
   ].join("\n");
 }
 
@@ -484,9 +619,7 @@ export function renderSeriesPage({
   const highlightBullets = newestHighlights ? splitHighlights(newestHighlights).body : undefined;
   // Only offer an install command for a version that is actually published; the page can be
   // generated from a release-preparation branch before its tag and npm publication exist.
-  const installable = series.releases.find(
-    (release) => !release.prerelease && dates[release.version],
-  )?.version;
+  const installable = publishedReleases(series, dates)[0]?.version;
   const isCurrent = latestReleasedVersion !== undefined && installable === latestReleasedVersion;
 
   const lines: string[] = [
@@ -609,8 +742,8 @@ export function renderIndexPage({
   // "Latest" tracks the newest *published* series, not the newest heading in CHANGELOG.md: a
   // release-preparation branch adds its section before the tag exists, and that series is
   // unreleased until the tag date lands.
-  const latestPublished = seriesList.find((series) =>
-    series.releases.some((release) => !release.prerelease && dates[release.version]),
+  const latestPublished = seriesList.find(
+    (series) => publishedReleases(series, dates).length > 0,
   )?.minor;
 
   seriesList.forEach((series) => {
@@ -677,9 +810,10 @@ export function renderFeed({
 }) {
   const items = seriesList
     .map((series) => {
-      const dated = series.releases
-        .filter((release) => !release.prerelease && dates[release.version])
-        .map((release) => ({ release, date: dates[release.version] as string }));
+      const dated = publishedReleases(series, dates).map((release) => ({
+        release,
+        date: dates[release.version] as string,
+      }));
       const newest = dated[0];
       if (!newest) {
         return undefined;
@@ -720,8 +854,8 @@ export function renderFeed({
 /** Produce every committed changelog artifact, keyed by absolute path. */
 export function generateChangelogArtifacts({
   markdown = readFileSync(CHANGELOG_SOURCE, "utf8"),
-  notes = readNotes(),
-  recordedDates = readDates(),
+  notes = readJsonInput<Record<string, SeriesNotes>>(RELEASE_NOTES_SOURCE),
+  recordedDates = readJsonInput<Record<string, string>>(RELEASE_DATES_SOURCE),
   lookupDate = tagDate,
 }: {
   markdown?: string;
@@ -732,9 +866,7 @@ export function generateChangelogArtifacts({
   const releases = parseChangelog(markdown);
   const dates = resolveDates(releases, recordedDates, lookupDate);
   const seriesList = groupIntoSeries(releases);
-  const latestReleasedVersion = releases.find(
-    (release) => !release.prerelease && dates[release.version],
-  )?.version;
+  const latestReleasedVersion = releases.find((release) => isPublished(release, dates))?.version;
 
   // The landing page reads this rather than the pages themselves, so its release ribbon stays a
   // static import instead of a build-time parse of generated Markdown.
@@ -773,7 +905,12 @@ export function generateChangelogArtifacts({
   return artifacts;
 }
 
-/** List generated series pages that no longer correspond to a series in `CHANGELOG.md`. */
+/**
+ * List generated series pages that no longer correspond to a series in `CHANGELOG.md`.
+ *
+ * Removing more than half of what is on disk means the parse collapsed rather than a series being
+ * renamed, so that case throws instead of quietly deleting committed pages.
+ */
 function findOrphanedPages(artifacts: Readonly<Record<string, string>>) {
   let existing: string[];
   try {
@@ -781,10 +918,20 @@ function findOrphanedPages(artifacts: Readonly<Record<string, string>>) {
   } catch {
     return [];
   }
-  return existing
+
+  const pages = existing
     .filter((name) => name.endsWith(".md"))
-    .map((name) => resolve(CHANGELOG_OUTPUT_DIR, name))
-    .filter((path) => !(path in artifacts));
+    .map((name) => resolve(CHANGELOG_OUTPUT_DIR, name));
+  const orphaned = pages.filter((path) => !(path in artifacts));
+
+  if (pages.length > 1 && orphaned.length > pages.length / 2) {
+    throw new Error(
+      `Refusing to remove ${orphaned.length} of ${pages.length} generated changelog pages. ` +
+        "This usually means CHANGELOG.md failed to parse rather than that releases were removed.",
+    );
+  }
+
+  return orphaned;
 }
 
 /** Write generated artifacts, or report stale paths without modifying them. */

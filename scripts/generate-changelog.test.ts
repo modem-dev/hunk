@@ -4,6 +4,7 @@ import {
   formatDate,
   generateChangelogArtifacts,
   groupIntoSeries,
+  isPublished,
   minorSeriesOf,
   parseChangeEntry,
   parseChangelog,
@@ -15,6 +16,7 @@ import {
   splitHighlights,
   toPlainText,
   truncate,
+  updateGeneratedChangelog,
   versionAnchor,
   yamlString,
 } from "./generate-changelog";
@@ -448,5 +450,170 @@ describe("the pre-tag window", () => {
     });
     const latest = Object.entries(artifacts).find(([path]) => path.endsWith("latest.json"))?.[1];
     expect(JSON.parse(latest ?? "null")).toMatchObject({ version: "0.18.0", minor: "0.18" });
+  });
+});
+
+describe("parser robustness", () => {
+  // Regression coverage for the shapes a future changeset can legitimately contain. Each of these
+  // previously either lost content silently or produced malformed output.
+  test("keeps a fenced code block containing a heading out of the document structure", () => {
+    const releases = parseChangelog(
+      [
+        "## 0.20.0",
+        "",
+        "### Minor Changes",
+        "",
+        "- [#1](https://x/pull/1) - Example output:",
+        "",
+        "```md",
+        "## Not a heading",
+        "- not a bullet",
+        "```",
+        "",
+        "### Patch Changes",
+        "",
+        "- [#2](https://x/pull/2) - Second entry.",
+        "",
+      ].join("\n"),
+    );
+    expect(releases).toHaveLength(1);
+    // The section after the fence must survive rather than being swallowed by a fake heading.
+    expect(releases[0]?.sections.map((section) => section.title)).toEqual([
+      "Minor Changes",
+      "Patch Changes",
+    ]);
+    expect(releases[0]?.sections[1]?.entries[0]?.pullRequest).toBe(2);
+  });
+
+  test("closes a fence only on its own delimiter", () => {
+    const releases = parseChangelog(
+      [
+        "## 0.20.0",
+        "",
+        "### Patch Changes",
+        "",
+        "- One:",
+        "",
+        "~~~",
+        "```",
+        "## x",
+        "~~~",
+        "",
+      ].join("\n"),
+    );
+    expect(releases[0]?.sections[0]?.entries).toHaveLength(1);
+  });
+
+  test("rejects a heading that only starts with a version", () => {
+    expect(parseChangelog("## 1.2.3 (hotfix) <script>x</script>\n\n- a: b\n")).toEqual([]);
+    expect(parseChangelog("## 1.2.3\n\n### Fixed\n\n- Real.\n").map((r) => r.version)).toEqual([
+      "1.2.3",
+    ]);
+  });
+
+  test("accepts a prerelease heading", () => {
+    expect(
+      parseChangelog("## 0.20.0-beta.10\n\n### Fixed\n\n- Real.\n").map((r) => r.version),
+    ).toEqual(["0.20.0-beta.10"]);
+  });
+
+  test("keeps a nested sub-list as a list instead of run-on prose", () => {
+    const releases = parseChangelog(
+      ["## 0.20.0", "", "### Minor Changes", "", "- Adds:", "  - one", "  - two", ""].join("\n"),
+    );
+    const description = releases[0]?.sections[0]?.entries[0]?.description ?? "";
+    expect(description).toContain("\n  - one");
+    expect(description).not.toContain("Adds: - one");
+  });
+});
+
+describe("prerelease ordering", () => {
+  test("never returns NaN from the comparator", () => {
+    for (const [a, b] of [
+      ["0.19.0-rc", "0.19.0"],
+      ["0.19.0-rc", "0.19.0-beta.1"],
+      ["0.19.0", "0.19.0"],
+    ] as const) {
+      expect(Number.isFinite(compareVersionsDescending(a, b))).toBe(true);
+    }
+  });
+
+  test("sorts a release above a prerelease with no trailing number", () => {
+    expect(["0.19.0-rc", "0.19.0-beta.1", "0.19.0"].sort(compareVersionsDescending)).toEqual([
+      "0.19.0",
+      "0.19.0-rc",
+      "0.19.0-beta.1",
+    ]);
+  });
+
+  test("orders prerelease channels and their numbers", () => {
+    expect(
+      ["0.19.0-alpha.99", "0.19.0-beta.2", "0.19.0-beta.10"].sort(compareVersionsDescending),
+    ).toEqual(["0.19.0-beta.10", "0.19.0-beta.2", "0.19.0-alpha.99"]);
+  });
+});
+
+describe("published-release policy", () => {
+  const dated = { version: "0.19.0", prerelease: false, sections: [] };
+  const prerelease = { version: "0.19.0-beta.0", prerelease: true, sections: [] };
+
+  test("requires a real release with a recorded date", () => {
+    expect(isPublished(dated, { "0.19.0": "2026-08-16" })).toBe(true);
+    expect(isPublished(dated, {})).toBe(false);
+    expect(isPublished(prerelease, { "0.19.0-beta.0": "2026-08-10" })).toBe(false);
+  });
+});
+
+describe("video embedding", () => {
+  const series = groupIntoSeries(parseChangelog(SAMPLE))[0];
+  const dates = { "0.19.0": "2026-08-16" };
+
+  test("renders the video and its schema when the overlay declares one", () => {
+    const page = series && renderSeriesPage({ series, notes: { video: { mp4: "/v.mp4" } }, dates });
+    expect(page).toContain('<source src="/v.mp4" type="video/mp4" />');
+    expect(page).toContain("application/ld+json");
+    expect(page).toContain('"@type":"VideoObject"');
+  });
+
+  test("escapes a title that would otherwise close the script element", () => {
+    const page =
+      series &&
+      renderSeriesPage({
+        series,
+        notes: { video: { mp4: "/v.mp4", title: "</script><script>alert(1)</script>" } },
+        dates,
+      });
+    expect(page).not.toContain("</script><script>alert(1)");
+    expect(page).toContain("\\u003c/script");
+  });
+
+  test("escapes a quote in a source URL rather than breaking the attribute", () => {
+    const page =
+      series &&
+      renderSeriesPage({ series, notes: { video: { mp4: '/v.mp4" onerror="x' } }, dates });
+    expect(page).not.toContain('onerror="x"');
+    expect(page).toContain("&quot;");
+  });
+});
+
+describe("orphan cleanup safety", () => {
+  test("refuses to remove most of the generated pages", () => {
+    // A collapsed parse would otherwise delete every committed page on a plain generate run.
+    // `check` mode never writes, so this asserts the guard without touching the tree.
+    expect(() => updateGeneratedChangelog({ check: true, artifacts: {} })).toThrow(
+      /Refusing to remove/,
+    );
+  });
+
+  test("still reports genuinely stale output", () => {
+    const artifacts = generateChangelogArtifacts();
+    const [firstPath] = Object.keys(artifacts);
+    expect(firstPath).toBeDefined();
+    expect(
+      updateGeneratedChangelog({
+        check: true,
+        artifacts: { ...artifacts, [firstPath as string]: "stale" },
+      }),
+    ).toEqual([firstPath as string]);
   });
 });
