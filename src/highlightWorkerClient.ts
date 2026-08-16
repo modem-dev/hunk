@@ -5,16 +5,17 @@ function highlightWorkerUrl() {
 
 /** Return whether this runtime can resolve Hunk's syntax worker entrypoint. */
 export function supportsHighlightWorkerOffload({
+  execPath = process.execPath,
   platform = process.platform,
-  workerUrl = highlightWorkerUrl().href,
 }: {
+  execPath?: string;
   platform?: NodeJS.Platform;
-  workerUrl?: string;
 } = {}) {
   // Bun 1.3 cannot resolve embedded Worker entrypoints from Windows single-file executables.
-  // Source-mode Windows workers still work, so disable only the B:\~BUN virtual-filesystem case.
-  const normalizedWorkerUrl = workerUrl.replaceAll("\\", "/").toLowerCase();
-  return platform !== "win32" || !normalizedWorkerUrl.includes("/~bun/");
+  // Source-mode Windows runs through bun.exe; compiled Hunk runs through its own executable.
+  const executableName = execPath.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase();
+  const runsThroughBun = executableName === "bun" || executableName === "bun.exe";
+  return platform !== "win32" || runsThroughBun;
 }
 
 /**
@@ -25,7 +26,7 @@ export function supportsHighlightWorkerOffload({
  */
 export function createHighlightWorker() {
   const workerUrl = highlightWorkerUrl();
-  if (!supportsHighlightWorkerOffload({ workerUrl: workerUrl.href })) {
+  if (!supportsHighlightWorkerOffload()) {
     throw new Error("Syntax worker offload is unavailable in Bun's compiled Windows runtime.");
   }
   return new Worker(workerUrl);

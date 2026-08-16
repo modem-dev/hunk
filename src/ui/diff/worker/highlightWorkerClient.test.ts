@@ -86,19 +86,19 @@ describe("highlight worker client", () => {
     expect(
       supportsHighlightWorkerOffload({
         platform: "win32",
-        workerUrl: "file:///B:/~BUN/root/highlightWorkerEntry.js",
+        execPath: "C:\\Program Files\\Hunk\\hunk.exe",
       }),
     ).toBe(false);
     expect(
       supportsHighlightWorkerOffload({
         platform: "win32",
-        workerUrl: "file:///C:/projects/hunk/src/highlightWorkerEntry.js",
+        execPath: "C:\\Users\\dev\\.bun\\bin\\bun.exe",
       }),
     ).toBe(true);
     expect(
       supportsHighlightWorkerOffload({
         platform: "linux",
-        workerUrl: "file:///$bunfs/root/highlightWorkerEntry.js",
+        execPath: "/opt/hunk/bin/hunk",
       }),
     ).toBe(true);
   });
