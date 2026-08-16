@@ -37,6 +37,7 @@ bun run bench:working-tree-load
 bun run bench:changeset-parse
 bun run bench:render-layout
 bun run bench:highlight-prefetch
+bun run bench:highlight-worker-offload
 bun run bench:large-stream
 bun run bench:interaction-latency
 bun run bench:non-ascii-stream
@@ -58,6 +59,7 @@ bun run bench:competitors
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
 - `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
+- `highlight-worker-offload.ts` — measures highlighting in a Bun Worker instead of on the main thread, reporting the worst main-thread stall as a median over repetitions, comparing four reply shapes — raw Pierre HAST, compact tokens, compact rebuilt lazily for one viewport, and a transferred columnar payload rebuilt lazily — each timed including the rebuild it costs on arrival, and round tripping through the real worker to check spans stay identical through `buildSplitRows`. `highlight-worker.ts` is the worker and `lib/compactHighlight.ts` the encoding they share. Tunable with `HUNK_BENCH_LINES`, `HUNK_BENCH_REPEATS`, and `HUNK_BENCH_VIEWPORT_ROWS`. See `docs/highlight-worker-offload.md`.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
 - `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
