@@ -57,14 +57,40 @@ function createMutableSide(): MutableCompactHighlightSide {
   };
 }
 
-/** Encode one side's HAST lines without retaining token text in the result. */
+/** Assign one compact palette ID while preserving first-seen HAST traversal order. */
+function compactPaletteId(
+  foreground: string | undefined,
+  foregroundPalette: string[],
+  paletteIds: Map<string, number>,
+) {
+  if (!foreground) {
+    return 0;
+  }
+
+  const existingId = paletteIds.get(foreground);
+  if (existingId !== undefined) {
+    return existingId;
+  }
+  if (foregroundPalette.length === 0xffff) {
+    throw new Error("Compact syntax palette exceeded Uint16 style IDs.");
+  }
+
+  foregroundPalette.push(foreground);
+  const styleId = foregroundPalette.length;
+  paletteIds.set(foreground, styleId);
+  return styleId;
+}
+
+/** Encode one side's HAST lines in one traversal without retaining token text in the result. */
 function encodeSide({
   lines,
   appearance,
+  foregroundPalette,
   paletteIds,
 }: {
   lines: HighlightedDiffCode["deletionLines"];
   appearance: "dark" | "light";
+  foregroundPalette: string[];
   paletteIds: Map<string, number>;
 }) {
   const side = createMutableSide();
@@ -79,13 +105,7 @@ function encodeSide({
         continue;
       }
 
-      let styleId = 0;
-      if (run.fg) {
-        styleId = paletteIds.get(run.fg) ?? 0;
-        if (styleId === 0) {
-          throw new Error(`Missing compact syntax palette color: ${run.fg}`);
-        }
-      }
+      const styleId = compactPaletteId(run.fg, foregroundPalette, paletteIds);
 
       side.starts.push(start);
       side.ends.push(end);
@@ -118,24 +138,21 @@ export function encodeCompactHighlightedDiff(
   const foregroundPalette: string[] = [];
   const paletteIds = new Map<string, number>();
 
-  for (const line of [...code.deletionLines, ...code.additionLines]) {
-    for (const run of collectHastHighlightRuns(line, appearance)) {
-      if (!run.fg || paletteIds.has(run.fg)) {
-        continue;
-      }
-      if (foregroundPalette.length === 0xffff) {
-        throw new Error("Compact syntax palette exceeded Uint16 style IDs.");
-      }
-      foregroundPalette.push(run.fg);
-      paletteIds.set(run.fg, foregroundPalette.length);
-    }
-  }
-
   return {
     version: COMPACT_HIGHLIGHT_PROTOCOL_VERSION,
     foregroundPalette,
-    deletion: encodeSide({ lines: code.deletionLines, appearance, paletteIds }),
-    addition: encodeSide({ lines: code.additionLines, appearance, paletteIds }),
+    deletion: encodeSide({
+      lines: code.deletionLines,
+      appearance,
+      foregroundPalette,
+      paletteIds,
+    }),
+    addition: encodeSide({
+      lines: code.additionLines,
+      appearance,
+      foregroundPalette,
+      paletteIds,
+    }),
   };
 }
 
