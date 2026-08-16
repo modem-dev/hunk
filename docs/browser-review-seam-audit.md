@@ -59,11 +59,9 @@ whether a client needs more than that is Phase 5's first question.
   _Repaid (Phase 1 PR 2)_: `reviewLeadingGap`/`reviewGapAddress` in `core/review/expansion.ts`;
   `pierre.ts` copies deleted; fixtures `pure-insertion-hunk` and `pure-deletion-hunk` in
   `test/review-conformance/geometryFixtures.ts`; core and terminal render planning both registered.
-  Residual (found in review): when the anchor side has zero rows and untouched content
-  precedes the hunk, the parser's `collapsedBefore` undercounts the leading gap by one line
-  — the leading-side sibling of A2's residual, recorded on `reviewLeadingGap` and pinned
-  (as the residual, explicitly) by the `pure-deletion-hunk` fixture; both residuals stage
-  together as one disclosed behavior-change commit.
+  _Residual repaid (Pierre 1.3.5)_: the parser now reports the complete leading gap when the
+  anchor side has zero rows, so `pure-deletion-hunk` pins lines 1–5 instead of preserving the
+  former one-line undercount. A2's separate trailing-gap residual remains.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
   producer `src/session/app/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
