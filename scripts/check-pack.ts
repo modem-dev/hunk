@@ -346,8 +346,9 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
-  // Maintainer-only release engineering; it references scripts/ which never ships.
-  "skills/launch-video/",
+  // Maintainer-only workflows reference repository scripts and never ship.
+  "skills/hunk-launch-video/",
+  "skills/hunk-release/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 
