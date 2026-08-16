@@ -1120,6 +1120,10 @@ interface ExtensionPaneBase {
   defaultOpen?: boolean;
   /**
    * Start open in place of this pane, which starts closed.
+   *
+   * Use `"hunk:files"` for the files role or a fully qualified
+   * `"<extensionId>:<paneId>"` key to extend a replacement chain. Hunk's
+   * files-pane command follows the resolved owner on any terminal edge.
    * Replacement initial defaults take precedence over `defaultOpen`. The first
    * pane registered for a named target owns its slot; later claims are skipped.
    */
@@ -1230,7 +1234,10 @@ export interface ExtensionCommandExecutionOptions {
   count?: number;
 }
 
-/** Inspect and invoke the public semantic commands owned by Hunk. */
+/**
+ * Inspect and invoke the public commands owned by Hunk.
+ * Canonical ids and documented compatibility aliases resolve to the same command.
+ */
 export interface ExtensionCommandControls {
   /** Report whether one public `hunk.*` command exists and can run right now; malformed ids return false. */
   isEnabled(commandId: string): boolean;
@@ -1260,11 +1267,13 @@ export interface ExtensionKeyboardModeControls {
 export interface ExtensionPaneControls {
   /**
    * Resolve one pane: a bare id names this extension's own pane, `"files"`
-   * names the built-in file navigation, and `"<extensionId>:<paneId>"`
-   * addresses any registered pane explicitly.
+   * names the literal built-in `hunk:files` pane, and
+   * `"<extensionId>:<paneId>"` addresses any registered pane explicitly.
+   * These controls do not resolve replacement slots; execute
+   * `hunk.view.toggleFilesPane` through command controls for the active files role.
    *
    * Opening a left/right pane (here, or via `toggle`) also reveals the sidebar
-   * area when the user has hidden it, so the open is never silent.
+   * area when it is hidden, so the open is never silent.
    */
   open(viewId: string): void;
   close(viewId: string): void;

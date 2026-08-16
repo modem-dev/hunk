@@ -81,11 +81,19 @@ The built-in commands and the keys they ship with:
 | `hunk.view.openThemeSelector`                  | Choose theme                                   | `t`                          |
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
 | `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
+| `hunk.view.toggleFilesPane`                    | Toggle files pane                              | `s`                          |
 | `hunk.view.toggleHunkHeaders`                  | Toggle hunk headers                            | `m`                          |
 | `hunk.view.toggleLineNumbers`                  | Toggle line numbers                            | `l`                          |
 | `hunk.view.toggleLineWrap`                     | Toggle line wrapping                           | `w`                          |
 | `hunk.view.toggleMenuBar`                      | Toggle menu bar                                | `M`                          |
-| `hunk.view.toggleSidebar`                      | Toggle files pane                              | `s`                          |
+
+The files-pane command follows the named `hunk:files` role. If an extension
+replaces that role, the command and **View → Files pane** toggle the resolved
+replacement on any terminal edge without changing unrelated panes. Remapping or
+unbinding `hunk.view.toggleFilesPane` changes that role-aware action, not an
+extension pane's own commands. The former `hunk.view.toggleSidebar` id remains a
+compatibility alias; prefer the files-pane name in new config and extension
+code.
 
 Commands marked _(none)_ ship without a key: they remain callable by command id
 and can be assigned a shortcut through `[keybindings]`. Some also appear in a

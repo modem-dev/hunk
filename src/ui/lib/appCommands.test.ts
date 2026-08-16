@@ -69,7 +69,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleLineNumbers: record("toggleLineNumbers"),
     toggleLineWrap: record("toggleLineWrap"),
     toggleMenuBar: record("toggleMenuBar"),
-    toggleSidebar: record("toggleSidebar"),
+    toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: record("triggerEditSelectedFile"),
     triggerRefreshCurrentInput: record("triggerRefreshCurrentInput"),
   };
@@ -316,6 +316,13 @@ describe("executeAppCommand", () => {
     expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
   });
 
+  test("executes a compatibility alias through the canonical command", () => {
+    const { commands, ran } = createTestCommands();
+
+    expect(executeAppCommand(commands, "hunk.view.toggleSidebar")).toBe(true);
+    expect(ran).toEqual(["toggleFilesPane"]);
+  });
+
   test("uses shipped semantics rather than a remapped chord for programmatic execution", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
@@ -416,6 +423,7 @@ describe("command catalog parity", () => {
     for (const entry of APP_COMMAND_CATALOG) {
       const command = commands.find((candidate) => candidate.id === entry.id);
       expect(command?.title).toBe(entry.title);
+      expect(command?.aliases).toEqual(entry.aliases);
       expect(command?.defaultKeys).toEqual(entry.defaultKeys);
       expect(command?.keys).toEqual(entry.defaultKeys);
       expect(command?.publicToExtensions).toBe(entry.publicToExtensions);

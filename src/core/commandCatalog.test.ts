@@ -30,6 +30,20 @@ describe("app command catalog", () => {
   // Intent: the resolution locus is what tells a remote client whether it may invoke a
   // command at all, so only semantic commands may carry a review effect — and every one of
   // them carries one, so a semantic command added without an effect is caught here.
+  test("keeps compatibility aliases unique and resolves them to canonical entries", () => {
+    const canonicalIds = new Set(APP_COMMAND_CATALOG.map((command) => command.id));
+    const aliases = APP_COMMAND_CATALOG.flatMap((command) => command.aliases ?? []);
+
+    expect(new Set(aliases).size).toBe(aliases.length);
+    expect(aliases.filter((alias) => canonicalIds.has(alias))).toEqual([]);
+    for (const command of APP_COMMAND_CATALOG) {
+      for (const alias of command.aliases ?? []) {
+        expect(appCommandCatalogEntry(alias)).toBe(command);
+      }
+    }
+    expect(appCommandCatalogEntry("hunk.view.toggleSidebar")?.id).toBe("hunk.view.toggleFilesPane");
+  });
+
   test("declares a review effect for semantic commands and nothing else", () => {
     const missingEffect = APP_COMMAND_CATALOG.filter(
       (command) => command.locus === "semantic" && command.review === undefined,
@@ -91,7 +105,7 @@ describe("app command catalog", () => {
     const state = createTestReviewState();
 
     expect(
-      lowerAppCommandToReviewIntent(entry("hunk.view.toggleSidebar"), { count: 1, state }),
+      lowerAppCommandToReviewIntent(entry("hunk.view.toggleFilesPane"), { count: 1, state }),
     ).toBeUndefined();
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.app.quit"), { count: 1, state }),

@@ -155,7 +155,7 @@ export function buildAppMenus({
       },
       { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
       SEPARATOR,
-      { commandId: "hunk.view.toggleSidebar", label: "Files pane", checked: filesPaneVisible },
+      { commandId: "hunk.view.toggleFilesPane", label: "Files pane", checked: filesPaneVisible },
       { commandId: "hunk.view.toggleMenuBar", label: "Menu bar", checked: showMenuBar },
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },

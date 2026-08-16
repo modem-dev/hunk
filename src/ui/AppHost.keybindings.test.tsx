@@ -183,6 +183,37 @@ describe("user keybindings", () => {
     });
   });
 
+  test("a legacy command id remaps the canonical files-pane command", async () => {
+    const repo = createTestRepo("hunk-keybindings-files-pane-alias-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.view.toggleSidebar" = "f6"\n',
+    );
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+      expect(seen).toEqual([]);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F6");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.view.toggleFilesPane"]);
+    });
+  });
+
   test("theme selector honors configured vertical review bindings", async () => {
     const repo = createTestRepo("hunk-keybindings-theme-selector-");
     const bootstrap = await launchWithConfig(

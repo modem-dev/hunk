@@ -10,6 +10,11 @@ const DEFAULTS: CommandKeyDefaults[] = [
   { id: "hunk.app.quit", defaultKeys: ["q"] },
   { id: "hunk.review.pageDown", defaultKeys: ["pagedown", "space", "f"] },
   { id: "hunk.review.nextHunk", defaultKeys: ["]"] },
+  {
+    id: "hunk.view.toggleFilesPane",
+    aliases: ["hunk.view.toggleSidebar"],
+    defaultKeys: ["s"],
+  },
   // A loaded extension's command, under that extension's own id.
   { id: "meta.toggle", defaultKeys: ["y"] },
 ];
@@ -39,6 +44,25 @@ describe("resolveCommandKeys", () => {
   test("false unbinds a command", () => {
     expect(resolve({ "hunk.app.quit": false }).keys.get("hunk.app.quit")).toEqual([]);
     expect(resolve({ "hunk.app.quit": [] }).keys.get("hunk.app.quit")).toEqual([]);
+  });
+
+  test("a legacy alias remaps the canonical command and mirrors its resolved keys", () => {
+    const { keys, issues } = resolve({ "hunk.view.toggleSidebar": "ctrl+b" });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.view.toggleFilesPane")).toEqual(["ctrl+b"]);
+    expect(keys.get("hunk.view.toggleSidebar")).toEqual(["ctrl+b"]);
+  });
+
+  test("the first config entry wins when an alias and canonical id both appear", () => {
+    const { keys, issues } = resolve({
+      "hunk.view.toggleSidebar": "ctrl+b",
+      "hunk.view.toggleFilesPane": "f6",
+    });
+
+    expect(keys.get("hunk.view.toggleFilesPane")).toEqual(["ctrl+b"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain('"hunk.view.toggleSidebar" already configures');
   });
 
   test("a user-bound chord is stripped from the command that held it by default", () => {
@@ -146,6 +170,8 @@ describe("extension pane keybindings", () => {
     expect(keybindings.matches({ sequence: "]" }, "hunk.review.nextHunk")).toBe(false);
     expect(keybindings.getKeys("hunk.app.quit")).toEqual([]);
     expect(keybindings.matches({ name: "q" }, "hunk.app.quit")).toBe(false);
+    expect(keybindings.getKeys("hunk.view.toggleSidebar")).toEqual(["s"]);
+    expect(keybindings.matches({ name: "s" }, "hunk.view.toggleSidebar")).toBe(true);
   });
 
   test("treats unknown command ids as unbound", () => {

@@ -636,6 +636,16 @@ Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to
 hide it conditionally. One pane may replace each named target; the first
 registration owns that slot and later claims are skipped with a warning.
+`replaces` may also name another pane by its fully qualified
+`"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+
+`hunk:files` is a named role, not a left-edge location. The
+`hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane**
+follow the resolved owner of that slot, whether the replacement is on the left,
+right, top, or bottom. They toggle only that owner; independently registered
+panes keep their own open state. User remaps and unbindings of
+`hunk.view.toggleFilesPane` apply to the resolved slot in the usual way. The
+former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
 `currentLine: true` opts into the opaque `currentLine.render(side, width)`
 painter. The installable
@@ -1311,10 +1321,13 @@ and focused text inputs own their keys first. It receives the standard context
 plus `ctx.panes`, the controls for opening panes:
 
 - `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` — a bare id
-  names your own extension's pane, `"files"` names the built-in file
-  navigation, and `"<extensionId>:<paneId>"` addresses any registered pane.
-  Opening a left/right pane also reveals the sidebar area when the user has
-  hidden it with `s`; top/bottom pane state is independent of that area.
+  names your own extension's pane, `"files"` names the literal built-in
+  `hunk:files` pane, and `"<extensionId>:<paneId>"` addresses any registered
+  pane. These controls address registrations directly; they do not resolve a
+  replacement slot. To toggle whichever pane currently owns the files role,
+  call `ctx.commands.execute("hunk.view.toggleFilesPane")`. Opening a left/right
+  pane also reveals the sidebar area when responsive layout has hidden it;
+  top/bottom pane state is independent of that area.
 - `ctx.panes.isOpen(paneId)` reports the logical open preference, including
   while availability or terminal bounds temporarily omit the pane.
 
@@ -1642,8 +1655,9 @@ A newly mounted extension instance receives `startup` before its first
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
 
-`command_executed` reports the stable command id after the terminal dispatcher invokes it,
-whether the user reached it through a key, a menu, or `ctx.commands.execute`. Extension commands
+`command_executed` reports the stable canonical command id after the terminal dispatcher invokes
+it, whether the user reached it through a key, a menu, an old command alias, or
+`ctx.commands.execute`. Extension commands
 may still have detached async work in flight; this event observes the accepted user action, not
 promise settlement. Listen for ids rather than key chords so behavior follows the user's live
 `[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal

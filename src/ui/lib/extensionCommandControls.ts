@@ -4,6 +4,7 @@ import type {
 } from "../../extension-api/types";
 import {
   executeAppCommandWithCount,
+  findAppCommandById,
   isCommandEnabled,
   normalizeAppCommandCount,
   type AppCommand,
@@ -24,10 +25,8 @@ function commandIdForProbe(commandId: unknown): string | undefined {
 
 /** Find one explicitly public host command in the current live command table. */
 function findPublicCommand(commands: readonly AppCommand[], commandId: string) {
-  return commands.find(
-    (command) =>
-      command.id === commandId && command.id.startsWith("hunk.") && command.publicToExtensions,
-  );
+  const command = findAppCommandById(commands, commandId);
+  return command?.id.startsWith("hunk.") && command.publicToExtensions ? command : undefined;
 }
 
 /**
@@ -60,7 +59,7 @@ export function createExtensionCommandControls({
       const commands = getCommands();
       const command = findPublicCommand(commands, id);
       if (!command) return false;
-      return executeAppCommandWithCount([command], id, count);
+      return executeAppCommandWithCount([command], command.id, count);
     },
   });
 }

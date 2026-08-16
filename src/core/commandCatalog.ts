@@ -56,8 +56,10 @@ export type AppCommandReviewEffect =
   | { kind: "expansion/toggle-selected-gap" };
 
 export interface AppCommandCatalogEntry {
-  /** Stable identifier, `hunk.<category>.<name>` for every built-in. */
+  /** Stable canonical identifier, `hunk.<category>.<name>` for every built-in. */
   id: string;
+  /** Deprecated identifiers that resolve to this command without creating duplicate entries. */
+  aliases?: readonly string[];
   title: string;
   category: AppCommandCategory;
   /** Chords the command ships with, before the user's `[keybindings]` are folded in. */
@@ -317,7 +319,8 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
-    id: "hunk.view.toggleSidebar",
+    id: "hunk.view.toggleFilesPane",
+    aliases: ["hunk.view.toggleSidebar"],
     title: "Toggle files pane",
     category: "view",
     defaultKeys: ["s"],
@@ -517,9 +520,9 @@ export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
 export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
 
-/** Look one command up by id. */
+/** Look one command up by its canonical id or a compatibility alias. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
-  return APP_COMMAND_CATALOG.find((entry) => entry.id === id);
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id || entry.aliases?.includes(id));
 }
 
 /**

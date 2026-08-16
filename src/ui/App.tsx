@@ -1243,7 +1243,7 @@ export function App({
   const diffPaneWidth = paneLayout.reviewBounds.width;
   const diffPaneHeight = paneLayout.reviewBounds.height;
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
-  // Mirrors toggleSidebar's reveal half: visible again, forced open when the
+  // Mirrors toggleFilesPane's reveal half: visible again, forced open when the
   // responsive layout alone would keep it hidden and the terminal has room.
   revealSidebarAreaRef.current = () => {
     setSidebarVisible(true);
@@ -1565,7 +1565,7 @@ export function App({
   }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
 
   /** Toggle only the active files pane without changing extension pane visibility. */
-  const toggleSidebar = () => {
+  const toggleFilesPane = () => {
     const filesPaneKey = resolvePaneSlotKey({
       panes: sessionPanes,
       slotKey: HUNK_FILES_PANE_KEY,
@@ -2028,7 +2028,7 @@ export function App({
         toggleLineNumbers,
         toggleLineWrap,
         toggleMenuBar,
-        toggleSidebar,
+        toggleFilesPane,
         triggerEditSelectedFile,
         triggerRefreshCurrentInput,
       }),
