@@ -156,8 +156,8 @@ describe("responsive app", () => {
       });
 
       const menuFrame = setup.captureCharFrame();
-      expect(menuFrame).toContain("[ ] Sidebar");
-      expect(menuFrame).not.toContain("[x] Sidebar");
+      expect(menuFrame).toContain("[ ] Files pane");
+      expect(menuFrame).not.toContain("[x] Files pane");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -90,6 +90,24 @@ export default function (hunk) {
 }
 `;
 
+/** A named files-slot replacement beside an independently controlled pane. */
+const FILES_SLOT_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "files-slot",
+    placement: "right",
+    replaces: "hunk:files",
+    component: () => createElement("text", { content: "FILES SLOT RIGHT" }),
+  });
+  hunk.registerPane({
+    id: "aux",
+    placement: "left",
+    defaultOpen: true,
+    component: () => createElement("text", { content: "AUX PANE LEFT" }),
+  });
+}
+`;
+
 /**
  * An extension that asks before acting, so a real terminal exercises the whole
  * dialog path: a registered key opens the modal, Enter resolves the handler's
@@ -458,6 +476,55 @@ describe("PTY extensions", () => {
       // The same key toggles it away again.
       await session.press("y");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the files shortcut and View menu follow a named pane slot", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(FILES_SLOT_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("s");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      expect(closed).toContain("alpha.ts");
+
+      await session.click(/View/);
+      const menu = await session.waitForText(/Files pane/, { timeout: 20_000 });
+      expect(menu).toContain("[ ] Files pane");
+
+      await session.click(/Files pane/);
+      const reopened = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      expect(reopened).toContain("alpha.ts");
     } finally {
       session.close();
     }

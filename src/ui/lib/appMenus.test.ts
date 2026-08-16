@@ -18,7 +18,7 @@ const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> =
   copyDecorations: true,
   cursorLine: "row" as const,
   layoutMode: "stack",
-  renderSidebar: false,
+  filesPaneVisible: false,
   showAgentNotes: true,
   showHelp: false,
   showHunkHeaders: false,
@@ -171,7 +171,7 @@ describe("buildAppMenus", () => {
     const { commands } = createTestCommands({ resolvedKeys: keys as ResolvedCommandKeys });
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    expect(entry(menus, "view", "Sidebar").hint).toBe("Ctrl+B");
+    expect(entry(menus, "view", "Files pane").hint).toBe("Ctrl+B");
     // Unbound by the user, and unbound by declaration: neither advertises a key.
     expect(entry(menus, "file", "Quit").hint).toBeUndefined();
     expect(entry(menus, "view", "Copy decorations").hint).toBeUndefined();
@@ -181,7 +181,7 @@ describe("buildAppMenus", () => {
     const { commands, ran } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    entry(menus, "view", "Sidebar").action();
+    entry(menus, "view", "Files pane").action();
     entry(menus, "view", "Copy decorations").action();
     entry(menus, "agent", "Agent skill").action();
     entry(menus, "agent", "Next annotated file").action();

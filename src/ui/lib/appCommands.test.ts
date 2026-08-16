@@ -403,7 +403,7 @@ describe("command catalog parity", () => {
       copyDecorations: false,
       cursorLine: "row",
       layoutMode: "auto",
-      renderSidebar: true,
+      filesPaneVisible: true,
       showAgentNotes: false,
       showHelp: false,
       showHunkHeaders: true,

@@ -1232,6 +1232,14 @@ export function App({
   const renderSidebar = paneLayout.panes.some(
     ({ pane }) => pane.placement === "left" || pane.placement === "right",
   );
+  const visiblePaneKeys = paneLayout.panes.map(({ pane }) => pane.key);
+  const visibleFilesPaneKey = resolvePaneSlotKey({
+    panes: sessionPanes,
+    slotKey: HUNK_FILES_PANE_KEY,
+    openKeys: visiblePaneKeys,
+    quarantined: paneAvailabilityQuarantineRef.current,
+  });
+  const filesPaneVisible = visiblePaneKeys.includes(visibleFilesPaneKey);
   const diffPaneWidth = paneLayout.reviewBounds.width;
   const diffPaneHeight = paneLayout.reviewBounds.height;
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
@@ -1565,7 +1573,9 @@ export function App({
       quarantined: paneAvailabilityQuarantineRef.current,
     });
 
-    if (!sidebarAreaVisible) {
+    const filesPane = sessionPanes.find((pane) => pane.key === filesPaneKey);
+    const usesSidebarArea = filesPane?.placement === "left" || filesPane?.placement === "right";
+    if (usesSidebarArea && !sidebarAreaVisible) {
       setPaneOpen(filesPaneKey, true);
       revealSidebarAreaRef.current();
       return;
@@ -2051,7 +2061,7 @@ export function App({
       : undefined,
     copyDecorations,
     layoutMode,
-    renderSidebar,
+    filesPaneVisible,
     showAgentNotes,
     showHelp,
     showHunkHeaders,
