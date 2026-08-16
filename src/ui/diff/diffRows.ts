@@ -89,6 +89,8 @@ export interface HighlightedDiffCode {
   additionLines: Array<HastNode | undefined>;
   /** Holds the worker's compact result without reconstructing a HAST response tree. */
   compact?: CompactHighlightedDiffCode;
+  /** Keeps a transient offload failure out of the shared cache so a later visit can retry it. */
+  retryable?: true;
 }
 
 export interface HighlightedSourceCode {
@@ -762,9 +764,9 @@ export async function loadHighlightedDiff(
     try {
       return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
     } catch {
-      // Do not repeat a multi-second highlight on the event loop after a worker failure. The
-      // existing row builders render plain text when no HAST line is available.
-      return { deletionLines: [], additionLines: [] };
+      // Do not repeat a multi-second highlight on the event loop after a worker failure. Render
+      // plain rows now, but leave a later file visit free to retry a recreated worker.
+      return { deletionLines: [], additionLines: [], retryable: true };
     }
   }
 

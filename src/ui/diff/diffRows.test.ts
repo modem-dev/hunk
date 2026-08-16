@@ -361,6 +361,7 @@ describe("Pierre diff rows", () => {
     await expect(loadHighlightedDiff(file, theme, { offloadLargeDiff: true })).resolves.toEqual({
       deletionLines: [],
       additionLines: [],
+      retryable: true,
     });
   });
 

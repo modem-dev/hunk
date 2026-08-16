@@ -86,8 +86,12 @@ export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
   return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
-/** Only commit a highlight result if the promise is still the active one for that key.
- *  Prevents a superseded or late-resolving promise from overwriting a newer entry. */
+/**
+ * Commit one cacheable highlight result if its promise is still active for that key.
+ *
+ * A transient worker failure resolves to plain rows with `retryable`, which updates the current
+ * view but must not occupy the shared cache and prevent a later worker retry.
+ */
 function commitHighlightResult(
   cacheKey: string,
   promise: Promise<HighlightedDiffCode>,
@@ -98,7 +102,9 @@ function commitHighlightResult(
   }
 
   SHARED_HIGHLIGHT_PROMISES.delete(cacheKey);
-  SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
+  if (!result.retryable) {
+    SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
+  }
   return true;
 }
 
