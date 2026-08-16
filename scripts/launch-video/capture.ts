@@ -12,6 +12,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import {
   createCommandWrapper,
@@ -205,16 +206,33 @@ function locateNeedle(moduleText: string, needle: string) {
   return { line: lineIndex + 1, start, end: start + needle.length };
 }
 
+/** Asks the OS for a currently free loopback port. */
+async function findFreePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("could not determine a free port"));
+        return;
+      }
+      server.close(() => resolvePort(address.port));
+    });
+  });
+}
+
 async function captureAttentionScene() {
   console.log("scene: attention");
   const repoDir = createAttentionDemoRepo();
 
-  // Isolated daemon: scratch runtime dir + non-default port so the scene can
-  // never register with (or collide with) a developer's live hunk daemon.
+  // Isolated daemon: a scratch runtime dir keeps discovery private, and an
+  // OS-assigned free port keeps the daemon itself private — no collision with
+  // a developer's live daemon, a concurrent capture, or a leftover process.
   const attentionEnv: Record<string, string> = {
     XDG_CONFIG_HOME: configHome,
     XDG_RUNTIME_DIR: makeTempDir("hunk-video-runtime-"),
-    HUNK_MCP_PORT: "47911",
+    HUNK_MCP_PORT: String(await findFreePort()),
     HUNK_DISABLE_UPDATE_NOTICE: "1",
   };
 
