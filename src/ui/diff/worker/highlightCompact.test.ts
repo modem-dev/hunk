@@ -58,7 +58,7 @@ const ELIXIR_AFTER = ELIXIR_BEFORE.replace("Line two.", "Line two, edited.");
 const ELIXIR_PATCH = `diff --git a/repro.ex b/repro.ex
 --- a/repro.ex
 +++ b/repro.ex
-@@ -3,7 +3,7 @@
+@@ -2,8 +2,8 @@
    @doc """
    Line one.
 -  Line two.
@@ -66,6 +66,8 @@ const ELIXIR_PATCH = `diff --git a/repro.ex b/repro.ex
    """
    def hello do
      :world
+   end
+ end
 `;
 
 /** Build a partial source-backed diff whose two sides require independent lexical state. */
