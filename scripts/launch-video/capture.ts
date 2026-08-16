@@ -8,14 +8,11 @@
 // this run only — compose.mjs resolves frames by name from its SHOTS table and
 // ignores it, and after a SCENES= run the manifest is partial while frames/
 // stays cumulative.
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
-import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import {
-  createCommandWrapper,
   createKeyframer,
   ensureKeyboardIsLive,
   launchApp,
@@ -25,6 +22,18 @@ import {
   typeCommand,
   type KeyboardProbe,
 } from "@hunk/term-video/capture";
+import {
+  createHunkCommandWrapper,
+  driveGestures,
+  launchAgentDrivenHunk,
+  type AgentGesture,
+} from "./agentDriver.ts";
+import {
+  buildReportModule,
+  createAgentDemoRepo,
+  createDemoRepo,
+  locateNeedle,
+} from "./demoContent.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hunkEntrypoint = join(repoRoot, "src/main.tsx");
@@ -65,13 +74,6 @@ const HUNK_KEYBOARD_PROBE: KeyboardProbe = {
   dismissKey: "escape",
 };
 
-function runGit(args: string[], cwd: string) {
-  const proc = spawnSync("git", args, { cwd, encoding: "utf8" });
-  if (proc.status !== 0) {
-    throw new Error(proc.stderr.trim() || `git ${args.join(" ")} failed`);
-  }
-}
-
 async function launchHunk(
   args: string[],
   options: { cwd?: string; env?: Record<string, string | undefined> } = {},
@@ -86,286 +88,163 @@ async function launchHunk(
   });
 }
 
-/** Interactive bash with a real `hunk` command on PATH for shell scenes. */
-async function launchHunkShell(cwd: string) {
-  const binDir = createCommandWrapper(join(makeTempDir("hunk-video-bin-"), "bin"), "hunk", [
-    process.execPath,
-    "run",
+/**
+ * Interactive bash with a real `hunk` command on PATH for shell scenes.
+ *
+ * Agent-driven scenes pass their own env so on-camera commands reach the same
+ * isolated daemon the TUI registered with.
+ */
+async function launchHunkShell(cwd: string, env: Record<string, string | undefined> = hunkEnv) {
+  const binDir = createHunkCommandWrapper(
+    join(makeTempDir("hunk-video-bin-"), "bin"),
     hunkEntrypoint,
-    "--",
-  ]);
-  return launchShell({ cwd, cols: COLS, rows: ROWS, pathPrepend: [binDir], env: hunkEnv });
-}
-
-/**
- * Build a real git repo from the mini-app refactor example: commit the
- * "before" tree, overlay the "after" tree as the working diff.
- */
-function createDemoRepo() {
-  const repoDir = makeTempDir("hunk-video-repo-");
-  runGit(["init"], repoDir);
-  runGit(["config", "user.name", "Demo"], repoDir);
-  runGit(["config", "user.email", "demo@example.com"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/before"), repoDir, { recursive: true });
-  runGit(["add", "."], repoDir);
-  runGit(["commit", "-m", "before"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
-  return repoDir;
-}
-
-// ---------------------------------------------------------------------------
-// Scene: agent attention — `hunk session navigate` lands exact lines and
-// `hunk session highlight` paints character ranges, driven through a real
-// isolated daemon exactly the way a coding agent drives a live review.
-// ---------------------------------------------------------------------------
-
-/**
- * Deterministic long module for the deep-line shot: 72 one-line team policies
- * with a quarterly recalibration sprinkled through them, and one behavioral
- * comparator change buried in the helper below the table.
- */
-function buildReportModule(variant: "before" | "after") {
-  const areas = [
-    "activation",
-    "billing",
-    "checkout",
-    "growth",
-    "identity",
-    "messaging",
-    "mobile",
-    "onboarding",
-    "payments",
-    "platform",
-    "search",
-    "support",
-  ];
-  const regions = ["us-east", "us-west", "eu-west", "eu-north", "apac-sg", "apac-syd"];
-  const owners = ["dana", "kai", "mira", "theo", "noor", "felix", "iris", "remy"];
-
-  const entries: string[] = [];
-  let index = 0;
-  for (const area of areas) {
-    for (const region of regions) {
-      // Every third entry gets its limit recalibrated — mechanical churn that
-      // keeps the whole table one tall hunk without touching every line.
-      const bump = variant === "after" && index % 3 === 0 ? 2 : 0;
-      const limit = 4 + (index % 9) + bump;
-      const escalate = 1 + (index % 5);
-      entries.push(
-        `  { team: "${area}-${region}", owner: "${owners[index % owners.length]}", limit: ${limit}, escalateAfterDays: ${escalate} },`,
-      );
-      index += 1;
-    }
-  }
-
-  // The buried behavioral change: at-limit teams now count as overloaded.
-  const comparator = variant === "after" ? ">=" : ">";
-  const lines = [
-    "/** Weekly workload policies per team, consumed by the ops report. */",
-    "export interface TeamPolicy {",
-    "  team: string;",
-    "  owner: string;",
-    "  limit: number;",
-    "  escalateAfterDays: number;",
-    "}",
-    "",
-    "export const TEAM_POLICIES: TeamPolicy[] = [",
-    ...entries,
-    "];",
-    "",
-    "/** Flags a team as overloaded once open work reaches its limit. */",
-    "export function isOverloaded(openCount: number, policy: TeamPolicy) {",
-    `  return openCount ${comparator} policy.limit;`,
-    "}",
-    "",
-  ];
-  return lines.join("\n");
-}
-
-/** Demo repo with the long report module layered onto the mini-app refactor. */
-function createAttentionDemoRepo() {
-  const repoDir = makeTempDir("hunk-video-repo-");
-  runGit(["init"], repoDir);
-  runGit(["config", "user.name", "Demo"], repoDir);
-  runGit(["config", "user.email", "demo@example.com"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/before"), repoDir, { recursive: true });
-  writeFileSync(join(repoDir, "src/report.ts"), buildReportModule("before"));
-  runGit(["add", "."], repoDir);
-  runGit(["commit", "-m", "before"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
-  writeFileSync(join(repoDir, "src/report.ts"), buildReportModule("after"));
-  return repoDir;
-}
-
-/** Finds the 1-based line and [start, end) offsets of `needle` in module text. */
-function locateNeedle(moduleText: string, needle: string) {
-  const lines = moduleText.split("\n");
-  const lineIndex = lines.findIndex((line) => line.includes(needle));
-  if (lineIndex === -1) throw new Error(`needle not found: ${needle}`);
-  const start = lines[lineIndex]!.indexOf(needle);
-  return { line: lineIndex + 1, start, end: start + needle.length };
-}
-
-/** Asks the OS for a currently free loopback port. */
-async function findFreePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("could not determine a free port"));
-        return;
-      }
-      server.close(() => resolvePort(address.port));
-    });
+  );
+  return launchShell({
+    cwd,
+    cols: COLS,
+    rows: ROWS,
+    pathPrepend: [binDir],
+    // macOS bash greets every interactive session with a zsh migration notice;
+    // it would be the first thing on camera in every shell scene.
+    env: { BASH_SILENCE_DEPRECATION_WARNING: "1", ...env },
   });
 }
 
-async function captureAttentionScene() {
-  console.log("scene: attention");
-  const repoDir = createAttentionDemoRepo();
+// What every demo-repo builder needs: the `examples/` source and this run's
+// scratch-dir factory, so temp cleanup stays in one place.
+const demoRepoOptions = { repoRoot, makeTempDir };
 
-  // Isolated daemon: a scratch runtime dir keeps discovery private, and an
-  // OS-assigned free port keeps the daemon itself private — no collision with
-  // a developer's live daemon, a concurrent capture, or a leftover process.
-  const attentionEnv: Record<string, string> = {
-    XDG_CONFIG_HOME: configHome,
-    XDG_RUNTIME_DIR: makeTempDir("hunk-video-runtime-"),
-    HUNK_MCP_PORT: String(await findFreePort()),
-    HUNK_DISABLE_UPDATE_NOTICE: "1",
-  };
+// ---------------------------------------------------------------------------
+// Scene: agent-driven review — a coding agent steers a live session over the
+// `hunk session` CLI: line-exact navigation, attention marks, and a note,
+// some typed on camera and some issued silently in the background.
+// ---------------------------------------------------------------------------
+async function captureAgentScene() {
+  console.log("scene: agent");
+  const repoDir = createAgentDemoRepo(demoRepoOptions);
 
-  /** Runs `hunk session …` against the scene's isolated daemon. */
-  const runSession = (args: string[]) => {
-    const proc = spawnSync(process.execPath, ["run", hunkEntrypoint, "--", "session", ...args], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      env: { ...process.env, ...attentionEnv },
-    });
-    if (proc.status !== 0) {
-      throw new Error(proc.stderr.trim() || `hunk session ${args.join(" ")} failed`);
-    }
-    return proc.stdout;
-  };
+  // Every offset the scene points at is computed from the generated content,
+  // so the shots stay aimed at the right code when that content changes.
+  const comparator = locateNeedle(buildReportModule("after"), "openCount >= policy.limit");
+  const formatModule = readFileSync(
+    join(repoRoot, "examples/2-mini-app-refactor/after/src/format.ts"),
+    "utf8",
+  );
+  const ternary = locateNeedle(formatModule, 'task.state === "doing" ? "[active]" : "[queued]"');
 
-  const session = await launchHunk(["diff", "--mode", "stack"], {
-    cwd: repoDir,
-    env: attentionEnv,
+  const drive = await launchAgentDrivenHunk({
+    repoDir,
+    args: ["diff", "--mode", "stack"],
+    repoRoot,
+    hunkEntrypoint,
+    cols: COLS,
+    rows: ROWS,
+    makeTempDir,
+    keyboardProbe: HUNK_KEYBOARD_PROBE,
+    baseEnv: { XDG_CONFIG_HOME: configHome, HUNK_DISABLE_UPDATE_NOTICE: "1" },
+    launchShell: launchHunkShell,
   });
   try {
-    await session.waitForText(/src\//, { timeout: 60_000 });
-    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
-
-    // Registration with the daemon is asynchronous — poll instead of racing it.
-    let sessionId: string | undefined;
-    for (let attempt = 0; attempt < 60 && !sessionId; attempt += 1) {
-      try {
-        const listed = JSON.parse(runSession(["list", "--json"])) as {
-          sessions?: { sessionId: string }[];
-        };
-        sessionId = listed.sessions?.[0]?.sessionId;
-      } catch {
-        // daemon not up yet
-      }
-      if (!sessionId) await sleep(500);
-    }
-    if (!sessionId) throw new Error("hunk session never registered with the demo daemon");
-
     await sleep(500);
-    await snap(session, "attention-review");
+    await snap(drive.session, "agent-review");
 
-    // 3a. Old granularity: hunk navigation parks at the top of the tall hunk.
-    runSession(["navigate", sessionId, "--file", "src/report.ts", "--hunk", "1"]);
-    await sleep(600);
-    await snap(session, "attention-hunk-nav");
-
-    // 3b. New granularity: a line target lands the buried comparator exactly.
-    const afterModule = buildReportModule("after");
-    const needle = locateNeedle(afterModule, "openCount >= policy.limit");
-    runSession([
-      "navigate",
-      sessionId,
+    // On-camera commands select the session with `--repo .` from the demo
+    // repo; off-camera ones use its absolute path.
+    const highlightReport = [
+      "highlight",
+      "add",
+      "--repo",
+      repoDir,
       "--file",
       "src/report.ts",
       "--new-line",
-      String(needle.line),
-    ]);
-    await sleep(600);
-    await snap(session, "attention-line-nav");
-
-    // 4. Attention mark: light up the comparator expression we just landed on.
-    runSession([
-      "highlight",
-      "add",
-      sessionId,
-      "--file",
-      "src/report.ts",
-      "--new-line",
-      String(needle.line),
+      String(comparator.line),
       "--start",
-      String(needle.start),
+      String(comparator.start),
       "--end",
-      String(needle.end),
-      "--tone",
-      "warning",
-    ]);
-    await sleep(600);
-    await snap(session, "attention-mark-warning");
+      String(comparator.end),
+    ];
 
-    // 4b. Tone is paint only: same range repainted as `current`, viewport
-    // untouched — this frame isolates --tone from --focus for the storyboard.
-    runSession(["highlight", "clear", sessionId]);
-    runSession([
-      "highlight",
-      "add",
-      sessionId,
-      "--file",
-      "src/report.ts",
-      "--new-line",
-      String(needle.line),
-      "--start",
-      String(needle.start),
-      "--end",
-      String(needle.end),
-      "--tone",
-      "current",
-    ]);
-    await sleep(600);
-    await snap(session, "attention-mark-tone");
+    const gestures: AgentGesture[] = [
+      // 1. The CLI surface itself: one live session, listed from the shell.
+      {
+        kind: "shell",
+        commandText: "hunk session list",
+        typingSnaps: { 6: "agent-list-typing-06", 13: "agent-list-typing-13" },
+        shellSnap: "agent-shell-list",
+        expect: /files:/,
+      },
+      // 2. Old granularity: hunk navigation parks at the top of the tall hunk.
+      {
+        kind: "silent",
+        args: ["navigate", "--repo", repoDir, "--file", "src/report.ts", "--hunk", "1"],
+        terminalSnap: "agent-hunk-nav",
+      },
+      // 3. New granularity: a line target lands the buried comparator exactly.
+      {
+        kind: "shell",
+        commandText: `hunk session navigate --repo . --file src/report.ts --new-line ${comparator.line}`,
+        typingSnaps: { 20: "agent-nav-typing-20", 44: "agent-nav-typing-44" },
+        shellSnap: "agent-shell-nav",
+        terminalSnap: "agent-line-nav",
+        expect: /Revealed/,
+      },
+      // 4. Attention mark: light up the comparator we just landed on.
+      {
+        kind: "silent",
+        args: [...highlightReport, "--tone", "warning"],
+        terminalSnap: "agent-mark-warning",
+      },
+      // 5. Tone is paint only: the same range repainted as `current`, viewport
+      // untouched — this beat isolates --tone from --focus.
+      { kind: "silent", args: ["highlight", "clear", "--repo", repoDir], settleMs: 0 },
+      {
+        kind: "silent",
+        args: [...highlightReport, "--tone", "current"],
+        terminalSnap: "agent-mark-tone",
+      },
+      // 6. Marks move with the narration: clear, then mark + focus a second file.
+      { kind: "silent", args: ["highlight", "clear", "--repo", repoDir], settleMs: 0 },
+      {
+        kind: "shell",
+        commandText:
+          `hunk session highlight add --repo . --file src/format.ts --new-line ${ternary.line}` +
+          ` --start ${ternary.start} --end ${ternary.end} --tone current --focus`,
+        typingSnaps: { 26: "agent-mark-typing-26", 62: "agent-mark-typing-62" },
+        shellSnap: "agent-shell-mark",
+        terminalSnap: "agent-mark-focus",
+        expect: /Marked/,
+      },
+      // 7. A mark is ephemeral; a comment persists the same explanation.
+      {
+        kind: "silent",
+        args: [
+          "comment",
+          "add",
+          "--repo",
+          repoDir,
+          "--file",
+          "src/format.ts",
+          "--new-line",
+          String(ternary.line),
+          "--summary",
+          "Queued tasks now render as [queued] instead of falling through to the done label.",
+          "--focus",
+        ],
+        terminalSnap: "agent-comment",
+        settleMs: 900,
+      },
+      // 8. Clear closes the loop: marks gone, the note stays.
+      {
+        kind: "silent",
+        args: ["highlight", "clear", "--repo", repoDir],
+        terminalSnap: "agent-clear",
+      },
+    ];
 
-    // 5. Marks move with the narration: clear, then mark + focus a second file.
-    const formatModule = readFileSync(
-      join(repoRoot, "examples/2-mini-app-refactor/after/src/format.ts"),
-      "utf8",
-    );
-    const ternary = locateNeedle(formatModule, 'task.state === "doing" ? "[active]" : "[queued]"');
-    runSession(["highlight", "clear", sessionId]);
-    runSession([
-      "highlight",
-      "add",
-      sessionId,
-      "--file",
-      "src/format.ts",
-      "--new-line",
-      String(ternary.line),
-      "--start",
-      String(ternary.start),
-      "--end",
-      String(ternary.end),
-      "--tone",
-      "current",
-      "--focus",
-    ]);
-    await sleep(600);
-    await snap(session, "attention-mark-ternary");
-
-    // 6. Clear closes the loop: the diff is clean again, nothing persisted.
-    runSession(["highlight", "clear", sessionId]);
-    await sleep(600);
-    await snap(session, "attention-clear");
+    await driveGestures(drive, keyframer, gestures);
   } finally {
-    session.close();
+    drive.close();
   }
 }
 
@@ -374,7 +253,7 @@ async function captureAttentionScene() {
 // ---------------------------------------------------------------------------
 async function captureReviewScene() {
   console.log("scene: review");
-  const repoDir = createDemoRepo();
+  const repoDir = createDemoRepo(demoRepoOptions);
   const session = await launchHunk(["diff", "--mode", "stack"], { cwd: repoDir });
   try {
     await session.waitForText(/src\//, { timeout: 60_000 });
@@ -498,7 +377,7 @@ async function captureMarkupCliScene() {
 // ---------------------------------------------------------------------------
 async function capturePagerScene() {
   console.log("scene: pager");
-  const repoDir = createDemoRepo();
+  const repoDir = createDemoRepo(demoRepoOptions);
   const session = await launchHunkShell(repoDir);
   try {
     await session.waitForText(/❯/, { timeout: 15_000 });
@@ -527,7 +406,7 @@ async function capturePagerScene() {
 // ---------------------------------------------------------------------------
 async function captureTriageScene() {
   console.log("scene: triage");
-  const repoDir = createDemoRepo();
+  const repoDir = createDemoRepo(demoRepoOptions);
 
   const session = await launchHunk(
     ["diff", "--extension", join(repoRoot, "examples/extensions/review-triage"), "--mode", "stack"],
@@ -618,7 +497,7 @@ const wants = makeSceneFilter(process.env.SCENES);
 
 async function main() {
   try {
-    if (wants("attention")) await captureAttentionScene();
+    if (wants("agent")) await captureAgentScene();
     if (wants("review")) await captureReviewScene();
     if (wants("stml")) await captureStmlScene();
     if (wants("cli")) await captureMarkupCliScene();
