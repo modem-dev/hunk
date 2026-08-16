@@ -28,6 +28,7 @@ import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
+import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
 import { highlightDiffInWorker } from "./highlightWorkerClient";
 import {
   createSourceBackedHighlightPlan,
@@ -68,20 +69,6 @@ type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
-
-type HastNode = HastTextNode | HastElementNode;
-
-interface HastTextNode {
-  type: "text";
-  value: string;
-}
-
-interface HastElementNode {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-}
 
 export interface HighlightedDiffCode {
   deletionLines: Array<HastNode | undefined>;
@@ -168,41 +155,6 @@ export type DiffRow =
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {
   return expandDiffTabs(sanitizeTerminalLine(text), tabWidth, initialColumn);
-}
-
-const EMPTY_STYLE_VALUES = new Map<string, string>();
-// Pierre reuses the same tiny set of inline style strings across many token spans.
-// Caching the parsed key/value pairs avoids reparsing identical `color:#...` snippets
-// every time split/stack row builders revisit the same highlighted lines.
-const parsedStyleValueCache = new Map<string, Map<string, string>>();
-
-/** Parse an inline CSS style string from Pierre's highlighted HAST output. */
-function parseStyleValue(styleValue: unknown) {
-  if (typeof styleValue !== "string") {
-    return EMPTY_STYLE_VALUES;
-  }
-
-  const cached = parsedStyleValueCache.get(styleValue);
-  if (cached) {
-    return cached;
-  }
-
-  const styles = new Map<string, string>();
-  for (const segment of styleValue.split(";")) {
-    const separator = segment.indexOf(":");
-    if (separator <= 0) {
-      continue;
-    }
-
-    const key = segment.slice(0, separator).trim();
-    const value = segment.slice(separator + 1).trim();
-    if (key && value) {
-      styles.set(key, value);
-    }
-  }
-
-  parsedStyleValueCache.set(styleValue, styles);
-  return styles;
 }
 
 // The expensive part after highlighting is walking Pierre's HAST line tree and flattening it
@@ -329,42 +281,16 @@ function flattenHighlightedLine(
 
   const spans: RenderSpan[] = [];
   let codeColumn = 0;
-  const colorVariable = theme.appearance === "light" ? "--diffs-token-light" : "--diffs-token-dark";
 
-  const visit = (current: HastNode | undefined, inherited: Pick<RenderSpan, "fg" | "bg">) => {
-    if (!current) {
-      return;
-    }
-
-    if (current.type === "text") {
-      // Pierre injects a "\n" placeholder into empty line nodes so they aren't childless.
-      // Strip it the same way cleanDiffLine does for the unhighlighted path, or the literal
-      // newline ends up in the span text and breaks terminal row rendering.
-      const text = tabify(cleanLastNewline(current.value), tabWidth, codeColumn);
-      mergeSpan(spans, {
-        text,
-        fg: inherited.fg,
-        bg: inherited.bg,
-      });
-      codeColumn += measureTextWidth(text);
-      return;
-    }
-
-    const properties = current.properties ?? {};
-    const styles = parseStyleValue(properties.style);
-    const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
-      // The registered Shiki theme has already applied any user-authored scope colors.
-      fg: styles.get(colorVariable) ?? styles.get("color") ?? inherited.fg,
-      // Pierre marks inline word-diff emphasis spans with a data attribute rather than a separate row kind.
-      bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
-    };
-
-    for (const child of current.children ?? []) {
-      visit(child, nextStyle);
-    }
-  };
-
-  visit(node, {});
+  for (const run of collectHastHighlightRuns(node, theme.appearance)) {
+    const text = tabify(run.text, tabWidth, codeColumn);
+    mergeSpan(spans, {
+      text,
+      fg: run.fg,
+      bg: run.wordDiff ? emphasisBg : undefined,
+    });
+    codeColumn += measureTextWidth(text);
+  }
 
   const nextCachedByTheme = cachedByTheme ?? new Map<string, RenderSpan[]>();
   nextCachedByTheme.set(cacheKey, spans);
