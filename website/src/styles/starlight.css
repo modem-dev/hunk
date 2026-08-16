@@ -310,3 +310,58 @@ starlight-menu-button button {
     box-shadow: 3px 3px 0 var(--hunk-shadow);
   }
 }
+
+/* Changelog pages. Generated Markdown, so the structure is fixed: an h3 per released version
+   followed by a plain-paragraph meta line, then h4 sections of change bullets. The rules below
+   turn that structure into a scannable release list without any per-page markup. */
+[data-changelog] .sl-markdown-content h3 {
+  font-size: var(--sl-text-2xl);
+}
+
+/*
+ * Rule between releases. Starlight renders headings inline inside a wrapper element, so a border
+ * on the heading spans only its text; the generated anchor above each release is a full-width
+ * block and carries it instead. It also gives `#v0-18-2` somewhere to land above the heading.
+ */
+[data-changelog] .sl-markdown-content .release-separator {
+  display: block;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--hunk-rule);
+}
+
+/* The dateline opening a release page: date span and release count. */
+[data-changelog] .sl-markdown-content > p:first-child {
+  margin-bottom: 0.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+/* The line directly under a version heading is its date and channel. */
+[data-changelog] .sl-markdown-content h3 + p {
+  margin-top: 0.35rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+[data-changelog] .sl-markdown-content h4 {
+  margin-top: 1.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-changelog] .sl-markdown-content h2 + p {
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+.changelog-video {
+  display: block;
+  width: 100%;
+  margin: 1.5rem 0;
+  border: 1px solid var(--hunk-strong-border);
+  border-radius: 8px;
+  background: var(--hunk-panel);
+}

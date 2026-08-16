@@ -788,3 +788,51 @@ a:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Release ribbon under the hero call to action: the landing page's entry point into the
+   changelog, carrying the current version so returning visitors can see what shipped. */
+.marketing .release-ribbon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 7px 14px;
+  border: 1px solid var(--hunk-rule);
+  border-radius: 100px;
+  background: var(--paper);
+  color: var(--hunk-body);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.3;
+  text-decoration: none;
+  transition: 0.12s;
+}
+
+.marketing .release-ribbon:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .release-ribbon .rv {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 100px;
+  background: var(--hunk-accent-soft);
+  color: var(--hunk-accent-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.marketing .release-ribbon .ra {
+  color: var(--soft);
+}
+
+.marketing .release-ribbon:hover .ra {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .marketing .release-ribbon .rs {
+    display: none;
+  }
+}

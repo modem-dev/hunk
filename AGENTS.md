@@ -186,6 +186,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Keep each Changeset summary to one concise, user-facing sentence; put implementation detail in the PR or supporting docs.
 - For release preparation, publishing, backports, and post-release verification, read `skills/hunk-release/SKILL.md`.
 - Never push a release tag or trigger publishing without explicit user confirmation.
+- `hunk.dev/changelog` is generated from `CHANGELOG.md` by `bun run generate:changelog`; hand-author only `website/releases/notes.json`, and never edit its output. `docs/changelog-on-hunk-dev.md` explains how release dates and the pre-tag window work.
 
 ## repo notes
 
