@@ -1,12 +1,48 @@
 import { describe, expect, test } from "bun:test";
 import type { HighlightedDiffCode } from "./diffRows";
 import { createHighlightedDiffCache } from "./highlightedDiffCache";
+import { COMPACT_HIGHLIGHT_PROTOCOL_VERSION } from "./worker/highlightCompact";
 
 /** Build a result retaining a known line count; identity is what these tests compare. */
 function createTestHighlightedDiffCode(lines: number): HighlightedDiffCode {
   return {
     deletionLines: Array.from({ length: lines }, () => undefined),
     additionLines: [],
+  };
+}
+
+/** Build one compact side holding a single run per line, as the worker encodes full source. */
+function createTestCompactSide(lines: number) {
+  return {
+    lineOffsets: new Uint32Array(Array.from({ length: lines + 1 }, (_, index) => index)),
+    starts: new Uint32Array(lines),
+    ends: new Uint32Array(Array.from({ length: lines }, () => 8)),
+    styleIds: new Uint16Array(Array.from({ length: lines }, () => 1)),
+    flags: new Uint8Array(lines),
+  };
+}
+
+/**
+ * Build a source-backed compact result: the payload spans the whole file while the index maps
+ * cover only the visible patch lines.
+ */
+function createTestCompactHighlightedDiffCode(
+  sourceLines: number,
+  patchLines: number,
+): HighlightedDiffCode {
+  return {
+    deletionLines: [],
+    additionLines: [],
+    compact: {
+      payload: {
+        version: COMPACT_HIGHLIGHT_PROTOCOL_VERSION,
+        foregroundPalette: ["#ffffff"],
+        deletion: createTestCompactSide(sourceLines),
+        addition: createTestCompactSide(sourceLines),
+      },
+      deletionLineMap: Array.from({ length: patchLines }, (_, index) => index),
+      additionLineMap: Array.from({ length: patchLines }, (_, index) => index),
+    },
   };
 }
 
@@ -99,6 +135,30 @@ describe("highlighted diff cache", () => {
 
     expect(cache.peek("skipped-199")).toBeDefined();
     expect(cache.peek("skipped-0")).toBeUndefined();
+  });
+
+  test("charges a source-backed compact result for the payload it retains", () => {
+    const cache = createHighlightedDiffCache(100);
+
+    // A few visible patch lines grafted onto a large file: the index maps are tiny, but the
+    // payload holds the whole source. Charging the maps would let these accumulate unbounded.
+    cache.set("grafted", createTestCompactHighlightedDiffCode(20_000, 4));
+    cache.set("neighbor", createTestHighlightedDiffCode(10));
+
+    expect(cache.peek("grafted")).toBeUndefined();
+    expect(cache.peek("neighbor")).toBeDefined();
+  });
+
+  test("keeps a small compact result cheap enough to sit beside its neighbors", () => {
+    const cache = createHighlightedDiffCache(100);
+    const compact = createTestCompactHighlightedDiffCode(40, 40);
+    const neighbor = createTestHighlightedDiffCode(10);
+
+    cache.set("compact", compact);
+    cache.set("neighbor", neighbor);
+
+    expect(cache.peek("compact")).toBe(compact);
+    expect(cache.peek("neighbor")).toBe(neighbor);
   });
 
   test("keeps one entry when given a degenerate budget", () => {

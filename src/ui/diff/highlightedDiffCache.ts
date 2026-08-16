@@ -1,4 +1,5 @@
 import type { HighlightedDiffCode } from "./diffRows";
+import { compactHighlightedDiffByteLength } from "./worker";
 
 /**
  * Cache budget, counted in highlighted diff lines.
@@ -38,14 +39,29 @@ interface HighlightedDiffCacheEntry {
   value: HighlightedDiffCode;
 }
 
-/** Count the highlighted lines one result retains, across both diff sides. */
+/**
+ * Bytes one highlighted line costs at the rate this budget was calibrated against.
+ *
+ * Compact worker results retain typed ranges rather than HAST nodes, so they are converted through
+ * the same rate instead of counted as lines. That keeps one budget comparable across both shapes.
+ */
+const HIGHLIGHTED_LINE_BYTES = 1_400;
+
+/** Bytes one index-map entry retains, at a packed small-integer array's per-entry cost. */
+const LINE_MAP_ENTRY_BYTES = 8;
+
+/** Count the line-equivalents one result retains, across both diff sides. */
 function highlightedLineCount(value: HighlightedDiffCode) {
   if (value.compact) {
-    return (
-      (value.compact.deletionLineMap?.length ??
-        value.compact.payload.deletion.lineOffsets.length - 1) +
-      (value.compact.additionLineMap?.length ??
-        value.compact.payload.addition.lineOffsets.length - 1)
+    // Charge the payload actually held. A source-backed compact result spans the whole file, which
+    // is many times the visible patch lines its index maps cover.
+    const lineMapBytes =
+      ((value.compact.deletionLineMap?.length ?? 0) +
+        (value.compact.additionLineMap?.length ?? 0)) *
+      LINE_MAP_ENTRY_BYTES;
+    return Math.ceil(
+      (compactHighlightedDiffByteLength(value.compact.payload) + lineMapBytes) /
+        HIGHLIGHTED_LINE_BYTES,
     );
   }
 
