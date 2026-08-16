@@ -11,6 +11,7 @@ import type { Changeset, DiffFile } from "../core/types";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { HUNK_FILES_PANE_KEY } from "./extensionIds";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
@@ -175,7 +176,7 @@ describe("extension panes", () => {
     const { panes, issues } = resolveExtensionPanes(result.registry);
 
     // Registration is additive: distinct panes from any extension coexist,
-    // and only an identity collision is refused.
+    // while this fixture's identity collision is refused.
     expect(panes).toEqual([
       { extensionId: "alpha", pane: tree },
       { extensionId: "beta", pane: flat },
@@ -184,6 +185,40 @@ describe("extension panes", () => {
       {
         extensionId: "alpha",
         message: 'Skipped duplicate pane "alpha:tree" from extension alpha',
+      },
+    ]);
+  });
+
+  test("keeps the first pane when several registrations replace one target", () => {
+    const result = createEmptyExtensionLoadResult();
+    const first = {
+      id: "first-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const second = {
+      id: "second-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const extra = { id: "extra", component: () => null };
+    result.registry.panes.push(
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: second },
+      { extensionId: "beta", pane: extra },
+    );
+
+    const { panes, issues } = resolveExtensionPanes(result.registry);
+
+    expect(panes).toEqual([
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: extra },
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "beta",
+        message:
+          'Skipped pane "beta:second-files" from extension beta • another pane already replaces "hunk:files"',
       },
     ]);
   });

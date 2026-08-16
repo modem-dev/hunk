@@ -482,6 +482,57 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("one registered pane owns the named files slot", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-replacement-owner-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-replacement-owner-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "first-files",\n` +
+        `    replaces: "hunk:files",\n` +
+        `    component: () => createElement("text", { content: "FIRST FILES PANE" }),\n` +
+        `  });\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "second-files",\n` +
+        `    replaces: "hunk:files",\n` +
+        `    component: () => createElement("text", { content: "SECOND FILES PANE" }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("FIRST FILES PANE"),
+        "the first registered files replacement to own the slot",
+      );
+      expect(setup.captureCharFrame()).not.toContain("SECOND FILES PANE");
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("FIRST FILES PANE"),
+        "the files command to close the slot owner",
+      );
+      expect(setup.captureCharFrame()).not.toContain("SECOND FILES PANE");
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("FIRST FILES PANE"),
+        "the files command to reopen the same named slot owner",
+      );
+      expect(setup.captureCharFrame()).not.toContain("SECOND FILES PANE");
+    });
+  });
+
   test("closes a crashing extra view and restores the built-in sidebar", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-broken-");
     const extPath = join(createTempDir("hunk-ext-sidebar-broken-ext-"), "ext.ts");

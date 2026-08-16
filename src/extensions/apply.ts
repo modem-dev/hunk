@@ -135,22 +135,34 @@ export interface ResolvedExtensionPanes {
   issues: ExtensionApplyIssue[];
 }
 
-/** Resolve pane identities while retaining registration order as priority. */
-export function resolveExtensionPanes(registry: ExtensionRegistry): ResolvedExtensionPanes {
+/** Resolve pane identities and replacement ownership in registration order. */
+export function resolveExtensionPanes(
+  registry: Pick<ExtensionRegistry, "panes">,
+): ResolvedExtensionPanes {
   const panes: RegisteredPane[] = [];
   const issues: ExtensionApplyIssue[] = [];
-  const claimed = new Set<string>();
+  const claimedKeys = new Set<string>();
+  const claimedReplacementTargets = new Set<string>();
 
   for (const registered of registry.panes) {
     const key = paneKey(registered);
-    if (claimed.has(key)) {
+    if (claimedKeys.has(key)) {
       issues.push({
         extensionId: registered.extensionId,
         message: `Skipped duplicate pane "${key}" from extension ${registered.extensionId}`,
       });
       continue;
     }
-    claimed.add(key);
+    const replacementTarget = registered.pane.replaces;
+    if (replacementTarget && claimedReplacementTargets.has(replacementTarget)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped pane "${key}" from extension ${registered.extensionId} • another pane already replaces "${replacementTarget}"`,
+      });
+      continue;
+    }
+    claimedKeys.add(key);
+    if (replacementTarget) claimedReplacementTargets.add(replacementTarget);
     panes.push(registered);
   }
   return { panes, issues };

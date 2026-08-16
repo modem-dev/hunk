@@ -1120,7 +1120,8 @@ interface ExtensionPaneBase {
   defaultOpen?: boolean;
   /**
    * Start open in place of this pane, which starts closed.
-   * Replacement initial defaults take precedence over `defaultOpen`.
+   * Replacement initial defaults take precedence over `defaultOpen`. The first
+   * pane registered for a named target owns its slot; later claims are skipped.
    */
   replaces?: string;
   /** Opt into live current-line paint; unrelated panes receive stable null. */

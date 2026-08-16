@@ -125,6 +125,7 @@ import {
   planExtensionPanes,
   reconcilePaneOpenState,
   resolvePaneKey,
+  resolvePaneSlotKey,
   type PlannedPane,
 } from "./lib/extensionPanes";
 import type { ExtensionPanePlacement } from "../extension-api/types";
@@ -1456,19 +1457,12 @@ export function App({
 
   /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleSidebar = () => {
-    const replacement = sessionPanes.find(
-      (pane) =>
-        pane.registered.pane.replaces === HUNK_FILES_PANE_KEY &&
-        !paneAvailabilityQuarantineRef.current.has(pane.registered),
-    );
-    const replacementIsOpen =
-      replacement !== undefined && paneOpenStateRef.current.open.includes(replacement.key);
-    const builtInIsOpen = paneOpenStateRef.current.open.includes(HUNK_FILES_PANE_KEY);
-    const filesPaneKey = replacementIsOpen
-      ? replacement.key
-      : builtInIsOpen
-        ? HUNK_FILES_PANE_KEY
-        : (replacement?.key ?? HUNK_FILES_PANE_KEY);
+    const filesPaneKey = resolvePaneSlotKey({
+      panes: sessionPanes,
+      slotKey: HUNK_FILES_PANE_KEY,
+      openKeys: paneOpenStateRef.current.open,
+      quarantined: paneAvailabilityQuarantineRef.current,
+    });
 
     if (!sidebarAreaVisible) {
       setPaneOpen(filesPaneKey, true);

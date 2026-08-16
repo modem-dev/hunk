@@ -14,6 +14,7 @@ import {
   planExtensionPanes,
   reconcilePaneOpenState,
   resolvePaneKey,
+  resolvePaneSlotKey,
   type SessionPane,
 } from "./extensionPanes";
 
@@ -90,6 +91,42 @@ describe("extension panes", () => {
       ]),
     );
     expect(reconcilePaneOpenState(after, closed).open).toEqual([HUNK_FILES_PANE_KEY, "meta:fresh"]);
+  });
+
+  test("resolves a named pane slot to its open owner or fallback", () => {
+    const panes = buildSessionPanes(
+      loadResultWith([registeredPane("meta", "files", { replaces: HUNK_FILES_PANE_KEY })]),
+    );
+    const replacement = panes.find((pane) => pane.key === "meta:files")!;
+    const resolve = (openKeys: readonly string[], quarantined?: WeakSet<RegisteredPane>) =>
+      resolvePaneSlotKey({
+        panes,
+        slotKey: HUNK_FILES_PANE_KEY,
+        openKeys,
+        quarantined,
+      });
+
+    expect(resolve([replacement.key])).toBe(replacement.key);
+    expect(resolve([HUNK_FILES_PANE_KEY])).toBe(HUNK_FILES_PANE_KEY);
+    expect(resolve([])).toBe(replacement.key);
+
+    const quarantined = new WeakSet([replacement.registered]);
+    expect(resolve([replacement.key], quarantined)).toBe(HUNK_FILES_PANE_KEY);
+  });
+
+  test("follows named replacement chains to the pane filling the slot", () => {
+    const panes = buildSessionPanes(
+      loadResultWith([
+        registeredPane("meta", "files", { replaces: HUNK_FILES_PANE_KEY }),
+        registeredPane("other", "files", { replaces: "meta:files" }),
+      ]),
+    );
+    const resolve = (openKeys: readonly string[]) =>
+      resolvePaneSlotKey({ panes, slotKey: HUNK_FILES_PANE_KEY, openKeys });
+
+    expect(resolve(["other:files"])).toBe("other:files");
+    expect(resolve(["meta:files"])).toBe("meta:files");
+    expect(resolve([])).toBe("other:files");
   });
 
   test("resolves local, files, and qualified ids", () => {

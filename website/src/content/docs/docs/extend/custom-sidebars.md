@@ -43,7 +43,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-`placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes use `height`. Both accept `{ preferred, min?, max? }`, defaulting to `{ preferred: 34, min: 22 }` columns or `{ preferred: 8, min: 3 }` rows. Equal bounds make a fixed pane. Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace it (and override `defaultOpen`), or `available(context)` to hide it conditionally.
+`placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes use `height`. Both accept `{ preferred, min?, max? }`, defaulting to `{ preferred: 34, min: 22 }` columns or `{ preferred: 8, min: 3 }` rows. Equal bounds make a fixed pane. Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace it (and override `defaultOpen`), or `available(context)` to hide it conditionally. One pane may replace each named target; the first registration owns that slot and later claims are skipped with a warning.
 
 Set `currentLine: true` to receive Hunk's opaque selected-row painter. The [`current-line-lens` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/current-line-lens) uses it and is not bundled with Hunk.
 

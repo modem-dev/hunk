@@ -25,9 +25,9 @@ export interface SessionPane {
 
 /** Compose bundled UI panes before user panes, preserving stable keys and replacement defaults. */
 export function buildSessionPanes(extensions: ExtensionLoadResult | undefined): SessionPane[] {
-  const bundled = resolveExtensionPanes(getBundledUIRegistry()).panes;
-  const user = extensions ? resolveExtensionPanes(extensions.registry).panes : [];
-  const all = [...bundled, ...user];
+  const all = resolveExtensionPanes({
+    panes: [...getBundledUIRegistry().panes, ...(extensions?.registry.panes ?? [])],
+  }).panes;
   const replacements = new Set(all.map((entry) => entry.pane.replaces).filter(Boolean));
   return all.map((registered) => {
     const key = paneKey(registered);
@@ -76,6 +76,43 @@ export function reconcilePaneOpenState(
   )
     return state;
   return { known: keys, open: nextOpen };
+}
+
+/** Resolve the pane currently filling a named slot, preserving an open fallback. */
+export function resolvePaneSlotKey(options: {
+  panes: readonly SessionPane[];
+  slotKey: string;
+  openKeys: readonly string[];
+  quarantined?: WeakSet<RegisteredPane>;
+}): string {
+  const open = new Set(options.openKeys);
+  const replacementByTarget = new Map<string, SessionPane>();
+  for (const pane of options.panes) {
+    const target = pane.registered.pane.replaces;
+    if (target && !options.quarantined?.has(pane.registered)) {
+      // Pane resolution admits one replacement per target, so every named slot
+      // has at most one owner at each step of a replacement chain.
+      replacementByTarget.set(target, pane);
+    }
+  }
+
+  const replacements: SessionPane[] = [];
+  const visited = new Set<string>();
+  let target = options.slotKey;
+  while (!visited.has(target)) {
+    visited.add(target);
+    const replacement = replacementByTarget.get(target);
+    if (!replacement) break;
+    replacements.push(replacement);
+    target = replacement.key;
+  }
+
+  for (let index = replacements.length - 1; index >= 0; index -= 1) {
+    const replacement = replacements[index];
+    if (replacement && open.has(replacement.key)) return replacement.key;
+  }
+  if (open.has(options.slotKey)) return options.slotKey;
+  return replacements.at(-1)?.key ?? options.slotKey;
 }
 
 /** Resolve a bare local id, `files`, or a fully-qualified pane key. */

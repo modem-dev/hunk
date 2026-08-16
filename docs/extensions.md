@@ -617,7 +617,8 @@ pane. Defaults are `{ preferred: 34, min: 22 }` columns and
 
 Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to
-hide it conditionally.
+hide it conditionally. One pane may replace each named target; the first
+registration owns that slot and later claims are skipped with a warning.
 
 `currentLine: true` opts into the opaque `currentLine.render(side, width)`
 painter. The installable

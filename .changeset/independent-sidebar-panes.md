@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Keep the files pane visible independently from extension panes when toggling it with `s`.
+Toggle the files pane without hiding independently controlled extension panes.
