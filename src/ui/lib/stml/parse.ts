@@ -286,6 +286,7 @@ interface OpenTag {
   next: number;
 }
 
+/** Read one opening tag after `isTagStart` confirms a non-empty name. */
 function readOpenTag(input: string, start: number): OpenTag {
   const n = input.length;
   let i = start + 1;
