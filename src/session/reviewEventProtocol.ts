@@ -135,11 +135,6 @@ export function parseReviewEventId(
   return { type, address: { generation: match[2]!, stateRevision } };
 }
 
-/** Whether one value could be an event id a client is echoing back at us. */
-export function isReviewEventId(value: unknown): value is string {
-  return parseReviewEventId(value) !== undefined;
-}
-
 // -- Frame payloads ---------------------------------------------------------------------
 
 /** One whole event, small enough to send in a single frame. */
@@ -208,13 +203,22 @@ function isChunkCount(value: unknown): value is number {
   return isCount(value) && (value as number) >= 1 && (value as number) <= MAX_REVIEW_EVENT_CHUNKS;
 }
 
+/** Whether one frame's id names the same publication position its own fields state. */
+function eventIdMatchesFrame(
+  record: Record<string, unknown>,
+  fields: readonly (keyof ReviewPublicationAddress)[],
+): boolean {
+  const parsed = parseReviewEventId(record.eventId);
+  return parsed !== undefined && fields.every((field) => parsed.address[field] === record[field]);
+}
+
 /** Parse one single-frame event body. */
 export function parseReviewEventFrame(value: unknown): ReviewEventFrameV1 | undefined {
   const record = asRecord(value);
   if (
     !record ||
     !hasExactKeys(record, ["eventId", "generation", "stateRevision", "payload"]) ||
-    !isReviewEventId(record.eventId) ||
+    !eventIdMatchesFrame(record, ["generation", "stateRevision"]) ||
     parseReviewGeneration(record.generation) === undefined ||
     !isCount(record.stateRevision)
   ) {
@@ -237,7 +241,7 @@ export function parseReviewEventBegin(value: unknown): ReviewEventBeginV1 | unde
       "contentDigest",
       "chunkCount",
     ]) ||
-    !isReviewEventId(record.eventId) ||
+    !eventIdMatchesFrame(record, ["generation", "stateRevision"]) ||
     parseReviewGeneration(record.generation) === undefined ||
     !isCount(record.stateRevision) ||
     record.encoding !== "base64" ||
@@ -266,7 +270,7 @@ export function parseReviewEventChunk(value: unknown): ReviewEventChunkV1 | unde
       "contentSize",
       "eof",
     ]) ||
-    !isReviewEventId(record.eventId) ||
+    !eventIdMatchesFrame(record, ["generation"]) ||
     parseReviewGeneration(record.generation) === undefined ||
     !isCount(record.offset) ||
     !isCount(record.byteLength) ||
@@ -294,7 +298,7 @@ export function parseReviewEventEnd(value: unknown): ReviewEventEndV1 | undefine
       "contentDigest",
       "chunkCount",
     ]) ||
-    !isReviewEventId(record.eventId) ||
+    !eventIdMatchesFrame(record, ["generation"]) ||
     parseReviewGeneration(record.generation) === undefined ||
     !isPayloadSize(record.contentSize) ||
     !isReviewSha256Digest(record.contentDigest) ||
