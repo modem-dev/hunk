@@ -1,5 +1,5 @@
 ---
-name: launch-video
+name: hunk-launch-video
 description: Produces Hunk videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use for feature demos, workflow explainers, announcements, launch videos, and full-release roundups.
 ---
 
@@ -140,7 +140,7 @@ checked-in demo coverage and belongs to the submitted change.
    or adjusting capture scenes as needed (see "Authoring scenes").
 3. Capture every scene referenced by the full storyboard, composite it, and
    encode both formats using the main workflow above.
-4. Verify the complete cut (see "Verification") and deliver both files.
+4. Verify the complete cut (see "Verification") and deliver both files. When `hunk-release` invoked this workflow, return the approved MP4 and WebM to that skill for versioned naming and GitHub user-attachment embedding; do not upload or edit the public release without its confirmation gate.
 
 ## Per-video editorial surface
 
@@ -316,7 +316,10 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 - Outputs stay under `.video-work/`: the full-release recipe creates
   `launch.mp4`/`launch.webm`, while the single-feature recipe above creates
   `hunk-feature-demo.mp4`/`hunk-feature-demo.webm`. `.video-work/` is
-  gitignored — never commit the video or its frames. Send both files to the
-  user directly (mp4: social/Slack; webm: web embeds), report duration and file
-  sizes, and flag if the mp4 exceeds ~10 MB (Slack) or ~15 MB (X). Copy them
-  elsewhere only if the user names a destination.
+  gitignored — never commit the video or its frames. For a standalone video
+  request, send both files to the user directly (mp4: social/Slack; webm: web
+  embeds), report duration and file sizes, and flag if the mp4 exceeds ~10 MB
+  (Slack) or ~15 MB (X). When invoked by `hunk-release`, hand both files back
+  to that workflow instead; it owns versioned filenames, GitHub's
+  user-attachment limit, public embedding, and inline-player verification.
+  Copy them elsewhere only if the user names a destination.
