@@ -193,6 +193,8 @@ export interface ExtensionRegistry {
   eventBusPhase: "loading" | "ready" | "closed";
   /** Bound after loading so hunk.events.emit can dispatch at runtime. */
   emitCustomEvent?: (event: string, payload: unknown) => void;
+  /** Bound after the UI mounts so hunk.setTheme can switch themes at runtime. */
+  setTheme?: (themeId: string) => void;
   logs: ExtensionLogEntry[];
 }
 
