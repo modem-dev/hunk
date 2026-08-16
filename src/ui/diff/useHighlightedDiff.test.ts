@@ -5,6 +5,15 @@ import { HIGHLIGHT_WORKER_MIN_LINES } from "./diffRows";
 import { prefetchHighlightedDiff, highlightedDiffCacheKey } from "./useHighlightedDiff";
 import { registerHighlightWorker } from "./worker";
 
+/** Build one file large enough to qualify for worker highlighting. */
+function createLargeHighlightTestFile(id: string) {
+  const lines = Array.from(
+    { length: HIGHLIGHT_WORKER_MIN_LINES },
+    (_, index) => `export const line${index} = ${index};`,
+  ).join("\n");
+  return createTestDiffFile({ after: `${lines}\n`, before: "", id });
+}
+
 /** Register a worker double that fails every request and reports how often a retry reaches it. */
 function registerFailingHighlightWorkerForTest() {
   const state = { calls: 0 };
@@ -52,27 +61,39 @@ describe("highlighted diff cache", () => {
     );
   });
 
-  test("does not cache retryable worker failures", async () => {
-    const lines = Array.from(
-      { length: HIGHLIGHT_WORKER_MIN_LINES },
-      (_, index) => `export const line${index} = ${index};`,
-    ).join("\n");
-    const file = createTestDiffFile({
-      after: `${lines}\n`,
-      before: "",
-      id: "retryable-worker-failure",
+  test("keeps inline highlighting as the default and offloads only when requested", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const worker = registerFailingHighlightWorkerForTest();
+
+    const inline = await prefetchHighlightedDiff({
+      file: createLargeHighlightTestFile("default-inline-highlight"),
+      theme,
     });
+    expect(inline.retryable).toBeUndefined();
+    expect(worker.calls).toBe(0);
+
+    const offloaded = await prefetchHighlightedDiff({
+      file: createLargeHighlightTestFile("fast-worker-highlight"),
+      offloadLargeDiff: true,
+      theme,
+    });
+    expect(offloaded.retryable).toBe(true);
+    expect(worker.calls).toBe(1);
+  });
+
+  test("does not cache retryable worker failures", async () => {
+    const file = createLargeHighlightTestFile("retryable-worker-failure");
     const theme = resolveTheme("github-dark-default", null);
     const firstWorker = registerFailingHighlightWorkerForTest();
 
-    const first = await prefetchHighlightedDiff({ file, theme });
+    const first = await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
     expect(first.retryable).toBe(true);
     expect(firstWorker.calls).toBe(1);
 
     // Registering another recovered/recreated worker should receive a new request instead of a
     // shared-cache hit for the first worker's plain-row fallback.
     const secondWorker = registerFailingHighlightWorkerForTest();
-    const second = await prefetchHighlightedDiff({ file, theme });
+    const second = await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
     expect(second.retryable).toBe(true);
     expect(secondWorker.calls).toBe(1);
   });

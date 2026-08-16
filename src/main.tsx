@@ -101,8 +101,8 @@ async function main() {
   }
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
-  // native library. The highlighting client starts the compiled worker only when an eligible large
-  // diff needs it, so normal small-diff sessions do not pay its startup cost.
+  // native library. The highlighting client starts the compiled worker only when an opted-in,
+  // eligible large diff needs it, so normal sessions do not pay its startup cost.
   try {
     const { runInteractiveApp } = await import("./ui/runInteractiveApp");
     await runInteractiveApp(startupPlan);

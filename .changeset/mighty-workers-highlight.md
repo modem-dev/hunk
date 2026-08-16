@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Keep large syntax-highlighted diffs responsive by moving eligible terminal highlighting into a Bun worker.
+Add an experimental `hunk --fast` mode that keeps eligible large syntax-highlighted diffs responsive with a Bun worker.

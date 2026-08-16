@@ -100,6 +100,7 @@ export function DiffSectionBody({
   selectedHunkIndex,
   sectionGeometry,
   shouldLoadHighlight = true,
+  offloadLargeDiff = false,
   scrollable = true,
   visibleBodyBounds,
 }: {
@@ -131,6 +132,7 @@ export function DiffSectionBody({
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
+  offloadLargeDiff?: boolean;
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
@@ -205,6 +207,7 @@ export function DiffSectionBody({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
+    offloadLargeDiff,
     theme,
     shouldLoadHighlight,
   });

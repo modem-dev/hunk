@@ -79,6 +79,10 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
+  {
+    flag: "--fast",
+    description: "experimentally offload eligible large-diff highlighting",
+  },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
   {
@@ -315,6 +319,7 @@ function buildCommonOptions(
     pager?: boolean;
     watch?: boolean;
     experimental?: boolean;
+    fast?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
     extension?: string[];
@@ -329,9 +334,10 @@ function buildCommonOptions(
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     experimental:
-      options.experimental || argv[2] === AUXILIARY_AGENT_OPTIONS.experimental.flag
+      options.experimental || hasPrefixedReviewFlag(argv, AUXILIARY_AGENT_OPTIONS.experimental.flag)
         ? true
         : undefined,
+    fast: options.fast || hasPrefixedReviewFlag(argv, "--fast") ? true : undefined,
     excludeUntracked: resolveBooleanFlag(
       argv,
       AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag,
@@ -447,6 +453,7 @@ function renderCliHelp() {
     "  -h, --help                              show help",
     "  -v, --version                           show version",
     "  --experimental                          enable experimental review features (currently STML)",
+    "  --fast                                  review working tree with experimental fast highlighting",
     "",
     "Common review options:",
     "  --mode <mode>                           layout mode: auto, split, stack",
@@ -1715,12 +1722,45 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
   };
 }
 
+const REVIEW_COMMAND_NAMES = new Set(["diff", "show", "patch", "pager", "difftool", "stash"]);
+const TOP_LEVEL_COMMAND_NAMES = new Set([
+  ...REVIEW_COMMAND_NAMES,
+  "session",
+  "markup",
+  "skill",
+  "extension",
+  "ext",
+  "daemon",
+  "mcp",
+]);
+
+/** Return whether one review flag appears in the leading global-style flag run. */
+function hasPrefixedReviewFlag(argv: string[], flag: string) {
+  for (const arg of argv.slice(2)) {
+    if (arg !== "--fast" && arg !== AUXILIARY_AGENT_OPTIONS.experimental.flag) {
+      return false;
+    }
+    if (arg === flag) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Parse CLI arguments into one normalized input shape for the app loader layer. */
 export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   const rawArgs = argv.slice(2);
-  const prefixedExperimental = rawArgs[0] === AUXILIARY_AGENT_OPTIONS.experimental.flag;
-  const args = prefixedExperimental ? rawArgs.slice(1) : rawArgs;
-  const [commandName, ...rest] = args;
+  const prefixedReviewFlags: string[] = [];
+  while (
+    rawArgs[prefixedReviewFlags.length] === "--fast" ||
+    rawArgs[prefixedReviewFlags.length] === AUXILIARY_AGENT_OPTIONS.experimental.flag
+  ) {
+    prefixedReviewFlags.push(rawArgs[prefixedReviewFlags.length]!);
+  }
+  const prefixedFast = prefixedReviewFlags.includes("--fast");
+  const args = rawArgs.slice(prefixedReviewFlags.length);
+  const [explicitCommandName, ...rest] = args;
+  const commandName = explicitCommandName ?? (prefixedFast ? "diff" : undefined);
 
   if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
     return { kind: "help", text: renderCliHelp() };
@@ -1730,11 +1770,14 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     return { kind: "help", text: renderCliVersion() };
   }
 
-  if (
-    prefixedExperimental &&
-    !["diff", "show", "patch", "pager", "difftool", "stash"].includes(commandName)
-  ) {
-    throw new Error("`--experimental` must be used with a Hunk review command.");
+  // `hunk --fast` is shorthand for `hunk diff --fast`, so options and targets following the
+  // launch flag belong to the diff parser unless they explicitly name another Hunk command.
+  if (prefixedFast && explicitCommandName && !TOP_LEVEL_COMMAND_NAMES.has(explicitCommandName)) {
+    return parseDiffCommand(args, argv);
+  }
+
+  if (prefixedReviewFlags.length > 0 && !REVIEW_COMMAND_NAMES.has(commandName)) {
+    throw new Error(`\`${prefixedReviewFlags[0]}\` must be used with a Hunk review command.`);
   }
 
   switch (commandName) {

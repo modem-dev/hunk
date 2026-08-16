@@ -112,6 +112,7 @@ function commitHighlightResult(
 function ensureHighlightedDiffLoaded(
   file: DiffFile,
   theme: AppTheme,
+  offloadLargeDiff: boolean,
   cacheKey = highlightedDiffCacheKey(theme, file),
 ) {
   // Viewport prefetch calls this for every file in its halo on each scroll, so this read is also
@@ -128,7 +129,7 @@ function ensureHighlightedDiffLoaded(
   }
 
   let pending: Promise<HighlightedDiffCode>;
-  pending = loadHighlightedDiff(file, theme, { offloadLargeDiff: true })
+  pending = loadHighlightedDiff(file, theme, { offloadLargeDiff })
     .then((nextHighlighted) => {
       commitHighlightResult(cacheKey, pending, nextHighlighted);
       return nextHighlighted;
@@ -147,8 +148,16 @@ function ensureHighlightedDiffLoaded(
 }
 
 /** Queue syntax highlighting for one file without mounting its diff rows first. */
-export function prefetchHighlightedDiff({ file, theme }: { file: DiffFile; theme: AppTheme }) {
-  return ensureHighlightedDiffLoaded(file, theme);
+export function prefetchHighlightedDiff({
+  file,
+  offloadLargeDiff = false,
+  theme,
+}: {
+  file: DiffFile;
+  offloadLargeDiff?: boolean;
+  theme: AppTheme;
+}) {
+  return ensureHighlightedDiffLoaded(file, theme, offloadLargeDiff);
 }
 
 /** Read the best already-available highlight result without starting async work during render. */
@@ -177,10 +186,12 @@ function resolveHighlightedSnapshot({
 /** Resolve highlighted diff content with shared caching and background prefetch support. */
 export function useHighlightedDiff({
   file,
+  offloadLargeDiff = false,
   theme,
   shouldLoadHighlight,
 }: {
   file: DiffFile | undefined;
+  offloadLargeDiff?: boolean;
   theme: AppTheme;
   shouldLoadHighlight?: boolean;
 }) {
@@ -215,19 +226,21 @@ export function useHighlightedDiff({
     let cancelled = false;
     setHighlighted(null);
 
-    ensureHighlightedDiffLoaded(file, theme, appearanceCacheKey).then((nextHighlighted) => {
-      if (cancelled) {
-        return;
-      }
+    ensureHighlightedDiffLoaded(file, theme, offloadLargeDiff, appearanceCacheKey).then(
+      (nextHighlighted) => {
+        if (cancelled) {
+          return;
+        }
 
-      setHighlighted(nextHighlighted);
-      setHighlightedCacheKey(appearanceCacheKey);
-    });
+        setHighlighted(nextHighlighted);
+        setHighlightedCacheKey(appearanceCacheKey);
+      },
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
+  }, [appearanceCacheKey, file, highlightedCacheKey, offloadLargeDiff, shouldLoadHighlight]);
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
   return resolveHighlightedSnapshot({

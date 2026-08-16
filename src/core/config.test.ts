@@ -223,6 +223,27 @@ describe("config resolution", () => {
     });
   });
 
+  test("keeps fast highlighting launch-only instead of reading it from config", () => {
+    const home = createTempDir("hunk-config-fast-home-");
+    const repo = createTempDir("hunk-config-fast-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "fast = true");
+
+    const configured = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    const launched = resolveConfiguredCliInput(createPatchPagerInput({ fast: true }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(configured.input.options.fast).toBe(false);
+    expect(launched.input.options.fast).toBe(true);
+  });
+
   test("reads the current-line style from config and lets CLI flags outrank it", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

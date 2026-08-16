@@ -239,6 +239,7 @@ function createDiffPaneProps(
   return {
     diffContentWidth: 72,
     files,
+    offloadLargeDiff: false,
     headerLabelWidth: 40,
     headerStatsWidth: 16,
     layout: "split" as const,

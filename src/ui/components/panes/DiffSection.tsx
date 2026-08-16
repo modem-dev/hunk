@@ -24,6 +24,7 @@ interface DiffSectionProps {
   extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
   fileView?: ResolvedFileViewLayout;
+  offloadLargeDiff: boolean;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -64,6 +65,7 @@ function DiffSectionComponent({
   extensionLineHighlights,
   file,
   fileView,
+  offloadLargeDiff,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -161,6 +163,7 @@ function DiffSectionComponent({
           extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
+          offloadLargeDiff={offloadLargeDiff}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           sourceStatus={sourceStatus}
@@ -203,6 +206,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&
+    previous.offloadLargeDiff === next.offloadLargeDiff &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&

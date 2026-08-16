@@ -93,6 +93,8 @@ export interface CommonOptions {
   watch?: boolean;
   /** Enable launch-scoped experimental review features. */
   experimental?: boolean;
+  /** Offload eligible large-diff highlighting for this launch. */
+  fast?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   tabWidth?: number;
