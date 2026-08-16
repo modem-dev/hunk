@@ -6,11 +6,7 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
-import {
-  createHighlightWorker,
-  disposeHighlightWorker,
-  registerHighlightWorker,
-} from "./ui/diff/worker";
+import { disposeHighlightWorker } from "./ui/diff/worker";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -104,11 +100,9 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  // OpenTUI stays behind the interactive plan so headless commands never
-  // materialize its embedded native library. Bun only resolves compiled worker entrypoints from
-  // this executable entrypoint, so start and register the worker here instead of in a UI module.
-  const highlightWorker = createHighlightWorker();
-  registerHighlightWorker(highlightWorker);
+  // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
+  // native library. The highlighting client starts the compiled worker only when an eligible large
+  // diff needs it, so normal small-diff sessions do not pay its startup cost.
   try {
     const { runInteractiveApp } = await import("./ui/runInteractiveApp");
     await runInteractiveApp(startupPlan);

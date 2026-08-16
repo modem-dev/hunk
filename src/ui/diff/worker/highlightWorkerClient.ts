@@ -1,8 +1,8 @@
 /**
  * Brokers terminal syntax-highlighting jobs through Bun's compiled-entrypoint worker support.
  *
- * The executable registers the interactive worker because Bun resolves compiled worker URLs from
- * the entrypoint module; UI callers consume this narrow request queue through its local re-export.
+ * The first eligible request starts the worker through the root-level Bun resolver, then later
+ * requests share its serialized queue. UI callers consume the public worker-folder entrypoint.
  */
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { createHighlightWorker } from "../../../highlightWorkerClient";
@@ -48,7 +48,7 @@ function useHighlightWorker(nextWorker: Worker) {
   return nextWorker;
 }
 
-/** Register the compiled-entrypoint worker that the interactive app started. */
+/** Register a caller-provided worker, such as a deterministic test double. */
 export function registerHighlightWorker(nextWorker: Worker) {
   if (worker && worker !== nextWorker) {
     resetWorker(new Error("The syntax highlighting worker was replaced."));
@@ -62,8 +62,8 @@ function getHighlightWorker() {
     return worker;
   }
 
-  // Unit tests run this module without the interactive entrypoint. Production registers the
-  // worker from src/main.tsx, where Bun can resolve the additional compiled entrypoint.
+  // Construction runs inside `runNextRequest`'s try/catch, so unavailable workers leave the
+  // visible diff plain rather than aborting the interactive application.
   return useHighlightWorker(createHighlightWorker());
 }
 
