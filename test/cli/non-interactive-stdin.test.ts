@@ -3,9 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** App should continue rendering if input stdin is non-tty */
-
-// Treat 1000 bytes as rendered (content must be rendered)
 const MINIMUM_RENDERED_BYTES = 1_000;
 
 async function readUntilRendered(
@@ -36,9 +33,7 @@ async function readUntilRendered(
 }
 
 describe("non-interactive stdin contracts", () => {
-  // When hunk's stdin closed or pointed at /dev/null stream ends as soon as renderer resumes
-  // which shouldn't be considered as terminal going away.
-  test("renders the review when stdin is not a terminal", async () => {
+  test("renders the review and stays alive when stdin is not a terminal", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-non-tty-stdin-"));
     const before = join(dir, "before.ts");
     const after = join(dir, "after.ts");
@@ -62,8 +57,14 @@ describe("non-interactive stdin contracts", () => {
     try {
       const bytes = await readUntilRendered(proc.stdout, MINIMUM_RENDERED_BYTES, 15_000);
       expect(bytes).toBeGreaterThanOrEqual(MINIMUM_RENDERED_BYTES);
+      await expect(
+        Promise.race([
+          proc.exited.then((code) => ({ exited: true, code })),
+          Bun.sleep(250).then(() => ({ exited: false })),
+        ]),
+      ).resolves.toEqual({ exited: false });
     } finally {
-      proc.kill("SIGKILL");
+      proc.kill();
       await proc.exited;
       rmSync(dir, { recursive: true, force: true });
     }
