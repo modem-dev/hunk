@@ -15,4 +15,5 @@ export {
   type CompactHighlightedDiff,
   type CompactHighlightRun,
 } from "./highlightCompact";
+export { aliasContextHighlightLines } from "./highlightContext";
 export { collectHastHighlightRuns, type HastNode } from "./highlightHast";

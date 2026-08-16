@@ -29,6 +29,7 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 import {
+  aliasContextHighlightLines,
   collectHastHighlightRuns,
   compactHighlightRunsForLine,
   highlightDiffInWorker,
@@ -564,44 +565,6 @@ function sourceFileContents(file: DiffFile, text: string, language: string | und
   return contents;
 }
 
-/**
- * Pierre highlights unchanged context on both diff sides even though split/stack rendering later
- * cares only about the styled code spans. Reuse one side's line node for both arrays so identical
- * context flattens once and the existing WeakMap span cache can fan that result back out.
- */
-function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDiffCode) {
-  for (const hunk of file.metadata.hunks) {
-    let deletionLineIndex = hunk.deletionLineIndex;
-    let additionLineIndex = hunk.additionLineIndex;
-
-    for (const content of hunk.hunkContent) {
-      if (content.type === "context") {
-        for (let offset = 0; offset < content.lines; offset += 1) {
-          const sharedLine =
-            highlighted.additionLines[additionLineIndex + offset] ??
-            highlighted.deletionLines[deletionLineIndex + offset];
-
-          if (!sharedLine) {
-            continue;
-          }
-
-          highlighted.deletionLines[deletionLineIndex + offset] = sharedLine;
-          highlighted.additionLines[additionLineIndex + offset] = sharedLine;
-        }
-
-        deletionLineIndex += content.lines;
-        additionLineIndex += content.lines;
-        continue;
-      }
-
-      deletionLineIndex += content.deletions;
-      additionLineIndex += content.additions;
-    }
-  }
-
-  return highlighted;
-}
-
 /** Load and validate authoritative source snapshots for one partial diff when available. */
 async function loadSourceBackedHighlightPlan(file: DiffFile) {
   if (!file.metadata.isPartial || !file.sourceFetcher || file.metadata.hunks.length === 0) {
@@ -636,7 +599,7 @@ function finalizeHighlightedDiff(
   // those authoritative per-side nodes; aliasing remains safe only for patch-fragment highlighting.
   return sourcePlan
     ? remapSourceBackedHighlight(sourcePlan, code)
-    : aliasHighlightedContextLines(file, code);
+    : aliasContextHighlightLines(file.metadata, code);
 }
 
 /** Render one metadata snapshot through an already prepared highlighter. */
@@ -724,6 +687,7 @@ async function loadWorkerHighlightedDiff(
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
   const payload = await highlightDiffInWorker({
+    aliasContext: sourcePlan === null,
     appearance: theme.appearance,
     language: file.language ?? "text",
     metadata,

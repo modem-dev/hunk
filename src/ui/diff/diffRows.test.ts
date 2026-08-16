@@ -332,6 +332,40 @@ describe("Pierre diff rows", () => {
     expect(buildStackRows(file, offloaded, theme)).toEqual(buildStackRows(file, inline, theme));
   }, 30_000);
 
+  test("matches inline context styling for a large patch-only diff", async () => {
+    const context = Array.from(
+      { length: HIGHLIGHT_WORKER_MIN_LINES },
+      (_, index) => `const gap${index} = ${index};`,
+    );
+    const before = [`const message = "closed";`, ...context, "const target = 1;", ""].join("\n");
+    const after = ["const message = `open", ...context, "const target = 2;`", ""].join("\n");
+    const patch = createTwoFilesPatch("state.ts", "state.ts", before, after, "", "", {
+      context: HIGHLIGHT_WORKER_MIN_LINES + 2,
+    });
+    const metadata = parsePatchFiles(patch, "large-patch-only-state", true)[0]?.files[0];
+    if (!metadata) {
+      throw new Error("Expected large patch-only grammar-state metadata");
+    }
+    const file: DiffFile = {
+      id: "large-patch-only-state",
+      path: "state.ts",
+      patch,
+      language: "typescript",
+      stats: { additions: 2, deletions: 2 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("github-dark-default", null);
+
+    const [inline, offloaded] = await Promise.all([
+      loadHighlightedDiff(file, theme),
+      loadHighlightedDiff(file, theme, { offloadLargeDiff: true }),
+    ]);
+
+    expect(offloaded.compact).toBeDefined();
+    expect(buildSplitRows(file, offloaded, theme)).toEqual(buildSplitRows(file, inline, theme));
+  }, 30_000);
+
   test("falls back to patch highlighting when source-backed metadata exceeds the cap", async () => {
     // A 6,000-line file produces 12,000 full-source side lines, although the visible patch has
     // only one changed line. It should use the safe patch fragment rather than render plain rows.

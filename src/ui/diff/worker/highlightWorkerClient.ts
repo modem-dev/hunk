@@ -11,8 +11,9 @@ import type { CompactHighlightedDiff } from "./highlightCompact";
 export type WorkerHighlightedDiffCode = CompactHighlightedDiff;
 
 interface HighlightWorkerRequest {
-  version: 2;
+  version: 3;
   id: number;
+  aliasContext: boolean;
   metadata: FileDiffMetadata;
   appearance: "dark" | "light";
   language: string;
@@ -20,11 +21,12 @@ interface HighlightWorkerRequest {
 }
 
 type HighlightWorkerResponse =
-  | { version: 2; id: number; ok: true; code: WorkerHighlightedDiffCode }
-  | { version: 2; id: number; ok: false; message: string };
+  | { version: 3; id: number; ok: true; code: WorkerHighlightedDiffCode }
+  | { version: 3; id: number; ok: false; message: string };
 
 interface PendingHighlightRequest {
   id: number;
+  aliasContext: boolean;
   metadata: FileDiffMetadata;
   appearance: "dark" | "light";
   language: string;
@@ -81,7 +83,7 @@ function settleActiveRequest(settle: (request: PendingHighlightRequest) => void)
 function handleWorkerMessage(event: MessageEvent<HighlightWorkerResponse>) {
   const response = event.data;
   const request = activeRequest;
-  if (!request || response.version !== 2 || response.id !== request.id) {
+  if (!request || response.version !== 3 || response.id !== request.id) {
     return;
   }
 
@@ -130,8 +132,9 @@ function runNextRequest() {
   activeRequest = request;
   try {
     const message: HighlightWorkerRequest = {
-      version: 2,
+      version: 3,
       id: request.id,
+      aliasContext: request.aliasContext,
       metadata: request.metadata,
       appearance: request.appearance,
       language: request.language,
@@ -145,11 +148,13 @@ function runNextRequest() {
 
 /** Highlight one diff in the Bun worker after earlier requests finish. */
 export function highlightDiffInWorker({
+  aliasContext,
   appearance,
   language,
   metadata,
   theme,
 }: {
+  aliasContext: boolean;
   appearance: "dark" | "light";
   language: string;
   metadata: FileDiffMetadata;
@@ -158,6 +163,7 @@ export function highlightDiffInWorker({
   return new Promise<WorkerHighlightedDiffCode>((resolve, reject) => {
     queuedRequests.push({
       id: nextRequestId++,
+      aliasContext,
       appearance,
       language,
       metadata,

@@ -11,6 +11,7 @@ import {
   renderDiffWithHighlighter,
   type FileDiffMetadata,
 } from "@pierre/diffs";
+import { aliasContextHighlightLines } from "./highlightContext";
 import {
   compactHighlightTransferList,
   encodeCompactHighlightedDiff,
@@ -19,8 +20,9 @@ import {
 import type { HighlightedDiffCode } from "../diffRows";
 
 interface HighlightWorkerRequest {
-  version: 2;
+  version: 3;
   id: number;
+  aliasContext: boolean;
   metadata: FileDiffMetadata;
   appearance: "dark" | "light";
   language: string;
@@ -29,12 +31,12 @@ interface HighlightWorkerRequest {
 
 type HighlightWorkerResponse =
   | {
-      version: 2;
+      version: 3;
       id: number;
       ok: true;
       code: CompactHighlightedDiff;
     }
-  | { version: 2; id: number; ok: false; message: string };
+  | { version: 3; id: number; ok: false; message: string };
 
 /** Build the fixed Pierre render options shared with the terminal highlighter. */
 function workerRenderOptions(theme: string) {
@@ -55,11 +57,11 @@ function errorMessage(error: unknown) {
 declare const self: Worker;
 
 self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
-  const { appearance, id, language, metadata, theme, version } = event.data;
+  const { aliasContext, appearance, id, language, metadata, theme, version } = event.data;
 
-  if (version !== 2) {
+  if (version !== 3) {
     const response: HighlightWorkerResponse = {
-      version: 2,
+      version: 3,
       id,
       ok: false,
       message: `Unsupported highlight worker protocol version: ${String(version)}`,
@@ -75,9 +77,13 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
       preferredHighlighter: "shiki-wasm",
     });
     const result = renderDiffWithHighlighter(metadata, highlighter, workerRenderOptions(theme));
-    const code = encodeCompactHighlightedDiff(result.code as HighlightedDiffCode, appearance);
+    const highlighted = result.code as HighlightedDiffCode;
+    const code = encodeCompactHighlightedDiff(
+      aliasContext ? aliasContextHighlightLines(metadata, highlighted) : highlighted,
+      appearance,
+    );
     const response: HighlightWorkerResponse = {
-      version: 2,
+      version: 3,
       id,
       ok: true,
       code,
@@ -85,7 +91,7 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
     self.postMessage(response, compactHighlightTransferList(code));
   } catch (error) {
     const response: HighlightWorkerResponse = {
-      version: 2,
+      version: 3,
       id,
       ok: false,
       message: errorMessage(error),
