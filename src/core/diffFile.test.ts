@@ -94,14 +94,16 @@ describe("change-block line pairing", () => {
     const changes = metadata.hunks.flatMap((hunk) =>
       hunk.hunkContent.filter((content) => content.type === "change"),
     );
-    const paired = changes.filter((change) => change.additions > 0 && change.deletions > 0);
+    expect(changes).toEqual([
+      { additions: 2, deletions: 0, additionLineIndex: 1, deletionLineIndex: 1, type: "change" },
+      { additions: 1, deletions: 1, additionLineIndex: 3, deletionLineIndex: 1, type: "change" },
+    ]);
 
-    expect(paired).toHaveLength(1);
-    expect(paired[0]).toMatchObject({ additions: 1, deletions: 1 });
-    expect(metadata.deletionLines[paired[0]!.deletionLineIndex]).toContain(
+    const paired = changes[1]!;
+    expect(metadata.deletionLines[paired.deletionLineIndex]).toContain(
       "return computeTotal(items, taxRate);",
     );
-    expect(metadata.additionLines[paired[0]!.additionLineIndex]).toContain(
+    expect(metadata.additionLines[paired.additionLineIndex]).toContain(
       "return computeTotal(items, taxRate, discount);",
     );
   });
