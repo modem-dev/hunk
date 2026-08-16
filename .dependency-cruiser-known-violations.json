@@ -1,0 +1,502 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/core/cli.ts",
+    "to": "src/session/agent/errors.ts",
+    "unresolvedTo": "../session/agent/errors",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "core-stays-domain"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/core/cli.ts",
+    "to": "src/session/agent/surface.ts",
+    "unresolvedTo": "../session/agent/surface",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "core-stays-domain"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extensions/default/ui/sidebar/index.tsx",
+    "to": "src/ui/components/panes/FileListItem.tsx",
+    "unresolvedTo": "../../../../ui/components/panes/FileListItem",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "extensions-host-stays-below-surfaces"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extensions/default/ui/sidebar/index.tsx",
+    "to": "src/ui/lib/files.ts",
+    "unresolvedTo": "../../../../ui/lib/files",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "extensions-host-stays-below-surfaces"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extensions/default/ui/sidebar/index.tsx",
+    "to": "src/ui/lib/ids.ts",
+    "unresolvedTo": "../../../../ui/lib/ids",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "extensions-host-stays-below-surfaces"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extensions/default/ui/sidebar/index.tsx",
+    "to": "src/ui/lib/sidebarRenderWindow.ts",
+    "unresolvedTo": "../../../../ui/lib/sidebarRenderWindow",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "extensions-host-stays-below-surfaces"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/lib/reviewDigest.ts",
+    "to": "src/core/review/validation.ts",
+    "unresolvedTo": "../core/review/validation",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "lib-is-a-leaf"
+    }
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/diffFile.ts",
+    "to": "src/core/sidecar.ts",
+    "unresolvedTo": "./sidecar",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/sidecar.ts",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/core/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/diffFile.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/diffFile.ts",
+    "to": "src/core/types.ts",
+    "unresolvedTo": "./types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/diffFile.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/types.ts",
+    "to": "src/core/vcs/types.ts",
+    "unresolvedTo": "./vcs/types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/vcs/index.ts",
+    "to": "src/core/types.ts",
+    "unresolvedTo": "../types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/watch/plan.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/index.ts",
+        "dependencyTypes": ["local", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/vcs/index.ts",
+    "to": "src/core/vcs/types.ts",
+    "unresolvedTo": "./types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/watch/plan.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/index.ts",
+        "dependencyTypes": ["local", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/vcs/types.ts",
+    "to": "src/core/watch/plan.ts",
+    "unresolvedTo": "../watch/plan",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/watch/plan.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/core/watch/plan.ts",
+    "to": "src/core/types.ts",
+    "unresolvedTo": "../types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/core/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/vcs/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/core/watch/plan.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/extensions/notifications.ts",
+    "to": "src/extensions/types.ts",
+    "unresolvedTo": "./types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/extensions/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/extensions/notifications.ts",
+        "dependencyTypes": ["local", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/session/broker/brokerClient.ts",
+    "to": "src/session/client/capabilities.ts",
+    "unresolvedTo": "../client/capabilities",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/session/client/capabilities.ts",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/session/protocol.ts",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/session/types.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/session/broker/brokerClient.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/ui/components/panes/copySelection.ts",
+    "to": "src/ui/diff/diffSectionGeometry.ts",
+    "unresolvedTo": "../../diff/diffSectionGeometry",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/ui/diff/diffSectionGeometry.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/ui/diff/renderRows.tsx",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/ui/components/panes/copySelection.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/ui/components/panes/copySelection.ts",
+    "to": "src/ui/diff/renderRows.tsx",
+    "unresolvedTo": "../../diff/renderRows",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/ui/diff/renderRows.tsx",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/ui/components/panes/copySelection.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/ui/diff/codeColumns.ts",
+    "to": "src/ui/diff/diffRows.ts",
+    "unresolvedTo": "./diffRows",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/ui/diff/diffRows.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/ui/diff/codeColumns.ts",
+        "dependencyTypes": ["local", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/ui/diff/diffRows.ts",
+    "to": "src/ui/diff/worker/index.ts",
+    "unresolvedTo": "./worker",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/ui/diff/worker/index.ts",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/ui/diff/worker/highlightCompact.ts",
+        "dependencyTypes": ["local", "export"]
+      },
+      {
+        "name": "src/ui/diff/diffRows.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "src/ui/diff/worker/highlightWorkerClient.ts",
+    "to": "src/ui/diff/worker/highlightCompact.ts",
+    "unresolvedTo": "./highlightCompact",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/ui/diff/worker/highlightCompact.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/ui/diff/diffRows.ts",
+        "dependencyTypes": ["local", "type-only", "import"]
+      },
+      {
+        "name": "src/ui/diff/worker/index.ts",
+        "dependencyTypes": ["local", "import"]
+      },
+      {
+        "name": "src/ui/diff/worker/highlightWorkerClient.ts",
+        "dependencyTypes": ["local", "export"]
+      }
+    ]
+  },
+  {
+    "type": "dependency",
+    "from": "src/session/app/bridge.ts",
+    "to": "src/app/review/producer.ts",
+    "unresolvedTo": "../../app/review/producer",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "session-stays-below-app-and-ui"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/session/app/registration.ts",
+    "to": "src/app/review/capability.ts",
+    "unresolvedTo": "../../app/review/capability",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "session-stays-below-app-and-ui"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/session/app/registration.ts",
+    "to": "src/app/review/publication.ts",
+    "unresolvedTo": "../../app/review/publication",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "session-stays-below-app-and-ui"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/session/app/reviewCommands.ts",
+    "to": "src/app/review/producer.ts",
+    "unresolvedTo": "../../app/review/producer",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "session-stays-below-app-and-ui"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/session/types.ts",
+    "to": "src/extensions/types.ts",
+    "unresolvedTo": "../extensions/types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "session-stays-below-app-and-ui"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/lib/reviewState.ts",
+    "to": "src/session/agent/errors.ts",
+    "unresolvedTo": "../../session/agent/errors",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "ui-couples-to-session-via-adapters"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/ui/lib/reviewState.ts",
+    "to": "src/session/types.ts",
+    "unresolvedTo": "../../session/types",
+    "dependencyTypes": ["local", "type-only", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "ui-couples-to-session-via-adapters"
+    }
+  }
+]

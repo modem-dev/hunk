@@ -75,6 +75,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## architectural rules
 
+- Import boundaries between `src/` top-level trees are enforced by `bun run deps:check`
+  (dependency-cruiser; rules in `.dependency-cruiser.cjs`, target tiers in
+  `docs/module-boundaries.md`). The known-violations baseline is shrink-only: fix an edge, rerun
+  `bun run deps:baseline`, never add to it.
 - Keep the app review-first: the main pane is a single top-to-bottom stream of all visible file diffs.
 - The sidebar is for navigation. Selecting a file jumps to that file in the main review stream; it should not collapse the main pane to one file.
 - Keep Pierre as the diff engine and renderer foundation. Do not switch the main renderer back to OpenTUI's built-in `<diff>` widget.
