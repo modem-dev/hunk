@@ -5,27 +5,27 @@
  * the entrypoint module; UI callers consume this narrow request queue through its local re-export.
  */
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { CompactHighlightedDiff } from "./ui/diff/highlightCompact";
 
-export interface WorkerHighlightedDiffCode {
-  deletionLines: unknown[];
-  additionLines: unknown[];
-}
+export type WorkerHighlightedDiffCode = CompactHighlightedDiff;
 
 interface HighlightWorkerRequest {
-  version: 1;
+  version: 2;
   id: number;
   metadata: FileDiffMetadata;
+  appearance: "dark" | "light";
   language: string;
   theme: string;
 }
 
 type HighlightWorkerResponse =
-  | { version: 1; id: number; ok: true; code: WorkerHighlightedDiffCode }
-  | { version: 1; id: number; ok: false; message: string };
+  | { version: 2; id: number; ok: true; code: WorkerHighlightedDiffCode }
+  | { version: 2; id: number; ok: false; message: string };
 
 interface PendingHighlightRequest {
   id: number;
   metadata: FileDiffMetadata;
+  appearance: "dark" | "light";
   language: string;
   theme: string;
   resolve: (code: WorkerHighlightedDiffCode) => void;
@@ -80,7 +80,7 @@ function settleActiveRequest(settle: (request: PendingHighlightRequest) => void)
 function handleWorkerMessage(event: MessageEvent<HighlightWorkerResponse>) {
   const response = event.data;
   const request = activeRequest;
-  if (!request || response.version !== 1 || response.id !== request.id) {
+  if (!request || response.version !== 2 || response.id !== request.id) {
     return;
   }
 
@@ -129,9 +129,10 @@ function runNextRequest() {
   activeRequest = request;
   try {
     const message: HighlightWorkerRequest = {
-      version: 1,
+      version: 2,
       id: request.id,
       metadata: request.metadata,
+      appearance: request.appearance,
       language: request.language,
       theme: request.theme,
     };
@@ -143,10 +144,12 @@ function runNextRequest() {
 
 /** Highlight one diff in the Bun worker after earlier requests finish. */
 export function highlightDiffInWorker({
+  appearance,
   language,
   metadata,
   theme,
 }: {
+  appearance: "dark" | "light";
   language: string;
   metadata: FileDiffMetadata;
   theme: string;
@@ -154,6 +157,7 @@ export function highlightDiffInWorker({
   return new Promise<WorkerHighlightedDiffCode>((resolve, reject) => {
     queuedRequests.push({
       id: nextRequestId++,
+      appearance,
       language,
       metadata,
       theme,
