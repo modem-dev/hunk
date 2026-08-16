@@ -2,7 +2,11 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { createTestDiffFile, createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import { resolveTheme } from "../themes";
 import { HIGHLIGHT_WORKER_MIN_LINES } from "./diffRows";
-import { prefetchHighlightedDiff, highlightedDiffCacheKey } from "./useHighlightedDiff";
+import {
+  prefetchHighlightedDiff,
+  highlightedDiffCacheKey,
+  subscribeToHighlightedDiff,
+} from "./useHighlightedDiff";
 import { disposeHighlightWorker, registerHighlightWorker } from "./worker";
 
 // The highlight client is one module-level singleton shared by every test file in a `bun test`
@@ -121,6 +125,36 @@ describe("highlighted diff cache", () => {
     const settled = await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
     expect(settled.retryable).toBeUndefined();
     expect(settledWorker.calls).toBe(0);
+  });
+
+  test("wakes a reader holding provisional rows when the key finally caches a result", async () => {
+    const file = createLargeHighlightTestFile("provisional-reader-wakeup");
+    const theme = resolveTheme("github-dark-default", null);
+    const cacheKey = highlightedDiffCacheKey(theme, file);
+
+    registerFailingHighlightWorkerForTest();
+    const first = await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
+    expect(first.retryable).toBe(true);
+
+    // A mounted file showing those provisional rows has no other signal: viewport prefetch fills
+    // the shared cache without rendering anything.
+    let notified = 0;
+    const unsubscribe = subscribeToHighlightedDiff(cacheKey, () => {
+      notified += 1;
+    });
+
+    try {
+      registerFailingHighlightWorkerForTest();
+      await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
+
+      expect(notified).toBe(1);
+    } finally {
+      unsubscribe();
+    }
+
+    // Unsubscribed readers stop hearing about the key.
+    await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
+    expect(notified).toBe(1);
   });
 
   test("reuses source-backed highlights for equivalent versioned providers", () => {
