@@ -311,6 +311,23 @@ export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedE
   return { commands, issues };
 }
 
+/** Host-level behavior resolved across every extension in one shared session. */
+export interface ResolvedExtensionSessionOptions {
+  /** Any transient request wins so a guide cannot accidentally persist practice state. */
+  transientViewPreferences: boolean;
+}
+
+/** Resolve extension session requests through their documented shared-session policy. */
+export function resolveExtensionSessionOptions(
+  registry: ExtensionRegistry,
+): ResolvedExtensionSessionOptions {
+  return {
+    transientViewPreferences: registry.sessionOptions.some(
+      ({ options }) => options.viewPreferences === "transient",
+    ),
+  };
+}
+
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */
 export interface AppliedExtensionRegistrations {
   /** Accepted user adapters, retained for notices and extension-facing UI state. */

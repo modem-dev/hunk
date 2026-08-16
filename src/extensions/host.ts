@@ -15,6 +15,7 @@ import {
   type ExtensionLoadIssue,
   type ExtensionLoadResult,
   type ExtensionMetadata,
+  type ExtensionRegistry,
 } from "./types";
 
 export interface LoadExtensionsOptions {
@@ -42,6 +43,13 @@ export interface LoadExtensionsOptions {
   resolveRepoTrustImpl?: (repoRoot: string, options: ExtensionTrustOptions) => ExtensionTrustState;
   /** Module loader seam; defaults to a plain dynamic import of the absolute path. */
   importExtensionModuleImpl?: (path: string) => Promise<unknown>;
+  /** Publish provisional ownership before imports or asynchronous factories can suspend. */
+  onProvisionalLoad?: (result: ExtensionLoadResult) => void;
+}
+
+/** Read durable retirement without letting control-flow narrowing hide asynchronous revocation. */
+function registryRetired(registry: ExtensionRegistry) {
+  return registry.eventBusPhase === "closed";
 }
 
 /** Import one extension entry file by absolute path, cross-platform. */
@@ -186,7 +194,25 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
   // imports resolve to the host's own instances rather than the filesystem.
   registerHostRuntimeModules(accepted.map((candidate) => candidate.path));
   const registry = options.previousLoad?.registry ?? createEmptyExtensionRegistry();
-  registry.eventBusPhase = "loading";
+  if (!registryRetired(registry)) registry.eventBusPhase = "loading";
+  const notifications =
+    options.notifications ??
+    options.previousLoad?.notifications ??
+    createExtensionNotificationHub();
+  const context = createExtensionContext(options.cwd, notifications.notify);
+  const result: ExtensionLoadResult = {
+    registry,
+    issues,
+    loaded: [...registry.extensions],
+    context,
+    notifications,
+    loadState: {
+      candidates: [...(options.allCandidates ?? options.candidates)],
+      extensionConfigs: structuredClone(options.extensionConfigs ?? {}),
+    },
+  };
+  options.onProvisionalLoad?.(result);
+  if (registryRetired(registry)) return result;
   const importModule = options.importExtensionModuleImpl ?? importExtensionModule;
   const resolveTrust = options.resolveRepoTrustImpl ?? resolveRepoTrust;
   const trustOptions: ExtensionTrustOptions = { env: options.env };
@@ -207,6 +233,7 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
   };
 
   for (const candidate of accepted) {
+    if (registryRetired(registry)) break;
     if (candidate.origin === "repo") {
       const trust = resolveRepoTrustState();
       if (trust !== "trusted") {
@@ -228,6 +255,7 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
       // Importing is the host's half of loading: it is the part that differs
       // from the bundled tier, which has its factories statically in hand.
       factory = readExtensionFactory(await importModule(candidate.path));
+      if (registryRetired(registry)) break;
     } catch (error) {
       issues.push({
         extensionId: candidate.id,
@@ -245,24 +273,18 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
       factory,
       config: options.extensionConfigs?.[candidate.id],
     });
+    if (registryRetired(registry)) break;
   }
 
-  const notifications =
-    options.notifications ??
-    options.previousLoad?.notifications ??
-    createExtensionNotificationHub();
-  const context = createExtensionContext(options.cwd, notifications.notify);
   // `registry.extensions` already holds exactly the extensions whose factories
   // completed, in load order, so the loaded list is a copy of it rather than a
   // second tally that could drift.
-  const loaded = [...registry.extensions];
-  const loadState = {
-    candidates: [...(options.allCandidates ?? options.candidates)],
-    extensionConfigs: structuredClone(options.extensionConfigs ?? {}),
-  };
-  const result: ExtensionLoadResult = pendingTrustRepoRoot
-    ? { registry, issues, loaded, context, notifications, loadState, pendingTrustRepoRoot }
-    : { registry, issues, loaded, context, notifications, loadState };
+  result.loaded = [...registry.extensions];
+  if (pendingTrustRepoRoot) {
+    result.pendingTrustRepoRoot = pendingTrustRepoRoot;
+  } else {
+    delete result.pendingTrustRepoRoot;
+  }
   if (!options.deferEventBusBinding) {
     bindExtensionEventBus(result);
   }

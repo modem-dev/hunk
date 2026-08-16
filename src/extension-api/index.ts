@@ -83,6 +83,7 @@ export type {
   ExtensionDialogs,
   ExtensionInputOptions,
   ExtensionSelectOptions,
+  ExtensionSessionOptions,
   ExtensionNotifyType,
   ExtensionPaintTheme,
   ExtensionPane,

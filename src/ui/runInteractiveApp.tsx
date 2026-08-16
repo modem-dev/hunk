@@ -69,9 +69,15 @@ export async function runInteractiveApp({
   const appRenderer = renderer;
   const root = createRoot(appRenderer);
   const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+  const externalQuitController = new AbortController();
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
+
+  /** Ask AppHost to retire extension authority before tearing down the terminal. */
+  function requestQuit() {
+    externalQuitController.abort();
+  }
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
   function shutdown() {
@@ -81,7 +87,7 @@ export async function runInteractiveApp({
 
     shuttingDown = true;
     for (const signal of shutdownSignals) {
-      process.off(signal, shutdown);
+      process.off(signal, requestQuit);
     }
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
@@ -90,15 +96,16 @@ export async function runInteractiveApp({
   }
 
   for (const signal of shutdownSignals) {
-    process.once(signal, shutdown);
+    process.once(signal, requestQuit);
   }
-  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
+  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, requestQuit);
   jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
   // The app owns the full alternate screen session from this point on.
   root.render(
     <AppHost
       bootstrap={bootstrap}
+      externalQuitSignal={externalQuitController.signal}
       hostClient={hostClient}
       onQuit={shutdown}
       reviewProducer={reviewProducer}

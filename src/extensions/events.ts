@@ -8,8 +8,10 @@ import type {
 import type { Hunk } from "@pierre/diffs";
 import type {
   ExtensionDiffHunk,
+  ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
+  ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
 import { summarizeHunk } from "../core/hunkSummary";
@@ -308,6 +310,42 @@ function unavailablePaneControls(
   };
 }
 
+/** Navigation controls used before the mounted app can safely move a review. */
+function unavailableReviewNavigation(
+  result: ExtensionLoadResult,
+  extensionId: string,
+): ExtensionReviewNavigation {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot navigate the review before the app is ready`,
+      "warning",
+    );
+  return { selectFile: unavailable, selectHunk: unavailable, revealLine: unavailable };
+}
+
+/** Dialog controls used before the mounted app has installed its modal queue. */
+function unavailableDialogs(result: ExtensionLoadResult, extensionId: string): ExtensionDialogs {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot open a dialog before the app is ready`,
+      "warning",
+    );
+  return {
+    confirm: async () => {
+      unavailable();
+      return false;
+    },
+    select: async () => {
+      unavailable();
+      return null;
+    },
+    input: async () => {
+      unavailable();
+      return null;
+    },
+  };
+}
+
 /** Build the runtime event context for one owning extension. */
 function createEventContext(
   result: ExtensionLoadResult,
@@ -324,6 +362,8 @@ function createEventContext(
     ...result.context,
     panes,
     sidebars: panes,
+    navigation: unavailableReviewNavigation(result, extensionId),
+    dialogs: unavailableDialogs(result, extensionId),
     events: {
       emit(event, payload) {
         emitExtensionCustomEvent(result, event, payload);
@@ -346,6 +386,12 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
 ): Promise<void>[] {
   const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
+
+  // Revocation closes ordinary lifecycle delivery synchronously. Retirement is
+  // the sole exception: shutdown runs once after authority has become inert.
+  if (result.registry.eventBusPhase === "closed" && event !== "shutdown") {
+    return settled;
+  }
 
   if (handlers.length === 0) {
     return settled;
@@ -426,6 +472,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   }
 
   const { registry } = result;
+  if (registry.eventBusPhase === "closed") return false;
   registry.emitCustomEvent = (event, payload) => {
     emitExtensionCustomEvent(result, event, payload);
   };
@@ -436,6 +483,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   for (const { event, payload } of registry.pendingCustomEvents.splice(0)) {
     emitExtensionCustomEvent(result, event, payload);
   }
+  return true;
 }
 
 /**
@@ -504,13 +552,13 @@ export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefine
   return true;
 }
 
-/** Shut down one retired extension runtime after synchronously revoking its authority. */
-export async function retireExtensionLoadResult(
-  result: ExtensionLoadResult | undefined,
-): Promise<void> {
-  if (!revokeExtensionLoadResult(result)) {
-    return;
-  }
+/** Shut down one retired extension runtime through the registry's shared completion. */
+export function retireExtensionLoadResult(result: ExtensionLoadResult | undefined): Promise<void> {
+  if (!result) return Promise.resolve();
+  const { registry } = result;
+  if (registry.retirementPromise) return registry.retirementPromise;
+  if (!revokeExtensionLoadResult(result)) return Promise.resolve();
 
-  await emitExtensionEventBounded(result, "shutdown", {});
+  registry.retirementPromise = emitExtensionEventBounded(result, "shutdown", {});
+  return registry.retirementPromise;
 }

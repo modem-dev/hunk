@@ -76,6 +76,24 @@ afterEach(() => {
 });
 
 describe("Hunk session daemon client", () => {
+  test("keeps its previous registration when the live connection rejects replacement", () => {
+    const registration = createRegistration();
+    const client = new SessionBrokerClient(registration, createSnapshot());
+    (client as any).connection = {
+      replaceSession() {
+        throw new Error("connection exploded");
+      },
+    };
+
+    expect(() =>
+      client.replaceSession(
+        { ...registration, sessionId: "replacement-session" },
+        createSnapshot(),
+      ),
+    ).toThrow("connection exploded");
+    expect(client.getRegistration()).toBe(registration);
+  });
+
   test("logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in", async () => {
     process.env.HUNK_MCP_HOST = "0.0.0.0";
     process.env.HUNK_MCP_PORT = "47657";

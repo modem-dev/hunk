@@ -109,9 +109,11 @@ export class SessionBrokerClient<
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
+    // Let the connection validate/send first. If it throws, the client keeps
+    // serving the previous registration and snapshot as one coherent pair.
+    this.connection?.replaceSession(registration, snapshot);
     this.registration = registration;
     this.snapshot = snapshot;
-    this.connection?.replaceSession(registration, snapshot);
   }
 
   private resolveConfig() {

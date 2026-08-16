@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 5;
+export const HUNK_EXTENSION_API_VERSION = 6;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1411,12 +1411,12 @@ export interface ExtensionInputOptions {
 /**
  * Ask the user questions from a command handler, one modal at a time.
  *
- * Every dialog is drawn by Hunk, not by the extension, and carries an
- * attribution line naming the extension that raised it — a prompt cannot
- * present itself as Hunk asking. Only one dialog is on screen at a time:
+ * Every dialog is drawn by Hunk, not by the extension. Dialogs from installed
+ * extensions carry an attribution line naming their source, so a third-party
+ * prompt cannot present itself as Hunk asking; Hunk-owned bundled extensions
+ * omit that redundant marker. Only one dialog is on screen at a time:
  * concurrent requests queue in call order (FIFO), including across extensions,
- * so a second question waits for the first to be answered rather than
- * replacing it.
+ * so a second question waits for the first to be answered rather than replacing it.
  *
  * Escape always cancels, resolving the cancel value (`false`, or `null`).
  * Enter accepts: the confirm action, the highlighted option, or the typed text.
@@ -1554,9 +1554,13 @@ export interface ExtensionWorkspace {
    * On success Hunk reloads the session the same way the refresh key does, so
    * the review an extension sees afterwards reflects what it wrote. That holds
    * for every write that can happen: a session whose review could not be
-   * rebuilt refuses writes rather than accepting one it would then hide. The
-   * returned promise settles on the write itself, not on the reload — a handler
-   * that resumes immediately is looking at the changeset it was called with.
+   * rebuilt refuses writes rather than accepting one it would then hide.
+   * Authority is checked immediately before the filesystem call; once that
+   * irreversible write starts, the promise reports its actual outcome even if
+   * another reload wins meanwhile, and success reconciles the review then active.
+   * Graceful shutdown waits for a started write to settle. The promise settles
+   * on the write itself, not on its follow-up reload — a handler that
+   * resumes immediately is looking at the changeset it was called with.
    *
    * A filesystem that refuses the write resolves `"failed"` with a
    * human-readable `detail`. The promise **rejects** only for a malformed
@@ -1565,6 +1569,18 @@ export interface ExtensionWorkspace {
    * path as any other handler failure.
    */
   writeDocument(request: ExtensionWorkspaceWriteRequest): Promise<ExtensionWorkspaceWriteResult>;
+}
+
+/** Host-level behavior one extension may request for the current review session. */
+export interface ExtensionSessionOptions {
+  /**
+   * Treat view-setting changes as temporary practice or presentation state.
+   *
+   * When `"transient"`, Hunk never offers to write the session's final view
+   * settings into the user's config on quit. Any extension requesting
+   * transient behavior makes the shared session transient.
+   */
+  viewPreferences?: "default" | "transient";
 }
 
 /** What a command handler receives when its key fires. */
@@ -1600,8 +1616,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
   /**
    * Ask the user a question and await the answer.
    *
-   * Valid for the whole life of the handler's promise, so a handler may open
-   * several dialogs in sequence with work in between.
+   * Valid for the handler's promise while this review generation remains
+   * current, so a handler may open several dialogs in sequence with work in
+   * between. A reload expires retained controls and returns cancel values.
    */
   readonly dialogs: ExtensionDialogs;
   /**
@@ -1609,7 +1626,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * user's consent.
    *
    * Host-mediated on purpose: the file is named by review id, a write asks the
-   * user first, and the review reloads after a successful write.
+   * user first, and the review reloads after a successful write. Retained reads
+   * and writes that have not started expire with this review generation
+   * (`null`/`"unavailable"`); an irreversible write already in progress reports
+   * its real filesystem outcome.
    */
   readonly workspace: ExtensionWorkspace;
 }
@@ -1637,11 +1657,15 @@ export interface ExtensionEventBus {
   emit<Payload = unknown>(event: string, payload: Payload): void;
 }
 
-/** Context lifecycle and bus listeners receive, including live pane controls. */
+/** Context lifecycle and bus listeners receive, with controls scoped to this review generation. */
 export interface ExtensionEventContext extends ExtensionContext {
   panes: ExtensionPaneControls;
   /** @deprecated Use panes. */
   sidebars: ExtensionSidebarControls;
+  /** Navigate the live review from lifecycle-driven guides and coordinators. */
+  readonly navigation: ExtensionReviewNavigation;
+  /** Ask attributed, FIFO-queued questions from lifecycle and bus handlers. */
+  readonly dialogs: ExtensionDialogs;
   events: Pick<ExtensionEventBus, "emit">;
 }
 
@@ -1678,6 +1702,8 @@ export interface ExtensionReviewNote {
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
+  /** A named built-in or extension command was dispatched in this terminal host. */
+  command_executed: { commandId: string };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
@@ -1717,6 +1743,8 @@ export type ExtensionEventHandler<Event extends ExtensionEventName = ExtensionEv
  */
 export interface HunkExtensionAPI {
   readonly apiVersion: HunkExtensionApiVersion;
+  /** Configure host-level behavior for the review session loading this extension. */
+  configureSession(options: ExtensionSessionOptions): void;
   /** Contribute one selectable theme. */
   registerTheme(theme: ExtensionThemeConfig): void;
   /** Map one file extension (with or without a leading dot) to a highlight language. */

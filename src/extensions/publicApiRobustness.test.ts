@@ -560,6 +560,7 @@ describe("factories that misbehave outright", () => {
     });
 
     for (const method of [
+      "configureSession",
       "registerTheme",
       "registerFileLanguage",
       "registerVcsAdapter",

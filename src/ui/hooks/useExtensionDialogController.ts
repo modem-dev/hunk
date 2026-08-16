@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   createExtensionDialogQueue,
   type ExtensionDialogQueue,
@@ -12,7 +12,7 @@ export interface ExtensionDialogController {
   request: ExtensionDialogRequest | null;
   selectedIndex: number;
   inputValue: string;
-  accept: () => void;
+  accept: (selectedIndexOverride?: number) => void;
   cancel: () => void;
   moveSelection: (delta: number) => void;
   pickOption: (index: number) => void;
@@ -40,9 +40,12 @@ export function useExtensionDialogController({
   }, [initialInput, requestId]);
 
   const previousReviewGenerationRef = useRef(reviewGeneration);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousReviewGenerationRef.current !== reviewGeneration) {
       previousReviewGenerationRef.current = reviewGeneration;
+      // Child layout effects run before AppHost publishes lifecycle events for
+      // the committed generation. Drain only the retired review's requests so
+      // a session_reload handler can safely open the replacement's first dialog.
       queue.cancelAll();
     }
   }, [queue, reviewGeneration]);
@@ -53,11 +56,11 @@ export function useExtensionDialogController({
   }, [queue]);
 
   /** Answer the visible request with the state appropriate to its dialog kind. */
-  const accept = () => {
+  const accept = (selectedIndexOverride?: number) => {
     if (!request) return;
 
     if (request.kind === "select") {
-      queue.accept(request.id, request.options[selectedIndex]);
+      queue.accept(request.id, request.options[selectedIndexOverride ?? selectedIndex]);
       return;
     }
 

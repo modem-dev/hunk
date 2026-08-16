@@ -38,6 +38,8 @@ interface ExtensionDialogRequestBase {
   id: number;
   /** The extension that raised the dialog, rendered as its attribution. */
   extensionId: string;
+  /** Whether host chrome should identify the extension that raised the dialog. */
+  showAttribution: boolean;
   title: string;
 }
 
@@ -71,7 +73,10 @@ type ExtensionDialogResult = boolean | string | null;
 /** The host-side controller for every extension dialog in one session. */
 export interface ExtensionDialogQueue {
   /** Build the `dialogs` object one extension's command handlers receive. */
-  createDialogs(extensionId: string): ExtensionDialogs;
+  createDialogs(
+    extensionId: string,
+    options?: { isLive?: () => boolean; showAttribution?: boolean },
+  ): ExtensionDialogs;
   /** The dialog that should be on screen, or `null` when none is. */
   current(): ExtensionDialogRequest | null;
   /**
@@ -175,6 +180,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   const pending: {
     request: ExtensionDialogRequest;
     settle: (value: ExtensionDialogResult) => void;
+    isLive: () => boolean;
   }[] = [];
   const listeners = new Set<() => void>();
   let closed = false;
@@ -201,9 +207,10 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   function enqueue<Result extends ExtensionDialogResult>(
     build: (id: number) => ExtensionDialogRequest,
     cancelValue: Result,
+    isLive: () => boolean,
   ): Promise<Result> {
     return new Promise<Result>((resolve) => {
-      if (closed) {
+      if (closed || !isLive()) {
         resolve(cancelValue);
         return;
       }
@@ -213,7 +220,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
       const wasIdle = pending.length === 0;
       // The result type is decided by the request kind the caller built, which
       // is the one place both halves are known.
-      pending.push({ request, settle: (value) => resolve(value as Result) });
+      pending.push({ request, settle: (value) => resolve(value as Result), isLive });
       if (wasIdle) {
         notify();
       }
@@ -244,7 +251,9 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   };
 
   return {
-    createDialogs(extensionId: string): ExtensionDialogs {
+    createDialogs(extensionId: string, options = {}): ExtensionDialogs {
+      const isLive = options.isLive ?? (() => true);
+      const showAttribution = options.showAttribution !== false;
       return {
         // Async so a validation failure rejects the returned promise instead of
         // throwing synchronously out of the extension's `await`.
@@ -255,20 +264,30 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
               kind: "confirm",
               id,
               extensionId,
+              showAttribution,
               title,
               bodyLines: normalizeBodyLines(options.body),
               confirmLabel: normalizeLabel(options.confirmLabel, DEFAULT_CONFIRM_LABEL),
               cancelLabel: normalizeLabel(options.cancelLabel, DEFAULT_CANCEL_LABEL),
             }),
             false,
+            isLive,
           );
         },
         async select(options: ExtensionSelectOptions) {
           const title = normalizeTitle("select", options?.title);
           const choices = normalizeOptions(options.options);
           return await enqueue<string | null>(
-            (id) => ({ kind: "select", id, extensionId, title, options: choices }),
+            (id) => ({
+              kind: "select",
+              id,
+              extensionId,
+              showAttribution,
+              title,
+              options: choices,
+            }),
             null,
+            isLive,
           );
         },
         async input(options: ExtensionInputOptions) {
@@ -278,6 +297,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
               kind: "input",
               id,
               extensionId,
+              showAttribution,
               title,
               placeholder: normalizeLabel(options.placeholder, ""),
               // Sanitized like every other extension-authored string, but not
@@ -287,6 +307,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
                 typeof options.initial === "string" ? sanitizeTerminalLine(options.initial) : "",
             }),
             null,
+            isLive,
           );
         },
       };
@@ -299,6 +320,11 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
     accept(id: number, value?: string) {
       const active = pending[0];
       if (!active || active.request.id !== id) {
+        return;
+      }
+
+      if (!active.isLive()) {
+        settleCurrent(cancelValueFor(active.request));
         return;
       }
 

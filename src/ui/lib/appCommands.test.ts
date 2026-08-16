@@ -7,6 +7,7 @@ import {
   builtinCommandKeyDefaults,
   dispatchAppCommand,
   executeAppCommand,
+  observeAppCommandDispatch,
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
@@ -328,6 +329,42 @@ describe("executeAppCommand", () => {
     expect(executeAppCommand(disabled, "hunk.app.refresh")).toBe(false);
     expect(executeAppCommand(commands, "nobody.registered.this")).toBe(false);
     expect(ran).toEqual([]);
+  });
+});
+
+describe("observeAppCommandDispatch", () => {
+  test("observes successful terminal dispatch exactly once with the command id", () => {
+    const { commands, ran } = createTestCommands();
+    const observed: string[] = [];
+    const wrapped = observeAppCommandDispatch(commands, (id) => observed.push(id));
+
+    expect(dispatchAppCommand(wrapped, keyEvent({ name: "q" }))?.id).toBe("hunk.app.quit");
+    expect(ran).toEqual(["requestQuit"]);
+    expect(observed).toEqual(["hunk.app.quit"]);
+  });
+
+  test("does not observe disabled or throwing commands", () => {
+    const { commands } = createTestCommands();
+    const quit = commands.find((command) => command.id === "hunk.app.quit")!;
+    const observed: string[] = [];
+    const disabled = observeAppCommandDispatch([{ ...quit, isEnabled: () => false }], (id) =>
+      observed.push(id),
+    );
+    expect(dispatchAppCommand(disabled, keyEvent({ name: "q" }))).toBeUndefined();
+
+    const throwing = observeAppCommandDispatch(
+      [
+        {
+          ...quit,
+          run: () => {
+            throw new Error("boom");
+          },
+        },
+      ],
+      (id) => observed.push(id),
+    );
+    expect(() => throwing[0]!.run(keyEvent({ name: "q" }), 1)).toThrow("boom");
+    expect(observed).toEqual([]);
   });
 });
 

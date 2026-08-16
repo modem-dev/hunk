@@ -24,6 +24,7 @@ import {
   resolveExtensionKeyboardModes,
   resolveExtensionLineHighlighters,
   resolveExtensionPanes,
+  resolveExtensionSessionOptions,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -115,6 +116,20 @@ describe("extension file languages", () => {
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
     expect(fileLanguageForPath("sample.hunkfixture")).toBe("ruby");
+  });
+});
+
+describe("extension session options", () => {
+  test("lets any transient request win for the shared review session", () => {
+    const result = createEmptyExtensionLoadResult("/repo");
+    result.registry.sessionOptions.push(
+      { extensionId: "default", options: { viewPreferences: "default" } },
+      { extensionId: "guide", options: { viewPreferences: "transient" } },
+    );
+
+    expect(resolveExtensionSessionOptions(result.registry)).toEqual({
+      transientViewPreferences: true,
+    });
   });
 });
 

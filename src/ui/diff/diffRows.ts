@@ -643,11 +643,46 @@ function renderHighlightedDiff(
   });
 }
 
+/**
+ * Largest diff, in lines across both sides, that is worth syntax highlighting.
+ *
+ * Past this size the work stops paying for itself twice over: the job occupies the serialized
+ * highlight queue for seconds while nothing else can be colorized, and the result is too large for
+ * the shared cache to hold beside the files around it, so it evicts its neighbors and is evicted
+ * back on the next scroll. Diffs this big are generated output — lockfiles, snapshots, vendored
+ * bundles — where color earns little. They render as plain rows instead, immediately.
+ *
+ * Keep this at or below the cache budget in `highlightedDiffCache.ts`; that is what guarantees no
+ * single entry can push the rest of the working set out.
+ */
+const MAX_HIGHLIGHTED_DIFF_LINES = 10_000;
+
+/** Shared plain-rows result. Read-only, so one instance can back every skipped file. */
+const UNHIGHLIGHTED_DIFF: HighlightedDiffCode = Object.freeze({
+  deletionLines: [],
+  additionLines: [],
+});
+
+/** Count the diff lines one file retains when highlighted, across both sides. */
+export function highlightedDiffLineCount(metadata: FileDiffMetadata) {
+  return (metadata.deletionLines?.length ?? 0) + (metadata.additionLines?.length ?? 0);
+}
+
+/** Return whether one file's diff is small enough that highlighting it is worth the work. */
+export function shouldHighlightDiff(file: DiffFile) {
+  return highlightedDiffLineCount(file.metadata) <= MAX_HIGHLIGHTED_DIFF_LINES;
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
   theme: HighlightThemeInput = "dark",
 ): Promise<HighlightedDiffCode> {
+  // Checked before the source read so an oversized file costs neither I/O nor queue time.
+  if (!shouldHighlightDiff(file)) {
+    return UNHIGHLIGHTED_DIFF;
+  }
+
   const sourcePlan = await loadSourceBackedHighlightPlan(file);
 
   try {

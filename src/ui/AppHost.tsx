@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
@@ -13,11 +13,7 @@ import {
   reportExtensionApplyIssues,
   resolveExtensionVcsAdapters,
 } from "../extensions/apply";
-import {
-  emitExtensionEvent,
-  emitExtensionEventBounded,
-  retireExtensionLoadResult,
-} from "../extensions/events";
+import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
 import { extendVcsCatalog } from "../core/vcs";
 import {
   createInitialSessionSnapshot,
@@ -28,20 +24,39 @@ import {
   validateSessionReloadWithinBounds,
 } from "../session/app/reloadBounds";
 import type { HunkSessionBrokerClient, ReloadSessionOptions } from "../session/types";
-import { App } from "./App";
+import {
+  App,
+  type WorkspaceFileWriter,
+  type WorkspaceRefreshRequest,
+  type WorkspaceWriteRunner,
+} from "./App";
 import { useStartupNotices } from "./hooks/useStartupNotices";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
+
+/** A replacement registry prepared for adoption and optionally already retiring. */
+interface PendingExtensionReplacement {
+  result: ExtensionLoadResult;
+}
+
+/** Build the stable refusal returned once quit becomes terminal for reload coordination. */
+function reloadRefusedDuringShutdown() {
+  return new Error("The review session is shutting down and cannot reload.");
+}
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
   bootstrap,
+  externalQuitSignal,
   hostClient,
   onQuit = () => process.exit(0),
   reviewProducer,
   startupNoticeResolver,
   watchRuntime,
+  workspaceFileWriter,
 }: {
   bootstrap: AppBootstrap;
+  /** Process and terminal interrupts routed through host-owned extension retirement. */
+  externalQuitSignal?: AbortSignal;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
   /**
@@ -52,6 +67,7 @@ export function AppHost({
   reviewProducer?: ReviewProducer;
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
   watchRuntime?: WatchedInputRuntime;
+  workspaceFileWriter?: WorkspaceFileWriter;
 }) {
   const initialBootstrap = bootstrap.reloadContext.vcsCatalog
     ? bootstrap
@@ -100,11 +116,17 @@ export function AppHost({
   const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
   const initialExtensionStartupPendingRef = useRef(true);
   const reloadTailRef = useRef<Promise<void>>(Promise.resolve());
-  const pendingReplacementLifecycleRef = useRef<{
+  const quitRequestedRef = useRef(false);
+  const pendingExtensionReplacementRef = useRef<PendingExtensionReplacement | undefined>(undefined);
+  const pendingExtensionRetirementsRef = useRef<Set<Promise<void>>>(new Set());
+  const pendingWorkspaceWritesRef = useRef<Set<Promise<void>>>(new Set());
+  const workspaceRefreshRequestRef = useRef<WorkspaceRefreshRequest | undefined>(undefined);
+  const pendingReloadLifecycleRef = useRef<{
     extensions: ExtensionLoadResult;
     cwd: string;
     changeset: AppBootstrap["changeset"];
     reason: NonNullable<ReloadSessionOptions["reason"]>;
+    emitStartup: boolean;
     resolveMounted: () => void;
   } | null>(null);
   const startupNoticeText = useStartupNotices({
@@ -113,23 +135,31 @@ export function AppHost({
     resolver: startupNoticeResolver,
   });
 
-  useEffect(() => {
-    // Child effects run before the parent's, so by the time this fires the review
-    // UI has rendered the matching bootstrap and installed live extension controls.
+  useLayoutEffect(() => {
+    // Child layout effects run before the parent's, so controls and generation
+    // leases are live here; passive UI events still wait until this order lands.
     if (initialExtensionStartupPendingRef.current) {
       initialExtensionStartupPendingRef.current = false;
       emitExtensionEvent(extensionsRef.current, "startup", {
         cwd: initialBootstrap.reloadContext.cwd,
       });
+      emitExtensionEvent(extensionsRef.current, "changeset_loaded", {
+        changeset: initialBootstrap.changeset,
+      });
       return;
     }
 
-    const pending = pendingReplacementLifecycleRef.current;
+    const pending = pendingReloadLifecycleRef.current;
     if (!pending) {
       return;
     }
-    pendingReplacementLifecycleRef.current = null;
-    emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+    pendingReloadLifecycleRef.current = null;
+    if (pending.emitStartup) {
+      emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+    }
+    emitExtensionEvent(pending.extensions, "changeset_loaded", {
+      changeset: pending.changeset,
+    });
     emitExtensionEvent(pending.extensions, "session_reload", {
       changeset: pending.changeset,
       reason: pending.reason,
@@ -137,8 +167,72 @@ export function AppHost({
     pending.resolveMounted();
   }, [activeBootstrap, initialBootstrap.reloadContext.cwd]);
 
+  /** Track one prepared registry until it is either adopted or fully retired. */
+  const trackPreparedExtensionReplacement = useCallback((result: ExtensionLoadResult) => {
+    pendingExtensionReplacementRef.current = { result };
+  }, []);
+
+  /** Track every registry retirement until its shared shutdown completion settles. */
+  const retireOwnedExtensionLoadResult = useCallback((result: ExtensionLoadResult | undefined) => {
+    const retirement = retireExtensionLoadResult(result);
+    pendingExtensionRetirementsRef.current.add(retirement);
+    void retirement.then(
+      () => pendingExtensionRetirementsRef.current.delete(retirement),
+      () => pendingExtensionRetirementsRef.current.delete(retirement),
+    );
+    return retirement;
+  }, []);
+
+  /** Retire one prepared registry through a shared promise so quit and reload cleanup agree. */
+  const retirePreparedExtensionReplacement = useCallback(
+    (result: ExtensionLoadResult | undefined): Promise<void> => {
+      if (!result) return Promise.resolve();
+      const pending = pendingExtensionReplacementRef.current;
+      if (!pending || pending.result !== result) return retireOwnedExtensionLoadResult(result);
+      return retireOwnedExtensionLoadResult(result).finally(() => {
+        if (pendingExtensionReplacementRef.current === pending) {
+          pendingExtensionReplacementRef.current = undefined;
+        }
+      });
+    },
+    [retireOwnedExtensionLoadResult],
+  );
+
+  /** Own provisional loader authority immediately, including work exposed after quit. */
+  const ownProvisionalExtensionReplacement = useCallback(
+    (result: ExtensionLoadResult) => {
+      trackPreparedExtensionReplacement(result);
+      if (quitRequestedRef.current) {
+        void retirePreparedExtensionReplacement(result);
+      }
+    },
+    [retirePreparedExtensionReplacement, trackPreparedExtensionReplacement],
+  );
+
+  /** Clear prepared ownership only when this exact registry becomes the mounted authority. */
+  const adoptPreparedExtensionReplacement = useCallback((result: ExtensionLoadResult) => {
+    if (pendingExtensionReplacementRef.current?.result === result) {
+      pendingExtensionReplacementRef.current = undefined;
+    }
+  }, []);
+
+  /** Start one irreversible write atomically with host tracking, unless quit already won. */
+  const runWorkspaceWrite = useCallback<WorkspaceWriteRunner>(async (write) => {
+    if (quitRequestedRef.current) return false;
+    const pending = write();
+    pendingWorkspaceWritesRef.current.add(pending);
+    try {
+      await pending;
+      return true;
+    } finally {
+      pendingWorkspaceWritesRef.current.delete(pending);
+    }
+  }, []);
+
   const performReloadSession = useCallback(
     async (nextInput: CliInput, options?: ReloadSessionOptions) => {
+      if (quitRequestedRef.current) throw reloadRefusedDuringShutdown();
+
       // Re-run the same startup normalization pipeline used on first launch so reloads honor
       // runtime defaults and config layering instead of assuming `nextInput` is already final.
       // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
@@ -168,92 +262,129 @@ export function AppHost({
       let replacementExtensions: ExtensionLoadResult | undefined;
 
       if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
-        const resolvedExtensions = await resolveConfiguredExtensions({
-          runtimeInput,
-          configured,
-          cwd,
-          baseVcsCatalog,
-          discoveryCatalog,
-          // Reuse the session hub so the mounted toast surface keeps receiving notifications.
-          notifications: currentExtensions?.notifications,
-        });
-        configured = resolvedExtensions.configured;
-        replacementExtensions = resolvedExtensions.extensions;
+        try {
+          const resolvedExtensions = await resolveConfiguredExtensions({
+            runtimeInput,
+            configured,
+            cwd,
+            baseVcsCatalog,
+            discoveryCatalog,
+            // Reuse the session hub so the mounted toast surface keeps receiving notifications.
+            notifications: currentExtensions?.notifications,
+            onProvisionalLoad: ownProvisionalExtensionReplacement,
+            assertActive: () => {
+              if (quitRequestedRef.current) throw reloadRefusedDuringShutdown();
+            },
+          });
+          configured = resolvedExtensions.configured;
+          replacementExtensions = resolvedExtensions.extensions;
+          trackPreparedExtensionReplacement(replacementExtensions);
+        } catch (error) {
+          // The resolver may fail after publishing a provisional registry but
+          // before returning it. Clear host ownership through the same shared
+          // retirement used by quit and the ordinary reload failure paths.
+          await retirePreparedExtensionReplacement(pendingExtensionReplacementRef.current?.result);
+          throw error;
+        }
+        if (quitRequestedRef.current) {
+          await retirePreparedExtensionReplacement(replacementExtensions);
+          throw reloadRefusedDuringShutdown();
+        }
       }
 
       const extensions = replacementExtensions ?? currentExtensions;
-      const preparedReload = await (async () => {
-        try {
-          const {
-            applied,
-            bootstrap: nextBootstrap,
-            input: reloadInput,
-            sessionVcs,
-          } = await loadConfiguredSessionBootstrap({
-            configured,
-            cwd,
-            extensions,
-            loadAtCwd: true,
-            baseVcsCatalog,
-          });
-          if (extensions) {
-            reportExtensionApplyIssues(applied.issues, extensions.context);
-          }
-          nextBootstrap.startupNotices =
-            sessionVcs.unknownVcsId !== undefined
-              ? [
-                  ...(configured.startupNotices ?? []),
-                  // Names the backend the reload really used, detection override included.
-                  createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadInput.options.vcs)),
-                ]
-              : configured.startupNotices;
-          // The reload succeeded, so this content becomes the next generation; the
-          // registration and snapshot below are projections of it.
-          const publication = producer.publish({
-            files: nextBootstrap.changeset.files,
-            sourceLabel: nextBootstrap.changeset.sourceLabel,
-          });
-          const nextSnapshot = createInitialSessionSnapshot(nextBootstrap, publication);
+      let loaded: Awaited<ReturnType<typeof loadConfiguredSessionBootstrap>>;
+      try {
+        loaded = await loadConfiguredSessionBootstrap({
+          configured,
+          cwd,
+          extensions,
+          loadAtCwd: true,
+          baseVcsCatalog,
+        });
+      } catch (error) {
+        await retirePreparedExtensionReplacement(replacementExtensions);
+        throw error;
+      }
 
-          let sessionId = "local-session";
+      // This is the reload's commit gate. Nothing below awaits until the new
+      // registry, broker snapshot, pending lifecycle, and React state all agree.
+      // Quit therefore linearizes either wholly before or wholly after adoption.
+      if (quitRequestedRef.current) {
+        await retirePreparedExtensionReplacement(replacementExtensions);
+        throw reloadRefusedDuringShutdown();
+      }
+
+      let nextBootstrap!: AppBootstrap;
+      let nextSnapshot!: ReturnType<typeof createInitialSessionSnapshot>;
+      let sessionId = "local-session";
+      try {
+        const { applied, bootstrap, input: reloadInput, sessionVcs } = loaded;
+        nextBootstrap = bootstrap;
+        if (extensions) {
+          reportExtensionApplyIssues(applied.issues, extensions.context);
+        }
+        nextBootstrap.startupNotices =
+          sessionVcs.unknownVcsId !== undefined
+            ? [
+                ...(configured.startupNotices ?? []),
+                // Names the backend the reload really used, detection override included.
+                createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadInput.options.vcs)),
+              ]
+            : configured.startupNotices;
+        const preparedPublication = producer.preparePublication({
+          files: nextBootstrap.changeset.files,
+          sourceLabel: nextBootstrap.changeset.sourceLabel,
+        });
+        nextSnapshot = createInitialSessionSnapshot(nextBootstrap, preparedPublication.publication);
+        const publicationReservation = producer.reservePublication(preparedPublication);
+        try {
           if (hostClient) {
             // Keep the daemon-facing registration aligned with the review about to mount.
             const nextRegistration = updateSessionRegistration(
               hostClient.getRegistration(),
               nextBootstrap,
-              publication,
+              preparedPublication.publication,
             );
             sessionId = nextRegistration.sessionId;
             hostClient.replaceSession(nextRegistration, nextSnapshot);
           }
-          return { nextBootstrap, nextSnapshot, sessionId };
+          // The matching React store does not exist yet. Detach the previous
+          // generation so broker commands refuse rather than mutate stale state
+          // until the child layout effect attaches the committed review.
+          publicationReservation.commit({ detachStore: true });
         } catch (error) {
-          await retireExtensionLoadResult(replacementExtensions);
+          publicationReservation.cancel();
           throw error;
         }
-      })();
-      const { nextBootstrap, nextSnapshot, sessionId } = preparedReload;
+      } catch (error) {
+        await retirePreparedExtensionReplacement(replacementExtensions);
+        throw error;
+      }
 
-      let replacementMounted: Promise<void> | undefined;
       let currentExtensionsRetired: Promise<void> | undefined;
       if (replacementExtensions) {
         // Only retire the visible runtime after its replacement review is known-good.
         // Revocation is synchronous so mounted controls and modes become inert
         // before shutdown starts; React then tears them down on this state update.
         // `retireExtensionLoadResult` revokes synchronously before its first await.
-        currentExtensionsRetired = retireExtensionLoadResult(currentExtensions);
+        currentExtensionsRetired = retireOwnedExtensionLoadResult(currentExtensions);
         extensionsRef.current = replacementExtensions;
         extensionsCwdRef.current = cwd;
-        replacementMounted = new Promise<void>((resolveMounted) => {
-          pendingReplacementLifecycleRef.current = {
-            extensions: replacementExtensions,
-            cwd,
-            changeset: nextBootstrap.changeset,
-            reason: options?.reason ?? "daemon",
-            resolveMounted,
-          };
-        });
+        adoptPreparedExtensionReplacement(replacementExtensions);
       }
+      const reloadMounted = extensions
+        ? new Promise<void>((resolveMounted) => {
+            pendingReloadLifecycleRef.current = {
+              extensions,
+              cwd,
+              changeset: nextBootstrap.changeset,
+              reason: options?.reason ?? "daemon",
+              emitStartup: replacementExtensions !== undefined,
+              resolveMounted,
+            };
+          })
+        : undefined;
 
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
@@ -262,16 +393,9 @@ export function AppHost({
         setAppVersion((current) => current + 1);
       }
 
-      if (!replacementExtensions) {
-        emitExtensionEvent(extensions, "session_reload", {
-          changeset: nextBootstrap.changeset,
-          reason: options?.reason ?? "daemon",
-        });
-      } else {
-        // Keep the reload queue held until React commits the matching App and
-        // the replacement receives startup/session_reload through live controls.
-        await Promise.all([replacementMounted, currentExtensionsRetired]);
-      }
+      // Keep the reload queue held until React commits the matching App and
+      // lifecycle handlers receive controls leased to that review generation.
+      await Promise.all([reloadMounted, currentExtensionsRetired]);
 
       return {
         sessionId,
@@ -284,32 +408,101 @@ export function AppHost({
       };
     },
     [
+      adoptPreparedExtensionReplacement,
       hostClient,
       launchExperimental,
       launchExtensionsEnabled,
       launchExtensionPaths,
+      ownProvisionalExtensionReplacement,
       producer,
+      retireOwnedExtensionLoadResult,
+      retirePreparedExtensionReplacement,
       sessionFileBounds,
+      trackPreparedExtensionReplacement,
     ],
   );
 
+  /** Append one operation to the session's reload coordinator. */
+  const enqueueReload = useCallback(<Result,>(run: () => Promise<Result>): Promise<Result> => {
+    const pending = reloadTailRef.current.then(run);
+    reloadTailRef.current = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  }, []);
+
   /** Serialize broker, watch, workspace, and manual reloads around extension replacement. */
   const reloadSession = useCallback(
-    (nextInput: CliInput, options?: ReloadSessionOptions) => {
-      const pending = reloadTailRef.current.then(() => performReloadSession(nextInput, options));
-      reloadTailRef.current = pending.then(
-        () => undefined,
-        () => undefined,
-      );
-      return pending;
-    },
-    [performReloadSession],
+    (nextInput: CliInput, options?: ReloadSessionOptions) =>
+      enqueueReload(() => {
+        if (quitRequestedRef.current) throw reloadRefusedDuringShutdown();
+        return performReloadSession(nextInput, options);
+      }),
+    [enqueueReload, performReloadSession],
   );
 
-  /** Give `shutdown` handlers a bounded window, then leave regardless. */
+  /** Keep the latest mounted refresh descriptor without letting stale cleanup clear its successor. */
+  const registerWorkspaceRefreshRequest = useCallback((request: WorkspaceRefreshRequest) => {
+    workspaceRefreshRequestRef.current = request;
+    return () => {
+      if (workspaceRefreshRequestRef.current === request) {
+        workspaceRefreshRequestRef.current = undefined;
+      }
+    };
+  }, []);
+
+  /** Reconcile a completed write against whichever review owns the queue when it reaches the front. */
+  const reloadAfterWorkspaceWrite = useCallback(() => {
+    void enqueueReload(async () => {
+      if (quitRequestedRef.current) return;
+      const request = workspaceRefreshRequestRef.current;
+      if (!request) return;
+      await performReloadSession(request.nextInput, {
+        reason: "manual",
+        resetApp: false,
+        sourcePath: request.sourcePath,
+      });
+    }).catch((error) => {
+      console.error("Failed to reload after an extension workspace write.", error);
+    });
+  }, [enqueueReload, performReloadSession]);
+
+  /** Revoke all extension authority, finish started writes, then leave. */
   const quitAfterShutdownEvent = useCallback(() => {
-    void emitExtensionEventBounded(extensionsRef.current, "shutdown", {}).finally(onQuit);
-  }, [onQuit]);
+    if (quitRequestedRef.current) return;
+    quitRequestedRef.current = true;
+    queueMicrotask(() => {
+      const preparedReplacement = pendingExtensionReplacementRef.current?.result;
+      const startedWrites = [...pendingWorkspaceWritesRef.current];
+      void retireOwnedExtensionLoadResult(extensionsRef.current);
+      void retirePreparedExtensionReplacement(preparedReplacement);
+
+      /** Drain known retirement work; cancelled loaders cannot create a later staged registry. */
+      const settleExtensionRetirements = async () => {
+        while (pendingExtensionRetirementsRef.current.size > 0) {
+          await Promise.allSettled(pendingExtensionRetirementsRef.current);
+        }
+      };
+
+      void Promise.all([settleExtensionRetirements(), Promise.allSettled(startedWrites)]).finally(
+        onQuit,
+      );
+    });
+  }, [onQuit, retireOwnedExtensionLoadResult, retirePreparedExtensionReplacement]);
+
+  useEffect(() => {
+    if (!externalQuitSignal) return;
+
+    const requestQuit = () => quitAfterShutdownEvent();
+    if (externalQuitSignal.aborted) {
+      requestQuit();
+      return;
+    }
+
+    externalQuitSignal.addEventListener("abort", requestQuit, { once: true });
+    return () => externalQuitSignal.removeEventListener("abort", requestQuit);
+  }, [externalQuitSignal, quitAfterShutdownEvent]);
 
   return (
     <App
@@ -318,9 +511,13 @@ export function AppHost({
       hostClient={hostClient}
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
+      onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
+      onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={producer}
+      runWorkspaceWrite={runWorkspaceWrite}
       watchRuntime={watchRuntime}
+      workspaceFileWriter={workspaceFileWriter}
     />
   );
 }
