@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { cleanLastNewline, parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
-import type { DiffFile } from "../../core/types";
-import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
+import type { DiffFile } from "../../../core/types";
+import { loadHighlightedDiff, type HighlightedDiffCode } from "../diffRows";
 import {
   COMPACT_HIGHLIGHT_FLAG_WORD_DIFF,
   COMPACT_HIGHLIGHT_PROTOCOL_VERSION,
@@ -12,8 +12,8 @@ import {
   validateCompactHighlightedDiff,
 } from "./highlightCompact";
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
-import { resolveTheme } from "../themes";
-import { createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
+import { resolveTheme } from "../../themes";
+import { createTestSourceFetcher } from "../../../../test/helpers/diff-helpers";
 
 /** Build a regular changed file with tabs and word-diff emphasis. */
 function createDiffFile(): DiffFile {

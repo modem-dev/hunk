@@ -22,7 +22,7 @@ import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
 import { createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import { createTestCustomThemes } from "../../../test/helpers/theme-helpers";
-import { registerHighlightWorker } from "./highlightWorkerClient";
+import { registerHighlightWorker } from "./worker";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(

@@ -15,7 +15,7 @@ import {
   compactHighlightedDiffByteLength,
   encodeCompactHighlightedDiff,
   validateCompactHighlightedDiff,
-} from "../src/ui/diff/highlightCompact";
+} from "../src/ui/diff/worker";
 import { resolveTheme } from "../src/ui/themes";
 
 const LINE_COUNT = Number(process.env.HUNK_COMPACT_HIGHLIGHT_LINES ?? 8_000);

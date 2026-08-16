@@ -16,7 +16,7 @@ import {
   encodeCompactHighlightedDiff,
   type CompactHighlightedDiff,
 } from "./highlightCompact";
-import type { HighlightedDiffCode } from "./diffRows";
+import type { HighlightedDiffCode } from "../diffRows";
 
 interface HighlightWorkerRequest {
   version: 2;

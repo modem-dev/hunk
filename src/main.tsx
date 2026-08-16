@@ -6,7 +6,11 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
-import { disposeHighlightWorker, registerHighlightWorker } from "./highlightWorkerClient";
+import {
+  createHighlightWorker,
+  disposeHighlightWorker,
+  registerHighlightWorker,
+} from "./ui/diff/worker";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -103,7 +107,7 @@ async function main() {
   // OpenTUI stays behind the interactive plan so headless commands never
   // materialize its embedded native library. Bun only resolves compiled worker entrypoints from
   // this executable entrypoint, so start and register the worker here instead of in a UI module.
-  const highlightWorker = new Worker(new URL("./highlightWorker.js", import.meta.url).href);
+  const highlightWorker = createHighlightWorker();
   registerHighlightWorker(highlightWorker);
   try {
     const { runInteractiveApp } = await import("./ui/runInteractiveApp");

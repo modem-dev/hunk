@@ -29,13 +29,14 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 import {
+  collectHastHighlightRuns,
   compactHighlightRunsForLine,
+  highlightDiffInWorker,
   validateCompactHighlightedDiff,
   type CompactHighlightedDiff,
   type CompactHighlightRun,
-} from "./highlightCompact";
-import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
-import { highlightDiffInWorker } from "./highlightWorkerClient";
+  type HastNode,
+} from "./worker";
 import {
   createSourceBackedHighlightPlan,
   remapSourceBackedHighlight,

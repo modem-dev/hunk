@@ -1,4 +1,4 @@
-import type { HighlightedDiffCode } from "./diffRows";
+import type { HighlightedDiffCode } from "../diffRows";
 import { collectHastHighlightRuns } from "./highlightHast";
 
 /** Identifies the typed-array layout used for worker highlight responses. */
