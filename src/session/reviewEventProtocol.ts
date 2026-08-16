@@ -211,16 +211,27 @@ function isChunkCount(value: unknown): value is number {
 /** Parse one single-frame event body. */
 export function parseReviewEventFrame(value: unknown): ReviewEventFrameV1 | undefined {
   const record = asRecord(value);
+  if (!record || !hasExactKeys(record, ["eventId", "generation", "stateRevision", "payload"])) {
+    return undefined;
+  }
+  const eventId = parseReviewEventId(record.eventId);
   if (
-    !record ||
-    !hasExactKeys(record, ["eventId", "generation", "stateRevision", "payload"]) ||
-    !isReviewEventId(record.eventId) ||
+    !eventId ||
+    // The id names the publication position an event is about; the fields the frame
+    // duplicates must name the same position, or the frame is describing two at once.
+    eventId.address.generation !== record.generation ||
+    eventId.address.stateRevision !== record.stateRevision ||
     parseReviewGeneration(record.generation) === undefined ||
     !isCount(record.stateRevision)
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventFrameV1;
+  return {
+    eventId: record.eventId as string,
+    generation: eventId.address.generation,
+    stateRevision: eventId.address.stateRevision,
+    payload: record.payload,
+  };
 }
 
 /** Parse one chunked-event begin envelope. */
@@ -237,9 +248,6 @@ export function parseReviewEventBegin(value: unknown): ReviewEventBeginV1 | unde
       "contentDigest",
       "chunkCount",
     ]) ||
-    !isReviewEventId(record.eventId) ||
-    parseReviewGeneration(record.generation) === undefined ||
-    !isCount(record.stateRevision) ||
     record.encoding !== "base64" ||
     !isPayloadSize(record.contentSize) ||
     !isReviewSha256Digest(record.contentDigest) ||
@@ -247,7 +255,25 @@ export function parseReviewEventBegin(value: unknown): ReviewEventBeginV1 | unde
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventBeginV1;
+  const eventId = parseReviewEventId(record.eventId);
+  if (
+    !eventId ||
+    eventId.address.generation !== record.generation ||
+    eventId.address.stateRevision !== record.stateRevision ||
+    parseReviewGeneration(record.generation) === undefined ||
+    !isCount(record.stateRevision)
+  ) {
+    return undefined;
+  }
+  return {
+    eventId: record.eventId as string,
+    generation: eventId.address.generation,
+    stateRevision: eventId.address.stateRevision,
+    encoding: record.encoding as "base64",
+    contentSize: record.contentSize as number,
+    contentDigest: record.contentDigest as string,
+    chunkCount: record.chunkCount as number,
+  };
 }
 
 /** Parse one chunk frame. Its bytes are decoded by the transport, as resource chunks are. */
@@ -266,8 +292,6 @@ export function parseReviewEventChunk(value: unknown): ReviewEventChunkV1 | unde
       "contentSize",
       "eof",
     ]) ||
-    !isReviewEventId(record.eventId) ||
-    parseReviewGeneration(record.generation) === undefined ||
     !isCount(record.offset) ||
     !isCount(record.byteLength) ||
     (record.byteLength as number) > REVIEW_EVENT_CHUNK_BYTES ||
@@ -279,7 +303,25 @@ export function parseReviewEventChunk(value: unknown): ReviewEventChunkV1 | unde
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventChunkV1;
+  const eventId = parseReviewEventId(record.eventId);
+  if (
+    !eventId ||
+    eventId.address.generation !== record.generation ||
+    parseReviewGeneration(record.generation) === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    eventId: record.eventId as string,
+    generation: eventId.address.generation,
+    offset: record.offset as number,
+    byteLength: record.byteLength as number,
+    encoding: record.encoding as "base64",
+    data: record.data as string,
+    contentDigest: record.contentDigest as string,
+    contentSize: record.contentSize as number,
+    eof: record.eof as boolean,
+  };
 }
 
 /** Parse one chunked-event end envelope. */
@@ -294,15 +336,27 @@ export function parseReviewEventEnd(value: unknown): ReviewEventEndV1 | undefine
       "contentDigest",
       "chunkCount",
     ]) ||
-    !isReviewEventId(record.eventId) ||
-    parseReviewGeneration(record.generation) === undefined ||
     !isPayloadSize(record.contentSize) ||
     !isReviewSha256Digest(record.contentDigest) ||
     !isChunkCount(record.chunkCount)
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventEndV1;
+  const eventId = parseReviewEventId(record.eventId);
+  if (
+    !eventId ||
+    eventId.address.generation !== record.generation ||
+    parseReviewGeneration(record.generation) === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    eventId: record.eventId as string,
+    generation: eventId.address.generation,
+    contentSize: record.contentSize as number,
+    contentDigest: record.contentDigest as string,
+    chunkCount: record.chunkCount as number,
+  };
 }
 
 // -- Framing ----------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import {
   type ReviewEventBeginV1,
   type ReviewEventChunkV1,
   type ReviewEventEndV1,
+  type ReviewEventFrameV1,
 } from "./reviewEventProtocol";
 
 const ADDRESS = { generation: "generation:test:3", stateRevision: 7 };
@@ -297,5 +298,83 @@ describe("review event envelope parsing", () => {
     expect(parseReviewEventEnd(end)).toEqual(end);
     const { chunkCount: _dropped, ...withoutCount } = end;
     expect(parseReviewEventEnd(withoutCount)).toBeUndefined();
+  });
+});
+
+describe("review event id agreement", () => {
+  const frame: ReviewEventFrameV1 = {
+    eventId: reviewEventId("publication", ADDRESS),
+    generation: ADDRESS.generation,
+    stateRevision: ADDRESS.stateRevision,
+    payload: {},
+  };
+  const begin: ReviewEventBeginV1 = {
+    eventId: reviewEventId("publication", ADDRESS),
+    generation: ADDRESS.generation,
+    stateRevision: ADDRESS.stateRevision,
+    encoding: "base64",
+    contentSize: 10,
+    contentDigest: "a".repeat(64),
+    chunkCount: 1,
+  };
+  const chunk: ReviewEventChunkV1 = {
+    eventId: begin.eventId,
+    generation: begin.generation,
+    offset: 0,
+    byteLength: 4,
+    encoding: "base64",
+    data: "AAAA",
+    contentDigest: begin.contentDigest,
+    contentSize: 10,
+    eof: true,
+  };
+  const end: ReviewEventEndV1 = {
+    eventId: begin.eventId,
+    generation: begin.generation,
+    contentSize: 10,
+    contentDigest: begin.contentDigest,
+    chunkCount: 1,
+  };
+
+  test("accepts frames whose id agrees with their fields", () => {
+    expect(parseReviewEventFrame(frame)).toEqual(frame);
+    expect(parseReviewEventBegin(begin)).toEqual(begin);
+    expect(parseReviewEventChunk(chunk)).toEqual(chunk);
+    expect(parseReviewEventEnd(end)).toEqual(end);
+  });
+
+  test("rejects a frame whose id names a different generation or revision", () => {
+    expect(parseReviewEventFrame({ ...frame, generation: "generation:test:4" })).toBeUndefined();
+    expect(
+      parseReviewEventFrame({ ...frame, stateRevision: frame.stateRevision + 1 }),
+    ).toBeUndefined();
+    // The issue's example: the id names generation 1, revision 1 while the frame claims
+    // generation 2, revision 9.
+    expect(
+      parseReviewEventFrame({
+        eventId: reviewEventId("publication", {
+          generation: "generation:producer-a:1",
+          stateRevision: 1,
+        }),
+        generation: "generation:producer-a:2",
+        stateRevision: 9,
+        payload: {},
+      }),
+    ).toBeUndefined();
+  });
+
+  test("rejects a begin envelope whose id names a different generation or revision", () => {
+    expect(parseReviewEventBegin({ ...begin, generation: "generation:test:4" })).toBeUndefined();
+    expect(
+      parseReviewEventBegin({ ...begin, stateRevision: begin.stateRevision + 1 }),
+    ).toBeUndefined();
+  });
+
+  test("rejects a chunk whose id names a different generation", () => {
+    expect(parseReviewEventChunk({ ...chunk, generation: "generation:test:4" })).toBeUndefined();
+  });
+
+  test("rejects an end envelope whose id names a different generation", () => {
+    expect(parseReviewEventEnd({ ...end, generation: "generation:test:4" })).toBeUndefined();
   });
 });
