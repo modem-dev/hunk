@@ -5,5 +5,5 @@
  * worker entrypoint from here, while the worker queue and protocol stay under `ui/diff/worker`.
  */
 export function createHighlightWorker() {
-  return new Worker(new URL("./highlightWorkerEntry.js", import.meta.url).href);
+  return new Worker(new URL("./highlightWorkerEntry.js", import.meta.url));
 }
