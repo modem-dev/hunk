@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
@@ -87,10 +87,60 @@ export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
 }
 
 /**
+ * Worker failures re-attempted before a file settles on plain rows.
+ *
+ * A retryable result is deliberately kept out of the cache so a recreated worker can still colorize
+ * the file, but viewport prefetch re-requests every file in its halo on each scroll. Without a
+ * bound, a failure that repeats — an unresolvable worker entry, a payload the validator always
+ * rejects — would restart the multi-second highlight on every scroll step. One retry covers a
+ * worker lost mid-session; past that the plain result is cached and the work stops.
+ */
+const MAX_HIGHLIGHT_RETRY_ATTEMPTS = 1;
+
+/** Retryable worker failures seen per cache key, cleared once the key settles. */
+const HIGHLIGHT_RETRY_ATTEMPTS = new Map<string, number>();
+
+/** Readers waiting for one cache key to receive a cacheable result. */
+const HIGHLIGHT_RESULT_LISTENERS = new Map<string, Set<() => void>>();
+
+/**
+ * Watch one cache key until it holds a cacheable result, and return an unsubscribe.
+ *
+ * Viewport prefetch fills the shared cache without rendering anything, so a reader showing the
+ * provisional plain rows of a retryable failure has no other signal that a later attempt succeeded.
+ */
+export function subscribeToHighlightedDiff(cacheKey: string, listener: () => void) {
+  const listeners = HIGHLIGHT_RESULT_LISTENERS.get(cacheKey) ?? new Set<() => void>();
+  listeners.add(listener);
+  HIGHLIGHT_RESULT_LISTENERS.set(cacheKey, listeners);
+
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      HIGHLIGHT_RESULT_LISTENERS.delete(cacheKey);
+    }
+  };
+}
+
+/** Wake readers holding provisional rows once a key caches a result. */
+function notifyHighlightedDiffCached(cacheKey: string) {
+  const listeners = HIGHLIGHT_RESULT_LISTENERS.get(cacheKey);
+  if (!listeners) {
+    return;
+  }
+
+  // Copy before dispatching: a listener that repaints unsubscribes while this loop is running.
+  for (const listener of Array.from(listeners)) {
+    listener();
+  }
+}
+
+/**
  * Commit one cacheable highlight result if its promise is still active for that key.
  *
- * A transient worker failure resolves to plain rows with `retryable`, which updates the current
- * view but must not occupy the shared cache and prevent a later worker retry.
+ * A retryable worker failure updates the current view without occupying the cache, so a later
+ * visit can try a recreated worker. Once the retry budget is spent the plain result is cached like
+ * any other, which is what stops prefetch from re-running a failure that will not resolve.
  */
 function commitHighlightResult(
   cacheKey: string,
@@ -102,9 +152,24 @@ function commitHighlightResult(
   }
 
   SHARED_HIGHLIGHT_PROMISES.delete(cacheKey);
-  if (!result.retryable) {
-    SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
+
+  if (result.retryable) {
+    const attempts = (HIGHLIGHT_RETRY_ATTEMPTS.get(cacheKey) ?? 0) + 1;
+    if (attempts <= MAX_HIGHLIGHT_RETRY_ATTEMPTS) {
+      HIGHLIGHT_RETRY_ATTEMPTS.set(cacheKey, attempts);
+      return true;
+    }
+
+    // Budget spent: cache plain rows without the retryable marker so readers stop re-requesting.
+    HIGHLIGHT_RETRY_ATTEMPTS.delete(cacheKey);
+    SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, { deletionLines: [], additionLines: [] });
+    notifyHighlightedDiffCached(cacheKey);
+    return true;
   }
+
+  HIGHLIGHT_RETRY_ATTEMPTS.delete(cacheKey);
+  SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
+  notifyHighlightedDiffCached(cacheKey);
   return true;
 }
 
@@ -175,6 +240,13 @@ function resolveHighlightedSnapshot({
   }
 
   if (highlightedCacheKey === appearanceCacheKey) {
+    // Plain rows from a retryable worker failure are provisional. The layout effect below will not
+    // re-run for a key it already committed, so prefer a result a later prefetch retry has since
+    // cached rather than holding this file plain until it remounts.
+    if (highlighted?.retryable) {
+      return SHARED_HIGHLIGHTED_DIFF_CACHE.peek(appearanceCacheKey) ?? highlighted;
+    }
+
     return highlighted;
   }
 
@@ -241,6 +313,26 @@ export function useHighlightedDiff({
       cancelled = true;
     };
   }, [appearanceCacheKey, file, highlightedCacheKey, offloadLargeDiff, shouldLoadHighlight]);
+
+  // Plain rows from a retryable worker failure are provisional, and the layout effect above will
+  // not run again for a key it already committed. Viewport prefetch fills the shared cache without
+  // rendering, so watch this key until a later attempt caches a result worth repainting.
+  useEffect(() => {
+    if (
+      !appearanceCacheKey ||
+      highlightedCacheKey !== appearanceCacheKey ||
+      !highlighted?.retryable
+    ) {
+      return;
+    }
+
+    return subscribeToHighlightedDiff(appearanceCacheKey, () => {
+      const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.peek(appearanceCacheKey);
+      if (cached) {
+        setHighlighted(cached);
+      }
+    });
+  }, [appearanceCacheKey, highlighted, highlightedCacheKey]);
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
   return resolveHighlightedSnapshot({
