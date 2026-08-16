@@ -359,10 +359,15 @@ function compactRunsForHighlightedLine(
     return undefined;
   }
 
-  const sourceIndex =
-    (side === "deletion" ? compact.deletionLineMap : compact.additionLineMap)?.[lineIndex] ??
-    lineIndex;
-  if (!Number.isInteger(sourceIndex) || sourceIndex < 0) {
+  const sourceLineMap = side === "deletion" ? compact.deletionLineMap : compact.additionLineMap;
+  const sourceIndex = sourceLineMap ? sourceLineMap[lineIndex] : lineIndex;
+  const lineCount = compact.payload[side].lineOffsets.length - 1;
+  if (
+    !Number.isInteger(sourceIndex) ||
+    sourceIndex === undefined ||
+    sourceIndex < 0 ||
+    sourceIndex >= lineCount
+  ) {
     return undefined;
   }
 

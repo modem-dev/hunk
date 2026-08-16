@@ -332,6 +332,45 @@ describe("Pierre diff rows", () => {
     expect(buildStackRows(file, offloaded, theme)).toEqual(buildStackRows(file, inline, theme));
   }, 30_000);
 
+  test("falls back to plain spans for an out-of-range compact source mapping", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const emptySide = {
+      lineOffsets: Uint32Array.of(0, 0),
+      starts: new Uint32Array(),
+      ends: new Uint32Array(),
+      styleIds: new Uint16Array(),
+      flags: new Uint8Array(),
+    };
+    const highlighted = {
+      deletionLines: [],
+      additionLines: [],
+      compact: {
+        payload: {
+          version: 1 as const,
+          foregroundPalette: [],
+          deletion: emptySide,
+          addition: emptySide,
+        },
+        deletionLineMap: Array.from({ length: file.metadata.deletionLines.length }, () => 10_000),
+        additionLineMap: Array.from({ length: file.metadata.additionLines.length }, () => 10_000),
+      },
+    };
+
+    let rows: ReturnType<typeof buildSplitRows> = [];
+    expect(() => {
+      rows = buildSplitRows(file, highlighted, theme);
+    }).not.toThrow();
+    const changedRow = rows.find(
+      (row) =>
+        row.type === "split-line" && row.left.kind === "deletion" && row.right.kind === "addition",
+    );
+    expect(changedRow?.type).toBe("split-line");
+    expect(
+      changedRow?.type === "split-line" ? changedRow.left.spans.some((span) => span.fg) : true,
+    ).toBe(false);
+  });
+
   test("matches inline context styling for a large patch-only diff", async () => {
     const context = Array.from(
       { length: HIGHLIGHT_WORKER_MIN_LINES },
