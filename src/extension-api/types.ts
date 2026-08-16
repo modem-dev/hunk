@@ -1266,11 +1266,11 @@ export interface ExtensionKeyboardModeControls {
 /** Open, close, and inspect panes from a command handler. */
 export interface ExtensionPaneControls {
   /**
-   * Resolve one pane: a bare id names this extension's own pane, `"files"`
-   * names the literal built-in `hunk:files` pane, and
-   * `"<extensionId>:<paneId>"` addresses any registered pane explicitly.
-   * These controls do not resolve replacement slots; execute
-   * `hunk.view.toggleFilesPane` through command controls for the active files role.
+   * Resolve one pane: a bare id names this extension's own pane, while a fully
+   * qualified `"<extensionId>:<paneId>"` key addresses any registered pane.
+   * Use `"hunk:files"` for the literal built-in pane. These controls do not
+   * resolve replacement slots; execute `hunk.view.toggleFilesPane` through
+   * command controls for the active files role.
    *
    * Opening a left/right pane (here, or via `toggle`) also reveals the sidebar
    * area when it is hidden, so the open is never silent.

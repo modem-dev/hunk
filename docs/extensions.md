@@ -1321,10 +1321,11 @@ and focused text inputs own their keys first. It receives the standard context
 plus `ctx.panes`, the controls for opening panes:
 
 - `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` — a bare id
-  names your own extension's pane, `"files"` names the literal built-in
-  `hunk:files` pane, and `"<extensionId>:<paneId>"` addresses any registered
-  pane. These controls address registrations directly; they do not resolve a
-  replacement slot. To toggle whichever pane currently owns the files role,
+  names your own extension's pane, while a fully qualified
+  `"<extensionId>:<paneId>"` key addresses any registered pane. Use
+  `"hunk:files"` for the literal built-in pane. These controls address
+  registrations directly; they do not resolve a replacement slot. To toggle
+  whichever pane currently owns the files role,
   call `ctx.commands.execute("hunk.view.toggleFilesPane")`. Opening a left/right
   pane also reveals the sidebar area when responsive layout has hidden it;
   top/bottom pane state is independent of that area.

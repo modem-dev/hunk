@@ -115,16 +115,14 @@ export function resolvePaneSlotKey(options: {
   return replacements.at(-1)?.key ?? options.slotKey;
 }
 
-/** Resolve a bare local id, `files`, or a fully-qualified pane key. */
+/** Resolve a bare local id or a fully qualified pane key. */
 export function resolvePaneKey(
   panes: readonly SessionPane[],
   extensionId: string,
   id: string,
 ): string | undefined {
-  const candidates = id.includes(":")
-    ? [id]
-    : [`${extensionId}:${id}`, id === "files" ? HUNK_FILES_PANE_KEY : id];
-  return candidates.find((candidate) => panes.some((pane) => pane.key === candidate));
+  const key = id.includes(":") ? id : `${extensionId}:${id}`;
+  return panes.some((pane) => pane.key === key) ? key : undefined;
 }
 
 export interface PaneBounds {

@@ -155,7 +155,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 
 - `ctx.commands.isEnabled(commandId)` / `execute(commandId, { count? })` — probes or invokes an explicitly public built-in `hunk.*` command through the same live table as keyboard and menu actions. Relative movement applies counts atomically; extension-owned and cross-extension commands return `false`.
 - `ctx.keyboardModes.enterMode(id)` / `exitMode()` / `isActive(id?)` — controls only keyboard modes registered by this command's owning extension.
-- `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` / `isOpen(paneId)` — controls your panes, `"files"`, or a fully qualified `"<extensionId>:<paneId>"`. `ctx.sidebars` is deprecated.
+- `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` / `isOpen(paneId)` — controls your panes by bare id or any pane by its fully qualified `"<extensionId>:<paneId>"` key, including `"hunk:files"`. `ctx.sidebars` is deprecated.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
 - `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts, stops, or checks an [interactive preview](/docs/extend/file-previews/#interactive-previews). Entering selects the view and returns whether its mode started.

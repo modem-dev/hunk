@@ -129,10 +129,14 @@ describe("extension panes", () => {
     expect(resolve([])).toBe("other:files");
   });
 
-  test("resolves local, files, and qualified ids", () => {
-    const panes = buildSessionPanes(loadResultWith([registeredPane("meta", "extra")]));
+  test("resolves bare ids locally and qualified ids exactly", () => {
+    const panes = buildSessionPanes(
+      loadResultWith([registeredPane("meta", "extra"), registeredPane("meta", "files")]),
+    );
     expect(resolvePaneKey(panes, "meta", "extra")).toBe("meta:extra");
-    expect(resolvePaneKey(panes, "meta", "files")).toBe(HUNK_FILES_PANE_KEY);
+    expect(resolvePaneKey(panes, "meta", "files")).toBe("meta:files");
+    expect(resolvePaneKey(panes, "meta", HUNK_FILES_PANE_KEY)).toBe(HUNK_FILES_PANE_KEY);
+    expect(resolvePaneKey(panes, "other", "files")).toBeUndefined();
     expect(resolvePaneKey(panes, "other", "meta:extra")).toBe("meta:extra");
   });
 
