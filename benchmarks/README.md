@@ -37,6 +37,7 @@ bun run bench:working-tree-load
 bun run bench:changeset-parse
 bun run bench:render-layout
 bun run bench:highlight-prefetch
+bun run bench:pierre-windowed-highlight
 bun run bench:large-stream
 bun run bench:interaction-latency
 bun run bench:non-ascii-stream
@@ -58,6 +59,7 @@ bun run bench:competitors
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
 - `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
+- `pierre-windowed-highlight.ts` — compares Pierre's whole-file highlight call against the same diff rendered as row windows, reporting the longest uninterruptible call, then sweeps TypeScript/Python/CSS across five diff shapes and a partial patch to check windowed output byte-for-byte. Windowing needs the proof-of-concept patch in `patches/`; see `docs/pierre-chunked-highlighting.md`. Without it the script reports whole-file cost only.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
 - `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.

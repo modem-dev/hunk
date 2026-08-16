@@ -1,0 +1,132 @@
+--- a/dist/utils/renderDiffWithHighlighter.js
++++ b/dist/utils/renderDiffWithHighlighter.js
+@@ -11,8 +11,12 @@
+ 
+ //#region src/utils/renderDiffWithHighlighter.ts
+ const DEFAULT_PLAIN_TEXT_OPTIONS = { forcePlainText: false };
+-function renderDiffWithHighlighter(diff, highlighter, options, { forcePlainText, startingLine, totalLines, expandedHunks, collapsedContextThreshold = DEFAULT_COLLAPSED_CONTEXT_THRESHOLD } = DEFAULT_PLAIN_TEXT_OPTIONS) {
+-	if (forcePlainText) {
++function renderDiffWithHighlighter(diff, highlighter, options, { forcePlainText, startingLine, totalLines, expandedHunks, collapsedContextThreshold = DEFAULT_COLLAPSED_CONTEXT_THRESHOLD, windowedHighlight = false, grammarState } = DEFAULT_PLAIN_TEXT_OPTIONS) {
++	// A highlighted window is only correct if the caller carries grammar state
++	// from one window to the next, so it stays opt-in rather than being inferred
++	// from a range being present.
++	const isHighlightedWindow = !forcePlainText && windowedHighlight;
++	if (forcePlainText || isHighlightedWindow) {
+ 		startingLine ??= 0;
+ 		totalLines ??= Infinity;
+ 	} else {
+@@ -31,8 +35,8 @@
+ 		additionLines: []
+ 	};
+ 	const { maxLineDiffLength } = options;
+-	const shouldGroupAll = !forcePlainText && !diff.isPartial;
+-	const expandedHunksForIteration = forcePlainText ? expandedHunks : void 0;
++	const shouldGroupAll = !forcePlainText && !isWindowedHighlight && !diff.isPartial;
++	const expandedHunksForIteration = forcePlainText || isHighlightedWindow ? expandedHunks : void 0;
+ 	const buckets = /* @__PURE__ */ new Map();
+ 	function getBucketForHunk(hunkIndex) {
+ 		const index = shouldGroupAll ? 0 : hunkIndex;
+@@ -57,7 +61,7 @@
+ 	}
+ 	iterateOverDiff({
+ 		diff,
+-		diffStyle: "both",
++		diffStyle: isHighlightedWindow ? "split" : "both",
+ 		startingLine,
+ 		totalLines,
+ 		expandedHunks: isWindowedHighlight ? expandedHunksForIteration : true,
+@@ -95,6 +99,7 @@
+ 			}
+ 		}
+ 	});
++	let nextGrammarState = grammarState;
+ 	for (const bucket of buckets.values()) {
+ 		if (bucket.deletionContent.length === 0 && bucket.additionContent.length === 0) continue;
+ 		const deletionFile = {
+@@ -105,7 +110,11 @@
+ 			name: diff.name,
+ 			contents: bucket.additionContent.value
+ 		};
+-		const { deletionLines, additionLines } = renderTwoFiles({
++		const {
++			deletionLines,
++			additionLines,
++			grammarState: bucketGrammarState
++		} = renderTwoFiles({
+ 			deletionFile,
+ 			deletionInfo: bucket.deletionInfo,
+ 			deletionDecorations: bucket.deletionDecorations,
+@@ -114,8 +123,11 @@
+ 			additionDecorations: bucket.additionDecorations,
+ 			highlighter,
+ 			options,
+-			languageOverride: forcePlainText ? "text" : diff.lang
++			languageOverride: forcePlainText ? "text" : diff.lang,
++			grammarState: isHighlightedWindow ? nextGrammarState : void 0,
++			trackGrammarState: isHighlightedWindow
+ 		});
++		nextGrammarState = bucketGrammarState;
+ 		if (shouldGroupAll) {
+ 			code.deletionLines = deletionLines;
+ 			code.additionLines = additionLines;
+@@ -126,7 +138,12 @@
+ 		if (bucket.additionSegments.length > 0) for (const seg of bucket.additionSegments) for (let i = 0; i < seg.count; i++) code.additionLines[seg.targetIndex + i] = additionLines[seg.originalOffset + i];
+ 		else code.additionLines.push(...additionLines);
+ 	}
+-	return {
++	return isHighlightedWindow ? {
++		code,
++		themeStyles,
++		baseThemeType,
++		grammarState: nextGrammarState
++	} : {
+ 		code,
+ 		themeStyles,
+ 		baseThemeType
+@@ -217,7 +234,7 @@
+ 		additionSegments: []
+ 	};
+ }
+-function renderTwoFiles({ deletionFile, additionFile, deletionInfo, additionInfo, highlighter, deletionDecorations, additionDecorations, languageOverride, options: { theme: themeOrThemes = DEFAULT_THEMES,...options } }) {
++function renderTwoFiles({ deletionFile, additionFile, deletionInfo, additionInfo, highlighter, deletionDecorations, additionDecorations, languageOverride, grammarState, trackGrammarState, options: { theme: themeOrThemes = DEFAULT_THEMES,...options } }) {
+ 	const deletionLang = languageOverride ?? getFiletypeFromFileName(deletionFile.name);
+ 	const additionLang = languageOverride ?? getFiletypeFromFileName(additionFile.name);
+ 	const { state, transformers } = createTransformerWithState(options.useTokenTransformer);
+@@ -240,21 +257,34 @@
+ 			cssVariablePrefix: formatCSSVariablePrefix("token")
+ 		};
+ 	})();
++	// A side that contributed no lines here has not advanced through the file,
++	// so it keeps the state it came in with rather than resetting to undefined.
++	const nextGrammarState = {
++		deletion: grammarState?.deletion,
++		addition: grammarState?.addition
++	};
+ 	return {
+ 		deletionLines: (() => {
+ 			if (deletionFile.contents === "") return [];
+ 			hastConfig.lang = deletionLang;
+ 			state.lineInfo = deletionInfo;
+ 			hastConfig.decorations = deletionDecorations;
+-			return getLineNodes(highlighter.codeToHast(cleanLastNewline(deletionFile.contents), hastConfig));
++			hastConfig.grammarState = grammarState?.deletion;
++			const hast = highlighter.codeToHast(cleanLastNewline(deletionFile.contents), hastConfig);
++			if (trackGrammarState) nextGrammarState.deletion = highlighter.getLastGrammarState(hast);
++			return getLineNodes(hast);
+ 		})(),
+ 		additionLines: (() => {
+ 			if (additionFile.contents === "") return [];
+ 			hastConfig.lang = additionLang;
+ 			hastConfig.decorations = additionDecorations;
+ 			state.lineInfo = additionInfo;
+-			return getLineNodes(highlighter.codeToHast(cleanLastNewline(additionFile.contents), hastConfig));
+-		})()
++			hastConfig.grammarState = grammarState?.addition;
++			const hast = highlighter.codeToHast(cleanLastNewline(additionFile.contents), hastConfig);
++			if (trackGrammarState) nextGrammarState.addition = highlighter.getLastGrammarState(hast);
++			return getLineNodes(hast);
++		})(),
++		grammarState: trackGrammarState ? nextGrammarState : void 0
+ 	};
+ }
+ 
