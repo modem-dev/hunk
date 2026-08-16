@@ -1,5 +1,8 @@
 /** Exposes the terminal diff worker subsystem without requiring callers to know its internals. */
-export { createHighlightWorker } from "../../../highlightWorkerClient";
+export {
+  createHighlightWorker,
+  supportsHighlightWorkerOffload,
+} from "../../../highlightWorkerClient";
 export {
   disposeHighlightWorker,
   highlightDiffInWorker,

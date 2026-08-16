@@ -33,6 +33,7 @@ import {
   collectHastHighlightRuns,
   compactHighlightRunsForLine,
   highlightDiffInWorker,
+  supportsHighlightWorkerOffload,
   validateCompactHighlightedDiff,
   type CompactHighlightedDiff,
   type CompactHighlightRun,
@@ -668,6 +669,7 @@ export function shouldOffloadHighlight(
 ) {
   return (
     options.offloadLargeDiff === true &&
+    supportsHighlightWorkerOffload() &&
     typeof theme !== "string" &&
     Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0 &&
     shouldHighlightMetadata(metadata) &&

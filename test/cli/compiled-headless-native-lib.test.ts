@@ -185,7 +185,11 @@ describe("compiled headless native-library loading", () => {
 
     expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
     expect(proc.exitCode).toBe(0);
-    expect(Buffer.from(proc.stdout).toString("utf8")).toContain("compiled highlight worker ready");
+    expect(Buffer.from(proc.stdout).toString("utf8")).toContain(
+      process.platform === "win32"
+        ? "compiled highlight worker disabled"
+        : "compiled highlight worker ready",
+    );
   });
 
   compiledTest(

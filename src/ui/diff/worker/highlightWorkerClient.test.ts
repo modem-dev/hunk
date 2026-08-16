@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
+import { supportsHighlightWorkerOffload } from "../../../highlightWorkerClient";
 import type { CompactHighlightedDiff } from "./highlightCompact";
 import {
   disposeHighlightWorker,
@@ -81,6 +82,27 @@ afterEach(() => {
 });
 
 describe("highlight worker client", () => {
+  test("disables offload only for Bun-compiled Windows entrypoints", () => {
+    expect(
+      supportsHighlightWorkerOffload({
+        platform: "win32",
+        moduleUrl: "file:///B:/~BUN/root/highlightWorkerClient.ts",
+      }),
+    ).toBe(false);
+    expect(
+      supportsHighlightWorkerOffload({
+        platform: "win32",
+        moduleUrl: "file:///C:/projects/hunk/src/highlightWorkerClient.ts",
+      }),
+    ).toBe(true);
+    expect(
+      supportsHighlightWorkerOffload({
+        platform: "linux",
+        moduleUrl: "file:///$bunfs/root/highlightWorkerClient.ts",
+      }),
+    ).toBe(true);
+  });
+
   test("serializes requests, ignores stale replies, and propagates worker responses", async () => {
     const control = createTestHighlightWorker();
     registerHighlightWorker(control.worker);
