@@ -14,7 +14,11 @@ import type {
   SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
-import { parseUpdateMethod, UPDATE_METHOD_VALUES } from "../core/process/selfUpdate";
+import {
+  parseUpdateMethod,
+  parseUpdateVersion,
+  UPDATE_METHOD_VALUES,
+} from "../core/process/selfUpdate";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,
@@ -1700,7 +1704,7 @@ async function parseUpdateCommand(
 
   return {
     kind: "update",
-    version: parsedVersion,
+    version: parsedVersion === undefined ? undefined : parseUpdateVersion(parsedVersion),
     method: parsedOptions.method ? parseUpdateMethod(parsedOptions.method) : undefined,
     check: parsedOptions.check ?? false,
   };

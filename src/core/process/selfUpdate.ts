@@ -67,6 +67,19 @@ export function parseUpdateMethod(value: string): InstallSource {
   return method;
 }
 
+/** Validate one requested version, or explain what the argument accepts. */
+export function parseUpdateVersion(value: string): string {
+  // Release tags spell versions as `v1.2.3`, so tolerate that prefix before validating.
+  const version = value.startsWith("v") ? value.slice(1) : value;
+  if (!isComparableVersion(version)) {
+    throw new HunkUserError(`Invalid version: ${value}`, [
+      "Pass an exact release version such as `0.19.0`.",
+    ]);
+  }
+
+  return version;
+}
+
 /** Name one install source the way the user would say it. */
 function describeInstallSource(installSource: InstallSource) {
   if (installSource === "homebrew") {
@@ -177,7 +190,10 @@ export async function runSelfUpdateCommand(
   const installedVersion = resolveInstalledVersion();
   const installSource =
     input.method ??
-    (io.resolveInstallSource ?? (() => detectInstallSource({ env, executablePath })))();
+    (
+      io.resolveInstallSource ??
+      (() => detectInstallSource({ env, executablePath, version: installedVersion }))
+    )();
 
   if (installSource !== "npm" && installSource !== "homebrew") {
     if (input.version) {

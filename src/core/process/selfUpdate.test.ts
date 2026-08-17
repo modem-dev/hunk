@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { InstallSource } from "./installSource";
 import {
   parseUpdateMethod,
+  parseUpdateVersion,
   runSelfUpdateCommand,
   type SelfUpdateInput,
   type SelfUpdateProcessResult,
@@ -70,7 +71,40 @@ describe("update method parsing", () => {
   });
 });
 
+describe("update version parsing", () => {
+  test("accepts exact release versions, with or without a tag prefix", () => {
+    expect(parseUpdateVersion("0.19.0")).toBe("0.19.0");
+    expect(parseUpdateVersion("v1.2.3")).toBe("1.2.3");
+    expect(parseUpdateVersion("1.2.3-beta.1")).toBe("1.2.3-beta.1");
+  });
+
+  test("rejects npm specs that are not a plain version", () => {
+    for (const value of ["latest", "^1.2.0", "npm:evil@1.0.0", "../local-dir", "1.2.3 --flag"]) {
+      expect(() => parseUpdateVersion(value)).toThrow(`Invalid version: ${value}`);
+    }
+  });
+});
+
 describe("hunk update", () => {
+  test("detects untagged source builds when no install source is injected", async () => {
+    const stdout: string[] = [];
+    const exitCode = await runSelfUpdateCommand(
+      { check: false },
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: () => {},
+        env: {},
+        executablePath: join("/", "opt", "somewhere", "hunk"),
+        resolveInstalledVersion: () => "0.0.0-unknown",
+        fetchImpl: async () => jsonResponse({}),
+        runCommand: async () => ({ exitCode: 0, stderr: "" }),
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join("")).toContain("Hunk is running from a local source build.");
+  });
+
   test("installs the newest npm release with the npm client", async () => {
     const result = await runUpdate({ installSource: "npm", latestVersion: "1.1.0" });
 
