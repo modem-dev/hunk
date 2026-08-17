@@ -1,14 +1,14 @@
 /**
- * Packages a tessera chrome layer as an OpenTUI plugin.
+ * Packages a underglaze chrome layer as an OpenTUI plugin.
  *
  * OpenTUI's plugin system is a slot registry: a host app declares named slots,
  * plugins contribute Renderables into them, and the registry handles ordering,
  * replacement, disposal, and error isolation. This module builds one such
- * contribution whose Renderable is an `ImageRenderable` fed by tessera's
+ * contribution whose Renderable is an `ImageRenderable` fed by underglaze's
  * rasterizer.
  *
  * Unlike `adapter.ts`, this file imports OpenTUI at runtime. It is reachable
- * only through the `tessera/opentui` subpath, so a consumer drawing to a raw
+ * only through the `underglaze/opentui` subpath, so a consumer drawing to a raw
  * stream never loads it and never needs the peer dependency installed.
  */
 import {
@@ -113,7 +113,7 @@ export function createChromePlugin<TSlot extends string>(
   slots[options.slot as TSlot] = renderSlot;
 
   const plugin: CorePlugin<TSlot> = {
-    id: options.id ?? "tessera-chrome",
+    id: options.id ?? "underglaze-chrome",
     order: options.order ?? -100,
     setup(_ctx, cli) {
       renderer = cli;

@@ -1,15 +1,15 @@
 /**
- * Bridges tessera's rasterizer to OpenTUI's image pipeline.
+ * Bridges underglaze's rasterizer to OpenTUI's image pipeline.
  *
  * OpenTUI already owns everything below the pixels: it probes `kitty_graphics`
  * at runtime, decodes and resizes natively, and falls back across kitty, sixel,
  * and block glyphs on its own. What it has no equivalent for is a rasterizer —
  * nothing in OpenTUI draws a gradient, a rounded corner, or a soft shadow.
  *
- * So this adapter deliberately does not reach for tessera's own protocol,
+ * So this adapter deliberately does not reach for underglaze's own protocol,
  * capability, or blocks backends. Those exist for consumers writing to a raw
  * stream; under OpenTUI they would be a second, competing implementation of
- * transport that OpenTUI does better. tessera draws, OpenTUI delivers.
+ * transport that OpenTUI does better. underglaze draws, OpenTUI delivers.
  *
  * The seam is PNG bytes, which is `ImageRenderable`'s public `source` type. That
  * costs an encode and a native decode per redraw — cheap for chrome, which
@@ -39,7 +39,7 @@ export function pixmapToImageSource(pixmap: Pixmap): Uint8Array {
   return new Uint8Array(encodePng(pixmap));
 }
 
-/** Maps OpenTUI's multiplexer enum onto tessera's. */
+/** Maps OpenTUI's multiplexer enum onto underglaze's. */
 function toMultiplexer(value: TerminalCapabilities["multiplexer"]): Multiplexer {
   const name = String(value).toLowerCase();
   if (name.includes("tmux")) return "tmux";
@@ -48,9 +48,9 @@ function toMultiplexer(value: TerminalCapabilities["multiplexer"]): Multiplexer 
 }
 
 /**
- * Converts OpenTUI's runtime capability probe into a tessera capability record.
+ * Converts OpenTUI's runtime capability probe into a underglaze capability record.
  *
- * This is strictly better than tessera's own environment sniffing: OpenTUI
+ * This is strictly better than underglaze's own environment sniffing: OpenTUI
  * negotiates with the terminal rather than guessing from variables, so
  * `kitty_graphics` is an answer instead of an inference. Prefer this whenever a
  * renderer is available.

@@ -1,5 +1,5 @@
 {
-  "name": "tessera",
+  "name": "underglaze",
   "version": "0.0.0",
   "private": true,
   "description": "Pixel-accurate chrome for terminals via the kitty graphics protocol, with block-glyph and PNG fallbacks.",

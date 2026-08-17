@@ -72,9 +72,15 @@
       "name": "@hunk/term-video",
       "version": "0.0.0",
     },
-    "packages/tessera": {
-      "name": "tessera",
+    "packages/underglaze": {
+      "name": "underglaze",
       "version": "0.0.0",
+      "peerDependencies": {
+        "@opentui/core": ">=0.5.0",
+      },
+      "optionalPeers": [
+        "@opentui/core",
+      ],
     },
   },
   "overrides": {
@@ -589,8 +595,6 @@
 
     "strip-json-comments": ["strip-json-comments@5.0.3", "", {}, "sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw=="],
 
-    "tessera": ["tessera@workspace:packages/tessera"],
-
     "tinyexec": ["tinyexec@1.0.4", "", {}, "sha512-u9r3uZC0bdpGOXtlxUIdwf9pkmvhqJdrVCH9fapQtgy/OeTTMZ1nqH7agtvEfmGui6e1XxjcdrlxvxJvc3sMqw=="],
 
     "tinyglobby": ["tinyglobby@0.2.17", "", { "dependencies": { "fdir": "^6.5.0", "picomatch": "^4.0.4" } }, "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g=="],
@@ -608,6 +612,8 @@
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "unbash": ["unbash@4.0.8", "", {}, "sha512-gGRSq/2OXbvqC8vY23OY4tUpr66Fyzk+PmwVlUX4/lRsOBLX4pixwcRW1vLT5kZ98iWTbfcvXRgxBdKxy5E0XA=="],
+
+    "underglaze": ["underglaze@workspace:packages/underglaze"],
 
     "undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
 

@@ -1,5 +1,5 @@
 /**
- * tessera — pixel-accurate chrome for terminals, with honest fallbacks.
+ * underglaze — pixel-accurate chrome for terminals, with honest fallbacks.
  *
  * The public surface is grouped in tiers so consumers can enter at whatever
  * level they need: draw with `Surface`, target a specific `Backend`, rasterize

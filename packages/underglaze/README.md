@@ -1,15 +1,19 @@
-# tessera
+# underglaze
 
 Pixel-accurate chrome for terminals, with honest fallbacks.
 
 Terminals can draw real pixels. The kitty graphics protocol lets a program transmit an image and
 place it under the text layer, so gradients, rounded corners, bevels and soft shadows render as
-actual pixels while the terminal keeps drawing selectable text on top. `tessera` is the rendering
+actual pixels while the terminal keeps drawing selectable text on top. `underglaze` is the rendering
 core for that: you issue draw calls in cell coordinates, and it produces escape sequences, block
 glyphs, or a PNG.
 
 It is not a UI framework. There is no layout engine, component model, or event handling — it slots
 into OpenTUI, Ink, ratatui-style loops, or raw stdout rather than competing with them.
+
+The name is the technique: in ceramics, underglaze decoration is painted onto the body and then
+fired _beneath_ the clear glaze, so it shows through the surface without ever being on it. That is
+what a negative z-index does here — the chrome goes under, the text stays on top and stays text.
 
 ## Why images instead of block glyphs
 
@@ -35,7 +39,7 @@ photos are the case where blocks legitimately win on bytes.
 ## Usage
 
 ```ts
-import { createSurface, verticalGradient, autoBackend } from "tessera";
+import { createSurface, verticalGradient, autoBackend } from "underglaze";
 
 const surface = createSurface({ cols: 80, rows: 24, background: "#14151a" });
 
@@ -130,19 +134,19 @@ straight into its final position rather than rasterized separately and copied in
 
 ## OpenTUI
 
-`tessera/opentui` is a separate entry point with `@opentui/core` as an optional peer dependency.
+`underglaze/opentui` is a separate entry point with `@opentui/core` as an optional peer dependency.
 
-**It deliberately does not use tessera's own protocol, capability, or blocks backends.** OpenTUI
+**It deliberately does not use underglaze's own protocol, capability, or blocks backends.** OpenTUI
 already owns everything below the pixels: it probes `kitty_graphics` at runtime rather than sniffing
 environment variables, decodes and resizes natively, and falls back across kitty, sixel and blocks
 on its own. Reimplementing that under OpenTUI would be a second, worse copy. What OpenTUI has no
 equivalent for is a rasterizer — nothing in it draws a gradient, a rounded corner, or a shadow.
 
-So: **tessera draws, OpenTUI delivers.** The seam is PNG bytes, which is `ImageRenderable`'s public
+So: **underglaze draws, OpenTUI delivers.** The seam is PNG bytes, which is `ImageRenderable`'s public
 `source` type.
 
 ```ts
-import { renderChromeLayer, chromeIsWorthwhile } from "tessera/opentui";
+import { renderChromeLayer, chromeIsWorthwhile } from "underglaze/opentui";
 
 const layer = renderChromeLayer({ cols, rows }, (surface) => {
   surface.panel({ x: 2, y: 1, width: 36, height: 9 }, { radius: 12, shadow: { dy: 3, blur: 5 } });
