@@ -154,15 +154,15 @@ const showcase: (ShowcaseFeature | ShowcaseQuote)[] = [
   },
   {
     kind: "feature",
-    heading: "One TypeScript file. No build step.",
-    body: "An extension default-exports one function and gets an API for registering themes, commands, file previews, panes, and whole VCS backends — the same API Hunk's own Git, Jujutsu, and Sapling backends are built on. Install one from any git repository, or drop a file in and restart.",
+    heading: "Extend it however you want.",
+    body: "Add a theme, a command, a new way to preview a file, a docked pane, or a whole version-control backend. Extensions are plain TypeScript, and you can install one from any git repository.",
     href: "/docs/extend/extensions/",
     linkText: "Writing extensions",
     media: {
       kind: "code",
       file: "~/.config/hunk/extensions/hello.ts",
       source: extensionSample,
-      label: "A complete Hunk extension: one TypeScript file that default-exports a function and registers a command bound to f6",
+      label: "A complete Hunk extension: a TypeScript file that registers a command bound to f6",
     },
   },
 ];
