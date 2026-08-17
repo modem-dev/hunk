@@ -110,6 +110,25 @@ those inputs name them and the leaf may not import `core/types` back:
 `SessionCommentListType` and the `ReviewNoteSource` it unions over. `core/types.ts` re-exports
 all of them, so no import site changed.
 
+Phase 3 (2026-08-17) grouped **the process and terminal a run lives in** into `core/runtime/`:
+TTY capability detection and runtime CLI-input resolution (`terminal`), the external pager and
+its plain-text fallback (`pager`), SIGTSTP/SIGINT job control (`jobControl`), ordered session
+teardown (`shutdown`), `.hunk`/VCS project-root discovery (`projectRoot`), the atomically
+written app-state file (`appStateFile`), the version-check notice built on it (`updateNotice`),
+and the startup-notice shape every tier reports through (`startupNotice`). The move is
+path-only; no exported symbol changed, and `core/types.ts` now re-exports `StartupNotice` from
+`runtime/startupNotice`.
+
+All eight are **public** — each has production importers outside the module — so this phase adds
+no `runtime-internals-stay-in-module` rule; the grouping is its value. The audiences are worth
+naming, because they are why these files never belonged at `core/*` root together with the review
+model: `terminal`, `jobControl`, `shutdown`, and `updateNotice` serve the interactive surface;
+`pager` serves the CLI entry and the startup plan; `projectRoot` and `appStateFile` serve the
+extension host and config resolution.
+
+After this phase `src/core/` root holds only `types.ts`, `reviewDigest.ts`, and `liveComments.ts`
+beside the seven subdirectories. Phase 4 melts what is left of `core/types.ts`.
+
 ## Snapshot (2026-08-17, v0.19.0)
 
 331 production modules, 1282 internal edges, **zero boundary violations and zero import
@@ -149,14 +168,13 @@ rules:
 
 The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
-1. **Give `src/core` an interior.** _In progress (phases 0–2, see Module interiors)._ The
-   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`, and now `changeset/` and
-   `invocation/`) are coherent modules; the loose files still at `core/*` root are the remaining
-   grab-bag. Keep grouping them by audience — the process/runtime concerns next, then melting
-   what is left of `core/types.ts` — and give each group a rule restricting which of its files
-   other tiers may import. The review seam's
-   named modules (`document`, `geometry`, `state`, …) stay public; their helpers become
-   internal.
+1. **Give `src/core` an interior.** _In progress (phases 0–3, see Module interiors)._ The
+   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`, and now `changeset/`,
+   `invocation/`, and `runtime/`) are coherent modules; `types.ts`, `reviewDigest.ts`, and
+   `liveComments.ts` are all that is left at `core/*` root. Melting what remains of
+   `core/types.ts` is the next step, giving each group a rule restricting which of its files
+   other tiers may import. The review seam's named modules (`document`, `geometry`, `state`, …)
+   stay public; their helpers become internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
    six files. As session coupling consolidates into `useTerminalReview` /
    `useHunkSessionBridge`, shrink the list.

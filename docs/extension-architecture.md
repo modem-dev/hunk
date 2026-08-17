@@ -300,7 +300,7 @@ and exact-source reading — live entirely under
 `src/extensions/default/vcs/<provider>/`. `src/extensions/vcsPatchResult.ts` is
 the one conversion boundary where a published `ExtensionVcsPatchResult`
 becomes Hunk's internal diff model, including structural `too-large` source
-results. `src/core/projectRoot.ts` treats `.hunk` as a provider-independent
+results. `src/core/runtime/projectRoot.ts` treats `.hunk` as a provider-independent
 bootstrap marker and also consults the available catalog; startup performs a
 second root/config pass when a global, config-path, or CLI adapter recognizes a
 repository unavailable to the bundled catalog.

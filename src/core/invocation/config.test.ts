@@ -11,7 +11,10 @@ import {
   saveViewPreferencesPromptPreference,
 } from "./config";
 import { loadAppBootstrap } from "../changeset/loaders";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "../startupNotice";
+import {
+  LEGACY_CUSTOM_SYNTAX_NOTICE,
+  LEGACY_CUSTOM_SYNTAX_NOTICES,
+} from "../runtime/startupNotice";
 
 const tempDirs: string[] = [];
 

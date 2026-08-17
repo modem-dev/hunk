@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { readAppStateRecord, updateAppStateRecord } from "../core/appStateFile";
+import { readAppStateRecord, updateAppStateRecord } from "../core/runtime/appStateFile";
 import { resolveCanonicalPath, resolveAppStatePath } from "../core/invocation/paths";
 
 /**

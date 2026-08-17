@@ -17,9 +17,9 @@ import {
   resolveSyntaxScopeOverrides,
 } from "../theme/legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
-import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../startupNotice";
+import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../runtime/startupNotice";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
-import { findProjectRootCandidate } from "../projectRoot";
+import { findProjectRootCandidate } from "../runtime/projectRoot";
 import { createVcsCatalog, detectVcs } from "../vcs";
 import type { VcsCatalog } from "../vcs/types";
 import type {

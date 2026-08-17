@@ -1,5 +1,5 @@
 import { resolveConfiguredCliInput, type HunkConfigResolution } from "../core/invocation/config";
-import { findProjectRootCandidate } from "../core/projectRoot";
+import { findProjectRootCandidate } from "../core/runtime/projectRoot";
 import type { CliInput } from "../core/types";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";

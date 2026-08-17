@@ -11,7 +11,7 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/runtime/startupNotice";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";

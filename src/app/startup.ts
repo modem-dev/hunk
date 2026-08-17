@@ -4,14 +4,14 @@ import type { loadStartupExtensions } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/invocation/config";
 import { HunkUserError } from "../core/invocation/errors";
 import type { loadAppBootstrap } from "../core/changeset/loaders";
-import { looksLikePatchInput } from "../core/pager";
+import { looksLikePatchInput } from "../core/runtime/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
   usesPipedPatchInput,
   type ControllingTerminal,
-} from "../core/terminal";
+} from "../core/runtime/terminal";
 import type { AppBootstrap } from "./types";
 import type {
   CliInput,

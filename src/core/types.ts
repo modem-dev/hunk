@@ -6,7 +6,7 @@ import type {
   LayoutMode,
   SidebarVisibility,
 } from "./invocation/commandInputs";
-import type { StartupNotice } from "./startupNotice";
+import type { StartupNotice } from "./runtime/startupNotice";
 import type { VcsCatalog } from "./vcs/types";
 
 /**

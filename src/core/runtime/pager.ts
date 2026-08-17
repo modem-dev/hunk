@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { parse as parseShellCommand, type ParseEntry } from "shell-quote";
-import { stripTerminalControl } from "./patch/sanitize";
-import { sanitizeTerminalText } from "../lib/terminalText";
+import { stripTerminalControl } from "../patch/sanitize";
+import { sanitizeTerminalText } from "../../lib/terminalText";
 
 /** Detect whether generic pager stdin looks like a diff/patch that Hunk should review. */
 export function looksLikePatchInput(text: string) {

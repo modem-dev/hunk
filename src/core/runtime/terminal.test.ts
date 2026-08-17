@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CliInput } from "./types";
+import type { CliInput } from "../types";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,

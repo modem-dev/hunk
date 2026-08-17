@@ -4,8 +4,8 @@ import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { resolveConfiguredCliInput } from "../core/invocation/config";
-import { resolveRuntimeCliInput } from "../core/terminal";
-import type { StartupNotice } from "../core/startupNotice";
+import { resolveRuntimeCliInput } from "../core/runtime/terminal";
+import type { StartupNotice } from "../core/runtime/startupNotice";
 import type { AppBootstrap, CliInput } from "../core/types";
 import type { ExtensionLoadResult } from "../extensions/types";
 import {

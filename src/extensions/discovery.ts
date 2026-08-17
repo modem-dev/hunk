@@ -5,7 +5,7 @@ import {
   INSTALLED_EXTENSIONS_DIR_NAME,
   resolveGlobalExtensionsDir,
 } from "../core/invocation/paths";
-import { findProjectRootCandidate } from "../core/projectRoot";
+import { findProjectRootCandidate } from "../core/runtime/projectRoot";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 
 /** Entry-file suffixes Hunk will import directly, in preference order. */

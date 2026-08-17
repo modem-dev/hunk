@@ -5,11 +5,11 @@ import {
   installJobControlSuspendSupport,
   type JobControlInterruptSupport,
   type JobControlSuspendSupport,
-} from "../core/jobControl";
-import { shutdownSession } from "../core/shutdown";
-import { shouldUseMouseForApp, type ControllingTerminal } from "../core/terminal";
+} from "../core/runtime/jobControl";
+import { shutdownSession } from "../core/runtime/shutdown";
+import { shouldUseMouseForApp, type ControllingTerminal } from "../core/runtime/terminal";
 import type { AppBootstrap } from "../core/types";
-import { resolveStartupUpdateNotice } from "../core/updateNotice";
+import { resolveStartupUpdateNotice } from "../core/runtime/updateNotice";
 import { ReviewProducer } from "../app/review/producer";
 import {
   createInitialSessionSnapshot,

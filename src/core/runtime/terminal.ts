@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import tty from "node:tty";
-import type { CliInput } from "./types";
+import type { CliInput } from "../types";
 
 export interface AppMouseOptions {
   stdinIsTTY?: boolean;

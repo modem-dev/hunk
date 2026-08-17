@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type { StartupNotice } from "../core/startupNotice";
+import type { StartupNotice } from "../core/runtime/startupNotice";
 import type { ExtensionsConfig } from "../core/types";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { discoverExtensions } from "./discovery";

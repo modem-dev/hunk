@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { findProjectRootCandidate } from "./projectRoot";
-import { createVcsCatalog } from "./vcs";
-import type { VcsAdapter } from "./vcs/types";
+import { createVcsCatalog } from "../vcs";
+import type { VcsAdapter } from "../vcs/types";
 
 const tempDirs: string[] = [];
 

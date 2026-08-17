@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { VcsCatalog } from "./vcs/types";
+import type { VcsCatalog } from "../vcs/types";
 
 /** Return whether one path is a `.hunk` project directory, following directory symlinks. */
 function isHunkProjectDirectory(path: string) {
