@@ -1,7 +1,8 @@
 import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/changeset/diffPaths";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { AgentAnnotation } from "../../extension-api/types";
 import { readMetadataChangeType } from "../../extensions/events";
 import { formatTerminalPath } from "../../lib/terminalText";
 

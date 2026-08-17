@@ -10,7 +10,7 @@ import type {
   SessionReloadCommandInput,
   SessionReviewCommandInput,
   SessionSelectorInput,
-} from "../core/types";
+} from "../core/invocation/commandInputs";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,

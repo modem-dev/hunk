@@ -7,7 +7,7 @@ import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
 } from "../extension-api/types";
-import type { Changeset, DiffFile } from "../core/types";
+import type { Changeset, DiffFile } from "../core/changeset/model";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useCallback, useMemo, useRef, useState } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { toReadOnlyFileViews } from "../../extensions/events";
 import type { RegisteredFileView } from "../../extensions/types";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";

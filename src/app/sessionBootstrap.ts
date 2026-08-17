@@ -4,7 +4,7 @@ import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import { loadAppBootstrap } from "../core/changeset/loaders";
-import type { CliInput } from "../core/types";
+import type { CliInput } from "../core/invocation/commandInputs";
 import type { AppBootstrap } from "./types";
 import {
   applyExtensionChangesetTransforms,

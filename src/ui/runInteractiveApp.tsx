@@ -8,7 +8,7 @@ import {
 } from "../core/runtime/jobControl";
 import { shutdownSession } from "../core/runtime/shutdown";
 import { shouldUseMouseForApp, type ControllingTerminal } from "../core/runtime/terminal";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
 import { resolveStartupUpdateNotice } from "../core/runtime/updateNotice";
 import { ReviewProducer } from "../app/review/producer";
 import {

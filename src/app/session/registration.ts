@@ -6,7 +6,7 @@ import { summarizeHunk } from "../../core/changeset/hunkSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import { reviewProcessCapability } from "../review/capability";
 import type { ReviewPublication } from "../review/publication";
-import type { AppBootstrap } from "../../core/types";
+import type { AppBootstrap } from "../../core/bootstrap";
 import {
   SESSION_BROKER_REGISTRATION_VERSION,
   resolveSessionTerminalMetadata,

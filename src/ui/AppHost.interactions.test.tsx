@@ -12,7 +12,8 @@ import type {
   HunkSessionSnapshot,
 } from "../session/types";
 import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/runtime/startupNotice";
-import type { AppBootstrap, LayoutMode } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { LayoutMode } from "../core/invocation/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";

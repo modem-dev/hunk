@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { HunkConfigResolution } from "../core/invocation/config";
-import type { CliInput } from "../core/types";
+import type { CliInput } from "../core/invocation/commandInputs";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveConfiguredExtensions } from "./extensionBootstrap";
 import { getBundledVcsCatalog } from "./vcsCatalog";

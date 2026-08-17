@@ -2,7 +2,7 @@ import type { ExperimentalFeature } from "../core/invocation/experimental";
 import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import type { CliInput, ReviewNoteSource } from "../core/types";
+import type { CliInput, ReviewNoteSource } from "../core/invocation/commandInputs";
 import type {
   HunkReviewActionEnvelopeV1,
   HunkReviewResourceCatalogV1,

@@ -6,7 +6,8 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { resolveConfiguredCliInput } from "../core/invocation/config";
 import { resolveRuntimeCliInput } from "../core/runtime/terminal";
 import type { StartupNotice } from "../core/runtime/startupNotice";
-import type { AppBootstrap, CliInput } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { CliInput } from "../core/invocation/commandInputs";
 import type { ExtensionLoadResult } from "../extensions/types";
 import {
   createUnknownVcsNotice,

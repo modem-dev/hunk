@@ -4,7 +4,7 @@ import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/changeset
 import { countDiffStats } from "../core/changeset/diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
 import { sanitizePatch } from "../core/patch/sanitize";
-import type { DiffFile } from "../core/types";
+import type { DiffFile } from "../core/changeset/model";
 import type { HunkDiffFile, HunkDiffFileInput } from "./types";
 
 const NORMALIZED_HUNK_DIFF_FILES = new WeakSet<HunkDiffFile>();

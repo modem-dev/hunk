@@ -3,7 +3,7 @@ import {
   registerFileLanguage,
 } from "../core/changeset/fileLanguage";
 import type { StartupNotice } from "../core/runtime/startupNotice";
-import type { Changeset } from "../core/types";
+import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
 import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";

@@ -1,4 +1,5 @@
-import type { DiffFile, LayoutMode } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { LayoutMode } from "../../../core/invocation/commandInputs";
 import {
   DIFF_RAIL_PREFIX_WIDTH,
   resolveSplitCellGeometry,

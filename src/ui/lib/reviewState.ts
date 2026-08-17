@@ -16,7 +16,8 @@ import { reviewHunkRanges } from "../../core/review/geometry";
 import { reviewFileMatchesFilter, selectNormalizedSelection } from "../../core/review/selectors";
 import type { ReviewState } from "../../core/review/state";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { AgentAnnotation } from "../../extension-api/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
 import { mergeFileAnnotationsByFileId } from "./files";
 

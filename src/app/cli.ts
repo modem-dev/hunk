@@ -12,7 +12,7 @@ import type {
   ParsedCliInput,
   SessionCommentListType,
   SessionCommentApplyItemInput,
-} from "../core/types";
+} from "../core/invocation/commandInputs";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,

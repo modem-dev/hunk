@@ -19,7 +19,7 @@ import type {
   MarkupRenderCommandInput,
   ParsedCliInput,
   SessionCommandInput,
-} from "../core/types";
+} from "../core/invocation/commandInputs";
 import { canReloadInput } from "../core/invocation/inputReload";
 import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";

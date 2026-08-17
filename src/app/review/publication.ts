@@ -26,7 +26,7 @@ import {
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../../core/review/types";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 
 export interface ReviewPublication {
   /** Serialized generation identity; every descriptor below repeats it. */

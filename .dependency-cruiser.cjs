@@ -132,18 +132,15 @@ module.exports = {
       },
     },
     {
-      name: "core-leaves-never-reimport-types",
+      name: "core-leaves-stay-below-bootstrap",
       comment:
-        "Freezes the 2026-08 cycle fix. core/types.ts handed its changeset, command-input, sidecar, and file models to these leaves and now re-exports them for existing import sites; a leaf importing core/types.ts back would recreate the cycle that made the grab-bag and its members one module.",
+        "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. core/changeset/loaders.ts is the single exception — loadAppBootstrap assembles the value, so it names the shape it returns; its natural home is the app tier, and moving it there retires this exception.",
       severity: "error",
       from: {
-        path: [
-          "^src/core/changeset/(model|diffFile|sidecar)\\.ts$",
-          "^src/core/invocation/commandInputs\\.ts$",
-          "^src/core/(vcs|watch|patch)/",
-        ],
+        path: "^src/core/(changeset|invocation|runtime|review|vcs|watch|patch|theme)/",
+        pathNot: "^src/core/changeset/loaders\\.ts$",
       },
-      to: { path: "^src/core/types\\.ts$" },
+      to: { path: "^src/core/bootstrap\\.ts$" },
     },
     {
       name: "review-reducer-is-module-internal",

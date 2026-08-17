@@ -5,7 +5,7 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import { projectReviewDocument, reviewEmptyDiffReason } from "./document";
-import type { DiffFile } from "../types";
+import type { DiffFile } from "../changeset/model";
 
 /** Build one small parsed file, optionally with expandable source. */
 function testFile(

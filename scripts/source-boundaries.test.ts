@@ -8,6 +8,12 @@ const CORE_ROOT = join(SRC_ROOT, "core");
 const EXTENSIONS_ROOT = join(SRC_ROOT, "extensions");
 const BUNDLED_PROVIDER_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
 const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
+// The published extension contract, which the review model may name for the annotation shapes
+// that are simultaneously internal model types and part of `hunkdiff/extension`. It cannot widen
+// the seam: `extension-api-is-import-free` (.dependency-cruiser.cjs) forbids it any import at
+// all, so it can never carry a renderer or a platform runtime in. Only this one file is allowed,
+// not the tree — `extension-api/index.ts` is the runtime boundary and imports freely.
+const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
 const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
 
@@ -291,7 +297,7 @@ describe("shared review primitives seam", () => {
   }
 
   test("keeps the review model contained in core", () => {
-    expect(escapingImports(REVIEW_MODEL_ROOT, [CORE_ROOT])).toEqual([]);
+    expect(escapingImports(REVIEW_MODEL_ROOT, [CORE_ROOT, EXTENSION_API_TYPES_PATH])).toEqual([]);
   });
 
   test("keeps rendering and platform runtimes out of the review model", () => {

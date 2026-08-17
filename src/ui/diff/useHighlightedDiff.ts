@@ -1,5 +1,5 @@
 import { useLayoutEffect, useState } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
 import { createHighlightedDiffCache } from "./highlightedDiffCache";

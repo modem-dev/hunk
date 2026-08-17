@@ -25,20 +25,18 @@ import {
 import type { VcsCatalog } from "../vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "../vcs/untracked";
 import { computeWatchSignature } from "../watch/signature";
+import type { NamedCustomThemeConfig } from "../../extension-api/types";
+import type { AppBootstrap } from "../bootstrap";
 import type {
-  AppBootstrap,
-  SidecarContext,
-  Changeset,
   CliInput,
-  NamedCustomThemeConfig,
-  DiffFile,
   DiffToolCommandInput,
   FileCommandInput,
   PatchCommandInput,
   VcsShowCommandInput,
   VcsDiffCommandInput,
   VcsStashShowCommandInput,
-} from "../types";
+} from "../invocation/commandInputs";
+import type { SidecarContext, Changeset, DiffFile } from "./model";
 
 export interface LoadAppBootstrapOptions {
   cwd?: string;

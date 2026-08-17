@@ -9,7 +9,7 @@ import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { resolveConfiguredCliInput } from "../core/invocation/config";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/changeset/loaders";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AppHost } from "./AppHost";
 

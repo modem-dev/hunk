@@ -1,4 +1,6 @@
-import type { AgentFileContext, CommonOptions, DiffFile } from "../types";
+import type { AgentFileContext } from "../../extension-api/types";
+import type { DiffFile } from "../changeset/model";
+import type { CommonOptions } from "./commandInputs";
 
 export const EXPERIMENTAL_FEATURES = ["stml"] as const;
 export type ExperimentalFeature = (typeof EXPERIMENTAL_FEATURES)[number];

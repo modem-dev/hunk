@@ -21,7 +21,8 @@ import {
   type ReviewStoredNote,
 } from "../../core/review/state";
 import type { ReviewNoteV1 } from "../../core/review/types";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { AgentAnnotation } from "../../extension-api/types";
 import { reviewNoteSource } from "./agentAnnotations";
 
 /** One reviewer-authored note as the terminal review stream renders it. */

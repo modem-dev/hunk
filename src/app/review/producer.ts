@@ -41,7 +41,7 @@ import {
 } from "../../core/review/resources";
 import type { ReviewDigestFn } from "../../core/review/validation";
 import type { ReviewStore } from "../../core/review/store";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { nodeReviewDigest } from "../../core/reviewDigest";
 import { buildReviewPublication, type ReviewPublication } from "./publication";
 import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore";

@@ -21,7 +21,7 @@ import {
   type ReviewGapAddress,
 } from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
-import type { DiffFile, DiffLineMoveKind } from "../../core/types";
+import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";

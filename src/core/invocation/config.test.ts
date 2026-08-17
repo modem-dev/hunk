@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
-import type { CliInput } from "../types";
+import type { CliInput } from "./commandInputs";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,

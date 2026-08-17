@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SidecarContext } from "../types";
+import type { SidecarContext } from "./model";
 import { orderDiffFiles } from "./loaders";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 

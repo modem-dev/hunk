@@ -23,19 +23,59 @@ import { findProjectRootCandidate } from "../runtime/projectRoot";
 import { createVcsCatalog, detectVcs } from "../vcs";
 import type { VcsCatalog } from "../vcs/types";
 import type {
+  CustomSyntaxColorsConfig,
+  CustomSyntaxScopesConfig,
+  NamedCustomThemeConfig,
+} from "../../extension-api/types";
+import type {
   CliInput,
   CommonOptions,
   CursorLine,
-  CustomSyntaxColorsConfig,
-  CustomSyntaxScopesConfig,
-  ExtensionsConfig,
   LayoutMode,
-  NamedCustomThemeConfig,
-  PersistedViewPreferences,
   SidebarVisibility,
-  UserKeyBinding,
   VcsMode,
-} from "../types";
+} from "./commandInputs";
+
+/** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
+export interface ExtensionsConfig {
+  /**
+   * False when `--no-extensions` or `[extensions] enabled = false` disables loading.
+   *
+   * Scoped to user extensions. Hunk's bundled tier — the Jujutsu and Sapling
+   * backends — always loads: these switches exist to triage extensions you
+   * installed, not to drop VCS support.
+   */
+  enabled: boolean;
+  /** Explicit entry paths from the user config layer. */
+  paths: string[];
+  /** Explicit entry paths contributed by the repo config layer; trust-gated like `.hunk/extensions`. */
+  repoPaths: string[];
+  /** Per-extension config tables, keyed by extension id. */
+  extensionConfigs: Record<string, Record<string, unknown>>;
+}
+
+/**
+ * One `[keybindings]` entry: the chord(s) to bind a command to, or `false` to unbind it.
+ *
+ * Command ids are the ones the dispatch table declares — `"hunk.app.quit"`,
+ * `"hunk.review.nextHunk"`, or `"<extensionId>.<commandId>"` for an extension
+ * command. Resolution against each command's defaults lives in
+ * `src/ui/lib/keymap.ts`.
+ */
+export type UserKeyBinding = string | readonly string[] | false;
+
+/** The view options a session persists back to config when the reader saves them. */
+export interface PersistedViewPreferences {
+  mode: LayoutMode;
+  theme?: string;
+  showLineNumbers: boolean;
+  wrapLines: boolean;
+  showHunkHeaders: boolean;
+  showMenuBar: boolean;
+  showAgentNotes: boolean;
+  copyDecorations: boolean;
+  cursorLine: CursorLine;
+}
 
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.

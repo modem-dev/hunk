@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionsConfig } from "../core/types";
+import type { ExtensionsConfig } from "../core/invocation/config";
 import { createExtensionLoadNotices, loadStartupExtensions, mergeStartupNotices } from "./startup";
 import { createEmptyExtensionLoadResult } from "./types";
 

@@ -2,7 +2,7 @@ import {
   EXPERIMENTAL_FEATURES,
   type ExperimentalFeature,
 } from "../../core/invocation/experimental";
-import type { CliInput } from "../../core/types";
+import type { CliInput } from "../../core/invocation/commandInputs";
 import {
   MAX_REGISTRATION_FILES,
   MAX_REGISTRATION_HUNKS_PER_FILE,

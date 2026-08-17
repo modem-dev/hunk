@@ -1,4 +1,4 @@
-import type { UserKeyBinding } from "../../core/types";
+import type { UserKeyBinding } from "../../core/invocation/config";
 import type { ExtensionPaneKeybindings } from "../../extension-api/types";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../../lib/commandKeys";

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { RegisteredFileView } from "../../extensions/types";
 import type { FileViewEpochState, FileViewSelectionState } from "./state";
 import type { FileViewRowFailure } from "./types";

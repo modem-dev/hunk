@@ -10,7 +10,7 @@ import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/load
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import type { CliInput } from "../core/types";
+import type { CliInput } from "../core/invocation/commandInputs";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";

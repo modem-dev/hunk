@@ -23,6 +23,7 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
+  type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
   builtinAppCommand,
@@ -49,7 +50,9 @@ import {
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { AgentAnnotation } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,

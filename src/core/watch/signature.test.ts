@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
-import type { CliInput } from "../types";
+import type { CliInput } from "../invocation/commandInputs";
 import { createVcsCatalog } from "../vcs";
 import type { VcsAdapter } from "../vcs/types";
 import {

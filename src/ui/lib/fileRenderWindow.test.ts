@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { buildFileSectionLayouts } from "./fileSectionLayout";
 import { buildFileRenderWindow, type FileRenderWindowItem } from "./fileRenderWindow";
 

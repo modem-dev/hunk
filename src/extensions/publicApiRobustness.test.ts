@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
-import type { Changeset } from "../core/types";
+import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog } from "../core/vcs";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";

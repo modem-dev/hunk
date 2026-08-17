@@ -5,7 +5,7 @@
  * where each hunk's visible extent falls. Heights resolve before mount, which is why note
  * markup has to lay out deterministically from `(markup, width)` alone.
  */
-import type { LayoutMode } from "../../core/types";
+import type { LayoutMode } from "../../core/invocation/commandInputs";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";
 import { reviewRowId } from "../lib/ids";

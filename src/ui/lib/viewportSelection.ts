@@ -1,4 +1,4 @@
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { DiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { findFileSectionAtOffset, type FileSectionLayout } from "./fileSectionLayout";
 

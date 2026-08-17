@@ -2,7 +2,8 @@ import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { AppBootstrap, DiffFile } from "../../core/types";
+import type { AppBootstrap } from "../../core/bootstrap";
+import type { DiffFile } from "../../core/changeset/model";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import {

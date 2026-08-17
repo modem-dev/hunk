@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { ExtensionLineHighlightInput } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
 import type { RegisteredLineHighlighter } from "../../extensions/types";

@@ -9,7 +9,7 @@
  */
 import { resolveCommentTarget } from "../../../src/core/liveComments";
 import { reviewGapId } from "../../../src/core/review/expansion";
-import type { DiffFile } from "../../../src/core/types";
+import type { DiffFile } from "../../../src/core/changeset/model";
 import { buildDiffSectionRowPlan } from "../../../src/ui/diff/diffSectionRowPlan";
 import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/renderRows";
 import type { DiffRow } from "../../../src/ui/diff/diffRows";

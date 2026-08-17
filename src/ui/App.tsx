@@ -19,6 +19,7 @@ import {
   diffPersistedViewPreferences,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
+  type PersistedViewPreferences,
 } from "../core/invocation/config";
 import {
   experimentalFeatureEnabled,
@@ -26,14 +27,9 @@ import {
 } from "../core/invocation/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
-import type {
-  AppBootstrap,
-  CliInput,
-  CursorLine,
-  LayoutMode,
-  PersistedViewPreferences,
-  UserNoteLineTarget,
-} from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { CliInput, CursorLine, LayoutMode } from "../core/invocation/commandInputs";
+import type { UserNoteLineTarget } from "../core/liveComments";
 import { canReloadInput } from "../core/invocation/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {

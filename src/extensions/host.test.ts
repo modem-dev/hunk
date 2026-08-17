@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Changeset } from "../core/types";
+import type { Changeset } from "../core/changeset/model";
 import { getVcsOperation } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { discoverExtensions } from "./discovery";

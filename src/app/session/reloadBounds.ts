@@ -1,7 +1,8 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { resolveCanonicalPath } from "../../core/invocation/paths";
 import { findProjectRootCandidate } from "../../core/runtime/projectRoot";
-import type { AppBootstrap, CliInput, CommonOptions } from "../../core/types";
+import type { AppBootstrap } from "../../core/bootstrap";
+import type { CliInput, CommonOptions } from "../../core/invocation/commandInputs";
 import type { VcsCatalog } from "../../core/vcs/types";
 
 /**

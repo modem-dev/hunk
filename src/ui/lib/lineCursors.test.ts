@@ -4,7 +4,8 @@ import {
   createTestHeaderOnlyDiffFile,
   lines,
 } from "../../../test/helpers/diff-helpers";
-import type { DiffFile, LayoutMode } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/invocation/commandInputs";
 import { reviewGapId } from "../../core/review/expansion";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { resolveTheme } from "../themes";

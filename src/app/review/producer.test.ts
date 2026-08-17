@@ -8,7 +8,7 @@ import {
   reviewResourceId,
 } from "../../core/review/resources";
 import { createReviewStore } from "../../core/review/store";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { parseReadReviewResourceRequest } from "../../core/review/resources";
 import { ReviewProducer } from "./producer";
 

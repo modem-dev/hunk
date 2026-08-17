@@ -6,7 +6,7 @@ import {
   type VerticalCommandDirection,
 } from "../../core/invocation/commandCatalog";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
-import type { CursorLine, LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/invocation/commandInputs";
 import type { ExtensionCommandExecutionOptions } from "../../extension-api/types";
 import {
   matchesAnyKeyChord,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import type { ReviewProducer } from "../../app/review/producer";
-import type { CliInput, DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { CliInput } from "../../core/invocation/commandInputs";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import { createHunkSessionBridge } from "../../app/session/bridge";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";

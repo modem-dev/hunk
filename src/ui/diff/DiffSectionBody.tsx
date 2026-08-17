@@ -7,7 +7,9 @@
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { UserNoteLineTarget } from "../../core/liveComments";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";

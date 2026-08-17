@@ -13,7 +13,7 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { buildDiffFile, type BuildDiffFileOptions } from "./diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../patch/chunks";
 import { sanitizePatch, stripTerminalControl } from "../patch/sanitize";
-import type { Changeset, DiffLineMoveKind, DiffLineMoveKinds, SidecarContext } from "../types";
+import type { Changeset, DiffLineMoveKind, DiffLineMoveKinds, SidecarContext } from "./model";
 
 /** Return SGR parameter strings that Git emitted before one diff line marker. */
 function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {

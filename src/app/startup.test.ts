@@ -3,7 +3,9 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import type { HunkConfigResolution } from "../core/invocation/config";
 import { HunkUserError } from "../core/invocation/errors";
 import { prepareStartupPlan } from "./startup";
-import type { AppBootstrap, CliInput, NamedCustomThemeConfig, ParsedCliInput } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { CliInput, ParsedCliInput } from "../core/invocation/commandInputs";
+import type { NamedCustomThemeConfig } from "../extension-api/types";
 
 /**
  * Build a config resolution for tests that are not exercising config layering.

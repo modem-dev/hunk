@@ -1,5 +1,5 @@
 import { findProjectRootCandidate } from "../core/runtime/projectRoot";
-import type { SessionSelectorInput } from "../core/types";
+import type { SessionSelectorInput } from "../core/invocation/commandInputs";
 import type { VcsCatalog } from "../core/vcs/types";
 
 /** Attach the nearest known project boundary to one repo-path session selector. */

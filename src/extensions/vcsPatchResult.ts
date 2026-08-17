@@ -9,7 +9,7 @@ import {
   SourceTextTooLargeError,
   type FileSourceSide,
 } from "../core/changeset/fileSource";
-import type { DiffFile } from "../core/types";
+import type { DiffFile } from "../core/changeset/model";
 import type { VcsPatchResult } from "../core/vcs/types";
 import type {
   ExtensionVcsExtraFile,

@@ -14,13 +14,10 @@ import {
   type RefObject,
 } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../../core/invocation/tabWidth";
-import type {
-  AgentAnnotation,
-  CursorLine,
-  DiffFile,
-  LayoutMode,
-  UserNoteLineTarget,
-} from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { CursorLine, LayoutMode } from "../../../core/invocation/commandInputs";
+import type { UserNoteLineTarget } from "../../../core/liveComments";
+import type { AgentAnnotation } from "../../../extension-api/types";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
   reviewNoteAnchorLine,
