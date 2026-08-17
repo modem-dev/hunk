@@ -105,3 +105,39 @@ test("release notes reach the full agent corpus but not the abridged one", async
   expect(small.ok()).toBe(true);
   expect(await small.text()).not.toContain("# Hunk 0.18");
 });
+
+test("each changelog page carries its own social card", async ({ page, request }) => {
+  await page.goto("/changelog/0.19/");
+  const image = page.locator('meta[property="og:image"]');
+  // Exactly one: the page's card must replace the site-wide image, not sit beside it.
+  await expect(image).toHaveCount(1);
+  await expect(image).toHaveAttribute("content", "https://hunk.dev/changelog/og/0.19.png");
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/changelog/og/0.19.png",
+  );
+  await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+    "content",
+    /^Hunk 0\.19 release notes/,
+  );
+
+  // The index gets its own card too, and both images are actually served.
+  await page.goto("/changelog/");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/changelog/og/index.png",
+  );
+  for (const path of ["/changelog/og/0.19.png", "/changelog/og/index.png"]) {
+    const response = await request.get(path);
+    expect(response.ok(), path).toBe(true);
+    expect(response.headers()["content-type"]).toContain("image/png");
+  }
+});
+
+test("ordinary docs pages keep the site-wide social image", async ({ page }) => {
+  await page.goto("/docs/start/install/");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/og.png",
+  );
+});

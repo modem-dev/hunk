@@ -50,6 +50,7 @@ heading, so each release emits a readable `v0-18-2` anchor beside its heading.
 | `website/releases/notes.json`  | Hand-authored | Per-series `summary`, `tagline`, `links`, and `video`. Every field optional.                            |
 | `website/releases/dates.json`  | Generator     | Version to release date. Committed.                                                                     |
 | `website/releases/latest.json` | Generator     | Newest published release, imported by the landing-page ribbon.                                          |
+| `website/releases/cards.json`  | Generator     | Content of each social card, read by the card renderer.                                                 |
 
 The `### Highlights` block in `CHANGELOG.md` is already hand-written for minor releases, so the page
 uses it directly: its lead paragraph becomes the page summary and its bullets become the Highlights
@@ -98,6 +99,26 @@ Presentation lives in the site:
 
 `vercel.json` must keep `CHANGELOG.md` and `scripts/generate-changelog.ts` in its `ignoreCommand`
 path list, or release commits will not trigger a deploy.
+
+## Social cards
+
+Every changelog page carries its own OpenGraph image instead of the site-wide `og.png`, because a
+release announcement is the most-shared page the site has.
+
+`bun run generate:changelog` derives what belongs on each card into `website/releases/cards.json`,
+and each page's frontmatter `head` points at `/changelog/og/<slug>.png`. Starlight merges page head
+entries over the global ones by tag and property, so a changelog page replaces the site-wide image
+while ordinary docs pages keep it.
+
+`bun run generate:og` paints the cards with Chromium at 1200x630 and commits them. Rendering needs a
+browser, so it is a maintainer step rather than part of the website build: the changelog generator
+records which cards should exist and reports missing images — failing under `--check` — while the
+renderer is what draws them. Point `CHROMIUM` at a browser binary to use one other than Playwright's
+bundled build.
+
+The layout is the site's own paper surface. Two content rules shape it: a series with no editorial
+summary drops the tagline rather than padding it with the factual fallback (about half of them have
+none), and patch chips appear only when a series has more than one release.
 
 ## Not built yet
 
