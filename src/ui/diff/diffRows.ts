@@ -628,12 +628,15 @@ async function loadWorkerHighlightedDiff(
   theme: AppTheme,
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
+  const aliasContext = sourcePlan === null;
+  const language = file.language ?? "text";
+  const syntaxTheme = syntaxHighlightThemeName(theme);
   const payload = await highlightDiffInWorker({
-    aliasContext: sourcePlan === null,
+    aliasContext,
     appearance: theme.appearance,
-    language: file.language ?? "text",
+    language,
     metadata,
-    theme: syntaxHighlightThemeName(theme),
+    theme: syntaxTheme,
   });
   validateCompactHighlightedDiff(payload, compactHighlightLineLengths(metadata));
 
