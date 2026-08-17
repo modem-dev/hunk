@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { Component, memo, useMemo, type ReactNode } from "react";
-import type { DiffFile } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
 import type {
   ExtensionFileViewLayout,
   ExtensionFileViewRow,

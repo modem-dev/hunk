@@ -1,5 +1,5 @@
-import type { StartupNotice } from "../startupNotice";
-import type { NamedCustomThemeConfig } from "../types";
+import type { StartupNotice } from "../process/startupNotice";
+import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "./catalog";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS } from "./legacySyntaxScopes";
 

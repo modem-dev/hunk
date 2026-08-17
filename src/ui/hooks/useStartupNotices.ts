@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { StartupNotice } from "../../core/startupNotice";
+import type { StartupNotice } from "../../core/process/startupNotice";
 
 const DEFAULT_STARTUP_NOTICE_DELAY_MS = 1200;
 const DEFAULT_STARTUP_NOTICE_DURATION_MS = 7000;

@@ -11,8 +11,9 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
-import type { AppBootstrap, LayoutMode } from "../core/types";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/process/startupNotice";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { LayoutMode } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
@@ -20,7 +21,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
-const { loadAppBootstrap } = await import("../core/changesetLoaders");
+const { loadAppBootstrap } = await import("../core/changeset/loaders");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";

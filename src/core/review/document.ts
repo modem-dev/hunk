@@ -10,7 +10,7 @@
  * Publication concerns (generations, resource descriptors, byte digests) do not appear:
  * they belong to the producer runtime that serves a document, not to the document itself.
  */
-import type { DiffFile } from "../types";
+import type { DiffFile } from "../changeset/model";
 import {
   reviewFileContentIdentity,
   reviewFileKey,

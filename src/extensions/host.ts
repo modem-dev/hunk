@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { findProjectRootCandidate } from "../core/projectRoot";
+import { findProjectRootCandidate } from "../core/process/projectRoot";
 import { EXTENSION_ID_RULE, HUNK_VENDOR_EXTENSION_ID, isValidExtensionId } from "./extensionIds";
 import { bindExtensionEventBus } from "./events";
 import { registerHostRuntimeModules } from "./hostRuntimeModules";

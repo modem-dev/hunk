@@ -1,6 +1,6 @@
-import { resolveConfiguredCliInput, type HunkConfigResolution } from "../core/config";
-import { findProjectRootCandidate } from "../core/projectRoot";
-import type { CliInput } from "../core/types";
+import { resolveConfiguredCliInput, type HunkConfigResolution } from "../core/run/config";
+import { findProjectRootCandidate } from "../core/process/projectRoot";
+import type { CliInput } from "../core/run/commandInputs";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { resolveExtensionVcsAdapters } from "../extensions/apply";

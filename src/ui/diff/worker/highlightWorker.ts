@@ -13,11 +13,14 @@ import {
 } from "@pierre/diffs";
 import { aliasContextHighlightLines } from "./highlightContext";
 import {
+  cloneCompactHighlightedDiff,
   compactHighlightTransferList,
   encodeCompactHighlightedDiff,
   type CompactHighlightedDiff,
+  type HighlightedHastLines,
 } from "./highlightCompact";
-import type { HighlightedHastLines } from "./highlightCompact";
+import { HighlightWorkerCache } from "./highlightWorkerCache";
+import { highlightWorkerCacheKey } from "./highlightWorkerIdentity";
 
 interface HighlightWorkerRequest {
   version: 3;
@@ -37,6 +40,8 @@ type HighlightWorkerResponse =
       code: CompactHighlightedDiff;
     }
   | { version: 3; id: number; ok: false; message: string };
+
+const highlightedDiffCache = new HighlightWorkerCache();
 
 /** Build the fixed Pierre render options shared with the terminal highlighter. */
 function workerRenderOptions(theme: string) {
@@ -71,20 +76,38 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
   }
 
   try {
-    const options = getHighlighterOptions(language, { theme: theme as never });
-    const highlighter = await getSharedHighlighter({
-      ...options,
-      preferredHighlighter: "shiki-wasm",
-    });
-    const result = renderDiffWithHighlighter(metadata, highlighter, workerRenderOptions(theme));
-    const highlighted = result.code as {
-      deletionLines: HighlightedHastLines;
-      additionLines: HighlightedHastLines;
-    };
-    const code = encodeCompactHighlightedDiff(
-      aliasContext ? aliasContextHighlightLines(metadata, highlighted) : highlighted,
+    const cacheKey = highlightWorkerCacheKey({
+      aliasContext,
       appearance,
-    );
+      language,
+      metadata,
+      theme,
+    });
+    // A transferred response detaches its buffers. Cache hits therefore return a fresh typed-array
+    // copy, while the worker retains its own compact payload for a later request.
+    let code = highlightedDiffCache.get(cacheKey);
+    if (!code) {
+      const highlighter = await getSharedHighlighter({
+        ...getHighlighterOptions(language, { theme: theme as never }),
+        preferredHighlighter: "shiki-wasm",
+      });
+      const result = renderDiffWithHighlighter(metadata, highlighter, workerRenderOptions(theme));
+      const highlighted = result.code as {
+        deletionLines: HighlightedHastLines;
+        additionLines: HighlightedHastLines;
+      };
+      const cachedCode = encodeCompactHighlightedDiff(
+        aliasContext ? aliasContextHighlightLines(metadata, highlighted) : highlighted,
+        appearance,
+      );
+
+      // Oversized payloads stay uncached and transfer their only copy, avoiding a temporary
+      // second typed-array payload that would violate the worker cache's memory bound.
+      code = highlightedDiffCache.set(cacheKey, cachedCode)
+        ? cloneCompactHighlightedDiff(cachedCode)
+        : cachedCode;
+    }
+
     const response: HighlightWorkerResponse = {
       version: 3,
       id,

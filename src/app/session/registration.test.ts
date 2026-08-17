@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import { reviewProcessCapability } from "../review/capability";
 import { buildReviewPublication } from "../review/publication";
-import type { AppBootstrap } from "../../core/types";
+import type { AppBootstrap } from "../../core/bootstrap";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import {
   createInitialSessionSnapshot,

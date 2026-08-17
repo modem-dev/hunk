@@ -4,9 +4,9 @@ import {
   type AppCommandCatalogEntry,
   type AppCommandId,
   type VerticalCommandDirection,
-} from "../../core/commandCatalog";
+} from "../../core/run/commandCatalog";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
-import type { CursorLine, LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { ExtensionCommandExecutionOptions } from "../../extension-api/types";
 import {
   matchesAnyKeyChord,

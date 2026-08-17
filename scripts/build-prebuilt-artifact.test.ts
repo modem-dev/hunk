@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } f
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
-import { BUNDLED_SKILL_NAMES } from "../src/core/paths";
+import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
 import { stagePrebuiltArtifact } from "./build-prebuilt-artifact";
 import { binaryFilenameForSpec, getHostPlatformPackageSpec } from "./prebuilt-package-helpers";
 

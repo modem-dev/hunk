@@ -1,6 +1,8 @@
-import type { TerminalThemeMode } from "../types";
-
-export type { TerminalThemeMode } from "../types";
+/**
+ * Which of the two terminal backgrounds a session is drawn against. Probing the
+ * terminal answers it here; the app carries the answer into theme selection.
+ */
+export type TerminalThemeMode = "light" | "dark";
 
 export interface RgbColor {
   red: number;

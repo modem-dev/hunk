@@ -7,7 +7,7 @@
  * the builders themselves.
  */
 import type { ReviewGapPosition } from "../../core/review/expansion";
-import type { DiffLineMoveKind } from "../../core/types";
+import type { DiffLineMoveKind } from "../../core/changeset/model";
 
 export interface RenderSpan {
   text: string;

@@ -7,7 +7,7 @@ import type {
   ExtensionPaneProps,
   ExtensionCurrentLinePaint,
 } from "../../../extension-api/types";
-import type { DiffFile } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
 import { paneKey } from "../../../extensions/apply";
 import { BuiltInSidebarView } from "../../../extensions/default/ui/sidebar";
 import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";

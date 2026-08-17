@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { cleanLastNewline, parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
-import type { DiffFile } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "../diffRows";
 import {
   COMPACT_HIGHLIGHT_FLAG_WORD_DIFF,

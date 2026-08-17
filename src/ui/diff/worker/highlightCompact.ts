@@ -174,6 +174,26 @@ export function compactHighlightTransferList(payload: CompactHighlightedDiff) {
   return [...sideTransferList(payload.deletion), ...sideTransferList(payload.addition)];
 }
 
+/** Clone one payload before transferring it so a worker-owned cache keeps its buffers. */
+export function cloneCompactHighlightedDiff(
+  payload: CompactHighlightedDiff,
+): CompactHighlightedDiff {
+  const cloneSide = (side: CompactHighlightSide): CompactHighlightSide => ({
+    lineOffsets: side.lineOffsets.slice(),
+    starts: side.starts.slice(),
+    ends: side.ends.slice(),
+    styleIds: side.styleIds.slice(),
+    flags: side.flags.slice(),
+  });
+
+  return {
+    version: payload.version,
+    foregroundPalette: [...payload.foregroundPalette],
+    deletion: cloneSide(payload.deletion),
+    addition: cloneSide(payload.addition),
+  };
+}
+
 /** Estimate the retained wire size, including the small cloned color palette. */
 export function compactHighlightedDiffByteLength(payload: CompactHighlightedDiff) {
   const numericBytes = compactHighlightTransferList(payload).reduce(

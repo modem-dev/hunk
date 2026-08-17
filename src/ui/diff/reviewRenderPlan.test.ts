@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { expandCollapsedRows } from "./expandCollapsedRows";
 import {

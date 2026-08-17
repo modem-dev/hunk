@@ -14,7 +14,8 @@
  */
 import { reviewHunkRanges, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
 import type { ReviewAnnotationIndex } from "./navigation";
-import type { AgentAnnotation, DiffFile } from "../types";
+import type { AgentAnnotation } from "../../extension-api/types";
+import type { DiffFile } from "../changeset/model";
 
 /** Whether one annotation lands inside a hunk's visible span on either side. */
 export function reviewAnnotationOverlapsHunk(annotation: AgentAnnotation, hunk: ReviewHunkSpan) {

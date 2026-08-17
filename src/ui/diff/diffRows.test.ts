@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import {
   buildSplitRows,
   buildStackRows,

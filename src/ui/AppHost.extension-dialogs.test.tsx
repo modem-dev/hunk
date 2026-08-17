@@ -6,11 +6,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import type { CliInput } from "../core/types";
+import type { CliInput } from "../core/run/commandInputs";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";

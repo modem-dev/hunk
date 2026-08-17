@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { AppBootstrap, SidebarVisibility } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { SidebarVisibility } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";

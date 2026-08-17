@@ -19,7 +19,8 @@ import {
 } from "../../src/app/session/registration";
 import { HunkSessionBrokerState } from "../../src/session/broker/state";
 import { ReviewResourceCache } from "../../src/session/broker/reviewResourceCache";
-import type { AppBootstrap, DiffFile } from "../../src/core/types";
+import type { AppBootstrap } from "../../src/core/bootstrap";
+import type { DiffFile } from "../../src/core/changeset/model";
 import type { HunkSessionRegistration, HunkSessionServerMessage } from "../../src/session/types";
 import { createTestDiffFile } from "./diff-helpers";
 

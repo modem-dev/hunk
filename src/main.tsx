@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { formatCliError } from "./core/errors";
-import { pagePlainText } from "./core/pager";
+import { formatCliError } from "./core/run/errors";
+import { pagePlainText } from "./core/process/pager";
 import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";

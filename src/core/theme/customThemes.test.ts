@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { NamedCustomThemeConfig } from "../types";
+import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { RegisteredCustomTheme } from "./customThemes";
 import { collectSessionCustomThemes, describeCustomThemeIdIssue } from "./customThemes";
 

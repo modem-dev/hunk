@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 

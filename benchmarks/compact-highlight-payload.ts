@@ -3,7 +3,7 @@
 // normalizes it, and the terminal paint seam remains a later milestone.
 import { performance } from "node:perf_hooks";
 import { cleanLastNewline, parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../src/core/types";
+import type { DiffFile } from "../src/core/changeset/model";
 import {
   buildSplitRows,
   loadHighlightedDiff,

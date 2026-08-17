@@ -20,6 +20,31 @@ const UI_SESSION_ADAPTERS = [
   "^src/ui/lib/reviewState\\.ts$",
 ];
 
+// Every way the shipped product is entered: the CLI, the highlight worker thread, the two
+// published facades, and the skill generator. A module under src/ that no entry reaches,
+// directly or transitively, is not in the product.
+const PRODUCTION_ENTRY_POINTS = [
+  "^src/main\\.tsx$",
+  "^src/highlightWorkerEntry\\.ts$",
+  "^src/opentui/index\\.ts$",
+  "^src/extension-api/index\\.ts$",
+  "^src/hunk-review/skillDocument\\.ts$",
+];
+
+// Modules kept alive by tests alone. The cruise excludes tests, so these look unreachable
+// from the entry points while real coverage still depends on them. Shrink-only: an entry
+// leaves when production reaches the module or the module goes; nothing is ever added
+// without the coverage to justify it.
+const TEST_ONLY_MODULES = [
+  // Note-height measurement exercised by the review-conformance corpus.
+  "^src/core/review/noteSize\\.ts$",
+  // The floating agent-note popover and its measurement helper. Nothing renders them since
+  // notes moved into the diff flow as STML cards; their unit tests are the only consumers
+  // left, so they are quarantined here until that call is made rather than deleted blind.
+  "^src/ui/components/panes/AgentCard\\.tsx$",
+  "^src/ui/lib/agentPopover\\.ts$",
+];
+
 module.exports = {
   forbidden: [
     {
@@ -93,6 +118,47 @@ module.exports = {
       severity: "error",
       from: { path: "^src/ui/", pathNot: UI_SESSION_ADAPTERS },
       to: { path: "^src/(app|session)/" },
+    },
+    {
+      name: "no-dead-modules",
+      comment:
+        "Every module under src/ earns its place by being reachable from an entry point. Dead files are worse than clutter: they still import, so they hold boundaries hostage and answer questions nobody asks. `orphan` only catches fully disconnected files, which misses dead code that still has dependencies — reachability catches both. A flagged module is either deleted or, if tests are its only real consumer, listed in TEST_ONLY_MODULES with a reason.",
+      severity: "error",
+      from: { path: PRODUCTION_ENTRY_POINTS },
+      to: {
+        path: "^src/",
+        pathNot: [...PRODUCTION_ENTRY_POINTS, ...TEST_ONLY_MODULES],
+        reachable: false,
+      },
+    },
+    {
+      name: "core-leaves-stay-below-bootstrap",
+      comment:
+        "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. core/changeset/loaders.ts is the single exception — loadAppBootstrap assembles the value, so it names the shape it returns; its natural home is the app tier, and moving it there retires this exception.",
+      severity: "error",
+      from: {
+        path: "^src/core/(changeset|run|process|review|vcs|watch|patch|theme)/",
+        pathNot: "^src/core/changeset/loaders\\.ts$",
+      },
+      to: { path: "^src/core/bootstrap\\.ts$" },
+    },
+    {
+      name: "review-reducer-is-module-internal",
+      comment:
+        "The review reducer applies actions; callers state intent instead, so surfaces cannot reach past planReviewIntent into the transition table. First of the per-module interior rules — this establishes the mechanism later phases extend to the rest of src/core (identity.ts and the other named model modules stay public by design).",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/core/review/" },
+      to: { path: "^src/core/review/reducer\\.ts$" },
+    },
+    {
+      name: "changeset-internals-stay-in-module",
+      comment:
+        "core/changeset owns the changeset model and the pipeline that acquires one. Outsiders name the model, the loaders, and the per-file helpers they build on (model, loaders, diffFile, fileSource, fileLanguage, binary, diffPaths, hunkHeader, hunkSummary); the patch-to-model parse, the Pierre extension-table lookup, and the sidecar reader are steps inside that pipeline, reached through the loaders instead.",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/core/changeset/" },
+      to: {
+        path: "^src/core/changeset/(fromPatch|fileLanguageLookup|sidecar)\\.ts$",
+      },
     },
     {
       name: "packages-stay-standalone",

@@ -9,7 +9,7 @@ import {
   createTestSessionReviewHunk,
   createTestSessionSnapshot,
 } from "../../../test/helpers/session-daemon-fixtures";
-import type { SessionSelectorInput } from "../../core/types";
+import type { SessionSelectorInput } from "../../core/run/commandInputs";
 import {
   HUNK_SESSION_API_PATH,
   HUNK_SESSION_API_VERSION,

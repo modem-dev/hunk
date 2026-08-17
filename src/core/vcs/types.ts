@@ -1,11 +1,11 @@
 import type { ExtensionVcsWatchPlan } from "../../extension-api/types";
-import type { DiffFile } from "../changeset";
+import type { DiffFile } from "../changeset/model";
 import type {
   VcsDiffCommandInput,
   VcsShowCommandInput,
   VcsStashShowCommandInput,
-} from "../commandInputs";
-import type { BuildDiffFileOptions } from "../diffFile";
+} from "../run/commandInputs";
+import type { BuildDiffFileOptions } from "../changeset/diffFile";
 
 export type VcsId = string;
 

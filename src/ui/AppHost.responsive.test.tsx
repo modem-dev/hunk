@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { AppBootstrap, LayoutMode } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { LayoutMode } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 

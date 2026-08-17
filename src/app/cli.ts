@@ -12,13 +12,13 @@ import type {
   ParsedCliInput,
   SessionCommentListType,
   SessionCommentApplyItemInput,
-} from "../core/types";
+} from "../core/run/commandInputs";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,
   resolveBundledSkillPath,
   type BundledSkillName,
-} from "../core/paths";
+} from "../core/run/paths";
 import {
   type AgentCommandConstraint,
   type AgentCommandSpec,
@@ -42,8 +42,8 @@ import {
   HIGHLIGHT_RANGE_MESSAGE,
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
-import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/tabWidth";
-import { resolveCliVersion } from "../core/version";
+import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/run/tabWidth";
+import { resolveCliVersion } from "../core/run/version";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {

@@ -134,7 +134,7 @@ whether a client needs more than that is Phase 5's first question.
   _Repaid (Phase 1 PR 2)_: `reviewDefaultHunkLineTarget` in `core/review/geometry.ts`;
   `firstCommentTargetForHunk` deleted and both terminal callers converted; every geometry fixture
   pins the target, `pure-deletion-hunk` and `hunk-with-leading-context` adversarially.
-- **A11. Language registration side effect missing in browser.** `core/fileLanguage.ts`
+- **A11. Language registration side effect missing in browser.** `core/changeset/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
   `src/web/main.tsx` (or fold registration into the shared model).
@@ -515,7 +515,7 @@ here so the extraction happens before the duplication exists. Design detail in
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
-  _Repaid (Phase 1 PR 3)_: `src/core/commandCatalog.ts` carries id, title, category, default
+  _Repaid (Phase 1 PR 3)_: `src/core/run/commandCatalog.ts` carries id, title, category, default
   chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
   `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
   `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
@@ -619,6 +619,10 @@ implementation does.
   carrying separators, percent signs, and non-ASCII characters, and strict rejection of anything
   outside the grammar. No consumers yet, by design — browser deep links are Phase 5 and opener
   fragments Phase 6, which is when this finding closes.
+  _Reopened (2026-08-17, module-boundaries phase 0)_: `core/review/address.ts` is deleted. A
+  primitive with no consumers cannot be checked against what its consumers need, and the
+  `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
+  design; write it again beside the first consumer that addresses a review across a boundary.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,

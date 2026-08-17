@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { RegisteredFileView } from "../../extensions/types";
 import {
   fileViewHunkCount,

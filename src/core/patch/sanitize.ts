@@ -3,7 +3,7 @@
  *
  * Patch text reaches Hunk colored by a pager, CRLF-terminated, or wrapped in `git log`
  * metadata, and the parser accepts none of that. "Sanitize" is the rewrite of that text;
- * "normalize" stays reserved for canonicalizing paths (`core/diffPaths.ts`), so a reader can
+ * "normalize" stays reserved for canonicalizing paths (`core/changeset/diffPaths.ts`), so a reader can
  * tell the two apart by name.
  *
  * Callers that need moved-line markers must read Git's SGR colors before calling this — the

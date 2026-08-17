@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, resolve, win32 } from "node:path";
 import type { CliRenderer } from "@opentui/core";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { LineCursor } from "./lineCursors";
 
 export interface EditorCommand {

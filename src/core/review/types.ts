@@ -9,7 +9,7 @@
  * resource descriptors, digests — belong to the producer runtime and are absent here, so
  * nothing in this file implies a transport.
  */
-import type { ReviewNoteSource } from "../types";
+import type { ReviewNoteSource } from "../run/commandInputs";
 
 export type ReviewSide = "old" | "new";
 export type ReviewLineRange = readonly [number, number];

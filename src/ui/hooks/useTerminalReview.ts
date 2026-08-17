@@ -23,14 +23,15 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
+  type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
   builtinAppCommand,
   lowerAppCommandToReviewIntent,
   type AppCommandId,
   type AppCommandLoweringContext,
-} from "../../core/commandCatalog";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+} from "../../core/run/commandCatalog";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,
   ReviewIntentPlanningError,
@@ -49,7 +50,9 @@ import {
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/run/commandInputs";
+import type { AgentAnnotation } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,

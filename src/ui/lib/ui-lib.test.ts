@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { KeyEvent } from "@opentui/core";
 import stringWidth from "string-width";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import {
   buildMenuSpecs,
   menuBarTitleWidth,

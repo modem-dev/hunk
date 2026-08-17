@@ -1,4 +1,4 @@
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 
 /** Stream geometry for one file section in the main review pane. */
 export interface FileSectionLayout {

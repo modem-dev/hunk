@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { getBundledVcsCatalog } from "../vcsCatalog";
-import type { AppBootstrap, CliInput } from "../../core/types";
+import type { AppBootstrap } from "../../core/bootstrap";
+import type { CliInput } from "../../core/run/commandInputs";
 import { createSessionReloadBounds, validateSessionReloadWithinBounds } from "./reloadBounds";
 
 /** Resolve expected paths the same way production bounds do, including Windows long names. */

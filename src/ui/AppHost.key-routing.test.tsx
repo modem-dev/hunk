@@ -5,7 +5,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { ScrollBoxRenderable, type Renderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { loadStartupExtensions } from "../extensions/startup";

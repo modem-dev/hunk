@@ -1,7 +1,18 @@
+import type { AgentAnnotation } from "../extension-api/types";
+import type { DiffFile } from "./changeset/model";
 import { reviewDefaultHunkLineTarget, reviewHunkIndexForLine } from "./review/geometry";
-import type { AgentAnnotation, DiffFile } from "./types";
 
 export type DiffSide = "old" | "new";
+
+/**
+ * The one diff line a user note hangs on: which side of the hunk, and the line
+ * number on that side. Surfaces resolve a click or cursor position into this
+ * before asking for a note, so the note's anchor never depends on rendered rows.
+ */
+export interface UserNoteLineTarget {
+  side: DiffSide;
+  line: number;
+}
 
 export interface CommentTargetInput {
   filePath: string;

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { readAppStateRecord, writeAppStateRecord } from "../../core/appStateFile";
+import { readAppStateRecord, writeAppStateRecord } from "../../core/process/appStateFile";
 
 /**
  * What `hunk extension install` remembers about one managed install.

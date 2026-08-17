@@ -1,7 +1,7 @@
 import type { ThemeMode } from "@opentui/core";
 import { LEGACY_CUSTOM_THEME_ID } from "../core/theme/customThemes";
 import { resolveSyntaxScopeOverrides } from "../core/theme/legacySyntaxScopes";
-import type { NamedCustomThemeConfig } from "../core/types";
+import type { NamedCustomThemeConfig } from "../extension-api/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,

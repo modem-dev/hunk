@@ -14,14 +14,14 @@ import {
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
-import { formatHunkHeader } from "../../core/hunkHeader";
+import { formatHunkHeader } from "../../core/changeset/hunkHeader";
 import {
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapAddress,
 } from "../../core/review/expansion";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, DiffLineMoveKind } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
@@ -628,12 +628,15 @@ async function loadWorkerHighlightedDiff(
   theme: AppTheme,
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
+  const aliasContext = sourcePlan === null;
+  const language = file.language ?? "text";
+  const syntaxTheme = syntaxHighlightThemeName(theme);
   const payload = await highlightDiffInWorker({
-    aliasContext: sourcePlan === null,
+    aliasContext,
     appearance: theme.appearance,
-    language: file.language ?? "text",
+    language,
     metadata,
-    theme: syntaxHighlightThemeName(theme),
+    theme: syntaxTheme,
   });
   validateCompactHighlightedDiff(payload, compactHighlightLineLengths(metadata));
 

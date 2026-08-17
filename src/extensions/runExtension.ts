@@ -22,7 +22,7 @@ import {
   type HunkExtensionAPI,
 } from "./types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
-import { toUserFacingError } from "../core/errors";
+import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";

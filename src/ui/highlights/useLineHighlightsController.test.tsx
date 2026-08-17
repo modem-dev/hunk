@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement, useState } from "react";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { RegisteredLineHighlighter } from "../../extensions/types";
 import { registeredLineHighlighterKey } from "./state";
 import { scopedEpoch } from "../lib/scopedEpochs";
