@@ -1,8 +1,8 @@
 import type { SessionBootstrapResult } from "./sessionBootstrap";
 import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
 import type { loadStartupExtensions } from "../extensions/startup";
-import { resolveConfiguredCliInput } from "../core/config";
-import { HunkUserError } from "../core/errors";
+import { resolveConfiguredCliInput } from "../core/invocation/config";
+import { HunkUserError } from "../core/invocation/errors";
 import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
@@ -20,7 +20,7 @@ import type {
   ParsedCliInput,
   SessionCommandInput,
 } from "../core/types";
-import { canReloadInput } from "../core/inputReload";
+import { canReloadInput } from "../core/invocation/inputReload";
 import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";

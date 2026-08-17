@@ -2,11 +2,10 @@ import type { NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset, DiffFile } from "./changeset/model";
 import type {
   CliInput,
-  CommonOptions,
   CursorLine,
   LayoutMode,
   SidebarVisibility,
-} from "./commandInputs";
+} from "./invocation/commandInputs";
 import type { StartupNotice } from "./startupNotice";
 import type { VcsCatalog } from "./vcs/types";
 
@@ -26,9 +25,12 @@ export type {
 } from "../extension-api/types";
 
 /**
- * The changeset model and command-input shapes moved to leaf modules so the
- * VCS contract and watch planning can import them without this module's
- * app-facing layer; they are re-exported here to keep one import site.
+ * The changeset model and the command-input shapes moved to leaf modules —
+ * `changeset/model` and `invocation/commandInputs` — so the VCS contract, watch
+ * planning, and the session surfaces can import them without this module's
+ * app-facing layer; they are re-exported here to keep one import site. Only the
+ * names other modules actually reach for are listed; the union members nothing
+ * imports stay where they are declared.
  */
 export type {
   Changeset,
@@ -42,20 +44,38 @@ export type {
   CommonOptions,
   CursorLine,
   DiffToolCommandInput,
+  ExtensionManageCommandInput,
   FileCommandInput,
+  HelpCommandInput,
   LayoutMode,
+  MarkupRenderCommandInput,
+  PagerCommandInput,
+  ParsedCliInput,
   PatchCommandInput,
+  ReviewNoteSource,
+  SessionCommandInput,
+  SessionCommandOutput,
+  SessionCommentAddCommandInput,
+  SessionCommentApplyCommandInput,
+  SessionCommentApplyItemInput,
+  SessionCommentClearCommandInput,
+  SessionCommentListCommandInput,
+  SessionCommentListType,
+  SessionCommentRemoveCommandInput,
+  SessionHighlightAddCommandInput,
+  SessionHighlightClearCommandInput,
+  SessionNavigateCommandInput,
+  SessionReloadCommandInput,
+  SessionReviewCommandInput,
+  SessionSelectorInput,
   SidebarVisibility,
   VcsDiffCommandInput,
   VcsMode,
   VcsShowCommandInput,
   VcsStashShowCommandInput,
-} from "./commandInputs";
+} from "./invocation/commandInputs";
 
 export type TerminalThemeMode = "light" | "dark";
-
-export type ReviewNoteSource = "ai" | "agent" | "user";
-export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 
 export interface UserNoteLineTarget {
   side: "old" | "new";
@@ -101,231 +121,6 @@ export interface PersistedViewPreferences {
   copyDecorations: boolean;
   cursorLine: CursorLine;
 }
-
-export interface HelpCommandInput {
-  kind: "help";
-  text: string;
-}
-
-export interface PagerCommandInput {
-  kind: "pager";
-  options: CommonOptions;
-}
-
-export interface DaemonServeCommandInput {
-  kind: "daemon-serve";
-}
-
-export type SessionCommandOutput = "text" | "json";
-
-export interface SessionSelectorInput {
-  sessionId?: string;
-  sessionPath?: string;
-  repoRoot?: string;
-  /** Nearest project boundary known for this repo-path selector. */
-  repoBoundary?: string;
-}
-
-export interface SessionListCommandInput {
-  kind: "session";
-  action: "list";
-  output: SessionCommandOutput;
-}
-
-export interface SessionGetCommandInput {
-  kind: "session";
-  action: "get" | "context";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-}
-
-export interface SessionReviewCommandInput {
-  kind: "session";
-  action: "review";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  includePatch: boolean;
-  includeNotes?: boolean;
-}
-
-export interface SessionNavigateCommandInput {
-  kind: "session";
-  action: "navigate";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath?: string;
-  hunkNumber?: number;
-  side?: "old" | "new";
-  line?: number;
-  commentDirection?: "next" | "prev";
-}
-
-export interface SessionReloadCommandInput {
-  kind: "session";
-  action: "reload";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  nextInput: CliInput;
-  sourcePath?: string;
-}
-
-export interface SessionCommentAddCommandInput {
-  kind: "session";
-  action: "comment-add";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath: string;
-  side: "old" | "new";
-  line: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
-  reveal: boolean;
-}
-
-export interface SessionCommentApplyItemInput {
-  filePath: string;
-  hunkNumber?: number;
-  side?: "old" | "new";
-  line?: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
-}
-
-export interface SessionCommentApplyCommandInput {
-  kind: "session";
-  action: "comment-apply";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  comments: SessionCommentApplyItemInput[];
-  revealMode: "none" | "first";
-}
-
-export interface SessionCommentListCommandInput {
-  kind: "session";
-  action: "comment-list";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath?: string;
-  type?: SessionCommentListType;
-}
-
-export interface SessionCommentRemoveCommandInput {
-  kind: "session";
-  action: "comment-rm";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  commentId: string;
-}
-
-export interface SessionCommentClearCommandInput {
-  kind: "session";
-  action: "comment-clear";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath?: string;
-  includeUser?: boolean;
-  confirmed: boolean;
-}
-
-export interface SessionHighlightAddCommandInput {
-  kind: "session";
-  action: "highlight-add";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath: string;
-  side: "old" | "new";
-  line: number;
-  /** 0-based inclusive UTF-16 code-unit offset into the line's raw text. */
-  start: number;
-  /** Exclusive end offset; must exceed `start`. */
-  end: number;
-  tone?: "match" | "current" | "info" | "warning" | "error";
-  reveal: boolean;
-}
-
-export interface SessionHighlightClearCommandInput {
-  kind: "session";
-  action: "highlight-clear";
-  output: SessionCommandOutput;
-  selector: SessionSelectorInput;
-  filePath?: string;
-}
-
-export type SessionCommandInput =
-  | SessionListCommandInput
-  | SessionGetCommandInput
-  | SessionReviewCommandInput
-  | SessionNavigateCommandInput
-  | SessionReloadCommandInput
-  | SessionCommentAddCommandInput
-  | SessionCommentApplyCommandInput
-  | SessionCommentListCommandInput
-  | SessionCommentRemoveCommandInput
-  | SessionCommentClearCommandInput
-  | SessionHighlightAddCommandInput
-  | SessionHighlightClearCommandInput;
-
-export interface MarkupRenderCommandInput {
-  kind: "markup-render";
-  /** Markup source path, or "-" for stdin. */
-  file: string;
-  width: number;
-  color: "auto" | "always" | "never";
-  theme?: string;
-  json: boolean;
-}
-
-export interface MarkupGuideCommandInput {
-  kind: "markup-guide";
-}
-
-export interface ExtensionInstallCommandInput {
-  kind: "extension-manage";
-  action: "install";
-  /** Install source spec: owner/repo, git:host/path, a git URL, or a local path. */
-  source: string;
-  /** Skip the interactive confirmation (required when stdin is not a TTY). */
-  yes: boolean;
-}
-
-export interface ExtensionListCommandInput {
-  kind: "extension-manage";
-  action: "list";
-}
-
-export interface ExtensionUpdateCommandInput {
-  kind: "extension-manage";
-  action: "update";
-  /** One managed install to update; every managed install when omitted. */
-  name?: string;
-}
-
-export interface ExtensionRemoveCommandInput {
-  kind: "extension-manage";
-  action: "remove";
-  name: string;
-}
-
-/** `hunk extension ...` managed-install commands. */
-export type ExtensionManageCommandInput =
-  | ExtensionInstallCommandInput
-  | ExtensionListCommandInput
-  | ExtensionUpdateCommandInput
-  | ExtensionRemoveCommandInput;
-
-export type ParsedCliInput =
-  | CliInput
-  | HelpCommandInput
-  | PagerCommandInput
-  | DaemonServeCommandInput
-  | SessionCommandInput
-  | MarkupRenderCommandInput
-  | MarkupGuideCommandInput
-  | ExtensionManageCommandInput;
 
 export interface ReloadContext {
   cwd: string;

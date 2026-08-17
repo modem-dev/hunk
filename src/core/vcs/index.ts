@@ -1,7 +1,7 @@
 import { relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
-import { HunkUserError } from "../errors";
-import type { CliInput } from "../commandInputs";
+import { HunkUserError } from "../invocation/errors";
+import type { CliInput } from "../invocation/commandInputs";
 import type {
   VcsAdapter,
   VcsCatalog,

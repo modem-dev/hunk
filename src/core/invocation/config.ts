@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
-import { sanitizeTerminalLine } from "../lib/terminalText";
-import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "./theme/catalog";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -11,17 +11,17 @@ import {
   LEGACY_CUSTOM_THEME_ID,
   normalizeThemeColorValue,
   resolveThemeBase,
-} from "./theme/customThemes";
+} from "../theme/customThemes";
 import {
   LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
   resolveSyntaxScopeOverrides,
-} from "./theme/legacySyntaxScopes";
+} from "../theme/legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
-import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
+import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../startupNotice";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
-import { findProjectRootCandidate } from "./projectRoot";
-import { createVcsCatalog, detectVcs } from "./vcs";
-import type { VcsCatalog } from "./vcs/types";
+import { findProjectRootCandidate } from "../projectRoot";
+import { createVcsCatalog, detectVcs } from "../vcs";
+import type { VcsCatalog } from "../vcs/types";
 import type {
   CliInput,
   CommonOptions,
@@ -35,7 +35,7 @@ import type {
   SidebarVisibility,
   UserKeyBinding,
   VcsMode,
-} from "./types";
+} from "../types";
 
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.

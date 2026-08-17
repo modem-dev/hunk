@@ -25,11 +25,11 @@
  * describes UI vocabulary rather than review semantics, and that module stays purely about
  * what a review *is*.
  */
-import type { ReviewIntent } from "./review/intents";
-import type { ReviewSelectionScope } from "./review/navigation";
-import { selectNormalizedSelection, selectReviewGapForSelection } from "./review/selectors";
-import type { ReviewState } from "./review/state";
-import type { ReviewLineAddressV1 } from "./review/types";
+import type { ReviewIntent } from "../review/intents";
+import type { ReviewSelectionScope } from "../review/navigation";
+import { selectNormalizedSelection, selectReviewGapForSelection } from "../review/selectors";
+import type { ReviewState } from "../review/state";
+import type { ReviewLineAddressV1 } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";

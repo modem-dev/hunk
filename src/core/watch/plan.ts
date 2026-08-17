@@ -7,7 +7,7 @@ import type {
   ExtensionVcsWatchTargetSource,
 } from "../../extension-api/types";
 import { normalizePathForOS } from "../../lib/osPath";
-import type { CliInput } from "../commandInputs";
+import type { CliInput } from "../invocation/commandInputs";
 import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "../vcs";
 import type { VcsCatalog } from "../vcs/types";
 

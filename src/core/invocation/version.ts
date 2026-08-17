@@ -1,4 +1,4 @@
-import packageJson from "../../package.json" with { type: "json" };
+import packageJson from "../../../package.json" with { type: "json" };
 
 export const UNKNOWN_CLI_VERSION = "0.0.0-unknown";
 

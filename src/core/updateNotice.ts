@@ -1,8 +1,8 @@
 import { posix, win32 } from "node:path";
 import { readAppStateRecord, updateAppStateRecord } from "./appStateFile";
-import { resolveAppStatePath } from "./paths";
+import { resolveAppStatePath } from "./invocation/paths";
 import type { StartupNotice } from "./startupNotice";
-import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./version";
+import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./invocation/version";
 
 const DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;

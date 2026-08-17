@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareStartupPlan } from "./startup";
-import { resolveConfiguredCliInput } from "../core/config";
+import { resolveConfiguredCliInput } from "../core/invocation/config";
 import type { CliInput, ParsedCliInput } from "../core/types";
 
 const tempDirs: string[] = [];

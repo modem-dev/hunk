@@ -29,7 +29,7 @@ import {
   lowerAppCommandToReviewIntent,
   type AppCommandId,
   type AppCommandLoweringContext,
-} from "../../core/commandCatalog";
+} from "../../core/invocation/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,

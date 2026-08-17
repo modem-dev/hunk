@@ -1,4 +1,7 @@
-import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../../core/experimental";
+import {
+  EXPERIMENTAL_FEATURES,
+  type ExperimentalFeature,
+} from "../../core/invocation/experimental";
 import type { CliInput } from "../../core/types";
 import {
   MAX_REGISTRATION_FILES,

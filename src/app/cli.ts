@@ -18,7 +18,7 @@ import {
   resolveBundledSkillName,
   resolveBundledSkillPath,
   type BundledSkillName,
-} from "../core/paths";
+} from "../core/invocation/paths";
 import {
   type AgentCommandConstraint,
   type AgentCommandSpec,
@@ -42,8 +42,8 @@ import {
   HIGHLIGHT_RANGE_MESSAGE,
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
-import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/tabWidth";
-import { resolveCliVersion } from "../core/version";
+import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/invocation/tabWidth";
+import { resolveCliVersion } from "../core/invocation/version";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {

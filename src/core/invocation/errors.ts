@@ -1,4 +1,4 @@
-import { HUNK_EXTENSION_USER_ERROR_NAME, HunkExtensionUserError } from "../extension-api/types";
+import { HUNK_EXTENSION_USER_ERROR_NAME, HunkExtensionUserError } from "../../extension-api/types";
 
 /**
  * A failure Hunk raises because of how it was invoked, not because of a bug.

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { readAppStateRecord, updateAppStateRecord } from "../core/appStateFile";
-import { resolveCanonicalPath, resolveAppStatePath } from "../core/paths";
+import { resolveCanonicalPath, resolveAppStatePath } from "../core/invocation/paths";
 
 /**
  * Repo-local extensions run arbitrary code from the repository under review,

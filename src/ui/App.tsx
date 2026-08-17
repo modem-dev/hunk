@@ -19,9 +19,12 @@ import {
   diffPersistedViewPreferences,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
-} from "../core/config";
-import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/experimental";
-import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
+} from "../core/invocation/config";
+import {
+  experimentalFeatureEnabled,
+  resolveExperimentalDiffFiles,
+} from "../core/invocation/experimental";
+import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type {
   AppBootstrap,
@@ -31,7 +34,7 @@ import type {
   PersistedViewPreferences,
   UserNoteLineTarget,
 } from "../core/types";
-import { canReloadInput } from "../core/inputReload";
+import { canReloadInput } from "../core/invocation/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
   resolveExtensionCommands,

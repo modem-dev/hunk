@@ -1,4 +1,4 @@
-import type { HunkConfigResolution } from "../core/config";
+import type { HunkConfigResolution } from "../core/invocation/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";

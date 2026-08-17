@@ -2,16 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import type { CliInput } from "./types";
+import { getBundledVcsCatalog } from "../../app/vcsCatalog";
+import type { CliInput } from "../types";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
-import { loadAppBootstrap } from "./changeset/loaders";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "./startupNotice";
+import { loadAppBootstrap } from "../changeset/loaders";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "../startupNotice";
 
 const tempDirs: string[] = [];
 

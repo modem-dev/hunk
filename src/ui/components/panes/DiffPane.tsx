@@ -13,7 +13,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../../core/invocation/tabWidth";
 import type {
   AgentAnnotation,
   CursorLine,

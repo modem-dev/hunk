@@ -1,5 +1,5 @@
-import { HunkUserError } from "../../core/errors";
-import { resolveInstalledExtensionsRoot } from "../../core/paths";
+import { HunkUserError } from "../../core/invocation/errors";
+import { resolveInstalledExtensionsRoot } from "../../core/invocation/paths";
 import type { ExtensionManageCommandInput } from "../../core/types";
 import {
   installExtension,

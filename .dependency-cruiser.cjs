@@ -139,7 +139,7 @@ module.exports = {
       from: {
         path: [
           "^src/core/changeset/(model|diffFile|sidecar)\\.ts$",
-          "^src/core/commandInputs\\.ts$",
+          "^src/core/invocation/commandInputs\\.ts$",
           "^src/core/(vcs|watch|patch)/",
         ],
       },

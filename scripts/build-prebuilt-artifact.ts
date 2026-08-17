@@ -2,7 +2,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { BUNDLED_SKILL_NAMES } from "../src/core/paths";
+import { BUNDLED_SKILL_NAMES } from "../src/core/invocation/paths";
 import {
   binaryFilenameForSpec,
   getHostPlatformPackageSpec,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HunkUserError } from "../errors";
+import { HunkUserError } from "../invocation/errors";
 import {
   createUnsupportedVcsOperationError,
   createVcsCatalog,

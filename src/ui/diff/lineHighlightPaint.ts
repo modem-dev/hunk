@@ -18,7 +18,7 @@ import {
   type ReviewGapAddress,
 } from "../../core/review/expansion";
 import { normalizedReviewSourceLines } from "../../core/review/geometry";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
 import type { DiffFile } from "../../core/types";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";

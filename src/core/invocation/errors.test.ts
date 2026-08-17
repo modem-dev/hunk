@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { formatCliError, HunkUserError, isUserFacingError } from "./errors";
-import { HunkExtensionUserError } from "../extension-api/types";
+import { HunkExtensionUserError } from "../../extension-api/types";
 
 const originalDebug = process.env.HUNK_DEBUG;
 

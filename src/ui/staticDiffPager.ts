@@ -16,7 +16,7 @@
  */
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
-import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
 import type { CommonOptions, DiffFile, NamedCustomThemeConfig } from "../core/types";
 import {
   buildSplitRows,

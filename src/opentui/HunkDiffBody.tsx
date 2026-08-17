@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
 import { findMaxLineNumber } from "../ui/diff/codeColumns";
 import { buildSplitRows, buildStackRows } from "../ui/diff/diffRows";
 import { diffMessage, DiffRowView, fitText } from "../ui/diff/renderRows";

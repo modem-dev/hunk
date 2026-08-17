@@ -87,6 +87,29 @@ basenames — and no exported symbol changed. `core/types.ts` still re-exports t
 sidecar shapes for legacy import sites; it names `changeset/model`, which is public, so the
 interior rule needs no exception. `core/patch/` stayed where it is: it was already coherent.
 
+Phase 2 (2026-08-17) grouped **how a run is asked for** into `core/invocation/`: the command
+inputs (`commandInputs`), the layered config resolver (`config`), the app command catalog
+(`commandCatalog`), the invocation errors (`errors` — "a failure Hunk raises because of how it
+was invoked"), launch-scoped experimental features (`experimental`), XDG/app paths (`paths`),
+tab-width validation (`tabWidth`), reload eligibility (`inputReload`), and the CLI version
+(`version`). The move is path-only; no exported symbol changed.
+
+Every one of the nine is **public**: each has production importers outside the module, so this
+phase adds no `invocation-internals-stay-in-module` rule. Its value is the grouping plus
+extending the freeze: `core-leaves-never-reimport-types` now names
+`core/invocation/commandInputs.ts` in place of the old root path. Only `commandInputs` is a
+types-leaf — `config`, `experimental`, and `inputReload` import `core/types` legally, since
+`core/types` re-exports from `commandInputs` and never the other way round.
+
+`commandInputs` also absorbed the CLI-input half that was still declared in `core/types.ts`:
+`HelpCommandInput`, `PagerCommandInput`, `DaemonServeCommandInput`, the whole
+`Session*CommandInput` family with `SessionSelectorInput` / `SessionCommandOutput` /
+`SessionCommentApplyItemInput`, `MarkupRenderCommandInput`, `MarkupGuideCommandInput`, the
+`Extension*CommandInput` family, and `ParsedCliInput`. Two small aliases came with them because
+those inputs name them and the leaf may not import `core/types` back:
+`SessionCommentListType` and the `ReviewNoteSource` it unions over. `core/types.ts` re-exports
+all of them, so no import site changed.
+
 ## Snapshot (2026-08-17, v0.19.0)
 
 331 production modules, 1282 internal edges, **zero boundary violations and zero import
@@ -96,8 +119,9 @@ rules:
 
 - **Cycles.** Each cycle was a type-only back-edge from a lower module into a grab-bag above
   it. The cuts: `core/types.ts` gave its changeset model to `core/changeset.ts` (since phase 1,
-  `core/changeset/model.ts`) and its command-input model to `core/commandInputs.ts` (re-exported
-  from `core/types` so import sites keep working); the diff row model moved to
+  `core/changeset/model.ts`) and its command-input model to `core/commandInputs.ts` (since phase
+  2, `core/invocation/commandInputs.ts`; re-exported from `core/types` so import sites keep
+  working); the diff row model moved to
   `ui/diff/diffRowModel.ts`; the worker's
   compact encoder was retyped structurally (`HighlightedHastLines`); `HunkSessionBrokerClient`
   moved beside the client class it aliases; `CopySelectedRowRange` moved into
@@ -125,11 +149,12 @@ rules:
 
 The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
-1. **Give `src/core` an interior.** _In progress (phases 0–1, see Module interiors)._ The
-   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`, and now `changeset/`) are
-   coherent modules; the loose files still at `core/*` root are the remaining grab-bag. Keep
-   grouping them by audience — config/CLI next, then the process/runtime concerns — and give
-   each group a rule restricting which of its files other tiers may import. The review seam's
+1. **Give `src/core` an interior.** _In progress (phases 0–2, see Module interiors)._ The
+   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`, and now `changeset/` and
+   `invocation/`) are coherent modules; the loose files still at `core/*` root are the remaining
+   grab-bag. Keep grouping them by audience — the process/runtime concerns next, then melting
+   what is left of `core/types.ts` — and give each group a rule restricting which of its files
+   other tiers may import. The review seam's
    named modules (`document`, `geometry`, `state`, …) stay public; their helpers become
    internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists

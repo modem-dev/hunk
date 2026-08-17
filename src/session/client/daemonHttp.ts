@@ -1,4 +1,4 @@
-import { HunkUserError } from "../../core/errors";
+import { HunkUserError } from "../../core/invocation/errors";
 import {
   resolveSessionBrokerConfig,
   type ResolvedSessionBrokerConfig,

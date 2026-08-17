@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolveCanonicalPath } from "../core/paths";
+import { resolveCanonicalPath } from "../core/invocation/paths";
 import { join, resolve } from "node:path";
 import { loadExtensions } from "./host";
 import { readExtensionTrust, resolveRepoTrust, writeExtensionTrust } from "./trust";

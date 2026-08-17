@@ -4,7 +4,7 @@ import type {
   VcsDiffCommandInput,
   VcsShowCommandInput,
   VcsStashShowCommandInput,
-} from "../commandInputs";
+} from "../invocation/commandInputs";
 import type { BuildDiffFileOptions } from "../changeset/diffFile";
 
 export type VcsId = string;

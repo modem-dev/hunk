@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { INSTALLED_EXTENSIONS_DIR_NAME, resolveGlobalExtensionsDir } from "../core/paths";
+import {
+  INSTALLED_EXTENSIONS_DIR_NAME,
+  resolveGlobalExtensionsDir,
+} from "../core/invocation/paths";
 import { findProjectRootCandidate } from "../core/projectRoot";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 

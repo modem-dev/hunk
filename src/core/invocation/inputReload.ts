@@ -8,7 +8,7 @@
  * signature machinery so those callers can ask it without pulling either in.
  */
 
-import type { CliInput } from "./types";
+import type { CliInput } from "../types";
 
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {

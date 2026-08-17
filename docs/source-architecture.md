@@ -13,6 +13,8 @@ src/core/            review model, patch handling, VCS contracts, configuration,
                      runtime primitives
 src/core/changeset/  the changeset model and the pipeline that acquires one: loaders,
                      per-file construction, sidecar/source reads, and hunk formatting
+src/core/invocation/ how a run is asked for: command inputs, layered configuration, the
+                     command catalog, user-facing errors, paths, and version
 src/core/theme/      bundled theme metadata, custom-theme rules, and terminal theme detection
 src/core/watch/      input signatures, observation plans/backends, and refresh coordination
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support

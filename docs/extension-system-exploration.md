@@ -171,7 +171,7 @@ export default function (hunk: HunkExtensionAPI) {
 ````
 
 - Discovery: `~/.config/hunk/extensions/*.ts` and `*/index.ts` (global, follows
-  our existing XDG path logic in `src/core/paths.ts`), `.hunk/extensions/`
+  our existing XDG path logic in `src/core/invocation/paths.ts`), `.hunk/extensions/`
   (repo-local, **trust-gated**, same posture as pi's project trust), explicit
   `[extensions] paths = [...]` in `config.toml`, and a `--extension <path>`
   dev flag. `--no-extensions` for a clean run and for bug triage.

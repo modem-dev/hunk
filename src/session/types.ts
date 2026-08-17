@@ -1,4 +1,4 @@
-import type { ExperimentalFeature } from "../core/experimental";
+import type { ExperimentalFeature } from "../core/invocation/experimental";
 import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";

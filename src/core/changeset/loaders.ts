@@ -15,7 +15,7 @@ import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } 
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
-import { DEFAULT_TAB_WIDTH } from "../tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../invocation/tabWidth";
 import {
   getConfiguredVcsAdapter,
   isVcsReviewInput,

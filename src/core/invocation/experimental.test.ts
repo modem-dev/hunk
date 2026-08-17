@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTestAgentFileContext, createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createTestAgentFileContext, createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import { resolveExperimentalDiffFiles, resolveExperimentalFeatures } from "./experimental";
 
 describe("experimental review features", () => {

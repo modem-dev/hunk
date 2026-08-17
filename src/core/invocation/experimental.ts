@@ -1,4 +1,4 @@
-import type { AgentFileContext, CommonOptions, DiffFile } from "./types";
+import type { AgentFileContext, CommonOptions, DiffFile } from "../types";
 
 export const EXPERIMENTAL_FEATURES = ["stml"] as const;
 export type ExperimentalFeature = (typeof EXPERIMENTAL_FEATURES)[number];

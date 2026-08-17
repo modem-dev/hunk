@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { formatCliError } from "./core/errors";
+import { formatCliError } from "./core/invocation/errors";
 import { pagePlainText } from "./core/pager";
 import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";

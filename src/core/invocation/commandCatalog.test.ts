@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTestReviewState } from "../../test/helpers/review-store-helpers";
+import { createTestReviewState } from "../../../test/helpers/review-store-helpers";
 import {
   APP_COMMAND_CATALOG,
   appCommandCatalogEntry,

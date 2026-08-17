@@ -1,5 +1,5 @@
 import { reviewExpansionSide } from "../../core/review/expansion";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
