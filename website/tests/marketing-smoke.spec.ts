@@ -148,18 +148,17 @@ test("the more-features list quick-hits the long tail with docs links", async ({
   );
 });
 
-test("the extend section pitches extensions with a real code sample", async ({ page }) => {
+test("the extensions row carries a real code sample as its media", async ({ page }) => {
   await page.goto("/");
 
-  const section = page.locator(".extend");
-  await expect(
-    section.getByRole("heading", { name: "One TypeScript file. No build step." }),
-  ).toBeVisible();
-  // The sample is the docs' hello-world extension in the same framed chrome as
-  // the captures, titled with the path users actually drop extensions into.
-  await expect(section.locator(".paper-bar .pt")).toHaveText("~/.config/hunk/extensions/hello.ts");
-  await expect(section.locator(".extend-code pre")).toContainText('from "hunkdiff/extension"');
-  await expect(section.getByRole("link", { name: /Write your first extension/ })).toHaveAttribute(
+  // Extensions close the tour as an ordinary showcase row: copy left, framed
+  // media right — source instead of a capture, titled with the path users drop
+  // extensions into.
+  const row = page.locator(".show-item").filter({ hasText: "One TypeScript file" });
+  await expect(row.locator(".show-media.show-code")).toHaveCount(1);
+  await expect(row.locator(".paper-bar .pt")).toHaveText("~/.config/hunk/extensions/hello.ts");
+  await expect(row.locator("pre")).toContainText('from "hunkdiff/extension"');
+  await expect(row.getByRole("link", { name: /Writing extensions/ })).toHaveAttribute(
     "href",
     "/docs/extend/extensions/",
   );

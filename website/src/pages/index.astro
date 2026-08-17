@@ -63,20 +63,6 @@ const schema = {
   },
 };
 
-// A real, runnable extension for the extend section, hand-highlighted so the
-// landing page ships no syntax-highlighter script. Keep it in sync with the
-// hello-world example in docs/extend/extensions.
-const extensionSample = [
-  `<span class="k">import type</span> { HunkExtensionAPI } <span class="k">from</span> <span class="s">"hunkdiff/extension"</span>;`,
-  ``,
-  `<span class="k">export default function</span> (hunk: HunkExtensionAPI) {`,
-  `  hunk.registerCommand(`,
-  `    { id: <span class="s">"hello"</span>, title: <span class="s">"Say hello"</span>, key: <span class="s">"f6"</span> },`,
-  `    (ctx) =&gt; ctx.notify(<span class="s">"Hello from my extension"</span>),`,
-  `  );`,
-  `}`,
-].join("\n");
-
 const formattedStars =
   stars === null
     ? null
@@ -181,40 +167,6 @@ const formattedStars =
             Don't just <span class="mark-del">read</span> code, <span class="mark">understand</span> it.
           </h2>
           <FeatureShowcase />
-        </section>
-
-        <section class="extend" aria-labelledby="extend-title">
-          <p class="kicker"># extend</p>
-          <h2 id="extend-title">One TypeScript file. No build step.</h2>
-          <div class="extend-grid">
-            <div class="extend-copy">
-              <p>
-                An extension is a TypeScript file that default-exports one function. Hunk imports
-                it at startup and hands it an API object for registering themes, commands, file
-                previews, custom panes, and whole VCS backends. The bundled Git, Jujutsu, and
-                Sapling support is built on the same API.
-              </p>
-              <p>
-                Share one as a plain git repository and anyone can pick it up
-                with <b>hunk extension install</b>. Extensions that ship inside a reviewed repo
-                never run until you approve them.
-              </p>
-              <a class="more" href="/docs/extend/extensions/">Write your first extension →</a>
-            </div>
-            <figure class="frame extend-code">
-              <div class="paper-bar">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="pt">~/.config/hunk/extensions/hello.ts</span>
-              </div>
-              {/* The sample can scroll sideways on narrow screens, so it must be reachable by keyboard. */}
-              <pre tabindex="0" aria-label="Example hunk extension source"><code set:html={extensionSample} /></pre>
-            </figure>
-          </div>
-        </section>
-
-        <section class="band" aria-label="More features">
           <MoreFeatures />
         </section>
 

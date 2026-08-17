@@ -293,7 +293,6 @@ a:focus-visible {
 }
 
 .marketing .feats h2,
-.marketing .extend h2,
 .marketing .install h2,
 .marketing .band h2 {
   margin: 0 0 30px;
@@ -385,6 +384,7 @@ a:focus-visible {
 .marketing .show {
   display: grid;
   gap: 56px;
+  margin-bottom: 64px;
 }
 
 .marketing .show-item {
@@ -409,15 +409,13 @@ a:focus-visible {
   line-height: 1.65;
 }
 
-.marketing .show-copy .more,
-.marketing .extend-copy .more {
+.marketing .show-copy .more {
   color: var(--acc);
   font-size: 13px;
   font-weight: 600;
 }
 
-.marketing .show-copy .more:hover,
-.marketing .extend-copy .more:hover {
+.marketing .show-copy .more:hover {
   text-decoration: underline;
 }
 
@@ -500,35 +498,9 @@ a:focus-visible {
   }
 }
 
-/* Extensions band: the code card plays the capture's role — the same framed
-   chrome as the screenshots, made of source instead of pixels. Highlighting is
-   hand-authored spans, so no highlighter script ships with the page. */
-.marketing .extend {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 0 36px 104px;
-}
-
-.marketing .extend-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 38px;
-  align-items: center;
-}
-
-.marketing .extend-copy p {
-  margin: 0 0 12px;
-  color: var(--hunk-body);
-  font-size: 13.5px;
-  line-height: 1.65;
-}
-
-.marketing .extend-copy b {
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.marketing .extend-code pre {
+/* The extensions row's media is source rather than a capture, so it wears the
+   same frame with a title bar carrying the path the file lives at. */
+.marketing .show-code pre {
   overflow-x: auto;
   margin: 0;
   padding: 18px 20px;
@@ -539,11 +511,11 @@ a:focus-visible {
 }
 
 /* Fixed colors on the fixed-dark card, like the terminal captures. */
-.marketing .extend-code .k {
+.marketing .show-code .k {
   color: #7fd1ff;
 }
 
-.marketing .extend-code .s {
+.marketing .show-code .s {
   color: #b5cea8;
 }
 
@@ -783,8 +755,7 @@ a:focus-visible {
 
 @media (max-width: 980px) {
   /* Copy stacks above its capture on narrow screens. */
-  .marketing .show-item,
-  .marketing .extend-grid {
+  .marketing .show-item {
     grid-template-columns: 1fr;
     gap: 16px;
   }
@@ -804,7 +775,6 @@ a:focus-visible {
   .marketing .intro,
   .marketing .paper,
   .marketing .feats,
-  .marketing .extend,
   .marketing .band,
   .marketing .install,
   .marketing .last {
