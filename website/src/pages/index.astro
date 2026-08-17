@@ -13,7 +13,7 @@ import "../styles/marketing.css";
 const REPO = "https://github.com/modem-dev/hunk";
 const title = "hunk — review-first terminal diff viewer";
 const description =
-  "Hunk is a review-first terminal diff viewer for agent-authored changesets. One scrolling review stream, inline agent notes, watch mode, TypeScript extensions, and Git, Jujutsu, and Sapling support.";
+  "Hunk is a review-first terminal diff viewer for agent-authored changesets. Multi-file review stream, inline AI annotations, watch mode, TypeScript extensions, and Git/Jujutsu integration.";
 
 let stars: number | null = null;
 try {
@@ -94,7 +94,7 @@ const formattedStars =
     <meta name="description" content={description} />
     <meta
       name="keywords"
-      content="diff, terminal, TUI, code review, git, jujutsu, sapling, AI agents, extensions, OpenTUI"
+      content="diff, terminal, TUI, code review, git, jujutsu, AI agents, extensions, OpenTUI"
     />
     <meta name="author" content="Modem" />
     <meta property="og:type" content="website" />
@@ -131,8 +131,8 @@ const formattedStars =
             for <span class="ink">humans</span> &amp; <span class="mark">agents</span>
           </h1>
           <p class="sub">
-            Hunk is a review-first diff viewer that plays nice with agents. Point it at a working
-            tree, a commit, or a patch and read the whole change in one pass.
+            Hunk is a review-first diff viewer that plays nice with agents. It's fast, it looks
+            good, and it works everywhere.
           </p>
           <div class="cta">
             <CopyCommand command="npm i -g hunkdiff" />
@@ -178,7 +178,7 @@ const formattedStars =
         <section class="feats">
           <p class="kicker"># what you get</p>
           <h2>
-            Review the <span class="mark">changeset</span>, not <span class="mark-del">one file at a time</span>.
+            Don't just <span class="mark-del">read</span> code, <span class="mark">understand</span> it.
           </h2>
           <FeatureShowcase />
         </section>
