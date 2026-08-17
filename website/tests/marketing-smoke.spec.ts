@@ -138,13 +138,30 @@ test("the more-features list quick-hits the long tail with docs links", async ({
     "href",
     "/docs/workflows/watch-mode/",
   );
-  await expect(list.getByRole("link", { name: /Extensions/ })).toHaveAttribute(
+  await expect(list.getByRole("link", { name: /Live sessions/ })).toHaveAttribute(
     "href",
-    "/docs/extend/extensions/",
+    "/docs/agents/live-session-control/",
   );
   await expect(list.getByRole("link", { name: /Jujutsu & Sapling/ })).toHaveAttribute(
     "href",
     "/docs/workflows/jujutsu-and-sapling/",
+  );
+});
+
+test("the extend section pitches extensions with a real code sample", async ({ page }) => {
+  await page.goto("/");
+
+  const section = page.locator(".extend");
+  await expect(
+    section.getByRole("heading", { name: "One TypeScript file. No build step." }),
+  ).toBeVisible();
+  // The sample is the docs' hello-world extension in the same framed chrome as
+  // the captures, titled with the path users actually drop extensions into.
+  await expect(section.locator(".paper-bar .pt")).toHaveText("~/.config/hunk/extensions/hello.ts");
+  await expect(section.locator(".extend-code pre")).toContainText('from "hunkdiff/extension"');
+  await expect(section.getByRole("link", { name: /Write your first extension/ })).toHaveAttribute(
+    "href",
+    "/docs/extend/extensions/",
   );
 });
 
