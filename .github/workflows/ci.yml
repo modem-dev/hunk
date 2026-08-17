@@ -218,6 +218,15 @@ jobs:
       - name: Build binary
         run: bun run build:bin
 
+      # Bun's default x64 runtime is compiled for Haswell and raises SIGILL on older CPUs.
+      # Emulating a pre-AVX CPU here catches a dropped baseline target on main rather than
+      # after a release ships a binary that cannot start.
+      - name: Verify the binary starts without AVX2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          qemu-x86_64-static -cpu Nehalem dist/hunk --version
+
       - name: Verify compiled binary watch mode
         run: bun test ./test/pty/watch.test.ts
         env:
