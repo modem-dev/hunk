@@ -95,15 +95,28 @@ test("install command copies with accessible feedback", async ({ context, page }
 test("theme previews switch without loading every screenshot up front", async ({ page }) => {
   await page.goto("/");
   const themePicker = page.getByRole("group", { name: "Preview theme" });
-  const midnight = themePicker.getByRole("button", { name: "Midnight" });
-  const midnightShot = page.getByAltText("Hunk split-view diff in the Midnight theme");
+  const nord = themePicker.getByRole("button", { name: "Nord" });
+  const nordShot = page.getByAltText("Hunk split-view diff in the Nord theme");
 
-  await expect(midnight).toHaveAttribute("aria-pressed", "false");
-  await expect(midnightShot).not.toHaveAttribute("src", /.+/);
-  await midnight.click();
-  await expect(midnight).toHaveAttribute("aria-pressed", "true");
-  await expect(midnightShot).toBeVisible();
-  await expect(midnightShot).toHaveAttribute("src", "/shot-midnight.webp");
+  await expect(nord).toHaveAttribute("aria-pressed", "false");
+  await expect(nordShot).not.toHaveAttribute("src", /.+/);
+  await nord.click();
+  await expect(nord).toHaveAttribute("aria-pressed", "true");
+  await expect(nordShot).toBeVisible();
+  await expect(nordShot).toHaveAttribute("src", "/shot-nord.webp");
+});
+
+test("the theme picker says how many themes it is not showing", async ({ page }) => {
+  await page.goto("/");
+  const picker = page.getByRole("group", { name: "Preview theme" });
+
+  // The count is derived from Hunk's bundled catalog at build time, so this
+  // asserts the shape rather than a number that legitimately grows.
+  const more = picker.getByRole("link", { name: /and \d+ more/ });
+  await expect(more).toHaveAttribute("href", "/docs/configure/themes/");
+  const shown = await picker.getByRole("button").count();
+  const label = (await more.textContent())?.match(/and (\d+) more/)?.[1];
+  expect(Number(label)).toBeGreaterThan(shown);
 });
 
 test("community videos link out without embedding a third-party player", async ({ page }) => {

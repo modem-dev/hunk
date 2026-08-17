@@ -1,12 +1,25 @@
 ---
+// The count comes from Hunk's own catalog so the "more" pill can never drift
+// from what ships. The module is a bare id array with no imports, so reaching
+// across into the app costs the site build nothing.
+import { BUNDLED_SHIKI_THEME_IDS } from "../../../../src/core/theme/catalog";
+
+/**
+ * The picker's spread of the bundled catalog: one neutral default, the popular
+ * community palettes, a warm one, and a light one. `id` must stay in step with
+ * `HERO_SHOT_THEMES` in website/scripts/capture-media.ts, which photographs
+ * exactly these.
+ */
 const themes = [
-  { name: "Graphite", src: "/shot-graphite.webp" },
-  { name: "Midnight", src: "/shot-midnight.webp" },
-  { name: "Ember", src: "/shot-ember.webp" },
-  { name: "Zenburn", src: "/shot-zenburn.webp" },
-  { name: "Catppuccin Mocha", src: "/shot-mocha.webp" },
-  { name: "Catppuccin Latte", src: "/shot-latte.webp" },
+  { name: "GitHub Dark", src: "/shot-github-dark.webp" },
+  { name: "Tokyo Night", src: "/shot-tokyo-night.webp" },
+  { name: "Catppuccin Mocha", src: "/shot-catppuccin-mocha.webp" },
+  { name: "Gruvbox", src: "/shot-gruvbox.webp" },
+  { name: "Nord", src: "/shot-nord.webp" },
+  { name: "GitHub Light", src: "/shot-github-light.webp" },
 ];
+
+const remainingThemes = BUNDLED_SHIKI_THEME_IDS.length - themes.length;
 ---
 
 <figure class="frame">
@@ -25,8 +38,8 @@ const themes = [
           src={index === 0 ? theme.src : undefined}
           data-src={theme.src}
           alt={`Hunk split-view diff in the ${theme.name} theme`}
-          width="2200"
-          height="1413"
+          width="2202"
+          height="1400"
           draggable="false"
           hidden={index !== 0}
         />
@@ -48,6 +61,7 @@ const themes = [
       </button>
     ))
   }
+  <a class="tmore" href="/docs/configure/themes/">and {remainingThemes} more</a>
 </div>
 
 <script>

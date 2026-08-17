@@ -241,7 +241,8 @@ a:focus-visible {
 .marketing .shot-stack {
   position: relative;
   width: 100%;
-  aspect-ratio: 2200 / 1413;
+  /* Matches the capture geometry in capture-media.ts (131 cols × 35 rows at DPR 2). */
+  aspect-ratio: 2202 / 1400;
   background: #0c0e10;
 }
 
@@ -283,6 +284,23 @@ a:focus-visible {
   border-color: var(--acc);
   background: var(--acc);
   color: var(--paper);
+}
+
+/* Sits in the pill row without pretending to be one: the picker shows a
+   sample, and this says how much more is behind it. */
+.marketing .tmore {
+  padding: 5px 4px;
+  color: var(--soft);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+  transition: 0.12s;
+}
+
+.marketing .tmore:hover {
+  color: var(--acc);
+  text-decoration-color: var(--acc);
 }
 
 .marketing .feats,

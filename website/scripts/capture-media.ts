@@ -9,7 +9,7 @@
  * refresh rituals in website/MEDIA.md; website builds and tests never run it.
  *
  * Usage, from the repository root:
- *   bun run website/scripts/capture-media.ts [stream|agent|mouse|layout|themes]...
+ *   bun run website/scripts/capture-media.ts [stream|agent|mouse|layout|themes|shots]...
  *
  * With no arguments every asset is rebuilt. Video assets need an ffmpeg with
  * libx264 + libvpx-vp9; point FFMPEG at one if it is not on PATH.
@@ -425,6 +425,68 @@ async function captureLayout() {
   }
 }
 
+/**
+ * The themes the landing page's picker shows, in pill order.
+ *
+ * A spread of the bundled catalog rather than all of it: one neutral default,
+ * the popular community palettes, a warm one, and a light one, so the picker
+ * shows range at a glance. `ThemeShot.astro` names the rest beside them. Ids
+ * are real bundled theme ids — check `BUNDLED_SHIKI_THEME_IDS` before editing,
+ * because a renamed theme silently falls back instead of failing.
+ */
+const HERO_SHOT_THEMES = [
+  { id: "github-dark-default", slug: "github-dark" },
+  { id: "tokyo-night", slug: "tokyo-night" },
+  { id: "catppuccin-mocha", slug: "catppuccin-mocha" },
+  { id: "gruvbox-dark-medium", slug: "gruvbox" },
+  { id: "nord", slug: "nord" },
+  { id: "github-light-default", slug: "github-light" },
+];
+
+/** Stills: one split-view review per themed pill in the hero picker. */
+async function captureShots() {
+  for (const theme of HERO_SHOT_THEMES) {
+    const { session, cleanup } = await launchHunkForCapture({
+      args: [
+        "patch",
+        "examples/6-readme-screenshot/change.patch",
+        "--agent-context",
+        "examples/6-readme-screenshot/agent-context.json",
+        "--mode",
+        "split",
+        "--theme",
+        theme.id,
+      ],
+      // Wide and tall enough to hold the sidebar, both diff columns, and a
+      // note card at once, which is the whole point of the hero frame.
+      cols: 131,
+      rows: 35,
+    });
+    try {
+      await waitForReview(session, /ReviewSummaryCard/);
+      // Sidebar and agent notes on, then hold at the first hunk: its note card
+      // renders in place, so every theme is photographed with the same
+      // furniture. Advancing a hunk scrolls that card out of frame.
+      await session.press("s");
+      await sleep(400);
+      await session.press("a");
+      await sleep(700);
+
+      const webp: Buffer = await renderTerminalToImage(session.getTerminalData(), {
+        format: "webp",
+        quality: 90,
+        devicePixelRatio: DPR,
+        fontSize: FONT_SIZE,
+        lineHeight: LINE_HEIGHT,
+      });
+      writeFileSync(join(publicDir, `shot-${theme.slug}.webp`), webp);
+      console.log(`shots: captured ${theme.id} -> shot-${theme.slug}.webp`);
+    } finally {
+      cleanup();
+    }
+  }
+}
+
 const MONTAGE_THEMES = [
   "midnight",
   "dracula",
@@ -544,6 +606,7 @@ const ASSETS: Record<string, () => Promise<void>> = {
   mouse: captureMouse,
   layout: captureLayout,
   themes: captureThemes,
+  shots: captureShots,
 };
 
 const requested = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
