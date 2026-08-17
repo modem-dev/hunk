@@ -19,7 +19,6 @@ import {
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapAddress,
-  type ReviewGapPosition,
 } from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, DiffLineMoveKind } from "../../core/types";
@@ -28,6 +27,7 @@ import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
+import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRowModel";
 import {
   aliasContextHighlightLines,
   collectHastHighlightRuns,
@@ -99,78 +99,13 @@ export interface HighlightedSourceCode {
   lines: Array<HastNode | undefined>;
 }
 
-export interface RenderSpan {
-  text: string;
-  fg?: string;
-  bg?: string;
-}
-
-export interface SplitLineCell {
-  kind: "context" | "addition" | "deletion" | "empty";
-  sign: string;
-  lineNumber?: number;
-  moveKind?: DiffLineMoveKind;
-  spans: RenderSpan[];
-}
-
-export interface StackLineCell {
-  kind: "context" | "addition" | "deletion";
-  sign: string;
-  oldLineNumber?: number;
-  newLineNumber?: number;
-  moveKind?: DiffLineMoveKind;
-  spans: RenderSpan[];
-}
-
-/** One vocabulary for gap positions, shared with the core gap addressing it comes from. */
-export type CollapsedGapPosition = ReviewGapPosition;
-
-export type DiffRow =
-  | {
-      type: "collapsed";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      text: string;
-      // Where this gap sits relative to the surrounding hunks; "before" attaches to
-      // the gap leading into hunkIndex, "trailing" sits after the final hunk.
-      position: CollapsedGapPosition;
-      // 1-based inclusive file-line ranges this gap covers on each side. Expansion
-      // uses these to slice the file contents that fill the gap.
-      oldRange: [number, number];
-      newRange: [number, number];
-    }
-  | {
-      type: "hunk-header";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      text: string;
-    }
-  | {
-      type: "split-line";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      left: SplitLineCell;
-      right: SplitLineCell;
-      // True when this row was synthesized to fill an expanded collapsed gap.
-      // Expanded rows carry the neighbor hunk's index for ordering but must not
-      // count toward that hunk's bounds or anchor position.
-      isExpansionRow?: true;
-      /** Exact collapsed gap this synthesized row reveals. */
-      expandedGapKey?: string;
-    }
-  | {
-      type: "stack-line";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      cell: StackLineCell;
-      isExpansionRow?: true;
-      /** Exact collapsed gap this synthesized row reveals. */
-      expandedGapKey?: string;
-    };
+export type {
+  CollapsedGapPosition,
+  DiffRow,
+  RenderSpan,
+  SplitLineCell,
+  StackLineCell,
+} from "./diffRowModel";
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {

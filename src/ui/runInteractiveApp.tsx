@@ -14,7 +14,7 @@ import { ReviewProducer } from "../app/review/producer";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
-} from "../session/app/registration";
+} from "../app/session/registration";
 import type {
   HunkSessionCommandResult,
   HunkSessionInfo,

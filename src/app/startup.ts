@@ -21,7 +21,7 @@ import type {
   SessionCommandInput,
 } from "../core/types";
 import { canReloadInput } from "../core/inputReload";
-import { parseCli } from "../core/cli";
+import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
 

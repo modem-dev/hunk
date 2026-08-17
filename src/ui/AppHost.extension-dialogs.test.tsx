@@ -11,7 +11,7 @@ import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoade
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/types";
-import type { HunkSessionBrokerClient } from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 

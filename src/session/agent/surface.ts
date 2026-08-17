@@ -4,7 +4,7 @@ import type { SessionDaemonAction } from "../protocol";
  * Declarative description of the agent-facing `hunk session` command surface.
  *
  * This module is the single source of truth for what agents can invoke: the Commander commands in
- * `src/core/cli.ts`, the `hunk session --help` usage text, and the generated
+ * `src/app/cli.ts`, the `hunk session --help` usage text, and the generated
  * `skills/hunk-review/SKILL.md` reference sections are all derived from these specs, so the parser
  * and the docs cannot drift apart. Keep it pure data with no runtime dependencies.
  */
@@ -67,7 +67,7 @@ type OptionValue<Option extends AgentCommandOption> = Option["flag"] extends `${
 
 /**
  * The parsed-options shape one spec produces. Deriving this from the manifest means adding or
- * renaming an option automatically updates the action handler's type in `src/core/cli.ts` —
+ * renaming an option automatically updates the action handler's type in `src/app/cli.ts` —
  * hand-written option interfaces could silently drift from the declared surface.
  */
 export type ParsedCommandOptions<Spec extends AgentCommandSpec> = {
@@ -115,7 +115,7 @@ export function optionKeyFromFlag(flag: string) {
 
 /**
  * Options owned by non-session commands (`hunk diff`, `hunk markup render`, shared review flags)
- * that agent-facing docs also reference. `src/core/cli.ts` registers them from these constants,
+ * that agent-facing docs also reference. `src/app/cli.ts` registers them from these constants,
  * so the docs' flag-consistency tests verify real parser flags instead of a hand-kept allowlist.
  */
 export const AUXILIARY_AGENT_OPTIONS = {

@@ -8,7 +8,7 @@ import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { ValidatedLineHighlight } from "../../highlights/validate";
-import type { CopySelectedRowRange } from "./copySelection";
+import type { CopySelectedRowRange } from "../../lib/diffSpatial";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";

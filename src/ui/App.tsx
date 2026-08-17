@@ -61,11 +61,8 @@ import type {
   RegisteredPane,
 } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
-import type {
-  HunkSessionBrokerClient,
-  ReloadedSessionResult,
-  ReloadSessionOptions,
-} from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";

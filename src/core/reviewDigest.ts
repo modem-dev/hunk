@@ -9,7 +9,7 @@
  * browser bundle supply Web Crypto's instead.
  */
 import { createHash } from "node:crypto";
-import { REVIEW_DIGEST_ALGORITHM, type ReviewDigestFn } from "../core/review/validation";
+import { REVIEW_DIGEST_ALGORITHM, type ReviewDigestFn } from "./review/validation";
 
 /** Digest bytes with Node's implementation of the shared algorithm, in canonical form. */
 export const nodeReviewDigest: ReviewDigestFn = (bytes) =>

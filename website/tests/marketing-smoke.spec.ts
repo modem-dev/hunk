@@ -50,6 +50,29 @@ test("shared headers stay usable at narrow and tablet breakpoints", async ({ pag
     marketingHeader!.y + marketingHeader!.height,
   );
 
+  // The nav must stay on one line at every phone width. Checking horizontal overflow alone would
+  // pass while the links silently wrapped onto a second row and doubled the header height.
+  for (const width of [320, 360, 375, 390, 414, 430]) {
+    await page.setViewportSize({ width, height: 700 });
+    const rows = await marketingNavigation.evaluate((nav) => {
+      const tops = [...nav.querySelectorAll("a")]
+        .filter((link) => link.getClientRects().length > 0)
+        .map((link) => Math.round(link.getBoundingClientRect().top));
+      return new Set(tops).size;
+    });
+    expect(rows, `nav wrapped at ${width}px`).toBe(1);
+
+    // Whatever else is dropped, these three always remain reachable.
+    for (const name of ["Docs", "Changelog", "GitHub ↗"]) {
+      await expect(marketingNavigation.getByRole("link", { name })).toBeVisible();
+    }
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `page scrolled sideways at ${width}px`).toBeLessThanOrEqual(0);
+  }
+
   await page.setViewportSize({ width: 780, height: 800 });
   await page.goto("/docs/");
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();

@@ -20,7 +20,7 @@
  *   the caller here, so note and draft ids and timestamps are allocated at this edge.
  */
 import { randomUUID } from "node:crypto";
-import type { ReviewProducer } from "../../app/review/producer";
+import type { ReviewProducer } from "../review/producer";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
 import { resolveReviewExpandedLine } from "../../core/review/expansion";
 import { requireReviewFile, ReviewIntentPlanningError } from "../../core/review/intents";
@@ -36,7 +36,7 @@ import {
   type HunkReviewFailureV1,
   type HunkReviewResourceReadEnvelopeV1,
   type HunkReviewResourceReadResultV1,
-} from "../reviewProtocol";
+} from "../../session/reviewProtocol";
 
 /** Build one failure carrying the generation the producer is actually serving. */
 function fail(

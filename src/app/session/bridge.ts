@@ -1,5 +1,8 @@
-import type { ReviewProducer } from "../../app/review/producer";
-import type { HunkReviewFailureV1, HunkReviewResourceReadResultV1 } from "../reviewProtocol";
+import type { ReviewProducer } from "../review/producer";
+import type {
+  HunkReviewFailureV1,
+  HunkReviewResourceReadResultV1,
+} from "../../session/reviewProtocol";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -11,7 +14,7 @@ import type {
   NavigatedSelectionResult,
   ReloadedSessionResult,
   RemovedCommentResult,
-} from "../types";
+} from "../../session/types";
 import { applySessionReviewAction, readSessionReviewResource } from "./reviewCommands";
 
 export interface HunkSessionBridgeHandlers {

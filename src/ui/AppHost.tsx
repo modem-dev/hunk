@@ -18,12 +18,13 @@ import { extendVcsCatalog } from "../core/vcs";
 import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
-} from "../session/app/registration";
+} from "../app/session/registration";
 import {
   createSessionReloadBounds,
   validateSessionReloadWithinBounds,
-} from "../session/app/reloadBounds";
-import type { HunkSessionBrokerClient, ReloadSessionOptions } from "../session/types";
+} from "../app/session/reloadBounds";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { ReloadSessionOptions } from "../session/types";
 import {
   App,
   type WorkspaceFileWriter,
