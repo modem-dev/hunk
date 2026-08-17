@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -26,6 +26,8 @@ export const CHANGELOG_SOURCE = resolve(REPO_ROOT, "CHANGELOG.md");
 export const RELEASE_NOTES_SOURCE = resolve(REPO_ROOT, "website", "releases", "notes.json");
 export const RELEASE_DATES_SOURCE = resolve(REPO_ROOT, "website", "releases", "dates.json");
 export const LATEST_RELEASE_PATH = resolve(REPO_ROOT, "website", "releases", "latest.json");
+export const SOCIAL_CARDS_PATH = resolve(REPO_ROOT, "website", "releases", "cards.json");
+export const SOCIAL_CARD_DIR = resolve(REPO_ROOT, "website", "public", "changelog", "og");
 export const CHANGELOG_OUTPUT_DIR = resolve(
   REPO_ROOT,
   "website",
@@ -432,6 +434,31 @@ export function resolveDates(
   );
 }
 
+/**
+ * One social card's content, in the order it is rendered.
+ *
+ * The renderer in `website/scripts/generate-og.ts` reads only this, so the facts on a card come
+ * from the same derivation as the page it belongs to rather than being re-read from Markdown.
+ */
+export type SocialCard = {
+  /** Published path the card belongs to, used to name the image file. */
+  slug: string;
+  title: string;
+  /** Editorial summary only; absent when a series has none, and the card then omits the line. */
+  tagline?: string;
+  meta: string;
+  /** Patch versions in the series, newest first. Absent for a single-release series. */
+  chips?: string[];
+  latest?: boolean;
+  /** Alt text published beside the image. */
+  alt: string;
+};
+
+/** Path of the rendered card for one social-card slug. */
+export function socialCardPath(slug: string) {
+  return `/changelog/og/${slug}.png`;
+}
+
 /** Build the stable in-page anchor for one version, e.g. `0.18.2` becomes `v0-18-2`. */
 export function versionAnchor(version: string) {
   return `v${version.replaceAll(".", "-")}`;
@@ -568,6 +595,34 @@ export function resolveSummary(
   return seriesSummary(series, notes) ?? factualSummary(series, dates);
 }
 
+/**
+ * Render the frontmatter `head` entries that point one page at its own social card.
+ *
+ * The global `head` in `astro.config.mjs` sets a site-wide image; Starlight merges page entries
+ * over it by tag and property, so these replace rather than duplicate it.
+ */
+function renderCardHead(card: SocialCard) {
+  const url = `${SITE_ORIGIN}${socialCardPath(card.slug)}`;
+  const tags: [string, string][] = [
+    ["og:image", url],
+    ["og:image:alt", card.alt],
+  ];
+  return [
+    "head:",
+    ...tags.flatMap(([property, content]) => [
+      "  - tag: meta",
+      "    attrs:",
+      `      property: ${property}`,
+      `      content: ${yamlString(content)}`,
+    ]),
+    // Twitter reads its own name-based tags rather than the property-based OpenGraph ones.
+    "  - tag: meta",
+    "    attrs:",
+    "      name: twitter:image",
+    `      content: ${yamlString(url)}`,
+  ];
+}
+
 /** Render one bullet, appending its pull-request link when the entry carries one. */
 function renderEntry(entry: ChangeEntry) {
   const suffix =
@@ -623,6 +678,7 @@ export function renderSeriesPage({
   series,
   notes,
   dates,
+  card,
   newer,
   older,
   latestReleasedVersion,
@@ -630,6 +686,7 @@ export function renderSeriesPage({
   series: ReleaseSeries;
   notes: SeriesNotes | undefined;
   dates: Record<string, string>;
+  card?: SocialCard;
   newer?: string;
   older?: string;
   latestReleasedVersion?: string;
@@ -660,6 +717,7 @@ export function renderSeriesPage({
     `slug: changelog/${series.minor}`,
     // The page is generated; an edit link would invite hand-edits that regeneration overwrites.
     "editUrl: false",
+    ...(card ? renderCardHead(card) : []),
     "---",
     "",
     GENERATED_NOTICE,
@@ -749,10 +807,12 @@ export function renderIndexPage({
   seriesList,
   notes,
   dates,
+  card,
 }: {
   seriesList: readonly ReleaseSeries[];
   notes: Record<string, SeriesNotes>;
   dates: Record<string, string>;
+  card?: SocialCard;
 }) {
   const lines: string[] = [
     "---",
@@ -763,6 +823,7 @@ export function renderIndexPage({
         "Every Hunk release, newest first — features, fixes, and performance work in the terminal diff viewer.",
       ),
     "tableOfContents: false",
+    ...(card ? renderCardHead(card) : []),
     "---",
     "",
     GENERATED_NOTICE,
@@ -815,6 +876,67 @@ export function renderIndexPage({
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trimEnd()}\n`;
+}
+
+/** Columns the repository formatter wraps at; generated JSON has to agree or `--check` fails. */
+const PRINT_WIDTH = 100;
+
+/**
+ * Serialize JSON the way the repository formatter would print it.
+ *
+ * `JSON.stringify` always expands arrays, while oxfmt keeps an array of primitives on one line
+ * while it fits inside the print width. Emitting the formatter's own shape keeps generated files
+ * stable across `bun run format`, the same reason `generate-docs.ts` pre-formats its tables.
+ */
+export function formatJson(
+  value: unknown,
+  indent = 0,
+  /** Column the value starts at, which is past its key when it is an object property. */
+  column = indent,
+  /** Whether a comma follows this value, which counts toward the line's width. */
+  trailingComma = false,
+): string {
+  const pad = " ".repeat(indent);
+  const inner = " ".repeat(indent + 2);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+    const last = value.length - 1;
+    const parts = value.map((item, index) =>
+      formatJson(item, indent + 2, indent + 2, index < last),
+    );
+    // Only primitives collapse; an array holding objects always breaks, as the formatter does.
+    if (value.every((item) => item === null || typeof item !== "object")) {
+      const inline = `[${parts.join(", ")}]`;
+      // Measure the whole printed line: the key already consumed columns before this value, and a
+      // comma may follow it. Ignoring the key inlined a 104-column `"chips": [...]` that the
+      // formatter then rewrapped, which is exactly the drift this function exists to avoid.
+      if (column + inline.length + (trailingComma ? 1 : 0) <= PRINT_WIDTH) {
+        return inline;
+      }
+    }
+    return `[\n${parts.map((part) => `${inner}${part}`).join(",\n")}\n${pad}]`;
+  }
+
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).filter(([, item]) => item !== undefined);
+    if (entries.length === 0) {
+      return "{}";
+    }
+    const lastEntry = entries.length - 1;
+    const body = entries
+      .map(([key, item], index) => {
+        const label = `${JSON.stringify(key)}: `;
+        const printed = formatJson(item, indent + 2, indent + 2 + label.length, index < lastEntry);
+        return `${inner}${label}${printed}`;
+      })
+      .join(",\n");
+    return `{\n${body}\n${pad}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 /** Escape text for inclusion in an XML text node or attribute. */
@@ -884,6 +1006,85 @@ export function renderFeed({
   ].join("\n");
 }
 
+/** Describe a series' size as `N releases · N changes`. */
+function seriesCounts(series: ReleaseSeries) {
+  const releases = series.releases.length;
+  const changes = series.releases.reduce(
+    (total, release) =>
+      total + release.sections.reduce((n, section) => n + section.entries.length, 0),
+    0,
+  );
+  return `${releases} release${releases === 1 ? "" : "s"} · ${changes} change${changes === 1 ? "" : "s"}`;
+}
+
+/** Build the social card for one minor series. */
+export function buildSeriesCard({
+  series,
+  notes,
+  dates,
+  latest,
+}: {
+  series: ReleaseSeries;
+  notes: SeriesNotes | undefined;
+  dates: Record<string, string>;
+  latest: boolean;
+}): SocialCard {
+  const tagline = seriesSummary(series, notes);
+  const published = publishedReleases(series, dates);
+  const meta = [seriesSpan(series, dates) ?? "Unreleased", seriesCounts(series)].join(" · ");
+
+  return {
+    slug: series.minor,
+    title: `Hunk ${series.minor}`,
+    // A card with no editorial summary drops the line rather than padding it with the factual
+    // fallback; roughly half the series have never had one written.
+    // Three lines at the card's type size; longer taglines are cut rather than shrinking the card.
+    ...(tagline ? { tagline: truncate(toPlainText(tagline), 140) } : {}),
+    meta,
+    // Chips make the one-page-per-series idea legible, so they only appear when there is more
+    // than one release to show.
+    ...(published.length > 1 ? { chips: published.map((release) => release.version) } : {}),
+    ...(latest ? { latest: true } : {}),
+    alt: `Hunk ${series.minor} release notes — ${meta}`,
+  };
+}
+
+/** Build the social card for the changelog index. */
+export function buildIndexCard(
+  seriesList: readonly ReleaseSeries[],
+  dates: Record<string, string>,
+): SocialCard {
+  const published = seriesList.filter((series) => publishedReleases(series, dates).length > 0);
+  const allDates = published
+    .flatMap((series) => publishedReleases(series, dates).map((r) => dates[r.version] as string))
+    .sort();
+  const first = allDates[0];
+  const last = allDates.at(-1);
+  const span = first && last ? `${monthAndYear(first)} – ${monthAndYear(last)}` : undefined;
+  const meta = [`${published.length} release series`, span].filter(Boolean).join(" · ");
+
+  // The ellipsis stands for series the card had no room for, so it only appears when some were
+  // actually left off. Appending it unconditionally claimed more history than the card was showing.
+  const shown = published.slice(0, 5).map((series) => series.minor);
+  const chips = published.length > shown.length ? [...shown, "…"] : shown;
+
+  return {
+    slug: "index",
+    title: "Changelog",
+    tagline: "Every Hunk release, grouped by minor series.",
+    meta,
+    ...(chips.length > 0 ? { chips } : {}),
+    alt: `Hunk changelog — ${meta}`,
+  };
+}
+
+/** Render `2026-08-16` as `August 2026`, for spans that cover whole months. */
+function monthAndYear(iso: string) {
+  const [year, month] = iso.split("-");
+  const name = MONTHS[Number(month) - 1];
+  return name && year ? `${name} ${year}` : iso;
+}
+
 /** Produce every committed changelog artifact, keyed by absolute path. */
 export function generateChangelogArtifacts({
   markdown = readFileSync(CHANGELOG_SOURCE, "utf8"),
@@ -919,16 +1120,35 @@ export function generateChangelogArtifacts({
       }
     : null;
 
+  const cards: SocialCard[] = [
+    buildIndexCard(seriesList, dates),
+    ...seriesList.map((series) =>
+      buildSeriesCard({
+        series,
+        notes: notes[series.minor],
+        dates,
+        latest: series.minor === (latestSeries?.minor ?? ""),
+      }),
+    ),
+  ];
+
   const artifacts: Record<string, string> = {
-    [RELEASE_DATES_SOURCE]: `${JSON.stringify(dates, null, 2)}\n`,
-    [LATEST_RELEASE_PATH]: `${JSON.stringify(latest, null, 2)}\n`,
-    [resolve(CHANGELOG_OUTPUT_DIR, "index.md")]: renderIndexPage({ seriesList, notes, dates }),
+    [RELEASE_DATES_SOURCE]: `${formatJson(dates)}\n`,
+    [LATEST_RELEASE_PATH]: `${formatJson(latest)}\n`,
+    [SOCIAL_CARDS_PATH]: `${formatJson(cards)}\n`,
+    [resolve(CHANGELOG_OUTPUT_DIR, "index.md")]: renderIndexPage({
+      seriesList,
+      notes,
+      dates,
+      card: cards[0] as SocialCard,
+    }),
     [CHANGELOG_FEED_PATH]: renderFeed({ seriesList, notes, dates }),
   };
 
   seriesList.forEach((series, index) => {
     artifacts[resolve(CHANGELOG_OUTPUT_DIR, `${series.minor}.md`)] = renderSeriesPage({
       series,
+      card: cards[index + 1] as SocialCard,
       notes: notes[series.minor],
       dates,
       ...(seriesList[index - 1] ? { newer: seriesList[index - 1]?.minor } : {}),
@@ -967,6 +1187,18 @@ function findOrphanedPages(artifacts: Readonly<Record<string, string>>) {
   }
 
   return orphaned;
+}
+
+/**
+ * List cards whose rendered image is missing.
+ *
+ * Painting a card needs a browser, so this script records what should exist and reports gaps;
+ * `bun run generate:og` is what draws them.
+ */
+export function findMissingCardImages(cards: readonly SocialCard[]) {
+  return cards
+    .map((card) => resolve(SOCIAL_CARD_DIR, `${card.slug}.png`))
+    .filter((path) => !existsSync(path));
 }
 
 /** Write generated artifacts, or report stale paths without modifying them. */
@@ -1024,5 +1256,21 @@ if (import.meta.main) {
         ? `Updated ${stalePaths.length} generated changelog file(s).`
         : "Generated changelog is already current.",
     );
+  }
+
+  // Card images need a browser, so they are drawn separately. Report the gap either way: a new
+  // release otherwise ships with a page whose social card 404s.
+  const cards = JSON.parse(readFileSync(SOCIAL_CARDS_PATH, "utf8")) as SocialCard[];
+  const missingImages = findMissingCardImages(cards);
+  if (missingImages.length > 0) {
+    const report = check ? console.error : console.warn;
+    report(`Missing ${missingImages.length} social card image(s):`);
+    for (const path of missingImages) {
+      report(`  ${path}`);
+    }
+    report("Run `bun run generate:og` and commit the result.");
+    if (check) {
+      process.exit(1);
+    }
   }
 }
