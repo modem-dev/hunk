@@ -888,7 +888,14 @@ const PRINT_WIDTH = 100;
  * while it fits inside the print width. Emitting the formatter's own shape keeps generated files
  * stable across `bun run format`, the same reason `generate-docs.ts` pre-formats its tables.
  */
-export function formatJson(value: unknown, indent = 0): string {
+export function formatJson(
+  value: unknown,
+  indent = 0,
+  /** Column the value starts at, which is past its key when it is an object property. */
+  column = indent,
+  /** Whether a comma follows this value, which counts toward the line's width. */
+  trailingComma = false,
+): string {
   const pad = " ".repeat(indent);
   const inner = " ".repeat(indent + 2);
 
@@ -896,12 +903,17 @@ export function formatJson(value: unknown, indent = 0): string {
     if (value.length === 0) {
       return "[]";
     }
-    const parts = value.map((item) => formatJson(item, indent + 2));
+    const last = value.length - 1;
+    const parts = value.map((item, index) =>
+      formatJson(item, indent + 2, indent + 2, index < last),
+    );
     // Only primitives collapse; an array holding objects always breaks, as the formatter does.
     if (value.every((item) => item === null || typeof item !== "object")) {
       const inline = `[${parts.join(", ")}]`;
-      // Budget for the key and the trailing comma the caller will add after this value.
-      if (indent + inline.length + 1 <= PRINT_WIDTH) {
+      // Measure the whole printed line: the key already consumed columns before this value, and a
+      // comma may follow it. Ignoring the key inlined a 104-column `"chips": [...]` that the
+      // formatter then rewrapped, which is exactly the drift this function exists to avoid.
+      if (column + inline.length + (trailingComma ? 1 : 0) <= PRINT_WIDTH) {
         return inline;
       }
     }
@@ -913,8 +925,13 @@ export function formatJson(value: unknown, indent = 0): string {
     if (entries.length === 0) {
       return "{}";
     }
+    const lastEntry = entries.length - 1;
     const body = entries
-      .map(([key, item]) => `${inner}${JSON.stringify(key)}: ${formatJson(item, indent + 2)}`)
+      .map(([key, item], index) => {
+        const label = `${JSON.stringify(key)}: `;
+        const printed = formatJson(item, indent + 2, indent + 2 + label.length, index < lastEntry);
+        return `${inner}${label}${printed}`;
+      })
       .join(",\n");
     return `{\n${body}\n${pad}}`;
   }
@@ -1046,12 +1063,17 @@ export function buildIndexCard(
   const span = first && last ? `${monthAndYear(first)} – ${monthAndYear(last)}` : undefined;
   const meta = [`${published.length} release series`, span].filter(Boolean).join(" · ");
 
+  // The ellipsis stands for series the card had no room for, so it only appears when some were
+  // actually left off. Appending it unconditionally claimed more history than the card was showing.
+  const shown = published.slice(0, 5).map((series) => series.minor);
+  const chips = published.length > shown.length ? [...shown, "…"] : shown;
+
   return {
     slug: "index",
     title: "Changelog",
     tagline: "Every Hunk release, grouped by minor series.",
     meta,
-    chips: [...published.slice(0, 5).map((series) => series.minor), "…"],
+    ...(chips.length > 0 ? { chips } : {}),
     alt: `Hunk changelog — ${meta}`,
   };
 }

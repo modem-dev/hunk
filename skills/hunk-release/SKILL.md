@@ -150,7 +150,7 @@ bun run generate:og
 git diff --stat -- website
 ```
 
-This backfills the new tag's date, adds the install command to the series page, moves the landing-page ribbon to the new version, and redraws the social cards whose contents changed. Commit it to `main` — the diff should only touch `website/releases/` and `website/src/content/docs/changelog/`. Skip this for a prerelease or a backport: neither advances the published latest release.
+This backfills the new tag's date, adds the install command to the series page, moves the landing-page ribbon to the new version, and redraws the social cards whose contents changed. Commit it to `main` — the diff should only touch `website/releases/`, `website/src/content/docs/changelog/`, and the redrawn cards under `website/public/changelog/og/`. Skip this for a prerelease or a backport: neither advances the published latest release.
 
 Prereleases are never published to `hunk.dev/changelog`; they stay on GitHub. The generator drops them, so a beta produces no page, no index row, and no feed item, and a series that has only reached beta has no page at all until its stable release ships.
 

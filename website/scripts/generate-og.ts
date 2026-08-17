@@ -16,7 +16,8 @@
  * With no arguments every card is redrawn. Point CHROMIUM at a browser binary to use one other
  * than Playwright's bundled build.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -162,30 +163,42 @@ if (selected.length === 0) {
 }
 
 const fontDataUri = `data:font/woff2;base64,${readFileSync(fontFile).toString("base64")}`;
-mkdirSync(outputDir, { recursive: true });
 
-// A stale image for a series that no longer exists would keep being served; a full run owns the
-// directory, while a targeted run only touches what it was asked for.
-if (requested.size === 0) {
-  rmSync(outputDir, { recursive: true, force: true });
+// Draw into a scratch directory and move the results into place only once every card has
+// rendered. Painting straight into the published directory meant a Chromium launch failure or a
+// mid-run error left the committed image set partly deleted, with nothing to restore it from.
+const stagingDir = mkdtempSync(join(tmpdir(), "hunk-og-"));
+
+try {
+  const browser = await chromium.launch(
+    process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {},
+  );
+  try {
+    const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
+    for (const card of selected) {
+      const scratch = join(stagingDir, `${card.slug}.html`);
+      writeFileSync(scratch, renderCardHtml(card, fontDataUri));
+      await page.goto(`file://${scratch}`, { waitUntil: "networkidle" });
+      await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({ path: join(stagingDir, `${card.slug}.png`) });
+      rmSync(scratch);
+      console.log(`${card.slug}.png`);
+    }
+  } finally {
+    await browser.close();
+  }
+
+  // A stale image for a series that no longer exists would keep being served, so a full run owns
+  // the directory. A targeted run replaces only the cards it was asked for.
+  if (requested.size === 0) {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
   mkdirSync(outputDir, { recursive: true });
+  for (const card of selected) {
+    renameSync(join(stagingDir, `${card.slug}.png`), join(outputDir, `${card.slug}.png`));
+  }
+} finally {
+  rmSync(stagingDir, { recursive: true, force: true });
 }
 
-const browser = await chromium.launch(
-  process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {},
-);
-const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
-
-for (const card of selected) {
-  const html = renderCardHtml(card, fontDataUri);
-  const scratch = join(outputDir, `.${card.slug}.html`);
-  writeFileSync(scratch, html);
-  await page.goto(`file://${scratch}`, { waitUntil: "networkidle" });
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: join(outputDir, `${card.slug}.png`) });
-  rmSync(scratch);
-  console.log(`${card.slug}.png`);
-}
-
-await browser.close();
 console.log(`Rendered ${selected.length} card(s) into ${outputDir.replace(`${repoRoot}/`, "")}.`);

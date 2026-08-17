@@ -796,7 +796,28 @@ describe("social cards", () => {
     const index = buildIndexCard(seriesList, dates);
     expect(index).toMatchObject({ slug: "index", title: "Changelog" });
     expect(index.meta).toBe("3 release series · June 2026 – August 2026");
-    expect(index.chips).toEqual(["0.19", "0.18", "0.15", "…"]);
+    // Three series all fit, so nothing is elided and no ellipsis chip appears.
+    expect(index.chips).toEqual(["0.19", "0.18", "0.15"]);
+  });
+
+  test("adds an ellipsis chip only when series are actually left off", () => {
+    const many = Array.from({ length: 7 }, (_, index) => ({
+      minor: `0.${20 - index}`,
+      releases: [{ version: `0.${20 - index}.0`, prerelease: false, sections: [] }],
+    }));
+    const manyDates = Object.fromEntries(many.map((s) => [`${s.minor}.0`, "2026-08-16"]));
+    expect(buildIndexCard(many, manyDates).chips).toEqual([
+      "0.20",
+      "0.19",
+      "0.18",
+      "0.17",
+      "0.16",
+      "…",
+    ]);
+  });
+
+  test("omits chips entirely when nothing is published yet", () => {
+    expect(buildIndexCard([], {}).chips).toBeUndefined();
   });
 
   test("points each page at its own card instead of the site-wide image", () => {
@@ -839,6 +860,23 @@ describe("generated JSON survives the repository formatter", () => {
     for (const line of printed.split("\n")) {
       expect(line.length).toBeLessThanOrEqual(100);
     }
+  });
+
+  test("counts the key that precedes an inlined array toward the width", () => {
+    // A nine-patch series printed a 104-column line that the formatter then rewrapped, because the
+    // budget ignored the `"chips": ` prefix. `0.17` already ships eight patches.
+    const chips = Array.from({ length: 9 }, (_, index) => `0.20.${index}`);
+    const printed = formatJson([{ slug: "0.20", chips, alt: "x" }]);
+    expect(printed).toContain('"chips": [\n');
+    for (const line of printed.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(100);
+    }
+  });
+
+  test("keeps a final key inline without budgeting a comma that never follows", () => {
+    // The last member of an object has no trailing comma, so it gets one more column than the rest.
+    const chips = Array.from({ length: 8 }, (_, index) => `0.20.${index}`);
+    expect(formatJson([{ chips }])).toContain('"chips": ["0.20.0"');
   });
 
   test("always expands objects and arrays of objects", () => {
