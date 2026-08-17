@@ -231,6 +231,25 @@ hunk extension remove <name>
 
 **Aliases:** `hunk ext remove`.
 
+## `hunk update`
+
+update Hunk with the package manager that installed it
+
+### Usage
+
+```bash
+hunk update [version]
+hunk update --check
+hunk update --method <npm|brew>
+```
+
+### Command-specific options
+
+| Option              | Description                                                    |
+| ------------------- | -------------------------------------------------------------- |
+| `--method <method>` | install method instead of the detected one: npm, brew          |
+| `--check`           | report the installed and available versions without installing |
+
 ## `hunk daemon serve`
 
 run the local Hunk session daemon and websocket session broker

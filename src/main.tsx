@@ -56,6 +56,16 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "self-update") {
+    const { runSelfUpdateCommand } = await import("./core/process/selfUpdate");
+    process.exit(
+      await runSelfUpdateCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
     process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));

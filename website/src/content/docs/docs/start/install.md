@@ -62,4 +62,16 @@ hunk --help
 
 You should see `Usage: hunk <command> [options]`. If the shell cannot find Hunk, ensure your global npm, Homebrew, or mise binary directory is on `PATH`, then open a new shell.
 
+## Update Hunk
+
+`hunk update` replaces Hunk with the newest release, using the package manager that installed it:
+
+```bash
+hunk update          # install the newest release
+hunk update --check  # report the installed and available versions
+hunk update 0.19.0   # install a specific npm release
+```
+
+npm installs (including `bun` and `pnpm` global installs) and Homebrew installs update in place. mise, Nix, and local source builds are owned by their own tooling, so Hunk prints the command that updates them — `mise up hunk`, your Nix configuration, or `bun run install:bin` — instead of updating itself. Pass `--method npm` or `--method brew` if Hunk detects the wrong one.
+
 Next, [review your first working tree](/docs/start/quick-start/).
