@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
+import { createVisibleAgentNote } from "../lib/agentAnnotations";
+import { expandCollapsedRows } from "./expandCollapsedRows";
 import {
   contextLineStableKeyTarget,
   lineStableKey,
@@ -9,12 +11,21 @@ import {
 } from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
-const { buildSplitRows, buildStackRows } = await import("./pierre");
+const { buildSplitRows, buildStackRows } = await import("./diffRows");
 const { buildReviewRenderPlan } = await import("./reviewRenderPlan");
 
 function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
 }
+
+/** Twelve lines changed at line 2 and line 11: two hunks with a collapsed gap between them. */
+const TWELVE_LINES_BEFORE = lines(
+  ...Array.from({ length: 12 }, (_, index) => `export const line${index + 1} = ${index + 1};`),
+);
+const TWELVE_LINES_AFTER = TWELVE_LINES_BEFORE.replace(
+  "export const line2 = 2;",
+  "export const line2 = 200;",
+).replace("export const line11 = 11;", "export const line11 = 1100;");
 
 function createDiffFile(id: string, path: string, before: string, after: string): DiffFile {
   const metadata = parseDiffFromFile(
@@ -89,14 +100,14 @@ describe("review render plan", () => {
       selectedHunkIndex: 0,
       showHunkHeaders: true,
       visibleAgentNotes: [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:alpha:0:0",
           annotation: {
             newRange: [2, 3],
             summary: "Explain the expanded new-side range",
             rationale: "The annotation should anchor to the first matching new-side row.",
           },
-        },
+        }),
       ],
     });
 
@@ -135,14 +146,14 @@ describe("review render plan", () => {
       selectedHunkIndex: 0,
       showHunkHeaders: true,
       visibleAgentNotes: [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:deleted:0:0",
           annotation: {
             oldRange: [1, 1],
             summary: "Explain the removed line",
             rationale: "Deletion notes should visually anchor on the old side.",
           },
-        },
+        }),
       ],
     });
 
@@ -167,38 +178,7 @@ describe("review render plan", () => {
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {
     const theme = resolveTheme("github-dark-default", null);
-    const file = createDiffFile(
-      "beta",
-      "beta.ts",
-      lines(
-        "export const line1 = 1;",
-        "export const line2 = 2;",
-        "export const line3 = 3;",
-        "export const line4 = 4;",
-        "export const line5 = 5;",
-        "export const line6 = 6;",
-        "export const line7 = 7;",
-        "export const line8 = 8;",
-        "export const line9 = 9;",
-        "export const line10 = 10;",
-        "export const line11 = 11;",
-        "export const line12 = 12;",
-      ),
-      lines(
-        "export const line1 = 1;",
-        "export const line2 = 200;",
-        "export const line3 = 3;",
-        "export const line4 = 4;",
-        "export const line5 = 5;",
-        "export const line6 = 6;",
-        "export const line7 = 7;",
-        "export const line8 = 8;",
-        "export const line9 = 9;",
-        "export const line10 = 10;",
-        "export const line11 = 1100;",
-        "export const line12 = 12;",
-      ),
-    );
+    const file = createDiffFile("beta", "beta.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
@@ -221,7 +201,7 @@ describe("review render plan", () => {
     expect(anchorRows.every((row) => row.row.type === "split-line")).toBe(true);
   });
 
-  test("anchors range-less notes to the first visible line row without guide rows", () => {
+  test("anchors range-less notes to the shared default line without guide rows", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "stack",
@@ -236,13 +216,13 @@ describe("review render plan", () => {
       selectedHunkIndex: 0,
       showHunkHeaders: true,
       visibleAgentNotes: [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:stack:0:0",
           annotation: {
             summary: "General hunk note",
             rationale: "No explicit line range is attached yet.",
           },
-        },
+        }),
       ],
     });
 
@@ -256,47 +236,20 @@ describe("review render plan", () => {
       plannedRows.some((row) => row.kind === "diff-row" && row.noteGuideSide !== undefined),
     ).toBe(false);
 
+    // A note with no range of its own hangs from the shared default: the new side's first line.
     const anchoredRow = inlineNoteAnchorRow(plannedRows);
     expect(anchoredRow?.kind).toBe("diff-row");
     if (anchoredRow?.kind === "diff-row") {
       expect(anchoredRow.row.type).toBe("stack-line");
+      if (anchoredRow.row.type === "stack-line") {
+        expect(anchoredRow.row.cell.newLineNumber).toBe(1);
+      }
     }
   });
 
   test("anchors notes on the matching hunk in multi-hunk diffs", () => {
     const theme = resolveTheme("github-dark-default", null);
-    const file = createDiffFile(
-      "multi",
-      "multi.ts",
-      lines(
-        "export const line1 = 1;",
-        "export const line2 = 2;",
-        "export const line3 = 3;",
-        "export const line4 = 4;",
-        "export const line5 = 5;",
-        "export const line6 = 6;",
-        "export const line7 = 7;",
-        "export const line8 = 8;",
-        "export const line9 = 9;",
-        "export const line10 = 10;",
-        "export const line11 = 11;",
-        "export const line12 = 12;",
-      ),
-      lines(
-        "export const line1 = 1;",
-        "export const line2 = 200;",
-        "export const line3 = 3;",
-        "export const line4 = 4;",
-        "export const line5 = 5;",
-        "export const line6 = 6;",
-        "export const line7 = 7;",
-        "export const line8 = 8;",
-        "export const line9 = 9;",
-        "export const line10 = 10;",
-        "export const line11 = 1100;",
-        "export const line12 = 12;",
-      ),
-    );
+    const file = createDiffFile("multi", "multi.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
@@ -304,14 +257,14 @@ describe("review render plan", () => {
       selectedHunkIndex: 1,
       showHunkHeaders: true,
       visibleAgentNotes: [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:multi:1:0",
           annotation: {
             newRange: [11, 11],
             summary: "Explain the later change",
             rationale: "The note should attach to the second hunk only.",
           },
-        },
+        }),
       ],
     });
 
@@ -322,6 +275,83 @@ describe("review render plan", () => {
       expect(anchoredRow.row.type).toBe("split-line");
       if (anchoredRow.row.type === "split-line") {
         expect(anchoredRow.row.right.lineNumber).toBe(11);
+      }
+    }
+  });
+
+  test("keeps a note on collapsed lines inside its owning hunk", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "collapsed",
+      "collapsed.ts",
+      TWELVE_LINES_BEFORE,
+      TWELVE_LINES_AFTER,
+    );
+    const rows = buildSplitRows(file, null, theme);
+    // Lines 6-7 sit in the gap between the two hunks, so no rendered row covers them.
+    const note = createVisibleAgentNote(file.metadata.hunks, {
+      id: "annotation:collapsed:0",
+      annotation: {
+        newRange: [6, 7],
+        summary: "Explain the collapsed region",
+        rationale: "The patch shows neither of these lines.",
+      },
+    });
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      selectedHunkIndex: 0,
+      showHunkHeaders: true,
+      visibleAgentNotes: [note],
+    });
+
+    expect(note.anchor.intersectingHunkIndices).toEqual([]);
+    expect(note.anchor.ownerHunkIndex).toBe(1);
+
+    const inlineNote = firstInlineNote(plannedRows);
+    expect(inlineNote?.kind).toBe("inline-note");
+    if (inlineNote?.kind === "inline-note") {
+      expect(inlineNote.hunkIndex).toBe(1);
+    }
+
+    const anchoredRow = inlineNoteAnchorRow(plannedRows);
+    expect(anchoredRow?.kind).toBe("diff-row");
+    if (anchoredRow?.kind === "diff-row") {
+      expect(anchoredRow.hunkIndex).toBe(1);
+      expect(anchoredRow.row.type).toBe("split-line");
+      if (anchoredRow.row.type === "split-line") {
+        expect(anchoredRow.row.right.lineNumber).toBe(8);
+      }
+    }
+  });
+
+  test("places a note on an expanded gap line beside that line", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile("expanded", "expanded.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
+    const rows = expandCollapsedRows(buildSplitRows(file, null, theme), {
+      layout: "split",
+      expandedKeys: new Set(["before:1"]),
+      sourceStatus: { kind: "loaded", text: TWELVE_LINES_AFTER },
+    });
+    const note = createVisibleAgentNote(file.metadata.hunks, {
+      id: "annotation:expanded:0",
+      annotation: { newRange: [7, 7], summary: "Explain the revealed line" },
+    });
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      selectedHunkIndex: 1,
+      showHunkHeaders: true,
+      visibleAgentNotes: [note],
+    });
+
+    const anchoredRow = inlineNoteAnchorRow(plannedRows);
+    expect(anchoredRow?.kind).toBe("diff-row");
+    if (anchoredRow?.kind === "diff-row") {
+      expect(anchoredRow.row.type).toBe("split-line");
+      if (anchoredRow.row.type === "split-line") {
+        expect(anchoredRow.row.isExpansionRow).toBe(true);
+        expect(anchoredRow.row.right.lineNumber).toBe(7);
       }
     }
   });
@@ -341,20 +371,20 @@ describe("review render plan", () => {
       selectedHunkIndex: 0,
       showHunkHeaders: true,
       visibleAgentNotes: [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:counted:0:0",
           annotation: {
             newRange: [2, 2],
             summary: "First visible note",
           },
-        },
-        {
+        }),
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:counted:0:1",
           annotation: {
             newRange: [1, 1],
             summary: "Second visible note",
           },
-        },
+        }),
       ],
     });
 

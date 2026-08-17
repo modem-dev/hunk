@@ -18,10 +18,10 @@
  *   another file puts that file's header on screen; crossing backward reveals the hunk
  *   itself; annotated-hunk navigation asks for the note. Callers do not re-decide this.
  *
- * The model this plans over is deliberately structural — file keys and hunk counts, plus
- * an annotation index the consumer supplies. Which hunks count as annotated depends on
- * note sources the semantic document does not carry (an imported sidecar, a renderer's
- * merged live comments), so it arrives as a caller-owned fact rather than being guessed.
+ * The model this plans over is structural — file keys and hunk counts, plus an annotation
+ * index the consumer supplies. Which hunks count as annotated depends on note sources the
+ * semantic document does not carry (an imported sidecar, a renderer's merged live
+ * comments), so it arrives as a caller-owned fact rather than being guessed.
  */
 import type { ReviewRevealRequest, ReviewSemanticSelection } from "./state";
 

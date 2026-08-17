@@ -7,7 +7,20 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `5`). Version 5 adds line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `7`). Branch on it if you want one file to support several Hunk versions. Version 7 adds the current source line to command selection snapshots. Version 6 adds session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+
+## `hunk.configureSession(options)`
+
+Request host behavior for the review session loading the extension. Training,
+demo, and presentation extensions can make their view-setting changes temporary:
+
+```ts
+hunk.configureSession({ viewPreferences: "transient" });
+```
+
+If any loaded extension requests this, Hunk skips the save-view-preferences
+prompt on quit instead of offering to write practice state into user config.
+The default is `"default"`.
 
 ## `hunk.registerTheme(theme)`
 
@@ -142,7 +155,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 
 - `ctx.commands.isEnabled(commandId)` / `execute(commandId, { count? })` — probes or invokes an explicitly public built-in `hunk.*` command through the same live table as keyboard and menu actions. Relative movement applies counts atomically; extension-owned and cross-extension commands return `false`.
 - `ctx.keyboardModes.enterMode(id)` / `exitMode()` / `isActive(id?)` — controls only keyboard modes registered by this command's owning extension.
-- `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` / `isOpen(paneId)` — controls your panes, `"files"`, or a fully qualified `"<extensionId>:<paneId>"`. `ctx.sidebars` is deprecated.
+- `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` / `isOpen(paneId)` — controls your panes by bare id or any pane by its fully qualified `"<extensionId>:<paneId>"` key, including `"hunk:files"`. `ctx.sidebars` is deprecated.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
 - `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts, stops, or checks an [interactive preview](/docs/extend/file-previews/#interactive-previews). Entering selects the view and returns whether its mode started.
@@ -166,7 +179,7 @@ hunk.registerCommand(
 );
 ```
 
-`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` only when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. The values are captured when the command fires, so an async handler keeps the selection it started from.
+`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` when filtering hides the selected file or when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. `selection.currentLine` is the one-based `{ side, line }` source address carrying the current-line marker, or `null` when that marker is off or the review has not settled on a rendered line. It belongs to this file and hunk, uses Hunk's canonical new-side address for context rows, and can be passed directly to `navigation.revealLine`. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
 `ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
 
@@ -225,7 +238,7 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 });
 ```
 
-Hunk draws the dialog; your text fills the title, body, and choices, and the frame carries an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a prompt cannot present itself as Hunk asking.
+Hunk draws the dialog; your text fills the title, body, and choices. Dialogs from installed extensions carry an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a third-party prompt cannot present itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
 One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
@@ -257,12 +270,13 @@ Writes require a reloadable, unstaged working-tree review and a writable reviewe
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async and receive `ctx.panes`, `cwd`, and `notify`. `ctx.sidebars` is deprecated.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads and writes that have not started return `null`/`unavailable`. Once a consented filesystem write starts, it reports its actual outcome, graceful shutdown waits for it, and success reconciles the review then active.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once, after the app mounts with its first changeset      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                              |
+| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host   |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)     |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
@@ -274,10 +288,12 @@ Subscribe to a lifecycle or UI event. Handlers may be async and receive `ctx.pan
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                  |
 | `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
 
+- A newly mounted instance receives `startup` before its first `changeset_loaded`; reloads deliver `changeset_loaded` before `session_reload` after the matching review commits.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
+- `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
 - `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes — an accumulated list is not a complete review record.
-- `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing.
+- `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing. UI authority has already been revoked, so shutdown is for releasing extension-owned resources rather than navigation or dialogs.
 
 ## `hunk.events`
 

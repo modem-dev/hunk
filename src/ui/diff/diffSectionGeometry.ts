@@ -11,7 +11,7 @@ import { type FileSourceStatus } from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
-} from "./plannedReviewRows";
+} from "./reviewRowGeometry";
 import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
@@ -259,7 +259,7 @@ function measurePlannedDiffSectionRowHeight(
   );
 }
 
-/** Measure one file section from the same render plan used by PierreDiffView. */
+/** Measure one file section from the same render plan used by DiffSectionBody. */
 export function measureDiffSectionGeometry(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
@@ -424,24 +424,4 @@ export function estimateDiffSectionBodyRows(
   theme: AppTheme,
 ) {
   return measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).bodyHeight;
-}
-
-/** Estimate the body-row position for the anchor that should represent the selected hunk. */
-export function estimateHunkAnchorBodyRow(
-  file: DiffFile,
-  layout: Exclude<LayoutMode, "auto">,
-  showHunkHeaders: boolean,
-  hunkIndex: number,
-  theme: AppTheme,
-) {
-  if (file.metadata.hunks.length === 0) {
-    return 0;
-  }
-
-  const clampedHunkIndex = Math.max(0, Math.min(hunkIndex, file.metadata.hunks.length - 1));
-  return (
-    measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).hunkAnchorRows.get(
-      clampedHunkIndex,
-    ) ?? 0
-  );
 }

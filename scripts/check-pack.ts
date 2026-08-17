@@ -37,6 +37,7 @@ import type {
   ExtensionPaneProps,
   ExtensionPaneSize,
   ExtensionReviewSelection,
+  ExtensionSessionOptions,
   ExtensionVerticalPane,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
@@ -48,8 +49,15 @@ import type {
 } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
-  const noSelection: ExtensionReviewSelection = { file: null, hunkIndex: null };
+  const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
+  hunk.configureSession(sessionOptions);
+  const noSelection: ExtensionReviewSelection = {
+    file: null,
+    hunkIndex: null,
+    currentLine: null,
+  };
   hunk.log(noSelection.file === null ? "nothing selected" : noSelection.file.path);
+  hunk.log(noSelection.currentLine?.side ?? "no current line");
 
   const theme: NamedCustomThemeConfig = {
     id: "midnight-review",
@@ -290,8 +298,14 @@ export default function (hunk: HunkExtensionAPI) {
     files: changeset.files.filter((file) => !file.path.endsWith(".lock")),
   }));
 
-  hunk.on("startup", (event, ctx) => {
+  hunk.on("startup", async (event, ctx) => {
     ctx.notify(\`started in \${event.cwd}\`, "info");
+    if (await ctx.dialogs.confirm({ title: "Reveal the first line?" })) {
+      ctx.navigation.revealLine("file-id", "new", 1);
+    }
+  });
+  hunk.on("command_executed", ({ commandId }) => {
+    hunk.log(\`terminal command \${commandId}\`);
   });
   hunk.on("changeset_loaded", (event) => {
     hunk.log(\`loaded \${event.changeset.files.length} files\`);
@@ -379,8 +393,9 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
-  // Maintainer-only release engineering; it references scripts/ which never ships.
-  "skills/launch-video/",
+  // Maintainer-only workflows reference repository scripts and never ship.
+  "skills/hunk-launch-video/",
+  "skills/hunk-release/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 

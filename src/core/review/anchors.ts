@@ -6,17 +6,44 @@
  * this resolver placed through its fallback is not silently dropped by a consumer that
  * re-derives placement (`docs/browser-review-seam-audit.md`, D3/B8).
  *
- * Resolution is deliberately permissive: an imported note may name a line the current
- * patch no longer shows, and losing it entirely would be worse than hanging it from the
- * nearest real hunk. Callers that must reject an unbacked target validate before
- * anchoring rather than reading a verdict out of the anchor.
+ * Resolution is permissive: an imported note may name a line the current patch no longer
+ * shows, and losing it entirely would be worse than hanging it from the nearest real hunk.
+ * Callers that must reject an unbacked target validate before anchoring rather than
+ * reading a verdict out of the anchor.
  */
 import { reviewHunkRange, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
 import type { ReviewLineRange, ReviewRangeAnchorV1, ReviewSide } from "./types";
 
+/**
+ * Names the hunk a line outside every hunk hangs from.
+ *
+ * A line the patch omitted sits in a collapsed gap, and a gap is addressed by the hunk it
+ * leads into (`before:<hunkIndex>`) or the one it trails (`trailing:<hunkIndex>`). Picking
+ * the first hunk that starts after the line — the last hunk when none does — resolves that
+ * same ownership from geometry alone, which is what a caller anchoring an imported note
+ * needs when nothing declares where the note was written. Undefined when the file has no
+ * hunk to hang anything from.
+ */
+export function reviewGapOwnerHunkIndex(
+  hunks: readonly ReviewHunkSpan[],
+  side: ReviewSide,
+  line: number,
+): number | undefined {
+  if (hunks.length === 0) {
+    return undefined;
+  }
+
+  const following = hunks.findIndex((hunk) => reviewHunkRange(hunk, side)[0] > line);
+  return following >= 0 ? following : hunks.length - 1;
+}
+
 export interface ReviewNoteAnchorInput {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;
+  /**
+   * The line the note was placed on. When it lands inside a hunk it decides ownership,
+   * ahead of any range that also intersects one.
+   */
   preferred?: { side: ReviewSide; line: number };
   /**
    * The hunk that owns the note when no range intersects one — an expanded-gap line, or

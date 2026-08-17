@@ -6,6 +6,7 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { disposeHighlightWorker } from "./ui/diff/worker";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -99,10 +100,15 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  // OpenTUI stays behind the interactive plan so headless commands never
-  // materialize its embedded native library.
-  const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  await runInteractiveApp(startupPlan);
+  // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
+  // native library. The highlighting client starts the compiled worker only when an opted-in,
+  // eligible large diff needs it, so normal sessions do not pay its startup cost.
+  try {
+    const { runInteractiveApp } = await import("./ui/runInteractiveApp");
+    await runInteractiveApp(startupPlan);
+  } finally {
+    disposeHighlightWorker();
+  }
 }
 
 await main().catch((error) => {

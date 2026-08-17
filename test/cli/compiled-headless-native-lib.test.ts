@@ -19,35 +19,61 @@ const positiveControlExecutable = positiveControlBuildRoot
       process.platform === "win32" ? "opentui-control.exe" : "opentui-control",
     )
   : undefined;
+const highlightWorkerControlExecutable = positiveControlBuildRoot
+  ? resolve(
+      positiveControlBuildRoot,
+      process.platform === "win32" ? "highlight-worker-control.exe" : "highlight-worker-control",
+    )
+  : undefined;
 
 let rootsToClean: string[] = [];
 
 beforeAll(() => {
-  if (!positiveControlExecutable) {
+  if (!positiveControlExecutable || !highlightWorkerControlExecutable) {
     return;
   }
 
-  const source = resolve(import.meta.dir, "fixtures", "compiled-opentui-positive-control.ts");
-  const build = Bun.spawnSync(
-    [
-      process.execPath,
-      "build",
-      "--compile",
-      "--no-compile-autoload-bunfig",
-      source,
-      "--outfile",
-      positiveControlExecutable,
-    ],
+  const controls = [
     {
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+      name: "OpenTUI positive control",
+      entries: [resolve(import.meta.dir, "fixtures", "compiled-opentui-positive-control.ts")],
+      executable: positiveControlExecutable,
+      root: undefined,
     },
-  );
-  if (build.exitCode !== 0) {
-    throw new Error(
-      `Failed to build the OpenTUI positive control: ${Buffer.from(build.stderr).toString("utf8")}`,
+    {
+      name: "highlight worker control",
+      entries: [
+        resolve(import.meta.dir, "fixtures", "compiled-highlight-worker-control.ts"),
+        resolve(import.meta.dir, "..", "..", "src", "highlightWorkerEntry.ts"),
+      ],
+      executable: highlightWorkerControlExecutable,
+      root: resolve(import.meta.dir, "..", "..", "src"),
+    },
+  ];
+
+  for (const control of controls) {
+    const build = Bun.spawnSync(
+      [
+        process.execPath,
+        "build",
+        "--compile",
+        "--no-compile-autoload-bunfig",
+        ...(control.root ? ["--root", control.root] : []),
+        ...control.entries,
+        "--outfile",
+        control.executable,
+      ],
+      {
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
+    if (build.exitCode !== 0) {
+      throw new Error(
+        `Failed to build the ${control.name}: ${Buffer.from(build.stderr).toString("utf8")}`,
+      );
+    }
   }
 });
 
@@ -146,6 +172,24 @@ describe("compiled headless native-library loading", () => {
 
     expect(proc.exitCode).toBe(0);
     expect(nativeArtifacts(temp).length).toBeGreaterThan(0);
+  });
+
+  compiledTest("starts its embedded highlight worker entrypoint", () => {
+    const { env } = createTestEnvironment();
+    const proc = Bun.spawnSync([highlightWorkerControlExecutable!], {
+      env,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+    expect(proc.exitCode).toBe(0);
+    expect(Buffer.from(proc.stdout).toString("utf8")).toContain(
+      process.platform === "win32"
+        ? "compiled highlight worker disabled"
+        : "compiled highlight worker ready",
+    );
   });
 
   compiledTest(

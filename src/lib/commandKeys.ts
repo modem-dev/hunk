@@ -17,8 +17,8 @@ import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../extensio
  * spelled as chords; chords and predicates meet at the dispatch table's `match`
  * shape so the dispatch loop treats them identically.
  */
-export { matchesKey, matchesKeyChord, parseKeyChord } from "../extension-api/keys";
-export type { ExtensionKeyEvent, ParsedKeyChord } from "../extension-api/keys";
+export { matchesKeyChord, parseKeyChord } from "../extension-api/keys";
+export type { ParsedKeyChord } from "../extension-api/keys";
 
 /**
  * Build a synthetic key event that would satisfy the parsed chord.

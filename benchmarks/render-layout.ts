@@ -1,6 +1,6 @@
 // Benchmark pure diff row/layout planning across split, stack, and size-shape cases.
 import { performance } from "perf_hooks";
-import { buildSplitRows, buildStackRows } from "../src/ui/diff/pierre";
+import { buildSplitRows, buildStackRows } from "../src/ui/diff/diffRows";
 import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
 import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
 import { resolveTheme } from "../src/ui/themes";

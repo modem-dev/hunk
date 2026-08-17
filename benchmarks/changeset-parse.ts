@@ -1,9 +1,9 @@
-// Benchmark raw patch parsing and normalized DiffFile construction for several diff shapes.
+// Benchmark raw patch parsing and sanitized DiffFile construction for several diff shapes.
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
 import { buildDiffFile } from "../src/core/diffFile";
 import { findPatchChunk, splitPatchIntoFileChunks } from "../src/core/patch/chunks";
-import { normalizePatchText } from "../src/core/patch/normalize";
+import { sanitizePatchText } from "../src/core/patch/sanitize";
 import { createSyntheticPatch } from "./lib/fixtures";
 
 interface Scenario {
@@ -28,15 +28,15 @@ const scenarios: Scenario[] = [
 
 function measureScenario({ name, patch }: Scenario) {
   const normalizeStart = performance.now();
-  const normalized = normalizePatchText(patch);
+  const sanitized = sanitizePatchText(patch);
   const normalizeMs = performance.now() - normalizeStart;
 
   const parseStart = performance.now();
-  const parsed = parsePatchFiles(normalized, "patch", true);
+  const parsed = parsePatchFiles(sanitized, "patch", true);
   const parseMs = performance.now() - parseStart;
 
   const splitStart = performance.now();
-  const chunks = splitPatchIntoFileChunks(normalized);
+  const chunks = splitPatchIntoFileChunks(sanitized);
   const splitMs = performance.now() - splitStart;
 
   const files = parsed.flatMap((entry) => entry.files);
@@ -51,7 +51,7 @@ function measureScenario({ name, patch }: Scenario) {
   console.log(`METRIC ${name}_split_chunks_ms=${splitMs.toFixed(2)}`);
   console.log(`METRIC ${name}_build_diff_files_ms=${buildMs.toFixed(2)}`);
   console.log(`METRIC ${name}_files=${diffFiles.length}`);
-  console.log(`METRIC ${name}_patch_bytes=${Buffer.byteLength(normalized)}`);
+  console.log(`METRIC ${name}_patch_bytes=${Buffer.byteLength(sanitized)}`);
 }
 
 for (const scenario of scenarios) {

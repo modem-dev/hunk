@@ -45,18 +45,28 @@ export function reviewNoteVisibleByPolicy(
 }
 
 /**
+ * Anything carrying a resolved note anchor, whether or not it is a stored note.
+ *
+ * A surface may hold a note in its own shape — the terminal draws sidecar annotations and
+ * open drafts that never became `ReviewNoteV1`s — and still has to ask where that note
+ * hangs. Both placement policies read the anchor and nothing else, so they answer for any
+ * of them.
+ */
+export type ReviewAnchoredNote = Pick<ReviewNoteV1, "anchor">;
+
+/**
  * Which hunk renders one note.
  *
  * Ownership is an explicit anchor field rather than a range-containment guess, so a note
  * that core placed through a fallback path is not silently dropped by a consumer that
  * re-derives placement.
  */
-export function reviewNoteOwnerHunkIndex(note: ReviewNoteV1) {
+export function reviewNoteOwnerHunkIndex(note: ReviewAnchoredNote) {
   return note.anchor.ownerHunkIndex ?? note.anchor.intersectingHunkIndices[0] ?? 0;
 }
 
 /** Which line one note hangs beside, falling back to the new side's first line. */
-export function reviewNoteAnchorLine(note: ReviewNoteV1): ReviewLineAddressV1 {
+export function reviewNoteAnchorLine(note: ReviewAnchoredNote): ReviewLineAddressV1 {
   return note.anchor.preferred ?? { side: "new", line: 1 };
 }
 
@@ -149,6 +159,11 @@ export interface ReviewExpandedGapState {
   expanded: boolean;
 }
 
+/**
+ * Everything a review is, semantically, at one moment: the document plus what the reviewer
+ * has done to it. Rows, scroll offsets, widths, and themes belong to the surface drawing
+ * it, not here.
+ */
 export interface ReviewState {
   document: ReviewDocumentV1;
   /** Monotonic counter advanced by every state-changing dispatch. */

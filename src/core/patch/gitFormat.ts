@@ -1,5 +1,5 @@
 /**
- * Helpers for normalizing Git-format patch syntax.
+ * Helpers for sanitizing Git-format patch syntax.
  *
  * These helpers are not tied to Git repositories: Jujutsu and other VCS backends can emit
  * the same `diff --git` patch format, so the app loader and public OpenTUI API share them.
@@ -15,14 +15,14 @@
  */
 type GitHeaderRewriteMode = "add" | "prepend-prefix" | "strip";
 
-export interface NormalizedGitPatchFilePaths {
+export interface SanitizedGitPatchFilePaths {
   path: string;
   previousPath?: string;
 }
 
-export interface NormalizedGitPatch {
+export interface SanitizedGitPatch {
   text: string;
-  filePaths: Array<NormalizedGitPatchFilePaths | undefined>;
+  filePaths: Array<SanitizedGitPatchFilePaths | undefined>;
 }
 
 const gitQuotedUtf8Decoder = new TextDecoder("utf-8", { fatal: true });
@@ -138,14 +138,14 @@ function decodeGitQuotedPath(path: string) {
 }
 
 /** Normalize Git patch syntax and retain exact decoded paths separately from parser-safe text. */
-export function normalizeGitPatch(patchText: string): NormalizedGitPatch {
+export function sanitizeGitPatch(patchText: string): SanitizedGitPatch {
   if (!patchText.includes("diff --git ")) {
     return { text: patchText, filePaths: [] };
   }
 
   const lines = patchText.split("\n");
   const normalizedLines: string[] = [];
-  const filePaths: Array<NormalizedGitPatchFilePaths | undefined> = [];
+  const filePaths: Array<SanitizedGitPatchFilePaths | undefined> = [];
   let blockLines: string[] = [];
 
   const flushBlock = () => {
@@ -177,9 +177,9 @@ export function normalizeGitPatch(patchText: string): NormalizedGitPatch {
   return { text: normalizedLines.join("\n"), filePaths };
 }
 
-/** Preserve the existing text-only normalizer for callers that do not parse file metadata. */
-export function normalizeGitPatchPrefixes(patchText: string) {
-  return normalizeGitPatch(patchText).text;
+/** Preserve the existing text-only sanitizer for callers that do not parse file metadata. */
+export function sanitizeGitPatchText(patchText: string) {
+  return sanitizeGitPatch(patchText).text;
 }
 
 /** Rewrite one `diff --git` block, keeping file-header rewrites out of hunk bodies. */
@@ -353,7 +353,7 @@ function findRenameOrCopyMetadata(blockLines: string[]) {
 function resolveDecodedGitFilePaths(
   decodedPair: { oldPath: string; newPath: string } | undefined,
   blockLines: string[],
-): NormalizedGitPatchFilePaths | undefined {
+): SanitizedGitPatchFilePaths | undefined {
   if (!decodedPair) {
     return undefined;
   }

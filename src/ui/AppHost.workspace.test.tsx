@@ -13,12 +13,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/loaders";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { WorkspaceFileWriter } from "./App";
 import { AppHost } from "./AppHost";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
@@ -199,6 +201,24 @@ function writeReadWriteFixture(extPath: string, logPath: string) {
   );
 }
 
+/** Create a filesystem writer the test can hold after authority's final start boundary. */
+function createDeferredWorkspaceWriter() {
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const writer: WorkspaceFileWriter = async (absolutePath, text) => {
+    markStarted();
+    await barrier;
+    writeFileSync(absolutePath, text);
+  };
+  return { release, started, writer };
+}
+
 /** Launch a bootstrap for one review input whose extensions come from one fixture path. */
 async function launchWithExtension(
   repo: string,
@@ -215,15 +235,64 @@ async function launchWithExtension(
   return bootstrap;
 }
 
+/** Capture the daemon bridge App registers so tests can replace a review generation. */
+function createTestBrokerClient() {
+  let bridge: { dispatchCommand: (message: unknown) => Promise<unknown> } | null = null;
+  let replacementCount = 0;
+  const client = {
+    setBridge(next: typeof bridge) {
+      bridge = next;
+    },
+    getRegistration() {
+      return { sessionId: "test-session" };
+    },
+    replaceSession() {
+      replacementCount += 1;
+    },
+    updateSnapshot() {},
+    updateRegistration() {},
+    close() {},
+  } as unknown as HunkSessionBrokerClient;
+
+  return {
+    client,
+    replacementCount: () => replacementCount,
+    reload: async (nextInput: CliInput) => {
+      if (!bridge) throw new Error("App never registered a session bridge.");
+      return await bridge.dispatchCommand({
+        type: "command",
+        requestId: "test-request",
+        command: "reload_session",
+        input: { sessionId: "test-session", nextInput },
+      });
+    },
+  };
+}
+
 /** Mount one AppHost, run the body, and tear down. */
 async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>) => Promise<void>,
+  options: {
+    externalQuitSignal?: AbortSignal;
+    hostClient?: HunkSessionBrokerClient;
+    onQuit?: () => void;
+    workspaceFileWriter?: WorkspaceFileWriter;
+  } = {},
 ) {
-  const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
-    width: 140,
-    height: 30,
-  });
+  const setup = await testRender(
+    <AppHost
+      bootstrap={bootstrap}
+      externalQuitSignal={options.externalQuitSignal}
+      hostClient={options.hostClient}
+      onQuit={options.onQuit ?? (() => {})}
+      workspaceFileWriter={options.workspaceFileWriter}
+    />,
+    {
+      width: 140,
+      height: 30,
+    },
+  );
 
   try {
     await flush(setup);
@@ -236,6 +305,70 @@ async function withAppHost(
 }
 
 describe("extension workspace reads", () => {
+  test("returns null when a deferred read finishes after the review reloads", async () => {
+    const repo = createTestRepo("hunk-ext-read-reload-race-");
+    const extDir = createTempDir("hunk-ext-read-reload-race-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerCommand({ id: "read", title: "Read", key: "y" }, async (ctx) => {\n` +
+        `    const file = ctx.selection.file;\n` +
+        `    if (!file) return;\n` +
+        `    const text = await ctx.workspace.readDocument(file.id, "new");\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "read " + JSON.stringify(text) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let finishRead!: (text: string) => void;
+    const deferredRead = new Promise<string>((resolve) => {
+      finishRead = resolve;
+    });
+    bootstrap.changeset.files[0]!.sourceFetcher = {
+      cacheKey: "deferred-read",
+      async getFullText() {
+        markReadStarted();
+        return await deferredRead;
+      },
+    };
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => setup.mockInput.typeText("y"));
+        await readStarted;
+
+        let reloadFinished = false;
+        const reload = broker
+          .reload({ kind: "vcs", staged: false, options: {} })
+          .then(() => (reloadFinished = true));
+        await flushUntil(setup, () => reloadFinished, "the replacement review to commit");
+
+        finishRead("stale review text");
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("read null"),
+          "the retired read to resolve as unavailable",
+        );
+        await reload;
+      },
+      { hostClient: broker.client },
+    );
+  });
+
   test("reads the working tree's current document for a working-tree review", async () => {
     const repo = createTestRepo("hunk-ext-read-worktree-");
     const extDir = createTempDir("hunk-ext-read-worktree-ext-");
@@ -445,6 +578,111 @@ describe("extension workspace writes", () => {
         "the reloaded review to show the written content",
       );
     });
+  });
+
+  test("reports a deferred write truthfully and reconciles after a competing reload", async () => {
+    const repo = createTestRepo("hunk-ext-write-reload-race-");
+    const extDir = createTempDir("hunk-ext-write-reload-race-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeWorkspaceFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    const deferredWriter = createDeferredWorkspaceWriter();
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => setup.mockInput.typeText("y"));
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Write alpha.txt?"),
+          "the deferred write confirm to open",
+        );
+        await act(async () => setup.mockInput.pressEnter());
+        await deferredWriter.started;
+
+        const competingReload = broker.reload({ kind: "vcs", staged: false, options: {} });
+        await flushUntil(
+          setup,
+          () => broker.replacementCount() === 1,
+          "the competing reload to replace the originating review",
+        );
+        await competingReload;
+
+        deferredWriter.release();
+        await flushUntil(
+          setup,
+          () =>
+            readProbeLog(logPath).includes('result {"ok":true}') && broker.replacementCount() === 2,
+          "the successful write to reconcile the active review",
+        );
+
+        expect(readProbeLog(logPath).some((line) => line.includes("unavailable"))).toBe(false);
+        expect(readFileSync(join(repo, "alpha.txt"), "utf8")).toBe("rewritten\n");
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("rewritten"),
+          "the active review to show the deferred write",
+        );
+      },
+      { hostClient: broker.client, workspaceFileWriter: deferredWriter.writer },
+    );
+  });
+
+  test("graceful quit waits for a write that already crossed the start boundary", async () => {
+    const repo = createTestRepo("hunk-ext-write-quit-race-");
+    const extDir = createTempDir("hunk-ext-write-quit-race-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeWorkspaceFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    const deferredWriter = createDeferredWorkspaceWriter();
+    const quitController = new AbortController();
+    let quits = 0;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => setup.mockInput.typeText("y"));
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Write alpha.txt?"),
+          "the pre-quit write confirm to open",
+        );
+        await act(async () => setup.mockInput.pressEnter());
+        await deferredWriter.started;
+
+        quitController.abort();
+        await flush(setup);
+        expect(quits).toBe(0);
+
+        deferredWriter.release();
+        await flushUntil(
+          setup,
+          () => quits === 1 && readProbeLog(logPath).includes('result {"ok":true}'),
+          "the started write to finish before graceful quit",
+        );
+        expect(readFileSync(join(repo, "alpha.txt"), "utf8")).toBe("rewritten\n");
+      },
+      {
+        externalQuitSignal: quitController.signal,
+        onQuit: () => {
+          quits += 1;
+        },
+        workspaceFileWriter: deferredWriter.writer,
+      },
+    );
   });
 
   test("refuses when the reviewed file disappears while consent is pending", async () => {

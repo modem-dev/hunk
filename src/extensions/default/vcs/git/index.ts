@@ -8,7 +8,6 @@ import {
   buildGitStashShowArgs,
   listGitIgnoredDirectoryRoots,
   listGitUntrackedFiles,
-  normalizeUntrackedPatchHeaders,
   parseGitNumstat,
   resolveGitColorMovedOptions,
   resolveGitCommitRef,
@@ -16,13 +15,11 @@ import {
   resolveGitMetadata,
   resolveGitRepoRoot,
   runGitText,
-  runGitUntrackedFileDiffText,
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
   type GitDiffEndpoints,
 } from "./commands";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
-import { inspectLargeUntrackedFile } from "../../../../lib/largeFile";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -191,47 +188,6 @@ function createGitDiffSourceCapability(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Files reviewed outside the main patch                                       */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Describe one untracked file for review.
- *
- * Git renders the addition itself rather than Hunk reading the working copy, so
- * its own binary detection and path quoting decide what the patch says — the
- * same output `git diff` would have produced for a tracked file.
- */
-function buildUntrackedExtraFile(
-  input: ExtensionVcsDiffInput,
-  filePath: string,
-  repoRoot: string,
-  gitExecutable: string,
-): ExtensionVcsExtraFile {
-  const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
-  if (largeFileCheck.shouldSkip) {
-    return {
-      kind: "skipped",
-      path: filePath,
-      reason: "too-large",
-      changeType: "new",
-      isUntracked: true,
-      stats: largeFileCheck.stats,
-      statsTruncated: largeFileCheck.statsTruncated,
-    };
-  }
-
-  return {
-    kind: "patch",
-    path: filePath,
-    isUntracked: true,
-    patchText: normalizeUntrackedPatchHeaders(
-      runGitUntrackedFileDiffText(input, filePath, { repoRoot, gitExecutable }),
-      filePath,
-    ),
-  };
-}
-
-/* -------------------------------------------------------------------------- */
 /* Watch plans                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -360,20 +316,20 @@ export function createGitVcsAdapter({
               gitExecutable,
             }),
             ...sourceCapability,
-            extraFiles: [
-              ...largeTrackedFiles.map(
-                (file): ExtensionVcsExtraFile => ({
-                  kind: "skipped",
-                  path: file.path,
-                  reason: "too-large",
-                  changeType: "change",
-                  stats: { additions: file.additions, deletions: file.deletions },
-                }),
-              ),
-              ...listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }).map((filePath) =>
-                buildUntrackedExtraFile(input, filePath, repoRoot, gitExecutable),
-              ),
-            ],
+            extraFiles: largeTrackedFiles.map(
+              (file): ExtensionVcsExtraFile => ({
+                kind: "skipped",
+                path: file.path,
+                reason: "too-large",
+                changeType: "change",
+                stats: { additions: file.additions, deletions: file.deletions },
+              }),
+            ),
+            // One `git status` lists the paths; Hunk synthesizes each added-file
+            // diff in-process. Rendering them through `git diff --no-index`
+            // instead costs one subprocess per file, which made working-tree
+            // review scale with the untracked file count.
+            untrackedPaths: listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }),
           };
         },
         watchPlan(input, { cwd }) {

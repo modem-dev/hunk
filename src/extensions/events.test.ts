@@ -63,6 +63,24 @@ describe("extension event dispatch", () => {
     expect(seen).toEqual(["first:/repo:/repo", "second"]);
   });
 
+  test("reports named command execution with an immutable payload", () => {
+    let seen: { commandId: string } | undefined;
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "coach",
+        event: "command_executed",
+        handler: (payload) => {
+          seen = payload as { commandId: string };
+        },
+      },
+    ]);
+
+    emitExtensionEvent(result, "command_executed", { commandId: "hunk.review.nextHunk" });
+
+    expect(seen).toEqual({ commandId: "hunk.review.nextHunk" });
+    expect(Object.isFrozen(seen)).toBe(true);
+  });
+
   test("isolates a throwing handler and keeps dispatching the rest", () => {
     const seen: string[] = [];
     const { result, notices } = createTestLoadResult([
@@ -172,6 +190,12 @@ describe("extension event dispatch", () => {
         notify: () => {},
         panes,
         sidebars: panes,
+        navigation: { selectFile: () => {}, selectHunk: () => {}, revealLine: () => {} },
+        dialogs: {
+          confirm: async () => false,
+          select: async () => null,
+          input: async () => null,
+        },
         events: { emit: () => {} },
       };
     };
@@ -224,6 +248,55 @@ describe("extension event bus", () => {
 
     releaseShutdown();
     await retirement;
+  });
+
+  test("shares one retirement completion while shutdown is still pending", async () => {
+    const { result } = createTestLoadResult();
+    let releaseShutdown!: () => void;
+    result.registry.eventHandlers.shutdown.push({
+      extensionId: "probe",
+      handler: () => new Promise<void>((resolve) => (releaseShutdown = resolve)),
+    });
+    bindExtensionEventBus(result);
+
+    const first = retireExtensionLoadResult(result);
+    const second = retireExtensionLoadResult({ ...result });
+    expect(second).toBe(first);
+
+    let settled = false;
+    void second.then(() => (settled = true));
+    await Bun.sleep(0);
+    expect(settled).toBe(false);
+
+    releaseShutdown();
+    await Promise.all([first, second]);
+  });
+
+  test("drops ordinary lifecycle events after revocation and runs shutdown once", async () => {
+    const seen: string[] = [];
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "probe",
+        event: "selection_changed",
+        handler: () => {
+          seen.push("selection");
+        },
+      },
+      {
+        extensionId: "probe",
+        event: "shutdown",
+        handler: () => {
+          seen.push("shutdown");
+        },
+      },
+    ]);
+    bindExtensionEventBus(result);
+
+    await retireExtensionLoadResult(result);
+    emitExtensionEvent(result, "selection_changed", { fileId: null, hunkIndex: null });
+    await retireExtensionLoadResult(result);
+
+    expect(seen).toEqual(["shutdown"]);
   });
 
   test("delivers a namespaced event to every listener and isolates failures", async () => {

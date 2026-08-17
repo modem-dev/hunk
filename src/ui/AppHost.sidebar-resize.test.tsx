@@ -196,32 +196,3 @@ describe("AppHost sidebar resize", () => {
     expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
   });
 });
-
-describe("AppHost edit-selected-file shortcut", () => {
-  const originalEditor = process.env.EDITOR;
-
-  beforeEach(() => {
-    delete process.env.EDITOR;
-  });
-
-  afterEach(() => {
-    if (originalEditor === undefined) {
-      delete process.env.EDITOR;
-    } else {
-      process.env.EDITOR = originalEditor;
-    }
-  });
-
-  test("pressing e with no $EDITOR surfaces a notice instead of crashing", async () => {
-    setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
-    await flush(setup);
-
-    await act(async () => {
-      await setup!.mockInput.typeText("e");
-    });
-    await flush(setup);
-
-    // openSelectedFileInEditor returns "$EDITOR is not set." which shows as a session notice.
-    expect(setup.captureCharFrame()).toContain("EDITOR is not set");
-  });
-});

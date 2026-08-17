@@ -6,7 +6,7 @@ import {
   maxFileCodeLineWidth,
   measureRenderedCodeLineWidth,
 } from "./codeColumns";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 /** Generate a large diff metadata fixture without checking a huge file into the repo. */
 function createLargeLineFixture(lineCount: number, widestLine: string): DiffFile {

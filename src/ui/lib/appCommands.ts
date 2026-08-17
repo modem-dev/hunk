@@ -3,6 +3,7 @@ import {
   APP_COMMAND_CATALOG,
   type AppCommandCatalogEntry,
   type AppCommandId,
+  type VerticalCommandDirection,
 } from "../../core/commandCatalog";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import type { CursorLine, LayoutMode } from "../../core/types";
@@ -45,6 +46,8 @@ export interface AppCommand {
    * and any built-in namespace Hunk adds later would have had the same problem.
    */
   id: string;
+  /** Deprecated ids that resolve to this command without adding dispatch entries. */
+  aliases?: readonly string[];
   title: string;
   /**
    * The chords this command currently answers to, after user keybindings.
@@ -71,8 +74,31 @@ export interface AppCommand {
   publicToExtensions: boolean;
   /** Run once with a host-normalized positive movement count. */
   run: (key: KeyEvent, count: number) => void;
+  /** The direction this command moves an ordered UI surface, when it has one. */
+  verticalDirection?: VerticalCommandDirection;
   /** Close an open dropdown menu after running. */
   closesMenu?: boolean;
+}
+
+/**
+ * Observe successful terminal dispatch without moving command identity into review state.
+ *
+ * Keyboard dispatch, menus, and extension command controls all invoke these
+ * entries, while browser/session actions correctly continue through ReviewIntent.
+ */
+export function observeAppCommandDispatch(
+  commands: readonly AppCommand[],
+  onDispatched: (commandId: string) => void,
+): AppCommand[] {
+  return commands.map((command) => ({
+    ...command,
+    run(key, count) {
+      command.run(key, count);
+      // AppCommand is deliberately synchronous. Extension handlers may have
+      // detached async work still running after terminal dispatch returns.
+      onDispatched(command.id);
+    },
+  }));
 }
 
 /** What the terminal does for one catalogued command. */
@@ -113,7 +139,7 @@ export interface BuildAppCommandsOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleMenuBar: () => void;
-  toggleSidebar: () => void;
+  toggleFilesPane: () => void;
   triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
 }
@@ -196,7 +222,7 @@ function builtinCommandHandlers(
       isEnabled: () => options.canApplyFilePresentationToAllMatching,
       run: () => options.applyFilePresentationToAllMatching(),
     },
-    "hunk.view.toggleSidebar": { run: () => options.toggleSidebar() },
+    "hunk.view.toggleFilesPane": { run: () => options.toggleFilesPane() },
     "hunk.app.refresh": {
       isEnabled: () => options.canRefreshCurrentInput,
       run: () => options.triggerRefreshCurrentInput(),
@@ -253,12 +279,14 @@ function toAppCommand(
 
   return {
     id: entry.id,
+    aliases: entry.aliases,
     title: entry.title,
     defaultKeys: entry.defaultKeys,
     keys,
     keyLabels: keys.map(formatKeyChord),
     isEnabled: handler.isEnabled,
     publicToExtensions: entry.publicToExtensions,
+    verticalDirection: entry.verticalDirection,
     match: matchesAnyKeyChord(keys),
     run: (key, count) => handler.run(key, count, entry),
     closesMenu: entry.closesMenu,
@@ -308,7 +336,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     toggleLineNumbers: noop,
     toggleLineWrap: noop,
     toggleMenuBar: noop,
-    toggleSidebar: noop,
+    toggleFilesPane: noop,
     triggerEditSelectedFile: noop,
     triggerRefreshCurrentInput: noop,
   };
@@ -353,6 +381,7 @@ export function builtinCommandMatchProbes(
 export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
   return APP_COMMAND_CATALOG.map((entry) => ({
     id: entry.id,
+    aliases: entry.aliases,
     defaultKeys: entry.defaultKeys,
   }));
 }
@@ -365,6 +394,29 @@ export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
  */
 export function isCommandEnabled(command: AppCommand): boolean {
   return !command.isEnabled || command.isEnabled();
+}
+
+/**
+ * Find the resolved vertical movement binding that matches one key.
+ *
+ * Modal selectors use the same command table as the review, so built-in aliases and user
+ * remaps move the modal instead of dispatching their review action behind it.
+ */
+export function verticalCommandDirection(
+  commands: readonly AppCommand[],
+  key: KeyEvent,
+): VerticalCommandDirection | undefined {
+  for (const command of commands) {
+    if (
+      command.verticalDirection !== undefined &&
+      isCommandEnabled(command) &&
+      command.match(key)
+    ) {
+      return command.verticalDirection;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -454,13 +506,21 @@ export function executeAppCommand(
   return executeAppCommandWithCount(commands, id, normalizeAppCommandCount(options));
 }
 
+/** Find one command by its canonical id or a compatibility alias. */
+export function findAppCommandById(
+  commands: readonly AppCommand[],
+  id: string,
+): AppCommand | undefined {
+  return commands.find((command) => command.id === id || command.aliases?.includes(id));
+}
+
 /** Execute one command after the caller has normalized its count exactly once. */
 export function executeAppCommandWithCount(
   commands: readonly AppCommand[],
   id: string,
   count: number,
 ): boolean {
-  const command = commands.find((candidate) => candidate.id === id);
+  const command = findAppCommandById(commands, id);
   if (!command || !isCommandEnabled(command)) {
     return false;
   }

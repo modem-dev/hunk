@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
 const MINIMUM_RENDERED_BYTES = 1_000;
 
 async function readUntilRendered(

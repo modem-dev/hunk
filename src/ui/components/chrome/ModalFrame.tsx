@@ -1,5 +1,6 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { ReactNode } from "react";
+import { resolveModalGeometry } from "../../lib/modalGeometry";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
@@ -25,10 +26,17 @@ export function ModalFrame({
   title: string;
   width: number;
 }) {
-  const clampedWidth = Math.min(width, Math.max(24, terminalWidth - 2));
-  const clampedHeight = Math.min(height, Math.max(5, terminalHeight - 2));
-  const left = Math.max(1, Math.floor((terminalWidth - clampedWidth) / 2));
-  const top = Math.max(1, Math.floor((terminalHeight - clampedHeight) / 2));
+  const {
+    height: clampedHeight,
+    left,
+    top,
+    width: clampedWidth,
+  } = resolveModalGeometry({
+    width,
+    height,
+    terminalWidth,
+    terminalHeight,
+  });
   const closeText = onClose ? "[Esc]" : "";
   const titleWidth = Math.max(1, clampedWidth - 2 - (closeText ? closeText.length + 1 : 0));
 

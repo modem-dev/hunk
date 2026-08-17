@@ -11,7 +11,8 @@ import {
   nextMenuItemIndex,
   type MenuEntry,
 } from "../components/chrome/menu";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
+import { createVisibleAgentNote } from "./agentAnnotations";
+import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
   cellRangeToCharRange,
@@ -20,6 +21,7 @@ import {
   measureTextWidth,
   padText,
   sliceTextByWidth,
+  wrapText,
   wrapTextByWidth,
 } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
@@ -491,14 +493,14 @@ describe("ui helpers", () => {
       true,
       theme,
       [
-        {
+        createVisibleAgentNote(file.metadata.hunks, {
           id: "annotation:example:0",
           annotation: {
             newRange: [1, 1],
             summary: "Explain the changed line",
             rationale: "Keep the inline note height in placeholder math.",
           },
-        },
+        }),
       ],
       120,
     );

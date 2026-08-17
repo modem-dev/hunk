@@ -204,14 +204,41 @@ export function selectNotesByHunk(
   return byHunk;
 }
 
+/** One note a reveal could land on, described the way any surface can describe what it draws. */
+export interface ReviewRevealNoteCandidate {
+  id: string;
+  /** The line the note hangs beside; "earliest in the hunk" compares these. */
+  line: number;
+  /** The reviewer's open draft, which outranks every settled note. */
+  draft?: boolean;
+}
+
 /**
- * Which note a "jump to the note" reveal targets.
+ * Picks the note a "jump to the note" reveal targets, among one hunk's notes.
  *
- * Named policy: an active draft in the selected hunk wins, because the reviewer is
- * writing it right now; otherwise the note whose anchor sits earliest in the hunk, with
- * arrival order breaking ties. Undefined means the selected hunk has nothing to reveal
- * and the caller should fall back to revealing the hunk itself.
+ * Named policy: an open draft wins, because the reviewer is writing it right now;
+ * otherwise the note whose anchor sits earliest, with arrival order breaking ties.
+ * Candidates arrive already scoped to the hunk being revealed, because *which* notes a
+ * surface shows is that surface's own fact — the terminal draws sidecar annotations that
+ * never entered the note store — while which of them wins is this one rule. Undefined
+ * means the hunk has nothing to reveal and the caller should reveal the hunk itself.
  */
+export function resolveReviewRevealNoteId(
+  candidates: readonly ReviewRevealNoteCandidate[],
+): string | undefined {
+  const draft = candidates.find((candidate) => candidate.draft);
+  if (draft) {
+    return draft.id;
+  }
+
+  return candidates
+    .map((candidate, arrival) => ({ candidate, arrival }))
+    .sort(
+      (left, right) => left.candidate.line - right.candidate.line || left.arrival - right.arrival,
+    )[0]?.candidate.id;
+}
+
+/** Which note a "jump to the note" reveal targets among the notes the store holds. */
 export function selectActiveRevealNoteId(
   state: Pick<ReviewState, "draftNote" | "liveNotes" | "selection" | "userNotes">,
 ): string | undefined {
@@ -221,14 +248,14 @@ export function selectActiveRevealNoteId(
   }
 
   const draft = state.draftNote;
-  if (draft && draft.fileKey === fileKey && draft.hunkIndex === hunkIndex) {
-    return draft.id;
-  }
-
-  return renderableNotes(state)
-    .filter((note) => note.fileKey === fileKey && reviewNoteOwnerHunkIndex(note) === hunkIndex)
-    .map((note, arrival) => ({ note, arrival, line: reviewNoteAnchorLine(note).line }))
-    .sort((left, right) => left.line - right.line || left.arrival - right.arrival)[0]?.note.id;
+  return resolveReviewRevealNoteId([
+    ...(draft && draft.fileKey === fileKey && draft.hunkIndex === hunkIndex
+      ? [{ id: draft.id, line: draft.line, draft: true }]
+      : []),
+    ...renderableNotes(state)
+      .filter((note) => note.fileKey === fileKey && reviewNoteOwnerHunkIndex(note) === hunkIndex)
+      .map((note) => ({ id: note.id, line: reviewNoteAnchorLine(note).line })),
+  ]);
 }
 
 /** Return whether one collapsed gap is currently expanded. */

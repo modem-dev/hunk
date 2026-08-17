@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import { readHunkStateRecord, updateHunkStateRecord } from "../core/hunkState";
-import { resolveCanonicalPath, resolveHunkStatePath } from "../core/paths";
+import { readAppStateRecord, updateAppStateRecord } from "../core/appStateFile";
+import { resolveCanonicalPath, resolveAppStatePath } from "../core/paths";
 
 /**
  * Repo-local extensions run arbitrary code from the repository under review,
@@ -23,7 +23,7 @@ export interface ExtensionTrustOptions {
 
 /** Resolve the state file backing trust decisions, if the environment has one. */
 function resolveStatePath(options: ExtensionTrustOptions) {
-  return options.statePath ?? resolveHunkStatePath(options.env ?? process.env);
+  return options.statePath ?? resolveAppStatePath(options.env ?? process.env);
 }
 
 /**
@@ -56,7 +56,7 @@ export function readExtensionTrust(options: ExtensionTrustOptions = {}): Extensi
     return {};
   }
 
-  const stored = readHunkStateRecord(statePath)[EXTENSION_TRUST_STATE_KEY];
+  const stored = readAppStateRecord(statePath)[EXTENSION_TRUST_STATE_KEY];
   if (typeof stored !== "object" || stored === null || Array.isArray(stored)) {
     return {};
   }
@@ -98,7 +98,7 @@ export function writeExtensionTrust(
     throw new Error("Could not resolve the Hunk state path because HOME/XDG_CONFIG_HOME is unset.");
   }
 
-  updateHunkStateRecord(statePath, {
+  updateAppStateRecord(statePath, {
     [EXTENSION_TRUST_STATE_KEY]: {
       ...readExtensionTrust(options),
       [toTrustKey(repoRoot)]: decision,

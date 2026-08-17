@@ -10,6 +10,7 @@ import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
+import { createVisibleAgentNote } from "../../lib/agentAnnotations";
 import { reviewRowId } from "../../lib/ids";
 import { resolveTheme } from "../../themes";
 import { FileView, isFileViewRowSelected } from "./FileView";
@@ -113,10 +114,10 @@ describe("FileView custom rows", () => {
       60,
     );
     const plan = buildFileViewRenderPlan(fileView.layout, [
-      {
+      createVisibleAgentNote([], {
         id: "note",
         annotation: { id: "note", summary: "Review bound output", newRange: [1, 1] },
-      },
+      }),
     ]);
     const geometry = measureFileViewGeometry({
       resolved: fileView,
@@ -386,10 +387,10 @@ describe("FileView custom rows", () => {
     });
     const fileView = resolveTestLayout(largeLayout, 20);
     const plan = buildFileViewRenderPlan(fileView.layout, [
-      {
+      createVisibleAgentNote([], {
         id: "windowed-note",
         annotation: { summary: "WINDOWED NOTE", newRange: [500, 500] },
-      },
+      }),
     ]);
     const geometry = measureFileViewGeometry({
       resolved: fileView,

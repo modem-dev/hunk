@@ -85,7 +85,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "split / stack / auto",
       },
       {
-        commandIds: ["hunk.view.toggleSidebar", "hunk.view.openThemeSelector"],
+        commandIds: ["hunk.view.toggleFilesPane", "hunk.view.openThemeSelector"],
         description: "sidebar / theme selector",
       },
       { commandIds: ["hunk.view.toggleAgentNotes"], description: "toggle AI notes" },

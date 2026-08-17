@@ -6,8 +6,8 @@
  * transported.
  *
  * The document carries what every consumer reads. Publication addresses — generations,
- * resource descriptors, digests — belong to the producer runtime and are deliberately
- * absent, so nothing here implies a transport.
+ * resource descriptors, digests — belong to the producer runtime and are absent here, so
+ * nothing in this file implies a transport.
  */
 import type { ReviewNoteSource } from "../types";
 

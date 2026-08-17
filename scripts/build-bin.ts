@@ -19,6 +19,7 @@ const proc = Bun.spawnSync(
     "--compile",
     "--no-compile-autoload-bunfig",
     path.join(repoRoot, "src", "main.tsx"),
+    path.join(repoRoot, "src", "highlightWorkerEntry.ts"),
     "--outfile",
     outfile,
   ],

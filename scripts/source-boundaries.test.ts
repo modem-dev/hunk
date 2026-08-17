@@ -11,6 +11,19 @@ const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
 const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
 
+// Session modules a browser bundle imports verbatim: the wire schema, the HTTP surface's
+// addressing and authorization grammar, the SSE event contract, and the user-facing error
+// catalog. Each may reach the shared review model and the browser-safe broker-core parsers
+// and nothing else, and each is checked for a platform-free import closure — the C4 defect
+// was precisely a contract declared on the server that a client then re-declared, so these
+// files only pay for themselves if the client can really import them.
+const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
+  REVIEW_PROTOCOL_PATH,
+  join(SRC_ROOT, "session", "reviewHttpProtocol.ts"),
+  join(SRC_ROOT, "session", "reviewEventProtocol.ts"),
+  join(SRC_ROOT, "session", "reviewErrorCatalog.ts"),
+];
+
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
 function repoPath(path: string) {
   return relative(REPO_ROOT, path).split(sep).join("/");
@@ -41,6 +54,32 @@ function importSpecifiers(path: string) {
   return [...source.matchAll(/(?:from\s*|import\s*\(?\s*)["']([^"']+)["']/g)].map(
     (match) => match[1]!,
   );
+}
+
+/**
+ * Reads the specifiers one file imports *for value*.
+ *
+ * `import type` and `export type` statements are erased before anything is bundled, so
+ * they cannot drag a platform module into a browser build and must not constrain one —
+ * the shared review model addresses `DiffFile` by type without depending on the tree it
+ * lives in. Everything else counts, side-effect and dynamic imports included.
+ */
+function valueImportSpecifiers(path: string) {
+  const source = readFileSync(path, "utf8");
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(
+    /import\s*\(\s*["']([^"']+)["']|(?:^|\n)\s*import\s+["']([^"']+)["']/g,
+  )) {
+    specifiers.push((match[1] ?? match[2])!);
+  }
+  for (const match of source.matchAll(
+    /(?:^|\n)\s*(import|export)\s+(type\s+)?[^;]*?\bfrom\s*["']([^"']+)["']/g,
+  )) {
+    if (!match[2]) {
+      specifiers.push(match[3]!);
+    }
+  }
+  return specifiers;
 }
 
 /** Resolve one relative source import sufficiently for architectural containment checks. */
@@ -135,9 +174,9 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   symbol: string;
   finding: string;
 }> = [
-  { file: "src/ui/diff/pierre.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/pierre.ts", symbol: "trailingCollapsedLines", finding: "A2" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
+  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedLines", finding: "A2" },
   { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "sliceLines", finding: "A4" },
   { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "gapKey", finding: "A1" },
   { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
@@ -231,7 +270,7 @@ describe("shared review primitives seam", () => {
     "@hunk/session-broker-core",
   ]);
 
-  /** Collect every module transitively reachable from the given files via relative imports. */
+  /** Collect every module transitively reachable from the given files via value imports. */
   function reachableSourceFiles(rootFiles: readonly string[]) {
     const visited = new Set<string>();
     const queue = [...rootFiles];
@@ -241,7 +280,7 @@ describe("shared review primitives seam", () => {
         continue;
       }
       visited.add(path);
-      for (const specifier of importSpecifiers(path)) {
+      for (const specifier of valueImportSpecifiers(path)) {
         const target = resolveImport(path, specifier);
         if (target) {
           queue.push(target);
@@ -261,26 +300,35 @@ describe("shared review primitives seam", () => {
     ).toEqual([]);
   });
 
-  test("keeps the review wire protocol browser-safe", () => {
-    if (!existsSync(REVIEW_PROTOCOL_PATH)) {
-      return;
-    }
-    const violations = importSpecifiers(REVIEW_PROTOCOL_PATH).flatMap((specifier) => {
-      if (specifier.startsWith(".")) {
-        const target = resolveImport(REVIEW_PROTOCOL_PATH, specifier);
-        return target && isWithin(REVIEW_MODEL_ROOT, target) ? [] : [specifier];
-      }
-      // The broker-core package supplies shared limits and identifier parsing; it must stay
-      // importable without Node-only side effects for the browser bundle.
-      return specifier === "@hunk/session-broker-core" ? [] : [specifier];
-    });
+  test("keeps the browser-safe session modules browser-safe", () => {
+    const violations = BROWSER_SAFE_SESSION_MODULES.filter(existsSync).flatMap((path) =>
+      importSpecifiers(path).flatMap((specifier) => {
+        if (specifier.startsWith(".")) {
+          const target = resolveImport(path, specifier);
+          const allowed =
+            target &&
+            (isWithin(REVIEW_MODEL_ROOT, target) ||
+              BROWSER_SAFE_SESSION_MODULES.some((module) => isWithin(module, target)));
+          return allowed ? [] : [`${repoPath(path)} -> ${specifier}`];
+        }
+        // The broker-core package supplies shared limits and identifier parsing; it must stay
+        // importable without Node-only side effects for the browser bundle.
+        return specifier === "@hunk/session-broker-core"
+          ? []
+          : [`${repoPath(path)} -> ${specifier}`];
+      }),
+    );
     expect(violations).toEqual([]);
   });
 
   test("keeps the browser client on shared review primitives", () => {
     expect(unexpectedExternalImports(WEB_CLIENT_ROOT, WEB_CLIENT_EXTERNALS)).toEqual([]);
     expect(
-      escapingImports(WEB_CLIENT_ROOT, [WEB_CLIENT_ROOT, REVIEW_MODEL_ROOT, REVIEW_PROTOCOL_PATH]),
+      escapingImports(WEB_CLIENT_ROOT, [
+        WEB_CLIENT_ROOT,
+        REVIEW_MODEL_ROOT,
+        ...BROWSER_SAFE_SESSION_MODULES,
+      ]),
     ).toEqual([]);
   });
 
@@ -289,8 +337,9 @@ describe("shared review primitives seam", () => {
   // the node-debt map's "a browser bundle must never import these until repaid" clause
   // mechanical rather than aspirational.
   test("keeps the browser-reachable module closure free of platform runtimes", () => {
-    const violations = [...reachableSourceFiles(sourceFiles(WEB_CLIENT_ROOT))].flatMap((path) =>
-      importSpecifiers(path)
+    const roots = [...sourceFiles(WEB_CLIENT_ROOT), ...BROWSER_SAFE_SESSION_MODULES];
+    const violations = [...reachableSourceFiles(roots)].flatMap((path) =>
+      valueImportSpecifiers(path)
         .filter((specifier) => specifier.startsWith("node:") || specifier.startsWith("bun:"))
         .map((specifier) => `${repoPath(path)} -> ${specifier}`),
     );

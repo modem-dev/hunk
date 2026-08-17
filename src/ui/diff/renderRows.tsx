@@ -9,7 +9,7 @@ import {
 } from "./codeColumns";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../../core/review/document";
 import { reviewGapId } from "../../core/review/expansion";
-import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
+import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRows";
 import {
   applyLineHighlightsToSpans,
   lineHighlightPaintKey,
@@ -32,7 +32,7 @@ import {
 } from "./rowStyle";
 import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
-import { wrapText } from "../lib/agentPopover";
+import { wrapText } from "../lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import {
   isPrintableAsciiText,
@@ -45,7 +45,7 @@ import {
   textClusters,
   wrapSanitizedTextByWidth,
 } from "../lib/text";
-import type { CopySelectedRowRange } from "../components/panes/copySelection";
+import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { CursorLine } from "../../core/types";
 
 export interface CursorHighlight {
@@ -2298,7 +2298,7 @@ interface DiffRowViewProps {
 /**
  * Render one diff row, memoized to avoid unnecessary rerenders.
  *
- * The comparator checks every handler by reference, so callers (PierreDiffView) must pass
+ * The comparator checks every handler by reference, so callers (DiffSectionBody) must pass
  * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
  * silently degrades to re-rendering every visible row per parent render.
  */

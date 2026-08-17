@@ -80,6 +80,35 @@ describe("buildDiffFile", () => {
   });
 });
 
+describe("change-block line pairing", () => {
+  // Split view places paired lines side by side, and Pierre word-diffs a deletion against the
+  // addition it is paired with. When a change block has unequal addition and deletion counts,
+  // pairing by position would align unrelated lines and smear the inline highlight across the
+  // whole row, so the engine has to re-split the block by content similarity instead.
+  test("pairs a deletion with the similar addition, not the positionally first one", () => {
+    const metadata = metadataFor(
+      "start();\n  return computeTotal(items, taxRate);\nend();\n",
+      "start();\n  const items = loadItems();\n  const taxRate = getTaxRate();\n  return computeTotal(items, taxRate, discount);\nend();\n",
+    );
+
+    const changes = metadata.hunks.flatMap((hunk) =>
+      hunk.hunkContent.filter((content) => content.type === "change"),
+    );
+    expect(changes).toEqual([
+      { additions: 2, deletions: 0, additionLineIndex: 1, deletionLineIndex: 1, type: "change" },
+      { additions: 1, deletions: 1, additionLineIndex: 3, deletionLineIndex: 1, type: "change" },
+    ]);
+
+    const paired = changes[1]!;
+    expect(metadata.deletionLines[paired.deletionLineIndex]).toContain(
+      "return computeTotal(items, taxRate);",
+    );
+    expect(metadata.additionLines[paired.additionLineIndex]).toContain(
+      "return computeTotal(items, taxRate, discount);",
+    );
+  });
+});
+
 describe("createSkippedLargeMetadata", () => {
   test("produces partial, hunk-free placeholder metadata with a stable cache key", () => {
     const metadata = createSkippedLargeMetadata("big.ts", "change");

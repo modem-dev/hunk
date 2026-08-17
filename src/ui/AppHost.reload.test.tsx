@@ -7,15 +7,15 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  HunkSessionBrokerClient,
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
 
 const { getBundledVcsCatalog } = await import("../app/vcsCatalog");
-const { loadAppBootstrap } = await import("../core/loaders");
+const { loadAppBootstrap } = await import("../core/changesetLoaders");
 const { AppHost } = await import("./AppHost");
 
 /** Stand in for the session daemon so a test can send the commands agents send. */

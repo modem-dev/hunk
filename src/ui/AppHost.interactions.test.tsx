@@ -5,8 +5,8 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  HunkSessionBrokerClient,
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,
@@ -16,10 +16,11 @@ import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
-const { loadAppBootstrap } = await import("../core/loaders");
+const { loadAppBootstrap } = await import("../core/changesetLoaders");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -834,7 +835,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
+  test("theme shortcut opens a selector, j/k move it, and Enter applies the highlighted theme", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -847,16 +848,25 @@ describe("App interactions", () => {
         await setup.mockInput.typeText("t");
       });
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
-      expect(frame).toContain("↑/↓/Tab preview  Enter accept  Esc cancel");
       expect(frame).toContain("›  github-dark-default");
       expect(frame).toContain("active");
 
       await act(async () => {
-        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.typeText("j");
       });
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
       expect(frame).not.toContain("UI");
       expect(frame).not.toContain("Syntax");
+
+      await act(async () => {
+        await setup.mockInput.typeText("k");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-default"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
 
       await act(async () => {
         await setup.mockInput.pressEnter();
@@ -873,7 +883,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme selector mouse hover does not preview and click selects without accepting", async () => {
+  test("theme selector waits for mouse hover to settle before previewing", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -889,29 +899,36 @@ describe("App interactions", () => {
       expect(frame).toContain("›  github-dark-default");
 
       const lines = frame.split("\n");
-      const targetY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
-      expect(targetY).toBeGreaterThanOrEqual(0);
-      const targetX = Math.max(0, lines[targetY]!.indexOf("github-dark-dimmed"));
+      const dimmedY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
+      const highContrastY = lines.findIndex((line) => line.includes("github-dark-high-contrast"));
+      expect(dimmedY).toBeGreaterThanOrEqual(0);
+      expect(highContrastY).toBeGreaterThanOrEqual(0);
+      const targetX = Math.max(0, lines[dimmedY]!.indexOf("github-dark-dimmed"));
 
       await act(async () => {
-        await setup.mockMouse.moveTo(targetX, targetY);
+        await setup.mockMouse.moveTo(targetX, dimmedY);
+        await setup.mockMouse.moveTo(targetX, highContrastY);
       });
       await flush(setup);
       frame = setup.captureCharFrame();
       expect(frame).toContain("›  github-dark-default");
       expect(frame).not.toContain("›  github-dark-dimmed");
+      expect(frame).not.toContain("›  github-dark-high-contrast");
 
       await act(async () => {
-        await setup.mockMouse.click(targetX, targetY);
-      });
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
-      expect(frame).toContain("Theme selector");
-
-      await act(async () => {
-        await setup.mockInput.pressEnter();
+        await new Promise((resolve) => setTimeout(resolve, 250));
       });
       frame = await waitForFrame(setup, (nextFrame) =>
-        nextFrame.includes("Theme: github-dark-dimmed"),
+        nextFrame.includes("›  github-dark-high-contrast"),
+      );
+      expect(frame).toContain("Theme selector");
+      expect(frame).not.toContain("›  github-dark-default");
+
+      await act(async () => {
+        await setup.mockMouse.click(targetX, highContrastY);
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-high-contrast"),
       );
       expect(frame).not.toContain("Theme selector");
     } finally {
@@ -921,7 +938,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme selector mouse wheel previews the next row", async () => {
+  test("theme selector mouse wheel scrolls the window without changing the preview", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -936,13 +953,20 @@ describe("App interactions", () => {
       const frame = await waitForFrame(setup, (nextFrame) =>
         nextFrame.includes("›  github-dark-default"),
       );
+      expect(frame).not.toContain("gruvbox-dark-medium");
       const selectedY = frame.split("\n").findIndex((line) => line.includes("github-dark-default"));
       expect(selectedY).toBeGreaterThanOrEqual(0);
 
       await act(async () => {
         await setup.mockMouse.scroll(120, selectedY, "down");
       });
-      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("gruvbox-dark-medium") &&
+          nextFrame.includes("›  github-dark-default") &&
+          !nextFrame.includes("›  github-dark-dimmed"),
+      );
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1172,9 +1196,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("interaction coverage")) {
-          break;
-        }
       }
 
       expect(frame).toContain("interaction coverage");
@@ -1186,9 +1207,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("this is a very")) {
-          break;
-        }
       }
 
       expect(frame).toContain("this is a very");
@@ -3766,6 +3784,37 @@ describe("App interactions", () => {
 
       expect(quit).toHaveBeenCalledTimes(1);
       expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("transient extension sessions never offer to save practice view preferences", async () => {
+    const quit = mock(() => undefined);
+    const bootstrap = createSingleFileBootstrap();
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    extensions.registry.sessionOptions.push({
+      extensionId: "trainer",
+      options: { viewPreferences: "transient" },
+    });
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={quit} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("w");
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+
+      expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+      expect(quit).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

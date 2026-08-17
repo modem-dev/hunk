@@ -10,7 +10,7 @@ import {
   buildStackRows,
   type HighlightedDiffCode,
   type RenderSpan,
-} from "./pierre";
+} from "./diffRows";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "./reviewRenderPlan";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();

@@ -28,7 +28,7 @@ Hunk navigation stays review-wide: hunk and file shortcuts move through the same
 | Key             | Action                                           |
 | --------------- | ------------------------------------------------ |
 | `0` / `1` / `2` | Auto / split / stack layout                      |
-| `s`             | Toggle sidebar                                   |
+| `s`             | Toggle files pane                                |
 | `t`             | Choose a theme                                   |
 | `l`             | Toggle line numbers                              |
 | `w`             | Toggle line wrapping                             |

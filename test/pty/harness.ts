@@ -336,6 +336,51 @@ export function createPtyHarness() {
     return { dir, before, after, agentContext };
   }
 
+  /**
+   * Two hunks with a collapsed gap between them, annotated on a line inside that gap.
+   *
+   * The annotated lines are unchanged context the patch omits, so no rendered row carries
+   * them: the note has to hang from the hunk owning the gap rather than from the file's
+   * first row.
+   */
+  function createGapAnnotatedAgentFilePair() {
+    const dir = makeTempDir("hunk-tuistory-gap-note-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+    const agentContext = join(dir, "agent.json");
+
+    const beforeLines = Array.from(
+      { length: 12 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[1] = "export const line2 = 200;";
+    afterLines[10] = "export const line11 = 1100;";
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "after.ts",
+            annotations: [
+              {
+                newRange: [6, 7],
+                summary: "GAP NOTE",
+                rationale: "Anchored to lines the patch collapsed away.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { dir, before, after, agentContext };
+  }
+
   function createAgentNavigationRepoFixture() {
     const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
     const alphaAfterLines = [...alphaBeforeLines];
@@ -983,6 +1028,7 @@ end
     countMatches,
     createAgentFilePair,
     createAgentNavigationRepoFixture,
+    createGapAnnotatedAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,

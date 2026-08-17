@@ -6,12 +6,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/loaders";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/types";
-import type { HunkSessionBrokerClient } from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 
@@ -160,6 +160,7 @@ async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
   hostClient?: HunkSessionBrokerClient,
+  dimensions: { width: number; height: number } = { width: 140, height: 30 },
 ) {
   let quitCount = 0;
   const setup = await testRender(
@@ -170,7 +171,7 @@ async function withAppHost(
         quitCount += 1;
       }}
     />,
-    { width: 140, height: 30 },
+    dimensions,
   );
 
   try {
@@ -181,6 +182,16 @@ async function withAppHost(
       setup.renderer.destroy();
     });
   }
+}
+
+/** Find the first terminal coordinate occupied by one rendered text fragment. */
+function findTextPosition(frame: string, text: string) {
+  const lines = frame.split("\n");
+  for (let y = 0; y < lines.length; y += 1) {
+    const x = lines[y]!.indexOf(text);
+    if (x >= 0) return { x, y };
+  }
+  return null;
 }
 
 /**
@@ -264,6 +275,40 @@ describe("extension dialogs", () => {
     });
   });
 
+  test("keeps confirm actions visible when wrapped prose exceeds a short terminal", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-short-confirm-");
+    const extDir = createTempDir("hunk-ext-dialog-short-confirm-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.confirm({ title: "Short terminal", body: "This deliberately long explanation wraps across many rows but must never displace the primary actions from the modal footer." })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => {
+          await setup.mockInput.typeText("y");
+        });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Short terminal"),
+          "the short confirm dialog to open",
+        );
+
+        const frame = setup.captureCharFrame();
+        expect(frame).toContain("…");
+        expect(frame).toContain("enter/y");
+        expect(frame).toContain("esc/n");
+      },
+      undefined,
+      { width: 50, height: 12 },
+    );
+  });
+
   test("escape resolves a confirm dialog as false", async () => {
     const repo = createTestRepo("hunk-ext-dialog-escape-");
     const extDir = createTempDir("hunk-ext-dialog-escape-ext-");
@@ -345,6 +390,41 @@ describe("extension dialogs", () => {
     });
   });
 
+  test("clicking a select option accepts that exact row", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-select-mouse-");
+    const extDir = createTempDir("hunk-ext-dialog-select-mouse-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.select({ title: "Mouse target?", options: ["staging", "production", "canary"] })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("production"),
+        "the mouse select dialog to open",
+      );
+
+      const target = findTextPosition(setup.captureCharFrame(), "production");
+      expect(target).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.click(target!.x, target!.y);
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("answer production"),
+        "the clicked option to resolve",
+      );
+    });
+  });
+
   test("an input dialog resolves the typed text", async () => {
     const repo = createTestRepo("hunk-ext-dialog-input-");
     const extDir = createTempDir("hunk-ext-dialog-input-ext-");
@@ -385,13 +465,15 @@ describe("extension dialogs", () => {
       );
       expect(quits()).toBe(0);
 
+      const submit = findTextPosition(setup.captureCharFrame(), "submit");
+      expect(submit).not.toBeNull();
       await act(async () => {
-        await setup.mockInput.pressEnter();
+        await setup.mockMouse.click(submit!.x, submit!.y);
       });
       await flushUntil(
         setup,
         () => readProbeLog(logPath).includes("answer quick-fix"),
-        "the handler to resolve the typed text",
+        "the mouse action to submit the typed text",
       );
     });
   });
@@ -426,9 +508,7 @@ describe("extension dialogs", () => {
         // The daemon path reaches reloadSession without the refresh key's
         // wrapper, so this is the reload that would leave the question
         // standing if cancellation hung off any single call site.
-        await act(async () => {
-          await broker.reload({ kind: "vcs", staged: false, options: {} });
-        });
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} });
         await flushUntil(
           setup,
           () => {
@@ -437,10 +517,60 @@ describe("extension dialogs", () => {
           },
           "the reload to close the dialog over the replacement review",
         );
+        await reload;
         await flushUntil(
           setup,
           () => readProbeLog(logPath).includes("answer false"),
           "the handler to resolve the dialog's cancel value",
+        );
+      },
+      broker.client,
+    );
+  });
+
+  test("keeps a dialog opened by the replacement generation's reload lifecycle", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-reload-lifecycle-");
+    const extDir = createTempDir("hunk-ext-dialog-reload-lifecycle-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.on("session_reload", async (_payload, ctx) => {\n` +
+        `    const answer = await ctx.dialogs.confirm({ title: "Review reloaded" });\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "answer " + String(answer) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const broker = createTestBrokerClient();
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("alpha.txt"),
+          "the initial review to render",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Review reloaded"),
+          "the replacement lifecycle dialog to remain open",
+        );
+        await reload;
+        expect(readProbeLog(logPath)).toEqual([]);
+
+        await act(async () => {
+          await setup.mockInput.pressEnter();
+        });
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("answer true"),
+          "the replacement lifecycle dialog to resolve normally",
         );
       },
       broker.client,

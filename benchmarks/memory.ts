@@ -3,7 +3,7 @@ import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { buildSplitRows } from "../src/ui/diff/pierre";
+import { buildSplitRows } from "../src/ui/diff/diffRows";
 import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
 import { resolveTheme } from "../src/ui/themes";
 import { AppHost } from "../src/ui/AppHost";

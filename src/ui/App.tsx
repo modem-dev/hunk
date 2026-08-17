@@ -38,6 +38,7 @@ import {
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
   resolveExtensionLineHighlighters,
+  resolveExtensionSessionOptions,
 } from "../extensions/apply";
 import {
   emitExtensionCustomEvent,
@@ -60,11 +61,8 @@ import type {
   RegisteredPane,
 } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
-import type {
-  HunkSessionBrokerClient,
-  ReloadedSessionResult,
-  ReloadSessionOptions,
-} from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
@@ -78,27 +76,29 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
-import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
+import type { ActiveAddNoteAffordance } from "./diff/DiffSectionBody";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import {
-  useReviewController,
+  useTerminalReview,
   type AgentNoteGeometrySnapshot,
   type RevealedLineResult,
-} from "./hooks/useReviewController";
+} from "./hooks/useTerminalReview";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  observeAppCommandDispatch,
   type AppCommand,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { createExtensionCapabilityLease } from "./lib/extensionCapabilityLease";
 import { createExtensionCommandControls } from "./lib/extensionCommandControls";
 import {
   applyExtensionCurrentLinePaintUpdate,
@@ -125,6 +125,7 @@ import {
   planExtensionPanes,
   reconcilePaneOpenState,
   resolvePaneKey,
+  resolvePaneSlotKey,
   type PlannedPane,
 } from "./lib/extensionPanes";
 import type { ExtensionPanePlacement } from "../extension-api/types";
@@ -208,27 +209,55 @@ function withCurrentViewOptions(
   };
 }
 
+/** Current mounted review descriptor AppHost dereferences when reconciling a completed write. */
+export interface WorkspaceRefreshRequest {
+  nextInput: CliInput;
+  sourcePath?: string;
+}
+
+/** Filesystem write implementation used by the host-mediated extension workspace. */
+export type WorkspaceFileWriter = (absolutePath: string, text: string) => Promise<void>;
+
+/** Host-owned boundary that tracks irreversible writes through graceful shutdown. */
+export type WorkspaceWriteRunner = (write: () => Promise<void>) => Promise<boolean>;
+
+/** Write UTF-8 text through the production filesystem implementation. */
+const writeWorkspaceFile: WorkspaceFileWriter = async (absolutePath, text) => {
+  await writeFile(absolutePath, text, "utf8");
+};
+
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
+  onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onWorkspaceWriteCompleted,
   reviewProducer,
+  runWorkspaceWrite,
   watchRuntime,
+  workspaceFileWriter = writeWorkspaceFile,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
+  /** Register the mounted review descriptor AppHost should reconcile after a completed write. */
+  onRegisterWorkspaceRefreshRequest: (request: WorkspaceRefreshRequest) => () => void;
   onReloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Reconcile the currently mounted review after a consented filesystem write succeeds. */
+  onWorkspaceWriteCompleted: () => void;
   /** The producer publishing this review's generations, when the host mounted one. */
   reviewProducer?: ReviewProducer;
+  /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
+  runWorkspaceWrite: WorkspaceWriteRunner;
   watchRuntime?: WatchedInputRuntime;
+  workspaceFileWriter?: WorkspaceFileWriter;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -245,7 +274,7 @@ export function App({
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const review = useReviewController({
+  const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
@@ -255,11 +284,11 @@ export function App({
   });
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
-  // Attached before any command can arrive: the session bridge is installed by a later
-  // effect, so nothing can be dispatched into the producer until this has run.
-  useEffect(() => {
+  // AppHost detaches the previous store while committing a reload; this child layout
+  // effect installs the matching store before parent lifecycle handlers can use it.
+  useLayoutEffect(() => {
     reviewProducer?.attachStore(review.store);
-  }, [review.store, reviewProducer]);
+  }, [bootstrap.changeset, review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -299,7 +328,9 @@ export function App({
     previewThemeId: null,
   });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
+  const [forceSidebarOpen, setForceSidebarOpen] = useState(
+    () => !pagerMode && bootstrap.initialSidebar === true,
+  );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
@@ -319,7 +350,18 @@ export function App({
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
-  const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
+  const [paneOpenState, setPaneOpenState] = useState(() => {
+    const initial = initialPaneOpenState(sessionPanes);
+    if (bootstrap.initialSidebar !== false) return initial;
+
+    // The preference targets the active files slot, not independently open extension panes.
+    const filesPaneKey = resolvePaneSlotKey({
+      panes: sessionPanes,
+      slotKey: HUNK_FILES_PANE_KEY,
+      openKeys: initial.open,
+    });
+    return { ...initial, open: initial.open.filter((key) => key !== filesPaneKey) };
+  });
   useEffect(
     () => setPaneOpenState((current) => reconcilePaneOpenState(sessionPanes, current)),
     [sessionPanes],
@@ -440,6 +482,11 @@ export function App({
   const currentLinePaintPending =
     currentLinePaintState.status === "pending" ||
     (currentLinePaintState.status === "ready" && !currentLinePaintMatchesCursor);
+  /** The review stream's current line, or null when line-level navigation is off. */
+  const activeLineCursor = useMemo(
+    () => (cursorLine === "off" ? null : review.lineCursor),
+    [cursorLine, review.lineCursor],
+  );
   const sessionFileViews = useMemo(
     () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
     [extensions],
@@ -450,6 +497,13 @@ export function App({
   );
   const sessionLineHighlighters = useMemo(
     () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
+    [extensions],
+  );
+  const extensionSessionOptions = useMemo(
+    () =>
+      extensions
+        ? resolveExtensionSessionOptions(extensions.registry)
+        : { transientViewPreferences: false },
     [extensions],
   );
   // The one conversion of the visible review files into the frozen views every
@@ -463,8 +517,16 @@ export function App({
     source: typeof filteredFiles;
     views: ReturnType<typeof toReadOnlyFileViews>;
   } | null>(null);
-  const extensionSelectionInputsRef = useRef({ filteredFiles, selectedFileId, selectedHunkIndex });
-  extensionSelectionInputsRef.current = { filteredFiles, selectedFileId, selectedHunkIndex };
+  const extensionSelectionInputsRef = useRef({
+    filteredFiles,
+    getSelection: review.getSelection,
+    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
+  });
+  extensionSelectionInputsRef.current = {
+    filteredFiles,
+    getSelection: review.getSelection,
+    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
+  };
   // What `ctx.workspace` decides against, re-read on every render because a soft
   // reload swaps the bootstrap under a mounted App: the input can change what is
   // writable at all, and the changeset decides which ids exist and which source
@@ -510,19 +572,33 @@ export function App({
   // created each handler. Retain the current registry separately so controls
   // captured by a retired async handler cannot drive the replacement registry.
   const activeExtensionRegistryRef = useRef(extensions?.registry);
+  const activeReviewGenerationRef = useRef(bootstrap);
   useLayoutEffect(() => {
     activeExtensionRegistryRef.current = extensions?.registry;
-  }, [extensions?.registry]);
+    activeReviewGenerationRef.current = bootstrap;
+  }, [bootstrap, extensions?.registry]);
   const extensionCommandControls = useMemo(() => {
-    const owningRegistry = extensions?.registry;
+    const lease = createExtensionCapabilityLease({
+      owningRegistry: extensions?.registry,
+      getActiveRegistry: () => activeExtensionRegistryRef.current,
+      isAppAlive: () => appAliveForNavigationRef.current,
+    });
     return createExtensionCommandControls({
       getCommands: () => extensionHostCommandsRef.current,
-      isLive: () =>
-        appAliveForNavigationRef.current &&
-        owningRegistry?.eventBusPhase !== "closed" &&
-        activeExtensionRegistryRef.current === owningRegistry,
+      isLive: lease.isLive,
     });
   }, [extensions?.registry]);
+  /** Mint controls that expire with their runtime, App instance, or review generation. */
+  const createReviewCapabilityLease = useCallback(
+    () =>
+      createExtensionCapabilityLease({
+        owningRegistry: extensions?.registry,
+        getActiveRegistry: () => activeExtensionRegistryRef.current,
+        isAppAlive: () => appAliveForNavigationRef.current,
+        isReviewCurrent: () => activeReviewGenerationRef.current === bootstrap,
+      }),
+    [bootstrap, extensions?.registry],
+  );
   useEffect(() => {
     // StrictMode replays setup/cleanup/setup while the same App remains mounted.
     appAliveForNavigationRef.current = true;
@@ -533,17 +609,18 @@ export function App({
 
   /** Build the selection snapshot a command handler receives, at invocation. */
   const getExtensionSelection = useCallback(() => {
-    const { selectedFileId: fileId, selectedHunkIndex: hunkIndex } =
-      extensionSelectionInputsRef.current;
+    const { getSelection, getActiveLineCursor } = extensionSelectionInputsRef.current;
+    const { fileId, hunkIndex } = getSelection();
     return buildExtensionReviewSelection({
       files: getExtensionFileViews(),
       selectedFileId: fileId,
       selectedHunkIndex: hunkIndex,
+      lineCursor: getActiveLineCursor(),
     });
   }, [getExtensionFileViews]);
   /** Read the live internal selection id independently from the frozen public selection. */
   const getSelectedFileId = useCallback(
-    () => extensionSelectionInputsRef.current.selectedFileId,
+    () => extensionSelectionInputsRef.current.getSelection().fileId,
     [],
   );
   const jumpToFile = useCallback(
@@ -629,12 +706,6 @@ export function App({
     };
   }, []);
 
-  useEffect(() => {
-    // Every load produces a fresh changeset object, so this covers the first
-    // review plus soft reloads; hard reloads remount App and land here again.
-    emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
-  }, [bootstrap.changeset, extensions]);
-
   const setPaneOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
     setPaneOpenState((current) => {
       const isOpen = current.open.includes(key);
@@ -650,6 +721,15 @@ export function App({
   /** Build the canonical pane controls; deprecated sidebar controls share this object. */
   const createPaneControls = useCallback(
     (extensionId: string): ExtensionPaneControls => {
+      const lease = createReviewCapabilityLease();
+      const hasAuthority = (method: string) => {
+        if (lease.isLive()) return true;
+        extensions?.context.notify(
+          `Extension ${extensionId} ${method} ignored — the review session was reloaded`,
+          "warning",
+        );
+        return false;
+      };
       const resolve = (method: string, id: string) => {
         const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
         if (!key)
@@ -666,6 +746,7 @@ export function App({
       };
       return {
         open(id) {
+          if (!hasAuthority("panes.open")) return;
           const key = resolve("panes.open", id);
           if (key) {
             setPaneOpen(key, true);
@@ -673,10 +754,12 @@ export function App({
           }
         },
         close(id) {
+          if (!hasAuthority("panes.close")) return;
           const key = resolve("panes.close", id);
           if (key) setPaneOpen(key, false);
         },
         toggle(id) {
+          if (!hasAuthority("panes.toggle")) return;
           const key = resolve("panes.toggle", id);
           if (key) {
             const opens = !paneOpenStateRef.current.open.includes(key);
@@ -685,12 +768,32 @@ export function App({
           }
         },
         isOpen(id) {
+          if (!lease.isLive()) return false;
           const key = resolvePaneKey(sessionPanesRef.current, extensionId, id);
           return key !== undefined && paneOpenStateRef.current.open.includes(key);
         },
       };
     },
-    [extensions, setPaneOpen],
+    [createReviewCapabilityLease, extensions, setPaneOpen],
+  );
+
+  /** Build live, guarded review navigation for one extension-owned handler. */
+  const createExtensionNavigation = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createGuardedReviewNavigation({
+        extensionId,
+        getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
+        isLive: lease.isLive,
+        notify: (message, type) => extensions?.context.notify(message, type),
+        onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
+        onSelectHunk: (fileId, hunkIndex) =>
+          extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
+        onRevealLine: (fileId, side, line) =>
+          extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
+      });
+    },
+    [createReviewCapabilityLease, extensions],
   );
 
   /**
@@ -699,17 +802,10 @@ export function App({
    */
   const revealSidebarAreaRef = useRef<() => void>(() => {});
 
-  /**
-   * Reload the review after a host-mediated write, assigned each render because
-   * the refresh callback is built further down the component than the extension
-   * controls that trigger it.
-   */
-  const reloadAfterWorkspaceWriteRef = useRef<() => void>(() => {});
-
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
-    createDialogs: createExtensionDialogs,
+    createDialogs: createQueuedExtensionDialogs,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
     pickOption: setExtensionDialogSelectedIndex,
@@ -718,9 +814,30 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
+  /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
+  const createExtensionDialogs = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      const bundled = extensions?.registry.extensions.some(
+        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
+      );
+      return createQueuedExtensionDialogs(extensionId, {
+        isLive: lease.isLive,
+        showAttribution: !bundled,
+      });
+    },
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+  );
+
   /** Build host-mediated reviewed-document read and write controls for one extension command. */
   const createWorkspaceControls = useCallback(
     (extensionId: string): ExtensionWorkspace => {
+      const lease = createReviewCapabilityLease();
+      const expired = (): ExtensionWorkspaceWriteResult => ({
+        ok: false,
+        reason: "unavailable",
+        detail: "The review reloaded before this extension operation could finish.",
+      });
       const resolveTarget = (fileId: string) =>
         resolveExtensionWorkspaceWriteTarget({
           fileId,
@@ -729,6 +846,7 @@ export function App({
 
       return {
         async readDocument(fileId: string, side: ExtensionFileSide) {
+          if (!lease.isLive()) return null;
           // Unlike a write, a read asks nothing of the user and nothing of the
           // review kind: it hands back the document the review is already
           // showing. Only a malformed side throws, from inside the policy.
@@ -738,14 +856,16 @@ export function App({
             side,
           });
           // Every failure the fetcher can raise — a missing side, a read error,
-          // the host's source-size cap — is the same "no document" answer.
-          return read ? read().catch(() => null) : null;
+          // the host's source-size cap — is the same "no document" answer. Recheck
+          // after the fetch so a retired generation cannot publish stale text.
+          const document = read ? await read().catch(() => null) : null;
+          return lease.isLive() ? document : null;
         },
         canWriteDocument(fileId: string) {
           // The probe answers for anything, including an id that is not even a
           // string: an affordance question should not throw at a caller who is
           // only deciding whether to offer the action.
-          return typeof fileId === "string" && resolveTarget(fileId).writable;
+          return lease.isLive() && typeof fileId === "string" && resolveTarget(fileId).writable;
         },
         async writeDocument(
           request: ExtensionWorkspaceWriteRequest,
@@ -753,6 +873,7 @@ export function App({
           // Throws rather than resolving a reason: a malformed request is a bug
           // in the extension, not an answer about this review.
           const { fileId, text } = normalizeWorkspaceWriteRequest(request);
+          if (!lease.isLive()) return expired();
           const target = resolveTarget(fileId);
           if (!target.writable) {
             return { ok: false, reason: "unavailable", detail: target.detail };
@@ -771,6 +892,7 @@ export function App({
               root,
             });
           const refusal = await verifyTarget();
+          if (!lease.isLive()) return expired();
           if (refusal) {
             return { ok: false, reason: "unavailable", detail: refusal };
           }
@@ -783,6 +905,7 @@ export function App({
             body: `Extension ${extensionId} will replace this file's contents on disk.`,
             confirmLabel: "write",
           });
+          if (!lease.isLive()) return expired();
           if (!confirmed) {
             return {
               ok: false,
@@ -792,12 +915,19 @@ export function App({
           }
 
           const changedTargetRefusal = await verifyTarget();
+          if (!lease.isLive()) return expired();
           if (changedTargetRefusal) {
             return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
 
+          // This is the final revocable boundary. Once the irreversible write
+          // starts, its real filesystem outcome wins even if the review changes.
+          if (!lease.isLive()) return expired();
           try {
-            await writeFile(target.absolutePath, text, "utf8");
+            const started = await runWorkspaceWrite(() =>
+              workspaceFileWriter(target.absolutePath, text),
+            );
+            if (!started) return expired();
           } catch (error) {
             return {
               ok: false,
@@ -808,20 +938,25 @@ export function App({
             };
           }
 
-          // Fire-and-forget the reload so the result settles on the write
-          // itself. In a `--watch` session the watcher sees the same write and
-          // reloads too; a reload replaces the review silently, so a second one
-          // costs a rebuild rather than a duplicated notice.
-          reloadAfterWorkspaceWriteRef.current();
+          // AppHost dereferences the mounted review descriptor only when this
+          // reconciliation reaches the reload queue, so a retired App cannot
+          // restore the source or view options it started from.
+          onWorkspaceWriteCompleted();
           return { ok: true };
         },
       };
     },
-    [createExtensionDialogs],
+    [
+      createExtensionDialogs,
+      createReviewCapabilityLease,
+      onWorkspaceWriteCompleted,
+      runWorkspaceWrite,
+      workspaceFileWriter,
+    ],
   );
 
-  // Lifecycle and bus listeners receive the same pane controls as commands,
-  // so an extension can react to loaded content by revealing its own pane.
+  // Lifecycle and bus listeners receive the same pane, navigation, and dialog
+  // controls as commands, so onboarding can stay entirely in the public API.
   if (extensions) {
     extensions.eventContextProvider = (extensionId): ExtensionEventContext => {
       const panes = createPaneControls(extensionId);
@@ -830,6 +965,8 @@ export function App({
         notify: (message, type) => extensions.context.notify(message, type),
         panes,
         sidebars: panes,
+        navigation: createExtensionNavigation(extensionId),
+        dialogs: createExtensionDialogs(extensionId),
         events: {
           emit(event, payload) {
             emitExtensionCustomEvent(extensions, event, payload);
@@ -875,19 +1012,7 @@ export function App({
         // the same focus/jump callbacks a sidebar row click runs, so a handler
         // that awaits a dialog before navigating still acts on the current
         // review — validated, clamped, and warned exactly like sidebar actions.
-        navigation: createGuardedReviewNavigation({
-          extensionId: registered.extensionId,
-          getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
-          // Extensions outlive App remounts, so the notify sink stays valid
-          // even after this instance dies and `isLive` starts refusing calls.
-          isLive: () => appAliveForNavigationRef.current,
-          notify: (message, type) => extensions?.context.notify(message, type),
-          onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
-          onSelectHunk: (fileId, hunkIndex) =>
-            extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
-          onRevealLine: (fileId, side, line) =>
-            extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
-        }),
+        navigation: createExtensionNavigation(registered.extensionId),
       };
 
       try {
@@ -904,6 +1029,7 @@ export function App({
     // do not rebuild on every `[`/`]` press.
     [
       createExtensionDialogs,
+      createExtensionNavigation,
       createFileViewControls,
       createKeyboardModeControls,
       createLineHighlightControls,
@@ -1130,10 +1256,18 @@ export function App({
   const renderSidebar = paneLayout.panes.some(
     ({ pane }) => pane.placement === "left" || pane.placement === "right",
   );
+  const visiblePaneKeys = paneLayout.panes.map(({ pane }) => pane.key);
+  const visibleFilesPaneKey = resolvePaneSlotKey({
+    panes: sessionPanes,
+    slotKey: HUNK_FILES_PANE_KEY,
+    openKeys: visiblePaneKeys,
+    quarantined: paneAvailabilityQuarantineRef.current,
+  });
+  const filesPaneVisible = visiblePaneKeys.includes(visibleFilesPaneKey);
   const diffPaneWidth = paneLayout.reviewBounds.width;
   const diffPaneHeight = paneLayout.reviewBounds.height;
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
-  // Mirrors toggleSidebar's reveal half: visible again, forced open when the
+  // Mirrors toggleFilesPane's reveal half: visible again, forced open when the
   // responsive layout alone would keep it hidden and the terminal has room.
   revealSidebarAreaRef.current = () => {
     setSidebarVisible(true);
@@ -1274,7 +1408,7 @@ export function App({
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
-    if (cursorLine === "off" || !review.lineCursor) {
+    if (!activeLineCursor) {
       scrollDiff(delta, "step");
       return;
     }
@@ -1323,7 +1457,7 @@ export function App({
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    review.setShowAgentNotes(!showAgentNotes);
+    review.toggleAgentNotes();
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
@@ -1418,7 +1552,8 @@ export function App({
     [themeSelectorItems],
   );
 
-  const pickThemeSelectorItem = useCallback(
+  /** Preview the theme under the pointer without committing it. */
+  const previewThemeSelectorItem = useCallback(
     (index: number) => {
       const item = themeSelectorItems[index];
       if (!item) {
@@ -1434,34 +1569,43 @@ export function App({
     [themeSelectorItems],
   );
 
-  const acceptThemeSelector = useCallback(() => {
-    const item = themeSelectorItems[themeSelectorState.selectedIndex];
-    if (!item) {
-      return;
-    }
-
-    selectTheme(item.id);
-    // Close without a preview id; the committed theme id now supplies the same effective theme.
-    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-  }, [selectTheme, themeSelectorState.selectedIndex, themeSelectorItems]);
-
-  /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
-  const toggleSidebar = () => {
-    if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
-      setForceSidebarOpen(false);
-      return;
-    }
-
-    if (sidebarVisible && !responsiveLayout.showSidebar) {
-      if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
+  /** Commit one theme and close the selector. */
+  const acceptThemeSelectorItem = useCallback(
+    (index: number) => {
+      const item = themeSelectorItems[index];
+      if (!item) {
+        return;
       }
+
+      selectTheme(item.id);
+      // Close without a preview id; the committed theme id now supplies the same effective theme.
+      setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+    },
+    [selectTheme, themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    acceptThemeSelectorItem(themeSelectorState.selectedIndex);
+  }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
+
+  /** Toggle only the active files pane without changing extension pane visibility. */
+  const toggleFilesPane = () => {
+    const filesPaneKey = resolvePaneSlotKey({
+      panes: sessionPanes,
+      slotKey: HUNK_FILES_PANE_KEY,
+      openKeys: paneOpenStateRef.current.open,
+      quarantined: paneAvailabilityQuarantineRef.current,
+    });
+
+    const filesPane = sessionPanes.find((pane) => pane.key === filesPaneKey);
+    const usesSidebarArea = filesPane?.placement === "left" || filesPane?.placement === "right";
+    if (usesSidebarArea && !sidebarAreaVisible) {
+      setPaneOpen(filesPaneKey, true);
+      revealSidebarAreaRef.current();
       return;
     }
 
-    setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    setPaneOpen(filesPaneKey, "toggle");
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
@@ -1476,15 +1620,11 @@ export function App({
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
+  const workspaceRefreshRequest = useMemo<WorkspaceRefreshRequest | null>(() => {
+    if (!canRefreshCurrentInput) return null;
 
-  /** Rebuild the current diff source while preserving the active app view options. */
-  const refreshCurrentInput = useCallback(
-    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
-      if (!canRefreshCurrentInput) {
-        return;
-      }
-
-      const nextInput = withCurrentViewOptions(bootstrap.input, {
+    return {
+      nextInput: withCurrentViewOptions(bootstrap.input, {
         layoutMode,
         themeId,
         showAgentNotes,
@@ -1492,27 +1632,39 @@ export function App({
         showLineNumbers,
         showMenuBar,
         wrapLines,
-      });
+      }),
+      sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
+    };
+  }, [
+    bootstrap.changeset.sourceLabel,
+    bootstrap.input,
+    canRefreshCurrentInput,
+    layoutMode,
+    showAgentNotes,
+    showHunkHeaders,
+    showLineNumbers,
+    showMenuBar,
+    themeId,
+    wrapLines,
+  ]);
 
-      await onReloadSession(nextInput, {
+  useLayoutEffect(() => {
+    if (!workspaceRefreshRequest) return;
+    return onRegisterWorkspaceRefreshRequest(workspaceRefreshRequest);
+  }, [onRegisterWorkspaceRefreshRequest, workspaceRefreshRequest]);
+
+  /** Rebuild the current diff source while preserving the active app view options. */
+  const refreshCurrentInput = useCallback(
+    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
+      if (!workspaceRefreshRequest) return;
+
+      await onReloadSession(workspaceRefreshRequest.nextInput, {
         ...options,
         resetApp: false,
-        sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
+        sourcePath: workspaceRefreshRequest.sourcePath,
       });
     },
-    [
-      bootstrap.changeset.sourceLabel,
-      bootstrap.input,
-      canRefreshCurrentInput,
-      layoutMode,
-      onReloadSession,
-      showAgentNotes,
-      showHunkHeaders,
-      showLineNumbers,
-      showMenuBar,
-      themeId,
-      wrapLines,
-    ],
+    [onReloadSession, workspaceRefreshRequest],
   );
 
   const triggerRefreshCurrentInput = useCallback(() => {
@@ -1520,10 +1672,6 @@ export function App({
       console.error("Failed to reload the current diff.", error);
     });
   }, [refreshCurrentInput]);
-
-  // A completed extension write is a source change the user did not make in an
-  // editor, so it reloads through exactly the path the refresh key takes.
-  reloadAfterWorkspaceWriteRef.current = triggerRefreshCurrentInput;
 
   /** Reload because the watcher saw the reviewed source change on disk. */
   const refreshWatchedInput = useCallback(
@@ -1621,6 +1769,7 @@ export function App({
     const message = openSelectedFileInEditor({
       basePath,
       file: selectedFile,
+      lineCursor: activeLineCursor,
       renderer,
       selectedHunk: review.selectedHunk,
     });
@@ -1634,6 +1783,7 @@ export function App({
       triggerRefreshCurrentInput();
     }
   }, [
+    activeLineCursor,
     bootstrap.changeset.sourceLabel,
     bootstrap.input.kind,
     canRefreshCurrentInput,
@@ -1694,6 +1844,7 @@ export function App({
   const requestQuit = useCallback(() => {
     if (
       !pagerMode &&
+      !extensionSessionOptions.transientViewPreferences &&
       bootstrap.input.options.promptSaveViewPreferences !== false &&
       hasUnsavedViewPreferences
     ) {
@@ -1705,6 +1856,7 @@ export function App({
     onQuit();
   }, [
     bootstrap.input.options.promptSaveViewPreferences,
+    extensionSessionOptions.transientViewPreferences,
     hasUnsavedViewPreferences,
     onQuit,
     pagerMode,
@@ -1785,8 +1937,7 @@ export function App({
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget =
-        hoverTarget ?? (fileId === undefined && cursorLine !== "off" ? review.lineCursor : null);
+      const keyboardTarget = hoverTarget ?? (fileId === undefined ? activeLineCursor : null);
       const draft = review.startUserNote(
         fileId ?? keyboardTarget?.fileId,
         hunkIndex ?? keyboardTarget?.hunkIndex,
@@ -1798,7 +1949,7 @@ export function App({
         setFocusArea("note");
       }
     },
-    [activeAddNoteTarget, cursorLine, review.lineCursor, review.startUserNote],
+    [activeAddNoteTarget, activeLineCursor, review.startUserNote],
   );
 
   /** Mark the inline draft note textarea as the active keyboard input. */
@@ -1873,40 +2024,43 @@ export function App({
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
   // win a key and extension order follows load order.
-  const appCommands = [
-    ...buildAppCommands({
-      canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
-      canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
-      canRefreshCurrentInput,
-      alignCurrentLine,
-      applyFilePresentationToAllMatching,
-      focusFilter,
-      moveSelection: review.moveSelection,
-      openAgentSkill,
-      openThemeSelector,
-      requestQuit,
-      resolvedKeys: resolvedCommandKeys,
-      scrollCodeHorizontally,
-      scrollDiff,
-      stepDiffLine,
-      selectCursorLine: setCursorLine,
-      selectLayoutMode,
-      startUserNote: () => startUserNote(),
-      toggleAgentNotes,
-      toggleCopyDecorations,
-      toggleFocusArea,
-      toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
-      toggleHelp,
-      toggleHunkHeaders,
-      toggleLineNumbers,
-      toggleLineWrap,
-      toggleMenuBar,
-      toggleSidebar,
-      triggerEditSelectedFile,
-      triggerRefreshCurrentInput,
-    }),
-    ...extensionAppCommands.commands,
-  ];
+  const appCommands = observeAppCommandDispatch(
+    [
+      ...buildAppCommands({
+        canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
+        canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        canRefreshCurrentInput,
+        alignCurrentLine,
+        applyFilePresentationToAllMatching,
+        focusFilter,
+        moveSelection: review.moveSelection,
+        openAgentSkill,
+        openThemeSelector,
+        requestQuit,
+        resolvedKeys: resolvedCommandKeys,
+        scrollCodeHorizontally,
+        scrollDiff,
+        stepDiffLine,
+        selectCursorLine: setCursorLine,
+        selectLayoutMode,
+        startUserNote: () => startUserNote(),
+        toggleAgentNotes,
+        toggleCopyDecorations,
+        toggleFocusArea,
+        toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+        toggleHelp,
+        toggleHunkHeaders,
+        toggleLineNumbers,
+        toggleLineWrap,
+        toggleMenuBar,
+        toggleFilesPane,
+        triggerEditSelectedFile,
+        triggerRefreshCurrentInput,
+      }),
+      ...extensionAppCommands.commands,
+    ],
+    (commandId) => emitExtensionEvent(extensions, "command_executed", { commandId }),
+  );
   extensionHostCommandsRef.current = appCommands;
 
   // Menus name commands rather than repeating them: every item's key hint and
@@ -1932,7 +2086,7 @@ export function App({
       : undefined,
     copyDecorations,
     layoutMode,
-    renderSidebar,
+    filesPaneVisible,
     showAgentNotes,
     showHelp,
     showHunkHeaders,
@@ -2113,6 +2267,8 @@ export function App({
               : () => {
                   paneAvailabilityQuarantineRef.current.add(pane.registered);
                   if (pane.registered.pane.replaces === HUNK_FILES_PANE_KEY) {
+                    setPaneOpen(pane.key, false);
+                    setPaneOpen(HUNK_FILES_PANE_KEY, true);
                     revealSidebarAreaRef.current();
                   }
                   setPaneFailureEpoch((value) => value + 1);
@@ -2213,6 +2369,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
             screenLeft={diffPaneScreenLeft}
@@ -2442,9 +2599,9 @@ export function App({
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}
+            onAcceptItem={acceptThemeSelectorItem}
             onClose={closeThemeSelector}
-            onPickItem={pickThemeSelectorItem}
-            onScroll={moveThemeSelector}
+            onPreviewItem={previewThemeSelectorItem}
           />
         </Suspense>
       ) : null}

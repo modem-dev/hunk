@@ -19,6 +19,10 @@ export interface ResolveConfiguredExtensionsOptions {
   /** Adapters already known before this load, such as the current live-session catalog. */
   discoveryCatalog?: VcsCatalog;
   notifications?: ExtensionNotificationHub;
+  /** Publish provisional ownership before imports or asynchronous factories can suspend. */
+  onProvisionalLoad?: (result: ExtensionLoadResult) => void;
+  /** Throw when the caller's lifetime ended so no later staged registry can be created. */
+  assertActive?: () => void;
 }
 
 export interface ResolveConfiguredExtensionsDeps {
@@ -54,7 +58,14 @@ export async function resolveConfiguredExtensions(
     });
 
   let extensions: ExtensionLoadResult | undefined;
+  let provisionalExtensions: ExtensionLoadResult | undefined;
+  /** Retain loader ownership locally before forwarding it to a caller that may also suspend. */
+  const ownProvisionalLoad = (result: ExtensionLoadResult) => {
+    provisionalExtensions = result;
+    options.onProvisionalLoad?.(result);
+  };
   try {
+    options.assertActive?.();
     extensions = await loadStartupExtensionsImpl({
       extensions: configured.extensions,
       cwd: options.cwd,
@@ -64,8 +75,10 @@ export async function resolveConfiguredExtensions(
       reservedExtensionIds: options.baseVcsCatalog.reservedIds,
       notifications: options.notifications,
       deferEventBusBinding: true,
+      onProvisionalLoad: ownProvisionalLoad,
     });
 
+    options.assertActive?.();
     const provisionalAdapters = resolveExtensionVcsAdapters(
       extensions.registry,
       options.baseVcsCatalog,
@@ -79,6 +92,7 @@ export async function resolveConfiguredExtensions(
         env: options.env,
         vcsCatalog: provisionalCatalog,
       });
+      options.assertActive?.();
       extensions = await loadStartupExtensionsImpl({
         extensions: configured.extensions,
         cwd: options.cwd,
@@ -88,14 +102,22 @@ export async function resolveConfiguredExtensions(
         reservedExtensionIds: options.baseVcsCatalog.reservedIds,
         notifications: extensions.notifications,
         previousLoad: extensions,
+        onProvisionalLoad: ownProvisionalLoad,
       });
     } else {
       bindExtensionEventBus(extensions);
     }
 
+    options.assertActive?.();
     return { configured, extensions };
   } catch (error) {
-    await retireExtensionLoadResult(extensions);
+    // A staged loader can reject after publishing a new registry but before
+    // assigning its result. Retire the latest provisional wrapper first, then
+    // any distinct earlier pass; registry-global retirement deduplicates aliases.
+    await retireExtensionLoadResult(provisionalExtensions);
+    if (extensions?.registry !== provisionalExtensions?.registry) {
+      await retireExtensionLoadResult(extensions);
+    }
     throw error;
   }
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, lineIndexOf, measureKeyScroll, sleep } from "./harness";
+import { createPtyHarness, lineIndexOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -193,7 +193,7 @@ describe("PTY key routing", () => {
     }
   });
 
-  test("the theme selector does not let unhandled keys scroll the pager stream", async () => {
+  test("the theme selector uses vertical review keys without scrolling the pager stream", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunkWithFileBackedStdin({
       stdinFile: fixture.patchFile,
@@ -217,14 +217,16 @@ describe("PTY key routing", () => {
       const anchorText = selectorOpen.split("\n")[anchorRow]?.trim() ?? "";
       expect(anchorText.length).toBeGreaterThan(0);
 
-      // "j" is not a selector key, and the modal must swallow it rather than
-      // let the focused scroll box page the diff behind the dialog.
+      // The review's down key moves the selector and must not reach the focused scroll box.
       await session.press("j");
       await session.waitIdle({ timeout: 400 });
 
+      const selectedBefore = selectorOpen.split("\n").find((line) => line.includes("›"));
       const afterKey = await session.text({ immediate: true });
+      const selectedAfter = afterKey.split("\n").find((line) => line.includes("›"));
       expect(lineIndexOf(afterKey, anchorText)).toBe(anchorRow);
       expect(afterKey).toContain("Theme selector");
+      expect(selectedAfter).not.toBe(selectedBefore);
     } finally {
       session.close();
     }
@@ -261,7 +263,7 @@ describe("PTY key routing", () => {
     }
   });
 
-  test("step keys still scroll exactly one row while a menu is open", async () => {
+  test("vertical review keys move an open menu without scrolling the stream", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
       args: ["show", "HEAD", "--cursor-line", "off"],
@@ -275,10 +277,17 @@ describe("PTY key routing", () => {
       await session.waitIdle({ timeout: 300 });
 
       await session.press("f10");
-      await session.waitForText(/Reload/, { timeout: 5_000 });
+      const menuOpen = await session.waitForText(/Reload/, { timeout: 5_000 });
 
-      // Row 20 sits below the File dropdown, so the anchor stays visible.
-      expect(await measureKeyScroll(session, "j", 20)).toBe(1);
+      const anchorRow = 20;
+      const anchorText = menuOpen.split("\n")[anchorRow]?.trim() ?? "";
+      expect(anchorText.length).toBeGreaterThan(0);
+
+      await session.press("j");
+      await session.waitIdle({ timeout: 300 });
+
+      const afterKey = await session.text({ immediate: true });
+      expect(lineIndexOf(afterKey, anchorText)).toBe(anchorRow);
     } finally {
       session.close();
     }

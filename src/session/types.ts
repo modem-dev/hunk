@@ -1,18 +1,15 @@
 import type { ExperimentalFeature } from "../core/experimental";
-import type { ExtensionLineHighlightTone } from "../extension-api/types";
+import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/types";
-import type { SessionReloadReason } from "../extensions/types";
 import type {
   HunkReviewActionEnvelopeV1,
   HunkReviewResourceCatalogV1,
   HunkReviewResourceReadEnvelopeV1,
   HunkReviewResultV1,
 } from "./reviewProtocol";
-import type { SessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  SessionClientMessage,
   SessionRegistration,
   SessionServerMessage,
   SessionSnapshot,
@@ -73,6 +70,15 @@ export interface HunkSessionInfo {
    * treats that as "this session serves no resources" rather than as an invalid payload.
    */
   reviewCatalog?: HunkReviewResourceCatalogV1;
+  /**
+   * Digest of the capability this session's review may be read under.
+   *
+   * The digest, never the capability: the session keeps the secret and the daemon only
+   * ever compares hashes, so nothing the daemon holds can be replayed as authorization.
+   * Absent from a session that predates the HTTP review surface, which then simply has no
+   * review to serve over HTTP.
+   */
+  reviewCapabilityDigest?: string;
 }
 
 /** App-owned live state that the broker snapshots and rebroadcasts. */
@@ -124,10 +130,6 @@ export interface NavigateToHunkToolInput extends SessionTargetInput {
 export interface ReloadSessionToolInput extends SessionTargetInput {
   nextInput: CliInput;
   sourcePath?: string;
-}
-
-export interface ListCommentsToolInput extends SessionTargetInput {
-  filePath?: string;
 }
 
 export interface RemoveCommentToolInput extends SessionTargetInput {
@@ -341,19 +343,6 @@ export type HunkSessionCommandResult =
   | HunkReviewResultV1
   | AppliedHighlightResult
   | ClearedHighlightsResult;
-
-export type HunkSessionClientMessage = SessionClientMessage<
-  HunkSessionInfo,
-  HunkSessionState,
-  HunkSessionCommandResult
->;
-
-export type HunkSessionBrokerClient = SessionBrokerClient<
-  HunkSessionInfo,
-  HunkSessionState,
-  HunkSessionServerMessage,
-  HunkSessionCommandResult
->;
 
 export type HunkSessionServerMessage =
   | SessionServerMessage<"comment", CommentToolInput>

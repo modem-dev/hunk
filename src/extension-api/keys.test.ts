@@ -81,6 +81,8 @@ describe("parseKeyChord", () => {
   test("refuses unknown named keys and dangling modifiers", () => {
     expect(parseKeyChord("f13")).toHaveProperty("error");
     expect(parseKeyChord("ctlr+s")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl+shift")).toHaveProperty("error");
     expect(parseKeyChord("ctrl+")).toHaveProperty("error");
     expect(parseKeyChord("")).toHaveProperty("error");
   });

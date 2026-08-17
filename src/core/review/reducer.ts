@@ -52,9 +52,9 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (action.document === state.document) {
         return state;
       }
-      // Selection reconciliation is deliberately not done here: which file becomes
-      // selected when the current one disappears depends on the consumer's visible
-      // stream, so consumers dispatch the follow-up selection they want.
+      // Selection reconciliation is not done here: which file becomes selected when the
+      // current one disappears depends on the consumer's visible stream, so consumers
+      // dispatch the follow-up selection they want.
       const retired = reviewFileKeysWithRetiredContent(state.document, action.document);
       const expandedGaps = state.expandedGaps.filter((gap) => !retired.has(gap.fileKey));
       // Loaded text is a cache of what a reader returned, not a fact of the diff: it

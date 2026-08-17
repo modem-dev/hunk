@@ -1,8 +1,4 @@
-import {
-  DEFAULT_SOURCE_TEXT_MAX_BYTES,
-  readFileTextWithLimit,
-  readStreamTextWithLimit as readLimitedStreamText,
-} from "../lib/sourceText";
+import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readFileTextWithLimit } from "../lib/sourceText";
 
 export { DEFAULT_SOURCE_TEXT_MAX_BYTES } from "../lib/sourceText";
 
@@ -57,15 +53,6 @@ async function readFsSpec(
     throw new SourceTextTooLargeError(result.maxBytes);
   }
   return result;
-}
-
-export function readStreamTextWithLimit(
-  stream: ReadableStream<Uint8Array> | null,
-  maxBytes: number,
-  onTooLarge?: () => void,
-  createLimitError: (maxBytes: number) => Error = (limit) => new SourceTextTooLargeError(limit),
-) {
-  return readLimitedStreamText(stream, maxBytes, onTooLarge, createLimitError);
 }
 
 /** Read the text one filesystem-backed source spec names, or null when there is none. */

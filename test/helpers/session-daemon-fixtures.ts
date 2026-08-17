@@ -47,11 +47,6 @@ export function createTestSessionReviewFile(
   };
 }
 
-function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary {
-  const { patch: _patch, hunks: _hunks, ...summary } = reviewFile;
-  return summary;
-}
-
 export function createTestSessionSnapshot(
   overrides: Partial<HunkSessionSnapshot["state"]> & { updatedAt?: string } = {},
 ): HunkSessionSnapshot {
@@ -196,15 +191,4 @@ export function createTestSessionReview(overrides: Partial<SessionReview> = {}):
     selectedHunk,
     files,
   };
-}
-
-export function createTestListedSessionFromReviewFiles(
-  files: SessionReviewFile[],
-  overrides: Partial<ListedSession> = {},
-): ListedSession {
-  return createTestListedSession({
-    fileCount: files.length,
-    files: files.map(summarizeReviewFile),
-    ...overrides,
-  });
 }

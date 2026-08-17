@@ -1,0 +1,72 @@
+{
+  "0.19": {
+    "tagline": "Git-installable extensions, exact-line agent guidance",
+    "links": [
+      { "label": "Extensions", "href": "/docs/extend/extensions/" },
+      { "label": "Live session control", "href": "/docs/agents/live-session-control/" },
+      { "label": "Layout and display", "href": "/docs/configure/layout-and-display/" }
+    ]
+  },
+  "0.18": {
+    "tagline": "Extension platform, line-level review",
+    "links": [
+      { "label": "Extensions", "href": "/docs/extend/extensions/" },
+      { "label": "Keyboard and mouse", "href": "/docs/start/keyboard-and-mouse/" },
+      { "label": "Git pager and difftool", "href": "/docs/workflows/git-pager-and-difftool/" }
+    ]
+  },
+  "0.17": {
+    "summary": "Hunk 0.17 makes the review chrome configurable, adds an Agent menu for setting up the review skill, and smooths out scrolling, theming, and session reliability across platforms.",
+    "links": [
+      { "label": "Layout and display", "href": "/docs/configure/layout-and-display/" },
+      { "label": "Review with an agent", "href": "/docs/agents/review-with-an-agent/" },
+      { "label": "Themes", "href": "/docs/configure/themes/" }
+    ]
+  },
+  "0.16": {
+    "summary": "Hunk 0.16 rebuilds the built-in theme system around a single `theme` setting with a live selector, and lets custom themes inherit from any built-in theme.",
+    "links": [{ "label": "Themes", "href": "/docs/configure/themes/" }]
+  },
+  "0.15": {
+    "summary": "Hunk 0.15 adds release benchmark gating, Sapling support, and a run of rendering performance work that keeps large reviews responsive on Windows and Unix alike.",
+    "links": [
+      { "label": "Jujutsu and Sapling", "href": "/docs/workflows/jujutsu-and-sapling/" },
+      { "label": "Git pager and difftool", "href": "/docs/workflows/git-pager-and-difftool/" }
+    ]
+  },
+  "0.14": {
+    "summary": "Hunk 0.14 adds mouse-drag selection with clipboard copy, inline expansion of collapsed unchanged context, and the Catppuccin Latte and Mocha themes.",
+    "links": [
+      { "label": "Keyboard and mouse", "href": "/docs/start/keyboard-and-mouse/" },
+      { "label": "Themes", "href": "/docs/configure/themes/" }
+    ]
+  },
+  "0.13": {
+    "summary": "Hunk 0.13 adds human-authored inline notes saved with `c`, an `e` shortcut to open the selected file in `$EDITOR`, and `g`/`G` jump navigation.",
+    "links": [
+      { "label": "Comments and annotations", "href": "/docs/agents/comments-and-annotations/" },
+      { "label": "Keyboard and mouse", "href": "/docs/start/keyboard-and-mouse/" }
+    ]
+  },
+  "0.12": {
+    "summary": "Hunk 0.12 brings native Windows support, Homebrew release automation, terminal-aware light and dark theme detection, and row windowing for very large single-file reviews.",
+    "links": [
+      { "label": "Install", "href": "/docs/start/install/" },
+      { "label": "OpenTUI components", "href": "/docs/reference/opentui-components/" }
+    ]
+  },
+  "0.11": {
+    "summary": "Hunk 0.11 adds Jujutsu support through `vcs = \"jj\"`, a pager-mode sidebar file tree, and steadier cross-file hunk navigation.",
+    "links": [
+      { "label": "Jujutsu and Sapling", "href": "/docs/workflows/jujutsu-and-sapling/" },
+      { "label": "Git pager and difftool", "href": "/docs/workflows/git-pager-and-difftool/" }
+    ]
+  },
+  "0.10": {
+    "summary": "Hunk 0.10 introduces `hunk daemon serve` as the standard session entrypoint, publishes reusable session-broker packages, and surfaces agent comment counts in the sidebar.",
+    "links": [
+      { "label": "Live session control", "href": "/docs/agents/live-session-control/" },
+      { "label": "Working trees and commits", "href": "/docs/workflows/working-trees-and-commits/" }
+    ]
+  }
+}

@@ -162,7 +162,7 @@ describe("UI key routing with a focused scroll box", () => {
     }
   });
 
-  test("the theme selector swallows unhandled keys instead of letting them scroll the stream", async () => {
+  test("the theme selector owns vertical review keys instead of scrolling the stream", async () => {
     const { setup, scrollBox } = await setupWithFocusedScrollBox();
 
     try {
@@ -178,15 +178,16 @@ describe("UI key routing with a focused scroll box", () => {
       );
       expect(selectorFrame).toContain("Theme selector");
 
-      // "j" is not a selector key, and it must not reach the scroll box
-      // either: a modal surface owns every key it does not explicitly handle.
+      // The review's down key moves the selector and must not reach the focused scroll box.
       await act(async () => {
         await setup.mockInput.typeText("j");
       });
       await flush(setup);
 
       expect(scrollBox.scrollTop).toBe(scrollTopBefore);
-      expect(setup.captureCharFrame()).toContain("Theme selector");
+      const movedFrame = setup.captureCharFrame();
+      expect(movedFrame).toContain("Theme selector");
+      expect(movedFrame).toContain("›  github-dark-dimmed");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

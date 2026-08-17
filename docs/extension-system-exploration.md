@@ -112,7 +112,7 @@ seams in very different states of readiness:
 - The session broker (`packages/session-broker*`) is generic over session
   info/state/message types by design, and the app installs its command
   dispatcher at runtime via `createHunkSessionBridge(handlers)` +
-  `hostClient.setBridge(...)` (`src/session/app/bridge.ts`). That bridge is
+  `hostClient.setBridge(...)` (`src/app/session/bridge.ts`). That bridge is
   the single clearest injection point for extension-provided session commands.
 - Dynamic theme registration exists (`ensureSyntaxHighlightThemeRegistered` →
   Pierre's `registerCustomTheme`), but the config layer caps custom themes at

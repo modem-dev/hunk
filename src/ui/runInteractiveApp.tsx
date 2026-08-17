@@ -19,7 +19,7 @@ import { ReviewProducer } from "../app/review/producer";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
-} from "../session/app/registration";
+} from "../app/session/registration";
 import type {
   HunkSessionCommandResult,
   HunkSessionInfo,
@@ -82,10 +82,16 @@ export async function runInteractiveApp({
 
   const appRenderer = renderer;
   const root = createRoot(appRenderer);
+  const externalQuitController = new AbortController();
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
   let terminalDisconnectSupport: TerminalDisconnectSupport = { dispose: () => undefined };
+
+  /** Ask AppHost to retire extension authority before tearing down the terminal. */
+  function requestQuit() {
+    externalQuitController.abort();
+  }
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
   function shutdown() {
@@ -95,7 +101,7 @@ export async function runInteractiveApp({
 
     shuttingDown = true;
     for (const signal of APP_SHUTDOWN_SIGNALS) {
-      process.off(signal, shutdown);
+      process.off(signal, requestQuit);
     }
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
@@ -105,17 +111,18 @@ export async function runInteractiveApp({
   }
 
   for (const signal of APP_SHUTDOWN_SIGNALS) {
-    process.once(signal, shutdown);
+    process.once(signal, requestQuit);
   }
-  // Istalled after the renderer so a disconnect closes a session cleanly, instead of racing renderer.
-  terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, shutdown);
-  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
+  // Install after the renderer so a disconnect closes the live session instead of racing startup.
+  terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, requestQuit);
+  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, requestQuit);
   jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
   // The app owns the full alternate screen session from this point on.
   root.render(
     <AppHost
       bootstrap={bootstrap}
+      externalQuitSignal={externalQuitController.signal}
       hostClient={hostClient}
       onQuit={shutdown}
       reviewProducer={reviewProducer}

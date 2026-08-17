@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { REVIEW_INTENT_TYPES, type ReviewIntent } from "../core/review/intents";
-import { MAX_REVIEW_NOTE_BYTES, reviewNoteWithinBounds } from "../core/review/noteBounds";
+import { MAX_REVIEW_NOTE_BYTES, reviewNoteWithinSizeLimit } from "../core/review/noteSize";
 import {
   REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   REVIEW_PATCH_CONTENT_TYPE,
@@ -406,12 +406,12 @@ describe("note transport bounds", () => {
     for (const field of [note.summary, note.rationale!, note.markup!]) {
       expect(field.length).toBeLessThanOrEqual(MAX_REVIEW_NOTE_BYTES);
     }
-    expect(reviewNoteWithinBounds(note)).toBe(false);
+    expect(reviewNoteWithinSizeLimit(note)).toBe(false);
   });
 
   test("accepts a note within the shared bound", () => {
     expect(
-      reviewNoteWithinBounds({
+      reviewNoteWithinSizeLimit({
         id: "user:1",
         source: "user",
         fileKey: FILE_KEY,

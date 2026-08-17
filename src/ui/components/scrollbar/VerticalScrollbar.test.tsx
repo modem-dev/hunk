@@ -262,24 +262,28 @@ describe("Vertical scrollbar", () => {
         contentHeight={40}
         theme={theme}
         height={10}
-        hideDelayMs={20}
+        hideDelayMs={120}
       />,
       { width: 2, height: 10 },
     );
 
     try {
       await flush(setup);
+      // Real timers, so keep wide margins on both sides of the deadline:
+      // Windows CI timer granularity oversleeps enough to flip tight ones.
       await act(async () => {
         handle.current?.show();
-        await Bun.sleep(15);
+        await Bun.sleep(100);
         handle.current?.show();
-        await Bun.sleep(10);
+        await Bun.sleep(60);
       });
       await flush(setup);
+      // 160ms since the first show() but only 60ms since the second: still
+      // visible only because the second show() restarted the deadline.
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
       await act(async () => {
-        await Bun.sleep(15);
+        await Bun.sleep(180);
       });
       await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);

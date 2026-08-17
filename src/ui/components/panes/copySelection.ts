@@ -10,6 +10,7 @@ import {
   type DiffSectionGeometry,
   type DiffSectionRowBounds,
 } from "../../diff/diffSectionGeometry";
+import type { CopySelectedRowRange } from "../../lib/diffSpatial";
 import type { FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth } from "../../lib/text";
@@ -428,13 +429,6 @@ export function renderCopySelectionText({
   }
 
   return lines.join("\n").replace(/\n+$/g, "");
-}
-
-export interface CopySelectedRowRange {
-  /** Global column where the selection starts on this row. */
-  startCol: number;
-  /** Global column where the selection ends on this row (inclusive). */
-  endCol: number;
 }
 
 /**

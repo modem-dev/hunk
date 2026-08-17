@@ -10,6 +10,7 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
@@ -30,7 +31,7 @@ const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
-const { PierreDiffView } = await import("../diff/PierreDiffView");
+const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { DiffRowView, measureRenderedRowHeight } = await import("../diff/renderRows");
 
 function createTestDiffFile(
@@ -238,6 +239,7 @@ function createDiffPaneProps(
   return {
     diffContentWidth: 72,
     files,
+    offloadLargeDiff: false,
     headerLabelWidth: 40,
     headerStatsWidth: 16,
     layout: "split" as const,
@@ -2301,6 +2303,135 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane reveals the note the shared policy names, not the first one drawn in the hunk", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    // Two hunks far apart. Both notes hang from the second hunk and land on its first row:
+    // one is anchored there, the other to a line the collapsed gap swallowed.
+    const beforeLines = Array.from(
+      { length: 80 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[59] = "export const line60 = 6000;";
+
+    const file = createTestDiffFile(
+      "policy-note",
+      "policy-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    const hunkFirstLine = file.metadata.hunks[1]!.additionStart;
+    file.agent = {
+      path: file.path,
+      summary: "file note",
+      annotations: [
+        {
+          newRange: [hunkFirstLine, hunkFirstLine],
+          summary: "HUNK NOTE",
+          // Tall enough that revealing the note below it pushes this one off the top.
+          rationale: Array.from({ length: 6 }, (_, index) => `filler line ${index + 1}`).join(" "),
+        },
+        { newRange: [hunkFirstLine - 20, hunkFirstLine - 20], summary: "GAP NOTE" },
+      ],
+    };
+
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 40,
+      headerLabelWidth: 20,
+      selectedFileId: file.id,
+      selectedHunkIndex: 1,
+      scrollToNote: true,
+      separatorWidth: 44,
+      showAgentNotes: true,
+      showHunkHeaders: true,
+      width: 48,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 52, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      // Both notes sit on the same row, so the note drawn first is the one a scan of the
+      // hunk's rows finds. The shared policy takes the earliest anchor instead.
+      expect(frame).toContain("GAP NOTE");
+      expect(frame).not.toContain("HUNK NOTE");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane reveal is not confused by an explicit note id that spells an index", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    // Same geometry as the policy test above, but the notes' identities collide under an
+    // index-based id scheme: the policy's winner has no id and sits at index 0, while the
+    // decoy's explicit id is the string "0". If synthesized and explicit ids share a
+    // namespace, the reveal resolves the winner's id to the decoy's row.
+    const beforeLines = Array.from(
+      { length: 80 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[59] = "export const line60 = 6000;";
+
+    const file = createTestDiffFile(
+      "collide-note",
+      "collide-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    const hunkFirstLine = file.metadata.hunks[1]!.additionStart;
+    file.agent = {
+      path: file.path,
+      summary: "file note",
+      annotations: [
+        // The reveal's rightful target: the only note in the selected hunk, with the
+        // explicit id "1" — the string the decoy's index synthesizes.
+        {
+          id: "1",
+          newRange: [hunkFirstLine, hunkFirstLine],
+          summary: "COLLIDE TARGET",
+        },
+        // An id-less note at index 1, two viewports away in the first hunk. Under a shared
+        // namespace its row registers last under the target's id, so the reveal scrolls here.
+        { newRange: [1, 1], summary: "COLLIDE DECOY" },
+      ],
+    };
+
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 40,
+      headerLabelWidth: 20,
+      selectedFileId: file.id,
+      selectedHunkIndex: 1,
+      scrollToNote: true,
+      separatorWidth: 44,
+      showAgentNotes: true,
+      showHunkHeaders: true,
+      width: 48,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 52, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      // The shared policy names the earliest-anchored note; its id must resolve to its own
+      // row even though another note's explicit id spells the winner's index.
+      expect(frame).toContain("COLLIDE TARGET");
+      expect(frame).not.toContain("COLLIDE DECOY");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -3225,11 +3356,11 @@ describe("UI components", () => {
     expect(frame).toContain("1 + export const alpha = 2;");
   });
 
-  test("PierreDiffView renders stack-mode wrapped continuation rows", async () => {
+  test("DiffSectionBody renders stack-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -3256,12 +3387,12 @@ describe("UI components", () => {
     expect(addedLines.slice(1).some((line) => line.includes("age';"))).toBe(true);
   });
 
-  test("PierreDiffView can reveal offscreen code columns in nowrap mode", async () => {
+  test("DiffSectionBody can reveal offscreen code columns in nowrap mode", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
 
     const baseFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -3274,7 +3405,7 @@ describe("UI components", () => {
       12,
     );
     const shiftedFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -3300,7 +3431,7 @@ describe("UI components", () => {
     const width = 64;
 
     const splitFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3313,7 +3444,7 @@ describe("UI components", () => {
       18,
     );
     const stackFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -3334,7 +3465,7 @@ describe("UI components", () => {
     expect(splitContinuationRows.length).toBeGreaterThan(stackContinuationRows.length);
   });
 
-  test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
+  test("DiffSectionBody anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
     const file = createTestDiffFile(
       "note-fallback",
       "note-fallback.ts",
@@ -3343,20 +3474,20 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
         width={88}
         selectedHunkIndex={0}
         visibleAgentNotes={[
-          {
+          createVisibleAgentNote(file.metadata.hunks, {
             id: "note:ungrounded",
             annotation: {
               summary: "Ungrounded note",
               rationale: "Falls back to the first visible row.",
             },
-          },
+          }),
         ]}
         showHunkHeaders={false}
         scrollable={false}
@@ -3375,11 +3506,11 @@ describe("UI components", () => {
     );
   });
 
-  test("PierreDiffView shows contextual messages when there is no selected file or no textual hunks", async () => {
+  test("DiffSectionBody shows contextual messages when there is no selected file or no textual hunks", async () => {
     const theme = resolveTheme("github-dark-default", null);
 
     const noFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={undefined}
         layout="split"
         theme={theme}
@@ -3393,7 +3524,7 @@ describe("UI components", () => {
     expect(noFileFrame).toContain("No file selected.");
 
     const renameOnlyFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("rename-pure")}
         layout="split"
         theme={theme}
@@ -3407,7 +3538,7 @@ describe("UI components", () => {
     expect(renameOnlyFrame).toContain("This change only renames the file.");
 
     const newFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("new")}
         layout="split"
         theme={theme}
@@ -3421,7 +3552,7 @@ describe("UI components", () => {
     expect(newFileFrame).toContain("The file is marked as new.");
 
     const deletedFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("deleted")}
         layout="split"
         theme={theme}
@@ -3435,7 +3566,7 @@ describe("UI components", () => {
     expect(deletedFileFrame).toContain("The file is marked as deleted.");
 
     const binaryFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={{
           ...createEmptyDiffFile("change"),
           id: "empty:binary",
@@ -3454,12 +3585,12 @@ describe("UI components", () => {
     expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
-  test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {
+  test("DiffSectionBody shows the expand chevron only when a source fetcher is attached", async () => {
     const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
     const theme = resolveTheme("github-dark-default", null);
 
     const noFetcherFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={baseFile}
         layout="split"
         theme={theme}
@@ -3479,7 +3610,7 @@ describe("UI components", () => {
     };
 
     const expandableFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={fileWithFetcher}
         layout="split"
         theme={theme}
@@ -3494,7 +3625,7 @@ describe("UI components", () => {
     expect(expandableFrame).toContain("▾");
   });
 
-  test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
+  test("DiffSectionBody hides add-note affordances on collapsed and hunk-header rows", async () => {
     const expandable = createExpandableContextDiffFile("meta-hover", "meta-hover.ts");
     const file = {
       ...expandable.file,
@@ -3502,7 +3633,7 @@ describe("UI components", () => {
     };
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3565,7 +3696,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView toggles a collapsed gap when clicked", async () => {
+  test("DiffSectionBody toggles a collapsed gap when clicked", async () => {
     const expandable = createExpandableContextDiffFile("expand-click", "expand-click.ts");
     const file = {
       ...expandable.file,
@@ -3574,7 +3705,7 @@ describe("UI components", () => {
     const toggledGaps: string[] = [];
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3619,7 +3750,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView highlights expanded unchanged source rows", async () => {
+  test("DiffSectionBody highlights expanded unchanged source rows", async () => {
     const beforeLines = Array.from({ length: 30 }, (_, index) =>
       index === 0
         ? "export const expandedMarker = 1;"
@@ -3637,7 +3768,7 @@ describe("UI components", () => {
     });
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3674,7 +3805,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView renders word-diff spans with a visibly different background in split view", async () => {
+  test("DiffSectionBody renders word-diff spans with a visibly different background in split view", async () => {
     const file = createTestDiffFile(
       "word-diff",
       "word-diff.ts",
@@ -3683,7 +3814,7 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3729,7 +3860,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
+  test("DiffSectionBody reuses highlighted rows after unmounting and remounting a file section", async () => {
     const file = createTestDiffFile(
       "cache",
       "cache.ts",
@@ -3739,7 +3870,7 @@ describe("UI components", () => {
     const theme = resolveTheme("github-dark-default", null);
 
     const firstSetup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3774,7 +3905,7 @@ describe("UI components", () => {
     }
 
     const secondSetup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3813,7 +3944,7 @@ describe("UI components", () => {
       { width: 100, height: 10 },
     );
     const thirdFileCheck = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={files[2]}
         layout="split"
         theme={theme}

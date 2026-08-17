@@ -1,10 +1,10 @@
 import { type FileDiffMetadata } from "@pierre/diffs";
-import { findAgentFileContext } from "./agent";
+import { findSidecarFileContext } from "./sidecar";
 import { patchLooksBinary } from "./binary";
-import { getFiletypeFromFileName } from "./fileLanguage";
+import { fileLanguageForPath } from "./fileLanguageLookup";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import type { FileSourceFetcher } from "./fileSource";
-import type { AgentContext, DiffFile, DiffLineMoveKinds } from "./types";
+import type { DiffFile, DiffLineMoveKinds, SidecarContext } from "./changeset";
 
 /** Count visible additions and deletions from parsed diff metadata. */
 export function countDiffStats(metadata: FileDiffMetadata) {
@@ -49,7 +49,7 @@ export function buildDiffFile(
   patch: string,
   index: number,
   sourcePrefix: string,
-  agentContext: AgentContext | null,
+  sidecar: SidecarContext | null,
   {
     isUntracked,
     previousPath,
@@ -81,11 +81,11 @@ export function buildDiffFile(
     path,
     previousPath: resolvedPreviousPath,
     patch,
-    language: getFiletypeFromFileName(path) ?? undefined,
+    language: fileLanguageForPath(path) ?? undefined,
     stats: stats ?? countDiffStats(normalizedMetadata),
     metadata: normalizedMetadata,
     lineMoveKinds,
-    agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
+    agent: findSidecarFileContext(sidecar, path, resolvedPreviousPath),
     isUntracked,
     isBinary: resolvedIsBinary,
     isTooLarge,

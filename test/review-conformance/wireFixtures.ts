@@ -3,14 +3,12 @@
  *
  * Every action in the vocabulary appears here with the intent it lowers to, written by
  * hand. That makes the corpus a statement of the round trip rather than a snapshot of the
- * parser: an action that stopped lowering to the intent it derives from — the B12 failure
- * mode, where a wire type drifts away from the semantics it is supposed to carry — fails
- * here.
+ * parser: an action that stopped lowering to the intent it derives from fails here, which
+ * is the B12 failure mode of a wire type drifting away from the semantics it carries.
  *
  * The adversarial cases are the two the audit contributed. B10: a line inside an expanded
- * gap is addressable at all, because the action carries the proof for it — the prototype's
- * browser could not express one and had its clicks rejected or mis-sided. D1 is covered by
- * the note-bounds corpus, which the wire now runs as a consumer.
+ * gap is addressable at all, because the action carries the proof for it. D1 is covered by
+ * the note-size corpus, which the wire now runs as a consumer.
  */
 import type { ReviewWireFixture } from "./types";
 

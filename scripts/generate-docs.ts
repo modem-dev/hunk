@@ -6,7 +6,7 @@ import {
   type CliReferenceCommand,
   type CliReferenceOption,
   WATCH_OPTION,
-} from "../src/core/cli";
+} from "../src/app/cli";
 import {
   BUILT_IN_THEME_IDS,
   CONFIG_COMMAND_SECTIONS,

@@ -41,7 +41,7 @@ describe("buildExtensionAppCommands", () => {
 
   test("refuses chords owned by built-in shortcuts", () => {
     const { commands, conflicts } = buildExtensionAppCommands({
-      // "s" toggles the sidebar and "[" is hunk navigation; both are taken.
+      // "s" toggles the files pane and "[" is hunk navigation; both are taken.
       registered: [registeredCommand("meta", "steal-s", "s"), registeredCommand("meta", "ok", "y")],
       builtins: builtinCommandMatchProbes(),
       runCommand: () => {},
@@ -55,7 +55,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.steal-s",
         key: "s",
-        conflictingId: "hunk.view.toggleSidebar",
+        conflictingId: "hunk.view.toggleFilesPane",
       },
     ]);
   });
@@ -95,7 +95,7 @@ describe("buildExtensionAppCommands", () => {
 
   test("drops only the conflicting chord of a multi-key command", () => {
     const { commands, conflicts } = buildExtensionAppCommands({
-      // "s" toggles the sidebar; "y" is free.
+      // "s" toggles the files pane; "y" is free.
       registered: [registeredCommand("meta", "toggle", ["s", "y"])],
       builtins: builtinCommandMatchProbes(),
       runCommand: () => {},
@@ -106,7 +106,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.toggle",
         key: "s",
-        conflictingId: "hunk.view.toggleSidebar",
+        conflictingId: "hunk.view.toggleFilesPane",
       },
     ]);
     // The command stays registered and keeps the chord nobody else owns.
@@ -128,9 +128,9 @@ describe("buildExtensionAppCommands", () => {
   });
 
   test("a chord a built-in released is free for an extension to claim", () => {
-    // The user moved the sidebar toggle to "ctrl+b", so "s" belongs to nobody.
+    // The user moved the files-pane toggle to "ctrl+b", so "s" belongs to nobody.
     const resolvedKeys = new Map<string, readonly string[]>([
-      ["hunk.view.toggleSidebar", ["ctrl+b"]],
+      ["hunk.view.toggleFilesPane", ["ctrl+b"]],
     ]);
     const { commands, conflicts } = buildExtensionAppCommands({
       registered: [registeredCommand("meta", "steal-s", "s")],

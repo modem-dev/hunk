@@ -25,9 +25,11 @@ function createTestRepo() {
     writeFileSync(path.join(repoRoot, "skills", skillName, "SKILL.md"), `# ${skillName}\n`);
   }
 
-  // A maintainer-only skill the artifact must leave behind.
-  mkdirSync(path.join(repoRoot, "skills", "launch-video"), { recursive: true });
-  writeFileSync(path.join(repoRoot, "skills", "launch-video", "SKILL.md"), "# Launch video\n");
+  // Maintainer-only skills the artifact must leave behind.
+  for (const skillName of ["hunk-launch-video", "hunk-release"]) {
+    mkdirSync(path.join(repoRoot, "skills", skillName), { recursive: true });
+    writeFileSync(path.join(repoRoot, "skills", skillName, "SKILL.md"), `# ${skillName}\n`);
+  }
 
   return { repoRoot, spec, binaryName };
 }
@@ -79,7 +81,9 @@ describe("stagePrebuiltArtifact", () => {
     }
 
     // Maintainer-only skills reference scripts no artifact ships, so they stay out.
-    expect(existsSync(path.join(outputDir, "skills", "launch-video"))).toBe(false);
+    for (const skillName of ["hunk-launch-video", "hunk-release"]) {
+      expect(existsSync(path.join(outputDir, "skills", skillName))).toBe(false);
+    }
 
     if (process.platform !== "win32") {
       expect(statSync(path.join(outputDir, binaryName)).mode & 0o111).not.toBe(0);

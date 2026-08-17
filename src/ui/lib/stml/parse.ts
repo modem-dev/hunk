@@ -197,13 +197,8 @@ export function parseStml(input: string, options: StmlParseOptions = {}): StmlPa
       continue;
     }
 
-    // Opening tag
+    // `isTagStart` guarantees `readOpenTag` can consume a non-empty tag name.
     const open = readOpenTag(source, i);
-    if (!open) {
-      pushText("<");
-      i += 1;
-      continue;
-    }
     i = open.next;
 
     if (stack.length >= limits.maxDepth) {
@@ -291,15 +286,13 @@ interface OpenTag {
   next: number;
 }
 
-function readOpenTag(input: string, start: number): OpenTag | null {
+/** Read one opening tag after `isTagStart` confirms a non-empty name. */
+function readOpenTag(input: string, start: number): OpenTag {
   const n = input.length;
   let i = start + 1;
   let tag = "";
   while (i < n && isNameChar(input[i]!)) {
     tag += input[i++];
-  }
-  if (!tag) {
-    return null;
   }
   tag = tag.toLowerCase();
   const attrs: Record<string, string> = {};

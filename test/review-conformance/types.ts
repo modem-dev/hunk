@@ -23,6 +23,7 @@ import type {
 import type { ReviewIntent } from "../../src/core/review/intents";
 import type { ReviewSelectionScope } from "../../src/core/review/navigation";
 import type { ReviewNoteV1 } from "../../src/core/review/types";
+import type { HunkReviewPublicationBodyV1 } from "../../src/session/reviewHttpProtocol";
 import type { DiffFile } from "../../src/core/types";
 
 export interface ConformanceGap {
@@ -63,7 +64,7 @@ export interface ConformanceFileProjection {
   expandedRows?: ConformanceExpandedRow[];
 }
 
-export interface ReviewConformanceProjection {
+export interface ReviewGeometryProjection {
   files: ConformanceFileProjection[];
 }
 
@@ -75,7 +76,7 @@ export interface ConformanceExpansion {
   sourceText: string;
 }
 
-export interface ReviewConformanceFixture {
+export interface ReviewGeometryFixture {
   id: string;
   /** Audit finding ids this fixture guards, e.g. `A1`. */
   findings: string[];
@@ -84,7 +85,7 @@ export interface ReviewConformanceFixture {
   build: () => DiffFile[];
   expansion?: ConformanceExpansion;
   /** Hand-written from the semantics — never captured from a primitive. */
-  expected: ReviewConformanceProjection;
+  expected: ReviewGeometryProjection;
 }
 
 /**
@@ -94,11 +95,11 @@ export interface ReviewConformanceFixture {
  * calling core directly — the terminal adapter drives row building, a producer adapter
  * drives publication, a browser adapter drives its own projection.
  */
-export interface ReviewConformanceConsumer {
+export interface ReviewGeometryConsumer {
   name: string;
   /** The phase that registered this consumer, for the gate ladder's records. */
   phase: string;
-  project: (fixture: ReviewConformanceFixture) => ReviewConformanceProjection;
+  project: (fixture: ReviewGeometryFixture) => ReviewGeometryProjection;
 }
 
 /**
@@ -203,15 +204,64 @@ export interface ReviewWireParseOutcome {
 /**
  * One consumer of the wire schema.
  *
- * Two questions, both of which the prototype answered differently at different tiers: what
- * an action means once parsed (B12/B10), and whether a note may cross a boundary at all
- * (D1). A consumer joins by driving the code path it really uses.
+ * Two questions every tier must answer the same way: what an action means once parsed
+ * (B12/B10), and whether a note may cross a boundary at all (D1). A consumer joins by
+ * driving the code path it really uses.
  */
 export interface ReviewWireConsumer {
   name: string;
   phase: string;
   parseAction: (action: Record<string, unknown>) => ReviewWireParseOutcome;
   acceptsNote: (note: ReviewNoteV1) => boolean;
+}
+
+/**
+ * What one consumer made of framing an event, stated so two tiers can be compared.
+ *
+ * Deliberately about the shape of the exchange rather than its bytes: which frames went
+ * out, how many of them a client may resume from, and whether the payload came back
+ * intact. Sizes are arithmetic and belong to the protocol, not to a corpus.
+ */
+export interface ReviewEventFramingProjection {
+  /** Frame names in order, with a run of chunk frames collapsed to one entry. */
+  frames: string[];
+  /** How many frames carry a resumable `id`. */
+  resumableFrames: number;
+  /** Whether reading the frames back yields the body that was framed. */
+  roundTrips: boolean;
+}
+
+/** One publication to frame, and how small the sender's windows are while it does. */
+export interface ReviewEventFixture {
+  id: string;
+  /** Audit finding ids this fixture guards, e.g. `C4`. */
+  findings: string[];
+  /** What makes this payload worth stating, in one line. */
+  description: string;
+  body: HunkReviewPublicationBodyV1;
+  /**
+   * Window size, either in bytes or relative to the payload.
+   *
+   * The relative forms are how a fixture pins the boundary both ends must agree on
+   * without writing a byte count into the corpus.
+   */
+  chunkBytes: number | "payload-size" | "payload-size-minus-one";
+  /** Hand-written from the semantics — never captured from a sender. */
+  expected: ReviewEventFramingProjection;
+}
+
+/**
+ * One consumer of the event contract.
+ *
+ * Registered separately because it answers a transport question rather than a semantic
+ * one: given a publication and a window size, what goes on the wire and does it survive?
+ * The shared protocol answers first and every tier that frames events joins beside it —
+ * the HTTP surface here, a browser client's reader in Phase 5.
+ */
+export interface ReviewEventConsumer {
+  name: string;
+  phase: string;
+  frame: (fixture: ReviewEventFixture) => Promise<ReviewEventFramingProjection>;
 }
 
 /** One action a client sends, and what the wire should make of it. */

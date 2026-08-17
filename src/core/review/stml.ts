@@ -21,6 +21,9 @@ export type StmlInlineRole =
   | "key"
   | "badge"
   | "link"
+  // Text whose appearance comes from its own attributes (`<c fg="success">`)
+  // rather than from a fixed meaning like `strong`.
+  | "styled"
   | "line-break";
 
 export type StmlBlockRole =
@@ -54,6 +57,9 @@ const TAG_ROLES: Readonly<Record<string, StmlTagRole>> = {
   badge: "badge",
   a: "link",
   link: "link",
+  c: "styled",
+  color: "styled",
+  span: "styled",
   br: "line-break",
   box: "container",
   col: "container",
@@ -93,6 +99,7 @@ const INLINE_ROLES: ReadonlySet<StmlTagRole> = new Set<StmlInlineRole>([
   "key",
   "badge",
   "link",
+  "styled",
   "line-break",
 ]);
 

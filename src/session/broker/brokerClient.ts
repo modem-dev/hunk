@@ -23,6 +23,12 @@ import {
   readHunkSessionDaemonCapabilities,
   reportHunkDaemonUpgradeRestart,
 } from "../client/capabilities";
+import type {
+  HunkSessionCommandResult,
+  HunkSessionInfo,
+  HunkSessionServerMessage,
+  HunkSessionState,
+} from "../types";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
@@ -41,6 +47,14 @@ interface SessionBrokerClientTiming {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
 }
+
+/** The broker client bound to Hunk's session info, state, message, and result types. */
+export type HunkSessionBrokerClient = SessionBrokerClient<
+  HunkSessionInfo,
+  HunkSessionState,
+  HunkSessionServerMessage,
+  HunkSessionCommandResult
+>;
 
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<
@@ -109,9 +123,11 @@ export class SessionBrokerClient<
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
+    // Let the connection validate/send first. If it throws, the client keeps
+    // serving the previous registration and snapshot as one coherent pair.
+    this.connection?.replaceSession(registration, snapshot);
     this.registration = registration;
     this.snapshot = snapshot;
-    this.connection?.replaceSession(registration, snapshot);
   }
 
   private resolveConfig() {

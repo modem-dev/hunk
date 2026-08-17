@@ -17,6 +17,7 @@ import {
   selectReviewFileByKey,
   selectReviewGapForSelection,
   selectReviewNavigationFiles,
+  resolveReviewRevealNoteId,
   selectRevealTarget,
   selectVisibleReviewFiles,
 } from "./selectors";
@@ -214,6 +215,32 @@ describe("note selectors", () => {
 
     expect(selectActiveRevealNoteId(state)).toBe("live-early");
     expect(selectActiveRevealNoteId({ ...state, liveNotes: [], userNotes: [] })).toBeUndefined();
+  });
+
+  // Intent: a surface that draws notes the store never held — the terminal's sidecar
+  // annotations — asks the same policy which of them a reveal targets.
+  test("answer the same way for candidates a surface supplies itself", () => {
+    expect(
+      resolveReviewRevealNoteId([
+        { id: "late", line: 9 },
+        { id: "draft", line: 40, draft: true },
+        { id: "early", line: 1 },
+      ]),
+    ).toBe("draft");
+    expect(
+      resolveReviewRevealNoteId([
+        { id: "late", line: 9 },
+        { id: "early", line: 1 },
+      ]),
+    ).toBe("early");
+    // Same anchor line: the note that arrived first keeps the reveal.
+    expect(
+      resolveReviewRevealNoteId([
+        { id: "first", line: 4 },
+        { id: "second", line: 4 },
+      ]),
+    ).toBe("first");
+    expect(resolveReviewRevealNoteId([])).toBeUndefined();
   });
 });
 

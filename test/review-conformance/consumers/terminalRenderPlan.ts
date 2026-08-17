@@ -12,15 +12,15 @@ import { reviewGapId } from "../../../src/core/review/expansion";
 import type { DiffFile } from "../../../src/core/types";
 import { buildDiffSectionRowPlan } from "../../../src/ui/diff/diffSectionRowPlan";
 import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/renderRows";
-import type { DiffRow } from "../../../src/ui/diff/pierre";
+import type { DiffRow } from "../../../src/ui/diff/diffRows";
 import { buildSelectedHunkSummary } from "../../../src/ui/lib/reviewState";
 import { resolveTheme } from "../../../src/ui/themes";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,
   ConformanceHunkRanges,
-  ReviewConformanceConsumer,
-  ReviewConformanceFixture,
+  ReviewGeometryConsumer,
+  ReviewGeometryFixture,
 } from "../types";
 
 const THEME = resolveTheme("github-dark-default", null);
@@ -87,10 +87,10 @@ function hunkRangesOf(file: DiffFile): ConformanceHunkRanges[] {
   });
 }
 
-export const terminalRenderPlanConsumer: ReviewConformanceConsumer = {
+export const terminalRenderPlanConsumer: ReviewGeometryConsumer = {
   name: "terminal render planning",
   phase: "Phase 1 PR 2",
-  project(fixture: ReviewConformanceFixture) {
+  project(fixture: ReviewGeometryFixture) {
     const files = fixture.build();
     return {
       files: files.map((file, fileIndex) => {

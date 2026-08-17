@@ -18,6 +18,7 @@
       "import": "./src/compose.mjs"
     },
     "./plan": {
+      "types": "./src/plan.d.mts",
       "import": "./src/plan.mjs"
     }
   },

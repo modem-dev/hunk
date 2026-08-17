@@ -44,7 +44,7 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
-Or with [mise](https://mise.jdx.dev) (macOS and Linux):
+Or with [mise](https://mise.jdx.dev) (Windows requires mise 2026.8.6 or newer):
 
 ```bash
 mise use -g hunk
@@ -73,6 +73,7 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 
 ```bash
 hunk diff                      # review current repo changes, including untracked files
+hunk --fast                    # experimentally offload eligible large-diff highlighting
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
@@ -140,9 +141,10 @@ vcs = "git"          # git, jj, sl
 watch = false
 exclude_untracked = false
 line_numbers = true
-tab_width = 4       # tab stops, 1-16
+tab_width = 4        # tab stops, 1-16
 wrap_lines = false
 menu_bar = true
+sidebar = "auto"     # "auto", true, false
 agent_notes = false
 prompt_save_view_preferences = true
 transparent_background = false

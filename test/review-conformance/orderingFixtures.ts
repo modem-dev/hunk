@@ -1,12 +1,9 @@
 /**
  * The publication-ordering corpus: what is ahead, what is behind, and what needs a resnap.
  *
- * The prototype answered this five times with three rules — one client demanded contiguous
- * `+1` revisions the server never promised, another accepted equal revisions, a third
- * required exact equality — and the disagreements only surfaced as a browser that silently
- * stopped updating (`docs/browser-review-seam-audit.md`, C1). These fixtures pin the one
- * rule from both ends: the classification itself, and the transitions a real producer
- * actually emits.
+ * The rule these fixtures pin lives in `src/core/review/generationOrder.ts`
+ * (`docs/browser-review-seam-audit.md`, C1). They pin it from both ends: the
+ * classification itself, and the transitions a real producer actually emits.
  *
  * Verdicts are written by hand from the invariant, never captured from the classifier.
  */

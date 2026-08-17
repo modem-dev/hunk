@@ -25,6 +25,6 @@ inspectable PNG before anything is encoded.
 ## Consumers
 
 `scripts/launch-video/` holds Hunk's current storyboard (scenes, captions,
-cards) on top of this package; `skills/launch-video/SKILL.md` documents the
+cards) on top of this package; `skills/hunk-launch-video/SKILL.md` documents the
 end-to-end workflow and recipes for single-feature, custom, and full-release
 videos, environment gotchas included.

@@ -1,5 +1,5 @@
 /**
- * Pure review-stream derivation helpers used by `useReviewController`.
+ * Pure review-stream derivation helpers used by `useTerminalReview`.
  *
  * This module turns raw diff files plus live comments into the current visible review
  * state, the terminal's selection-reconciliation follow-up, and absolute session-daemon

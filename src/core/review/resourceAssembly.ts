@@ -37,6 +37,12 @@ export interface ReviewResourceChunkBytes {
   bytes: Uint8Array;
 }
 
+/**
+ * What one assembler needs to verify a read it did not perform.
+ *
+ * Everything platform-shaped enters here rather than being reached for, which is why
+ * hashing is the injected `ReviewDigestFn` seam below.
+ */
 export interface ReviewChunkAssemblerOptions {
   /** The resource being read; a chunk about anything else is a routing failure. */
   resourceId: string;

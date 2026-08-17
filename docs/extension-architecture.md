@@ -42,8 +42,9 @@ load issue and costs only that extension. The rules themselves are stated in
 
 ## One registry, one apply path
 
-Registrations (themes, file languages, VCS adapters, changeset transforms,
-panes, commands, lifecycle/UI events, and bus listeners) collect into one
+Registrations (session behavior, themes, file languages, VCS adapters,
+changeset transforms, panes, commands, lifecycle/UI events, and inter-extension
+bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
 bootstrap retains the provisional candidate/config snapshot: a final pass that
@@ -128,7 +129,7 @@ geometry measurement: a highlight change is a repaint, never a re-plan. The
 static pager never runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
-pipeline rather than growing a second one: `useReviewController.ts` validates
+pipeline rather than growing a second one: `useTerminalReview.ts` validates
 each daemon-pushed mark with the same `validate.ts` contract and caps, holds
 them per file, and `src/ui/highlights/merge.ts` appends them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
@@ -178,18 +179,29 @@ commands. Extension
 chord at a time and detected by probing matchers with a synthesized event
 (`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
 `src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
-panes render. App reads it through a ref so the dispatch table stays stable.
+panes render plus a copied source address for the active current-line cursor.
+App reads it through a ref so the dispatch table stays stable while line
+navigation moves.
 
 `src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only
 — visible-file validation, hunk clamping, `revealLine`'s side and line-number
-checks — and delegates the move itself to the review controller. Where a jump
-puts a line on screen stays host policy: `useReviewController` tags each
+checks — and delegates the move itself to the terminal review adapter. Where a
+jump puts a line on screen stays host policy: `useTerminalReview` tags each
 current-line reveal with a placement, and `DiffPane` reads it to choose between
 stepping's minimum-distance scroll and the top-padded position hunk, note, and
 `revealLine` reveals share. Extensions name a target; they never name a scroll
 position.
+
+After any named command dispatches in the terminal host, App emits
+`command_executed` with its stable id. This observes the accepted action after
+synchronous `AppCommand.run`, not settlement of detached extension promises.
+The event decorates the assembled terminal command table, so
+keyboard dispatch, menus, and extension command controls share one observation
+path. Browser/session review actions lower through `ReviewIntent` instead; they
+are semantic effects rather than terminal command invocations. Widget-owned
+modal keys also remain outside the table and therefore outside the event.
 
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
@@ -206,9 +218,30 @@ dialogs below Hunk's own app-critical prompts (repo trust, save-on-quit) and
 above menus, help, the theme selector, focused inputs, file-view modes, session
 keyboard modes, and the command table: an extension may
 interrupt review navigation, never a decision about the session itself. The
-frame always carries an `ext <id>` attribution row — the toast marker — because
-the title is extension-authored and a prompt must not be able to impersonate
-Hunk.
+frame carries an `ext <id>` attribution row — the toast marker — for every
+user-installed extension, because its title is extension-authored and a prompt
+must not be able to impersonate Hunk. The host derives the extension's trusted
+bundled origin from registry metadata and omits the redundant marker only for
+Hunk-owned bundled UI. `src/ui/lib/modalGeometry.ts` clamps the frame before
+extension text is wrapped or windowed, so measurement and rendering use the
+same terminal width; body/options yield rows to a pinned mouse-clickable action
+footer on short terminals.
+
+Lifecycle and bus handlers receive that same attributed dialog queue plus the
+same guarded live navigation commands use. `App` installs both through the
+per-extension event-context provider, while `AppHost` publishes mounted
+lifecycle order (`startup`, then `changeset_loaded`; reloads add
+`session_reload`) only after the matching child commit. Headless or pre-mount delivery resolves
+dialogs to their cancel values and refuses navigation with a warning.
+`src/ui/lib/extensionCapabilityLease.ts` binds retained pane, navigation,
+dialog, and workspace controls to one App, extension registry, and review
+generation. Soft
+reload or registry retirement therefore makes old host-mediated capabilities
+inert before shutdown begins. Session behavior requests are registry data too:
+`resolveExtensionSessionOptions` applies the shared policy that any
+`configureSession({ viewPreferences: "transient" })` request makes practice and
+presentation view changes ephemeral without teaching `App` about an extension
+id.
 
 `src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains

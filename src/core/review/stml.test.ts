@@ -15,6 +15,7 @@ describe("stmlTagRole", () => {
       [["s", "strike", "del"], "strike"],
       [["dim", "muted"], "muted"],
       [["a", "link"], "link"],
+      [["c", "color", "span"], "styled"],
       [["box", "col", "column", "stack", "section"], "container"],
       [["text", "p"], "paragraph"],
       [["h", "h2", "h3", "heading"], "heading"],
@@ -50,6 +51,11 @@ describe("role classification", () => {
   test("separates inline flow from block layout", () => {
     expect(isInlineStmlRole(stmlTagRole("strong"))).toBe(true);
     expect(isInlineStmlRole(stmlTagRole("br"))).toBe(true);
+    // The terminal layout engine partitions inline runs through this predicate,
+    // so the color tags it flows inline have to classify as inline here too.
+    for (const tag of ["c", "color", "span"]) {
+      expect(isInlineStmlRole(stmlTagRole(tag))).toBe(true);
+    }
     expect(isInlineStmlRole(stmlTagRole("card"))).toBe(false);
     expect(isInlineStmlRole(undefined)).toBe(false);
   });

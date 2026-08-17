@@ -37,6 +37,7 @@ line_numbers = true
 wrap_lines = false
 hunk_headers = true
 menu_bar = true
+sidebar = "auto"
 agent_notes = false
 copy_decorations = false
 transparent_background = false

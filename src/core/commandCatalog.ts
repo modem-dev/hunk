@@ -13,17 +13,17 @@
  *   attached surface sees the result. Its effect is declared as data rather than as a
  *   function, which is what lets the same declaration drive the terminal's handler, an
  *   agent command, and later a wire action.
- * - `client-local` — deliberately per-client view state (scrolling, layout, theme, help).
+ * - `client-local` — per-client view state (scrolling, layout, theme, help).
  *   Each client implements its own handler; sharing identity is what keeps help screens
  *   and palettes agreeing about what the command is called and what it is bound to.
  * - `host-only` — it runs where the review is hosted (quitting, reloading the source,
- *   opening `$EDITOR`). Not invocable from a remote client without an explicit allowlist,
- *   which is a scope boundary rather than a missing feature (audit F4).
+ *   opening `$EDITOR`). Not invocable from a remote client without an explicit allowlist
+ *   (audit F4).
  *
- * This module is deliberately renderer-neutral and dependency-light: no OpenTUI, no React,
- * no Node builtins, chords as plain strings. It is not part of `src/core/review` because
- * it describes UI vocabulary rather than review semantics, and that module stays purely
- * about what a review *is*.
+ * This module is renderer-neutral and dependency-light: no OpenTUI, no React, no Node
+ * builtins, chords as plain strings. It is not part of `src/core/review` because it
+ * describes UI vocabulary rather than review semantics, and that module stays purely about
+ * what a review *is*.
  */
 import type { ReviewIntent } from "./review/intents";
 import type { ReviewSelectionScope } from "./review/navigation";
@@ -36,6 +36,9 @@ export type AppCommandLocus = "semantic" | "client-local" | "host-only";
 
 /** The id group a command lives under, and the menu-level grouping users read. */
 export type AppCommandCategory = "app" | "review" | "view";
+
+/** The direction a command moves a vertically ordered surface. */
+export type VerticalCommandDirection = -1 | 1;
 
 /**
  * What a semantic command does to the review, declared rather than closed over.
@@ -53,13 +56,22 @@ export type AppCommandReviewEffect =
   | { kind: "expansion/toggle-selected-gap" };
 
 export interface AppCommandCatalogEntry {
-  /** Stable identifier, `hunk.<category>.<name>` for every built-in. */
+  /** Stable canonical identifier, `hunk.<category>.<name>` for every built-in. */
   id: string;
+  /** Deprecated identifiers that resolve to this command without creating duplicate entries. */
+  aliases?: readonly string[];
   title: string;
   category: AppCommandCategory;
   /** Chords the command ships with, before the user's `[keybindings]` are folded in. */
   defaultKeys: readonly string[];
   locus: AppCommandLocus;
+  /**
+   * The direction this command moves an ordered UI surface, when it has one.
+   *
+   * Selector dialogs use this alongside the resolved keymap, so user bindings for review
+   * movement keep working while a modal owns the keyboard.
+   */
+  verticalDirection?: VerticalCommandDirection;
   /** The review effect a semantic command lowers to, where one is already modelled. */
   review?: AppCommandReviewEffect;
   /** True when extension command controls may invoke this command by id. */
@@ -153,6 +165,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["pagedown", "space", "f"],
     locus: "client-local",
+    verticalDirection: 1,
     publicToExtensions: true,
   },
   {
@@ -161,6 +174,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["pageup", "b", "shift+space"],
     locus: "client-local",
+    verticalDirection: -1,
     publicToExtensions: true,
   },
   {
@@ -169,6 +183,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["d"],
     locus: "client-local",
+    verticalDirection: 1,
     publicToExtensions: true,
   },
   {
@@ -177,6 +192,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["u"],
     locus: "client-local",
+    verticalDirection: -1,
     publicToExtensions: true,
   },
   {
@@ -185,6 +201,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["down", "j"],
     locus: "client-local",
+    verticalDirection: 1,
     publicToExtensions: true,
   },
   {
@@ -193,6 +210,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["up", "k"],
     locus: "client-local",
+    verticalDirection: -1,
     publicToExtensions: true,
   },
   {
@@ -301,8 +319,9 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
-    id: "hunk.view.toggleSidebar",
-    title: "Toggle sidebar",
+    id: "hunk.view.toggleFilesPane",
+    aliases: ["hunk.view.toggleSidebar"],
+    title: "Toggle files pane",
     category: "view",
     defaultKeys: ["s"],
     locus: "client-local",
@@ -407,6 +426,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["["],
     locus: "semantic",
+    verticalDirection: -1,
     review: { kind: "selection/move", scope: "hunk", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -417,6 +437,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["]"],
     locus: "semantic",
+    verticalDirection: 1,
     review: { kind: "selection/move", scope: "hunk", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -427,6 +448,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: [","],
     locus: "semantic",
+    verticalDirection: -1,
     review: { kind: "selection/move", scope: "file", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -437,6 +459,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["."],
     locus: "semantic",
+    verticalDirection: 1,
     review: { kind: "selection/move", scope: "file", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -447,6 +470,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["{"],
     locus: "semantic",
+    verticalDirection: -1,
     review: { kind: "selection/move", scope: "annotated-hunk", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -457,6 +481,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: ["}"],
     locus: "semantic",
+    verticalDirection: 1,
     review: { kind: "selection/move", scope: "annotated-hunk", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -467,6 +492,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: [],
     locus: "semantic",
+    verticalDirection: -1,
     review: { kind: "selection/move", scope: "annotated-file", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -477,6 +503,7 @@ const BUILTIN_COMMANDS = [
     category: "review",
     defaultKeys: [],
     locus: "semantic",
+    verticalDirection: 1,
     review: { kind: "selection/move", scope: "annotated-file", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
@@ -493,9 +520,20 @@ export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
 export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
 
-/** Look one command up by id. */
+/** Look one command up by its canonical id or a compatibility alias. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
-  return APP_COMMAND_CATALOG.find((entry) => entry.id === id);
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id || entry.aliases?.includes(id));
+}
+
+/**
+ * Look one built-in command up by its catalogued id.
+ *
+ * Total where `appCommandCatalogEntry` is partial, because `AppCommandId` is derived from
+ * the catalog itself: a client naming a built-in it lowers does not have to handle the
+ * possibility that the command does not exist.
+ */
+export function builtinAppCommand(id: AppCommandId): AppCommandCatalogEntry {
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id) as AppCommandCatalogEntry;
 }
 
 /** The facts a command needs to become one concrete review intent. */
@@ -516,6 +554,14 @@ export interface AppCommandLoweringContext {
    * default for the whole hunk.
    */
   noteTarget?: ReviewLineAddressV1;
+  /**
+   * The file and hunk the invoking client's note affordance addressed.
+   *
+   * The other renderer-owned fact: a client may offer "add a note here" on a row the
+   * reviewer is merely pointing at or has scrolled to, which is not always what the review
+   * has selected. Omitted, the note lands on the current selection.
+   */
+  noteLocation?: { fileKey: string; hunkIndex: number };
 }
 
 /**
@@ -530,7 +576,7 @@ export interface AppCommandLoweringContext {
  */
 export function lowerAppCommandToReviewIntent(
   entry: AppCommandCatalogEntry,
-  { count, state, noteTarget }: AppCommandLoweringContext,
+  { count, state, noteTarget, noteLocation }: AppCommandLoweringContext,
 ): ReviewIntent | undefined {
   switch (entry.review?.kind) {
     case "selection/move":
@@ -542,7 +588,7 @@ export function lowerAppCommandToReviewIntent(
     case "notes/toggle-visibility":
       return { type: "notes/set-visibility", visible: !state.showAgentNotes };
     case "notes/start-draft": {
-      const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+      const { fileKey, hunkIndex } = noteLocation ?? selectNormalizedSelection(state);
       return fileKey === null
         ? undefined
         : {

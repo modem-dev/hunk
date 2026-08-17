@@ -7,6 +7,8 @@ import {
   builtinCommandKeyDefaults,
   dispatchAppCommand,
   executeAppCommand,
+  observeAppCommandDispatch,
+  verticalCommandDirection,
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
@@ -67,7 +69,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleLineNumbers: record("toggleLineNumbers"),
     toggleLineWrap: record("toggleLineWrap"),
     toggleMenuBar: record("toggleMenuBar"),
-    toggleSidebar: record("toggleSidebar"),
+    toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: record("triggerEditSelectedFile"),
     triggerRefreshCurrentInput: record("triggerRefreshCurrentInput"),
   };
@@ -132,6 +134,23 @@ describe("built-in command chords", () => {
     expect(ran).toEqual(["scrollCodeHorizontally:-1", "scrollCodeHorizontally:-8"]);
   });
 
+  test("reports the vertical direction for every review-navigation alias", () => {
+    const { commands, ran } = createTestCommands();
+
+    expect(verticalCommandDirection(commands, keyEvent({ name: "down" }))).toBe(1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "j", sequence: "j" }))).toBe(1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "up" }))).toBe(-1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "k", sequence: "k" }))).toBe(-1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "pagedown" }))).toBe(1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "pageup" }))).toBe(-1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "]", sequence: "]" }))).toBe(1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "[", sequence: "[" }))).toBe(-1);
+    expect(
+      verticalCommandDirection(commands, keyEvent({ name: "q", sequence: "q" })),
+    ).toBeUndefined();
+    expect(ran).toEqual([]);
+  });
+
   test("a matched key is claimed so focused OpenTUI widgets cannot scroll it too", () => {
     const { commands } = createTestCommands();
     const press = (fields: Partial<ParsedKey>) => {
@@ -172,6 +191,16 @@ describe("built-in commands under user keybindings", () => {
     expect(commands.find((command) => command.id === "hunk.app.quit")?.keyLabels).toEqual([
       "Ctrl+X",
     ]);
+  });
+
+  test("uses a user binding for a vertical movement command", () => {
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.stepDown": ["down", "j", "ctrl+n"] },
+    });
+    const { commands } = createTestCommands(keys);
+
+    expect(verticalCommandDirection(commands, keyEvent({ name: "n", ctrl: true }))).toBe(1);
   });
 
   test("claiming a key held by default takes it from its old owner only", () => {
@@ -287,6 +316,13 @@ describe("executeAppCommand", () => {
     expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
   });
 
+  test("executes a compatibility alias through the canonical command", () => {
+    const { commands, ran } = createTestCommands();
+
+    expect(executeAppCommand(commands, "hunk.view.toggleSidebar")).toBe(true);
+    expect(ran).toEqual(["toggleFilesPane"]);
+  });
+
   test("uses shipped semantics rather than a remapped chord for programmatic execution", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
@@ -331,6 +367,42 @@ describe("executeAppCommand", () => {
   });
 });
 
+describe("observeAppCommandDispatch", () => {
+  test("observes successful terminal dispatch exactly once with the command id", () => {
+    const { commands, ran } = createTestCommands();
+    const observed: string[] = [];
+    const wrapped = observeAppCommandDispatch(commands, (id) => observed.push(id));
+
+    expect(dispatchAppCommand(wrapped, keyEvent({ name: "q" }))?.id).toBe("hunk.app.quit");
+    expect(ran).toEqual(["requestQuit"]);
+    expect(observed).toEqual(["hunk.app.quit"]);
+  });
+
+  test("does not observe disabled or throwing commands", () => {
+    const { commands } = createTestCommands();
+    const quit = commands.find((command) => command.id === "hunk.app.quit")!;
+    const observed: string[] = [];
+    const disabled = observeAppCommandDispatch([{ ...quit, isEnabled: () => false }], (id) =>
+      observed.push(id),
+    );
+    expect(dispatchAppCommand(disabled, keyEvent({ name: "q" }))).toBeUndefined();
+
+    const throwing = observeAppCommandDispatch(
+      [
+        {
+          ...quit,
+          run: () => {
+            throw new Error("boom");
+          },
+        },
+      ],
+      (id) => observed.push(id),
+    );
+    expect(() => throwing[0]!.run(keyEvent({ name: "q" }), 1)).toThrow("boom");
+    expect(observed).toEqual([]);
+  });
+});
+
 // The command-parity hook (audit F1–F3): every surface that presents a command — the
 // terminal's dispatch table, its dropdown menus, its help dialog — must name one the
 // shared catalog declares, and the table must present every catalogued command. A command
@@ -351,6 +423,7 @@ describe("command catalog parity", () => {
     for (const entry of APP_COMMAND_CATALOG) {
       const command = commands.find((candidate) => candidate.id === entry.id);
       expect(command?.title).toBe(entry.title);
+      expect(command?.aliases).toEqual(entry.aliases);
       expect(command?.defaultKeys).toEqual(entry.defaultKeys);
       expect(command?.keys).toEqual(entry.defaultKeys);
       expect(command?.publicToExtensions).toBe(entry.publicToExtensions);
@@ -366,7 +439,7 @@ describe("command catalog parity", () => {
       copyDecorations: false,
       cursorLine: "row",
       layoutMode: "auto",
-      renderSidebar: true,
+      filesPaneVisible: true,
       showAgentNotes: false,
       showHelp: false,
       showHunkHeaders: true,

@@ -5,7 +5,7 @@
 //
 // <workDir> is the capture output dir (contains frames/) and must have a
 // node_modules with playwright-core matching the Chromium build (see
-// skills/launch-video/SKILL.md). Composited frames land in <workDir>/out.
+// skills/hunk-launch-video/SKILL.md). Composited frames land in <workDir>/out.
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { composeStoryboard } from "@hunk/term-video/compose";

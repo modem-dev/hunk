@@ -31,7 +31,7 @@ import {
   textClusters,
 } from "../lib/text";
 import { expandDiffTabs } from "./codeColumns";
-import type { RenderSpan } from "./pierre";
+import type { RenderSpan } from "./diffRows";
 
 /** One mark resolved to terminal columns of the rendered (expanded) line. */
 export interface LineHighlightColRange {
@@ -311,11 +311,6 @@ export function buildLineHighlightPaintIndex({
     }
   }
 
-  for (const [key, bucket] of index) {
-    if (bucket.length === 0) {
-      index.delete(key);
-    }
-  }
   if (index.size === 0) {
     return undefined;
   }

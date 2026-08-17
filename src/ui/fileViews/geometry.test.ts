@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionFileViewLayout } from "../../extension-api/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
+import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { measureFileViewGeometry } from "./geometry";
 import { validateFileViewLayout } from "./layout";
 import { buildFileViewRenderPlan } from "./renderPlan";
@@ -107,7 +108,9 @@ describe("file-view geometry", () => {
       summary: "Review this range",
       newRange: [1, 1] as [number, number],
     };
-    const plan = buildFileViewRenderPlan(checked.value.layout, [{ id: "note", annotation }]);
+    const plan = buildFileViewRenderPlan(checked.value.layout, [
+      createVisibleAgentNote([], { id: "note", annotation }),
+    ]);
     const noteHeight = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",

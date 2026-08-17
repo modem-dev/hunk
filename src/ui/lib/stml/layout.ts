@@ -2,7 +2,7 @@
 // fixed-width line/span rows.
 //
 // Hunk's review stream is row-windowed: every planned row must know its exact
-// terminal height before it mounts (see plannedReviewRows.ts). A flexbox
+// terminal height before it mounts (see reviewRowGeometry.ts). A flexbox
 // renderer cannot promise that, so this is a small deterministic layout
 // engine instead — the same (markup, width) input always produces the same
 // lines, and a note's height is simply `lines.length`.
@@ -11,7 +11,7 @@
 // against the active AppTheme happens at render time in resolveStmlColor, so
 // measurement never needs a theme.
 
-import { stmlTagRole } from "../../../core/review/stml";
+import { isInlineStmlRole, stmlTagRole } from "../../../core/review/stml";
 import { measureTextWidth, sliceTextByWidth } from "../text";
 import { decodeStmlEntities, parseStml, type StmlElement, type StmlNode } from "./parse";
 
@@ -56,26 +56,8 @@ export function validateStmlMarkup(markup: string, width: number = STML_REFERENC
 
 const MAX_LAYOUT_ERRORS = 20;
 
-const INLINE_TAGS = new Set([
-  "b",
-  "strong",
-  "i",
-  "em",
-  "u",
-  "dim",
-  "muted",
-  "s",
-  "strike",
-  "del",
-  "c",
-  "color",
-  "span",
-  "a",
-  "link",
-  "kbd",
-  "badge",
-  "br",
-]);
+/** Answer whether a tag joins inline flow, using core's shared tag vocabulary. */
+const isInlineTag = (tag: string) => isInlineStmlRole(stmlTagRole(tag));
 
 interface BorderChars {
   topLeft: string;
@@ -197,6 +179,9 @@ function inlineStyle(tag: string, attrs: Record<string, string>): StmlStyle {
       };
     case "link":
       return { fg: "accent", underline: true };
+    // A styled run has no look of its own — its attributes are the style. Tags
+    // with no role land here too and keep whatever styling attributes they carry.
+    case "styled":
     default:
       return attrStyle(attrs);
   }
@@ -574,10 +559,10 @@ function layoutRow(
   errors: LayoutErrors,
 ): StmlLine[] {
   const children = el.children.filter(
-    (child): child is StmlElement => child.type === "element" && !INLINE_TAGS.has(child.tag),
+    (child): child is StmlElement => child.type === "element" && !isInlineTag(child.tag),
   );
   const looseInline = el.children.filter(
-    (child) => child.type === "text" || (child.type === "element" && INLINE_TAGS.has(child.tag)),
+    (child) => child.type === "text" || (child.type === "element" && isInlineTag(child.tag)),
   );
 
   if (children.length === 0) {
@@ -772,7 +757,7 @@ function layoutBlockNodes(
   };
 
   for (const node of nodes) {
-    if (node.type === "text" || INLINE_TAGS.has(node.tag)) {
+    if (node.type === "text" || isInlineTag(node.tag)) {
       run.push(node);
       continue;
     }
@@ -816,7 +801,7 @@ export function layoutStml(markup: string, width: number): StmlLayoutResult {
   return { lines, errors: errors.messages };
 }
 
-// Layout is recomputed by both measurement (plannedReviewRows) and rendering
+// Layout is recomputed by both measurement (reviewRowGeometry) and rendering
 // (AgentInlineNote) on every plan pass, so memoize per (markup, width).
 const layoutCache = new Map<string, StmlLayoutResult>();
 const LAYOUT_CACHE_LIMIT = 256;
