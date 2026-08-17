@@ -100,6 +100,7 @@
     "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
     "bench:highlight-compact-payload": "bun run benchmarks/compact-highlight-payload.ts",
     "bench:highlight-worker-cache": "bun run benchmarks/worker-highlight-cache.ts",
+    "bench:highlight-cache-layers": "bun run benchmarks/highlight-cache-layers.ts",
     "bench:large-stream": "bun run benchmarks/large-stream.ts",
     "bench:interaction-latency": "bun run benchmarks/interaction-latency.ts",
     "bench:non-ascii-stream": "bun run benchmarks/non-ascii-stream.ts",

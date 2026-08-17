@@ -37,6 +37,8 @@ bun run bench:working-tree-load
 bun run bench:changeset-parse
 bun run bench:render-layout
 bun run bench:highlight-prefetch
+bun run bench:highlight-worker-cache
+bun run bench:highlight-cache-layers
 bun run bench:large-stream
 bun run bench:interaction-latency
 bun run bench:non-ascii-stream
@@ -58,6 +60,8 @@ bun run bench:competitors
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
 - `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
+- `worker-highlight-cache.ts` — measures a cold worker highlight against an immediate compact-result cache hit.
+- `highlight-cache-layers.ts` — measures a resident terminal-cache hit against a worker-cache revisit after the terminal cache evicts the diff.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
 - `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
