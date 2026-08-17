@@ -20,6 +20,31 @@ const UI_SESSION_ADAPTERS = [
   "^src/ui/lib/reviewState\\.ts$",
 ];
 
+// Every way the shipped product is entered: the CLI, the highlight worker thread, the two
+// published facades, and the skill generator. A module under src/ that no entry reaches,
+// directly or transitively, is not in the product.
+const PRODUCTION_ENTRY_POINTS = [
+  "^src/main\\.tsx$",
+  "^src/highlightWorkerEntry\\.ts$",
+  "^src/opentui/index\\.ts$",
+  "^src/extension-api/index\\.ts$",
+  "^src/hunk-review/skillDocument\\.ts$",
+];
+
+// Modules kept alive by tests alone. The cruise excludes tests, so these look unreachable
+// from the entry points while real coverage still depends on them. Shrink-only: an entry
+// leaves when production reaches the module or the module goes; nothing is ever added
+// without the coverage to justify it.
+const TEST_ONLY_MODULES = [
+  // Note-height measurement exercised by the review-conformance corpus.
+  "^src/core/review/noteSize\\.ts$",
+  // The floating agent-note popover and its measurement helper. Nothing renders them since
+  // notes moved into the diff flow as STML cards; their unit tests are the only consumers
+  // left, so they are quarantined here until that call is made rather than deleted blind.
+  "^src/ui/components/panes/AgentCard\\.tsx$",
+  "^src/ui/lib/agentPopover\\.ts$",
+];
+
 module.exports = {
   forbidden: [
     {
@@ -93,6 +118,39 @@ module.exports = {
       severity: "error",
       from: { path: "^src/ui/", pathNot: UI_SESSION_ADAPTERS },
       to: { path: "^src/(app|session)/" },
+    },
+    {
+      name: "no-dead-modules",
+      comment:
+        "Every module under src/ earns its place by being reachable from an entry point. Dead files are worse than clutter: they still import, so they hold boundaries hostage and answer questions nobody asks. `orphan` only catches fully disconnected files, which misses dead code that still has dependencies — reachability catches both. A flagged module is either deleted or, if tests are its only real consumer, listed in TEST_ONLY_MODULES with a reason.",
+      severity: "error",
+      from: { path: PRODUCTION_ENTRY_POINTS },
+      to: {
+        path: "^src/",
+        pathNot: [...PRODUCTION_ENTRY_POINTS, ...TEST_ONLY_MODULES],
+        reachable: false,
+      },
+    },
+    {
+      name: "core-leaves-never-reimport-types",
+      comment:
+        "Freezes the 2026-08 cycle fix. core/types.ts handed its changeset, command-input, sidecar, and file models to these leaves and now re-exports them for existing import sites; a leaf importing core/types.ts back would recreate the cycle that made the grab-bag and its members one module.",
+      severity: "error",
+      from: {
+        path: [
+          "^src/core/(changeset|commandInputs|diffFile|sidecar)\\.ts$",
+          "^src/core/(vcs|watch|patch)/",
+        ],
+      },
+      to: { path: "^src/core/types\\.ts$" },
+    },
+    {
+      name: "review-reducer-is-module-internal",
+      comment:
+        "The review reducer applies actions; callers state intent instead, so surfaces cannot reach past planReviewIntent into the transition table. First of the per-module interior rules — this establishes the mechanism later phases extend to the rest of src/core (identity.ts and the other named model modules stay public by design).",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/core/review/" },
+      to: { path: "^src/core/review/reducer\\.ts$" },
     },
     {
       name: "packages-stay-standalone",

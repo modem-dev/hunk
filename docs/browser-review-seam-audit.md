@@ -619,6 +619,10 @@ implementation does.
   carrying separators, percent signs, and non-ASCII characters, and strict rejection of anything
   outside the grammar. No consumers yet, by design — browser deep links are Phase 5 and opener
   fragments Phase 6, which is when this finding closes.
+  _Reopened (2026-08-17, module-boundaries phase 0)_: `core/review/address.ts` is deleted. A
+  primitive with no consumers cannot be checked against what its consumers need, and the
+  `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
+  design; write it again beside the first consumer that addresses a review across a boundary.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,

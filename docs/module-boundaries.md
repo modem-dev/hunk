@@ -44,9 +44,34 @@ Intentional exceptions, allowed by the rules:
   surface by design.
 - Tests are excluded: they are colocated and free to reach across boundaries.
 
+## Module interiors
+
+Tier rules say which trees may reach each other; interior rules say which _files_ in a tree
+outsiders may name. A module's interior is enforced the same way as a tier — one rule per
+protected file, `from` everything outside the module's directory, `to` the file — so an
+accidental reach-in fails `bun run deps:check` instead of quietly becoming API.
+
+Two supporting rules keep the interiors honest:
+
+- **`no-dead-modules`** flags any module under `src/` that no entry point reaches
+  (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, and the
+  skill generator). It uses `reachable: false` rather than `orphan`, which only catches fully
+  disconnected files and so misses dead code that still imports. A hit is deleted, or — when
+  tests are its only genuine consumer — listed in the rule's `TEST_ONLY_MODULES` allowlist
+  with the reason. That allowlist is **shrink-only**, like the baseline.
+- **`core-leaves-never-reimport-types`** freezes the cycle fix below: the leaves extracted out
+  of `core/types.ts` may never import it back, even though it re-exports them.
+
+Phase 0 (2026-08-17) established the mechanism: it deleted `core/review/address.ts` (a
+speculative primitive with no consumers), added the two rules above, and froze the first
+interior — `core/review/reducer.ts` is importable only from within `core/review/`, because
+callers state intent and `planReviewIntent` owns the transition. Later phases extend the same
+pattern across `src/core` as its subdirectories take shape; the review model's named modules
+(`document`, `identity`, `geometry`, `state`, …) stay public by design.
+
 ## Snapshot (2026-08-17, v0.19.0)
 
-332 production modules, 1283 internal edges, **zero boundary violations and zero import
+331 production modules, 1282 internal edges, **zero boundary violations and zero import
 cycles** — the baseline is empty. The initial audit (2026-08-16) found 28 violations in five
 clusters and 5 file-level cycles; all were repaid in the same change series that introduced the
 rules:
@@ -81,12 +106,12 @@ rules:
 
 The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
-1. **Give `src/core` an interior.** The subdirectories (`review/`, `vcs/`, `theme/`, `watch/`,
-   `patch/`) are already coherent modules; the ~40 loose files at `core/*` root are the
-   grab-bag. Group them by audience (changeset model, config/CLI, process/runtime concerns) and
-   then add per-module rules restricting which files other tiers may import — the review seam's
-   named modules (`document`, `geometry`, `state`, …) stay public; their helpers become
-   internal.
+1. **Give `src/core` an interior.** _Started (phase 0, see Module interiors)._ The
+   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`) are already coherent
+   modules; the ~40 loose files at `core/*` root are the grab-bag. Group them by audience
+   (changeset model, config/CLI, process/runtime concerns) and then add per-module rules
+   restricting which files other tiers may import — the review seam's named modules
+   (`document`, `geometry`, `state`, …) stay public; their helpers become internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
    six files. As session coupling consolidates into `useTerminalReview` /
    `useHunkSessionBridge`, shrink the list.
