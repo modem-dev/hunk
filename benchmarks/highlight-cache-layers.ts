@@ -1,7 +1,7 @@
 // Compare a resident main-process cache hit with a worker-LRU revisit after main-cache eviction.
 import { performance } from "node:perf_hooks";
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../src/core/types";
+import type { DiffFile } from "../src/core/changeset/model";
 import { resolveTheme } from "../src/ui/themes";
 import { disposeHighlightWorker } from "../src/ui/diff/worker/highlightWorkerClient";
 import { prefetchHighlightedDiff } from "../src/ui/diff/useHighlightedDiff";
