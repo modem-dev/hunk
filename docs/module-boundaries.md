@@ -98,7 +98,7 @@ tab-width validation (`tabWidth`), reload eligibility (`inputReload`), and the C
 (`version`). The move is path-only; no exported symbol changed.
 
 Every one of the nine is **public**: each has production importers outside the module, so this
-phase adds no `invocation-internals-stay-in-module` rule. Its value is the grouping plus
+phase adds no `run-internals-stay-in-module` rule. Its value is the grouping plus
 extending the freeze: `core-leaves-never-reimport-types` now names
 `core/run/commandInputs.ts` in place of the old root path. Only `commandInputs` is a
 types-leaf — `config`, `experimental`, and `inputReload` import `core/types` legally, since
@@ -123,10 +123,10 @@ teardown (`shutdown`), `.hunk`/VCS project-root discovery (`projectRoot`), the a
 written app-state file (`appStateFile`), the version-check notice built on it (`updateNotice`),
 and the startup-notice shape every tier reports through (`startupNotice`). The move is
 path-only; no exported symbol changed, and `core/types.ts` now re-exports `StartupNotice` from
-`runtime/startupNotice` (a re-export nothing ever imported, deleted unused in phase 4).
+`process/startupNotice` (a re-export nothing ever imported, deleted unused in phase 4).
 
 All eight are **public** — each has production importers outside the module — so this phase adds
-no `runtime-internals-stay-in-module` rule; the grouping is its value. The audiences are worth
+no `process-internals-stay-in-module` rule; the grouping is its value. The audiences are worth
 naming, because they are why these files never belonged at `core/*` root together with the review
 model: `terminal`, `jobControl`, `shutdown`, and `updateNotice` serve the interactive surface;
 `pager` serves the CLI entry and the startup plan; `projectRoot` and `appStateFile` serve the
@@ -165,7 +165,7 @@ seam, since `extension-api-is-import-free` forbids `extension-api/types.ts` any 
 Fan-in tells the story: 147 importing files became 28 (13 outside tests) — the review stream,
 the diff renderer, and the session surfaces never needed the bootstrap contract, only the
 changeset and command-input models they now name. `core/bootstrap.ts` imports downward into
-`changeset/model`, `invocation/commandInputs`, `invocation/config`, `runtime/startupNotice`,
+`changeset/model`, `run/commandInputs`, `run/config`, `process/startupNotice`,
 `theme/detection`, and `vcs/types`, and `core-leaves-stay-below-bootstrap` forbids the reverse
 edge from every module directory. One exception is carved out and named in the rule:
 `core/changeset/loaders.ts` returns an `AppBootstrap` from `loadAppBootstrap`, so it names the
@@ -220,11 +220,11 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
 1. **Give `src/core` an interior.** _Done (phases 0–4, see Module interiors)._ Every group is a
    module directory — `review/`, `vcs/`, `theme/`, `watch/`, `patch/`, `changeset/`,
-   `invocation/`, `runtime/` — and `core/*` root is down to `bootstrap.ts`, `reviewDigest.ts`,
+   `run/`, `process/` — and `core/*` root is down to `bootstrap.ts`, `reviewDigest.ts`,
    and `liveComments.ts`, with no grab-bag left to import. What remains is per-file public
    surfaces for the modules that never got one: `changeset` has
    `changeset-internals-stay-in-module` and `review` has `review-reducer-is-module-internal`,
-   while `invocation`, `runtime`, `theme`, `vcs`, `watch`, and `patch` are still public in full
+   while `run`, `process`, `theme`, `vcs`, `watch`, and `patch` are still public in full
    because every file in them has an outside importer today. Two named follow-ups: move
    `loadAppBootstrap` out of `core/changeset/loaders.ts` into `src/app` (it is composition, and
    it is the one exception `core-leaves-stay-below-bootstrap` has to carve out), and split
