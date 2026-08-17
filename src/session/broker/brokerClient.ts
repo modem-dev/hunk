@@ -23,6 +23,12 @@ import {
   readHunkSessionDaemonCapabilities,
   reportHunkDaemonUpgradeRestart,
 } from "../client/capabilities";
+import type {
+  HunkSessionCommandResult,
+  HunkSessionInfo,
+  HunkSessionServerMessage,
+  HunkSessionState,
+} from "../types";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
@@ -41,6 +47,14 @@ interface SessionBrokerClientTiming {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
 }
+
+/** The broker client bound to Hunk's session info, state, message, and result types. */
+export type HunkSessionBrokerClient = SessionBrokerClient<
+  HunkSessionInfo,
+  HunkSessionState,
+  HunkSessionServerMessage,
+  HunkSessionCommandResult
+>;
 
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<

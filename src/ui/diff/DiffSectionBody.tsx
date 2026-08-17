@@ -10,7 +10,7 @@ import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
-import type { CopySelectedRowRange } from "../components/panes/copySelection";
+import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";

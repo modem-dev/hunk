@@ -1,5 +1,7 @@
-import type { HighlightedDiffCode } from "../diffRows";
-import { collectHastHighlightRuns } from "./highlightHast";
+import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
+
+/** HAST lines for one diff side; `undefined` marks lines the highlighter skipped. */
+export type HighlightedHastLines = Array<HastNode | undefined>;
 
 /** Identifies the typed-array layout used for worker highlight responses. */
 export const COMPACT_HIGHLIGHT_PROTOCOL_VERSION = 1;
@@ -88,7 +90,7 @@ function encodeSide({
   foregroundPalette,
   paletteIds,
 }: {
-  lines: HighlightedDiffCode["deletionLines"];
+  lines: HighlightedHastLines;
   appearance: "dark" | "light";
   foregroundPalette: string[];
   paletteIds: Map<string, number>;
@@ -132,7 +134,7 @@ function encodeSide({
  * semantic flag so each row can apply its existing theme policy.
  */
 export function encodeCompactHighlightedDiff(
-  code: HighlightedDiffCode,
+  code: { deletionLines: HighlightedHastLines; additionLines: HighlightedHastLines },
   appearance: "dark" | "light",
 ): CompactHighlightedDiff {
   const foregroundPalette: string[] = [];

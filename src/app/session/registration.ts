@@ -4,15 +4,19 @@ import { resolveExperimentalFeatures } from "../../core/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/hunkSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";
-import { reviewProcessCapability } from "../../app/review/capability";
-import type { ReviewPublication } from "../../app/review/publication";
+import { reviewProcessCapability } from "../review/capability";
+import type { ReviewPublication } from "../review/publication";
 import type { AppBootstrap } from "../../core/types";
 import {
   SESSION_BROKER_REGISTRATION_VERSION,
   resolveSessionTerminalMetadata,
 } from "@hunk/session-broker-core";
-import type { HunkReviewResourceCatalogV1 } from "../reviewProtocol";
-import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "../types";
+import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type {
+  HunkSessionRegistration,
+  HunkSessionSnapshot,
+  SessionReviewFile,
+} from "../../session/types";
 
 /** Resolve the TTY device path for the current process, if available. */
 function ttyname(): string | undefined {

@@ -4,6 +4,14 @@ export interface VerticalBounds {
   height: number;
 }
 
+/** One selected column extent on a single row, in global review-stream columns (inclusive). */
+export interface CopySelectedRowRange {
+  /** Global column where the selection starts on this row. */
+  startCol: number;
+  /** Global column where the selection ends on this row (inclusive). */
+  endCol: number;
+}
+
 /**
  * Shared geometry for one file section body.
  *

@@ -11,7 +11,7 @@
  */
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../../src/app/review/capability";
-import { nodeReviewDigest } from "../../../src/lib/reviewDigest";
+import { nodeReviewDigest } from "../../../src/core/reviewDigest";
 import { BrowserReviewServer } from "../../../src/session/broker/browserReviewServer";
 import { HunkSessionBrokerState } from "../../../src/session/broker/state";
 import {

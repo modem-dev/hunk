@@ -19,7 +19,7 @@ import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
-import type { HunkSessionBrokerClient } from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { WorkspaceFileWriter } from "./App";
 import { AppHost } from "./AppHost";
 

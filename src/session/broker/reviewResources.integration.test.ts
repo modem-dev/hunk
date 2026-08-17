@@ -13,7 +13,10 @@ import {
   createTestPatchFile,
 } from "../../../test/helpers/review-session-harness";
 import { REVIEW_RESOURCE_CHUNK_BYTES, reviewResourceId } from "../../core/review/resources";
-import { createSessionRegistration, createInitialSessionSnapshot } from "../app/registration";
+import {
+  createSessionRegistration,
+  createInitialSessionSnapshot,
+} from "../../app/session/registration";
 import type { HunkSessionServerMessage } from "../types";
 import { ReviewGenerationRetiredError } from "./state";
 import { ReviewResourceCache } from "./reviewResourceCache";

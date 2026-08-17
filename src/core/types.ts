@@ -1,12 +1,12 @@
-import type { FileDiffMetadata } from "@pierre/diffs";
+import type { NamedCustomThemeConfig } from "../extension-api/types";
+import type { Changeset, DiffFile } from "./changeset";
 import type {
-  AgentFileContext,
-  ExtensionVcsDiffInput,
-  ExtensionVcsShowInput,
-  ExtensionVcsStashShowInput,
-  NamedCustomThemeConfig,
-} from "../extension-api/types";
-import type { FileSourceFetcher } from "./fileSource";
+  CliInput,
+  CommonOptions,
+  CursorLine,
+  LayoutMode,
+  SidebarVisibility,
+} from "./commandInputs";
 import type { StartupNotice } from "./startupNotice";
 import type { VcsCatalog } from "./vcs/types";
 
@@ -25,10 +25,33 @@ export type {
   NamedCustomThemeConfig,
 } from "../extension-api/types";
 
-export type LayoutMode = "auto" | "split" | "stack";
-export type CursorLine = "row" | "number" | "off";
-export type SidebarVisibility = boolean | "auto";
-export type VcsMode = string;
+/**
+ * The changeset model and command-input shapes moved to leaf modules so the
+ * VCS contract and watch planning can import them without this module's
+ * app-facing layer; they are re-exported here to keep one import site.
+ */
+export type {
+  Changeset,
+  DiffFile,
+  DiffLineMoveKind,
+  DiffLineMoveKinds,
+  SidecarContext,
+} from "./changeset";
+export type {
+  CliInput,
+  CommonOptions,
+  CursorLine,
+  DiffToolCommandInput,
+  FileCommandInput,
+  LayoutMode,
+  PatchCommandInput,
+  SidebarVisibility,
+  VcsDiffCommandInput,
+  VcsMode,
+  VcsShowCommandInput,
+  VcsStashShowCommandInput,
+} from "./commandInputs";
+
 export type TerminalThemeMode = "light" | "dark";
 
 export type ReviewNoteSource = "ai" | "agent" | "user";
@@ -37,81 +60,6 @@ export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 export interface UserNoteLineTarget {
   side: "old" | "new";
   line: number;
-}
-
-/** One loaded review sidecar: the changeset summary plus every annotated file it names. */
-export interface SidecarContext {
-  version: number;
-  summary?: string;
-  files: AgentFileContext[];
-}
-
-export interface DiffFile {
-  id: string;
-  path: string;
-  previousPath?: string;
-  patch: string;
-  language?: string;
-  stats: {
-    additions: number;
-    deletions: number;
-  };
-  metadata: FileDiffMetadata;
-  lineMoveKinds?: DiffLineMoveKinds;
-  agent: AgentFileContext | null;
-  isUntracked?: boolean;
-  isBinary?: boolean;
-  isTooLarge?: boolean;
-  statsTruncated?: boolean;
-  // Optional capability for fetching the file's full text on either side.
-  // Loaders attach this when source content is reachable; absent when not.
-  sourceFetcher?: FileSourceFetcher;
-}
-
-export type DiffLineMoveKind = "moved";
-
-export interface DiffLineMoveKinds {
-  additionLines: Array<DiffLineMoveKind | undefined>;
-  deletionLines: Array<DiffLineMoveKind | undefined>;
-}
-
-export interface Changeset {
-  id: string;
-  sourceLabel: string;
-  title: string;
-  summary?: string;
-  agentSummary?: string;
-  files: DiffFile[];
-}
-
-export interface CommonOptions {
-  mode?: LayoutMode;
-  cursorLine?: CursorLine;
-  vcs?: VcsMode;
-  theme?: string;
-  agentContext?: string;
-  pager?: boolean;
-  watch?: boolean;
-  /** Enable launch-scoped experimental review features. */
-  experimental?: boolean;
-  /** Offload eligible large-diff highlighting for this launch. */
-  fast?: boolean;
-  excludeUntracked?: boolean;
-  lineNumbers?: boolean;
-  tabWidth?: number;
-  wrapLines?: boolean;
-  hunkHeaders?: boolean;
-  menuBar?: boolean;
-  sidebar?: SidebarVisibility;
-  agentNotes?: boolean;
-  copyDecorations?: boolean;
-  promptSaveViewPreferences?: boolean;
-  transparentBackground?: boolean;
-  colorMoved?: boolean;
-  /** False only when `--no-extensions` disables user extension loading for this run. */
-  extensions?: boolean;
-  /** Entry paths from repeated `--extension` flags, for development and testing. */
-  extensionPaths?: string[];
 }
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
@@ -320,54 +268,6 @@ export type SessionCommandInput =
   | SessionCommentClearCommandInput
   | SessionHighlightAddCommandInput
   | SessionHighlightClearCommandInput;
-
-/**
- * Review requests extend the published input views rather than restating them,
- * so an adapter written against the extension contract accepts the exact values
- * Hunk's commands produce. `options` is the internal half: resolved CLI and
- * config state that no adapter — bundled or third-party — needs to see.
- */
-export interface VcsDiffCommandInput extends ExtensionVcsDiffInput {
-  options: CommonOptions;
-}
-
-export interface VcsShowCommandInput extends ExtensionVcsShowInput {
-  options: CommonOptions;
-}
-
-export interface VcsStashShowCommandInput extends ExtensionVcsStashShowInput {
-  options: CommonOptions;
-}
-
-export interface FileCommandInput {
-  kind: "diff";
-  left: string;
-  right: string;
-  options: CommonOptions;
-}
-
-export interface PatchCommandInput {
-  kind: "patch";
-  file?: string;
-  text?: string;
-  options: CommonOptions;
-}
-
-export interface DiffToolCommandInput {
-  kind: "difftool";
-  left: string;
-  right: string;
-  path?: string;
-  options: CommonOptions;
-}
-
-export type CliInput =
-  | VcsDiffCommandInput
-  | VcsShowCommandInput
-  | VcsStashShowCommandInput
-  | FileCommandInput
-  | PatchCommandInput
-  | DiffToolCommandInput;
 
 export interface MarkupRenderCommandInput {
   kind: "markup-render";

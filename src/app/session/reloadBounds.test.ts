@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { getBundledVcsCatalog } from "../../app/vcsCatalog";
+import { getBundledVcsCatalog } from "../vcsCatalog";
 import type { AppBootstrap, CliInput } from "../../core/types";
 import { createSessionReloadBounds, validateSessionReloadWithinBounds } from "./reloadBounds";
 

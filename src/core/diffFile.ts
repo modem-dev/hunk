@@ -4,7 +4,7 @@ import { patchLooksBinary } from "./binary";
 import { fileLanguageForPath } from "./fileLanguageLookup";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import type { FileSourceFetcher } from "./fileSource";
-import type { SidecarContext, DiffFile, DiffLineMoveKinds } from "./types";
+import type { DiffFile, DiffLineMoveKinds, SidecarContext } from "./changeset";
 
 /** Count visible additions and deletions from parsed diff metadata. */
 export function countDiffStats(metadata: FileDiffMetadata) {

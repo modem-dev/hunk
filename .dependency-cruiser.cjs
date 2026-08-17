@@ -8,14 +8,16 @@
  * `bun run deps:check` fails on any violation not in the baseline.
  */
 
-// UI files allowed to couple to src/app and src/session: the composition shell and the
-// two named session adapters. Everything else in src/ui stays presentation-only.
+// UI files allowed to couple to src/app and src/session: the composition shell, the two
+// named session adapter hooks, and the session-navigation resolution helper those hooks
+// share. Everything else in src/ui stays presentation-only.
 const UI_SESSION_ADAPTERS = [
   "^src/ui/App\\.tsx$",
   "^src/ui/AppHost\\.tsx$",
   "^src/ui/runInteractiveApp\\.tsx$",
   "^src/ui/hooks/useHunkSessionBridge\\.ts$",
   "^src/ui/hooks/useTerminalReview\\.ts$",
+  "^src/ui/lib/reviewState\\.ts$",
 ];
 
 module.exports = {
@@ -55,10 +57,18 @@ module.exports = {
     {
       name: "extensions-host-stays-below-surfaces",
       comment:
-        "The extension host and bundled extensions sit below the surfaces that load them. Bundled UI extensions must consume the runtime-module surface the API serves, not reach into src/ui internals — that reach-in is exactly what third-party extensions cannot do.",
+        "The extension host and bundled extensions sit below the surfaces that load them. The bundled UI tier (src/extensions/default/ui/) is exempt from the src/ui half by documented design: its dogfooding boundary is the published props contract — data, actions, theme — while rendering helpers are host code (see the sidebar module header).",
       severity: "error",
-      from: { path: "^src/extensions/" },
+      from: { path: "^src/extensions/", pathNot: "^src/extensions/default/ui/" },
       to: { path: "^src/(ui|app|session|opentui)/" },
+    },
+    {
+      name: "bundled-ui-extensions-render-only",
+      comment:
+        "The bundled UI tier may consume src/ui rendering helpers as host code, but composition and session brokering stay out of reach — a pane gets its data and actions through the published props.",
+      severity: "error",
+      from: { path: "^src/extensions/default/ui/" },
+      to: { path: "^src/(app|session|opentui)/" },
     },
     {
       name: "session-stays-below-app-and-ui",

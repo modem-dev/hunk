@@ -17,7 +17,7 @@ import {
   encodeCompactHighlightedDiff,
   type CompactHighlightedDiff,
 } from "./highlightCompact";
-import type { HighlightedDiffCode } from "../diffRows";
+import type { HighlightedHastLines } from "./highlightCompact";
 
 interface HighlightWorkerRequest {
   version: 3;
@@ -77,7 +77,10 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
       preferredHighlighter: "shiki-wasm",
     });
     const result = renderDiffWithHighlighter(metadata, highlighter, workerRenderOptions(theme));
-    const highlighted = result.code as HighlightedDiffCode;
+    const highlighted = result.code as {
+      deletionLines: HighlightedHastLines;
+      additionLines: HighlightedHastLines;
+    };
     const code = encodeCompactHighlightedDiff(
       aliasContext ? aliasContextHighlightLines(metadata, highlighted) : highlighted,
       appearance,

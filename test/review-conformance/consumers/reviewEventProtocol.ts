@@ -6,7 +6,7 @@
  * reference every other tier is compared against: a surface that framed events its own way
  * would disagree with this consumer on the fixtures the C4 finding contributed.
  */
-import { nodeReviewDigest } from "../../../src/lib/reviewDigest";
+import { nodeReviewDigest } from "../../../src/core/reviewDigest";
 import {
   parseReviewEventBegin,
   parseReviewEventChunk,

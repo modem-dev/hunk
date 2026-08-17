@@ -45,7 +45,7 @@ import {
   textClusters,
   wrapSanitizedTextByWidth,
 } from "../lib/text";
-import type { CopySelectedRowRange } from "../components/panes/copySelection";
+import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { CursorLine } from "../../core/types";
 
 export interface CursorHighlight {

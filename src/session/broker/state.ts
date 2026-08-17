@@ -53,7 +53,7 @@ import {
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
 import { isReviewSha256Digest } from "../../core/review/validation";
-import { nodeReviewDigest } from "../../lib/reviewDigest";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   type HunkReviewActionResultV1,

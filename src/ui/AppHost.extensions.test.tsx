@@ -19,7 +19,7 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
 import type { CliInput } from "../core/types";
 
-import type { HunkSessionBrokerClient } from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import {
   applyExtensionRegistrations,
   resolveDetectedVcsIdWithExtensions,

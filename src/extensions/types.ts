@@ -60,7 +60,6 @@ export type {
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
-  SessionReloadReason,
 } from "../extension-api/types";
 
 /**

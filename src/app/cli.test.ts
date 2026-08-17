@@ -9,7 +9,7 @@ import {
   parseCli,
   WATCH_OPTION,
 } from "./cli";
-import { resolveCliVersion } from "./version";
+import { resolveCliVersion } from "../core/version";
 
 const tempDirs: string[] = [];
 

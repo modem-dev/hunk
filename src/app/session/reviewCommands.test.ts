@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
-import { ReviewProducer } from "../../app/review/producer";
+import { ReviewProducer } from "../review/producer";
 import { reviewGapId } from "../../core/review/expansion";
 import { reviewResourceId } from "../../core/review/resources";
 import { createReviewStore } from "../../core/review/store";
-import { HUNK_REVIEW_PROTOCOL_VERSION, type HunkReviewActionV1 } from "../reviewProtocol";
+import {
+  HUNK_REVIEW_PROTOCOL_VERSION,
+  type HunkReviewActionV1,
+} from "../../session/reviewProtocol";
 import { applySessionReviewAction, readSessionReviewResource } from "./reviewCommands";
 
 const ACTOR = { clientId: "browser-1", kind: "browser" as const };

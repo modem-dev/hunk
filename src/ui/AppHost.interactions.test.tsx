@@ -5,8 +5,8 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  HunkSessionBrokerClient,
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,

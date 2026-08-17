@@ -27,10 +27,12 @@ packages/*             standalone publishable units (session broker, term-video)
                        never import src/
 src/extensions         extension host + bundled extensions; consume core, never surfaces
 src/session            daemon/broker transport + protocol; consumes core and packages
-src/app                startup composition: wires core + extensions + session; no rendering
+src/app                startup composition: CLI parsing plus the wiring of core,
+                       extensions, and the session broker; no rendering
 src/ui                 terminal surface; only the composition shell (App, AppHost,
-                       runInteractiveApp) and the named session adapter hooks
-                       (useTerminalReview, useHunkSessionBridge) may import app/session
+                       runInteractiveApp), the named session adapter hooks
+                       (useTerminalReview, useHunkSessionBridge), and their shared
+                       navigation helper (ui/lib/reviewState) may import app/session
 src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`
 src/main.tsx           CLI entry
 ```
@@ -42,75 +44,42 @@ Intentional exceptions, allowed by the rules:
   surface by design.
 - Tests are excluded: they are colocated and free to reach across boundaries.
 
-## Snapshot (2026-08-16, v0.19.0)
+## Snapshot (2026-08-17, v0.19.0)
 
-310 production modules, 1161 internal edges. The good news first: the graph is broadly layered
-already — `src/app` never imports `src/ui`, packages are standalone, `src/extension-api` is
-import-free, and file-level cycles are few and small. The problems are concentrated, not
-diffuse:
+332 production modules, 1283 internal edges, **zero boundary violations and zero import
+cycles** — the baseline is empty. The initial audit (2026-08-16) found 28 violations in five
+clusters and 5 file-level cycles; all were repaid in the same change series that introduced the
+rules:
 
-- **`src/core` has no interior.** 58 of its 69 files are imported from outside — an 84% public
-  surface. It behaves as a shared file pool, not a module.
-- **`src/core/types.ts` is a god module**: 91 inbound edges (next highest: 44), imported by
-  every tier, and itself a member of the largest import cycle.
-- **28 boundary violations** (the baseline), in five clusters described below.
-- **5 import cycles** (2–6 files each).
+- **Cycles.** Each cycle was a type-only back-edge from a lower module into a grab-bag above
+  it. The cuts: `core/types.ts` gave its changeset model to `core/changeset.ts` and its
+  command-input model to `core/commandInputs.ts` (re-exported from `core/types` so import
+  sites keep working); the diff row model moved to `ui/diff/diffRowModel.ts`; the worker's
+  compact encoder was retyped structurally (`HighlightedHastLines`); `HunkSessionBrokerClient`
+  moved beside the client class it aliases; `CopySelectedRowRange` moved into
+  `ui/lib/diffSpatial.ts`; `extensions/notifications.ts` now imports `ExtensionNotifyType`
+  from its declaring module.
+- **`src/core/cli.ts` → `src/app/cli.ts`.** CLI parsing that registers every tier's command
+  surface (including `hunk session *` from `session/agent/surface.ts`) is composition, not
+  domain — moving it made the core→session edges legal app→session edges.
+- **`src/session/app/` → `src/app/session/`.** The mounted-review registration, bridge, and
+  reload-authorization modules compose the app process with the session broker, and nothing
+  inside `src/session` imported them — they were app-tier code homed on the wrong side.
+  Moving the directory removed every session→app edge at once.
+- **`src/lib/reviewDigest.ts` → `src/core/reviewDigest.ts`.** The Node digest implementation
+  is review-semantic and platform-bound; core root (Node-full, outside the platform-free
+  `core/review/` seam) is its tier.
+- **`ui/lib/reviewState.ts`** resolves session-daemon navigation for the adapter hooks and is
+  now a named entry in the adapter allowlist rather than an accidental reach-in.
+- **The bundled sidebar's `src/ui` imports are documented design, not debt.** Its module
+  header defines the dogfooding boundary as the published props contract (data, actions,
+  theme); rendering helpers are host code. The rules now encode exactly that:
+  `src/extensions/default/ui/` may consume `src/ui`, and still may never touch
+  `src/app`/`src/session`.
 
-## Baseline violations and how to repay them
+## After the baseline: next targets
 
-Grouped by cluster, roughly in suggested order of attack.
-
-### 1. Small upward edges (cheap, high signal)
-
-- `src/core/cli.ts → src/session/agent/{surface,errors}` — the CLI help text embeds the agent
-  surface docs. Invert: let the session tier register its command documentation into a catalog
-  `core/cli.ts` renders, or move the agent-facing CLI assembly up beside `src/app`.
-- `src/lib/reviewDigest.ts → src/core/review/validation.ts` — review-semantic code sitting in
-  the helper tier. Move it into `src/core/review/` (its one non-core consumer already imports
-  core freely).
-- `src/ui/lib/reviewState.ts → src/session/agent/errors.ts` and `session/types` — a UI helper
-  reaching into session error formatting. Either promote `reviewState.ts` to the adapter
-  allowlist deliberately, or (better) move the shared error catalog down to core so both tiers
-  consume it from below.
-
-### 2. Bundled sidebar reaches into `src/ui` internals
-
-`src/extensions/default/ui/sidebar/index.tsx` imports `FileListItem`, `ui/lib/files`,
-`ui/lib/ids`, and `ui/lib/sidebarRenderWindow` directly. The bundled tier exists to dogfood the
-public extension API; these four edges are exactly what a third-party extension cannot write.
-Repay by promoting what the sidebar genuinely needs into the host-served runtime-module surface
-(the same mechanism user extensions use), or by moving the shared pieces into a tree both may
-import.
-
-### 3. `src/session/app` ↔ `src/app/review` mutual dependency
-
-`session/app/registration.ts` imports `app/review/{capability,publication}` (one runtime edge)
-while `src/app` imports session brokering — the two tiers hold hands. `capability.ts` and
-`publication.ts` are review-publication semantics, not startup composition; moving them into
-`src/core/review/` (they are already close to `resources.ts`/`generationOrder.ts`) breaks the
-mutual dependency without inventing a new tier. The remaining `session/app → app/review/producer`
-edges are type-only and disappear once the producer's published types move with them.
-
-### 4. Import cycles
-
-| Cycle                                                                                            | Suggested cut                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `core/types ↔ core/vcs/{types,index} ↔ core/{diffFile,sidecar,watch/plan}` (6 files)             | Split `core/types.ts`: the changeset/diff model, the view-options/config types, and the VCS-facing types are three audiences. The cycle exists because everything lives in one file. |
-| `ui/diff/{codeColumns,diffRows} ↔ ui/diff/worker/*` (5 files)                                    | The worker protocol types should be a leaf module both sides import; today the worker index re-imports the row model that imports it back.                                           |
-| `session/{types,protocol} ↔ session/broker/brokerClient ↔ session/client/capabilities` (4 files) | Extract the wire-protocol types into a leaf (mirroring what `reviewProtocol.ts` already does for the review side).                                                                   |
-| `ui/diff/{diffSectionGeometry,renderRows} ↔ ui/components/panes/copySelection` (3 files)         | `copySelection` is interaction policy importing geometry; geometry should not know it exists.                                                                                        |
-| `extensions/types ↔ extensions/notifications` (2 files)                                          | Move the notification payload types into `extensions/types.ts` (or a shared leaf) so `types.ts` stops importing a sibling implementation.                                            |
-
-### 5. Root-level stragglers
-
-`src/highlightWorkerClient.ts` and `src/highlightWorkerEntry.ts` sit at the src root but belong
-to `src/ui/diff/worker/` (the worker index imports back out to the root file). Fold them into
-the worker directory, keeping only genuine bundler entry points at the root. Not encoded as a
-rule yet; do it opportunistically.
-
-## After the baseline is empty
-
-Two follow-ups become worth doing once the tier rules hold:
+The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
 1. **Give `src/core` an interior.** The subdirectories (`review/`, `vcs/`, `theme/`, `watch/`,
    `patch/`) are already coherent modules; the ~40 loose files at `core/*` root are the
@@ -119,5 +88,5 @@ Two follow-ups become worth doing once the tier rules hold:
    named modules (`document`, `geometry`, `state`, …) stay public; their helpers become
    internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
-   five shell files. As session coupling consolidates into `useTerminalReview` /
+   six files. As session coupling consolidates into `useTerminalReview` /
    `useHunkSessionBridge`, shrink the list.
