@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildIndexCard,
+  buildSeriesCard,
   compareVersionsDescending,
+  findMissingCardImages,
   formatDate,
+  formatJson,
   generateChangelogArtifacts,
   groupIntoSeries,
   isPublished,
@@ -13,6 +17,7 @@ import {
   renderSeriesPage,
   resolveDates,
   seriesSummary,
+  socialCardPath,
   splitHighlights,
   toPlainText,
   truncate,
@@ -745,5 +750,106 @@ describe("link reference definitions", () => {
         ].join("\n"),
       )[0]?.sections[0]?.entries ?? [];
     expect(entries[0]?.description).toContain("[label]: https://example.com");
+  });
+});
+
+describe("social cards", () => {
+  const seriesList = groupIntoSeries(parseChangelog(SAMPLE).filter((r) => !r.prerelease));
+  const dates = { "0.19.0": "2026-08-16", "0.18.0": "2026-08-08", "0.15.3": "2026-06-13" };
+  const card = (minor: string, latest = false) => {
+    const series = seriesList.find((entry) => entry.minor === minor);
+    if (!series) throw new Error(`no series ${minor}`);
+    return buildSeriesCard({ series, notes: undefined, dates, latest });
+  };
+
+  test("names the image after the published slug", () => {
+    expect(socialCardPath("0.18")).toBe("/changelog/og/0.18.png");
+    expect(socialCardPath("index")).toBe("/changelog/og/index.png");
+  });
+
+  test("marks only the latest series", () => {
+    expect(card("0.19", true).latest).toBe(true);
+    expect(card("0.18").latest).toBeUndefined();
+  });
+
+  test("omits the tagline when no summary was written", () => {
+    expect(card("0.19", true).tagline).toBe("Hunk 0.19.0 expands the extension platform.");
+    // 0.15 is the legacy-format series, which has no Highlights block.
+    expect(card("0.15").tagline).toBeUndefined();
+  });
+
+  test("carries counts and a date span in the meta line", () => {
+    expect(card("0.19", true).meta).toBe("August 16, 2026 · 1 release · 2 changes");
+  });
+
+  test("shows chips only when a series has more than one published release", () => {
+    expect(card("0.19", true).chips).toBeUndefined();
+  });
+
+  test("describes itself for screen readers and link previews", () => {
+    expect(card("0.18").alt).toBe(
+      "Hunk 0.18 release notes — August 8, 2026 · 1 release · 1 change",
+    );
+  });
+
+  test("summarises the whole history on the index card", () => {
+    const index = buildIndexCard(seriesList, dates);
+    expect(index).toMatchObject({ slug: "index", title: "Changelog" });
+    expect(index.meta).toBe("3 release series · June 2026 – August 2026");
+    expect(index.chips).toEqual(["0.19", "0.18", "0.15", "…"]);
+  });
+
+  test("points each page at its own card instead of the site-wide image", () => {
+    const series = seriesList[0];
+    const page =
+      series &&
+      renderSeriesPage({
+        series,
+        notes: undefined,
+        dates,
+        card: card("0.19", true),
+      });
+    expect(page).toContain("property: og:image");
+    expect(page).toContain("https://hunk.dev/changelog/og/0.19.png");
+    expect(page).toContain("name: twitter:image");
+    expect(page).toContain("property: og:image:alt");
+  });
+
+  test("reports a card whose image has not been drawn", () => {
+    expect(findMissingCardImages([{ slug: "9.9", title: "x", meta: "y", alt: "z" }])).toEqual([
+      expect.stringContaining("9.9.png"),
+    ]);
+    expect(findMissingCardImages([{ slug: "0.19", title: "x", meta: "y", alt: "z" }])).toEqual([]);
+  });
+});
+
+describe("generated JSON survives the repository formatter", () => {
+  // oxfmt keeps a primitive array on one line while it fits in 100 columns and expands past it.
+  // Emitting anything else makes `bun run format` rewrite the file and `--check` call it stale.
+  test("keeps a short primitive array inline", () => {
+    expect(formatJson({ chips: ["0.18.2", "0.18.1"] })).toBe(
+      '{\n  "chips": ["0.18.2", "0.18.1"]\n}',
+    );
+  });
+
+  test("expands an array that would cross the print width", () => {
+    const long = Array.from({ length: 14 }, (_, index) => `0.17.${index}`);
+    const printed = formatJson({ chips: long });
+    expect(printed).toContain('"chips": [\n');
+    for (const line of printed.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(100);
+    }
+  });
+
+  test("always expands objects and arrays of objects", () => {
+    expect(formatJson([{ a: 1 }])).toBe('[\n  {\n    "a": 1\n  }\n]');
+  });
+
+  test("drops undefined members rather than emitting them", () => {
+    expect(formatJson({ a: 1, b: undefined })).toBe('{\n  "a": 1\n}');
+  });
+
+  test("renders empty containers compactly", () => {
+    expect(formatJson({ a: [], b: {} })).toBe('{\n  "a": [],\n  "b": {}\n}');
   });
 });

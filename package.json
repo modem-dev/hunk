@@ -62,6 +62,7 @@
     "generate:skill": "bun run ./scripts/generate-skill.ts",
     "generate:docs": "bun run ./scripts/generate-docs.ts",
     "generate:changelog": "bun run ./scripts/generate-changelog.ts",
+    "generate:og": "bun run ./website/scripts/generate-og.ts",
     "check:docs": "bun run ./scripts/generate-docs.ts --check",
     "check:changelog": "bun run ./scripts/generate-changelog.ts --check",
     "website:dev": "bun run --cwd website dev",
