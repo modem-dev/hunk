@@ -1,6 +1,6 @@
-import { DEFAULT_TAB_WIDTH, validateTabWidth } from "../../core/invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH, validateTabWidth } from "../../core/run/tabWidth";
 import type { DiffFile } from "../../core/changeset/model";
-import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import { measureTextWidth } from "../lib/text";
 import type { DiffRow } from "./diffRowModel";
 

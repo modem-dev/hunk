@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { ValidatedLineHighlight } from "../highlights/validate";
 import { measureTextWidth } from "../lib/text";
 import { expandDiffTabs } from "./codeColumns";

@@ -2,7 +2,7 @@
 // main.tsx so the command behavior is directly testable.
 
 import { resolve as resolvePath } from "node:path";
-import type { MarkupRenderCommandInput } from "../../../core/invocation/commandInputs";
+import type { MarkupRenderCommandInput } from "../../../core/run/commandInputs";
 import { resolveTheme } from "../../themes";
 import { STML_GUIDE } from "./guide";
 import { renderStmlToAnsi, renderStmlToText } from "./render";

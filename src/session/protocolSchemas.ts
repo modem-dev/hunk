@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CliInput } from "../core/invocation/commandInputs";
+import type { CliInput } from "../core/run/commandInputs";
 import type { SessionDaemonRequest } from "./protocol";
 
 /**

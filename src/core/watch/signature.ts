@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { resolve } from "node:path";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "../vcs";
-import type { CliInput } from "../invocation/commandInputs";
+import type { CliInput } from "../run/commandInputs";
 import type { VcsCatalog } from "../vcs/types";
 
 /** Format one file stat into a stable signature fragment, or mark the path missing. */

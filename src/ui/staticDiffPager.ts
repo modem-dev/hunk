@@ -16,9 +16,9 @@
  */
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
-import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { DiffFile } from "../core/changeset/model";
-import type { CommonOptions } from "../core/invocation/commandInputs";
+import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import {
   buildSplitRows,

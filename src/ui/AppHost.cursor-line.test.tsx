@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { CursorLine } from "../core/invocation/commandInputs";
+import type { CursorLine } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { AppHost } from "./AppHost";

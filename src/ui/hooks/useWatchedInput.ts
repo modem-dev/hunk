@@ -8,7 +8,7 @@ import { createWatchEventSource } from "../../core/watch/observer";
 import { resolveWatchPlan, type WatchPlan } from "../../core/watch/plan";
 import { computeWatchSignature } from "../../core/watch/signature";
 import type { ReloadContext } from "../../core/bootstrap";
-import type { CliInput } from "../../core/invocation/commandInputs";
+import type { CliInput } from "../../core/run/commandInputs";
 
 export interface WatchedInputRuntime {
   clock?: WatchControllerClock;

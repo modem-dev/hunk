@@ -1,11 +1,8 @@
 import fs from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import {
-  INSTALLED_EXTENSIONS_DIR_NAME,
-  resolveGlobalExtensionsDir,
-} from "../core/invocation/paths";
-import { findProjectRootCandidate } from "../core/runtime/projectRoot";
+import { INSTALLED_EXTENSIONS_DIR_NAME, resolveGlobalExtensionsDir } from "../core/run/paths";
+import { findProjectRootCandidate } from "../core/process/projectRoot";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 
 /** Entry-file suffixes Hunk will import directly, in preference order. */

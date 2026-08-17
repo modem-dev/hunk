@@ -47,7 +47,7 @@ import {
   wrapSanitizedTextByWidth,
 } from "../lib/text";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
-import type { CursorLine } from "../../core/invocation/commandInputs";
+import type { CursorLine } from "../../core/run/commandInputs";
 
 export interface CursorHighlight {
   /** The render plan anchor of the row the cursor rests on, shared with reveal lookups. */

@@ -90,7 +90,7 @@ sidecar shapes for legacy import sites (since phase 4: those sites name `changes
 directly); it names `changeset/model`, which is public, so the interior rule needs no
 exception. `core/patch/` stayed where it is: it was already coherent.
 
-Phase 2 (2026-08-17) grouped **how a run is asked for** into `core/invocation/`: the command
+Phase 2 (2026-08-17) grouped **how a run is asked for** into `core/run/`: the command
 inputs (`commandInputs`), the layered config resolver (`config`), the app command catalog
 (`commandCatalog`), the invocation errors (`errors` — "a failure Hunk raises because of how it
 was invoked"), launch-scoped experimental features (`experimental`), XDG/app paths (`paths`),
@@ -100,7 +100,7 @@ tab-width validation (`tabWidth`), reload eligibility (`inputReload`), and the C
 Every one of the nine is **public**: each has production importers outside the module, so this
 phase adds no `invocation-internals-stay-in-module` rule. Its value is the grouping plus
 extending the freeze: `core-leaves-never-reimport-types` now names
-`core/invocation/commandInputs.ts` in place of the old root path. Only `commandInputs` is a
+`core/run/commandInputs.ts` in place of the old root path. Only `commandInputs` is a
 types-leaf — `config`, `experimental`, and `inputReload` import `core/types` legally, since
 `core/types` re-exports from `commandInputs` and never the other way round. (Since phase 4
 there is no shell to import: those three name `commandInputs` directly, and `config` declares
@@ -116,7 +116,7 @@ those inputs name them and the leaf may not import `core/types` back:
 all of them, so no import site changed at the time; phase 4 moved the import sites onto
 `commandInputs` and deleted the re-exports.
 
-Phase 3 (2026-08-17) grouped **the process and terminal a run lives in** into `core/runtime/`:
+Phase 3 (2026-08-17) grouped **the process and terminal a run lives in** into `core/process/`:
 TTY capability detection and runtime CLI-input resolution (`terminal`), the external pager and
 its plain-text fallback (`pager`), SIGTSTP/SIGINT job control (`jobControl`), ordered session
 teardown (`shutdown`), `.hunk`/VCS project-root discovery (`projectRoot`), the atomically
@@ -149,7 +149,7 @@ module that owns their behaviour, one home each:
 
 - `TerminalThemeMode` → `core/theme/detection.ts`, which probes the terminal for it and had
   been re-exporting the name from the shell.
-- `ExtensionsConfig`, `UserKeyBinding`, `PersistedViewPreferences` → `core/invocation/config.ts`,
+- `ExtensionsConfig`, `UserKeyBinding`, `PersistedViewPreferences` → `core/run/config.ts`,
   which resolves `[extensions]`, `[keybindings]`, and the persisted view options.
 - `UserNoteLineTarget` → `core/liveComments.ts`, beside `DiffSide` and `CommentTargetInput`: it
   is the line a user note hangs on, and every consumer reaches it through note code.
@@ -188,7 +188,7 @@ rules:
 - **Cycles.** Each cycle was a type-only back-edge from a lower module into a grab-bag above
   it. The cuts: `core/types.ts` gave its changeset model to `core/changeset.ts` (since phase 1,
   `core/changeset/model.ts`) and its command-input model to `core/commandInputs.ts` (since phase
-  2, `core/invocation/commandInputs.ts`; re-exported from `core/types` so import sites kept
+  2, `core/run/commandInputs.ts`; re-exported from `core/types` so import sites kept
   working, until phase 4 melted that shell into `core/bootstrap.ts` and moved the sites onto the
   declaring modules); the diff row model moved to
   `ui/diff/diffRowModel.ts`; the worker's
@@ -228,7 +228,7 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
    because every file in them has an outside importer today. Two named follow-ups: move
    `loadAppBootstrap` out of `core/changeset/loaders.ts` into `src/app` (it is composition, and
    it is the one exception `core-leaves-stay-below-bootstrap` has to carve out), and split
-   `core/invocation/config.ts`, whose readers reach it for three unrelated reasons — the
+   `core/run/config.ts`, whose readers reach it for three unrelated reasons — the
    resolved `HunkConfigResolution`, the persisted view preferences, and the extension/keybinding
    tables. The review seam's named modules (`document`, `geometry`, `state`, …) stay public;
    their helpers become internal.

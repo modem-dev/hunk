@@ -1,8 +1,8 @@
-import type { ExperimentalFeature } from "../core/invocation/experimental";
+import type { ExperimentalFeature } from "../core/run/experimental";
 import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import type { CliInput, ReviewNoteSource } from "../core/invocation/commandInputs";
+import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
   HunkReviewActionEnvelopeV1,
   HunkReviewResourceCatalogV1,

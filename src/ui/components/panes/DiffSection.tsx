@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
-import type { LayoutMode } from "../../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../../core/liveComments";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { DiffSectionBody, type ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";

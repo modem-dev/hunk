@@ -1,6 +1,6 @@
 import type { Hunk } from "@pierre/diffs";
 import type { DiffFile } from "../../core/changeset/model";
-import type { ReviewNoteSource } from "../../core/invocation/commandInputs";
+import type { ReviewNoteSource } from "../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../extension-api/types";
 import { reviewAnnotationOverlapsHunk } from "../../core/review/annotations";
 import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex } from "../../core/review/anchors";

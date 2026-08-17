@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareStartupPlan } from "./startup";
-import { resolveConfiguredCliInput } from "../core/invocation/config";
-import type { CliInput, ParsedCliInput } from "../core/invocation/commandInputs";
+import { resolveConfiguredCliInput } from "../core/run/config";
+import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
 
 const tempDirs: string[] = [];
 const initialCwd = process.cwd();

@@ -515,7 +515,7 @@ here so the extraction happens before the duplication exists. Design detail in
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
-  _Repaid (Phase 1 PR 3)_: `src/core/invocation/commandCatalog.ts` carries id, title, category, default
+  _Repaid (Phase 1 PR 3)_: `src/core/run/commandCatalog.ts` carries id, title, category, default
   chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
   `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
   `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and

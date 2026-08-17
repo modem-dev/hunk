@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { CONFIG_REFERENCE_OPTIONS } from "../src/core/invocation/config";
+import { CONFIG_REFERENCE_OPTIONS } from "../src/core/run/config";
 import { renderHunkReviewSkill } from "../src/hunk-review/skillDocument";
 import { SESSION_AGENT_COMMAND_LIST } from "../src/session/agent/surface";
 import {

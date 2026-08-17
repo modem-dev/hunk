@@ -1,6 +1,6 @@
 import { reviewGapId } from "../../core/review/expansion";
 import { normalizedReviewSourceLines } from "../../core/review/geometry";
-import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { expandDiffTabs } from "./codeColumns";
 import type {

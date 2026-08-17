@@ -12,7 +12,7 @@ import {
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
-import { APP_COMMAND_CATALOG } from "../../core/invocation/commandCatalog";
+import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
 import { buildAppMenus } from "./appMenus";
 import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
 import { resolveCommandKeys } from "./keymap";

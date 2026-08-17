@@ -16,7 +16,7 @@ import { createGitVcsAdapter } from "../../extensions/default/vcs/git";
 import { toInternalVcsAdapter } from "../../extensions/runExtension";
 import { createVcsCatalog } from "../vcs";
 import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";
-import type { CliInput } from "../invocation/commandInputs";
+import type { CliInput } from "../run/commandInputs";
 import type { VcsAdapter } from "../vcs/types";
 import { computeWatchSignature } from "../watch/signature";
 

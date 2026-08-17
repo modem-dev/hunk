@@ -13,9 +13,9 @@ src/core/            review model, patch handling, VCS contracts, configuration,
                      runtime primitives
 src/core/changeset/  the changeset model and the pipeline that acquires one: loaders,
                      per-file construction, sidecar/source reads, and hunk formatting
-src/core/invocation/ how a run is asked for: command inputs, layered configuration, the
+src/core/run/ how a run is asked for: command inputs, layered configuration, the
                      command catalog, user-facing errors, paths, and version
-src/core/runtime/    the process and terminal a run lives in: TTY capabilities, the pager,
+src/core/process/    the process and terminal a run lives in: TTY capabilities, the pager,
                      job control, shutdown, project-root discovery, persisted app state,
                      and startup/update notices
 src/core/theme/      bundled theme metadata, custom-theme rules, and terminal theme detection

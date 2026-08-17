@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { getBundledVcsCatalog } from "../vcsCatalog";
 import type { AppBootstrap } from "../../core/bootstrap";
-import type { CliInput } from "../../core/invocation/commandInputs";
+import type { CliInput } from "../../core/run/commandInputs";
 import { createSessionReloadBounds, validateSessionReloadWithinBounds } from "./reloadBounds";
 
 /** Resolve expected paths the same way production bounds do, including Windows long names. */

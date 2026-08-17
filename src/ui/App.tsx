@@ -20,17 +20,14 @@ import {
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
   type PersistedViewPreferences,
-} from "../core/invocation/config";
-import {
-  experimentalFeatureEnabled,
-  resolveExperimentalDiffFiles,
-} from "../core/invocation/experimental";
-import { DEFAULT_TAB_WIDTH } from "../core/invocation/tabWidth";
+} from "../core/run/config";
+import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
+import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
-import type { CliInput, CursorLine, LayoutMode } from "../core/invocation/commandInputs";
+import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../core/liveComments";
-import { canReloadInput } from "../core/invocation/inputReload";
+import { canReloadInput } from "../core/run/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
   resolveExtensionCommands,

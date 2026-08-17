@@ -5,7 +5,7 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import type { DiffFile } from "../../core/changeset/model";
-import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import { reviewGapId } from "../../core/review/expansion";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { resolveTheme } from "../themes";

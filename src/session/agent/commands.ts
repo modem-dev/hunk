@@ -2,7 +2,7 @@ import type {
   SessionCommandInput,
   SessionCommandOutput,
   SessionSelectorInput,
-} from "../../core/invocation/commandInputs";
+} from "../../core/run/commandInputs";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
 import {

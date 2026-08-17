@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../core/run/commandInputs";
 
 export type ResponsiveViewport = "full" | "medium" | "tight";
 

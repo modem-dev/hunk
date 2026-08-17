@@ -17,7 +17,7 @@ import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/load
 
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import type { CliInput } from "../core/invocation/commandInputs";
+import type { CliInput } from "../core/run/commandInputs";
 import { loadStartupExtensions } from "../extensions/startup";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { WorkspaceFileWriter } from "./App";

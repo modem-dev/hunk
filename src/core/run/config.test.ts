@@ -14,7 +14,7 @@ import { loadAppBootstrap } from "../changeset/loaders";
 import {
   LEGACY_CUSTOM_SYNTAX_NOTICE,
   LEGACY_CUSTOM_SYNTAX_NOTICES,
-} from "../runtime/startupNotice";
+} from "../process/startupNotice";
 
 const tempDirs: string[] = [];
 

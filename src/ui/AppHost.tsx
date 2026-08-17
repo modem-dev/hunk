@@ -3,11 +3,11 @@ import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { resolveConfiguredCliInput } from "../core/invocation/config";
-import { resolveRuntimeCliInput } from "../core/runtime/terminal";
-import type { StartupNotice } from "../core/runtime/startupNotice";
+import { resolveConfiguredCliInput } from "../core/run/config";
+import { resolveRuntimeCliInput } from "../core/process/terminal";
+import type { StartupNotice } from "../core/process/startupNotice";
 import type { AppBootstrap } from "../core/bootstrap";
-import type { CliInput } from "../core/invocation/commandInputs";
+import type { CliInput } from "../core/run/commandInputs";
 import type { ExtensionLoadResult } from "../extensions/types";
 import {
   createUnknownVcsNotice,

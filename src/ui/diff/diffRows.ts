@@ -20,7 +20,7 @@ import {
   reviewTrailingGap,
   type ReviewGapAddress,
 } from "../../core/review/expansion";
-import { DEFAULT_TAB_WIDTH } from "../../core/invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { measureTextWidth } from "../lib/text";

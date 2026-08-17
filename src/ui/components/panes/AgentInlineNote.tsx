@@ -6,7 +6,7 @@ import {
 } from "@opentui/core";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
-import type { LayoutMode } from "../../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";

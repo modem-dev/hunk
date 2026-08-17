@@ -30,7 +30,7 @@ import {
   lowerAppCommandToReviewIntent,
   type AppCommandId,
   type AppCommandLoweringContext,
-} from "../../core/invocation/commandCatalog";
+} from "../../core/run/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,
@@ -51,7 +51,7 @@ import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../c
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
-import type { LayoutMode } from "../../core/invocation/commandInputs";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,

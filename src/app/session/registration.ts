@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { resolveExperimentalFeatures } from "../../core/invocation/experimental";
+import { resolveExperimentalFeatures } from "../../core/run/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
 import { summarizeHunk } from "../../core/changeset/hunkSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";

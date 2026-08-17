@@ -13,14 +13,9 @@
  */
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset } from "./changeset/model";
-import type {
-  CliInput,
-  CursorLine,
-  LayoutMode,
-  SidebarVisibility,
-} from "./invocation/commandInputs";
-import type { UserKeyBinding } from "./invocation/config";
-import type { StartupNotice } from "./runtime/startupNotice";
+import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/commandInputs";
+import type { UserKeyBinding } from "./run/config";
+import type { StartupNotice } from "./process/startupNotice";
 import type { TerminalThemeMode } from "./theme/detection";
 import type { VcsCatalog } from "./vcs/types";
 

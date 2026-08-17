@@ -15,7 +15,7 @@ import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } 
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
-import { DEFAULT_TAB_WIDTH } from "../invocation/tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../run/tabWidth";
 import {
   getConfiguredVcsAdapter,
   isVcsReviewInput,
@@ -35,7 +35,7 @@ import type {
   VcsShowCommandInput,
   VcsDiffCommandInput,
   VcsStashShowCommandInput,
-} from "../invocation/commandInputs";
+} from "../run/commandInputs";
 import type { SidecarContext, Changeset, DiffFile } from "./model";
 
 export interface LoadAppBootstrapOptions {

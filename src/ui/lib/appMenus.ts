@@ -1,4 +1,4 @@
-import type { CursorLine, LayoutMode } from "../../core/invocation/commandInputs";
+import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
