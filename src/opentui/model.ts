@@ -1,7 +1,7 @@
 import { parsePatchFiles } from "@pierre/diffs";
-import { patchLooksBinary } from "../core/binary";
-import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/diffPaths";
-import { countDiffStats } from "../core/diffFile";
+import { patchLooksBinary } from "../core/changeset/binary";
+import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/changeset/diffPaths";
+import { countDiffStats } from "../core/changeset/diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
 import { sanitizePatch } from "../core/patch/sanitize";
 import type { DiffFile } from "../core/types";

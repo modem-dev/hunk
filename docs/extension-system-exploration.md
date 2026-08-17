@@ -117,7 +117,7 @@ seams in very different states of readiness:
 - Dynamic theme registration exists (`ensureSyntaxHighlightThemeRegistered` →
   Pierre's `registerCustomTheme`), but the config layer caps custom themes at
   one `"custom"` slot.
-- Pierre's `setCustomExtension` (`src/core/fileLanguage.ts`) is already used at
+- Pierre's `setCustomExtension` (`src/core/changeset/fileLanguage.ts`) is already used at
   import time for `.mts`/`.cts`; extending it to plugin-declared mappings is
   trivial.
 - `StartupDeps` (`src/app/startup.ts`) fully injects the startup pipeline

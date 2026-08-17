@@ -107,7 +107,7 @@ describe("extension file languages", () => {
   });
 
   test("lets the last extension registration win for the same file extension", async () => {
-    const { fileLanguageForPath } = await import("../core/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       { extensionId: "first", extension: "hunkfixture", language: "python" },

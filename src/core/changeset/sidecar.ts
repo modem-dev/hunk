@@ -7,8 +7,8 @@
  * mean the coding-agent command surface in `src/session/agent/`.
  */
 import { resolve as resolvePath } from "node:path";
-import type { AgentAnnotation, AgentFileContext } from "../extension-api/types";
-import type { SidecarContext } from "./changeset";
+import type { AgentAnnotation, AgentFileContext } from "../../extension-api/types";
+import type { SidecarContext } from "./model";
 
 interface SidecarLoadOptions {
   cwd?: string;

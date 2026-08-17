@@ -1,4 +1,7 @@
-import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
+import {
+  BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
+  registerFileLanguage,
+} from "../core/changeset/fileLanguage";
 import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";

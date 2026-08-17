@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/commandCatalog";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/types";
 import {
   createTestDeferred,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { resolveExperimentalFeatures } from "../../core/experimental";
 import { isVcsReviewInput } from "../../core/vcs";
-import { summarizeHunk } from "../../core/hunkSummary";
+import { summarizeHunk } from "../../core/changeset/hunkSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import { reviewProcessCapability } from "../review/capability";
 import type { ReviewPublication } from "../review/publication";

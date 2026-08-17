@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import { parseReviewGeneration } from "../../core/review/generationOrder";
 import {
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,

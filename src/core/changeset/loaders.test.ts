@@ -11,17 +11,14 @@ import {
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
-import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { createGitVcsAdapter } from "../extensions/default/vcs/git";
-import { toInternalVcsAdapter } from "../extensions/runExtension";
-import { createVcsCatalog } from "./vcs";
-import {
-  loadAppBootstrap as loadCoreAppBootstrap,
-  type LoadAppBootstrapOptions,
-} from "./changesetLoaders";
-import type { CliInput } from "./types";
-import type { VcsAdapter } from "./vcs/types";
-import { computeWatchSignature } from "./watch/signature";
+import { getBundledVcsCatalog } from "../../app/vcsCatalog";
+import { createGitVcsAdapter } from "../../extensions/default/vcs/git";
+import { toInternalVcsAdapter } from "../../extensions/runExtension";
+import { createVcsCatalog } from "../vcs";
+import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";
+import type { CliInput } from "../types";
+import type { VcsAdapter } from "../vcs/types";
+import { computeWatchSignature } from "../watch/signature";
 
 const tempDirs: string[] = [];
 

@@ -1,4 +1,4 @@
-import type { ReviewHunkSpan } from "./review/geometry";
+import type { ReviewHunkSpan } from "../review/geometry";
 
 /**
  * The facts a hunk header is built from.

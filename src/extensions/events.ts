@@ -14,7 +14,7 @@ import type {
   ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
-import { summarizeHunk } from "../core/hunkSummary";
+import { summarizeHunk } from "../core/changeset/hunkSummary";
 
 /**
  * How long `shutdown` handlers may run before Hunk exits anyway.

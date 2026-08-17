@@ -6,7 +6,7 @@
  * differently. Selectors stay pure functions of state, and the ones that encode a rule
  * rather than a lookup say so by name.
  */
-import { normalizeDiffPath } from "../diffPaths";
+import { normalizeDiffPath } from "../changeset/diffPaths";
 import {
   reviewGapId,
   reviewGapSourceForFile,

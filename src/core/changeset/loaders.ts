@@ -13,18 +13,18 @@ import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
-import { changesetFromPatch } from "./changesetFromPatch";
+import { changesetFromPatch } from "./fromPatch";
 
-import { DEFAULT_TAB_WIDTH } from "./tabWidth";
+import { DEFAULT_TAB_WIDTH } from "../tabWidth";
 import {
   getConfiguredVcsAdapter,
   isVcsReviewInput,
   loadVcsReview,
   operationFromInput,
-} from "./vcs";
-import type { VcsCatalog } from "./vcs/types";
-import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
-import { computeWatchSignature } from "./watch/signature";
+} from "../vcs";
+import type { VcsCatalog } from "../vcs/types";
+import { buildFilesystemUntrackedDiffFile } from "../vcs/untracked";
+import { computeWatchSignature } from "../watch/signature";
 import type {
   AppBootstrap,
   SidecarContext,
@@ -38,7 +38,7 @@ import type {
   VcsShowCommandInput,
   VcsDiffCommandInput,
   VcsStashShowCommandInput,
-} from "./types";
+} from "../types";
 
 export interface LoadAppBootstrapOptions {
   cwd?: string;

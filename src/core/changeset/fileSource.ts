@@ -1,6 +1,6 @@
-import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readFileTextWithLimit } from "../lib/sourceText";
+import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readFileTextWithLimit } from "../../lib/sourceText";
 
-export { DEFAULT_SOURCE_TEXT_MAX_BYTES } from "../lib/sourceText";
+export { DEFAULT_SOURCE_TEXT_MAX_BYTES } from "../../lib/sourceText";
 
 /**
  * Generic full-file source fetcher primitives used by input loaders and VCS adapters.

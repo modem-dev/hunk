@@ -69,6 +69,24 @@ callers state intent and `planReviewIntent` owns the transition. Later phases ex
 pattern across `src/core` as its subdirectories take shape; the review model's named modules
 (`document`, `identity`, `geometry`, `state`, …) stay public by design.
 
+Phase 1 (2026-08-17) grouped the changeset model and its acquisition pipeline — twelve loose
+files at `core/*` root — into `core/changeset/`, with the surface split enforced by
+`changeset-internals-stay-in-module`:
+
+- **Public:** `model` (the `Changeset` / `DiffFile` / `SidecarContext` shapes), `loaders`
+  (every input source, plus the app bootstrap built around one), `diffFile`, `fileSource`,
+  `fileLanguage`, `binary`, `diffPaths`, `hunkHeader`, `hunkSummary`.
+- **Interior:** `fromPatch` turns patch text into the model and is reached through `loaders`;
+  `fileLanguageLookup` is the only reader/writer of Pierre's process-global extension table
+  and the import that drags in the diff engine; `sidecar` reads `--agent-context` as one step
+  of acquiring a changeset.
+
+The renames are path-only — `changeset.ts` → `changeset/model.ts`, `changesetLoaders.ts` →
+`changeset/loaders.ts`, `changesetFromPatch.ts` → `changeset/fromPatch.ts`, the rest keep their
+basenames — and no exported symbol changed. `core/types.ts` still re-exports the changeset and
+sidecar shapes for legacy import sites; it names `changeset/model`, which is public, so the
+interior rule needs no exception. `core/patch/` stayed where it is: it was already coherent.
+
 ## Snapshot (2026-08-17, v0.19.0)
 
 331 production modules, 1282 internal edges, **zero boundary violations and zero import
@@ -77,9 +95,10 @@ clusters and 5 file-level cycles; all were repaid in the same change series that
 rules:
 
 - **Cycles.** Each cycle was a type-only back-edge from a lower module into a grab-bag above
-  it. The cuts: `core/types.ts` gave its changeset model to `core/changeset.ts` and its
-  command-input model to `core/commandInputs.ts` (re-exported from `core/types` so import
-  sites keep working); the diff row model moved to `ui/diff/diffRowModel.ts`; the worker's
+  it. The cuts: `core/types.ts` gave its changeset model to `core/changeset.ts` (since phase 1,
+  `core/changeset/model.ts`) and its command-input model to `core/commandInputs.ts` (re-exported
+  from `core/types` so import sites keep working); the diff row model moved to
+  `ui/diff/diffRowModel.ts`; the worker's
   compact encoder was retyped structurally (`HighlightedHastLines`); `HunkSessionBrokerClient`
   moved beside the client class it aliases; `CopySelectedRowRange` moved into
   `ui/lib/diffSpatial.ts`; `extensions/notifications.ts` now imports `ExtensionNotifyType`
@@ -106,12 +125,13 @@ rules:
 
 The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
-1. **Give `src/core` an interior.** _Started (phase 0, see Module interiors)._ The
-   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`) are already coherent
-   modules; the ~40 loose files at `core/*` root are the grab-bag. Group them by audience
-   (changeset model, config/CLI, process/runtime concerns) and then add per-module rules
-   restricting which files other tiers may import — the review seam's named modules
-   (`document`, `geometry`, `state`, …) stay public; their helpers become internal.
+1. **Give `src/core` an interior.** _In progress (phases 0–1, see Module interiors)._ The
+   subdirectories (`review/`, `vcs/`, `theme/`, `watch/`, `patch/`, and now `changeset/`) are
+   coherent modules; the loose files still at `core/*` root are the remaining grab-bag. Keep
+   grouping them by audience — config/CLI next, then the process/runtime concerns — and give
+   each group a rule restricting which of its files other tiers may import. The review seam's
+   named modules (`document`, `geometry`, `state`, …) stay public; their helpers become
+   internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
    six files. As session coupling consolidates into `useTerminalReview` /
    `useHunkSessionBridge`, shrink the list.

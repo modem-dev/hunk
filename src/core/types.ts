@@ -1,5 +1,5 @@
 import type { NamedCustomThemeConfig } from "../extension-api/types";
-import type { Changeset, DiffFile } from "./changeset";
+import type { Changeset, DiffFile } from "./changeset/model";
 import type {
   CliInput,
   CommonOptions,
@@ -36,7 +36,7 @@ export type {
   DiffLineMoveKind,
   DiffLineMoveKinds,
   SidecarContext,
-} from "./changeset";
+} from "./changeset/model";
 export type {
   CliInput,
   CommonOptions,

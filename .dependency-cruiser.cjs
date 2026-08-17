@@ -138,7 +138,8 @@ module.exports = {
       severity: "error",
       from: {
         path: [
-          "^src/core/(changeset|commandInputs|diffFile|sidecar)\\.ts$",
+          "^src/core/changeset/(model|diffFile|sidecar)\\.ts$",
+          "^src/core/commandInputs\\.ts$",
           "^src/core/(vcs|watch|patch)/",
         ],
       },
@@ -151,6 +152,16 @@ module.exports = {
       severity: "error",
       from: { path: "^src/", pathNot: "^src/core/review/" },
       to: { path: "^src/core/review/reducer\\.ts$" },
+    },
+    {
+      name: "changeset-internals-stay-in-module",
+      comment:
+        "core/changeset owns the changeset model and the pipeline that acquires one. Outsiders name the model, the loaders, and the per-file helpers they build on (model, loaders, diffFile, fileSource, fileLanguage, binary, diffPaths, hunkHeader, hunkSummary); the patch-to-model parse, the Pierre extension-table lookup, and the sidecar reader are steps inside that pipeline, reached through the loaders instead.",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/core/changeset/" },
+      to: {
+        path: "^src/core/changeset/(fromPatch|fileLanguageLookup|sidecar)\\.ts$",
+      },
     },
     {
       name: "packages-stay-standalone",

@@ -14,7 +14,7 @@ import {
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
-import { formatHunkHeader } from "../../core/hunkHeader";
+import { formatHunkHeader } from "../../core/changeset/hunkHeader";
 import {
   reviewLeadingGap,
   reviewTrailingGap,

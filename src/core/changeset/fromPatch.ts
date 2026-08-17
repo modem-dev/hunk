@@ -3,7 +3,7 @@
  *
  * Every input mode converges here: a VCS spawn, a two-file comparison, and a patch read from
  * disk or stdin all end up as text, and this module is the one that turns text into
- * `DiffFile`s. Keeping it apart from `changesetLoaders.ts` keeps the parse pure — the
+ * `DiffFile`s. Keeping it apart from `loaders.ts` keeps the parse pure — the
  * loaders own the I/O, this owns the model.
  *
  * Moved-line capture has to run before sanitizing: Git marks moved lines only through SGR
@@ -11,9 +11,9 @@
  */
 import { parsePatchFiles } from "@pierre/diffs";
 import { buildDiffFile, type BuildDiffFileOptions } from "./diffFile";
-import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { sanitizePatch, stripTerminalControl } from "./patch/sanitize";
-import type { Changeset, DiffLineMoveKind, DiffLineMoveKinds, SidecarContext } from "./types";
+import { splitPatchIntoFileChunks, findPatchChunk } from "../patch/chunks";
+import { sanitizePatch, stripTerminalControl } from "../patch/sanitize";
+import type { Changeset, DiffLineMoveKind, DiffLineMoveKinds, SidecarContext } from "../types";
 
 /** Return SGR parameter strings that Git emitted before one diff line marker. */
 function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {

@@ -18,7 +18,7 @@
  * The store belongs to one publication, so a new generation starts with nothing cached and
  * the previous generation's bytes become collectable as soon as it is retired.
  */
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   isMaterializedReviewResource,
   isReviewResourceRange,

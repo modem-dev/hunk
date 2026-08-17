@@ -8,7 +8,7 @@ import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { resolveConfiguredCliInput } from "../core/config";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { loadAppBootstrap } from "../core/changesetLoaders";
+import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { AppBootstrap } from "../core/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AppHost } from "./AppHost";

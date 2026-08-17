@@ -1,5 +1,5 @@
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { FileSourceFetcher, FileSourceSide } from "../../src/core/fileSource";
+import type { FileSourceFetcher, FileSourceSide } from "../../src/core/changeset/fileSource";
 import type { AgentAnnotation, AgentFileContext, DiffFile } from "../../src/core/types";
 
 function collectChangeStats(metadata: DiffFile["metadata"]) {

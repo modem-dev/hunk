@@ -30,7 +30,7 @@ import {
   type AppCommandId,
   type AppCommandLoweringContext,
 } from "../../core/commandCatalog";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,
   ReviewIntentPlanningError,

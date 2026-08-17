@@ -1,6 +1,6 @@
-import type { ExtensionDiffHunk } from "../extension-api/types";
+import type { ExtensionDiffHunk } from "../../extension-api/types";
 import { formatHunkHeader, type ReviewHunkHeaderSource } from "./hunkHeader";
-import { reviewHunkRanges } from "./review/geometry";
+import { reviewHunkRanges } from "../review/geometry";
 
 /** Report whether one hunk carries the numeric header fields ranges derive from. */
 function hasLineNumbers(hunk: ReviewHunkHeaderSource) {

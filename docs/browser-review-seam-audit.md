@@ -134,7 +134,7 @@ whether a client needs more than that is Phase 5's first question.
   _Repaid (Phase 1 PR 2)_: `reviewDefaultHunkLineTarget` in `core/review/geometry.ts`;
   `firstCommentTargetForHunk` deleted and both terminal callers converted; every geometry fixture
   pins the target, `pure-deletion-hunk` and `hunk-with-leading-context` adversarially.
-- **A11. Language registration side effect missing in browser.** `core/fileLanguage.ts`
+- **A11. Language registration side effect missing in browser.** `core/changeset/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
   `src/web/main.tsx` (or fold registration into the shared model).

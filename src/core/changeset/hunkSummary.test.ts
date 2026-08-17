@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { Hunk } from "@pierre/diffs";
-import { createJsxFileViewLayout } from "../../examples/extensions/jsx-file-view";
-import { createTestDiffFile } from "../../test/helpers/diff-helpers";
-import { createFileViewInput } from "../ui/fileViews/host";
-import { validateFileViewLayout } from "../ui/fileViews/layout";
+import { createJsxFileViewLayout } from "../../../examples/extensions/jsx-file-view";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import { createFileViewInput } from "../../ui/fileViews/host";
+import { validateFileViewLayout } from "../../ui/fileViews/layout";
 import { formatHunkHeader } from "./hunkHeader";
 import { summarizeHunk } from "./hunkSummary";
-import { reviewHunkRanges } from "./review/geometry";
+import { reviewHunkRanges } from "../review/geometry";
 
 describe("summarizeHunk", () => {
   test("summarizes every hunk Pierre parses with its header and inclusive spans", () => {

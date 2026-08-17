@@ -9,8 +9,10 @@ Use it when adding a new module or deciding where an existing responsibility bel
 ```text
 src/app/             executable composition: CLI parsing, startup plans, and shared session bootstrap
 src/app/session/     mounted-review registration, bridge, and reload authorization
-src/core/            normalized review model, loading, patch handling, VCS contracts,
-                     configuration, and runtime primitives
+src/core/            review model, patch handling, VCS contracts, configuration, and
+                     runtime primitives
+src/core/changeset/  the changeset model and the pipeline that acquires one: loaders,
+                     per-file construction, sidecar/source reads, and hunk formatting
 src/core/theme/      bundled theme metadata, custom-theme rules, and terminal theme detection
 src/core/watch/      input signatures, observation plans/backends, and refresh coordination
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support
