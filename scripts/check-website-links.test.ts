@@ -2,24 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { checkWebsiteBuild } from "./check-website-links";
+import { REQUIRED_ASSETS, checkWebsiteBuild } from "./check-website-links";
 
 const tempDirectories: string[] = [];
-const REQUIRED_ASSETS = [
-  "apple-icon.png",
-  "favicon.svg",
-  "icon.png",
-  "modem-light.svg",
-  "og.png",
-  "shot-ember.webp",
-  "shot-graphite.webp",
-  "shot-latte.webp",
-  "shot-midnight.webp",
-  "shot-mocha.webp",
-  "shot-zenburn.webp",
-  "docs/favicon.svg",
-  "docs/hunk-review-skill.md",
-] as const;
 
 afterEach(() => {
   for (const directory of tempDirectories.splice(0)) {

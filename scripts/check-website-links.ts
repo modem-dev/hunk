@@ -19,7 +19,8 @@ const MARKETING_HEAD_TAGS = [
   '<meta name="twitter:card" content="summary_large_image"',
   '<meta name="twitter:image" content="https://hunk.dev/og.png"',
 ] as const;
-const REQUIRED_ASSETS = [
+/** Public files every build must ship; the link-check test builds its fixture from this. */
+export const REQUIRED_ASSETS = [
   "apple-icon.png",
   "favicon.svg",
   "icon.png",
