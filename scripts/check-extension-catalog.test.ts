@@ -10,6 +10,7 @@ import {
   installCommand,
   ownerOf,
   repositoryUrl,
+  toJsonLdScriptBody,
 } from "../website/src/data/extensions";
 
 /**
@@ -107,6 +108,14 @@ describe("extension directory catalog", () => {
     for (const payload of [undefined, null, {}, { items: "nope" }, { items: [null, 7] }]) {
       expect(indexActivityByRepo(payload).size).toBe(0);
     }
+  });
+
+  test("neutralizes markup when serializing JSON-LD", () => {
+    const body = toJsonLdScriptBody({ name: "</script><img src=x onerror=alert(1)>" });
+
+    // Nothing can close the script element, and the payload is still JSON-LD.
+    expect(body).not.toContain("<");
+    expect(JSON.parse(body)).toEqual({ name: "</script><img src=x onerror=alert(1)>" });
   });
 
   test("phrases repository recency in coarse, human units", () => {

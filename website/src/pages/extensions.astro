@@ -9,6 +9,7 @@ import {
   loadExtensionEntries,
   ownerOf,
   repositoryUrl,
+  toJsonLdScriptBody,
 } from "../data/extensions";
 import "../styles/marketing.css";
 import "../styles/extensions.css";
@@ -71,7 +72,7 @@ const schema = {
     <link rel="icon" href="/icon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-icon.png" />
     <title>{title}</title>
-    <script type="application/ld+json" is:inline set:html={JSON.stringify(schema)}></script>
+    <script type="application/ld+json" is:inline set:html={toJsonLdScriptBody(schema)}></script>
     <script is:inline defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
