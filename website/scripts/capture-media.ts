@@ -467,6 +467,10 @@ async function captureShots() {
       // Sidebar and agent notes on, then hold at the first hunk: its note card
       // renders in place, so every theme is photographed with the same
       // furniture. Advancing a hunk scrolls that card out of frame.
+      //
+      // `s` reveals the sidebar rather than hiding it: the responsive default
+      // only shows it on a "full" viewport, which starts at 220 columns (see
+      // resolveResponsiveLayout), and this frame is 131.
       await session.press("s");
       await sleep(400);
       await session.press("a");
