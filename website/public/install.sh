@@ -146,7 +146,9 @@ installed_version() {
 add_path_line() {
 	rc_file="$1"
 	line="$2"
-	if [ -f "$rc_file" ] && grep -Fq "$bin_dir" "$rc_file"; then
+	# Match the exact line this installer writes — the raw directory does not appear verbatim once
+	# quoting escapes it, so grepping for it would re-append on every run for such paths.
+	if [ -f "$rc_file" ] && grep -Fq "$line" "$rc_file"; then
 		info "${rc_file} already puts ${bin_dir} on PATH."
 		return 0
 	fi

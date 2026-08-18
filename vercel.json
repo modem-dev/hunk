@@ -8,7 +8,7 @@
   "rewrites": [{ "source": "/install", "destination": "/install.sh" }],
   "headers": [
     {
-      "source": "/install(.sh)?",
+      "source": "/install(\\.sh)?",
       "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }]
     }
   ]
