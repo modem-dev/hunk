@@ -53,6 +53,7 @@ mise use -g hunk
 Requirements:
 
 - macOS, Linux, or Windows
+- On x86-64, a CPU with SSE4.2 (Intel Nehalem 2008+, AMD Bulldozer 2011+); arm64 has no CPU feature floor
 - Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 

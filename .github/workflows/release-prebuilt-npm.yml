@@ -165,6 +165,16 @@ jobs:
           bun run build:bin
           bun run ./scripts/build-prebuilt-artifact.ts --expect-package "${{ matrix.package_name }}"
 
+      # Bun's default x64 runtime is compiled for Haswell and raises SIGILL on older CPUs.
+      # Run the real artifact under an emulated pre-AVX CPU so a dropped baseline target
+      # fails the release instead of shipping a binary that cannot start.
+      - name: Verify the x64 artifact starts without AVX2
+        if: matrix.package_name == 'hunkdiff-linux-x64'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          qemu-x86_64-static -cpu Nehalem dist/hunk --version
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
