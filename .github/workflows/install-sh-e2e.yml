@@ -1,0 +1,99 @@
+# Runs the hunk.dev install script end to end against the newest published release.
+#
+# The unit suite (scripts/install-sh.test.ts) checks the script as text and exercises its
+# functions in isolation; this workflow is the only place the real download, checksum, extract,
+# and PATH flow runs against real release assets. It triggers on changes to the script itself,
+# on a weekly schedule to catch release-asset drift the script did not cause, and on demand.
+#
+# The release version is resolved with an authenticated `gh` call and pinned via HUNK_VERSION
+# instead of exercising the script's own anonymous latest-release lookup: shared runner IPs hit
+# GitHub's unauthenticated API rate limits, and a rate-limited lookup would fail runs the script
+# did nothing to deserve. The lookup's parsing is covered by the unit suite.
+name: Install script E2E
+
+on:
+  pull_request:
+    paths:
+      - website/public/install.sh
+      - .github/workflows/install-sh-e2e.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-e2e:
+    name: Install script E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # dash serves /bin/sh on ubuntu and bash-as-sh on macos, so both POSIX modes get exercised.
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the newest published release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install into a sandbox home
+        env:
+          HUNK_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -eu
+          sandbox="$(mktemp -d)"
+          github_path="${sandbox}/github_path"
+          : >"$github_path"
+
+          HOME="$sandbox" GITHUB_PATH="$github_path" sh website/public/install.sh
+
+          binary="${sandbox}/.hunk/bin/hunk"
+          [ -x "$binary" ] || { echo "error: no executable at $binary" >&2; exit 1; }
+          "$binary" --version | grep -F "$HUNK_VERSION"
+          skill="$("$binary" skill path hunk-review)"
+          [ -f "$skill" ] || { echo "error: skill path $skill does not exist" >&2; exit 1; }
+          grep -F "${sandbox}/.hunk/bin" "$github_path"
+
+      - name: Re-run is idempotent
+        env:
+          HUNK_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -eu
+          sandbox="$(mktemp -d)"
+          HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh website/public/install.sh
+          output="$(HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh website/public/install.sh)"
+          printf '%s\n' "$output" | grep -F "already installed"
+
+      - name: Custom directory with spaces installs and resolves skills
+        env:
+          HUNK_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -eu
+          sandbox="$(mktemp -d)"
+          custom="${sandbox}/hunk tools"
+
+          HOME="$sandbox" HUNK_INSTALL_DIR="$custom" sh website/public/install.sh --no-modify-path
+
+          binary="${custom}/hunk"
+          [ -x "$binary" ] || { echo "error: no executable at $binary" >&2; exit 1; }
+          "$binary" --version | grep -F "$HUNK_VERSION"
+          skill="$("$binary" skill path hunk-review)"
+          [ -f "$skill" ] || { echo "error: skill path $skill does not exist" >&2; exit 1; }
+
+      - name: Unknown version fails loudly
+        run: |
+          set -eu
+          sandbox="$(mktemp -d)"
+          if HOME="$sandbox" HUNK_VERSION="0.0.999" sh website/public/install.sh --no-modify-path 2>"${sandbox}/err"; then
+            echo "error: installing a nonexistent version should have failed" >&2
+            exit 1
+          fi
+          grep -F "Could not download" "${sandbox}/err"
