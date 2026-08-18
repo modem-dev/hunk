@@ -47,7 +47,7 @@ export default function (hunk: HunkExtensionAPI) {
 
 `hunk:files` is a named role, not a left-edge location. The `hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane** follow the resolved owner of that slot on any edge and leave independently registered panes alone. User remaps and unbindings apply to that command normally; the former `hunk.view.toggleSidebar` id remains a compatibility alias. `ctx.panes.toggle("hunk:files")`, by contrast, addresses the literal built-in pane; use `ctx.commands.execute("hunk.view.toggleFilesPane")` when an extension wants the role-aware slot behavior.
 
-Set `currentLine: true` to receive Hunk's opaque selected-row painter. The [`current-line-lens` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/current-line-lens) uses it and is not bundled with Hunk.
+Set `currentLine: true` to receive Hunk's opaque selected-row painter. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses it and is not bundled with Hunk. Install it with `hunk extension install modem-dev/hunk-lens`.
 
 API-v3 sidebar names remain as deprecated aliases.
 

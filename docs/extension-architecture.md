@@ -24,7 +24,8 @@ object and registry collection (`src/extensions/runExtension.ts`):
   only where the app resolves UI panes.
 
 Git and the built-in file navigation use the public `registerVcsAdapter` and
-`registerPane` paths. The current-line lens remains an installable example.
+`registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
+extension exercises current-line pane paint through that same public contract.
 
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.

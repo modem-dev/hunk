@@ -649,9 +649,9 @@ panes keep their own open state. User remaps and unbindings of
 former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
 `currentLine: true` opts into the opaque `currentLine.render(side, width)`
-painter. The installable
-[`current-line-lens`](../examples/extensions/current-line-lens/) example uses
-this API; it is not bundled Hunk UI.
+painter. The installable [Hunk Lens](https://github.com/modem-dev/hunk-lens)
+extension uses this API; it is not bundled Hunk UI. Install it with
+`hunk extension install modem-dev/hunk-lens`.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -1760,11 +1760,11 @@ to the terminal, because the TUI owns the screen.
 
 ## A complete example
 
-Installable examples include:
+Installable extensions and examples include:
 
 - [`pane-layout`](../examples/extensions/pane-layout/) for all four placements.
-- [`current-line-lens`](../examples/extensions/current-line-lens/) for opaque
-  selected-row paint.
+- [Hunk Lens](https://github.com/modem-dev/hunk-lens) for opaque selected-row
+  paint (`hunk extension install modem-dev/hunk-lens`).
 - [`review-triage`](../examples/extensions/review-triage/) for panes, commands,
   dialogs, lifecycle events, and the event bus.
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
