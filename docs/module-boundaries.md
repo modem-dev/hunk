@@ -54,8 +54,9 @@ accidental reach-in fails `bun run deps:check` instead of quietly becoming API.
 Two supporting rules keep the interiors honest:
 
 - **`no-dead-modules`** flags any module under `src/` that no entry point reaches
-  (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, and the
-  skill generator). It uses `reachable: false` rather than `orphan`, which only catches fully
+  (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, the
+  skill generator, and the browser review page's mount entry `web/main.tsx`). It uses
+  `reachable: false` rather than `orphan`, which only catches fully
   disconnected files and so misses dead code that still imports. A hit is deleted, or — when
   tests are its only genuine consumer — listed in the rule's `TEST_ONLY_MODULES` allowlist
   with the reason. That allowlist is **shrink-only**, like the baseline.
