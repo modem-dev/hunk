@@ -98,7 +98,12 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## theme guidance
 
-- Built-in themes live in `src/ui/themes/<theme-id>.ts`; register them in `src/ui/themes.ts` `THEMES` to control menu/cycle order.
+- Built-in themes are table-driven from `src/core/theme/catalog.ts`: `BUNDLED_SHIKI_THEME_IDS`
+  (its order controls menu/cycle order) plus the background, foreground, diff-color, and
+  optional declared-surfaces tables; `src/ui/themes.ts` `buildShikiTheme` derives the full
+  `AppTheme` from those inputs.
+- When a theme publishes official diff/UI surface tokens, declare them in
+  `BUNDLED_SHIKI_THEME_SURFACES` rather than approximating them with derived blends.
 - When adding or renaming a built-in theme, update config validation, OpenTUI theme exports, docs/README examples, changelog, and tests that assert theme order.
 - Keep official palette tokens separate from Hunk's semantic `AppTheme` mapping, and cover non-trivial derived colors with tests.
 
