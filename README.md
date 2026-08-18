@@ -60,6 +60,8 @@ Requirements:
 
 > Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
+Later, `hunk update` installs the newest release with whichever package manager you used (`hunk update --check` just reports the versions). mise, Nix, and source installs print the command that updates them instead.
+
 ## Quick start
 
 ```bash

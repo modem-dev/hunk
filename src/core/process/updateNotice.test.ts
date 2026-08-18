@@ -12,6 +12,17 @@ function createDistTagsResponse(tags: Record<string, unknown>, status = 200) {
   });
 }
 
+/** Build one JSON response that mimics the Homebrew formula API payload. */
+function createFormulaResponse(stable: string) {
+  return new Response(JSON.stringify({ versions: { stable } }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/** Executable path of a plain global npm install, pinned so detection never reads the host. */
+const NPM_EXECUTABLE_PATH = join("/", "usr", "lib", "node_modules", "hunkdiff", "bin", "hunk");
+
 async function withTempStatePath(run: (statePath: string) => Promise<void>) {
   const stateDir = mkdtempSync(join(tmpdir(), "hunk-startup-notice-"));
   const statePath = join(stateDir, "state.json");
@@ -28,13 +39,14 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1", beta: "0.8.0-beta.1" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
         }),
       ).resolves.toEqual({
         key: "latest:0.7.1",
-        message: "Update available: 0.7.1 (latest) • npm i -g hunkdiff",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
     });
   });
@@ -43,13 +55,14 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
         }),
       ).resolves.toEqual({
         key: "beta:0.8.0-beta.1",
-        message: "Update available: 0.8.0-beta.1 (beta) • npm i -g hunkdiff@beta",
+        message: "Update available: 0.8.0-beta.1 (beta) • run `hunk update 0.8.0-beta.1`",
       });
     });
   });
@@ -58,38 +71,45 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.8.0", beta: "0.8.1-beta.1" }),
           resolveInstalledVersion: () => "0.8.0-beta.1",
           statePath,
         }),
       ).resolves.toEqual({
         key: "beta:0.8.1-beta.1",
-        message: "Update available: 0.8.1-beta.1 (beta) • npm i -g hunkdiff@beta",
+        message: "Update available: 0.8.1-beta.1 (beta) • run `hunk update 0.8.1-beta.1`",
       });
     });
   });
 
-  test("uses the Homebrew upgrade command for Homebrew installs", async () => {
+  test("reads the Homebrew formula, not npm, for Homebrew installs", async () => {
     await withTempStatePath(async (statePath) => {
+      const requested: string[] = [];
+
       await expect(
         resolveStartupUpdateNotice({
-          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1", beta: "0.8.0-beta.1" }),
+          fetchImpl: async (input) => {
+            requested.push(String(input));
+            return createFormulaResponse("0.7.1");
+          },
           resolveInstalledVersion: () => "0.7.0",
           resolveInstallSource: () => "homebrew",
           statePath,
         }),
       ).resolves.toEqual({
         key: "latest:0.7.1",
-        message: "Update available: 0.7.1 (latest) • brew update && brew upgrade hunk",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
+      expect(requested).toEqual(["https://formulae.brew.sh/api/formula/hunk.json"]);
     });
   });
 
-  test("ignores beta updates for Homebrew installs", async () => {
+  test("stays quiet for Homebrew installs while the formula still lags npm", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
-          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
+          fetchImpl: async () => createFormulaResponse("0.7.0"),
           resolveInstalledVersion: () => "0.7.0",
           resolveInstallSource: () => "homebrew",
           statePath,
@@ -103,14 +123,46 @@ describe("startup update notice", () => {
       await expect(
         resolveStartupUpdateNotice({
           env: { HUNK_INSTALL_SOURCE: "homebrew" },
-          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1" }),
+          fetchImpl: async () => createFormulaResponse("0.7.1"),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
         }),
       ).resolves.toEqual({
         key: "latest:0.7.1",
-        message: "Update available: 0.7.1 (latest) • brew update && brew upgrade hunk",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
+    });
+  });
+
+  test("detects unmarked Homebrew installs from their Cellar executable", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: {},
+          fetchImpl: async () => createFormulaResponse("0.7.1"),
+          resolveExecutablePath: () => "/opt/homebrew/Cellar/hunk/0.7.0/bin/hunk",
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
+      });
+    });
+  });
+
+  test("suppresses update notices for local source builds", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "dev" },
+          fetchImpl: async () => {
+            throw new Error("should not fetch for source builds");
+          },
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
     });
   });
 
@@ -213,6 +265,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
           resolveInstalledVersion: () => "0.7.0",
           resolveInstallSource: () => "mise",
@@ -234,7 +287,7 @@ describe("startup update notice", () => {
         }),
       ).resolves.toEqual({
         key: "latest:0.7.1",
-        message: "Update available: 0.7.1 (latest) • npm i -g hunkdiff",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
     });
   });
@@ -243,6 +296,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.7.0-beta.1" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
@@ -258,6 +312,7 @@ describe("startup update notice", () => {
     try {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
@@ -281,6 +336,7 @@ describe("startup update notice", () => {
     try {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
@@ -289,6 +345,7 @@ describe("startup update notice", () => {
 
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => {
             fetchCalled = true;
             return createDistTagsResponse({ latest: "0.8.0" });
@@ -305,6 +362,7 @@ describe("startup update notice", () => {
 
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.8.0" }),
           resolveInstalledVersion: () => "0.8.0",
           statePath,
@@ -319,6 +377,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
           resolveInstalledVersion: () => "0.0.0-unknown",
           statePath,
@@ -331,6 +390,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1" }, 503),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
@@ -343,6 +403,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async () => {
             throw new Error("network down");
           },
@@ -361,6 +422,7 @@ describe("startup update notice", () => {
       await withTempStatePath(async (statePath) => {
         await expect(
           resolveStartupUpdateNotice({
+            resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
             fetchImpl: async () => {
               throw new Error("should not fetch when disabled");
             },
@@ -384,6 +446,7 @@ describe("startup update notice", () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
           fetchImpl: async (_input, init) =>
             new Promise<Response>((_resolve, reject) => {
               init?.signal?.addEventListener(

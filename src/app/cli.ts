@@ -10,9 +10,15 @@ import type {
   LayoutMode,
   PagerCommandInput,
   ParsedCliInput,
+  SelfUpdateCommandInput,
   SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
+import {
+  parseUpdateMethod,
+  parseUpdateVersion,
+  UPDATE_METHOD_VALUES,
+} from "../core/process/selfUpdate";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,
@@ -234,6 +240,21 @@ export const CLI_REFERENCE_COMMANDS = {
     synopsis: ["hunk extension remove <name>"],
     aliases: ["hunk ext remove"],
   },
+  update: {
+    path: "update",
+    summary: "update Hunk with the package manager that installed it",
+    synopsis: ["hunk update [version]", "hunk update --check", "hunk update --method <npm|brew>"],
+    options: [
+      {
+        flag: "--method <method>",
+        description: `install method instead of the detected one: ${UPDATE_METHOD_VALUES.join(", ")}`,
+      },
+      {
+        flag: "--check",
+        description: "report the installed and available versions without installing",
+      },
+    ],
+  },
   "daemon-serve": {
     path: "daemon serve",
     summary: "run the local Hunk session daemon and websocket session broker",
@@ -452,6 +473,7 @@ function renderCliHelp() {
     "  hunk markup guide                       print the experimental STML authoring guide",
     "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk extension <subcommand>             install and manage shared extensions",
+    "  hunk update [version]                   update Hunk with the package manager that installed it",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
@@ -876,7 +898,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "daemon-serve" ||
     input.kind === "markup-render" ||
     input.kind === "markup-guide" ||
-    input.kind === "extension-manage"
+    input.kind === "extension-manage" ||
+    input.kind === "update"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -1641,6 +1664,52 @@ async function parseExtensionCommand(
   throw new Error("Supported extension subcommands are install, list, update, and remove.");
 }
 
+/** Parse `hunk update` as the standalone self-update command. */
+async function parseUpdateCommand(
+  tokens: string[],
+): Promise<SelfUpdateCommandInput | HelpCommandInput> {
+  const command = createCliReferenceCommand("update").argument(
+    "[version]",
+    "version to install; the newest release when omitted",
+  );
+
+  let parsedVersion: string | undefined;
+  let parsedOptions: { method?: string; check?: boolean } = {};
+
+  command.action((version: string | undefined, options: { method?: string; check?: boolean }) => {
+    parsedVersion = version;
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return {
+      kind: "help",
+      text:
+        [
+          command.helpInformation().trimEnd(),
+          "",
+          "Hunk updates itself only for installs it owns: npm (or bun/pnpm global installs) and",
+          "Homebrew. Nix, mise, and local source builds print the command that updates them.",
+          "",
+          "Examples:",
+          "  hunk update",
+          "  hunk update 1.2.3",
+          "  hunk update --check",
+          "  hunk update --method brew",
+        ].join("\n") + "\n",
+    };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  return {
+    kind: "update",
+    version: parsedVersion === undefined ? undefined : parseUpdateVersion(parsedVersion),
+    method: parsedOptions.method ? parseUpdateMethod(parsedOptions.method) : undefined,
+    check: parsedOptions.check ?? false,
+  };
+}
+
 /** Parse `hunk daemon serve` as the canonical local daemon entrypoint. */
 async function parseDaemonCommand(tokens: string[]): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
@@ -1736,6 +1805,7 @@ const TOP_LEVEL_COMMAND_NAMES = new Set([
   "skill",
   "extension",
   "ext",
+  "update",
   "daemon",
   "mcp",
 ]);
@@ -1808,6 +1878,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     case "extension":
     case "ext":
       return parseExtensionCommand(rest);
+    case "update":
+      return parseUpdateCommand(rest);
     case "daemon":
     case "mcp":
       return parseDaemonCommand(rest);

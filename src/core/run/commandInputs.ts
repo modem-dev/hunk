@@ -13,6 +13,7 @@ import type {
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
+import type { InstallSource } from "../process/installSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type CursorLine = "row" | "number" | "off";
@@ -313,6 +314,16 @@ export interface ExtensionRemoveCommandInput {
   name: string;
 }
 
+export interface SelfUpdateCommandInput {
+  kind: "update";
+  /** Version to install; the install channel's newest release when omitted. */
+  version?: string;
+  /** Install method override from `--method`, normalized to an install source. */
+  method?: InstallSource;
+  /** Report the installed and available versions without installing anything. */
+  check: boolean;
+}
+
 /** `hunk extension ...` managed-install commands. */
 export type ExtensionManageCommandInput =
   | ExtensionInstallCommandInput
@@ -328,4 +339,5 @@ export type ParsedCliInput =
   | SessionCommandInput
   | MarkupRenderCommandInput
   | MarkupGuideCommandInput
-  | ExtensionManageCommandInput;
+  | ExtensionManageCommandInput
+  | SelfUpdateCommandInput;

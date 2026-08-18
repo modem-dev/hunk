@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,11 @@ import {
 } from "./install";
 import { readInstallRecords } from "./records";
 import { parseExtensionInstallSource } from "./source";
+
+// Every test here spawns real Git processes — a fixture repo, usually a clone,
+// sometimes a second one for an update. Hosted Windows runners can stall a
+// single clone past Bun's five-second default, so bound the suite generously.
+setDefaultTimeout(30_000);
 
 const tempDirs: string[] = [];
 

@@ -18,6 +18,7 @@ import type {
   ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
+  SelfUpdateCommandInput,
   SessionCommandInput,
 } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
@@ -78,6 +79,10 @@ export type StartupPlan =
   | {
       kind: "extension-manage";
       input: ExtensionManageCommandInput;
+    }
+  | {
+      kind: "self-update";
+      input: SelfUpdateCommandInput;
     }
   | {
       kind: "app";
@@ -182,6 +187,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "extension-manage") {
     return {
       kind: "extension-manage",
+      input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "update") {
+    return {
+      kind: "self-update",
       input: parsedCliInput,
     };
   }
