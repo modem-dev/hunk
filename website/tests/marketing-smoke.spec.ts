@@ -92,14 +92,49 @@ test("install command copies with accessible feedback", async ({ context, page }
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("npm i -g hunkdiff");
 });
 
-test("theme previews switch without loading every screenshot up front", async ({ page }) => {
+test("the theme picker ships one shot, then warms the rest before they are clicked", async ({
+  page,
+}) => {
+  // The document itself must carry only the visible shot: the other five are
+  // ~1.4MB and would otherwise compete with first paint.
+  const html = await (await page.request.get("/")).text();
+  expect(html.match(/class="shot"[^>]*\ssrc="/g) ?? []).toHaveLength(1);
+
+  await page.goto("/");
+  const nordShot = page.getByAltText("Hunk split-view diff in the Nord theme");
+
+  // Warming is scheduled for idle after load, so the unselected shots pick up
+  // their source without anyone touching a pill.
+  await expect(nordShot).toHaveAttribute("src", "/shot-nord.webp");
+});
+
+test("hovering a pill warms its shot ahead of the idle pass", async ({ page }) => {
+  // Block the idle warm-up so only the hover path can supply the source.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "requestIdleCallback", { value: undefined });
+    const nativeTimeout = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, timeout?: number, ...rest: unknown[]) =>
+      timeout === 300 ? 0 : nativeTimeout(handler, timeout, ...rest)) as typeof window.setTimeout;
+  });
+
+  await page.goto("/");
+  const gruvboxShot = page.getByAltText("Hunk split-view diff in the Gruvbox theme");
+  await expect(gruvboxShot).not.toHaveAttribute("src", /.+/);
+
+  await page
+    .getByRole("group", { name: "Preview theme" })
+    .getByRole("button", { name: "Gruvbox" })
+    .hover();
+  await expect(gruvboxShot).toHaveAttribute("src", "/shot-gruvbox.webp");
+});
+
+test("theme previews switch when a pill is clicked", async ({ page }) => {
   await page.goto("/");
   const themePicker = page.getByRole("group", { name: "Preview theme" });
   const nord = themePicker.getByRole("button", { name: "Nord" });
   const nordShot = page.getByAltText("Hunk split-view diff in the Nord theme");
 
   await expect(nord).toHaveAttribute("aria-pressed", "false");
-  await expect(nordShot).not.toHaveAttribute("src", /.+/);
   await nord.click();
   await expect(nord).toHaveAttribute("aria-pressed", "true");
   await expect(nordShot).toBeVisible();

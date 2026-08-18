@@ -68,18 +68,62 @@ const remainingThemes = BUNDLED_SHIKI_THEME_IDS.length - themes.length;
   const buttons = document.querySelectorAll<HTMLButtonElement>("[data-theme-index]");
   const shots = document.querySelectorAll<HTMLImageElement>(".shot-stack .shot");
 
-  for (const button of buttons) {
-    button.addEventListener("click", () => {
-      const selectedIndex = Number(button.dataset.themeIndex);
+  /**
+   * Give one shot its real source, once, and decode it up front so switching
+   * to it is a paint rather than a fetch.
+   */
+  const warm = (shot: HTMLImageElement | undefined) => {
+    if (!shot || shot.hasAttribute("src") || !shot.dataset.src) {
+      return;
+    }
+    shot.src = shot.dataset.src;
+    void shot.decode().catch(() => {
+      // A refused decode only means the swap pays for it later.
+    });
+  };
 
+  // The document ships the selected shot alone, so first paint never waits on
+  // the ~1.4MB behind the other pills. Warm those once loading is done and the
+  // browser is idle, which is long before anyone reaches for a pill.
+  const warmAll = () => {
+    for (const shot of shots) {
+      warm(shot);
+    }
+  };
+  const scheduleWarm = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(warmAll, { timeout: 2000 });
+    } else {
+      window.setTimeout(warmAll, 300);
+    }
+  };
+
+  if (document.readyState === "complete") {
+    scheduleWarm();
+  } else {
+    window.addEventListener("load", scheduleWarm, { once: true });
+  }
+
+  for (const button of buttons) {
+    const buttonIndex = Number(button.dataset.themeIndex);
+
+    // A pointer or keyboard focus landing on a pill beats the idle pass as a
+    // signal, so warm that shot right away rather than waiting its turn.
+    const warmOwnShot = () => warm(shots[buttonIndex]);
+    button.addEventListener("pointerenter", warmOwnShot);
+    button.addEventListener("focus", warmOwnShot);
+
+    button.addEventListener("click", () => {
       buttons.forEach((candidate, index) => {
-        const selected = index === selectedIndex;
+        const selected = index === buttonIndex;
         candidate.classList.toggle("on", selected);
         candidate.setAttribute("aria-pressed", String(selected));
       });
       shots.forEach((shot, index) => {
-        const selected = index === selectedIndex;
-        if (selected && !shot.hasAttribute("src") && shot.dataset.src) shot.src = shot.dataset.src;
+        const selected = index === buttonIndex;
+        if (selected) {
+          warm(shot);
+        }
         shot.hidden = !selected;
       });
     });
