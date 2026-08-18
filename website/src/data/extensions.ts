@@ -6,8 +6,8 @@
  * what an indexer reading the topic would produce, so replacing the literal
  * with generated data is the only change that step needs. Static facts
  * (summary, categories, manifest values) live here so the page renders without
- * a network call; volatile facts (stars, last push) are fetched at build time
- * and simply omitted when the fetch fails.
+ * a network call; volatile facts (stars, dates) are fetched at build time and
+ * simply omitted when the fetch fails.
  */
 
 /** GitHub topic an author adds to be listed. */
@@ -30,7 +30,7 @@ export const CURRENT_EXTENSION_API_VERSION = 7;
  * Derived by hand from each extension's entry file today, and declarable by
  * authors later; either way the category names have to stay the ones the
  * authoring guide uses, because they are how a reader maps a listing onto a
- * docs page.
+ * docs page — and, once the directory is long, the filter they browse by.
  */
 export type ExtensionCategory =
   | "Pane"
@@ -48,89 +48,113 @@ export interface ExtensionListing {
   repo: string;
   /** Manifest `name`; the id the extension owns once installed. */
   name: string;
-  /** Who publishes it, for the byline. */
-  author: string;
   /** One curated line. Repository descriptions drift and get noisy. */
   summary: string;
   /** Surfaces it registers. */
   categories: readonly ExtensionCategory[];
+  /** Manifest `version`, so a card can say what installing gets you. */
+  version: string;
   /** `hunk.apiVersion` from its manifest: the Hunk surface it needs. */
   apiVersion: number;
-  /** SPDX id from its manifest. */
-  license: string;
 }
 
 /** Repository facts fetched at build time, absent when GitHub is unreachable. */
 export interface ExtensionActivity {
   stars?: number;
   pushedAt?: string;
+  createdAt?: string;
 }
 
 /** One listing as the page renders it. */
 export type ExtensionEntry = ExtensionListing & ExtensionActivity;
 
 /**
- * The listed extensions, in the order the page shows them.
+ * The listed extensions.
  *
- * Hunk's own extension leads; the rest follow alphabetically by repository, so
- * the order is stable and nothing looks ranked while the list is this short.
+ * Order here is only the fallback the page sorts away from, so it stays
+ * alphabetical by repository with Hunk's own extension first; readers reorder
+ * it with the sort control.
  */
 export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   {
     repo: "modem-dev/hunk-lens",
     name: "hunk-lens",
-    author: "Modem",
     summary: "Keeps the current split-diff line in view, and paints its context beside the review.",
     categories: ["Pane", "Command"],
+    version: "0.1.0",
     apiVersion: 4,
-    license: "MIT",
   },
   {
     repo: "astwys/hunk-adaptive-theme",
     name: "hunk-adaptive-theme",
-    author: "astwys",
     summary: "Picks a Hunk theme to match your terminal background at startup.",
     categories: ["Theme"],
+    version: "0.1.0",
     apiVersion: 6,
-    license: "MIT",
   },
   {
     repo: "astwys/hunk-exclude-files",
     name: "hunk-exclude-files",
-    author: "astwys",
     summary: "Hides files matching configured glob rules from the review stream.",
     categories: ["Changeset transform"],
+    version: "0.1.0",
     apiVersion: 6,
-    license: "MIT",
   },
   {
     repo: "elucid/hunk-less-search",
     name: "hunk-less-search",
-    author: "elucid",
     summary: "less-style forward search across the review stream, with in-diff match marks.",
     categories: ["Keyboard mode", "Line highlighter", "Pane", "Command"],
+    version: "0.1.0",
     apiVersion: 5,
-    license: "MIT",
   },
   {
     repo: "mikeclarke/hunk-tutor",
     name: "hunk-tutor",
-    author: "mikeclarke",
     summary: "An interactive tour of Hunk, taught inside a practice review.",
     categories: ["Pane", "Theme", "Line highlighter", "Command", "VCS backend"],
+    version: "0.1.0",
     apiVersion: 5,
-    license: "MIT",
   },
 ];
+
+/** GitHub account that publishes one listing. */
+export function ownerOf(listing: ExtensionListing) {
+  return listing.repo.split("/")[0] ?? listing.repo;
+}
 
 /** Repository page for one listing. */
 export function repositoryUrl(listing: ExtensionListing) {
   return `https://github.com/${listing.repo}`;
 }
 
+/** Owner avatar, sized for a card and served by GitHub itself. */
+export function avatarUrl(listing: ExtensionListing, size: number) {
+  return `https://github.com/${encodeURIComponent(ownerOf(listing))}.png?size=${size}`;
+}
+
 /** The command a reader copies to install one listing. */
 export function installCommand(listing: ExtensionListing) {
   return `hunk extension install ${listing.repo}`;
+}
+
+/**
+ * Categories present in one set of entries, with how many carry each.
+ *
+ * The filter offers only categories something is actually tagged with, so the
+ * directory never shows a chip that leads to an empty grid.
+ */
+export function categoryFacets(entries: readonly ExtensionListing[]) {
+  const counts = new Map<ExtensionCategory, number>();
+  for (const entry of entries) {
+    for (const category of entry.categories) {
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+  }
+
+  return [...counts]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
 }
 
 /** Phrase one ISO timestamp as the coarse recency a directory card wants. */
@@ -158,10 +182,11 @@ async function fetchActivity(listing: ExtensionListing): Promise<ExtensionActivi
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return {};
-    const data = (await response.json()) as { stargazers_count?: unknown; pushed_at?: unknown };
+    const data = (await response.json()) as Record<string, unknown>;
     return {
       stars: typeof data.stargazers_count === "number" ? data.stargazers_count : undefined,
       pushedAt: typeof data.pushed_at === "string" ? data.pushed_at : undefined,
+      createdAt: typeof data.created_at === "string" ? data.created_at : undefined,
     };
   } catch {
     // A directory that renders without stars beats a build that fails on them.

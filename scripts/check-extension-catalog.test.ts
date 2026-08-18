@@ -4,8 +4,11 @@ import { parseExtensionInstallSource } from "../src/extensions/manage/source";
 import {
   CURRENT_EXTENSION_API_VERSION,
   EXTENSION_CATALOG,
+  avatarUrl,
+  categoryFacets,
   formatUpdated,
   installCommand,
+  ownerOf,
   repositoryUrl,
 } from "../website/src/data/extensions";
 
@@ -40,11 +43,35 @@ describe("extension directory catalog", () => {
     }
   });
 
-  test("describes every listing with a summary and at least one category", () => {
+  test("describes every listing with a summary, a version, and a category", () => {
     for (const listing of EXTENSION_CATALOG) {
       expect(listing.summary.length).toBeGreaterThan(0);
       expect(listing.categories.length).toBeGreaterThan(0);
-      expect(listing.license.length).toBeGreaterThan(0);
+      expect(listing.version).toMatch(/^\d+\.\d+\.\d+/);
+    }
+  });
+
+  test("offers a filter facet for every category something is tagged with", () => {
+    const facets = categoryFacets(EXTENSION_CATALOG);
+    const tagged = new Set(EXTENSION_CATALOG.flatMap((listing) => listing.categories));
+
+    expect(new Set(facets.map((facet) => facet.category))).toEqual(tagged);
+    for (const { category, count } of facets) {
+      const actual = EXTENSION_CATALOG.filter((listing) =>
+        listing.categories.includes(category),
+      ).length;
+      expect(count).toBe(actual);
+    }
+    // Busiest first, so the chips a reader reaches for are the ones in front.
+    const counts = facets.map((facet) => facet.count);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+
+  test("derives the owner and its avatar from the repository, not a second field", () => {
+    for (const listing of EXTENSION_CATALOG) {
+      const owner = ownerOf(listing);
+      expect(listing.repo.startsWith(`${owner}/`)).toBe(true);
+      expect(avatarUrl(listing, 64)).toBe(`https://github.com/${owner}.png?size=64`);
     }
   });
 
