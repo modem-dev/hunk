@@ -13,9 +13,6 @@
 /** GitHub topic an author adds to be listed. */
 export const HUNK_EXTENSION_TOPIC = "hunk-extension";
 
-/** Browse URL for the topic itself, for authors and for the unlisted tail. */
-export const HUNK_EXTENSION_TOPIC_URL = `https://github.com/topics/${HUNK_EXTENSION_TOPIC}`;
-
 /**
  * What an extension registers, in the words the docs use for those surfaces.
  *

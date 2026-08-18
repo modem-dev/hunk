@@ -2,8 +2,6 @@
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
 import {
-  HUNK_EXTENSION_TOPIC,
-  HUNK_EXTENSION_TOPIC_URL,
   avatarUrl,
   categoryFacets,
   formatUpdated,
@@ -90,9 +88,8 @@ const schema = {
             <a href="/docs/extend/extensions/">write your own</a>.
           </p>
           <p class="xcaveat">
-            Every listing is a public repository that tagged itself{" "}
-            <a href={HUNK_EXTENSION_TOPIC_URL}><code>{HUNK_EXTENSION_TOPIC}</code></a> on GitHub, and
-            an extension runs with your full permissions. Read the source before you install it.
+            Extensions run with full permissions on your OS. These are community extensions and have
+            not been vetted. Read the source before installing.
           </p>
         </section>
 
