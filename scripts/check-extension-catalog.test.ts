@@ -6,6 +6,7 @@ import {
   avatarUrl,
   categoryFacets,
   formatUpdated,
+  indexActivityByRepo,
   installCommand,
   ownerOf,
   repositoryUrl,
@@ -67,6 +68,44 @@ describe("extension directory catalog", () => {
       const owner = ownerOf(listing);
       expect(listing.repo.startsWith(`${owner}/`)).toBe(true);
       expect(avatarUrl(listing, 64)).toBe(`https://github.com/${owner}.png?size=64`);
+    }
+  });
+
+  test("indexes a topic search by repository, ignoring anything malformed", () => {
+    const activity = indexActivityByRepo({
+      total_count: 3,
+      items: [
+        {
+          full_name: "Astwys/Hunk-Adaptive-Theme",
+          stargazers_count: 12,
+          pushed_at: "2026-08-18T09:12:00Z",
+          created_at: "2026-08-11T00:00:00Z",
+        },
+        { full_name: "someone/not-in-the-catalog", stargazers_count: 4 },
+        { stargazers_count: 9 },
+      ],
+    });
+
+    // Repository names are matched case-insensitively: GitHub echoes back the
+    // owner's own capitalisation, which need not match what the catalog types.
+    expect(activity.get("astwys/hunk-adaptive-theme")).toEqual({
+      stars: 12,
+      pushedAt: "2026-08-18T09:12:00Z",
+      createdAt: "2026-08-11T00:00:00Z",
+    });
+    // A field GitHub omits is absent, never zero: a card shows no stars rather
+    // than claiming none.
+    expect(activity.get("someone/not-in-the-catalog")).toEqual({
+      stars: 4,
+      pushedAt: undefined,
+      createdAt: undefined,
+    });
+    expect(activity.size).toBe(2);
+  });
+
+  test("treats an unusable search response as no metadata at all", () => {
+    for (const payload of [undefined, null, {}, { items: "nope" }, { items: [null, 7] }]) {
+      expect(indexActivityByRepo(payload).size).toBe(0);
     }
   });
 

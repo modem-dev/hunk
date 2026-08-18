@@ -162,32 +162,119 @@ export function formatUpdated(pushedAt: string, now = new Date()) {
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
 
-/** Read one repository's volatile facts, or nothing when GitHub says no. */
-async function fetchActivity(listing: ExtensionListing): Promise<ExtensionActivity> {
+/** Headers GitHub wants, with the build's token when it has one. */
+function githubHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  return {
+    Accept: "application/vnd.github+json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+/** Read one repository's volatile facts out of a GitHub API repository object. */
+export function readActivity(value: unknown): ExtensionActivity {
+  if (typeof value !== "object" || value === null) return {};
+  const repository = value as Record<string, unknown>;
+  return {
+    stars:
+      typeof repository.stargazers_count === "number" ? repository.stargazers_count : undefined,
+    pushedAt: typeof repository.pushed_at === "string" ? repository.pushed_at : undefined,
+    createdAt: typeof repository.created_at === "string" ? repository.created_at : undefined,
+  };
+}
+
+/**
+ * Index one topic-search response by lowercased `owner/name`.
+ *
+ * The search is the same query the future indexer runs, so one request covers
+ * every tagged repository however long the catalog gets — where a request per
+ * listing would exhaust an unauthenticated build's hourly budget well before a
+ * hundred listings and lose every star count at once.
+ */
+export function indexActivityByRepo(payload: unknown): Map<string, ExtensionActivity> {
+  const items =
+    typeof payload === "object" && payload !== null
+      ? (payload as { items?: unknown }).items
+      : undefined;
+  if (!Array.isArray(items)) return new Map();
+
+  const byRepo = new Map<string, ExtensionActivity>();
+  for (const item of items) {
+    const fullName =
+      typeof item === "object" && item !== null
+        ? (item as { full_name?: unknown }).full_name
+        : undefined;
+    if (typeof fullName !== "string") continue;
+    byRepo.set(fullName.toLowerCase(), readActivity(item));
+  }
+
+  return byRepo;
+}
+
+/** Search the topic for every tagged repository's current metadata. */
+async function fetchTopicActivity(): Promise<Map<string, ExtensionActivity>> {
+  const query = encodeURIComponent(`topic:${HUNK_EXTENSION_TOPIC} is:public`);
   try {
-    const token = process.env.GITHUB_TOKEN;
+    const response = await fetch(
+      `https://api.github.com/search/repositories?q=${query}&per_page=100`,
+      { headers: githubHeaders(), signal: AbortSignal.timeout(8000) },
+    );
+    if (!response.ok) {
+      console.warn(
+        `Extension directory: GitHub topic search returned ${response.status}; rendering without stars.`,
+      );
+      return new Map();
+    }
+
+    return indexActivityByRepo(await response.json());
+  } catch (error) {
+    console.warn(
+      `Extension directory: GitHub topic search failed (${error instanceof Error ? error.message : String(error)}); rendering without stars.`,
+    );
+    return new Map();
+  }
+}
+
+/** Read one listing the topic search did not return, so it still gets metadata. */
+async function fetchListingActivity(listing: ExtensionListing): Promise<ExtensionActivity> {
+  try {
     const response = await fetch(`https://api.github.com/repos/${listing.repo}`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: githubHeaders(),
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return {};
-    const data = (await response.json()) as Record<string, unknown>;
-    return {
-      stars: typeof data.stargazers_count === "number" ? data.stargazers_count : undefined,
-      pushedAt: typeof data.pushed_at === "string" ? data.pushed_at : undefined,
-      createdAt: typeof data.created_at === "string" ? data.created_at : undefined,
-    };
+    return response.ok ? readActivity(await response.json()) : {};
   } catch {
     // A directory that renders without stars beats a build that fails on them.
     return {};
   }
 }
 
-/** Resolve every listing with whatever repository activity the build can reach. */
+/**
+ * Resolve every listing with whatever repository activity the build can reach.
+ *
+ * One topic search covers everything tagged; anything the catalog lists that
+ * the search did not return is read directly and named in the build log, since
+ * a listing missing from its own topic is a catalog bug — it will vanish the
+ * day this list is generated from the topic instead of maintained by hand.
+ */
 export async function loadExtensionEntries(): Promise<ExtensionEntry[]> {
-  const activity = await Promise.all(EXTENSION_CATALOG.map(fetchActivity));
-  return EXTENSION_CATALOG.map((listing, index) => ({ ...listing, ...activity[index] }));
+  const tagged = await fetchTopicActivity();
+  const untagged = EXTENSION_CATALOG.filter((listing) => !tagged.has(listing.repo.toLowerCase()));
+  if (tagged.size > 0 && untagged.length > 0) {
+    console.warn(
+      `Extension directory: ${untagged.map((listing) => listing.repo).join(", ")} ` +
+        `${untagged.length === 1 ? "is" : "are"} listed but not tagged \`${HUNK_EXTENSION_TOPIC}\`.`,
+    );
+  }
+
+  const direct = new Map(
+    await Promise.all(
+      untagged.map(async (listing) => [listing.repo, await fetchListingActivity(listing)] as const),
+    ),
+  );
+
+  return EXTENSION_CATALOG.map((listing) => ({
+    ...listing,
+    ...(tagged.get(listing.repo.toLowerCase()) ?? direct.get(listing.repo)),
+  }));
 }
