@@ -30,7 +30,7 @@ curl -fsSL https://hunk.dev/install.sh | sh -s -- --no-modify-path
 curl -fsSL https://hunk.dev/install.sh | HUNK_VERSION=0.19.0 sh
 ```
 
-`hunk update` refreshes a default install in place. An install redirected with `HUNK_INSTALL_DIR` is treated as a local build instead, because that is also where `bun run install:bin` writes; rerun the script to update one of those.
+`hunk update` refreshes a default install in place. An install redirected with `HUNK_INSTALL_DIR` cannot be auto-detected later (the variable is gone once your shell exits), so update one of those by re-running the script with the same `HUNK_INSTALL_DIR`; the installer prints a reminder at the end of a custom-directory install.
 
 Windows is not covered by the script; use npm there.
 

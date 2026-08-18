@@ -17,6 +17,9 @@
 #   HUNK_NO_MODIFY_PATH   set to 1 to leave shell startup files alone
 #
 # macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
+#
+# Everything below only defines functions; the last line runs main. A partially delivered
+# script therefore dies on a syntax error instead of executing a truncated prefix.
 
 set -eu
 
@@ -65,35 +68,6 @@ EOF
 }
 
 # --------------------------------------------------------------------------------------
-# Arguments
-# --------------------------------------------------------------------------------------
-
-version="${HUNK_VERSION:-}"
-no_modify_path="${HUNK_NO_MODIFY_PATH:-0}"
-
-while [ "$#" -gt 0 ]; do
-	case "$1" in
-	-h | --help)
-		usage
-		exit 0
-		;;
-	--no-modify-path)
-		no_modify_path=1
-		;;
-	-*)
-		fail "Unknown option: $1 (run with --help to see the supported options)"
-		;;
-	*)
-		version="$1"
-		;;
-	esac
-	shift
-done
-
-# Release tags are spelled `v1.2.3`; asset names and `--version` output are not.
-version="${version#v}"
-
-# --------------------------------------------------------------------------------------
 # Platform detection
 # --------------------------------------------------------------------------------------
 
@@ -132,22 +106,9 @@ detect_arch() {
 	esac
 }
 
-os="$(detect_os)"
-arch="$(detect_arch)"
-package_name="hunkdiff-${os}-${arch}"
-archive_name="${package_name}.tar.gz"
-
 # --------------------------------------------------------------------------------------
 # Downloading
 # --------------------------------------------------------------------------------------
-
-if command -v curl >/dev/null 2>&1; then
-	downloader="curl"
-elif command -v wget >/dev/null 2>&1; then
-	downloader="wget"
-else
-	fail "Neither curl nor wget is available. Install one of them and try again."
-fi
 
 # Download one URL to one path, returning non-zero when the server refuses it.
 download() {
@@ -168,37 +129,6 @@ fetch() {
 }
 
 # --------------------------------------------------------------------------------------
-# Version resolution
-# --------------------------------------------------------------------------------------
-
-if [ -z "$version" ]; then
-	info "Resolving the newest Hunk release..."
-	# Parsed with sed rather than jq so the installer needs nothing but a shell and a downloader.
-	version="$(fetch "$RELEASES_API" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
-	[ -n "$version" ] || fail "Could not resolve the newest Hunk release from ${RELEASES_API}."
-fi
-
-# --------------------------------------------------------------------------------------
-# Install layout
-# --------------------------------------------------------------------------------------
-
-home_dir="${HOME:-}"
-[ -n "$home_dir" ] || fail "HOME is not set, so there is nowhere to install Hunk."
-
-if [ -n "${HUNK_INSTALL_DIR:-}" ]; then
-	bin_dir="$HUNK_INSTALL_DIR"
-	# The bundled skills are found by walking up from the binary, so a chosen directory holds
-	# both. `hunk update` reports this install as a local build rather than a curl install,
-	# because HUNK_INSTALL_DIR is also where `bun run install:bin` writes.
-	payload_dir="$HUNK_INSTALL_DIR"
-else
-	payload_dir="${home_dir}/.hunk"
-	bin_dir="${payload_dir}/bin"
-fi
-
-target_binary="${bin_dir}/hunk"
-
-# --------------------------------------------------------------------------------------
 # Already-current check
 # --------------------------------------------------------------------------------------
 
@@ -208,82 +138,9 @@ installed_version() {
 	"$1" --version 2>/dev/null | tr -d 'v \t\r' | head -n 1
 }
 
-current="$(installed_version "$target_binary")"
-if [ -z "$current" ] && command -v hunk >/dev/null 2>&1; then
-	current="$(installed_version "$(command -v hunk)")"
-fi
-
-if [ "$current" = "$version" ]; then
-	info "hunk ${version} is already installed."
-	exit 0
-fi
-
 # --------------------------------------------------------------------------------------
-# Download, verify, install
+# PATH helpers
 # --------------------------------------------------------------------------------------
-
-temp_dir="$(mktemp -d)"
-cleanup() {
-	rm -rf "$temp_dir"
-}
-trap cleanup EXIT INT TERM
-
-archive_url="${DOWNLOAD_BASE}/v${version}/${archive_name}"
-info "Downloading ${archive_name} (v${version})..."
-download "$archive_url" "${temp_dir}/${archive_name}" ||
-	fail "Could not download ${archive_url}. Check that the version exists and that this platform is published."
-
-# Checksums ship as one SHA256SUMS asset covering every archive in the release. Releases made
-# before that asset existed still install, with a warning rather than a silent skip.
-if download "${DOWNLOAD_BASE}/v${version}/SHA256SUMS" "${temp_dir}/SHA256SUMS" 2>/dev/null; then
-	if command -v sha256sum >/dev/null 2>&1; then
-		checksum_tool="sha256sum"
-	elif command -v shasum >/dev/null 2>&1; then
-		checksum_tool="shasum -a 256"
-	else
-		checksum_tool=""
-	fi
-
-	if [ -n "$checksum_tool" ]; then
-		grep " \{1,2\}${archive_name}\$" "${temp_dir}/SHA256SUMS" >"${temp_dir}/SHA256SUMS.one" ||
-			fail "SHA256SUMS has no entry for ${archive_name}. Refusing to install an unverified archive."
-		info "Verifying checksum..."
-		(cd "$temp_dir" && $checksum_tool -c SHA256SUMS.one >/dev/null) ||
-			fail "Checksum verification failed for ${archive_name}. Refusing to install a corrupted or tampered archive."
-	else
-		warn "Neither sha256sum nor shasum is available, so the archive checksum was not verified."
-	fi
-else
-	warn "This release publishes no SHA256SUMS asset, so the archive checksum was not verified."
-fi
-
-info "Installing to ${bin_dir}..."
-mkdir -p "${temp_dir}/extract"
-# The archive holds one top-level `hunkdiff-<os>-<arch>/` directory with the binary, the bundled
-# skills, and metadata.json inside it; stripping that wrapper puts the payload at the root.
-tar -xzf "${temp_dir}/${archive_name}" -C "${temp_dir}/extract" --strip-components=1
-[ -f "${temp_dir}/extract/hunk" ] || fail "The downloaded archive contains no hunk binary."
-chmod 0755 "${temp_dir}/extract/hunk"
-
-mkdir -p "$payload_dir" "$bin_dir"
-# Replace the skills and metadata first, then move the binary last and through a same-directory
-# rename, so a Hunk that is running right now is never left pointing at a half-written tree.
-rm -rf "${payload_dir}/skills"
-mv "${temp_dir}/extract/skills" "${payload_dir}/skills"
-if [ -f "${temp_dir}/extract/metadata.json" ]; then
-	mv -f "${temp_dir}/extract/metadata.json" "${payload_dir}/metadata.json"
-fi
-mv -f "${temp_dir}/extract/hunk" "${bin_dir}/hunk.new"
-mv -f "${bin_dir}/hunk.new" "$target_binary"
-chmod 0755 "$target_binary"
-
-info "Installed hunk ${version} to ${target_binary}"
-
-# --------------------------------------------------------------------------------------
-# PATH
-# --------------------------------------------------------------------------------------
-
-path_line="export PATH=\"${bin_dir}:\$PATH\""
 
 # Append one line to one file unless an equivalent line is already there. Prints what it did.
 add_path_line() {
@@ -311,33 +168,188 @@ first_existing() {
 	printf '%s\n' "$fallback"
 }
 
-if [ "$no_modify_path" = "1" ]; then
-	info "Left shell startup files untouched (--no-modify-path)."
-	info "Add ${bin_dir} to your PATH to run hunk from anywhere."
-elif [ -n "${GITHUB_PATH:-}" ]; then
-	# GitHub Actions reads this file between steps, so no shell startup file is involved.
-	printf '%s\n' "$bin_dir" >>"$GITHUB_PATH"
-	info "Added ${bin_dir} to \$GITHUB_PATH for later workflow steps."
-else
-	shell_name="$(basename "${SHELL:-sh}")"
-	case "$shell_name" in
-	zsh)
-		add_path_line "${ZDOTDIR:-$home_dir}/.zshrc" "$path_line"
-		;;
-	bash)
-		add_path_line \
-			"$(first_existing "${home_dir}/.bashrc" "${home_dir}/.bash_profile" "${home_dir}/.profile")" \
-			"$path_line"
-		;;
-	fish)
-		add_path_line "${home_dir}/.config/fish/config.fish" "fish_add_path \"${bin_dir}\""
-		;;
-	*)
-		add_path_line "${home_dir}/.profile" "$path_line"
-		;;
-	esac
-	info "Restart your shell, or run: export PATH=\"${bin_dir}:\$PATH\""
-fi
+# --------------------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------------------
 
-info ""
-info "Run 'hunk --help' to get started, and 'hunk update' to move to a newer release."
+main() {
+	version="${HUNK_VERSION:-}"
+	no_modify_path="${HUNK_NO_MODIFY_PATH:-0}"
+
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		-h | --help)
+			usage
+			exit 0
+			;;
+		--no-modify-path)
+			no_modify_path=1
+			;;
+		-*)
+			fail "Unknown option: $1 (run with --help to see the supported options)"
+			;;
+		*)
+			version="$1"
+			;;
+		esac
+		shift
+	done
+
+	# Release tags are spelled `v1.2.3`; asset names and `--version` output are not.
+	version="${version#v}"
+
+	os="$(detect_os)"
+	arch="$(detect_arch)"
+	package_name="hunkdiff-${os}-${arch}"
+	archive_name="${package_name}.tar.gz"
+
+	if command -v curl >/dev/null 2>&1; then
+		downloader="curl"
+	elif command -v wget >/dev/null 2>&1; then
+		downloader="wget"
+	else
+		fail "Neither curl nor wget is available. Install one of them and try again."
+	fi
+
+	if [ -z "$version" ]; then
+		info "Resolving the newest Hunk release..."
+		# Parsed with sed rather than jq so the installer needs nothing but a shell and a downloader.
+		version="$(fetch "$RELEASES_API" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
+		[ -n "$version" ] || fail "Could not resolve the newest Hunk release from ${RELEASES_API}."
+	fi
+
+	home_dir="${HOME:-}"
+	[ -n "$home_dir" ] || fail "HOME is not set, so there is nowhere to install Hunk."
+
+	custom_dir=""
+	if [ -n "${HUNK_INSTALL_DIR:-}" ]; then
+		bin_dir="$HUNK_INSTALL_DIR"
+		# The bundled skills are found by walking up from the binary, so a chosen directory holds
+		# both. `hunk update` cannot recognize a custom directory once this shell exits, so the
+		# install finishes with re-run guidance instead (see the note printed at the end).
+		payload_dir="$HUNK_INSTALL_DIR"
+		custom_dir="$HUNK_INSTALL_DIR"
+	else
+		payload_dir="${home_dir}/.hunk"
+		bin_dir="${payload_dir}/bin"
+	fi
+
+	target_binary="${bin_dir}/hunk"
+
+	current="$(installed_version "$target_binary")"
+	if [ -z "$current" ] && command -v hunk >/dev/null 2>&1; then
+		current="$(installed_version "$(command -v hunk)")"
+	fi
+
+	if [ "$current" = "$version" ]; then
+		info "hunk ${version} is already installed."
+		exit 0
+	fi
+
+	temp_dir="$(mktemp -d)"
+	cleanup() {
+		rm -rf "$temp_dir"
+	}
+	# INT/TERM exit explicitly so the shell cannot resume mid-install; EXIT then runs cleanup.
+	trap cleanup EXIT
+	trap 'exit 1' INT TERM
+
+	archive_url="${DOWNLOAD_BASE}/v${version}/${archive_name}"
+	info "Downloading ${archive_name} (v${version})..."
+	download "$archive_url" "${temp_dir}/${archive_name}" ||
+		fail "Could not download ${archive_url}. Check that the version exists and that this platform is published."
+
+	# Checksums ship as one SHA256SUMS asset covering every archive in the release. Releases made
+	# before that asset existed still install, with a warning rather than a silent skip.
+	if download "${DOWNLOAD_BASE}/v${version}/SHA256SUMS" "${temp_dir}/SHA256SUMS" 2>/dev/null; then
+		if command -v sha256sum >/dev/null 2>&1; then
+			checksum_tool="sha256sum"
+		elif command -v shasum >/dev/null 2>&1; then
+			checksum_tool="shasum -a 256"
+		else
+			checksum_tool=""
+		fi
+
+		if [ -n "$checksum_tool" ]; then
+			grep " \{1,2\}${archive_name}\$" "${temp_dir}/SHA256SUMS" >"${temp_dir}/SHA256SUMS.one" ||
+				fail "SHA256SUMS has no entry for ${archive_name}. Refusing to install an unverified archive."
+			info "Verifying checksum..."
+			(cd "$temp_dir" && $checksum_tool -c SHA256SUMS.one >/dev/null) ||
+				fail "Checksum verification failed for ${archive_name}. Refusing to install a corrupted or tampered archive."
+		else
+			warn "Neither sha256sum nor shasum is available, so the archive checksum was not verified."
+		fi
+	else
+		warn "This release publishes no SHA256SUMS asset, so the archive checksum was not verified."
+	fi
+
+	info "Installing to ${bin_dir}..."
+	mkdir -p "${temp_dir}/extract"
+	# The archive holds one top-level `hunkdiff-<os>-<arch>/` directory with the binary, the bundled
+	# skills, and metadata.json inside it; stripping that wrapper puts the payload at the root.
+	tar -xzf "${temp_dir}/${archive_name}" -C "${temp_dir}/extract" --strip-components=1
+	[ -f "${temp_dir}/extract/hunk" ] || fail "The downloaded archive contains no hunk binary."
+	chmod 0755 "${temp_dir}/extract/hunk"
+
+	mkdir -p "$payload_dir" "$bin_dir"
+	# Swap the skills through renames — new tree in beside the old, old tree moved aside, then
+	# removed — so no window exists where an existing install has no skills at all. The binary
+	# moves last, through a same-directory rename, so a Hunk that is running right now is never
+	# left pointing at a half-written tree.
+	rm -rf "${payload_dir}/skills.new" "${payload_dir}/skills.old"
+	mv "${temp_dir}/extract/skills" "${payload_dir}/skills.new"
+	if [ -e "${payload_dir}/skills" ]; then
+		mv "${payload_dir}/skills" "${payload_dir}/skills.old"
+	fi
+	mv "${payload_dir}/skills.new" "${payload_dir}/skills"
+	rm -rf "${payload_dir}/skills.old"
+	if [ -f "${temp_dir}/extract/metadata.json" ]; then
+		mv -f "${temp_dir}/extract/metadata.json" "${payload_dir}/metadata.json"
+	fi
+	mv -f "${temp_dir}/extract/hunk" "${bin_dir}/hunk.new"
+	mv -f "${bin_dir}/hunk.new" "$target_binary"
+	chmod 0755 "$target_binary"
+
+	info "Installed hunk ${version} to ${target_binary}"
+
+	path_line="export PATH=\"${bin_dir}:\$PATH\""
+
+	if [ "$no_modify_path" = "1" ]; then
+		info "Left shell startup files untouched (--no-modify-path)."
+		info "Add ${bin_dir} to your PATH to run hunk from anywhere."
+	elif [ -n "${GITHUB_PATH:-}" ]; then
+		# GitHub Actions reads this file between steps, so no shell startup file is involved.
+		printf '%s\n' "$bin_dir" >>"$GITHUB_PATH"
+		info "Added ${bin_dir} to \$GITHUB_PATH for later workflow steps."
+	else
+		shell_name="$(basename "${SHELL:-sh}")"
+		case "$shell_name" in
+		zsh)
+			add_path_line "${ZDOTDIR:-$home_dir}/.zshrc" "$path_line"
+			;;
+		bash)
+			add_path_line \
+				"$(first_existing "${home_dir}/.bashrc" "${home_dir}/.bash_profile" "${home_dir}/.profile")" \
+				"$path_line"
+			;;
+		fish)
+			add_path_line "${home_dir}/.config/fish/config.fish" "fish_add_path \"${bin_dir}\""
+			;;
+		*)
+			add_path_line "${home_dir}/.profile" "$path_line"
+			;;
+		esac
+		info "Restart your shell, or run: export PATH=\"${bin_dir}:\$PATH\""
+	fi
+
+	info ""
+	if [ -n "$custom_dir" ]; then
+		info "Note: hunk update cannot auto-detect this custom install directory. To update later,"
+		info "re-run this installer with HUNK_INSTALL_DIR=${custom_dir}."
+		info "Run 'hunk --help' to get started."
+	else
+		info "Run 'hunk --help' to get started, and 'hunk update' to move to a newer release."
+	fi
+}
+
+main "$@"

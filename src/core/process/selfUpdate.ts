@@ -154,11 +154,13 @@ function npmUpdateCommand(
  * The installer is the updater: it already resolves the platform archive, verifies its checksum,
  * and swaps the tree in place, so duplicating any of that here would give curl installs a second
  * download path that can drift from the one users pipe into `sh`. The target version travels in
- * the child environment rather than the command line so the pipeline stays byte-identical to the
- * documented one-liner.
+ * the child environment rather than the command line so the pipeline stays equivalent to the
+ * documented one-liner, and wget stands in when curl is absent — the installer itself supports
+ * wget-only machines, so its updater must too.
  */
 function curlUpdateCommand() {
-  return ["sh", "-c", `curl -fsSL ${CURL_INSTALL_SCRIPT_URL} | sh`];
+  const fetchScript = `if command -v curl >/dev/null 2>&1; then curl -fsSL ${CURL_INSTALL_SCRIPT_URL}; else wget -qO- ${CURL_INSTALL_SCRIPT_URL}; fi`;
+  return ["sh", "-c", `{ ${fetchScript}; } | sh`];
 }
 
 /** Choose the command that installs one target version for the channel that owns this binary. */

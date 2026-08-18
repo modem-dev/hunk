@@ -24,14 +24,15 @@ const CURL_INSTALLABLE_SPECS = PLATFORM_PACKAGE_MATRIX.filter((spec) => spec.os 
 /**
  * Run the installer's platform detection with a stubbed `uname` and print `<os> <arch>`.
  *
- * The script is sourced with its own body truncated at the detection call, so nothing downloads:
- * the stub shadows `uname` (and `sysctl`) as shell functions, which take precedence over the real
- * executables.
+ * The script keeps every statement inside `main`, called on its last line, so everything before
+ * `main() {` is pure function definitions: sourcing that prefix runs nothing, and the harness can
+ * call the detection functions directly. The stubs shadow `uname` (and `sysctl`) as shell
+ * functions, which take precedence over the real executables.
  */
 function detectPlatform(unameSystem: string, unameMachine: string, translated = "0") {
   const scriptDir = mkdtempSync(join(tmpdir(), "hunk-install-sh-"));
   const harnessPath = join(scriptDir, "detect.sh");
-  const [detectionBody] = INSTALL_SCRIPT.split('package_name="hunkdiff-');
+  const [definitionsBody] = INSTALL_SCRIPT.split("main() {");
 
   try {
     writeFileSync(
@@ -41,8 +42,10 @@ function detectPlatform(unameSystem: string, unameMachine: string, translated = 
         "set -eu",
         `uname() { if [ "\${1:-}" = "-m" ]; then printf '%s\\n' '${unameMachine}'; else printf '%s\\n' '${unameSystem}'; fi; }`,
         `sysctl() { printf '%s\\n' '${translated}'; }`,
-        // The installer's own text, stopping just before it starts naming release archives.
-        detectionBody ?? "",
+        // The installer's function definitions, without the main invocation.
+        definitionsBody ?? "",
+        'os="$(detect_os)"',
+        'arch="$(detect_arch)"',
         'printf "%s %s\\n" "$os" "$arch"',
         "",
       ].join("\n"),
@@ -87,8 +90,17 @@ describe("hunk.dev install script", () => {
     // `resolveBundledSkillPath` walks up from the binary looking for `skills/<name>/SKILL.md`,
     // so the payload directory must be the binary's directory or one of its ancestors.
     expect(INSTALL_SCRIPT).toContain('bin_dir="${payload_dir}/bin"');
-    expect(INSTALL_SCRIPT).toContain('mv "${temp_dir}/extract/skills" "${payload_dir}/skills"');
+    expect(INSTALL_SCRIPT).toContain('mv "${temp_dir}/extract/skills" "${payload_dir}/skills.new"');
+    expect(INSTALL_SCRIPT).toContain('mv "${payload_dir}/skills.new" "${payload_dir}/skills"');
     expect(INSTALL_SCRIPT).toContain("--strip-components=1");
+  });
+
+  test("defers every statement to a main call on the last line", () => {
+    // A `curl | sh` pipe executes statements as they stream in, so a truncated download must die
+    // on an unclosed function body instead of running a prefix of the install.
+    const lines = INSTALL_SCRIPT.trimEnd().split("\n");
+    expect(lines.at(-1)).toBe('main "$@"');
+    expect(INSTALL_SCRIPT).toContain("main() {");
   });
 
   test("points unsupported platforms at the npm package", () => {

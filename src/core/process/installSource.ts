@@ -195,10 +195,12 @@ export function detectInstallSource(facts: InstallSourceFacts = {}): InstallSour
     return "curl";
   }
 
-  // Boundary: a curl install redirected elsewhere with `HUNK_INSTALL_DIR` classifies as `dev`,
-  // because that variable already names the directory `bun run install:bin` writes to. The two
-  // channels are indistinguishable once they share a directory the user chose, and `dev` is the
-  // safe answer — it prints the command to rerun instead of replacing a binary Hunk does not own.
+  // Boundary: a curl install redirected elsewhere with `HUNK_INSTALL_DIR` is only recognizable
+  // while that variable is still exported — it names the directory `bun run install:bin` also
+  // writes to, so the match below classifies it as `dev`, which safely prints a rerun command.
+  // Once the installing shell exits the variable is gone, the custom directory matches nothing,
+  // and detection falls through to `npm`; the installer therefore ends a custom-directory run by
+  // telling the user to update by re-running it with the same `HUNK_INSTALL_DIR`.
   const homeDir = facts.homeDir ?? env.HOME ?? env.USERPROFILE;
   if (isInsideDirectory(executablePath, resolveDevInstallDir(env, homeDir))) {
     return "dev";

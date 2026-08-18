@@ -71,6 +71,10 @@ async function runUpdate(options: UpdateRunOptions) {
   };
 }
 
+/** The exact pipeline `hunk update` spawns for curl installs, wget standing in for curl. */
+const CURL_UPDATE_PIPELINE =
+  "{ if command -v curl >/dev/null 2>&1; then curl -fsSL https://hunk.dev/install.sh; else wget -qO- https://hunk.dev/install.sh; fi; } | sh";
+
 describe("update method parsing", () => {
   test("normalizes brew to the Homebrew install source", () => {
     expect(parseUpdateMethod("brew")).toBe("homebrew");
@@ -191,7 +195,7 @@ describe("hunk update", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.commands).toEqual([["sh", "-c", "curl -fsSL https://hunk.dev/install.sh | sh"]]);
+    expect(result.commands).toEqual([["sh", "-c", CURL_UPDATE_PIPELINE]]);
     // The installer resolves the version from its environment, so the child carries the target
     // alongside the rest of this process's environment.
     expect(result.commandEnvs).toEqual([
@@ -208,7 +212,7 @@ describe("hunk update", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.commands).toEqual([["sh", "-c", "curl -fsSL https://hunk.dev/install.sh | sh"]]);
+    expect(result.commands).toEqual([["sh", "-c", CURL_UPDATE_PIPELINE]]);
     expect(result.commandEnvs[0]?.HUNK_VERSION).toBe("0.9.0");
   });
 
