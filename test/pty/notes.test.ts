@@ -185,7 +185,12 @@ describe("PTY notes", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      // Paging is a render, not a keypress: snapshotting before it settles reads
+      // the pre-scroll frame. The same page-down assertion in cursor-line.test.ts
+      // brackets the key with the same waits.
+      await session.waitIdle({ timeout: 300 });
       await session.press("space");
+      await session.waitIdle({ timeout: 400 });
       const paged = await session.text({ immediate: true });
       expect(paged).not.toContain("export const line01 = 1;");
 
