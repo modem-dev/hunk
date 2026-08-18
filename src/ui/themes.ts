@@ -9,6 +9,7 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
+  getBundledShikiThemeSurfaces,
   type BundledShikiThemeId,
 } from "../core/theme/catalog";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
@@ -121,6 +122,7 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
   const editorBackground = getBundledShikiThemeBackground(themeId) ?? "#0d1117";
   const editorForeground = getBundledShikiThemeForeground(themeId);
   const diffColors = getBundledShikiThemeDiffColors(themeId);
+  const surfaces = getBundledShikiThemeSurfaces(themeId);
   const isLightSurface = relativeLuminance(editorBackground) > 0.45;
   const fallbackDiffColors = FALLBACK_DIFF_COLORS[isLightSurface ? "light" : "dark"];
   const rowTint = isLightSurface ? 0.12 : 0.2;
@@ -130,14 +132,16 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
   const neutralPanel = blendHex(codeForeground, editorBackground, isLightSurface ? 0.04 : 0.08);
   const neutralPanelAlt = blendHex(codeForeground, editorBackground, isLightSurface ? 0.08 : 0.12);
   const neutralBorder = blendHex(codeForeground, editorBackground, isLightSurface ? 0.15 : 0.18);
-  const textForeground = readableForeground(editorForeground ?? codeForeground, neutralPanelAlt);
+  const panelSurface = surfaces?.panel ?? neutralPanel;
+  const panelAltSurface = surfaces?.panelAlt ?? neutralPanelAlt;
+  const textForeground = readableForeground(editorForeground ?? codeForeground, panelAltSurface);
   const lineNumberForeground = readableDimForeground(
-    blendHex(textForeground, editorBackground, 0.56),
+    surfaces?.lineNumberFg ?? blendHex(textForeground, editorBackground, 0.56),
     editorBackground,
   );
   const mutedForeground = readableDimForeground(
     blendHex(textForeground, editorBackground, 0.56),
-    neutralPanelAlt,
+    panelAltSurface,
   );
   const addedSignColor = readableDiffSign(
     diffColors?.added ?? fallbackDiffColors.added,
@@ -151,54 +155,36 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     diffColors?.modified ?? fallbackDiffColors.modified,
     editorBackground,
   );
-  const addedBg = readableTintedBackground(
-    addedSignColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
-  const removedBg = readableTintedBackground(
-    removedSignColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
-  const movedBg = readableTintedBackground(
-    modifiedColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
-  const addedContentBg = readableTintedBackground(
-    addedSignColor,
-    editorBackground,
-    textForeground,
-    contentTint,
-  );
-  const removedContentBg = readableTintedBackground(
-    removedSignColor,
-    editorBackground,
-    textForeground,
-    contentTint,
-  );
-  const accentMuted = readableTintedBackground(
-    modifiedColor,
-    editorBackground,
-    textForeground,
-    selectedTint,
-  );
+  const addedBg =
+    surfaces?.addedBg ??
+    readableTintedBackground(addedSignColor, editorBackground, textForeground, rowTint);
+  const removedBg =
+    surfaces?.removedBg ??
+    readableTintedBackground(removedSignColor, editorBackground, textForeground, rowTint);
+  const movedBg =
+    surfaces?.movedBg ??
+    readableTintedBackground(modifiedColor, editorBackground, textForeground, rowTint);
+  const addedContentBg =
+    surfaces?.addedContentBg ??
+    readableTintedBackground(addedSignColor, editorBackground, textForeground, contentTint);
+  const removedContentBg =
+    surfaces?.removedContentBg ??
+    readableTintedBackground(removedSignColor, editorBackground, textForeground, contentTint);
+  const accentMuted =
+    surfaces?.accentMuted ??
+    readableTintedBackground(modifiedColor, editorBackground, textForeground, selectedTint);
   const syntaxColors = buildSyntaxColors(textForeground);
-  const badgeAdded = readableChromeColor(addedSignColor, neutralPanel, neutralPanelAlt);
-  const badgeRemoved = readableChromeColor(removedSignColor, neutralPanel, neutralPanelAlt);
-  const badgeModified = readableChromeColor(modifiedColor, neutralPanel, neutralPanelAlt);
+  const badgeAdded = readableChromeColor(addedSignColor, panelSurface, panelAltSurface);
+  const badgeRemoved = readableChromeColor(removedSignColor, panelSurface, panelAltSurface);
+  const badgeModified = readableChromeColor(modifiedColor, panelSurface, panelAltSurface);
   const themeBase: ThemeBase = {
     id: themeId,
     label: themeId,
     appearance: isLightSurface ? "light" : "dark",
     background: editorBackground,
-    panel: neutralPanel,
-    panelAlt: neutralPanelAlt,
-    border: neutralBorder,
+    panel: panelSurface,
+    panelAlt: panelAltSurface,
+    border: surfaces?.border ?? neutralBorder,
     accent: modifiedColor,
     accentMuted,
     text: textForeground,
@@ -215,10 +201,10 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     removedSignColor,
     lineNumberBg: editorBackground,
     lineNumberFg: lineNumberForeground,
-    selectedHunk: blendHex(modifiedColor, editorBackground, selectedTint),
-    noteBackground: neutralPanel,
+    selectedHunk: surfaces?.selectedHunk ?? blendHex(modifiedColor, editorBackground, selectedTint),
+    noteBackground: panelSurface,
     noteBorder: modifiedColor,
-    noteTitleBackground: neutralPanel,
+    noteTitleBackground: panelSurface,
     noteTitleText: textForeground,
     badgeAdded,
     badgeRemoved,

@@ -99,6 +99,20 @@ export interface BundledShikiThemeDiffColors {
   modified?: string;
 }
 
+export interface BundledShikiThemeSurfaces {
+  panel?: string;
+  panelAlt?: string;
+  border?: string;
+  addedBg?: string;
+  removedBg?: string;
+  movedBg?: string;
+  addedContentBg?: string;
+  removedContentBg?: string;
+  accentMuted?: string;
+  selectedHunk?: string;
+  lineNumberFg?: string;
+}
+
 export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledShikiThemeId, string> = {
   andromeeda: "#23262e",
   "aurora-x": "#07090f",
@@ -294,6 +308,36 @@ export const BUNDLED_SHIKI_THEME_DIFF_COLORS: Partial<
   "vitesse-light": { added: "#1e754f", removed: "#ab5959", modified: "#296aa3" },
 };
 
+export const BUNDLED_SHIKI_THEME_SURFACES: Partial<
+  Record<BundledShikiThemeId, BundledShikiThemeSurfaces>
+> = {
+  "everforest-dark": {
+    panel: "#343f44",
+    panelAlt: "#3d484d",
+    border: "#4f585e",
+    addedBg: "#3c4841",
+    removedBg: "#493b40",
+    movedBg: "#384b55",
+    addedContentBg: "#425047",
+    removedContentBg: "#514045",
+    accentMuted: "#3a515d",
+    selectedHunk: "#543a48",
+    lineNumberFg: "#9da9a0",
+  },
+  "everforest-light": {
+    panel: "#f4f0d9",
+    panelAlt: "#efebd4",
+    border: "#e0dcc7",
+    addedBg: "#f3f5d9",
+    removedBg: "#ffe7de",
+    movedBg: "#ecf5ed",
+    addedContentBg: "#f0f1d2",
+    removedContentBg: "#fde3da",
+    accentMuted: "#e9f0e9",
+    selectedHunk: "#eaedc8",
+  },
+};
+
 /** Return the editor surface declared by a bundled Shiki theme, when Hunk knows it. */
 export function getBundledShikiThemeBackground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_BACKGROUNDS
@@ -312,5 +356,11 @@ export function getBundledShikiThemeForeground(themeId: string | undefined) {
 export function getBundledShikiThemeDiffColors(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_DIFF_COLORS
     ? BUNDLED_SHIKI_THEME_DIFF_COLORS[themeId as BundledShikiThemeId]
+    : undefined;
+}
+
+export function getBundledShikiThemeSurfaces(themeId: string | undefined) {
+  return themeId && themeId in BUNDLED_SHIKI_THEME_SURFACES
+    ? BUNDLED_SHIKI_THEME_SURFACES[themeId as BundledShikiThemeId]
     : undefined;
 }
