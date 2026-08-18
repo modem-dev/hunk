@@ -1,6 +1,5 @@
 /**
- * Acquires a changeset from whichever source the CLI selected, and assembles the app's
- * bootstrap around it.
+ * Acquires a changeset from whichever source the CLI selected.
  *
  * One loader per source shape — a VCS review, a direct file comparison, a patch file or
  * stdin — and each ends by handing text to `changesetFromPatch`. This module owns the I/O
@@ -15,7 +14,6 @@ import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } 
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
-import { DEFAULT_TAB_WIDTH } from "../run/tabWidth";
 import {
   getConfiguredVcsAdapter,
   isVcsReviewInput,
@@ -25,8 +23,6 @@ import {
 import type { VcsCatalog } from "../vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "../vcs/untracked";
 import { computeWatchSignature } from "../watch/signature";
-import type { NamedCustomThemeConfig } from "../../extension-api/types";
-import type { AppBootstrap } from "../bootstrap";
 import type {
   CliInput,
   DiffToolCommandInput,
@@ -38,12 +34,17 @@ import type {
 } from "../run/commandInputs";
 import type { SidecarContext, Changeset, DiffFile } from "./model";
 
-export interface LoadAppBootstrapOptions {
+export interface LoadChangesetOptions {
   cwd?: string;
-  /** Selectable custom themes for this session, already merged into menu order. */
-  customThemes?: readonly NamedCustomThemeConfig[];
   /** Complete adapter catalog composed by the app for this session. */
   vcsCatalog?: VcsCatalog;
+}
+
+/** One loaded changeset plus the acquisition facts a reload or watch needs. */
+export interface LoadedChangeset {
+  changeset: Changeset;
+  repoRoot?: string;
+  initialWatchSignature?: string;
 }
 
 /** Return the final path segment for display-oriented labels. */
@@ -270,11 +271,11 @@ async function loadPatchChangeset(
   return changesetFromPatch(patchText, `Patch review: ${basename(label)}`, label, sidecar);
 }
 
-/** Resolve CLI input into the fully loaded app bootstrap state. */
-export async function loadAppBootstrap(
+/** Load the changeset (and its acquisition facts) for one CLI input. */
+export async function loadChangeset(
   input: CliInput,
-  { cwd = process.cwd(), customThemes, vcsCatalog }: LoadAppBootstrapOptions = {},
-): Promise<AppBootstrap> {
+  { cwd = process.cwd(), vcsCatalog }: LoadChangesetOptions = {},
+): Promise<LoadedChangeset> {
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
@@ -321,21 +322,5 @@ export async function loadAppBootstrap(
     files: orderDiffFiles(changeset.files, sidecar),
   };
 
-  return {
-    input,
-    reloadContext: { cwd, repoRoot, initialWatchSignature, vcsCatalog },
-    changeset,
-    initialMode: input.options.mode ?? "auto",
-    initialTheme: input.options.theme,
-    customThemes,
-    initialShowLineNumbers: input.options.lineNumbers ?? true,
-    initialTabWidth: input.options.tabWidth ?? DEFAULT_TAB_WIDTH,
-    initialWrapLines: input.options.wrapLines ?? false,
-    initialShowHunkHeaders: input.options.hunkHeaders ?? true,
-    initialShowMenuBar: input.options.menuBar ?? true,
-    initialSidebar: input.options.sidebar ?? "auto",
-    initialShowAgentNotes: input.options.agentNotes ?? false,
-    initialCopyDecorations: input.options.copyDecorations ?? false,
-    initialCursorLine: input.options.cursorLine ?? "row",
-  };
+  return { changeset, repoRoot, initialWatchSignature };
 }

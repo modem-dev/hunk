@@ -6,10 +6,9 @@
  * This module names shapes the tiers below it already own — the changeset, the
  * parsed command input, the resolved view and keybinding preferences, the
  * detected theme mode — and composes them into the one value that crosses from
- * startup into the UI. The module directories under `src/core` do not import it
- * back — composition sits above the leaves it composes — with one exception the
- * boundary rules name: `changeset/loaders.ts` assembles this value in
- * `loadAppBootstrap`, so it has to name the shape it returns.
+ * startup into the UI. The module directories under `src/core` never import it
+ * back: composition sits above the leaves it composes, and the assembly itself
+ * lives in `src/app/bootstrap.ts`.
  */
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset } from "./changeset/model";

@@ -8,13 +8,15 @@
  * `bun run deps:check` fails on any violation not in the baseline.
  */
 
-// UI files allowed to couple to src/app and src/session: the composition shell, the two
-// named session adapter hooks, and the session-navigation resolution helper those hooks
-// share. Everything else in src/ui stays presentation-only.
+// UI files allowed to couple to src/app and src/session: the composition shell (including
+// the non-interactive pager entry), the two named session adapter hooks, and the
+// session-navigation resolution helper those hooks share. Everything else in src/ui stays
+// presentation-only.
 const UI_SESSION_ADAPTERS = [
   "^src/ui/App\\.tsx$",
   "^src/ui/AppHost\\.tsx$",
   "^src/ui/runInteractiveApp\\.tsx$",
+  "^src/ui/staticDiffPager\\.ts$",
   "^src/ui/hooks/useHunkSessionBridge\\.ts$",
   "^src/ui/hooks/useTerminalReview\\.ts$",
   "^src/ui/lib/reviewState\\.ts$",
@@ -38,11 +40,6 @@ const PRODUCTION_ENTRY_POINTS = [
 const TEST_ONLY_MODULES = [
   // Note-height measurement exercised by the review-conformance corpus.
   "^src/core/review/noteSize\\.ts$",
-  // The floating agent-note popover and its measurement helper. Nothing renders them since
-  // notes moved into the diff flow as STML cards; their unit tests are the only consumers
-  // left, so they are quarantined here until that call is made rather than deleted blind.
-  "^src/ui/components/panes/AgentCard\\.tsx$",
-  "^src/ui/lib/agentPopover\\.ts$",
 ];
 
 module.exports = {
@@ -134,11 +131,10 @@ module.exports = {
     {
       name: "core-leaves-stay-below-bootstrap",
       comment:
-        "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. core/changeset/loaders.ts is the single exception — loadAppBootstrap assembles the value, so it names the shape it returns; its natural home is the app tier, and moving it there retires this exception.",
+        "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. The assembly itself (loadAppBootstrap) lives in src/app/bootstrap.ts, so this rule has no exceptions.",
       severity: "error",
       from: {
         path: "^src/core/(changeset|run|process|review|vcs|watch|patch|theme)/",
-        pathNot: "^src/core/changeset/loaders\\.ts$",
       },
       to: { path: "^src/core/bootstrap\\.ts$" },
     },

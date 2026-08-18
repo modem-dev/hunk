@@ -21,7 +21,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
-const { loadAppBootstrap } = await import("../core/changeset/loaders");
+const { loadAppBootstrap } = await import("../app/bootstrap");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";

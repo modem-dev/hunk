@@ -26,7 +26,6 @@ const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
 const { BuiltInSidebarView } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
-const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
 const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
@@ -2433,33 +2432,6 @@ describe("UI components", () => {
     }
   });
 
-  test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
-      40,
-      12,
-    );
-
-    const lines = frame
-      .split("\n")
-      .slice(0, 8)
-      .map((line) => line.trimEnd());
-    expect(lines[0]).toBe("┌────────────────────────────────┐");
-    expect(lines[1]).toContain("AI note");
-    expect(lines[2]).toContain("Annotation for alpha.ts");
-    expect(lines[4]).toContain("Why alpha.ts changed");
-    expect(lines[6]).toContain("alpha.ts +2");
-    expect(lines[7]).toBe("└────────────────────────────────┘");
-  });
-
   test("AgentInlineNote renders a connected bordered panel without a blank connector row", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -2731,52 +2703,6 @@ describe("UI components", () => {
 
     const lines = frame.split("\n");
     expect(lines[0]).toContain("prism (arbiter)");
-  });
-
-  test("AgentCard shows author in title when set", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        author="sonnet"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
-      40,
-      12,
-    );
-
-    const lines = frame
-      .split("\n")
-      .slice(0, 8)
-      .map((line) => line.trimEnd());
-    expect(lines[1]).toContain("sonnet");
-    expect(lines[1]).not.toContain("AI note");
-  });
-
-  test("AgentCard falls back to 'AI note' when author absent", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
-      40,
-      12,
-    );
-
-    const lines = frame
-      .split("\n")
-      .slice(0, 8)
-      .map((line) => line.trimEnd());
-    expect(lines[1]).toContain("AI note");
   });
 
   test("DiffPane renders all visible hunk notes across the review stream", async () => {

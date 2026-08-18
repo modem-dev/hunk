@@ -16,7 +16,7 @@ import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { ReviewProducer } from "../app/review/producer";
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../app/bootstrap";
 import type { CliInput } from "../core/run/commandInputs";
 
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";

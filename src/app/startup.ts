@@ -3,7 +3,7 @@ import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensio
 import type { loadStartupExtensions } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
-import type { loadAppBootstrap } from "../core/changeset/loaders";
+import type { loadAppBootstrap } from "./bootstrap";
 import { looksLikePatchInput } from "../core/process/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
@@ -330,7 +330,7 @@ export async function prepareStartupPlan(
       import("../extensions/startup"),
     ]);
   const loadAppBootstrapImpl =
-    deps.loadAppBootstrapImpl ?? (await import("../core/changeset/loaders")).loadAppBootstrap;
+    deps.loadAppBootstrapImpl ?? (await import("./bootstrap")).loadAppBootstrap;
   const loadStartupExtensionsImpl =
     deps.loadStartupExtensionsImpl ?? startupExtensions.loadStartupExtensions;
 

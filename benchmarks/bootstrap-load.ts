@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
 import { getBundledVcsCatalog } from "../src/app/vcsCatalog";
-import { loadAppBootstrap } from "../src/core/changeset/loaders";
+import { loadAppBootstrap } from "../src/app/bootstrap";
 
 const FILE_COUNT = 64;
 const LINES_PER_FILE = 420;

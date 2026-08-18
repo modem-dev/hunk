@@ -12,7 +12,6 @@ import {
   type MenuEntry,
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
   cellRangeToCharRange,
@@ -380,44 +379,6 @@ describe("ui helpers", () => {
 
     // ZWJ emoji clusters stay whole when hard-splitting.
     expect(wrapText("🧑‍💻🧑‍💻", 2)).toEqual(["🧑‍💻", "🧑‍💻"]);
-
-    const content = buildAgentPopoverContent({
-      summary: "Guard missing socket path",
-      rationale: "Prevents noisy reconnect errors during first launch.",
-      locationLabel: "startup.ts +43-44",
-      noteIndex: 0,
-      noteCount: 2,
-      width: 34,
-    });
-
-    expect(content.title).toBe("AI note 1/2");
-    expect(content.summaryLines.length).toBeGreaterThan(0);
-    expect(content.rationaleLines.length).toBeGreaterThan(0);
-    expect(content.height).toBe(9);
-
-    expect(
-      resolveAgentPopoverPlacement({
-        anchorColumn: 12,
-        anchorRowTop: 4,
-        anchorRowHeight: 1,
-        contentHeight: 20,
-        noteWidth: 18,
-        noteHeight: 7,
-        viewportWidth: 60,
-      }),
-    ).toMatchObject({ left: 42, top: 4, side: "right" });
-
-    expect(
-      resolveAgentPopoverPlacement({
-        anchorColumn: 48,
-        anchorRowTop: 16,
-        anchorRowHeight: 1,
-        contentHeight: 20,
-        noteWidth: 18,
-        noteHeight: 7,
-        viewportWidth: 60,
-      }),
-    ).toMatchObject({ left: 42, top: 13, side: "left" });
   });
 
   test("resizeSidebarWidth clamps drag updates into the allowed sidebar range", () => {

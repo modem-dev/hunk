@@ -3,7 +3,7 @@ import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
-import { loadAppBootstrap } from "../core/changeset/loaders";
+import { loadAppBootstrap } from "./bootstrap";
 import type { CliInput } from "../core/run/commandInputs";
 import type { AppBootstrap } from "./types";
 import {

@@ -10,7 +10,7 @@ import {
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
-import { loadAppBootstrap } from "../changeset/loaders";
+import { loadAppBootstrap } from "../../app/bootstrap";
 import {
   LEGACY_CUSTOM_SYNTAX_NOTICE,
   LEGACY_CUSTOM_SYNTAX_NOTICES,

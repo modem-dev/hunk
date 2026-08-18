@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
-import { loadAppBootstrap } from "../src/core/changeset/loaders";
+import { loadAppBootstrap } from "../src/app/bootstrap";
 import { AppHost } from "../src/ui/AppHost";
 
 function runGit(cwd: string, ...args: string[]) {

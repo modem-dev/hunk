@@ -76,7 +76,8 @@ files at `core/*` root — into `core/changeset/`, with the surface split enforc
 `changeset-internals-stay-in-module`:
 
 - **Public:** `model` (the `Changeset` / `DiffFile` / `SidecarContext` shapes), `loaders`
-  (every input source, plus the app bootstrap built around one), `diffFile`, `fileSource`,
+  (every input source; the app bootstrap is composed above, in `src/app/bootstrap.ts`),
+  `diffFile`, `fileSource`,
   `fileLanguage`, `binary`, `diffPaths`, `hunkHeader`, `hunkSummary`.
 - **Interior:** `fromPatch` turns patch text into the model and is reached through `loaders`;
   `fileLanguageLookup` is the only reader/writer of Pierre's process-global extension table
@@ -167,10 +168,9 @@ the diff renderer, and the session surfaces never needed the bootstrap contract,
 changeset and command-input models they now name. `core/bootstrap.ts` imports downward into
 `changeset/model`, `run/commandInputs`, `run/config`, `process/startupNotice`,
 `theme/detection`, and `vcs/types`, and `core-leaves-stay-below-bootstrap` forbids the reverse
-edge from every module directory. One exception is carved out and named in the rule:
-`core/changeset/loaders.ts` returns an `AppBootstrap` from `loadAppBootstrap`, so it names the
-shape it assembles; that function is composition living in the domain tier, and moving it to
-`src/app` retires the exception.
+edge from every module directory, with no exceptions: the assembly (`loadAppBootstrap`) lives
+in `src/app/bootstrap.ts` and composes what `core/changeset/loaders.ts` loads (`loadChangeset`),
+so the domain tier never names the contract built above it.
 
 `src/core/` root now holds `bootstrap.ts`, `reviewDigest.ts`, and `liveComments.ts` beside the
 eight module directories.
@@ -225,13 +225,12 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
    surfaces for the modules that never got one: `changeset` has
    `changeset-internals-stay-in-module` and `review` has `review-reducer-is-module-internal`,
    while `run`, `process`, `theme`, `vcs`, `watch`, and `patch` are still public in full
-   because every file in them has an outside importer today. Two named follow-ups: move
-   `loadAppBootstrap` out of `core/changeset/loaders.ts` into `src/app` (it is composition, and
-   it is the one exception `core-leaves-stay-below-bootstrap` has to carve out), and split
+   because every file in them has an outside importer today. One named follow-up: split
    `core/run/config.ts`, whose readers reach it for three unrelated reasons — the
    resolved `HunkConfigResolution`, the persisted view preferences, and the extension/keybinding
    tables. The review seam's named modules (`document`, `geometry`, `state`, …) stay public;
    their helpers become internal.
 2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
-   six files. As session coupling consolidates into `useTerminalReview` /
+   seven files (the shell entries — including the pager's — plus the adapters). As session
+   coupling consolidates into `useTerminalReview` /
    `useHunkSessionBridge`, shrink the list.
