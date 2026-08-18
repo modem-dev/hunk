@@ -131,16 +131,18 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      const initial = await session.text({ immediate: true });
-      const initialActiveLine = "export const line01 = 1;";
+      await session.waitIdle({ timeout: 500 });
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const beforePushedDraft = await session.text({ immediate: true });
       const firstActiveLine = "export const line09 = 9;";
       const followingLine = "export const line10 = 10;";
-      const firstActiveRow = lineIndexOf(initial, initialActiveLine) + 8;
-      const followingRowBefore = lineIndexOf(initial, followingLine);
+      const firstActiveRow = lineIndexOf(beforePushedDraft, firstActiveLine);
+      const followingRowBefore = lineIndexOf(beforePushedDraft, followingLine);
 
-      // Coalesce movement and note opening into one terminal write so `c` must read the cursor
-      // synchronously rather than targeting the React render from before the arrow-key burst.
-      session.writeRaw(`${"\x1b[B".repeat(8)}c`);
+      await session.press("c");
       await session.waitForText(/Draft note - before\.ts -> after\.ts L9/, { timeout: 5_000 });
       await sleep(100);
       const pushedDraft = await session.text({ immediate: true });
@@ -514,9 +516,19 @@ describe("PTY notes", () => {
       const targetRow = lineIndexOf(initial, "keep = true");
       expect(targetRow).toBeGreaterThan(0);
 
-      await revealAddNoteOnRow(session, targetRow);
+      // Put the keyboard cursor on the deletion, then click the separate context row. Opening the
+      // clicked draft must preserve the clicked row rather than the old keyboard-cursor anchor.
+      await session.press("down");
+      const beforeDraft = await session.text({ immediate: true });
+      const clickedRowBefore = lineIndexOf(beforeDraft, "keep = true");
+      await revealAddNoteOnRow(session, clickedRowBefore);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const withDraft = await session.text({ immediate: true });
+      expect(lineIndexOf(withDraft, "keep = true")).toBe(clickedRowBefore);
+      expect(lineIndexOf(withDraft, "Draft note")).toBeGreaterThan(clickedRowBefore);
+
       await session.type("Save this context draft.");
       await session.press(["ctrl", "s"]);
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
