@@ -75,9 +75,12 @@ function canonicalUrlForOutput(label: string) {
   return `${CANONICAL_ORIGIN}/${label.replace(/index\.html$/, "")}`;
 }
 
+/** Routes rendered in the marketing shell rather than by Starlight. */
+const MARKETING_ROUTES = ["index.html", "extensions/index.html"] as const;
+
 /** Return metadata required for one canonical page type. */
 function requiredHeadTags(label: string) {
-  if (label === "index.html") return MARKETING_HEAD_TAGS;
+  if ((MARKETING_ROUTES as readonly string[]).includes(label)) return MARKETING_HEAD_TAGS;
   if (label.startsWith("docs/")) return DOCS_HEAD_TAGS;
   return [];
 }

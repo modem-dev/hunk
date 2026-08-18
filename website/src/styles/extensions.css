@@ -1,0 +1,267 @@
+/*
+ * Extension directory. The page reuses the marketing shell, so only the
+ * directory's own geometry lives here: one column of wide cards, each splitting
+ * into what the extension is (left) and how to install it (right). Cards stay
+ * one per row at every width because the install command needs the horizontal
+ * space and a directory reads as a list, not a gallery.
+ */
+
+.marketing .xdir {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px;
+}
+
+.marketing .xintro {
+  padding: 72px 0 40px;
+}
+
+.marketing .xintro h1 {
+  margin: 0 0 18px;
+  font-size: clamp(30px, 5vw, 46px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.marketing .xintro .sub {
+  max-width: 60ch;
+  margin: 0 0 14px;
+  color: var(--hunk-body);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.marketing .xintro .sub a {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The accent green clears AA on paper but not on the panel chip behind inline
+   code, so the linked topic name drops to the darker accent ink. */
+.marketing .xintro .sub a code {
+  color: var(--hunk-accent-ink);
+}
+
+.marketing .xintro code,
+.marketing .xpublish code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hunk-panel);
+  font-size: 0.92em;
+}
+
+/* The consent warning is the one thing on the page that must not read as chrome. */
+.marketing .xcaveat {
+  max-width: 60ch;
+  margin: 0;
+  padding-left: 13px;
+  border-left: 2.5px solid var(--acc);
+  color: var(--soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.marketing .xlist {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.marketing .xcard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px 32px;
+  align-items: start;
+  padding: 22px 26px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .xname {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.marketing .xname a:hover,
+.marketing .xname a:focus-visible {
+  color: var(--acc);
+}
+
+.marketing .xby {
+  color: var(--soft);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.marketing .xby::before {
+  content: "by ";
+}
+
+.marketing .xsum {
+  max-width: 58ch;
+  margin: 0 0 12px;
+  color: var(--hunk-body);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.marketing .xsum code {
+  font-size: 0.92em;
+}
+
+.marketing .xtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marketing .xtags li {
+  padding: 2px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--soft);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.marketing .xside {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+/* The copy button is the card's action, so it drops the hero's heavy shadow. */
+.marketing .xside .copy {
+  padding: 9px 13px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 12.5px;
+}
+
+.marketing .xside .copy:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.marketing .xmeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 18px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.marketing .xmeta div {
+  display: flex;
+  gap: 6px;
+}
+
+.marketing .xmeta dt {
+  color: var(--soft);
+}
+
+.marketing .xmeta dd {
+  margin: 0;
+  color: var(--hunk-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.marketing .xpublish {
+  padding: 40px 0 96px;
+}
+
+.marketing .xpublish h2 {
+  margin: 0 0 26px;
+  font-size: clamp(22px, 3.4vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.marketing .xpublish ol {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.marketing .xpublish li {
+  display: grid;
+  grid-template-columns: auto 190px 1fr;
+  gap: 14px;
+  align-items: baseline;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.marketing .xpublish li::before {
+  counter-increment: step;
+  content: counter(step);
+  color: var(--acc);
+  font-weight: 700;
+}
+
+.marketing .xpublish li b {
+  font-weight: 700;
+}
+
+.marketing .xpublish li span {
+  color: var(--soft);
+}
+
+.marketing .xpreview {
+  max-width: 60ch;
+  margin: 22px 0 0;
+  color: var(--soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .marketing .xdir {
+    padding: 0 20px;
+  }
+
+  .marketing .xintro {
+    padding-top: 48px;
+  }
+
+  /* Below the two-column card, the install action follows what it installs. */
+  .marketing .xcard {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+
+  .marketing .xside {
+    justify-items: start;
+  }
+
+  .marketing .xmeta {
+    justify-content: flex-start;
+  }
+
+  .marketing .xpublish li {
+    grid-template-columns: auto 1fr;
+  }
+
+  .marketing .xpublish li span {
+    grid-column: 2;
+  }
+}

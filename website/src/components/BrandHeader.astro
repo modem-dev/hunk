@@ -1,6 +1,6 @@
 ---
 interface Props {
-  current?: "home" | "docs" | "changelog";
+  current?: "home" | "docs" | "changelog" | "extensions";
   context?: "marketing" | "docs";
 }
 
@@ -17,6 +17,9 @@ const installHref = context === "docs" ? "/docs/start/install/" : "/#install";
     <nav class="brand-nav" aria-label="Main navigation">
       <a class="brand-install" href={installHref}>Install</a>
       <a href="/docs/" aria-current={current === "docs" ? "page" : undefined}>Docs</a>
+      <a class="brand-extensions" href="/extensions/" aria-current={current === "extensions" ? "page" : undefined}>
+        Extensions
+      </a>
       <a href="/changelog/" aria-current={current === "changelog" ? "page" : undefined}>Changelog</a>
       <a class="brand-discord" href={DISCORD}>Discord</a>
       <a href={REPO}>GitHub ↗</a>

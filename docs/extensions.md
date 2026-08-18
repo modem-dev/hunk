@@ -180,7 +180,9 @@ To publish one:
    your default branch.
 4. Push the repository to any git host and add the **`hunk-extension`** GitHub
    topic so people can find it: every public repository with that topic shows
-   up at <https://github.com/topics/hunk-extension>.
+   up at <https://github.com/topics/hunk-extension>. Opening a pull request
+   against `website/src/data/extensions.ts` also lists it on
+   <https://hunk.dev/extensions>.
 
 Before publishing, exercise the exact layout users will install:
 `hunk extension install /path/to/your/checkout` installs from a local

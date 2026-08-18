@@ -1,0 +1,189 @@
+---
+import BrandFooter from "../components/BrandFooter.astro";
+import BrandHeader from "../components/BrandHeader.astro";
+import CopyCommand from "../components/marketing/CopyCommand.astro";
+import {
+  CURRENT_EXTENSION_API_VERSION,
+  HUNK_EXTENSION_TOPIC,
+  HUNK_EXTENSION_TOPIC_URL,
+  formatUpdated,
+  installCommand,
+  loadExtensionEntries,
+  repositoryUrl,
+} from "../data/extensions";
+import "../styles/marketing.css";
+import "../styles/extensions.css";
+
+const title = "hunk extensions — the community directory";
+const description =
+  "Community extensions for Hunk: panes, themes, highlighters, and VCS backends published as public GitHub repositories and installed with one command.";
+
+const entries = await loadExtensionEntries();
+
+// Structured data so the directory is machine-readable the way the landing page is.
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  name: "Hunk extensions",
+  description,
+  url: "https://hunk.dev/extensions/",
+  numberOfItems: entries.length,
+  itemListElement: entries.map((entry, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: entry.name,
+    description: entry.summary,
+    url: repositoryUrl(entry),
+  })),
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="description" content={description} />
+    <meta
+      name="keywords"
+      content="hunk extensions, terminal diff, code review, TypeScript extensions, hunk-extension"
+    />
+    <meta name="author" content="Modem" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="hunk" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://hunk.dev/extensions/" />
+    <meta property="og:image" content="https://hunk.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="hunk — terminal diffs for humans & agents" />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://hunk.dev/og.png" />
+    <link rel="canonical" href="https://hunk.dev/extensions/" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <title>{title}</title>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(schema)}></script>
+    <script is:inline defer src="/_vercel/insights/script.js"></script>
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <BrandHeader current="extensions" />
+      </header>
+
+      <main class="xdir">
+        <section class="xintro">
+          <p class="kicker"># extensions</p>
+          <h1>Made by people<br />who review a lot of code.</h1>
+          <p class="sub">
+            Extensions are plain TypeScript, published as ordinary GitHub repositories and installed
+            with one command. Every listing below is a public repository that tagged itself{" "}
+            <a href={HUNK_EXTENSION_TOPIC_URL}><code>{HUNK_EXTENSION_TOPIC}</code></a> on GitHub.
+          </p>
+          <p class="xcaveat">
+            An extension runs with your full permissions, and a listing here is not a review. Read
+            the source before you install it.
+          </p>
+        </section>
+
+        <section class="xlist" aria-label="Community extensions">
+          {
+            entries.map((entry) => {
+              const updated = entry.pushedAt ? formatUpdated(entry.pushedAt) : undefined;
+              return (
+                <article class="xcard">
+                  <div class="xbody">
+                    <h2 class="xname">
+                      <a href={repositoryUrl(entry)}>{entry.name}</a>
+                      <span class="xby">{entry.author}</span>
+                    </h2>
+                    <p class="xsum">{entry.summary}</p>
+                    <ul class="xtags">
+                      {entry.categories.map((category) => (
+                        <li>{category}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div class="xside">
+                    <CopyCommand command={installCommand(entry)} />
+                    <dl class="xmeta">
+                      <div>
+                        <dt>Needs</dt>
+                        <dd>API v{entry.apiVersion}</dd>
+                      </div>
+                      <div>
+                        <dt>License</dt>
+                        <dd>{entry.license}</dd>
+                      </div>
+                      {typeof entry.stars === "number" && (
+                        <div>
+                          <dt>Stars</dt>
+                          <dd>{entry.stars.toLocaleString("en-US")}</dd>
+                        </div>
+                      )}
+                      {updated && (
+                        <div>
+                          <dt>Updated</dt>
+                          <dd>{updated}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                </article>
+              );
+            })
+          }
+        </section>
+
+        <section class="xpublish">
+          <p class="kicker"># publish yours</p>
+          <h2>Tag a repository, join the list.</h2>
+          <ol>
+            <li>
+              <b>Build it</b>
+              <span
+                >One file that default-exports a function, plus a <code>package.json</code> with a{" "}
+                <code>hunk</code> field.</span
+              >
+            </li>
+            <li>
+              <b>Declare the surface</b>
+              <span
+                >Set <code>"hunk": &lbrace;"apiVersion": N&rbrace;</code> so an older Hunk refuses
+                the install cleanly. Current is v{CURRENT_EXTENSION_API_VERSION}.</span
+              >
+            </li>
+            <li>
+              <b>Tag releases</b>
+              <span>So people can pin with <code>@v1.2.0</code> instead of your default branch.</span
+              >
+            </li>
+            <li>
+              <b>Add the topic</b>
+              <span
+                >Push it public with the <code>{HUNK_EXTENSION_TOPIC}</code> topic, and open a pull request
+                to add it here.</span
+              >
+            </li>
+          </ol>
+          <div class="cta">
+            <a class="ghost" href="/docs/extend/extensions/">Read the authoring guide</a>
+            <a class="plain" href={HUNK_EXTENSION_TOPIC_URL}>Browse the topic on GitHub</a>
+          </div>
+          <p class="xpreview">
+            This directory is curated by hand while it finds its feet. The topic is the signal it
+            will index automatically.
+          </p>
+        </section>
+      </main>
+
+      <BrandFooter />
+    </div>
+  </body>
+</html>
