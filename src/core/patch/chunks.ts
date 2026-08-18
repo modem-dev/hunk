@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { normalizeDiffPath } from "../diffPaths";
+import { normalizeDiffPath } from "../changeset/diffPaths";
 
 /** Remove git-style a/ and b/ prefixes before matching diff paths. */
 function stripPrefixes(path: string) {

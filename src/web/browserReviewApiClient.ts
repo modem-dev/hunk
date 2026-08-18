@@ -33,7 +33,7 @@ import {
 } from "../core/review/resources";
 import { ReviewChunkAssembler } from "../core/review/resourceAssembly";
 import type { ReviewDigestFn } from "../core/review/validation";
-import { reviewErrorMessage } from "../session/reviewErrorCatalog";
+import { reviewErrorMessage, reviewHttpFailure } from "../session/reviewErrorCatalog";
 import {
   parseReviewEventBegin,
   parseReviewEventChunk,
@@ -51,7 +51,6 @@ import {
   parseReviewContentMeasurementHeaders,
   parseReviewCapabilityFragment,
   reviewErrorCodeForStatus,
-  reviewHttpFailure,
   reviewHttpPath,
   reviewPagePath,
   type HunkReviewClientErrorCodeV1,

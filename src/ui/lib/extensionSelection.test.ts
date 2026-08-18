@@ -22,6 +22,7 @@ describe("buildExtensionReviewSelection", () => {
 
     expect(selection.file?.path).toBe("beta.ts");
     expect(selection.hunkIndex).toBe(0);
+    expect(selection.currentLine).toBeNull();
   });
 
   test("reports no selection when nothing is selected", () => {
@@ -31,7 +32,7 @@ describe("buildExtensionReviewSelection", () => {
       selectedHunkIndex: 3,
     });
 
-    expect(selection).toEqual({ file: null, hunkIndex: null });
+    expect(selection).toEqual({ file: null, hunkIndex: null, currentLine: null });
   });
 
   test("reports no selection for a file the filter hides", () => {
@@ -44,7 +45,45 @@ describe("buildExtensionReviewSelection", () => {
       selectedHunkIndex: 0,
     });
 
-    expect(selection).toEqual({ file: null, hunkIndex: null });
+    expect(selection).toEqual({ file: null, hunkIndex: null, currentLine: null });
+  });
+
+  test("copies the matching current line into the frozen snapshot", () => {
+    const files = createTestFileViews();
+    const target = { side: "old" as const, line: 42 };
+    const selection = buildExtensionReviewSelection({
+      files,
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+      lineCursor: { fileId: "alpha", hunkIndex: 0, target },
+    });
+
+    expect(selection.currentLine).toEqual(target);
+    expect(selection.currentLine).not.toBe(target);
+    expect(Object.isFrozen(selection.currentLine)).toBe(true);
+    expect(Object.isFrozen(selection)).toBe(true);
+  });
+
+  test("drops a current line outside the resolved file and hunk", () => {
+    const files = createTestFileViews();
+    const target = { side: "old" as const, line: 7 };
+
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        selectedFileId: "alpha",
+        selectedHunkIndex: 0,
+        lineCursor: { fileId: "beta", hunkIndex: 0, target },
+      }).currentLine,
+    ).toBeNull();
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        selectedFileId: "alpha",
+        selectedHunkIndex: 0,
+        lineCursor: { fileId: "alpha", hunkIndex: 1, target },
+      }).currentLine,
+    ).toBeNull();
   });
 
   test("clamps a stale hunk index into the file's real range", () => {

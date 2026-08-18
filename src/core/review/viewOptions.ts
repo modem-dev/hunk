@@ -16,20 +16,22 @@
  * the other's colors, column layout, or window size.
  *
  * This module classifies. It resolves nothing: reading user config, repo config, and CLI
- * flags is the host's layered chain (`src/core/config.ts`), and a client's own overrides
+ * flags is the host's layered chain (`src/core/run/config.ts`), and a client's own overrides
  * are its own storage.
  */
-import type { PersistedViewPreferences } from "../types";
+import type { LayoutMode } from "../run/commandInputs";
+import type { PersistedViewPreferences } from "../run/config";
 
 /**
  * How a surface lays a diff out.
  *
  * One vocabulary for both tiers: `auto` is responsive — two columns when there is room for
- * them — and an explicit choice overrides it. It lives with the option classification
- * because a layout is one of the options being classified, and a browser that declared its
- * own three-word union would be free to drift from the terminal's on what `auto` means.
+ * them — and an explicit choice overrides it. Declared in `core/run/commandInputs` (the
+ * types-leaf this classification may name but not be named by) and re-exported here so a
+ * browser reads the layout union from the option classification, not by declaring its own
+ * three-word copy free to drift from the terminal's on what `auto` means.
  */
-export type LayoutMode = "auto" | "split" | "stack";
+export type { LayoutMode };
 
 /**
  * Where one option's value lives.

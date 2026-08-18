@@ -5,10 +5,12 @@ import {
   type TextareaRenderable,
 } from "@opentui/core";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
-import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { LayoutMode } from "../../../core/run/commandInputs";
+import type { AgentAnnotation } from "../../../extension-api/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
-import { wrapText } from "../../lib/agentPopover";
+import { wrapText } from "../../lib/text";
 
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
 import { fitText, measureTextWidth, padText } from "../../lib/text";

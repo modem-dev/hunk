@@ -38,7 +38,7 @@ import type {
   SessionReloadCommandInput,
   SessionReviewCommandInput,
   SessionSelectorInput,
-} from "../../core/types";
+} from "../../core/run/commandInputs";
 import { describeSessionSelector } from "@hunk/session-broker-core";
 
 export interface HunkSessionCliClient {

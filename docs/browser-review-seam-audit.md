@@ -73,13 +73,11 @@ assembly verified against rather than rehashing per request.
   _Repaid (Phase 1 PR 2)_: `reviewLeadingGap`/`reviewGapAddress` in `core/review/expansion.ts`;
   `pierre.ts` copies deleted; fixtures `pure-insertion-hunk` and `pure-deletion-hunk` in
   `test/review-conformance/geometryFixtures.ts`; core and terminal render planning both registered.
-  Residual (found in review): when the anchor side has zero rows and untouched content
-  precedes the hunk, the parser's `collapsedBefore` undercounts the leading gap by one line
-  — the leading-side sibling of A2's residual, recorded on `reviewLeadingGap` and pinned
-  (as the residual, explicitly) by the `pure-deletion-hunk` fixture; both residuals stage
-  together as one disclosed behavior-change commit.
+  _Residual repaid (Pierre 1.3.5)_: the parser now reports the complete leading gap when the
+  anchor side has zero rows, so `pure-deletion-hunk` pins lines 1–5 instead of preserving the
+  former one-line undercount. A2's separate trailing-gap residual remains.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
-  producer `src/session/app/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
+  producer `src/app/session/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
   rejects (`gap-not-found`). Fix: one `reviewTrailingGap(file)` in core.
   _Repaid (Phase 1 PR 2)_: `reviewTrailingGap` in `core/review/expansion.ts`;
@@ -175,7 +173,7 @@ projection` consumer answers `hunk-with-leading-context` beside the terminal.
   and the projection consumer answers every fixture with it, so the prototype's "hunk's first
   line" rule cannot come back. Nothing renders a note there yet — a publication carries none
   — which is why the target is model rather than pixels until PR 2.
-- **A11. Language registration side effect missing in browser.** `core/fileLanguage.ts`
+- **A11. Language registration side effect missing in browser.** `core/changeset/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
   `src/web/main.tsx` (or fold registration into the shared model).
@@ -301,7 +299,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   decides whether the claim holds. The wire carries it as `expandedLineProof` on the two
   actions that can name a line (`notes/start-draft`'s target, and `notes/create-user`'s
   precondition on the draft it is saving), refusing evidence that accompanies no line, and
-  `src/session/app/reviewCommands.ts` checks it before planning. Where the resulting note hangs
+  `src/app/session/reviewCommands.ts` checks it before planning. Where the resulting note hangs
   is deliberately _not_ decided there: it goes through `reviewLineAnchor`'s fallback owner
   exactly as a terminal note does, which `reviewCommands.test.ts` pins by asserting an empty
   intersection set and the declared owner. Fixtures `start-draft-on-an-expanded-line`,
@@ -378,7 +376,7 @@ path suffixes, expansion retention, git-status badges).
   new position is a replay, exactly as the contract says. The one non-ordering rule it does
   apply is stated as such — a later generation is adoptable only together with the catalog
   describing it, because a mirror holding a position whose resources it cannot name would
-  advertise reads nobody can serve. `src/session/app/reviewCommands.ts` makes the same one
+  advertise reads nobody can serve. `src/app/session/reviewCommands.ts` makes the same one
   call for an action's `expectedStateRevision`, so "has the review moved past what this
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
@@ -526,7 +524,7 @@ path suffixes, expansion retention, git-status badges).
   the prototype's failure impossible rather than merely fixed: its broker copy re-derived
   intersections, omitted the fallback branch, and rejected a legal expanded-gap note — and
   with it the whole registration. The case is pinned from the wire end in
-  `src/session/app/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
+  `src/app/session/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
   ends up with an empty intersection set and the fallback owner the caller declared, which is
   exactly the shape the dropped branch produced. Web `pierreNoteAnchor` closes in Phase 5.
 - **D4. Canonical-file ↔ manifest consistency — 3 checks, 3 field lists.** Producer
@@ -567,7 +565,7 @@ path suffixes, expansion retention, git-status badges).
   variant is what let a writer and a reader disagree — with `normalizeReviewDigest` for values
   arriving from outside and `reviewDigestsEqual` normalizing _both_ operands. Hashing itself is
   an injected `ReviewDigestFn` rather than inline `createHash` calls; the producer supplies
-  Node's at the edge (`src/lib/reviewDigest.ts`), which is also what repaid the shared model's
+  Node's at the edge (`src/core/reviewDigest.ts`), which is also what repaid the shared model's
   last node-debt entry. Resource bounds are constants in `core/review/resources.ts` that the
   producer imports rather than restates. Wire constants, the action-envelope parser, and the
   two note-filter namings are Phase 3.
@@ -629,7 +627,7 @@ here so the extraction happens before the duplication exists. Design detail in
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
-  _Repaid (Phase 1 PR 3)_: `src/core/commandCatalog.ts` carries id, title, category, default
+  _Repaid (Phase 1 PR 3)_: `src/core/run/commandCatalog.ts` carries id, title, category, default
   chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
   `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
   `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
@@ -755,9 +753,14 @@ implementation does.
   four address kinds over percent-encoded semantic identifiers, with round-trip coverage for keys
   carrying separators, percent signs, and non-ASCII characters, and strict rejection of anything
   outside the grammar.
-  _First consumer (Phase 5 PR 1)_: the browser stream gives every file and hunk a DOM anchor
-  built by `formatReviewAddress`, and the file list links to them — so the addresses a page
-  offers are the grammar's rather than strings this client invented. Reading an address back
+  _Reopened (2026-08-17, module-boundaries phase 0)_: `core/review/address.ts` is deleted. A
+  primitive with no consumers cannot be checked against what its consumers need, and the
+  `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
+  design; write it again beside the first consumer that addresses a review across a boundary.
+  _First consumer (Phase 5 PR 1)_: `core/review/address.ts` returns with the consumer the
+  reopening asked for: the browser stream gives every file and hunk a DOM anchor built by
+  `formatReviewAddress`, and the file list links to them — so the addresses a page offers
+  are the grammar's rather than strings this client invented. Reading an address back
   (deep-link navigation on load and on `hashchange`) needs a selection to move, which is PR
   2; opener fragments are Phase 6, which is when this finding closes.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:

@@ -21,12 +21,14 @@ type TestServerMessage = SessionServerMessage<"annotate", { summary: string }>;
 class TestSocket implements SessionBrokerSocketLike {
   readyState = 0;
   sent: string[] = [];
+  throwOnSend = false;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
 
   send(data: string) {
+    if (this.throwOnSend) throw new Error("socket exploded");
     this.sent.push(data);
   }
 
@@ -104,6 +106,35 @@ describe("session broker connection", () => {
       updatedAt: "2026-04-15T00:00:01.000Z",
       state: { selectedIndex: 1 },
     });
+  });
+
+  test("keeps the previous registration when replacement send throws", () => {
+    const socket = new TestSocket();
+    const registration = createRegistration();
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration,
+      snapshot: createSnapshot(),
+    });
+    connection.start();
+    socket.emitOpen();
+    socket.throwOnSend = true;
+
+    expect(() =>
+      connection.replaceSession(
+        { ...registration, sessionId: "session-2" },
+        { ...createSnapshot(), state: { selectedIndex: 2 } },
+      ),
+    ).toThrow("socket exploded");
+    expect(connection.getRegistration()).toBe(registration);
+    connection.stop();
   });
 
   test("queues broker commands until the app bridge is ready", async () => {

@@ -11,15 +11,16 @@
  */
 import { ReviewProducer } from "../../src/app/review/producer";
 import { createReviewStore } from "../../src/core/review/store";
-import { createHunkSessionBridge } from "../../src/session/app/bridge";
+import { createHunkSessionBridge } from "../../src/app/session/bridge";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
   updateSessionRegistration,
-} from "../../src/session/app/registration";
+} from "../../src/app/session/registration";
 import { HunkSessionBrokerState } from "../../src/session/broker/state";
 import { ReviewResourceCache } from "../../src/session/broker/reviewResourceCache";
-import type { AppBootstrap, DiffFile } from "../../src/core/types";
+import type { AppBootstrap } from "../../src/core/bootstrap";
+import type { DiffFile } from "../../src/core/changeset/model";
 import type { HunkSessionRegistration, HunkSessionServerMessage } from "../../src/session/types";
 import { createTestDiffFile } from "./diff-helpers";
 

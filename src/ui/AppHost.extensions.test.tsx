@@ -1,17 +1,25 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
+import { ReviewProducer } from "../app/review/producer";
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changesetLoaders";
-import type { CliInput } from "../core/types";
+import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
+import type { CliInput } from "../core/run/commandInputs";
 
-import type { HunkSessionBrokerClient } from "../session/types";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import {
   applyExtensionRegistrations,
   resolveDetectedVcsIdWithExtensions,
@@ -139,6 +147,68 @@ function writeProbeExtension(path: string, logPath: string) {
   );
 }
 
+/** Write a probe whose replacement transform waits until the test releases its commit gate. */
+function writeDelayedReplacementExtension(path: string, logPath: string, releasePath: string) {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(
+    path,
+    `import { appendFileSync, existsSync } from "node:fs";\n` +
+      `export default function (hunk) {\n` +
+      `  const replacement = existsSync(${JSON.stringify(logPath)});\n` +
+      `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
+      `  hunk.transformChangeset(async (changeset) => {\n` +
+      `    while (replacement && !existsSync(${JSON.stringify(releasePath)})) {\n` +
+      `      await new Promise((resolve) => setTimeout(resolve, 10));\n` +
+      `    }\n` +
+      `    return changeset;\n` +
+      `  });\n` +
+      `  hunk.on("startup", () => appendFileSync(${JSON.stringify(logPath)}, "startup\\n"));\n` +
+      `  hunk.on("session_reload", () => appendFileSync(${JSON.stringify(logPath)}, "session_reload\\n"));\n` +
+      `  hunk.on("shutdown", () => appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n"));\n` +
+      `}\n`,
+  );
+}
+
+/** Write a probe whose replacement factory waits after registering its shutdown hook. */
+function writeDelayedFactoryExtension(path: string, logPath: string, releasePath: string) {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(
+    path,
+    `import { appendFileSync, existsSync } from "node:fs";\n` +
+      `export default async function (hunk) {\n` +
+      `  const replacement = existsSync(${JSON.stringify(logPath)});\n` +
+      `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
+      `  hunk.on("startup", () => appendFileSync(${JSON.stringify(logPath)}, "startup\\n"));\n` +
+      `  hunk.on("shutdown", () => appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n"));\n` +
+      `  while (replacement && !existsSync(${JSON.stringify(releasePath)})) {\n` +
+      `    await new Promise((resolve) => setTimeout(resolve, 10));\n` +
+      `  }\n` +
+      `}\n`,
+  );
+}
+
+/** Write a probe whose original instance holds shutdown until the test releases it. */
+function writeDelayedOriginalShutdownExtension(path: string, logPath: string, releasePath: string) {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(
+    path,
+    `import { appendFileSync, existsSync } from "node:fs";\n` +
+      `export default function (hunk) {\n` +
+      `  const replacement = existsSync(${JSON.stringify(logPath)});\n` +
+      `  const instance = replacement ? "replacement" : "original";\n` +
+      `  appendFileSync(${JSON.stringify(logPath)}, "factory:" + instance + "\\n");\n` +
+      `  hunk.on("startup", () => appendFileSync(${JSON.stringify(logPath)}, "startup:" + instance + "\\n"));\n` +
+      `  hunk.on("shutdown", async () => {\n` +
+      `    appendFileSync(${JSON.stringify(logPath)}, "shutdown:start:" + instance + "\\n");\n` +
+      `    while (!replacement && !existsSync(${JSON.stringify(releasePath)})) {\n` +
+      `      await new Promise((resolve) => setTimeout(resolve, 5));\n` +
+      `    }\n` +
+      `    appendFileSync(${JSON.stringify(logPath)}, "shutdown:end:" + instance + "\\n");\n` +
+      `  });\n` +
+      `}\n`,
+  );
+}
+
 function readProbeLog(logPath: string) {
   try {
     return readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean);
@@ -204,17 +274,23 @@ async function flushUntil(
  * the session was launched with. The interactive refresh key cannot stand in for
  * it — that path reuses the live bootstrap input and so never loses anything.
  */
-function createTestBrokerClient() {
+function createTestBrokerClient(options: { replaceSessionError?: Error } = {}) {
   let bridge: { dispatchCommand: (message: unknown) => Promise<unknown> } | null = null;
+  let registration = { sessionId: "test-session" };
+  let replacementCount = 0;
 
   const client = {
     setBridge(next: typeof bridge) {
       bridge = next;
     },
     getRegistration() {
-      return { sessionId: "test-session" };
+      return registration;
     },
-    replaceSession() {},
+    replaceSession(nextRegistration: typeof registration) {
+      replacementCount += 1;
+      if (options.replaceSessionError) throw options.replaceSessionError;
+      registration = nextRegistration;
+    },
     updateSnapshot() {},
     updateRegistration() {},
     close() {},
@@ -222,6 +298,8 @@ function createTestBrokerClient() {
 
   return {
     client,
+    registrationId: () => registration.sessionId,
+    replacementCount: () => replacementCount,
     /** Reload the way the daemon does, with a freshly parsed input. */
     reload: async (nextInput: CliInput, sourcePath?: string) => {
       if (!bridge) {
@@ -243,11 +321,26 @@ async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>) => Promise<void>,
   hostClient?: HunkSessionBrokerClient,
+  options: {
+    externalQuitSignal?: AbortSignal;
+    onQuit?: () => void;
+    reviewProducer?: ReviewProducer;
+    width?: number;
+  } = {},
 ) {
-  const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
-    width: 120,
-    height: 24,
-  });
+  const setup = await testRender(
+    <AppHost
+      bootstrap={bootstrap}
+      externalQuitSignal={options.externalQuitSignal}
+      hostClient={hostClient}
+      onQuit={options.onQuit}
+      reviewProducer={options.reviewProducer}
+    />,
+    {
+      width: options.width ?? 120,
+      height: 24,
+    },
+  );
 
   try {
     await flush(setup);
@@ -343,6 +436,328 @@ describe("reload keeps launch extension authority", () => {
     );
   });
 
+  test("a reloaded files replacement does not take toggle control from the open fallback", async () => {
+    const repo = createTestRepo("hunk-apphost-sidebar-fallback-reload-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "broken",\n` +
+        `    replacesDefault: true,\n` +
+        `    component: () => { throw new Error("sidebar exploded"); },\n` +
+        `  });\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+
+    const broker = createTestBrokerClient();
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => (setup.captureCharFrame().match(/a\.txt/g) ?? []).length === 2,
+          "the built-in fallback to replace the crashed pane",
+        );
+
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "factory").length === 2,
+          "the replacement extension to register again",
+        );
+
+        await act(async () => {
+          await setup.mockInput.typeText("s");
+        });
+        await flushUntil(
+          setup,
+          () => (setup.captureCharFrame().match(/a\.txt/g) ?? []).length === 1,
+          "the s key to close the visible built-in fallback",
+        );
+      },
+      broker.client,
+      { width: 240 },
+    );
+  });
+
+  test("retires a prepared replacement when broker commit preparation throws", async () => {
+    const repo = createTestRepo("hunk-apphost-broker-replacement-failure-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeProbeExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient({ replaceSessionError: new Error("broker exploded") });
+    const producer = new ReviewProducer(
+      {
+        files: bootstrap.changeset.files,
+        sourceLabel: bootstrap.changeset.sourceLabel,
+      },
+      { producerId: "broker-failure" },
+    );
+    const initialGeneration = producer.getPublication().generation;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        await expect(
+          broker.reload({ kind: "vcs", staged: false, options: {} }, repo),
+        ).rejects.toThrow("broker exploded");
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "shutdown").length === 1,
+          "the prepared replacement to retire after broker failure",
+        );
+
+        const events = readProbeLog(logPath);
+        expect(producer.getPublication().generation).toBe(initialGeneration);
+        expect(broker.registrationId()).toBe("test-session");
+        expect(broker.replacementCount()).toBe(1);
+        expect(events.filter((line) => line === "factory")).toHaveLength(2);
+        expect(events.filter((line) => line === "startup")).toHaveLength(1);
+        expect(events.filter((line) => line === "shutdown")).toHaveLength(1);
+      },
+      broker.client,
+      { reviewProducer: producer },
+    );
+  });
+
+  test("refuses a queued replacement reload after quit becomes terminal", async () => {
+    const repo = createTestRepo("hunk-apphost-queued-reload-quit-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeProbeExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+    const quitController = new AbortController();
+    let quits = 0;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        quitController.abort();
+
+        await expect(reload).rejects.toThrow("shutting down");
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "shutdown").length === 1,
+          "quit to retire the original extension",
+        );
+        expect(quits).toBe(1);
+        expect(broker.replacementCount()).toBe(0);
+        expect(readProbeLog(logPath).filter((line) => line === "factory")).toHaveLength(1);
+      },
+      broker.client,
+      { externalQuitSignal: quitController.signal, onQuit: () => (quits += 1) },
+    );
+  });
+
+  test("owns and retires a replacement still inside its asynchronous factory", async () => {
+    const repo = createTestRepo("hunk-apphost-factory-reload-quit-");
+    const logPath = join(repo, "probe.log");
+    const releasePath = join(repo, "release-factory");
+    const extPath = join(repo, "ext.ts");
+    writeDelayedFactoryExtension(extPath, logPath, releasePath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+    const quitController = new AbortController();
+    let quits = 0;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "factory").length === 2,
+          "the replacement factory to suspend",
+        );
+
+        quitController.abort();
+        await flushUntil(
+          setup,
+          () =>
+            readProbeLog(logPath).filter((line) => line === "shutdown").length === 2 && quits === 1,
+          "quit to retire provisional factory authority before process teardown",
+        );
+        expect(existsSync(releasePath)).toBe(false);
+
+        writeFileSync(releasePath, "continue\n");
+        await expect(reload).rejects.toThrow("shutting down");
+        expect(broker.replacementCount()).toBe(0);
+        expect(readProbeLog(logPath).filter((line) => line === "startup")).toHaveLength(1);
+      },
+      broker.client,
+      { externalQuitSignal: quitController.signal, onQuit: () => (quits += 1) },
+    );
+  });
+
+  test("retires an in-flight replacement instead of adopting it after quit", async () => {
+    const repo = createTestRepo("hunk-apphost-inflight-reload-quit-");
+    const logPath = join(repo, "probe.log");
+    const releasePath = join(repo, "release-replacement");
+    const extPath = join(repo, "ext.ts");
+    writeDelayedReplacementExtension(extPath, logPath, releasePath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+    const quitController = new AbortController();
+    let quits = 0;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the original extension instance to start",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "factory").length === 2,
+          "the replacement to wait inside session loading",
+        );
+        expect(existsSync(releasePath)).toBe(false);
+
+        quitController.abort();
+        await flushUntil(
+          setup,
+          () =>
+            readProbeLog(logPath).filter((line) => line === "shutdown").length === 2 && quits === 1,
+          "quit to retire both runtimes before process teardown",
+        );
+        // The host can now exit even though session loading has not returned;
+        // release it only so this test process can observe the rejected reload.
+        expect(existsSync(releasePath)).toBe(false);
+        writeFileSync(releasePath, "continue\n");
+        await expect(reload).rejects.toThrow("shutting down");
+
+        const events = readProbeLog(logPath);
+        expect(quits).toBe(1);
+        expect(broker.replacementCount()).toBe(0);
+        expect(events.filter((line) => line === "startup")).toHaveLength(1);
+        expect(events.filter((line) => line === "session_reload")).toHaveLength(0);
+      },
+      broker.client,
+      { externalQuitSignal: quitController.signal, onQuit: () => (quits += 1) },
+    );
+  });
+
+  test("waits for an adopted runtime's in-flight retirement before quit", async () => {
+    const repo = createTestRepo("hunk-apphost-retirement-reload-quit-");
+    const logPath = join(repo, "probe.log");
+    const releasePath = join(repo, "release-shutdown");
+    const extPath = join(repo, "ext.ts");
+    writeDelayedOriginalShutdownExtension(extPath, logPath, releasePath);
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+    const quitController = new AbortController();
+    let quits = 0;
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup:original"),
+          "the original extension instance to start",
+        );
+
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("shutdown:start:original"),
+          "the original runtime retirement to suspend",
+        );
+
+        quitController.abort();
+        await pumpFrames(setup, 1);
+        expect(quits).toBe(0);
+        expect(readProbeLog(logPath)).not.toContain("shutdown:end:original");
+
+        writeFileSync(releasePath, "continue\n");
+        await reload;
+        await flushUntil(
+          setup,
+          () => quits === 1,
+          "quit to wait for the adopted runtime's prior retirement",
+        );
+
+        const events = readProbeLog(logPath);
+        expect(events).toContain("shutdown:end:original");
+        expect(events).toContain("shutdown:end:replacement");
+      },
+      broker.client,
+      { externalQuitSignal: quitController.signal, onQuit: () => (quits += 1) },
+    );
+  });
+
   test("serializes concurrent reloads so every replacement receives a full lifecycle", async () => {
     const repo = createTestRepo("hunk-apphost-concurrent-extension-reload-");
     const logPath = join(repo, "probe.log");
@@ -419,6 +834,73 @@ describe("reload keeps launch extension authority", () => {
         // The reload command carries no `--extension` flags of its own, so the
         // factory only runs again if the launch paths were re-threaded.
         expect(readProbeLog(logPath).filter((line) => line === "factory")).toHaveLength(2);
+      },
+      broker.client,
+    );
+  });
+});
+
+describe("mounted lifecycle ordering", () => {
+  test("delivers same-runtime reload events after the new review commits", async () => {
+    const repo = createTestRepo("hunk-apphost-lifecycle-order-");
+    const logPath = join(repo, "lifecycle.log");
+    const extPath = join(repo, "lifecycle.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+        `  hunk.on("startup", () => log("lifecycle:startup"));\n` +
+        `  hunk.on("changeset_loaded", () => log("lifecycle:changeset_loaded"));\n` +
+        `  hunk.on("session_reload", ({ changeset }, ctx) => {\n` +
+        `    log("lifecycle:session_reload");\n` +
+        `    const added = changeset.files.find((file) => file.path === "gamma.txt");\n` +
+        `    if (added) ctx.navigation.selectFile(added.id);\n` +
+        `  });\n` +
+        `  hunk.on("file_viewed", ({ file }) => log("viewed:" + file.path));\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { cwd: repo },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: repo,
+      cliExtensionPaths: [extPath],
+    });
+    expect(bootstrap.extensions.issues).toEqual([]);
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("lifecycle:changeset_loaded"),
+          "the initial mounted lifecycle",
+        );
+        expect(readProbeLog(logPath).slice(0, 2)).toEqual([
+          "lifecycle:startup",
+          "lifecycle:changeset_loaded",
+        ]);
+
+        writeFileSync(join(repo, "gamma.txt"), "new file\n");
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("viewed:gamma.txt"),
+          "the committed review to accept lifecycle navigation",
+        );
+
+        expect(readProbeLog(logPath).filter((line) => line.startsWith("lifecycle:"))).toEqual([
+          "lifecycle:startup",
+          "lifecycle:changeset_loaded",
+          "lifecycle:changeset_loaded",
+          "lifecycle:session_reload",
+        ]);
       },
       broker.client,
     );
@@ -619,6 +1101,62 @@ describe("startup for extensions loaded mid-session", () => {
       },
       broker.client,
     );
+  });
+
+  test("revokes retained panes and dialogs before a soft replacement shuts down", async () => {
+    const repo = createTestRepo("hunk-apphost-retired-controls-");
+    const logPath = join(repo, "retired.log");
+    const extPath = join(repo, "retired.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  const paneText = ["RETIRED", "CONTROL", "PANE"].join(" ");\n` +
+        `  const dialogTitle = ["RETIRED", "CONTROL", "DIALOG"].join(" ");\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "retired", title: "Retired", placement: "right", width: { preferred: 20, min: 10, max: 40 },\n` +
+        `    component: () => createElement("text", { content: paneText }),\n` +
+        `  });\n` +
+        `  hunk.on("startup", () => appendFileSync(${JSON.stringify(logPath)}, "startup\\n"));\n` +
+        `  hunk.on("shutdown", async (_payload, ctx) => {\n` +
+        `    ctx.panes.open("retired");\n` +
+        `    ctx.navigation.selectFile("retired-file");\n` +
+        `    const answer = await ctx.dialogs.confirm({ title: dialogTitle });\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, "shutdown:" + answer + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: join(repo, "sub"),
+      cliExtensionPaths: [extPath],
+    });
+    expect(bootstrap.extensions.issues).toEqual([]);
+
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("startup"),
+        "the retiring extension to receive startup",
+      );
+      await act(async () => {
+        await setup.mockInput.typeText("r");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("shutdown:false"),
+        "retired shutdown controls to resolve without entering replacement UI",
+      );
+
+      const frame = setup.captureCharFrame();
+      expect(frame).not.toContain("RETIRED CONTROL DIALOG");
+      expect(frame).not.toContain("RETIRED CONTROL PANE");
+      expect(frame).toContain("ignored — the review session was reloaded");
+    });
   });
 
   test("shuts down and starts each replacement extension instance", async () => {

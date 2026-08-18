@@ -2,16 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Changeset } from "../core/types";
+import type { Changeset } from "../core/changeset/model";
 import { getVcsOperation } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { discoverExtensions } from "./discovery";
+import { retireExtensionLoadResult } from "./events";
 import { loadExtensions } from "./host";
 import { createExtensionNotificationHub } from "./notifications";
 import {
   deriveExtensionId,
   HUNK_EXTENSION_API_VERSION,
   type ExtensionCandidate,
+  type ExtensionFactory,
   type ExtensionOrigin,
 } from "./types";
 
@@ -61,6 +63,71 @@ afterEach(() => {
 });
 
 describe("extension host", () => {
+  test("publishes provisional ownership before the first module import settles", async () => {
+    const dir = createTempDir("hunk-host-provisional-");
+    const candidate = createTestExtension(dir, "delayed.ts", "export default function () {}\n");
+    let finishImport!: (module: unknown) => void;
+    const imported = new Promise<unknown>((resolve) => {
+      finishImport = resolve;
+    });
+    let provisional: Awaited<ReturnType<typeof loadExtensions>> | undefined;
+
+    const loading = loadExtensions({
+      candidates: [candidate],
+      cwd: dir,
+      importExtensionModuleImpl: () => imported,
+      onProvisionalLoad: (result) => {
+        provisional = result;
+      },
+    });
+
+    expect(provisional?.registry.eventBusPhase).toBe("loading");
+    finishImport({ default: () => {} });
+    expect(await loading).toBe(provisional!);
+  });
+
+  test("keeps retirement terminal when an asynchronous factory resumes late", async () => {
+    const dir = createTempDir("hunk-host-retired-factory-");
+    const candidate = createTestExtension(dir, "delayed.ts", "export default function () {}\n");
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let shutdowns = 0;
+    const factory: ExtensionFactory = async (hunk) => {
+      hunk.on("shutdown", () => {
+        shutdowns += 1;
+      });
+      markStarted();
+      await barrier;
+      hunk.registerTheme({ id: "too-late", label: "Too late", background: "#000000" });
+    };
+    let provisional: Awaited<ReturnType<typeof loadExtensions>> | undefined;
+    const loading = loadExtensions({
+      candidates: [candidate],
+      cwd: dir,
+      importExtensionModuleImpl: async () => ({ default: factory }),
+      onProvisionalLoad: (result) => {
+        provisional = result;
+      },
+    });
+    await started;
+
+    const retirement = retireExtensionLoadResult(provisional);
+    release();
+    const result = await loading;
+    await retirement;
+
+    expect(shutdowns).toBe(1);
+    expect(result.registry.eventBusPhase).toBe("closed");
+    expect(result.registry.themes).toEqual([]);
+    expect(result.registry.extensions).toEqual([]);
+  });
+
   test("collects registrations from a TypeScript extension on disk", async () => {
     const dir = createTempDir("hunk-host-register-");
     const candidate = createTestExtension(

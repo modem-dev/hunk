@@ -1,27 +1,28 @@
 import type { SessionBootstrapResult } from "./sessionBootstrap";
 import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
 import type { loadStartupExtensions } from "../extensions/startup";
-import { resolveConfiguredCliInput } from "../core/config";
-import { HunkUserError } from "../core/errors";
-import type { loadAppBootstrap } from "../core/changesetLoaders";
-import { looksLikePatchInput } from "../core/pager";
+import { resolveConfiguredCliInput } from "../core/run/config";
+import { HunkUserError } from "../core/run/errors";
+import type { loadAppBootstrap } from "../core/changeset/loaders";
+import { looksLikePatchInput } from "../core/process/pager";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
   usesPipedPatchInput,
   type ControllingTerminal,
-} from "../core/terminal";
+} from "../core/process/terminal";
 import type { AppBootstrap } from "./types";
 import type {
   CliInput,
   ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
+  SelfUpdateCommandInput,
   SessionCommandInput,
-} from "../core/types";
-import { canReloadInput } from "../core/inputReload";
-import { parseCli } from "../core/cli";
+} from "../core/run/commandInputs";
+import { canReloadInput } from "../core/run/inputReload";
+import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
 
@@ -78,6 +79,10 @@ export type StartupPlan =
   | {
       kind: "extension-manage";
       input: ExtensionManageCommandInput;
+    }
+  | {
+      kind: "self-update";
+      input: SelfUpdateCommandInput;
     }
   | {
       kind: "app";
@@ -182,6 +187,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "extension-manage") {
     return {
       kind: "extension-manage",
+      input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "update") {
+    return {
+      kind: "self-update",
       input: parsedCliInput,
     };
   }
@@ -318,7 +330,7 @@ export async function prepareStartupPlan(
       import("../extensions/startup"),
     ]);
   const loadAppBootstrapImpl =
-    deps.loadAppBootstrapImpl ?? (await import("../core/changesetLoaders")).loadAppBootstrap;
+    deps.loadAppBootstrapImpl ?? (await import("../core/changeset/loaders")).loadAppBootstrap;
   const loadStartupExtensionsImpl =
     deps.loadStartupExtensionsImpl ?? startupExtensions.loadStartupExtensions;
 

@@ -8,7 +8,8 @@ import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   type HunkReviewResourceCatalogV1,
 } from "../session/reviewProtocol";
-import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
+import { reviewHttpFailure } from "../session/reviewErrorCatalog";
+import type { HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
 import type { BrowserReviewResult, BrowserReviewEventHandlers } from "./browserReviewApiClient";
 import {
   BrowserReviewMirror,

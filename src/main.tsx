@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 
-import { formatCliError } from "./core/errors";
-import { pagePlainText } from "./core/pager";
+import { formatCliError } from "./core/run/errors";
+import { pagePlainText } from "./core/process/pager";
 import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { disposeHighlightWorker } from "./ui/diff/worker";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -55,6 +56,16 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "self-update") {
+    const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
+    process.exit(
+      await runSelfUpdateCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
     process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
@@ -99,10 +110,15 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  // OpenTUI stays behind the interactive plan so headless commands never
-  // materialize its embedded native library.
-  const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  await runInteractiveApp(startupPlan);
+  // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
+  // native library. The highlighting client starts the compiled worker only when an opted-in,
+  // eligible large diff needs it, so normal sessions do not pay its startup cost.
+  try {
+    const { runInteractiveApp } = await import("./ui/runInteractiveApp");
+    await runInteractiveApp(startupPlan);
+  } finally {
+    disposeHighlightWorker();
+  }
 }
 
 await main().catch((error) => {

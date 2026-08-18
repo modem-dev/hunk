@@ -18,7 +18,7 @@ const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> =
   copyDecorations: true,
   cursorLine: "row" as const,
   layoutMode: "stack",
-  renderSidebar: false,
+  filesPaneVisible: false,
   showAgentNotes: true,
   showHelp: false,
   showHunkHeaders: false,
@@ -62,7 +62,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     toggleLineNumbers: noop,
     toggleLineWrap: noop,
     toggleMenuBar: noop,
-    toggleSidebar: record("toggleSidebar"),
+    toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: noop,
     triggerRefreshCurrentInput: noop,
     ...overrides,
@@ -163,7 +163,7 @@ describe("buildAppMenus", () => {
     ]);
   });
 
-  test("a remapped command re-labels the menu item that runs it", () => {
+  test("a legacy command alias remaps the canonical menu item", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
       userBindings: { "hunk.view.toggleSidebar": "ctrl+b", "hunk.app.quit": false },
@@ -171,7 +171,10 @@ describe("buildAppMenus", () => {
     const { commands } = createTestCommands({ resolvedKeys: keys as ResolvedCommandKeys });
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    expect(entry(menus, "view", "Sidebar").hint).toBe("Ctrl+B");
+    expect(entry(menus, "view", "Files pane")).toMatchObject({
+      commandId: "hunk.view.toggleFilesPane",
+      hint: "Ctrl+B",
+    });
     // Unbound by the user, and unbound by declaration: neither advertises a key.
     expect(entry(menus, "file", "Quit").hint).toBeUndefined();
     expect(entry(menus, "view", "Copy decorations").hint).toBeUndefined();
@@ -181,14 +184,14 @@ describe("buildAppMenus", () => {
     const { commands, ran } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    entry(menus, "view", "Sidebar").action();
+    entry(menus, "view", "Files pane").action();
     entry(menus, "view", "Copy decorations").action();
     entry(menus, "agent", "Agent skill").action();
     entry(menus, "agent", "Next annotated file").action();
     entry(menus, "agent", "Previous annotated file").action();
 
     expect(ran).toEqual([
-      "toggleSidebar",
+      "toggleFilesPane",
       "toggleCopyDecorations",
       "openAgentSkill",
       "moveSelection:annotated-file,1",

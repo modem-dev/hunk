@@ -3,7 +3,8 @@ import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act, createRef } from "react";
 import { capturedTestColorToHex } from "../../../../test/helpers/test-color-helpers";
-import type { AppBootstrap, DiffFile } from "../../../core/types";
+import type { AppBootstrap } from "../../../core/bootstrap";
+import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "./VerticalScrollbar";
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { KeyEvent } from "@opentui/core";
 import stringWidth from "string-width";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import {
   buildMenuSpecs,
   menuBarTitleWidth,
@@ -12,15 +12,19 @@ import {
   type MenuEntry,
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
+import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
+  BoundedClusterWidthCache,
+  CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
+  CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS,
   cellRangeToCharRange,
   fitText,
   measureClusterWidth,
   measureTextWidth,
   padText,
   sliceTextByWidth,
+  wrapText,
   wrapTextByWidth,
 } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
@@ -321,6 +325,48 @@ describe("ui helpers", () => {
     for (const line of complexLines) {
       expect(measureTextWidth(line)).toBe(stringWidth(line));
     }
+  });
+
+  test("bounded cluster cache evicts FIFO entries and rejects oversized keys", () => {
+    const cache = new BoundedClusterWidthCache(
+      CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
+      CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS,
+    );
+    for (let index = 0; index < CLUSTER_WIDTH_CACHE_MAX_ENTRIES; index += 1) {
+      cache.set(`cluster-${index}`, index);
+    }
+
+    // Reads do not change FIFO order, so the oldest entry is still evicted.
+    expect(cache.get("cluster-0")).toBe(0);
+    cache.set("cluster-new", CLUSTER_WIDTH_CACHE_MAX_ENTRIES);
+    expect(cache.size).toBe(CLUSTER_WIDTH_CACHE_MAX_ENTRIES);
+    expect(cache.get("cluster-0")).toBeUndefined();
+    expect(cache.get("cluster-new")).toBe(CLUSTER_WIDTH_CACHE_MAX_ENTRIES);
+
+    const oversizedKey = "x".repeat(CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS + 1);
+    cache.set(oversizedKey, 999);
+    expect(cache.size).toBe(CLUSTER_WIDTH_CACHE_MAX_ENTRIES);
+    expect(cache.get(oversizedKey)).toBeUndefined();
+    expect(cache.get("cluster-1")).toBe(1);
+  });
+
+  test("complex cluster widths stay exact across bounded-cache churn", () => {
+    const clusters = Array.from(
+      { length: 300 },
+      (_, index) =>
+        `${String.fromCodePoint(0x61 + (index % 26))}${String.fromCodePoint(
+          0x300 + (index % 112),
+        )}${String.fromCodePoint(0x300 + (Math.floor(index / 112) % 112))}`,
+    );
+
+    for (const cluster of clusters) {
+      expect(measureTextWidth(cluster)).toBe(stringWidth(cluster));
+    }
+
+    // An oversized combining cluster stays exact without becoming a retained cache key.
+    const oversizedCluster = `a${"\u0301".repeat(64)}`;
+    expect(measureTextWidth(oversizedCluster)).toBe(stringWidth(oversizedCluster));
+    expect(measureTextWidth(clusters[0]!)).toBe(stringWidth(clusters[0]!));
   });
 
   test("repeated single-character runs use the fast width path without losing correctness", () => {

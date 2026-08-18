@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
-import type { StartupNotice } from "../core/startupNotice";
-import type { ExtensionsConfig } from "../core/types";
+import type { StartupNotice } from "../core/process/startupNotice";
+import type { ExtensionsConfig } from "../core/run/config";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { discoverExtensions } from "./discovery";
 import { retireExtensionLoadResult } from "./events";
@@ -36,6 +36,8 @@ export interface LoadStartupExtensionsOptions {
   previousLoad?: ExtensionLoadResult;
   /** Keep factory bus events queued for a possible staged continuation. */
   deferEventBusBinding?: boolean;
+  /** Publish provisional ownership before imports or asynchronous factories can suspend. */
+  onProvisionalLoad?: (result: ExtensionLoadResult) => void;
   /** Test seams forwarded to the host loader. */
   hostOverrides?: Pick<
     LoadExtensionsOptions,
@@ -135,6 +137,7 @@ export async function loadStartupExtensions(
     repoRoot: options.projectRoot ?? options.hostOverrides?.repoRoot,
     reservedExtensionIds: options.reservedExtensionIds,
     deferEventBusBinding: options.deferEventBusBinding,
+    onProvisionalLoad: options.onProvisionalLoad,
   });
 }
 

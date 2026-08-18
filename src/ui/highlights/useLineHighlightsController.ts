@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExtensionLineHighlightControls } from "../../extension-api/types";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { RegisteredLineHighlighter } from "../../extensions/types";
 import { bumpScopedEpoch, reconcileScopedEpochs } from "../lib/scopedEpochs";
 import {

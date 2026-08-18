@@ -2,14 +2,14 @@ import {
   buildDiffFile,
   createSkippedLargeMetadata,
   type BuildDiffFileOptions,
-} from "../core/diffFile";
+} from "../core/changeset/diffFile";
 import { parseSingleFilePatch } from "../core/patch/singleFile";
 import {
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   SourceTextTooLargeError,
   type FileSourceSide,
-} from "../core/fileSource";
-import type { DiffFile } from "../core/types";
+} from "../core/changeset/fileSource";
+import type { DiffFile } from "../core/changeset/model";
 import type { VcsPatchResult } from "../core/vcs/types";
 import type {
   ExtensionVcsExtraFile,

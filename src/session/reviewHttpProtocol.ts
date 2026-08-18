@@ -29,7 +29,6 @@ import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "
 import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import { isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
-import { reviewErrorMessage } from "./reviewErrorCatalog";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
@@ -330,25 +329,6 @@ const REVIEW_ERROR_STATUS_INVERSE: ReadonlyMap<number, HunkReviewClientErrorCode
  */
 export function reviewErrorCodeForStatus(status: number): HunkReviewClientErrorCodeV1 | undefined {
   return REVIEW_ERROR_STATUS_INVERSE.get(status);
-}
-
-/**
- * Build one refusal in the shape every review route answers with.
- *
- * The message comes from the shared catalog unless a tier supplied a more specific one, so
- * no consumer — the surface answering, or a client rebuilding what it was told — has to
- * invent wording for a code (`docs/browser-review-seam-audit.md`, G4).
- */
-export function reviewHttpFailure(
-  code: HunkReviewClientErrorCodeV1,
-  details: { message?: string; currentGeneration?: string } = {},
-): HunkReviewHttpFailureV1 {
-  return {
-    ok: false,
-    code,
-    message: details.message ?? reviewErrorMessage(code),
-    ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
-  };
 }
 
 /**

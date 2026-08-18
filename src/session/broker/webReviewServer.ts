@@ -38,7 +38,7 @@ import {
   PayloadTooLargeError,
   readRequestTextWithLimit,
 } from "@hunk/session-broker-core";
-import { nodeReviewDigest } from "../../lib/reviewDigest";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../core/review/resources";
 import type { ReviewPublicationAddress } from "../../core/review/generationOrder";
 import { isReviewSha256Digest } from "../../core/review/validation";
@@ -58,11 +58,11 @@ import {
   parseReviewHttpPath,
   reviewContentMeasurementHeaders,
   REVIEW_ERROR_STATUS,
-  reviewHttpFailure,
   type HunkReviewClientErrorCodeV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
 } from "../reviewHttpProtocol";
+import { reviewHttpFailure } from "../reviewErrorCatalog";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,

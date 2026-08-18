@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { reviewProcessCapability } from "../../app/review/capability";
-import { nodeReviewDigest } from "../../lib/reviewDigest";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../core/review/resources";
 import {
   connectReviewSession,

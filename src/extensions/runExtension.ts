@@ -13,6 +13,7 @@ import {
   type ExtensionRegistry,
   type ExtensionPane,
   type ExtensionSidebarView,
+  type ExtensionSessionOptions,
   type ExtensionFileView,
   type ExtensionKeyboardMode,
   type ExtensionLineHighlighter,
@@ -21,7 +22,7 @@ import {
   type HunkExtensionAPI,
 } from "./types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
-import { toUserFacingError } from "../core/errors";
+import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
@@ -216,6 +217,7 @@ interface ExtensionApiHandle {
 
 /** Registration counts captured before one extension runs, for failure rollback. */
 interface RegistrySnapshot {
+  sessionOptions: number;
   themes: number;
   fileLanguages: number;
   vcsAdapters: number;
@@ -238,6 +240,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
   }
 
   return {
+    sessionOptions: registry.sessionOptions.length,
     themes: registry.themes.length,
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
@@ -260,6 +263,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
  * not stay in the registry. Collected logs are kept as failure diagnostics.
  */
 function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapshot) {
+  registry.sessionOptions.length = snapshot.sessionOptions;
   registry.themes.length = snapshot.themes;
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
@@ -289,9 +293,9 @@ export function createExtensionApi(
 ): ExtensionApiHandle {
   let sealed = false;
 
-  /** Guard one registration call against use after the load pass finished. */
+  /** Guard one registration call against use after the load pass finished or retired. */
   const assertOpen = (method: string) => {
-    if (sealed) {
+    if (sealed || registry.eventBusPhase === "closed") {
       throw new Error(
         `${metadata.id}: hunk.${method}() can only be called while the extension is loading.`,
       );
@@ -328,6 +332,21 @@ export function createExtensionApi(
     apiVersion: HUNK_EXTENSION_API_VERSION,
     config,
     events,
+    configureSession(options: ExtensionSessionOptions) {
+      assertOpen("configureSession");
+      if (!isPlainObject(options)) {
+        throw new Error("configureSession requires an options object.");
+      }
+      if (
+        options.viewPreferences !== undefined &&
+        options.viewPreferences !== "default" &&
+        options.viewPreferences !== "transient"
+      ) {
+        throw new Error('configureSession viewPreferences must be "default" or "transient".');
+      }
+
+      registry.sessionOptions.push({ extensionId: metadata.id, options: { ...options } });
+    },
     registerTheme(theme: ExtensionThemeConfig) {
       assertOpen("registerTheme");
       assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");
@@ -610,19 +629,38 @@ export function runExtensionFactory({
     return;
   }
 
-  if (!isThenable(pending)) {
+  let thenable: boolean;
+  try {
+    thenable = isThenable(pending);
+  } catch (error) {
     seal();
-    registry.extensions.push(metadata);
+    fail(error);
     return;
   }
 
-  return pending.then(
+  if (!thenable) {
+    seal();
+    if (registry.eventBusPhase !== "closed") registry.extensions.push(metadata);
+    return;
+  }
+
+  // Promise assimilation turns a throwing or otherwise hostile `then` access
+  // into the ordinary rejection path instead of leaking out of the load pass.
+  return Promise.resolve(pending).then(
     () => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       registry.extensions.push(metadata);
     },
     (error: unknown) => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       fail(error);
     },
   );

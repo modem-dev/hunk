@@ -7,7 +7,7 @@ import { reviewResourceId } from "../core/review/resources";
 import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { reviewHttpFailure } from "../session/reviewHttpProtocol";
+import { reviewHttpFailure } from "../session/reviewErrorCatalog";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../session/reviewProtocol";
 import type { BrowserReviewApiClient, BrowserReviewEventHandlers } from "./browserReviewApiClient";
 import { BrowserReviewApp } from "./BrowserReviewApp";

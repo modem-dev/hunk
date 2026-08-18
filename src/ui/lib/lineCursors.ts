@@ -5,7 +5,8 @@
  * active layout draws and carry the plan anchor rendering, reveal, and note placement already use.
  */
 
-import type { DiffFile, UserNoteLineTarget } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
 import {
   contextLineStableKeySides,

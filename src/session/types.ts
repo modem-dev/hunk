@@ -1,16 +1,14 @@
-import type { ExperimentalFeature } from "../core/experimental";
-import type { ExtensionLineHighlightTone } from "../extension-api/types";
+import type { ExperimentalFeature } from "../core/run/experimental";
+import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import type { CliInput, ReviewNoteSource } from "../core/types";
-import type { SessionReloadReason } from "../extensions/types";
+import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
   HunkReviewActionEnvelopeV1,
   HunkReviewResourceCatalogV1,
   HunkReviewResourceReadEnvelopeV1,
   HunkReviewResultV1,
 } from "./reviewProtocol";
-import type { SessionBrokerClient } from "../session/broker/brokerClient";
 import type {
   SessionRegistration,
   SessionServerMessage,
@@ -345,13 +343,6 @@ export type HunkSessionCommandResult =
   | HunkReviewResultV1
   | AppliedHighlightResult
   | ClearedHighlightsResult;
-
-export type HunkSessionBrokerClient = SessionBrokerClient<
-  HunkSessionInfo,
-  HunkSessionState,
-  HunkSessionServerMessage,
-  HunkSessionCommandResult
->;
 
 export type HunkSessionServerMessage =
   | SessionServerMessage<"comment", CommentToolInput>

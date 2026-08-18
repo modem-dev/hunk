@@ -1,5 +1,6 @@
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, LayoutMode } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";

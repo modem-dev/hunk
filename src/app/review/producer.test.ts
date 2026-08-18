@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import { parseReviewGeneration } from "../../core/review/generationOrder";
 import {
   MAX_REVIEW_SOURCE_RESOURCE_BYTES,
@@ -8,7 +8,7 @@ import {
   reviewResourceId,
 } from "../../core/review/resources";
 import { createReviewStore } from "../../core/review/store";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { parseReadReviewResourceRequest } from "../../core/review/resources";
 import { ReviewProducer } from "./producer";
 
@@ -87,6 +87,64 @@ describe("review producer generations", () => {
       before.document.files[0]!.contentIdentity,
     );
     expect(files).toHaveLength(1);
+  });
+
+  test("prepares a generation without advancing until a non-throwing commit", () => {
+    const { producer } = createProducer();
+    const before = producer.getPublication();
+    const prepared = producer.preparePublication({
+      files: [createTestDiffFile({ before: BEFORE, after: lines("alpha", "BETA!") })],
+      sourceLabel: "/repo",
+    });
+
+    expect(producer.getPublication()).toBe(before);
+    expect(parseReviewGeneration(prepared.publication.generation)?.sequence).toBe(1);
+
+    expect(producer.reservePublication(prepared).commit()).toBe(prepared.publication);
+    expect(producer.getPublication()).toBe(prepared.publication);
+  });
+
+  test("can detach the previous store until a prepared generation mounts", () => {
+    const { producer } = createProducer();
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+    const prepared = producer.preparePublication({
+      files: [createTestDiffFile({ before: BEFORE, after: AFTER })],
+      sourceLabel: "/repo",
+    });
+
+    producer.reservePublication(prepared).commit({ detachStore: true });
+
+    expect(producer.getReviewState()).toBeUndefined();
+    expect(() => producer.applyIntent({ type: "filter/set", filter: "stale" })).toThrow(
+      "no review state",
+    );
+  });
+
+  test("refuses stale, foreign, active, and reused publication preparations", () => {
+    const { producer } = createProducer();
+    const other = new ReviewProducer({ files: [] }, { producerId: "other" });
+    const first = producer.preparePublication({ files: [] });
+    const competing = producer.preparePublication({ files: [] });
+
+    expect(() => other.reservePublication(first)).toThrow("another producer");
+    const reservation = producer.reservePublication(first);
+    expect(() => producer.reservePublication(competing)).toThrow("another reservation is active");
+    reservation.commit();
+    expect(() => producer.reservePublication(competing)).toThrow("stale");
+    expect(() => producer.reservePublication(first)).toThrow("more than once");
+  });
+
+  test("cancels a reservation without advancing and cannot reuse its preparation", () => {
+    const { producer } = createProducer();
+    const before = producer.getPublication();
+    const prepared = producer.preparePublication({ files: [] });
+    const reservation = producer.reservePublication(prepared);
+
+    reservation.cancel();
+    reservation.commit();
+
+    expect(producer.getPublication()).toBe(before);
+    expect(() => producer.reservePublication(prepared)).toThrow("more than once");
   });
 
   test("retires the previous generation's resources", async () => {

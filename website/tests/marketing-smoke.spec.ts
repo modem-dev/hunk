@@ -50,6 +50,29 @@ test("shared headers stay usable at narrow and tablet breakpoints", async ({ pag
     marketingHeader!.y + marketingHeader!.height,
   );
 
+  // The nav must stay on one line at every phone width. Checking horizontal overflow alone would
+  // pass while the links silently wrapped onto a second row and doubled the header height.
+  for (const width of [320, 360, 375, 390, 414, 430]) {
+    await page.setViewportSize({ width, height: 700 });
+    const rows = await marketingNavigation.evaluate((nav) => {
+      const tops = [...nav.querySelectorAll("a")]
+        .filter((link) => link.getClientRects().length > 0)
+        .map((link) => Math.round(link.getBoundingClientRect().top));
+      return new Set(tops).size;
+    });
+    expect(rows, `nav wrapped at ${width}px`).toBe(1);
+
+    // Whatever else is dropped, these three always remain reachable.
+    for (const name of ["Docs", "Changelog", "GitHub ↗"]) {
+      await expect(marketingNavigation.getByRole("link", { name })).toBeVisible();
+    }
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `page scrolled sideways at ${width}px`).toBeLessThanOrEqual(0);
+  }
+
   await page.setViewportSize({ width: 780, height: 800 });
   await page.goto("/docs/");
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();
@@ -69,18 +92,66 @@ test("install command copies with accessible feedback", async ({ context, page }
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("npm i -g hunkdiff");
 });
 
-test("theme previews switch without loading every screenshot up front", async ({ page }) => {
+test("the theme picker ships one shot, then warms the rest before they are clicked", async ({
+  page,
+}) => {
+  // The document itself must carry only the visible shot: the other five are
+  // ~1.4MB and would otherwise compete with first paint.
+  const html = await (await page.request.get("/")).text();
+  expect(html.match(/class="shot"[^>]*\ssrc="/g) ?? []).toHaveLength(1);
+
+  await page.goto("/");
+  const nordShot = page.getByAltText("Hunk split-view diff in the Nord theme");
+
+  // Warming is scheduled for idle after load, so the unselected shots pick up
+  // their source without anyone touching a pill.
+  await expect(nordShot).toHaveAttribute("src", "/shot-nord.webp");
+});
+
+test("hovering a pill warms its shot ahead of the idle pass", async ({ page }) => {
+  // Block the idle warm-up so only the hover path can supply the source.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "requestIdleCallback", { value: undefined });
+    const nativeTimeout = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, timeout?: number, ...rest: unknown[]) =>
+      timeout === 300 ? 0 : nativeTimeout(handler, timeout, ...rest)) as typeof window.setTimeout;
+  });
+
+  await page.goto("/");
+  const gruvboxShot = page.getByAltText("Hunk split-view diff in the Gruvbox theme");
+  await expect(gruvboxShot).not.toHaveAttribute("src", /.+/);
+
+  await page
+    .getByRole("group", { name: "Preview theme" })
+    .getByRole("button", { name: "Gruvbox" })
+    .hover();
+  await expect(gruvboxShot).toHaveAttribute("src", "/shot-gruvbox.webp");
+});
+
+test("theme previews switch when a pill is clicked", async ({ page }) => {
   await page.goto("/");
   const themePicker = page.getByRole("group", { name: "Preview theme" });
-  const midnight = themePicker.getByRole("button", { name: "Midnight" });
-  const midnightShot = page.getByAltText("Hunk split-view diff in the Midnight theme");
+  const nord = themePicker.getByRole("button", { name: "Nord" });
+  const nordShot = page.getByAltText("Hunk split-view diff in the Nord theme");
 
-  await expect(midnight).toHaveAttribute("aria-pressed", "false");
-  await expect(midnightShot).not.toHaveAttribute("src", /.+/);
-  await midnight.click();
-  await expect(midnight).toHaveAttribute("aria-pressed", "true");
-  await expect(midnightShot).toBeVisible();
-  await expect(midnightShot).toHaveAttribute("src", "/shot-midnight.webp");
+  await expect(nord).toHaveAttribute("aria-pressed", "false");
+  await nord.click();
+  await expect(nord).toHaveAttribute("aria-pressed", "true");
+  await expect(nordShot).toBeVisible();
+  await expect(nordShot).toHaveAttribute("src", "/shot-nord.webp");
+});
+
+test("the theme picker says how many themes it is not showing", async ({ page }) => {
+  await page.goto("/");
+  const picker = page.getByRole("group", { name: "Preview theme" });
+
+  // The count is derived from Hunk's bundled catalog at build time, so this
+  // asserts the shape rather than a number that legitimately grows.
+  const more = picker.getByRole("link", { name: /and \d+ more/ });
+  await expect(more).toHaveAttribute("href", "/docs/configure/themes/");
+  const shown = await picker.getByRole("button").count();
+  const label = (await more.textContent())?.match(/and (\d+) more/)?.[1];
+  expect(Number(label)).toBeGreaterThan(shown);
 });
 
 test("community videos link out without embedding a third-party player", async ({ page }) => {
@@ -115,13 +186,29 @@ test("the more-features list quick-hits the long tail with docs links", async ({
     "href",
     "/docs/workflows/watch-mode/",
   );
-  await expect(list.getByRole("link", { name: /Extensions/ })).toHaveAttribute(
+  await expect(list.getByRole("link", { name: /Live sessions/ })).toHaveAttribute(
     "href",
-    "/docs/extend/extensions/",
+    "/docs/agents/live-session-control/",
   );
   await expect(list.getByRole("link", { name: /Jujutsu & Sapling/ })).toHaveAttribute(
     "href",
     "/docs/workflows/jujutsu-and-sapling/",
+  );
+});
+
+test("the extensions row carries a real code sample as its media", async ({ page }) => {
+  await page.goto("/");
+
+  // Extensions close the tour as an ordinary showcase row: copy left, framed
+  // media right — source instead of a capture, titled with the path users drop
+  // extensions into.
+  const row = page.locator(".show-item").filter({ hasText: "Extend it however you want" });
+  await expect(row.locator(".show-media.show-code")).toHaveCount(1);
+  await expect(row.locator(".paper-bar .pt")).toHaveText("~/.config/hunk/extensions/hello.ts");
+  await expect(row.locator("pre")).toContainText('from "hunkdiff/extension"');
+  await expect(row.getByRole("link", { name: /Writing extensions/ })).toHaveAttribute(
+    "href",
+    "/docs/extend/extensions/",
   );
 });
 

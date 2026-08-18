@@ -18,8 +18,8 @@ import {
   type ReviewGapAddress,
 } from "../../core/review/expansion";
 import { normalizedReviewSourceLines } from "../../core/review/geometry";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile } from "../../core/changeset/model";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { ValidatedLineHighlight } from "../highlights/validate";
@@ -311,11 +311,6 @@ export function buildLineHighlightPaintIndex({
     }
   }
 
-  for (const [key, bucket] of index) {
-    if (bucket.length === 0) {
-      index.delete(key);
-    }
-  }
   if (index.size === 0) {
     return undefined;
   }

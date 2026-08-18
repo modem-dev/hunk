@@ -44,8 +44,8 @@ import {
 import { reviewFileContentIdentityOf } from "../core/review/document";
 import { REVIEW_RESOURCE_LOAD_CONCURRENCY } from "../core/review/resources";
 import type { ReviewDocumentV1, ReviewFileV1 } from "../core/review/types";
-import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { reviewHttpFailure, type HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
+import { reviewErrorMessage, reviewHttpFailure } from "../session/reviewErrorCatalog";
+import type { HunkReviewPublicationBodyV1 } from "../session/reviewHttpProtocol";
 import type { HunkReviewResourceCatalogV1 } from "../session/reviewProtocol";
 import type { BrowserReviewApiClient, BrowserReviewFailure } from "./browserReviewApiClient";
 

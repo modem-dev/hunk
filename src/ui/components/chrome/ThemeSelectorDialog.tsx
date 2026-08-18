@@ -110,9 +110,7 @@ export function ThemeSelectorDialog({
       }}
     >
       <box style={{ width: "100%", height: 1 }}>
-        <text fg={theme.muted}>
-          {fitText("↑/↓/Tab/hover preview  Enter/click accept  Esc cancel", bodyWidth)}
-        </text>
+        <text fg={theme.muted}>{fitText("Enter/click accept  Esc cancel", bodyWidth)}</text>
       </box>
       <box style={{ width: "100%", height: 1 }} />
       {visibleItems.map((item, offset) => {

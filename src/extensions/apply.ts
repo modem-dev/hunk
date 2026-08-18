@@ -1,6 +1,9 @@
-import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
-import type { StartupNotice } from "../core/startupNotice";
-import type { Changeset } from "../core/types";
+import {
+  BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
+  registerFileLanguage,
+} from "../core/changeset/fileLanguage";
+import type { StartupNotice } from "../core/process/startupNotice";
+import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
 import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
@@ -135,22 +138,34 @@ export interface ResolvedExtensionPanes {
   issues: ExtensionApplyIssue[];
 }
 
-/** Resolve pane identities while retaining registration order as priority. */
-export function resolveExtensionPanes(registry: ExtensionRegistry): ResolvedExtensionPanes {
+/** Resolve pane identities and replacement ownership in registration order. */
+export function resolveExtensionPanes(
+  registry: Pick<ExtensionRegistry, "panes">,
+): ResolvedExtensionPanes {
   const panes: RegisteredPane[] = [];
   const issues: ExtensionApplyIssue[] = [];
-  const claimed = new Set<string>();
+  const claimedKeys = new Set<string>();
+  const claimedReplacementTargets = new Set<string>();
 
   for (const registered of registry.panes) {
     const key = paneKey(registered);
-    if (claimed.has(key)) {
+    if (claimedKeys.has(key)) {
       issues.push({
         extensionId: registered.extensionId,
         message: `Skipped duplicate pane "${key}" from extension ${registered.extensionId}`,
       });
       continue;
     }
-    claimed.add(key);
+    const replacementTarget = registered.pane.replaces;
+    if (replacementTarget && claimedReplacementTargets.has(replacementTarget)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped pane "${key}" from extension ${registered.extensionId} • another pane already replaces "${replacementTarget}"`,
+      });
+      continue;
+    }
+    claimedKeys.add(key);
+    if (replacementTarget) claimedReplacementTargets.add(replacementTarget);
     panes.push(registered);
   }
   return { panes, issues };
@@ -297,6 +312,23 @@ export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedE
   }
 
   return { commands, issues };
+}
+
+/** Host-level behavior resolved across every extension in one shared session. */
+export interface ResolvedExtensionSessionOptions {
+  /** Any transient request wins so a guide cannot accidentally persist practice state. */
+  transientViewPreferences: boolean;
+}
+
+/** Resolve extension session requests through their documented shared-session policy. */
+export function resolveExtensionSessionOptions(
+  registry: ExtensionRegistry,
+): ResolvedExtensionSessionOptions {
+  return {
+    transientViewPreferences: registry.sessionOptions.some(
+      ({ options }) => options.viewPreferences === "transient",
+    ),
+  };
 }
 
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */

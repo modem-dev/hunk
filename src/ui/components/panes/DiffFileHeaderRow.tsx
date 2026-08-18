@@ -1,4 +1,4 @@
-import type { DiffFile } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import type { AppTheme } from "../../themes";
 

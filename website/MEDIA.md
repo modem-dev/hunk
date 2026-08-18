@@ -6,8 +6,10 @@
 
 ```bash
 bun run website/scripts/capture-media.ts            # everything
-bun run website/scripts/capture-media.ts mouse      # one asset: stream|agent|mouse|layout|themes
+bun run website/scripts/capture-media.ts mouse      # one asset: stream|agent|mouse|layout|themes|shots
 ```
+
+`public/shot-*.webp` are the hero theme picker's stills, one per pill, captured by the same script's `shots` asset. Each is the same split-view review with the sidebar and an agent note showing, so the pills compare themes rather than scenes. The pills live in `src/components/marketing/ThemeShot.astro` and must name the same themes as `HERO_SHOT_THEMES` in the capture script; the "and N more" count reads Hunk's bundled catalog at build time, so it needs no updating when themes are added. Changing the capture's `cols`/`rows` changes the image geometry — update `.shot-stack`'s `aspect-ratio` in `src/styles/marketing.css` to match.
 
 Video assets need an ffmpeg with libx264 and libvpx-vp9 on PATH (or pointed at via `FFMPEG=`). Like the other rituals in this file it is optional and Unix-oriented; website builds and tests never run it.
 

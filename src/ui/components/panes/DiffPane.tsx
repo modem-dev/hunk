@@ -13,14 +13,11 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
-import type {
-  AgentAnnotation,
-  CursorLine,
-  DiffFile,
-  LayoutMode,
-  UserNoteLineTarget,
-} from "../../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
+import type { UserNoteLineTarget } from "../../../core/liveComments";
+import type { AgentAnnotation } from "../../../extension-api/types";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
   reviewNoteAnchorLine,
@@ -219,6 +216,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
+  offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   headerLabelWidth,
   headerStatsWidth,
@@ -280,6 +278,8 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
+  /** Offload eligible large-diff highlighting for this launch. */
+  offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   headerLabelWidth: number;
@@ -1376,10 +1376,18 @@ export function DiffPane({
 
       void prefetchHighlightedDiff({
         file,
+        offloadLargeDiff,
         theme,
       });
     }
-  }, [files, highlightPrefetchFileIds, initialWrappedRenderWindowWarmed, theme, wrapLines]);
+  }, [
+    files,
+    highlightPrefetchFileIds,
+    initialWrappedRenderWindowWarmed,
+    offloadLargeDiff,
+    theme,
+    wrapLines,
+  ]);
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
   // movement, while leaving the initial mount and non-scroll relayouts alone.
@@ -2357,6 +2365,7 @@ export function DiffPane({
                         extensionLineHighlights={lineHighlights.get(file.id)}
                         file={file}
                         fileView={fileViewRenderPlans.get(file.id)?.fileView}
+                        offloadLargeDiff={offloadLargeDiff}
                         headerLabelWidth={headerLabelWidth}
                         headerStatsWidth={headerStatsWidth}
                         layout={layout}

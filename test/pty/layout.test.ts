@@ -263,6 +263,55 @@ describe("PTY layout", () => {
     }
   });
 
+  test("--sidebar shows the sidebar below the viewport width that would reveal it", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--sidebar"],
+      cwd: fixture.dir,
+      cols: 180,
+      rows: 18,
+    });
+
+    try {
+      const frame = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(frame, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("--no-sidebar opens the review with the sidebar closed", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const frame = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(frame, /alpha\.ts/g)).toBe(1);
+
+      await session.type("s");
+      const toggled = await harness.waitForSnapshot(
+        session,
+        (text) => harness.countMatches(text, /alpha\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(harness.countMatches(toggled, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
   test("dragging the sidebar divider resizes the review pane in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

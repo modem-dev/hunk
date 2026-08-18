@@ -1,6 +1,7 @@
 import { reviewNoteAnchorLine, reviewNoteOwnerHunkIndex } from "../../core/review/state";
 import type { ReviewRangeAnchorV1 } from "../../core/review/types";
-import type { AgentAnnotation, UserNoteLineTarget } from "../../core/types";
+import type { UserNoteLineTarget } from "../../core/liveComments";
+import type { AgentAnnotation } from "../../extension-api/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
 import type { DiffRow } from "./diffRows";

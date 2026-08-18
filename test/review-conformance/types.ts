@@ -24,7 +24,7 @@ import type { ReviewIntent } from "../../src/core/review/intents";
 import type { ReviewSelectionScope } from "../../src/core/review/navigation";
 import type { ReviewNoteV1 } from "../../src/core/review/types";
 import type { HunkReviewPublicationBodyV1 } from "../../src/session/reviewHttpProtocol";
-import type { DiffFile } from "../../src/core/types";
+import type { DiffFile } from "../../src/core/changeset/model";
 
 export interface ConformanceGap {
   gapId: string;

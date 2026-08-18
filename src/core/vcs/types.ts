@@ -1,11 +1,11 @@
-import type { BuildDiffFileOptions } from "../diffFile";
-import type { WatchPlan } from "../watch/plan";
+import type { ExtensionVcsWatchPlan } from "../../extension-api/types";
+import type { DiffFile } from "../changeset/model";
 import type {
-  DiffFile,
+  VcsDiffCommandInput,
   VcsShowCommandInput,
   VcsStashShowCommandInput,
-  VcsDiffCommandInput,
-} from "../types";
+} from "../run/commandInputs";
+import type { BuildDiffFileOptions } from "../changeset/diffFile";
 
 export type VcsId = string;
 
@@ -30,7 +30,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
   watchSignature?: (input: Input, context: VcsLoadContext) => string;
-  watchPlan?: (input: Input, context: VcsLoadContext) => WatchPlan;
+  watchPlan?: (input: Input, context: VcsLoadContext) => ExtensionVcsWatchPlan;
 }
 
 export interface VcsOperations {

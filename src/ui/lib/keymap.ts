@@ -1,4 +1,4 @@
-import type { UserKeyBinding } from "../../core/types";
+import type { UserKeyBinding } from "../../core/run/config";
 import type { ExtensionPaneKeybindings } from "../../extension-api/types";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../../lib/commandKeys";
@@ -22,6 +22,8 @@ import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../../lib/c
 /** One command's shipped binding, as the command table declares it. */
 export interface CommandKeyDefaults {
   id: string;
+  /** Deprecated ids accepted anywhere callers name this command. */
+  aliases?: readonly string[];
   /** Chords the command ships with; empty means it ships unbound. */
   defaultKeys: readonly string[];
 }
@@ -134,6 +136,20 @@ function toRequestedChords(binding: UserKeyBinding): readonly string[] {
   return typeof binding === "string" ? [binding] : [...binding];
 }
 
+/** Mirror canonical bindings onto compatibility aliases for injected key lookup. */
+function mirrorCommandAliases(
+  keys: Map<string, readonly string[]>,
+  commands: readonly CommandKeyDefaults[],
+  canonicalByName: ReadonlyMap<string, string>,
+) {
+  for (const command of commands) {
+    const chords = keys.get(command.id) ?? NO_KEY_CHORDS;
+    for (const alias of command.aliases ?? []) {
+      if (canonicalByName.get(alias) === command.id) keys.set(alias, chords);
+    }
+  }
+}
+
 /**
  * Fold user keybindings over the command table's defaults.
  *
@@ -169,18 +185,35 @@ export function resolveCommandKeys({
     commands.push(command);
   }
 
+  const canonicalByName = new Map(commands.map((command) => [command.id, command.id]));
+  for (const command of commands) {
+    for (const alias of command.aliases ?? []) {
+      const existing = canonicalByName.get(alias);
+      if (existing !== undefined) {
+        issues.push({
+          commandId: alias,
+          message: `Duplicate command alias "${alias}" ignored • already resolves to "${existing}"`,
+        });
+        continue;
+      }
+      canonicalByName.set(alias, command.id);
+    }
+  }
+
   if (!userBindings) {
+    mirrorCommandAliases(keys, commands, canonicalByName);
     return { keys, issues };
   }
 
-  const known = new Set(commands.map((command) => command.id));
   const knownOwners = new Set(commands.map((command) => commandOwner(command.id)));
   // Canonical chord -> the user entry that claimed it; first entry in config order wins.
   const claimed = new Map<string, string>();
   const userChords = new Map<string, string[]>();
+  const configuredBy = new Map<string, string>();
 
   for (const [commandId, binding] of Object.entries(userBindings)) {
-    if (!known.has(commandId)) {
+    const canonicalId = canonicalByName.get(commandId);
+    if (canonicalId === undefined) {
       issues.push({
         commandId,
         message: namesAnAbsentExtension(commandId, knownOwners)
@@ -190,6 +223,16 @@ export function resolveCommandKeys({
       });
       continue;
     }
+
+    const previousName = configuredBy.get(canonicalId);
+    if (previousName !== undefined) {
+      issues.push({
+        commandId,
+        message: `Keybinding for "${commandId}" ignored • "${previousName}" already configures "${canonicalId}"`,
+      });
+      continue;
+    }
+    configuredBy.set(canonicalId, commandId);
 
     const accepted: string[] = [];
     for (const chord of toRequestedChords(binding)) {
@@ -215,7 +258,7 @@ export function resolveCommandKeys({
       accepted.push(chord);
     }
 
-    userChords.set(commandId, accepted);
+    userChords.set(canonicalId, accepted);
   }
 
   for (const [commandId, chords] of userChords) {
@@ -238,6 +281,7 @@ export function resolveCommandKeys({
     }
   }
 
+  mirrorCommandAliases(keys, commands, canonicalByName);
   return { keys, issues };
 }
 

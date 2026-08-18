@@ -1,4 +1,4 @@
-// Benchmark Hunk's scalar fast path and complex-cluster fallback against string-width.
+// Benchmark Hunk's scalar fast path and cached complex-cluster path against string-width.
 import { performance } from "node:perf_hooks";
 import stringWidth from "string-width";
 import { measureTextWidth } from "../src/ui/lib/text";

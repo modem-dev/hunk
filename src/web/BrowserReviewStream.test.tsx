@@ -6,7 +6,7 @@ import { projectReviewDocument } from "../core/review/document";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import { buildBrowserReviewFileRenderModel } from "./browserPierreDocument";
-import { reviewHttpFailure } from "../session/reviewHttpProtocol";
+import { reviewHttpFailure } from "../session/reviewErrorCatalog";
 import type { BrowserReviewSourceEntry } from "./browserReviewSources";
 import { BrowserGapStrip, BrowserReviewStream } from "./BrowserReviewStream";
 import { DEFAULT_BROWSER_VIEW_OPTIONS } from "./browserViewOptions";

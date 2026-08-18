@@ -278,10 +278,28 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `5`). Version 5 adds line
-highlighters and line-granular navigation (`revealLine`); version 4 added
-keyboard modes and docked panes, with API-v3 sidebar names remaining as
-deprecated aliases.
+The API generation this Hunk speaks (currently `7`). Branch on it if you want
+one file to support several Hunk versions. Version 7 adds the current source
+line to command selection snapshots. Version 6 adds session behavior,
+terminal-command observation, and live navigation/dialogs in event handlers;
+version 5 added line highlighters and line-granular navigation (`revealLine`);
+version 4 added keyboard modes and docked panes, with API-v3 sidebar names
+remaining as deprecated aliases.
+
+### `hunk.configureSession(options)`
+
+Request host-level behavior for the review session loading the extension. Use
+`{ viewPreferences: "transient" }` for training, demos, and presentations that
+deliberately exercise view controls but must never offer to save their final
+practice state into the user's config. If any loaded extension requests it, the
+shared session skips the save-view-preferences prompt on quit.
+
+```ts
+hunk.configureSession({ viewPreferences: "transient" });
+```
+
+The default is `{ viewPreferences: "default" }`. Like every registration-time
+call, this must run synchronously while the factory is loading.
 
 ### `hunk.registerTheme(theme)`
 
@@ -617,12 +635,23 @@ pane. Defaults are `{ preferred: 34, min: 22 }` columns and
 
 Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to
-hide it conditionally.
+hide it conditionally. One pane may replace each named target; the first
+registration owns that slot and later claims are skipped with a warning.
+`replaces` may also name another pane by its fully qualified
+`"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+
+`hunk:files` is a named role, not a left-edge location. The
+`hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane**
+follow the resolved owner of that slot, whether the replacement is on the left,
+right, top, or bottom. They toggle only that owner; independently registered
+panes keep their own open state. User remaps and unbindings of
+`hunk.view.toggleFilesPane` apply to the resolved slot in the usual way. The
+former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
 `currentLine: true` opts into the opaque `currentLine.render(side, width)`
-painter. The installable
-[`current-line-lens`](../examples/extensions/current-line-lens/) example uses
-this API; it is not bundled Hunk UI.
+painter. The installable [Hunk Lens](https://github.com/modem-dev/hunk-lens)
+extension uses this API; it is not bundled Hunk UI. Install it with
+`hunk extension install modem-dev/hunk-lens`.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -1293,10 +1322,14 @@ and focused text inputs own their keys first. It receives the standard context
 plus `ctx.panes`, the controls for opening panes:
 
 - `ctx.panes.open(paneId)` / `close(paneId)` / `toggle(paneId)` — a bare id
-  names your own extension's pane, `"files"` names the built-in file
-  navigation, and `"<extensionId>:<paneId>"` addresses any registered pane.
-  Opening a left/right pane also reveals the sidebar area when the user has
-  hidden it with `s`; top/bottom pane state is independent of that area.
+  names your own extension's pane, while a fully qualified
+  `"<extensionId>:<paneId>"` key addresses any registered pane. Use
+  `"hunk:files"` for the literal built-in pane. These controls address
+  registrations directly; they do not resolve a replacement slot. To toggle
+  whichever pane currently owns the files role,
+  call `ctx.commands.execute("hunk.view.toggleFilesPane")`. Opening a left/right
+  pane also reveals the sidebar area when responsive layout has hidden it;
+  top/bottom pane state is independent of that area.
 - `ctx.panes.isOpen(paneId)` reports the logical open preference, including
   while availability or terminal bounds temporarily omit the pane.
 
@@ -1320,13 +1353,16 @@ hunk.registerCommand(
 ```
 
 `selection.file` is a frozen read-only view, identical to the entries in a
-pane's `files` prop. Hunk keeps the selection inside the visible files, so
-it is `null` only when nothing is visible at all — a filter that matches no
-files. `selection.hunkIndex` is that file's
-selected hunk, and `null` whenever `file` is — or when the file has no hunks to
-select. The values are captured when the command fires: a handler that awaits
-still sees the selection it was run from, not wherever the user navigated to
-meanwhile.
+pane's `files` prop. Extensions only receive visible files, so it is `null`
+when filtering hides the selected file or when no files are visible.
+`selection.hunkIndex` is that file's selected hunk, and `null` whenever `file`
+is — or when the file has no hunks to select. `selection.currentLine` is the
+one-based `{ side, line }` source address carrying the current-line marker, or
+`null` when the marker is off or the review has not settled on a rendered line.
+It belongs to this file and hunk, uses Hunk's canonical new-side address for a
+context row, and can be passed directly to `navigation.revealLine`. The values
+are captured when the command fires: a handler that awaits still sees the
+selection it was run from, not wherever the user navigated to meanwhile.
 
 `ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
 table used by the keyboard, menus, and help:
@@ -1461,8 +1497,9 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 ```
 
 Hunk draws the dialog, not you: your text fills the title, body, and choices,
-and the frame carries an `ext <your-id>` attribution line — the same marker
-`notify` toasts use — so a prompt can never present itself as Hunk asking.
+and dialogs from installed extensions carry an `ext <your-id>` attribution line
+— the same marker `notify` toasts use — so a third-party prompt can never present
+itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
 One dialog is on screen at a time. Concurrent requests queue in call order,
 across extensions too, so a second question waits its turn instead of replacing
@@ -1538,9 +1575,12 @@ has moved or become unsafe.
 
 `writeDocument` verifies the target, asks for consent through the attributed
 `ctx.dialogs` queue, then verifies it again before writing. The second check
-prevents deletion and symlink-swap races while the dialog is open. A successful
-write starts a session reload; the write promise may settle before that reload
-finishes.
+prevents deletion and symlink-swap races while the dialog is open. Authority is
+checked immediately before the filesystem call; once that irreversible write
+starts, its actual success or failure wins even if another reload happens, and
+graceful shutdown waits for it to settle. A successful write queues
+reconciliation of the review then active, and the write promise may settle
+before that reload finishes.
 
 A declined prompt returns `cancelled`, an ineligible or unsafe target returns
 `unavailable`, and an attempted write failure returns `failed` with a
@@ -1582,14 +1622,25 @@ the metadata actually parses to.
 
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks
 the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
-`ctx.panes`, the same open/close/toggle controls command handlers receive.
-That means a `changeset_loaded` handler can reveal its extension's pane when
-it finds something worth showing — no keypress required.
+`ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs`, the same
+controls command handlers receive. `ctx.sidebars` is a deprecated alias for
+`ctx.panes`. That means a `startup` handler can present
+one focused welcome question and navigate to its first example, while a
+`changeset_loaded` handler can reveal a pane when it finds something worth
+showing — no keypress required. Dialog calls made before the mounted app is
+ready resolve to their cancel value with a warning rather than opening later.
+Controls retained across a review or extension-registry replacement expire:
+navigation and pane mutations warn and do nothing, dialogs resolve to their
+normal cancel value, and workspace reads or not-yet-started writes return
+`null`/`unavailable` instead of acting on replacement content. Once a consented
+filesystem write starts, it reports its actual outcome and success reconciles
+the review then active.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |
 | `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
 | `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
+| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
@@ -1601,9 +1652,22 @@ it finds something worth showing — no keypress required.
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
 | `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
+A newly mounted extension instance receives `startup` before its first
+`changeset_loaded`; reloads then deliver `changeset_loaded` before
+`session_reload` once the matching review generation has committed.
+
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
+
+`command_executed` reports the stable canonical command id after the terminal dispatcher invokes
+it, whether the user reached it through a key, a menu, an old command alias, or
+`ctx.commands.execute`. Extension commands
+may still have detached async work in flight; this event observes the accepted user action, not
+promise settlement. Listen for ids rather than key chords so behavior follows the user's live
+`[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal
+commands and do not emit this event. Modal widget keys such as Escape, Enter, note-editor Ctrl-S,
+and F10 menu navigation are also not commands.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
 `"daemon"` (an agent command through the session broker), or `"manual"` (the
@@ -1618,6 +1682,8 @@ here this session", not a complete review record; present it as such.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.
+Host-mediated UI authority is already revoked when shutdown begins: use the
+event to release extension-owned resources, not to navigate or open dialogs.
 The replacement instance receives `startup` after its review is mounted.
 
 ### `hunk.events`
@@ -1625,8 +1691,10 @@ The replacement instance receives `startup` after its review is mounted.
 `hunk.events` is a small bus shared by every loaded extension. Use it to
 coordinate extensions without coupling them through a command or global state.
 Names are open-ended, so namespace them with your extension id. Listeners get
-the same `ctx.panes` controls as lifecycle handlers; delivery is fire-and-forget
-and one listener's failure is reported without stopping the others. Events an
+the same `ctx.panes`, `ctx.navigation`, and `ctx.dialogs` controls as lifecycle
+handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
+fire-and-forget and one listener's failure is reported without stopping the
+others. Events an
 extension emits while factories are loading are queued until every extension
 has had a chance to subscribe.
 
@@ -1692,11 +1760,11 @@ to the terminal, because the TUI owns the screen.
 
 ## A complete example
 
-Installable examples include:
+Installable extensions and examples include:
 
 - [`pane-layout`](../examples/extensions/pane-layout/) for all four placements.
-- [`current-line-lens`](../examples/extensions/current-line-lens/) for opaque
-  selected-row paint.
+- [Hunk Lens](https://github.com/modem-dev/hunk-lens) for opaque selected-row
+  paint (`hunk extension install modem-dev/hunk-lens`).
 - [`review-triage`](../examples/extensions/review-triage/) for panes, commands,
   dialogs, lifecycle events, and the event bus.
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)

@@ -1,5 +1,7 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { LayoutMode } from "../../../core/run/commandInputs";
+import type { UserNoteLineTarget } from "../../../core/liveComments";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { DiffSectionBody, type ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/renderRows";
@@ -8,7 +10,7 @@ import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { ValidatedLineHighlight } from "../../highlights/validate";
-import type { CopySelectedRowRange } from "./copySelection";
+import type { CopySelectedRowRange } from "../../lib/diffSpatial";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -24,6 +26,7 @@ interface DiffSectionProps {
   extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
   fileView?: ResolvedFileViewLayout;
+  offloadLargeDiff: boolean;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -64,6 +67,7 @@ function DiffSectionComponent({
   extensionLineHighlights,
   file,
   fileView,
+  offloadLargeDiff,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -161,6 +165,7 @@ function DiffSectionComponent({
           extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
+          offloadLargeDiff={offloadLargeDiff}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           sourceStatus={sourceStatus}
@@ -203,6 +208,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&
+    previous.offloadLargeDiff === next.offloadLargeDiff &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&

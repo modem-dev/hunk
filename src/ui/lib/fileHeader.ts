@@ -1,5 +1,5 @@
 import { reviewFileStatBadges } from "../../core/review/presentation";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import { fileLabelParts } from "./files";
 import { fitText, measureTextWidth } from "./text";
 

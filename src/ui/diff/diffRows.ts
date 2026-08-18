@@ -14,20 +14,31 @@ import {
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
-import { formatHunkHeader } from "../../core/hunkHeader";
+import { formatHunkHeader } from "../../core/changeset/hunkHeader";
 import {
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapAddress,
-  type ReviewGapPosition,
 } from "../../core/review/expansion";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, DiffLineMoveKind } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
+import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRowModel";
+import {
+  aliasContextHighlightLines,
+  collectHastHighlightRuns,
+  compactHighlightRunsForLine,
+  highlightDiffInWorker,
+  supportsHighlightWorkerOffload,
+  validateCompactHighlightedDiff,
+  type CompactHighlightedDiff,
+  type CompactHighlightRun,
+  type HastNode,
+} from "./worker";
 import {
   createSourceBackedHighlightPlan,
   remapSourceBackedHighlight,
@@ -39,6 +50,13 @@ import {
 } from "./syntaxHighlightTheme";
 
 type HighlightThemeInput = AppTheme | AppTheme["appearance"];
+
+export const HIGHLIGHT_WORKER_MIN_LINES = 2_000;
+
+export interface LoadHighlightedDiffOptions {
+  /** Allow the interactive TUI to move eligible large-file work into the Bun worker. */
+  offloadLargeDiff?: boolean;
+}
 
 /** Return the light/dark mode for a theme object or legacy appearance argument. */
 function highlightThemeAppearance(theme: HighlightThemeInput) {
@@ -61,140 +79,37 @@ type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
 
-type HastNode = HastTextNode | HastElementNode;
-
-interface HastTextNode {
-  type: "text";
-  value: string;
-}
-
-interface HastElementNode {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
+export interface CompactHighlightedDiffCode {
+  payload: CompactHighlightedDiff;
+  /** Map visible patch-side indexes to full-source payload indexes when source context was used. */
+  deletionLineMap?: readonly number[];
+  additionLineMap?: readonly number[];
 }
 
 export interface HighlightedDiffCode {
   deletionLines: Array<HastNode | undefined>;
   additionLines: Array<HastNode | undefined>;
+  /** Holds the worker's compact result without reconstructing a HAST response tree. */
+  compact?: CompactHighlightedDiffCode;
+  /** Keeps a transient offload failure out of the shared cache so a later visit can retry it. */
+  retryable?: true;
 }
 
 export interface HighlightedSourceCode {
   lines: Array<HastNode | undefined>;
 }
 
-export interface RenderSpan {
-  text: string;
-  fg?: string;
-  bg?: string;
-}
-
-export interface SplitLineCell {
-  kind: "context" | "addition" | "deletion" | "empty";
-  sign: string;
-  lineNumber?: number;
-  moveKind?: DiffLineMoveKind;
-  spans: RenderSpan[];
-}
-
-export interface StackLineCell {
-  kind: "context" | "addition" | "deletion";
-  sign: string;
-  oldLineNumber?: number;
-  newLineNumber?: number;
-  moveKind?: DiffLineMoveKind;
-  spans: RenderSpan[];
-}
-
-/** One vocabulary for gap positions, shared with the core gap addressing it comes from. */
-export type CollapsedGapPosition = ReviewGapPosition;
-
-export type DiffRow =
-  | {
-      type: "collapsed";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      text: string;
-      // Where this gap sits relative to the surrounding hunks; "before" attaches to
-      // the gap leading into hunkIndex, "trailing" sits after the final hunk.
-      position: CollapsedGapPosition;
-      // 1-based inclusive file-line ranges this gap covers on each side. Expansion
-      // uses these to slice the file contents that fill the gap.
-      oldRange: [number, number];
-      newRange: [number, number];
-    }
-  | {
-      type: "hunk-header";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      text: string;
-    }
-  | {
-      type: "split-line";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      left: SplitLineCell;
-      right: SplitLineCell;
-      // True when this row was synthesized to fill an expanded collapsed gap.
-      // Expanded rows carry the neighbor hunk's index for ordering but must not
-      // count toward that hunk's bounds or anchor position.
-      isExpansionRow?: true;
-      /** Exact collapsed gap this synthesized row reveals. */
-      expandedGapKey?: string;
-    }
-  | {
-      type: "stack-line";
-      key: string;
-      fileId: string;
-      hunkIndex: number;
-      cell: StackLineCell;
-      isExpansionRow?: true;
-      /** Exact collapsed gap this synthesized row reveals. */
-      expandedGapKey?: string;
-    };
+export type {
+  CollapsedGapPosition,
+  DiffRow,
+  RenderSpan,
+  SplitLineCell,
+  StackLineCell,
+} from "./diffRowModel";
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {
   return expandDiffTabs(sanitizeTerminalLine(text), tabWidth, initialColumn);
-}
-
-const EMPTY_STYLE_VALUES = new Map<string, string>();
-// Pierre reuses the same tiny set of inline style strings across many token spans.
-// Caching the parsed key/value pairs avoids reparsing identical `color:#...` snippets
-// every time split/stack row builders revisit the same highlighted lines.
-const parsedStyleValueCache = new Map<string, Map<string, string>>();
-
-/** Parse an inline CSS style string from Pierre's highlighted HAST output. */
-function parseStyleValue(styleValue: unknown) {
-  if (typeof styleValue !== "string") {
-    return EMPTY_STYLE_VALUES;
-  }
-
-  const cached = parsedStyleValueCache.get(styleValue);
-  if (cached) {
-    return cached;
-  }
-
-  const styles = new Map<string, string>();
-  for (const segment of styleValue.split(";")) {
-    const separator = segment.indexOf(":");
-    if (separator <= 0) {
-      continue;
-    }
-
-    const key = segment.slice(0, separator).trim();
-    const value = segment.slice(separator + 1).trim();
-    if (key && value) {
-      styles.set(key, value);
-    }
-  }
-
-  parsedStyleValueCache.set(styleValue, styles);
-  return styles;
 }
 
 // The expensive part after highlighting is walking Pierre's HAST line tree and flattening it
@@ -321,42 +236,16 @@ function flattenHighlightedLine(
 
   const spans: RenderSpan[] = [];
   let codeColumn = 0;
-  const colorVariable = theme.appearance === "light" ? "--diffs-token-light" : "--diffs-token-dark";
 
-  const visit = (current: HastNode | undefined, inherited: Pick<RenderSpan, "fg" | "bg">) => {
-    if (!current) {
-      return;
-    }
-
-    if (current.type === "text") {
-      // Pierre injects a "\n" placeholder into empty line nodes so they aren't childless.
-      // Strip it the same way cleanDiffLine does for the unhighlighted path, or the literal
-      // newline ends up in the span text and breaks terminal row rendering.
-      const text = tabify(cleanLastNewline(current.value), tabWidth, codeColumn);
-      mergeSpan(spans, {
-        text,
-        fg: inherited.fg,
-        bg: inherited.bg,
-      });
-      codeColumn += measureTextWidth(text);
-      return;
-    }
-
-    const properties = current.properties ?? {};
-    const styles = parseStyleValue(properties.style);
-    const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
-      // The registered Shiki theme has already applied any user-authored scope colors.
-      fg: styles.get(colorVariable) ?? styles.get("color") ?? inherited.fg,
-      // Pierre marks inline word-diff emphasis spans with a data attribute rather than a separate row kind.
-      bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
-    };
-
-    for (const child of current.children ?? []) {
-      visit(child, nextStyle);
-    }
-  };
-
-  visit(node, {});
+  for (const run of collectHastHighlightRuns(node, theme.appearance)) {
+    const text = tabify(run.text, tabWidth, codeColumn);
+    mergeSpan(spans, {
+      text,
+      fg: run.fg,
+      bg: run.wordDiff ? emphasisBg : undefined,
+    });
+    codeColumn += measureTextWidth(text);
+  }
 
   const nextCachedByTheme = cachedByTheme ?? new Map<string, RenderSpan[]>();
   nextCachedByTheme.set(cacheKey, spans);
@@ -365,6 +254,60 @@ function flattenHighlightedLine(
   }
 
   return spans;
+}
+
+/** Flatten compact worker ranges against local text without rebuilding a HAST response tree. */
+function flattenCompactHighlightedLine(
+  rawLine: string | undefined,
+  runs: CompactHighlightRun[],
+  emphasisBg: string,
+  tabWidth: number,
+) {
+  const source = cleanLastNewline(rawLine ?? "");
+  const spans: RenderSpan[] = [];
+  let sourceColumn = 0;
+  let codeColumn = 0;
+
+  const appendText = (text: string, fg?: string, bg?: string) => {
+    const tabified = tabify(text, tabWidth, codeColumn);
+    mergeSpan(spans, { text: tabified, fg, bg });
+    codeColumn += measureTextWidth(tabified);
+  };
+
+  for (const run of runs) {
+    appendText(source.slice(sourceColumn, run.start));
+    appendText(source.slice(run.start, run.end), run.fg, run.wordDiff ? emphasisBg : undefined);
+    sourceColumn = run.end;
+  }
+  appendText(source.slice(sourceColumn));
+
+  return spans;
+}
+
+/** Resolve the compact worker runs for one visible patch-side line when present. */
+function compactRunsForHighlightedLine(
+  highlighted: HighlightedDiffCode | null,
+  side: "deletion" | "addition",
+  lineIndex: number,
+) {
+  const compact = highlighted?.compact;
+  if (!compact) {
+    return undefined;
+  }
+
+  const sourceLineMap = side === "deletion" ? compact.deletionLineMap : compact.additionLineMap;
+  const sourceIndex = sourceLineMap ? sourceLineMap[lineIndex] : lineIndex;
+  const lineCount = compact.payload[side].lineOffsets.length - 1;
+  if (
+    !Number.isInteger(sourceIndex) ||
+    sourceIndex === undefined ||
+    sourceIndex < 0 ||
+    sourceIndex >= lineCount
+  ) {
+    return undefined;
+  }
+
+  return compactHighlightRunsForLine(compact.payload, side, sourceIndex);
 }
 
 /** Normalize one raw diff line before rendering. */
@@ -381,6 +324,7 @@ function makeSplitCell(
   theme: AppTheme,
   tabWidth: number,
   moveKind?: DiffLineMoveKind,
+  compactRuns?: CompactHighlightRun[],
 ) {
   if (kind === "empty") {
     return {
@@ -390,25 +334,30 @@ function makeSplitCell(
     } satisfies SplitLineCell;
   }
 
-  // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
-  // Once highlighted spans are available, avoid touching the raw source line unless flattening
-  // produced nothing. That keeps newline stripping + tab expansion off the hot path.
+  // Startup renders often build rows before any highlight result exists, so keep that plain-text
+  // path cheap. HAST wins for inline work; worker responses decode compact ranges against raw text.
   let spans: RenderSpan[];
-  if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine, tabWidth);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-  } else {
+  if (highlightedLine !== undefined) {
     spans = flattenHighlightedLine(
       highlightedLine,
       theme,
       wordDiffHighlightBg(kind, theme),
       tabWidth,
     );
+  } else if (compactRuns !== undefined) {
+    spans = flattenCompactHighlightedLine(
+      rawLine,
+      compactRuns,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
+  } else {
+    spans = [];
+  }
 
-    if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine, tabWidth);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-    }
+  if (spans.length === 0) {
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   }
 
   return {
@@ -430,25 +379,32 @@ function makeStackCell(
   theme: AppTheme,
   tabWidth: number,
   moveKind?: DiffLineMoveKind,
+  compactRuns?: CompactHighlightRun[],
 ) {
-  // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
-  // need the plain-text fallback, not when highlighted spans are already ready to reuse.
+  // Same lazy-fallback strategy as split cells: only normalize raw text when no HAST or compact
+  // syntax run is available, or the selected highlighter produced no spans.
   let spans: RenderSpan[];
-  if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine, tabWidth);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-  } else {
+  if (highlightedLine !== undefined) {
     spans = flattenHighlightedLine(
       highlightedLine,
       theme,
       wordDiffHighlightBg(kind, theme),
       tabWidth,
     );
+  } else if (compactRuns !== undefined) {
+    spans = flattenCompactHighlightedLine(
+      rawLine,
+      compactRuns,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
+  } else {
+    spans = [];
+  }
 
-    if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine, tabWidth);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-    }
+  if (spans.length === 0) {
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   }
 
   return {
@@ -550,44 +506,6 @@ function sourceFileContents(file: DiffFile, text: string, language: string | und
   return contents;
 }
 
-/**
- * Pierre highlights unchanged context on both diff sides even though split/stack rendering later
- * cares only about the styled code spans. Reuse one side's line node for both arrays so identical
- * context flattens once and the existing WeakMap span cache can fan that result back out.
- */
-function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDiffCode) {
-  for (const hunk of file.metadata.hunks) {
-    let deletionLineIndex = hunk.deletionLineIndex;
-    let additionLineIndex = hunk.additionLineIndex;
-
-    for (const content of hunk.hunkContent) {
-      if (content.type === "context") {
-        for (let offset = 0; offset < content.lines; offset += 1) {
-          const sharedLine =
-            highlighted.additionLines[additionLineIndex + offset] ??
-            highlighted.deletionLines[deletionLineIndex + offset];
-
-          if (!sharedLine) {
-            continue;
-          }
-
-          highlighted.deletionLines[deletionLineIndex + offset] = sharedLine;
-          highlighted.additionLines[additionLineIndex + offset] = sharedLine;
-        }
-
-        deletionLineIndex += content.lines;
-        additionLineIndex += content.lines;
-        continue;
-      }
-
-      deletionLineIndex += content.deletions;
-      additionLineIndex += content.additions;
-    }
-  }
-
-  return highlighted;
-}
-
 /** Load and validate authoritative source snapshots for one partial diff when available. */
 async function loadSourceBackedHighlightPlan(file: DiffFile) {
   if (!file.metadata.isPartial || !file.sourceFetcher || file.metadata.hunks.length === 0) {
@@ -611,7 +529,7 @@ async function loadSourceBackedHighlightPlan(file: DiffFile) {
 function finalizeHighlightedDiff(
   file: DiffFile,
   sourcePlan: SourceBackedHighlightPlan | null,
-  highlighted: ReturnType<typeof renderDiffWithHighlighter>,
+  highlighted: { code: { deletionLines: unknown[]; additionLines: unknown[] } },
 ): HighlightedDiffCode {
   const code = {
     deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -622,7 +540,7 @@ function finalizeHighlightedDiff(
   // those authoritative per-side nodes; aliasing remains safe only for patch-fragment highlighting.
   return sourcePlan
     ? remapSourceBackedHighlight(sourcePlan, code)
-    : aliasHighlightedContextLines(file, code);
+    : aliasContextHighlightLines(file.metadata, code);
 }
 
 /** Render one metadata snapshot through an already prepared highlighter. */
@@ -643,25 +561,130 @@ function renderHighlightedDiff(
   });
 }
 
+/**
+ * Largest diff, in lines across both sides, that is worth syntax highlighting.
+ *
+ * Past this size the work stops paying for itself twice over: the job occupies the serialized
+ * highlight queue for seconds while nothing else can be colorized, and the result is too large for
+ * the shared cache to hold beside the files around it, so it evicts its neighbors and is evicted
+ * back on the next scroll. Diffs this big are generated output — lockfiles, snapshots, vendored
+ * bundles — where color earns little. They render as plain rows instead, immediately.
+ *
+ * Keep this at or below the cache budget in `highlightedDiffCache.ts`; that is what guarantees no
+ * single entry can push the rest of the working set out.
+ */
+const MAX_HIGHLIGHTED_DIFF_LINES = 10_000;
+
+/** Shared plain-rows result. Read-only, so one instance can back every skipped file. */
+const UNHIGHLIGHTED_DIFF: HighlightedDiffCode = Object.freeze({
+  deletionLines: [],
+  additionLines: [],
+});
+
+/** Count the diff lines one file retains when highlighted, across both sides. */
+export function highlightedDiffLineCount(metadata: FileDiffMetadata) {
+  return (metadata.deletionLines?.length ?? 0) + (metadata.additionLines?.length ?? 0);
+}
+
+/** Return whether one metadata snapshot is small enough that highlighting it is worth the work. */
+function shouldHighlightMetadata(metadata: FileDiffMetadata) {
+  return highlightedDiffLineCount(metadata) <= MAX_HIGHLIGHTED_DIFF_LINES;
+}
+
+/** Return whether one file's diff is small enough that highlighting it is worth the work. */
+export function shouldHighlightDiff(file: DiffFile) {
+  return shouldHighlightMetadata(file.metadata);
+}
+
+/** Return whether this interactive diff can use the bundled-theme worker path. */
+export function shouldOffloadHighlight(
+  metadata: FileDiffMetadata,
+  theme: HighlightThemeInput,
+  options: LoadHighlightedDiffOptions,
+) {
+  return (
+    options.offloadLargeDiff === true &&
+    supportsHighlightWorkerOffload() &&
+    typeof theme !== "string" &&
+    Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0 &&
+    shouldHighlightMetadata(metadata) &&
+    Math.max(metadata.deletionLines.length, metadata.additionLines.length) >=
+      HIGHLIGHT_WORKER_MIN_LINES
+  );
+}
+
+/** Return terminal-projected source lengths for compact UTF-16 range validation. */
+function compactHighlightLineLengths(metadata: FileDiffMetadata) {
+  return {
+    deletion: metadata.deletionLines.map((line) => cleanLastNewline(line).length),
+    addition: metadata.additionLines.map((line) => cleanLastNewline(line).length),
+  };
+}
+
+/** Highlight one eligible metadata snapshot off the terminal event loop. */
+async function loadWorkerHighlightedDiff(
+  file: DiffFile,
+  metadata: FileDiffMetadata,
+  theme: AppTheme,
+  sourcePlan: SourceBackedHighlightPlan | null,
+) {
+  const aliasContext = sourcePlan === null;
+  const language = file.language ?? "text";
+  const syntaxTheme = syntaxHighlightThemeName(theme);
+  const payload = await highlightDiffInWorker({
+    aliasContext,
+    appearance: theme.appearance,
+    language,
+    metadata,
+    theme: syntaxTheme,
+  });
+  validateCompactHighlightedDiff(payload, compactHighlightLineLengths(metadata));
+
+  return {
+    deletionLines: [],
+    additionLines: [],
+    compact: {
+      payload,
+      deletionLineMap: sourcePlan?.deletionLineMap,
+      additionLineMap: sourcePlan?.additionLineMap,
+    },
+  } satisfies HighlightedDiffCode;
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
   theme: HighlightThemeInput = "dark",
+  options: LoadHighlightedDiffOptions = {},
 ): Promise<HighlightedDiffCode> {
+  // Checked before the source read so an oversized file costs neither I/O nor queue time.
+  if (!shouldHighlightDiff(file)) {
+    return UNHIGHLIGHTED_DIFF;
+  }
+
   const sourcePlan = await loadSourceBackedHighlightPlan(file);
+  // A source graft includes every line before the visible hunk. Keep its work bounded, but fall
+  // back to the already-eligible patch fragment instead of blanking a small review diff.
+  const highlightSourcePlan =
+    sourcePlan && shouldHighlightMetadata(sourcePlan.metadata) ? sourcePlan : null;
+  const metadata = highlightSourcePlan?.metadata ?? file.metadata;
+
+  if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
+    try {
+      return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
+    } catch {
+      // Do not repeat a multi-second highlight on the event loop after a worker failure. Render
+      // plain rows now, but leave a later file visit free to retry a recreated worker.
+      return { deletionLines: [], additionLines: [], retryable: true };
+    }
+  }
 
   try {
     const highlighter = await prepareHighlighter(file.language, theme);
     try {
-      return await renderHighlightedDiff(
-        file,
-        sourcePlan?.metadata ?? file.metadata,
-        highlighter,
-        theme,
-        sourcePlan,
-      );
+      return await renderHighlightedDiff(file, metadata, highlighter, theme, highlightSourcePlan);
     } catch (error) {
-      if (!sourcePlan) {
+      if (!highlightSourcePlan) {
         throw error;
       }
 
@@ -786,6 +809,8 @@ export function buildSplitRows(
               deletionLines[deletionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
             ),
             right: makeSplitCell(
               "context",
@@ -794,6 +819,8 @@ export function buildSplitRows(
               additionLines[additionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
             ),
           });
         }
@@ -825,6 +852,7 @@ export function buildSplitRows(
                 theme,
                 tabWidth,
                 file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
+                compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
           right: hasAddition
@@ -836,6 +864,7 @@ export function buildSplitRows(
                 theme,
                 tabWidth,
                 file.lineMoveKinds?.additionLines[additionLineIndex + offset],
+                compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
         });
@@ -902,6 +931,8 @@ export function buildStackRows(
               additionLines[additionLineIndex + offset],
               theme,
               tabWidth,
+              undefined,
+              compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
             ),
           });
         }
@@ -928,6 +959,7 @@ export function buildStackRows(
             theme,
             tabWidth,
             file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
+            compactRunsForHighlightedLine(highlighted, "deletion", deletionLineIndex + offset),
           ),
         });
       }
@@ -947,6 +979,7 @@ export function buildStackRows(
             theme,
             tabWidth,
             file.lineMoveKinds?.additionLines[additionLineIndex + offset],
+            compactRunsForHighlightedLine(highlighted, "addition", additionLineIndex + offset),
           ),
         });
       }

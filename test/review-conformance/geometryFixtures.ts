@@ -7,7 +7,7 @@
  * they are the inputs the deleted copies got wrong.
  */
 import { createTestDiffFile, lines } from "../helpers/diff-helpers";
-import type { DiffFile } from "../../src/core/types";
+import type { DiffFile } from "../../src/core/changeset/model";
 import type { ReviewGeometryFixture } from "./types";
 
 /** Twelve numbered lines, the base every geometry fixture edits. */
@@ -90,16 +90,12 @@ export const REVIEW_GEOMETRY_FIXTURES: readonly ReviewGeometryFixture[] = [
       files: [
         {
           path: "deletion.ts",
-          // Pins the recorded residual, not the ideal: the true omitted region is lines
-          // 1–5, but the parser's `collapsedBefore` undercounts a zero-anchor-side
-          // leading gap by one, so every consumer currently agrees on [2, 5]. When the
-          // staged A1/A2 residual correction lands, this expectation changes to
-          // [1, 5] / lineCount 5 in the same commit (`reviewLeadingGap`'s doc comment,
-          // `docs/browser-review-seam-audit.md`).
-          gaps: [{ gapId: "before:0", oldRange: [2, 5], newRange: [2, 5], lineCount: 4 }],
+          // Pierre reports the full omitted region even though the new side has no rows.
+          gaps: [{ gapId: "before:0", oldRange: [1, 5], newRange: [1, 5], lineCount: 5 }],
           hunkRanges: [{ oldRange: [6, 6], newRange: [5, 5] }],
           defaultNoteTargets: [{ side: "old", line: 6 }],
           expandedRows: [
+            { oldLine: 1, newLine: 1, text: "line 1" },
             { oldLine: 2, newLine: 2, text: "line 2" },
             { oldLine: 3, newLine: 3, text: "line 3" },
             { oldLine: 4, newLine: 4, text: "line 4" },

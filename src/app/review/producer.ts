@@ -41,8 +41,8 @@ import {
 } from "../../core/review/resources";
 import type { ReviewDigestFn } from "../../core/review/validation";
 import type { ReviewStore } from "../../core/review/store";
-import type { DiffFile } from "../../core/types";
-import { nodeReviewDigest } from "../../lib/reviewDigest";
+import type { DiffFile } from "../../core/changeset/model";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 import { buildReviewPublication, type ReviewPublication } from "./publication";
 import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore";
 
@@ -81,6 +81,34 @@ export interface PublishReviewInput {
   sourceLabel?: string;
 }
 
+/** Fully validated next generation that can be reserved without changing current publication. */
+export interface PreparedReviewPublication {
+  readonly identity: ReviewGenerationIdentity;
+  readonly publication: ReviewPublication;
+  readonly resourceStore: ReviewResourceStore;
+}
+
+export interface ReviewPublicationCommitOptions {
+  detachStore?: boolean;
+}
+
+/** One producer-owned reservation whose final commit is synchronous and non-throwing. */
+export interface ReservedReviewPublication {
+  commit(options?: ReviewPublicationCommitOptions): ReviewPublication;
+  cancel(): void;
+}
+
+interface PreparedReviewPublicationOwnership {
+  producer: ReviewProducer;
+  baseGeneration: string;
+  state: "prepared" | "reserved" | "settled";
+}
+
+const preparedReviewPublicationOwnership = new WeakMap<
+  PreparedReviewPublication,
+  PreparedReviewPublicationOwnership
+>();
+
 /** How many resource ids one bulk request may name at once. */
 export const MAX_REVIEW_RESOURCE_BATCH = 512;
 
@@ -91,6 +119,7 @@ export class ReviewProducer {
   private publication: ReviewPublication;
   private resourceStore: ReviewResourceStore;
   private store: ReviewStore | undefined;
+  private publicationReservation: object | undefined;
 
   constructor(input: PublishReviewInput, options: ReviewProducerOptions = {}) {
     this.digest = options.digest ?? nodeReviewDigest;
@@ -117,6 +146,81 @@ export class ReviewProducer {
     };
   }
 
+  /** Validate and materialize the next generation without changing what this producer serves. */
+  preparePublication(input: PublishReviewInput): PreparedReviewPublication {
+    const previous = this.getPublicationAddress();
+    const identity = nextReviewGeneration(this.identity);
+    const generation = formatReviewGeneration(identity);
+    // A new generation restarts revisions, so the check is about the generation step; the
+    // contract states that revisions are only comparable within one.
+    assertReviewPublicationAdvance(previous, { generation, stateRevision: 0 });
+
+    const publication = buildReviewPublication({
+      files: input.files,
+      generation,
+      ...(input.sourceLabel !== undefined ? { sourceLabel: input.sourceLabel } : {}),
+    });
+    const prepared: PreparedReviewPublication = {
+      identity,
+      publication,
+      resourceStore: this.createResourceStore(publication),
+    };
+    preparedReviewPublicationOwnership.set(prepared, {
+      producer: this,
+      baseGeneration: previous.generation,
+      state: "prepared",
+    });
+    return prepared;
+  }
+
+  /** Reserve one owned, current preparation before a caller exposes it through a transport. */
+  reservePublication(prepared: PreparedReviewPublication): ReservedReviewPublication {
+    const ownership = preparedReviewPublicationOwnership.get(prepared);
+    if (!ownership || ownership.producer !== this) {
+      throw new Error("Cannot reserve a review publication prepared by another producer.");
+    }
+    if (ownership.state !== "prepared") {
+      throw new Error("Cannot reserve a review publication more than once.");
+    }
+    if (this.publicationReservation) {
+      throw new Error("Cannot reserve a review publication while another reservation is active.");
+    }
+    if (ownership.baseGeneration !== this.publication.generation) {
+      throw new Error("Cannot reserve a stale review publication.");
+    }
+
+    const reservation = {};
+    this.publicationReservation = reservation;
+    ownership.state = "reserved";
+    let settled = false;
+
+    /** Settle this exact reservation once, optionally publishing its prepared generation. */
+    const settle = (
+      commit: boolean,
+      options: ReviewPublicationCommitOptions = {},
+    ): ReviewPublication => {
+      if (settled) return this.publication;
+      settled = true;
+      ownership.state = "settled";
+      if (this.publicationReservation !== reservation) return this.publication;
+      this.publicationReservation = undefined;
+      if (!commit) return this.publication;
+
+      this.identity = prepared.identity;
+      this.publication = prepared.publication;
+      this.resourceStore = prepared.resourceStore;
+      if (options.detachStore) this.store = undefined;
+      return this.publication;
+    };
+
+    return {
+      commit: (options) => settle(true, options),
+      cancel: () => {
+        settle(false);
+      },
+    };
+  }
+
   /**
    * Publish the next generation of this review.
    *
@@ -126,21 +230,8 @@ export class ReviewProducer {
    * describe a review nobody is looking at any more.
    */
   publish(input: PublishReviewInput): ReviewPublication {
-    const previous = this.getPublicationAddress();
-    const identity = nextReviewGeneration(this.identity);
-    const generation = formatReviewGeneration(identity);
-    // A new generation restarts revisions, so the check is about the generation step; the
-    // contract states that revisions are only comparable within one.
-    assertReviewPublicationAdvance(previous, { generation, stateRevision: 0 });
-
-    this.identity = identity;
-    this.publication = buildReviewPublication({
-      files: input.files,
-      generation,
-      ...(input.sourceLabel !== undefined ? { sourceLabel: input.sourceLabel } : {}),
-    });
-    this.resourceStore = this.createResourceStore();
-    return this.publication;
+    const prepared = this.preparePublication(input);
+    return this.reservePublication(prepared).commit();
   }
 
   /**
@@ -232,10 +323,10 @@ export class ReviewProducer {
     return this.resourceStore.materializeAll(resourceIds);
   }
 
-  /** Build the resource store that belongs to the current generation. */
-  private createResourceStore() {
+  /** Build the resource store that belongs to one prepared or current generation. */
+  private createResourceStore(publication = this.publication) {
     return new ReviewResourceStore({
-      publication: this.publication,
+      publication,
       digest: this.digest,
       ...(this.resourceConcurrency !== undefined ? { concurrency: this.resourceConcurrency } : {}),
     });

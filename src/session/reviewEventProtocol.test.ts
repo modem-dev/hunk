@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { nodeReviewDigest } from "../lib/reviewDigest";
+import { nodeReviewDigest } from "../core/reviewDigest";
 import { MAX_HUNK_REVIEW_ENVELOPE_BYTES } from "./reviewProtocol";
 import {
   encodeReviewEventFrame,

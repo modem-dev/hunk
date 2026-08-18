@@ -1,6 +1,7 @@
 import { Fragment, isValidElement, memo, type ReactNode } from "react";
 import { parseColor, StyledText, type TextChunk } from "@opentui/core";
-import type { DiffFile, UserNoteLineTarget } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
+import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { AppTheme } from "../themes";
 import {
   resolveSplitCellGeometry,
@@ -32,7 +33,7 @@ import {
 } from "./rowStyle";
 import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
-import { wrapText } from "../lib/agentPopover";
+import { wrapText } from "../lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import {
   isPrintableAsciiText,
@@ -45,8 +46,8 @@ import {
   textClusters,
   wrapSanitizedTextByWidth,
 } from "../lib/text";
-import type { CopySelectedRowRange } from "../components/panes/copySelection";
-import type { CursorLine } from "../../core/types";
+import type { CopySelectedRowRange } from "../lib/diffSpatial";
+import type { CursorLine } from "../../core/run/commandInputs";
 
 export interface CursorHighlight {
   /** The render plan anchor of the row the cursor rests on, shared with reveal lookups. */

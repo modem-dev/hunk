@@ -23,14 +23,38 @@ interface ShowcaseImage {
   alt: string;
 }
 
+/**
+ * A source sample in the same framed chrome as the captures. The highlight
+ * spans are hand-authored so the landing page ships no highlighter script,
+ * and the title bar carries the path the file actually lives at.
+ */
+interface ShowcaseCode {
+  kind: "code";
+  file: string;
+  source: string;
+  label: string;
+}
+
 interface ShowcaseFeature {
   kind: "feature";
   heading: string;
   body: string;
   href: string;
   linkText: string;
-  media: ShowcaseVideo | ShowcaseImage;
+  media: ShowcaseVideo | ShowcaseImage | ShowcaseCode;
 }
+
+/** Keep in sync with the hello-world example in docs/extend/extensions. */
+const extensionSample = [
+  `<span class="k">import type</span> { HunkExtensionAPI } <span class="k">from</span> <span class="s">"hunkdiff/extension"</span>;`,
+  ``,
+  `<span class="k">export default function</span> (hunk: HunkExtensionAPI) {`,
+  `  hunk.registerCommand(`,
+  `    { id: <span class="s">"hello"</span>, title: <span class="s">"Say hello"</span>, key: <span class="s">"f6"</span> },`,
+  `    (ctx) =&gt; ctx.notify(<span class="s">"Hello from my extension"</span>),`,
+  `  );`,
+  `}`,
+].join("\n");
 
 /** A pull-quote breather between feature rows, linked to the original post. */
 interface ShowcaseQuote {
@@ -42,7 +66,8 @@ interface ShowcaseQuote {
 
 /**
  * The tour interleaves quotes as beats between chapters: Mitchell's after the
- * reviewing story (stream + agent notes), DHH's before the closing themes row.
+ * reviewing story (stream + agent notes), DHH's before the closing rows on
+ * making Hunk your own — themes, then extensions.
  */
 const showcase: (ShowcaseFeature | ShowcaseQuote)[] = [
   {
@@ -127,6 +152,19 @@ const showcase: (ShowcaseFeature | ShowcaseQuote)[] = [
       label: "One split diff crossfading through Hunk themes including Midnight, Dracula, Catppuccin Mocha, Gruvbox, and GitHub Light",
     },
   },
+  {
+    kind: "feature",
+    heading: "Extend it however you want.",
+    body: "Add a theme, a command, a new way to preview a file, a docked pane, or a whole version-control backend. Extensions are plain TypeScript, and you can install one from any git repository.",
+    href: "/docs/extend/extensions/",
+    linkText: "Writing extensions",
+    media: {
+      kind: "code",
+      file: "~/.config/hunk/extensions/hello.ts",
+      source: extensionSample,
+      label: "A complete Hunk extension: a TypeScript file that registers a command bound to f6",
+    },
+  },
 ];
 ---
 
@@ -152,8 +190,21 @@ const showcase: (ShowcaseFeature | ShowcaseQuote)[] = [
               {item.linkText} →
             </a>
           </div>
-          <figure class="show-media">
-            {item.media.kind === "image" ? (
+          <figure class:list={["show-media", item.media.kind === "code" && "show-code"]}>
+            {item.media.kind === "code" ? (
+              <Fragment>
+                <div class="paper-bar">
+                  <span class="dot" />
+                  <span class="dot" />
+                  <span class="dot" />
+                  <span class="pt">{item.media.file}</span>
+                </div>
+                {/* Focusable because the sample scrolls sideways on narrow screens.
+                    Kept on one line: pre preserves the source formatting verbatim. */}
+                {/* prettier-ignore */}
+                <pre tabindex="0" aria-label={item.media.label}><code set:html={item.media.source} /></pre>
+              </Fragment>
+            ) : item.media.kind === "image" ? (
               <img
                 src={item.media.src}
                 width={item.media.width}

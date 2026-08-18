@@ -19,7 +19,7 @@
  * the previous generation's bytes become collectable as soon as it is retired.
  */
 import { ConcurrencyGate } from "@hunk/session-broker-core";
-import { SourceTextTooLargeError } from "../../core/fileSource";
+import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   isMaterializedReviewResource,
   isReviewResourceRange,

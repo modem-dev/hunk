@@ -1,4 +1,4 @@
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import type { ExtensionFileSide } from "../../extension-api/types";
 
 /** Abort one caller's wait without cancelling the host's shared source read. */

@@ -6,11 +6,13 @@
  */
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/run/commandInputs";
+import type { UserNoteLineTarget } from "../../core/liveComments";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
-import type { CopySelectedRowRange } from "../components/panes/copySelection";
+import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
@@ -100,6 +102,7 @@ export function DiffSectionBody({
   selectedHunkIndex,
   sectionGeometry,
   shouldLoadHighlight = true,
+  offloadLargeDiff = false,
   scrollable = true,
   visibleBodyBounds,
 }: {
@@ -131,6 +134,7 @@ export function DiffSectionBody({
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
+  offloadLargeDiff?: boolean;
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
@@ -205,6 +209,7 @@ export function DiffSectionBody({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
+    offloadLargeDiff,
     theme,
     shouldLoadHighlight,
   });

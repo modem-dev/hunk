@@ -1,5 +1,5 @@
-import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../../core/experimental";
-import type { CliInput } from "../../core/types";
+import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../../core/run/experimental";
+import type { CliInput } from "../../core/run/commandInputs";
 import {
   MAX_REGISTRATION_FILES,
   MAX_REGISTRATION_HUNKS_PER_FILE,

@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "node:path";
 import { describe, expect, test } from "bun:test";
-import type { CliInput, CommonOptions } from "../../core/types";
+import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
 import {
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,

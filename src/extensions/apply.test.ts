@@ -7,10 +7,11 @@ import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
 } from "../extension-api/types";
-import type { Changeset, DiffFile } from "../core/types";
+import type { Changeset, DiffFile } from "../core/changeset/model";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { HUNK_FILES_PANE_KEY } from "./extensionIds";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
@@ -23,6 +24,7 @@ import {
   resolveExtensionKeyboardModes,
   resolveExtensionLineHighlighters,
   resolveExtensionPanes,
+  resolveExtensionSessionOptions,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -105,7 +107,7 @@ describe("extension file languages", () => {
   });
 
   test("lets the last extension registration win for the same file extension", async () => {
-    const { fileLanguageForPath } = await import("../core/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       { extensionId: "first", extension: "hunkfixture", language: "python" },
@@ -114,6 +116,20 @@ describe("extension file languages", () => {
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
     expect(fileLanguageForPath("sample.hunkfixture")).toBe("ruby");
+  });
+});
+
+describe("extension session options", () => {
+  test("lets any transient request win for the shared review session", () => {
+    const result = createEmptyExtensionLoadResult("/repo");
+    result.registry.sessionOptions.push(
+      { extensionId: "default", options: { viewPreferences: "default" } },
+      { extensionId: "guide", options: { viewPreferences: "transient" } },
+    );
+
+    expect(resolveExtensionSessionOptions(result.registry)).toEqual({
+      transientViewPreferences: true,
+    });
   });
 });
 
@@ -175,7 +191,7 @@ describe("extension panes", () => {
     const { panes, issues } = resolveExtensionPanes(result.registry);
 
     // Registration is additive: distinct panes from any extension coexist,
-    // and only an identity collision is refused.
+    // while this fixture's identity collision is refused.
     expect(panes).toEqual([
       { extensionId: "alpha", pane: tree },
       { extensionId: "beta", pane: flat },
@@ -184,6 +200,40 @@ describe("extension panes", () => {
       {
         extensionId: "alpha",
         message: 'Skipped duplicate pane "alpha:tree" from extension alpha',
+      },
+    ]);
+  });
+
+  test("keeps the first pane when several registrations replace one target", () => {
+    const result = createEmptyExtensionLoadResult();
+    const first = {
+      id: "first-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const second = {
+      id: "second-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const extra = { id: "extra", component: () => null };
+    result.registry.panes.push(
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: second },
+      { extensionId: "beta", pane: extra },
+    );
+
+    const { panes, issues } = resolveExtensionPanes(result.registry);
+
+    expect(panes).toEqual([
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: extra },
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "beta",
+        message:
+          'Skipped pane "beta:second-files" from extension beta • another pane already replaces "hunk:files"',
       },
     ]);
   });

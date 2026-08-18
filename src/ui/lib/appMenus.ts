@@ -1,4 +1,4 @@
-import type { CursorLine, LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -6,11 +6,9 @@ import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appComma
  * The dropdown menus, expressed as references into the command table.
  *
  * A menu item is a command plus presentation: nothing here re-implements an
- * action or re-states which key runs it. Labels and checkbox state are the two
- * things the menu genuinely owns — a menu reads "Sidebar" under "View" where
- * the command is titled "Toggle sidebar", and only App knows whether the
- * sidebar is currently showing — so those are declared per entry and everything
- * else is derived from the command the entry names.
+ * action or re-states which key runs it. Labels and checkbox state are the
+ * presentation details the menu owns; App supplies whether the active files
+ * pane is visible, and everything else comes from the command it names.
  */
 
 /** One dropdown item, named by the command it runs. */
@@ -41,7 +39,7 @@ export interface BuildAppMenusOptions {
   copyDecorations: boolean;
   cursorLine: CursorLine;
   layoutMode: LayoutMode;
-  renderSidebar: boolean;
+  filesPaneVisible: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
@@ -131,7 +129,7 @@ export function buildAppMenus({
   copyDecorations,
   cursorLine,
   layoutMode,
-  renderSidebar,
+  filesPaneVisible,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
@@ -157,7 +155,7 @@ export function buildAppMenus({
       },
       { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
       SEPARATOR,
-      { commandId: "hunk.view.toggleSidebar", label: "Sidebar", checked: renderSidebar },
+      { commandId: "hunk.view.toggleFilesPane", label: "Files pane", checked: filesPaneVisible },
       { commandId: "hunk.view.toggleMenuBar", label: "Menu bar", checked: showMenuBar },
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },

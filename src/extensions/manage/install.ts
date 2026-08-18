@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { HunkUserError } from "../../core/errors";
+import { HunkUserError } from "../../core/run/errors";
 import { directoryContainsExtensionEntries } from "../discovery";
 import { readInstallRecords, writeInstallRecords, type ExtensionInstallRecord } from "./records";
 import type { ExtensionInstallSource } from "./source";

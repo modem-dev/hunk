@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
-import type { CliInput } from "../types";
+import type { CliInput } from "../run/commandInputs";
 import { createVcsCatalog } from "../vcs";
 import type { VcsAdapter } from "../vcs/types";
 import { resolveWatchPlan as resolveCoreWatchPlan, type WatchPlanContext } from "./plan";

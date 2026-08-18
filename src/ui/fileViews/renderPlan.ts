@@ -1,4 +1,4 @@
-import type { AgentAnnotation } from "../../core/types";
+import type { AgentAnnotation } from "../../extension-api/types";
 import type { ExtensionFileViewLayout, ExtensionFileViewRow } from "../../extension-api/types";
 import { inlineNoteStableKey, lineStableKey } from "../diff/reviewRenderPlan";
 import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";

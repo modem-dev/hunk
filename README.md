@@ -35,6 +35,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
+Or with the install script on macOS and Linux, which downloads the prebuilt binary, verifies its checksum, and installs into `~/.hunk`:
+
+```bash
+curl -fsSL https://hunk.dev/install.sh | sh
+```
+
 Or with Homebrew:
 
 ```bash
@@ -44,7 +50,7 @@ brew install hunk
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
-Or with [mise](https://mise.jdx.dev) (macOS and Linux):
+Or with [mise](https://mise.jdx.dev) (Windows requires mise 2026.8.6 or newer):
 
 ```bash
 mise use -g hunk
@@ -53,12 +59,14 @@ mise use -g hunk
 Requirements:
 
 - macOS, Linux, or Windows
-- Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
+- Node.js 18+ for the npm install; the install script, Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
 
 > Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
+
+Later, `hunk update` installs the newest release with whichever package manager you used (`hunk update --check` just reports the versions). mise, Nix, and source installs print the command that updates them instead.
 
 ## Quick start
 
@@ -73,6 +81,7 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 
 ```bash
 hunk diff                      # review current repo changes, including untracked files
+hunk --fast                    # experimentally offload eligible large-diff highlighting
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
@@ -140,9 +149,10 @@ vcs = "git"          # git, jj, sl
 watch = false
 exclude_untracked = false
 line_numbers = true
-tab_width = 4       # tab stops, 1-16
+tab_width = 4        # tab stops, 1-16
 wrap_lines = false
 menu_bar = true
+sidebar = "auto"     # "auto", true, false
 agent_notes = false
 prompt_save_view_preferences = true
 transparent_background = false

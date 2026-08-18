@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import { join } from "node:path";
-import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../binary";
-import { buildDiffFile, createSkippedLargeMetadata } from "../diffFile";
-import { createFileSourceFetcher } from "../fileSource";
+import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../changeset/binary";
+import { buildDiffFile, createSkippedLargeMetadata } from "../changeset/diffFile";
+import { createFileSourceFetcher } from "../changeset/fileSource";
 import { inspectLargeUntrackedFile } from "../../lib/largeFile";
 import { escapeUntrackedPatchPath } from "../../lib/patchPath";
 import { parseSingleFilePatch } from "../patch/singleFile";

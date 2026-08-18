@@ -3,7 +3,7 @@ import { projectReviewDocument } from "../core/review/document";
 import type { ReviewFileV1 } from "../core/review/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../../test/helpers/diff-helpers";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
-import { reviewHttpFailure } from "../session/reviewHttpProtocol";
+import { reviewHttpFailure } from "../session/reviewErrorCatalog";
 import type { BrowserReviewResult } from "./browserReviewApiClient";
 import { BrowserReviewSourceStore, type BrowserReviewSourceReader } from "./browserReviewSources";
 

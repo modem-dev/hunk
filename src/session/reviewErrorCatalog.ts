@@ -22,7 +22,7 @@
  *   key or a gap id; the catalog stays constant so it can be rendered anywhere,
  *   including where the caller's input must not be echoed back.
  */
-import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
+import type { HunkReviewClientErrorCodeV1, HunkReviewHttpFailureV1 } from "./reviewHttpProtocol";
 
 /** One documented failure: what it means, and what the person in front of it can do. */
 export interface ReviewErrorDoc {
@@ -139,4 +139,25 @@ export function describeReviewError(code: HunkReviewClientErrorCodeV1): ReviewEr
 export function reviewErrorMessage(code: HunkReviewClientErrorCodeV1): string {
   const doc = REVIEW_ERROR_CATALOG[code];
   return `${doc.message} ${doc.remedy}`;
+}
+
+/**
+ * Build one refusal in the shape every review route answers with.
+ *
+ * The message comes from the shared catalog unless a tier supplied a more specific one, so
+ * no consumer — the surface answering, or a client rebuilding what it was told — has to
+ * invent wording for a code (`docs/browser-review-seam-audit.md`, G4). It lives here, not
+ * with the HTTP contract, because the catalog is the tier that turns a code into a
+ * sentence — the shape it fills stays declared in `reviewHttpProtocol`.
+ */
+export function reviewHttpFailure(
+  code: HunkReviewClientErrorCodeV1,
+  details: { message?: string; currentGeneration?: string } = {},
+): HunkReviewHttpFailureV1 {
+  return {
+    ok: false,
+    code,
+    message: details.message ?? reviewErrorMessage(code),
+    ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
+  };
 }

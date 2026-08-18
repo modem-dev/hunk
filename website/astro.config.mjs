@@ -45,6 +45,11 @@ export default defineConfig({
               description: "Drop-in agent skill for driving a live Hunk review session.",
             },
             {
+              label: "Hunk changelog",
+              url: "https://hunk.dev/changelog/",
+              description: "Every release, grouped by minor series, with per-version change lists.",
+            },
+            {
               label: "GitHub repository",
               url: "https://github.com/modem-dev/hunk",
               description: "Source, issues, and changelog.",
@@ -55,9 +60,10 @@ export default defineConfig({
           customSelectors: { all: ["a.sl-anchor-link"] },
           // Lead with the overview and onboarding pages rather than alphabetical order.
           promote: ["docs", "docs/start/**"],
-          // Extension authoring is a niche, code-heavy slice of the docs. It stays in
-          // llms-full.txt but is dropped from the smaller context-constrained variant.
-          exclude: ["docs/extend/**", "docs/reference/opentui-components"],
+          // Extension authoring is a niche, code-heavy slice of the docs, and the changelog is
+          // long and grows every release. Both stay in llms-full.txt — which is what answers
+          // "which version added X" — but drop out of the context-constrained variant.
+          exclude: ["docs/extend/**", "docs/reference/opentui-components", "changelog/**"],
         }),
       ],
       head: [
@@ -96,6 +102,7 @@ export default defineConfig({
         Footer: "./src/components/docs/DocsFooter.astro",
         Head: "./src/components/docs/DocsHead.astro",
         Header: "./src/components/docs/DocsHeader.astro",
+        MarkdownContent: "./src/components/docs/DocsMarkdownContent.astro",
         MobileMenuFooter: "./src/components/docs/DocsMobileMenuFooter.astro",
         Sidebar: "./src/components/docs/DocsSidebar.astro",
         ThemeProvider: "./src/components/docs/LightThemeProvider.astro",
@@ -168,6 +175,9 @@ export default defineConfig({
             { label: "Deployment integration", slug: "docs/help/deployment" },
           ],
         },
+        // One link rather than a group: the changelog is generated, grows every release, and
+        // carries its own series navigation, so listing 19 versions here would bury the docs.
+        { label: "Changelog", link: "/changelog/" },
       ],
     }),
   ],

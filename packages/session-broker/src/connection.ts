@@ -109,15 +109,16 @@ export class SessionBrokerConnection<
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
-    this.registration = registration;
-    this.snapshot = snapshot;
     // Re-register instead of sending only a snapshot because selectors like cwd, repoRoot, and the
-    // session id itself live in the registration envelope.
+    // session id itself live in the registration envelope. Send before committing local state so
+    // a throwing socket keeps the previous registration and snapshot coherent.
     this.send({
       type: "register",
       registration,
       snapshot,
     });
+    this.registration = registration;
+    this.snapshot = snapshot;
   }
 
   updateSnapshot(snapshot: SessionSnapshot<State>) {

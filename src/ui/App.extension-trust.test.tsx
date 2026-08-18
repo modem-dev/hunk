@@ -39,6 +39,7 @@ function createTrustHarness(initial: AppBootstrap) {
     return (
       <App
         bootstrap={bootstrap}
+        onRegisterWorkspaceRefreshRequest={() => () => {}}
         onReloadSession={async () => ({
           sessionId: "test",
           inputKind: bootstrap.input.kind,
@@ -47,6 +48,11 @@ function createTrustHarness(initial: AppBootstrap) {
           fileCount: bootstrap.changeset.files.length,
           selectedHunkIndex: 0,
         })}
+        onWorkspaceWriteCompleted={() => {}}
+        runWorkspaceWrite={async (write) => {
+          await write();
+          return true;
+        }}
       />
     );
   }

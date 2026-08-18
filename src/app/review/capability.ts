@@ -18,7 +18,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { REVIEW_CAPABILITY_ENTROPY_BYTES, reviewUrl } from "../../session/reviewHttpProtocol";
-import { nodeReviewDigest } from "../../lib/reviewDigest";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 
 /** One capability: the secret its holder presents, and the digest the daemon verifies against. */
 export interface ReviewCapability {

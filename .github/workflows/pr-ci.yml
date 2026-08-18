@@ -88,6 +88,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Module boundary check
+        run: bun run deps:check
+
       - name: Theme contrast check
         run: bun run test:theme-contrast
 
@@ -174,6 +177,9 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Module boundary check
+        run: bun run deps:check
 
       - name: Theme contrast check
         run: bun run test:theme-contrast

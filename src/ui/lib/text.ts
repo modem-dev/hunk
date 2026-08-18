@@ -8,17 +8,11 @@ const printableAsciiRegex = /^[\u0020-\u007E]*$/;
 export function isPrintableAsciiText(text: string) {
   return printableAsciiRegex.test(text);
 }
-const graphemeSegmenter =
-  typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null;
+// Hunk and string-width both require Intl.Segmenter to preserve terminal grapheme semantics.
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** Iterate user-visible text clusters so wide and combining characters stay together. */
 export function textClusters(text: string) {
-  if (!graphemeSegmenter) {
-    return Array.from(text);
-  }
-
   return Array.from(graphemeSegmenter.segment(text), (segment) => segment.segment);
 }
 
@@ -101,14 +95,75 @@ export function measureSimpleSanitizedTextWidth(text: string) {
   return width;
 }
 
+// Real source reuses a small vocabulary of multi-scalar clusters, while a diff can supply
+// unbounded input. Cap both the entry count and cached key length to bound retained text.
+export const CLUSTER_WIDTH_CACHE_MAX_ENTRIES = 256;
+export const CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS = 64;
+
+/** Store terminal widths without retaining an unbounded set or size of source clusters. */
+export class BoundedClusterWidthCache {
+  readonly #entries = new Map<string, number>();
+
+  constructor(
+    private readonly maxEntries: number,
+    private readonly maxKeyCodeUnits: number,
+  ) {}
+
+  /** Return one cached width without changing the FIFO eviction order. */
+  get(cluster: string) {
+    return this.#entries.get(cluster);
+  }
+
+  /** Cache one eligible width and remove the oldest entry when the limit is exceeded. */
+  set(cluster: string, width: number) {
+    if (cluster.length > this.maxKeyCodeUnits) {
+      return;
+    }
+
+    this.#entries.set(cluster, width);
+    while (this.#entries.size > this.maxEntries) {
+      const oldest = this.#entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.#entries.delete(oldest);
+    }
+  }
+
+  /** Return the number of retained cluster widths. */
+  get size() {
+    return this.#entries.size;
+  }
+}
+
+const cachedClusterWidths = new BoundedClusterWidthCache(
+  CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
+  CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS,
+);
+
+/** Measure one complex cluster with a small FIFO cache for repeated source glyphs. */
+function measureCachedClusterWidth(cluster: string) {
+  const cached = cachedClusterWidths.get(cluster);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const width = stringWidth(cluster);
+  cachedClusterWidths.set(cluster, width);
+  return width;
+}
+
 /**
  * Measure one grapheme cluster in terminal cells, matching string-width on every input.
  *
  * A single-scalar cluster can never be an emoji sequence, and every single-scalar emoji is East
  * Asian Wide, so a zero-width check plus the EAW table reproduces string-width exactly.
- * Multi-scalar clusters delegate to string-width itself.
+ * Multi-scalar clusters delegate to string-width through a bounded cluster cache.
  */
 export function measureClusterWidth(cluster: string): number {
+  // Complex source lines still contain mostly ASCII clusters after segmentation.
+  if (cluster.length === 1 && cluster.charCodeAt(0) >= 0x20 && cluster.charCodeAt(0) <= 0x7e) {
+    return 1;
+  }
+
   const codePoint = cluster.codePointAt(0);
   if (codePoint === undefined) {
     return 0;
@@ -120,7 +175,7 @@ export function measureClusterWidth(cluster: string): number {
     return zeroWidthScalarRegex.test(cluster) ? 0 : eastAsianWidth(codePoint);
   }
 
-  return stringWidth(cluster);
+  return measureCachedClusterWidth(cluster);
 }
 
 /**
@@ -167,13 +222,88 @@ export function measureSanitizedTextWidth(text: string) {
   }
 
   // Most source text is a sequence of independent scalars. Scan code points directly instead of
-  // allocating Intl.Segmenter records; composition-sensitive text keeps the whole-string fallback.
-  return measureSimpleSanitizedTextWidth(text) ?? stringWidth(text);
+  // allocating Intl.Segmenter records. Composition-sensitive text segments once and reuses the
+  // bounded cluster cache, avoiding string-width's full emoji-regex pass for every source line.
+  const simpleWidth = measureSimpleSanitizedTextWidth(text);
+  if (simpleWidth !== null) {
+    return simpleWidth;
+  }
+
+  // Avoid materializing cluster strings in an array for a width-only traversal.
+  let width = 0;
+  for (const { segment } of graphemeSegmenter.segment(text)) {
+    width += measureClusterWidth(segment);
+  }
+  return width;
 }
 
 /** Measure text in terminal cells, treating CJK and emoji clusters as wide. */
 export function measureTextWidth(text: string) {
   return measureSanitizedTextWidth(sanitizeTerminalLine(text));
+}
+
+/** Wrap plain prose to terminal-cell width, preferring word boundaries. */
+export function wrapText(text: string, width: number) {
+  if (width <= 0) {
+    return [""];
+  }
+
+  const normalized = sanitizeTerminalLine(text).trim().replace(/\s+/g, " ");
+  if (normalized.length === 0) {
+    return [""];
+  }
+
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+
+  /** Commit the current prose row before starting another one. */
+  const pushCurrent = () => {
+    if (current.length > 0) {
+      lines.push(current);
+      current = "";
+      currentWidth = 0;
+    }
+  };
+
+  for (const word of words) {
+    const wordWidth = measureTextWidth(word);
+
+    if (wordWidth > width) {
+      pushCurrent();
+      let offset = 0;
+      while (offset < wordWidth) {
+        const chunk = sliceTextByWidth(word, offset, width);
+        if (chunk.width <= 0) {
+          // Width is narrower than one cluster; keep the remainder on one
+          // line (fitText clamps at render time) instead of dropping it.
+          const rest = sliceTextByWidth(word, offset, Number.MAX_SAFE_INTEGER);
+          if (rest.text.length > 0) {
+            lines.push(rest.text);
+          }
+          break;
+        }
+        lines.push(chunk.text);
+        offset += chunk.width;
+      }
+      continue;
+    }
+
+    const nextWidth = current.length === 0 ? wordWidth : currentWidth + 1 + wordWidth;
+    if (nextWidth <= width) {
+      current = current.length === 0 ? word : `${current} ${word}`;
+      currentWidth = nextWidth;
+      continue;
+    }
+
+    pushCurrent();
+    current = word;
+    currentWidth = wordWidth;
+  }
+
+  pushCurrent();
+  return lines.length > 0 ? lines : [""];
 }
 
 export interface WrappedTextChunk {

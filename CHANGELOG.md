@@ -1,5 +1,107 @@
 # Changelog
 
+## 0.19.0
+
+### Highlights
+
+Hunk 0.19.0 expands the extension platform, makes live agent guidance more precise, and keeps large reviews responsive.
+
+- **Install and build richer extensions.** Install shared extensions from Git, dock panes on every edge, add session-scoped keyboard modes and guided workflows, and use the bundled authoring skill to discover the public API.
+- **Point agents and reviewers at exact code.** Live sessions and extensions can highlight character ranges and navigate directly to a source line, while `$EDITOR` opens at the line currently under review.
+- **Stay responsive in large repositories.** Untracked-file diffs avoid per-file subprocesses, syntax caches follow the active review, generated files skip expensive highlighting, and experimental `--fast` highlighting can offload eligible large diffs to a worker.
+- **Control the workspace more precisely.** Configure sidebar visibility, keep files and extension panes independent, and use review keybindings consistently in selectors and extension modes.
+- **Verify and install releases confidently.** Release archives carry build provenance attestations, and mise installation is documented across macOS, Linux, and Windows.
+
+### Minor Changes
+
+- [#728](https://github.com/modem-dev/hunk/pull/728) [`bb6405e`](https://github.com/modem-dev/hunk/commit/bb6405e43c22bee359cd75b24b3c0fc08b0f24fa) - Agents can now light up exact character ranges in a live review with `hunk session highlight add` / `clear` (five contrast-guaranteed tones, painted through the same pipeline as extension line highlights), and `hunk session navigate` line targets now land the viewport on the exact line instead of just its hunk.
+
+- [#697](https://github.com/modem-dev/hunk/pull/697) [`cb91c4b`](https://github.com/modem-dev/hunk/commit/cb91c4bb5f94be1a009d010ee82fd5875cefc407) - Ship an extension-authoring skill for coding agents and let `hunk skill path [name]` print any bundled skill.
+
+- [#713](https://github.com/modem-dev/hunk/pull/713) [`ee97fef`](https://github.com/modem-dev/hunk/commit/ee97fefbc492a52543bfb4fe8be2a56e8f420622) - Open `$EDITOR` at the current line instead of the start of the selected hunk.
+
+- [#710](https://github.com/modem-dev/hunk/pull/710) [`cd0df72`](https://github.com/modem-dev/hunk/commit/cd0df72e402ea968c74f38239d98790ac86432bd) - Generalize extension sidebars into dockable panes on all four review edges.
+
+- [#717](https://github.com/modem-dev/hunk/pull/717) [`fe9373b`](https://github.com/modem-dev/hunk/commit/fe9373bcc7cd19d8c86333dcbf1079aa9c6fce6b) - Add extension APIs for transient sessions and observing or navigating guided review workflows.
+
+- [#712](https://github.com/modem-dev/hunk/pull/712) [`994f66d`](https://github.com/modem-dev/hunk/commit/994f66d7bcdfe48a5f17b78436cb078dde0f12b3) - Install shared extensions straight from git with `hunk extension install <owner>/<repo>[@ref]` (plus `list`, `update`, and `remove`), let extension manifests declare a minimum API version via `"hunk": {"apiVersion": N}`, and find community extensions under the `hunk-extension` GitHub topic.
+
+- [#726](https://github.com/modem-dev/hunk/pull/726) [`9bdb0bb`](https://github.com/modem-dev/hunk/commit/9bdb0bb94c28ce6b5ca5b052d3717ab6763ca2fb) - Extensions can mark character ranges inside diff lines with `hunk.registerLineHighlighter` (API v5): source-addressed, tone-based marks painted inside Hunk's own rendering with guaranteed contrast on every line kind, invalidated through `ctx.highlights.refresh`.
+
+- [#749](https://github.com/modem-dev/hunk/pull/749) [`76e5eb2`](https://github.com/modem-dev/hunk/commit/76e5eb22efd759025615c96c7cafa98dfaa35ca1) - Hunk now runs on OpenTUI 0.5, picking up its faster FFI layout reads and a fix for duplicate live frame timers. Embedders of `hunkdiff/opentui` need to move their `@opentui/core` and `@opentui/react` peer installs to `^0.5.1`.
+
+- [#706](https://github.com/modem-dev/hunk/pull/706) [`51df868`](https://github.com/modem-dev/hunk/commit/51df86850184b2b1a68be24c51b73465d32d50fb) - Let extensions invoke public Hunk review commands with atomic movement counts.
+
+- [`f1bc9bf`](https://github.com/modem-dev/hunk/commit/f1bc9bfb562dad43023d88e49a57b7a1f26ace9c) - Let every configured vertical review key move open selection dialogs, including the theme selector.
+
+- [#727](https://github.com/modem-dev/hunk/pull/727) [`b941e0f`](https://github.com/modem-dev/hunk/commit/b941e0f7e05b7e18516ddc4b8bd5748494dae0c1) - Extensions can jump the review to one exact source line with `ctx.navigation.revealLine(fileId, side, line)` (API v5), so a target deep inside a tall hunk lands near the top of the viewport instead of pages below its anchor.
+
+- [#708](https://github.com/modem-dev/hunk/pull/708) [`61cc6b1`](https://github.com/modem-dev/hunk/commit/61cc6b167b09f3238f83c6c4e45a128972a44771) - Let extensions activate visible session-scoped keyboard modes that route keys through Hunk's public semantic commands.
+
+- [#648](https://github.com/modem-dev/hunk/pull/648) [`c16206f`](https://github.com/modem-dev/hunk/commit/c16206f54da138b9fc21be60d8d414838af89a68) - Add configuration and CLI flags to control the sidebar in non-pager mode.
+
+- [#711](https://github.com/modem-dev/hunk/pull/711) [`e31f7ad`](https://github.com/modem-dev/hunk/commit/e31f7ad8dac6b5e84523d6aac7aee67fe7b152cd) - Decouple bundled VCS providers from core, add provider-neutral repository bootstrapping, and let extension source readers report files that exceed their safe read limit.
+
+### Patch Changes
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Publish GitHub build provenance attestations for the release archives so installs can be cryptographically verified.
+
+- [#743](https://github.com/modem-dev/hunk/pull/743) [`f5314d6`](https://github.com/modem-dev/hunk/commit/f5314d65757062091892105c19921a397fafd7a8) - Make the theme picker scroll independently, preview themes after a brief hover, and apply them on click.
+
+- [#695](https://github.com/modem-dev/hunk/pull/695) [`63babe0`](https://github.com/modem-dev/hunk/commit/63babe0021396357ed9aa8cd4ea9617b01ce95c4) - Fix malformed `@@` hunk headers so each side's line range and count are emitted correctly.
+
+- [#750](https://github.com/modem-dev/hunk/pull/750) [`781074d`](https://github.com/modem-dev/hunk/commit/781074d81c946e65744d93dece07e541ede96c44) - Start up faster for commands that never build a changeset. `hunk --version`, `--help`,
+  `daemon serve`, the markup commands, and `hunk session *` no longer load the VCS, extension, and
+  diff-engine graph before answering.
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Document installing Hunk with mise, and note that Hunk ships as a default Omarchy tool.
+
+- [#682](https://github.com/modem-dev/hunk/pull/682) [`cbd77c4`](https://github.com/modem-dev/hunk/commit/cbd77c4890ee4a07bed679162f6dbc1bf6e34885) - Wrap draft review notes by terminal cells instead of scrolling horizontally, so long CJK notes stay fully visible while typing; previously the composer stayed one row high and hid everything before the cursor.
+
+- [#740](https://github.com/modem-dev/hunk/pull/740) [`772212d`](https://github.com/modem-dev/hunk/commit/772212dd9a1d8a5ced8b5290c6efafbf762ac5f6) - Agent notes anchored to collapsed or expanded-away lines now render beside their owning hunk instead of the top of the file.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Budget the syntax highlighting cache by lines instead of file count, so reviews of many small files stop re-highlighting as you scroll and reviews of very large files stay within a bounded memory footprint.
+
+- [#757](https://github.com/modem-dev/hunk/pull/757) [`6d8752a`](https://github.com/modem-dev/hunk/commit/6d8752a132c96a8a618404f34e2e9c3fa073eda7) - Toggle the files pane without hiding independently controlled extension panes.
+
+- [#733](https://github.com/modem-dev/hunk/pull/733) [`ef5798e`](https://github.com/modem-dev/hunk/commit/ef5798ee3998f6ec026b204adfcc0fb6aa827054) - Fix extension line highlights: marks now paint per file as they resolve instead of waiting for every file, never paint a previous review's offsets onto a reloaded file, stay visible on transparent line backgrounds, keep every active file's result retained however large the review is, and paint a row carrying thousands of ranges in milliseconds instead of seconds. Marks still resolve their tint against an assumed background on transparent cells, and a range covering only zero-width characters paints nothing.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Keep syntax highlighting cached for the files you are actually reviewing, so scrolling back to a recent file no longer re-highlights it.
+
+- [#693](https://github.com/modem-dev/hunk/pull/693) [`505d9d3`](https://github.com/modem-dev/hunk/commit/505d9d373aec50b7c855e536dbab477560e5168d) - Keep the top menu bar inside the same one-column margin as the rest of the app instead of painting its background into the outer gutter.
+
+- [#759](https://github.com/modem-dev/hunk/pull/759) [`5ebe975`](https://github.com/modem-dev/hunk/commit/5ebe97549edeeef855da92f1086f7bdc41354377) - Add an experimental `hunk --fast` mode that keeps eligible large syntax-highlighted diffs responsive with a Bun worker.
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Recognize mise-managed installs and skip the startup update notice for them, since mise already keeps Hunk up to date.
+
+- [#777](https://github.com/modem-dev/hunk/pull/777) [`bdec620`](https://github.com/modem-dev/hunk/commit/bdec620a7e977d0aaa8d6670b4f2d349590838f6) - Document that `mise use -g hunk` now installs Hunk on Windows with mise 2026.8.6 or newer.
+
+- [#753](https://github.com/modem-dev/hunk/pull/753) [`cfe8eee`](https://github.com/modem-dev/hunk/commit/cfe8eee842a60d1f7946d1dbbb24b184b7ef62f8) - Improved diff alignment when a change block adds and removes different numbers of lines: the changed line now pairs with the line it actually resembles instead of whichever line happened to sit in the same position, so split view lines up correctly and the word-level highlight marks just the edited part instead of most of an unrelated line.
+
+- [#703](https://github.com/modem-dev/hunk/pull/703) [`5afddf1`](https://github.com/modem-dev/hunk/commit/5afddf130c16a20870b20f36b6c2e869da28e182) - Keep Git's colors in non-diff `hunk pager` output for captured pager hosts, so LazyGit's branch log renders in its normal per-branch palette instead of a single color.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Render diffs larger than 10,000 lines as plain rows instead of syntax highlighting them, so a regenerated lockfile appears immediately and stops delaying color on the files around it.
+
+- [#738](https://github.com/modem-dev/hunk/pull/738) [`58c7d48`](https://github.com/modem-dev/hunk/commit/58c7d48fffa693eeee5e6a9ef94e9e892439b8fe) - Fix `hunk diff` taking tens of seconds in repos with many untracked files by synthesizing untracked diffs in-process instead of spawning one `git diff --no-index` subprocess per file.
+
+- [#760](https://github.com/modem-dev/hunk/pull/760) [`e5116b3`](https://github.com/modem-dev/hunk/commit/e5116b3a35a8733eb9e4985dade9a66e0327f3ca) - Name the public files-pane command `hunk.view.toggleFilesPane`, preserve `hunk.view.toggleSidebar` as a compatibility alias, and require `hunk:files` when directly controlling the built-in pane.
+
+## 0.18.2
+
+### Patch Changes
+
+- [#742](https://github.com/modem-dev/hunk/pull/742) [`568e7a5`](https://github.com/modem-dev/hunk/commit/568e7a50ff34ba64fb1784cc74ffd1c7d0baaafc) - Fix `hunk diff` taking tens of seconds in repos with many untracked files by synthesizing untracked diffs in-process instead of spawning one `git diff --no-index` subprocess per file.
+
+## 0.18.1
+
+### Patch Changes
+
+- [`f0c2d88`](https://github.com/modem-dev/hunk/commit/f0c2d88bbc5cd6c98cb1174988466eda640fe12c) - Fix malformed `@@` hunk headers so each side's line range and count are emitted correctly.
+
+- [`85f441b`](https://github.com/modem-dev/hunk/commit/85f441b1474b02a00cc029c1e6db06287c0b571e) - Keep the top menu bar inside the same one-column margin as the rest of the app instead of painting its background into the outer gutter.
+
+- [`a890077`](https://github.com/modem-dev/hunk/commit/a89007730f46b7a809a457039c856f736e0d22be) - Keep Git's colors in non-diff `hunk pager` output for captured pager hosts, so LazyGit's branch log renders in its normal per-branch palette instead of a single color.
+
 ## 0.18.0
 
 ### Highlights

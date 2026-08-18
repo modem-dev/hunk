@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import { HunkExtensionUserError } from "../extension-api/types";
-import { HunkUserError, toUserFacingError } from "../core/errors";
-import { SourceTextTooLargeError } from "../core/fileSource";
+import { HunkUserError, toUserFacingError } from "../core/run/errors";
+import { SourceTextTooLargeError } from "../core/changeset/fileSource";
 import { toInternalVcsAdapter } from "./runExtension";
 import type {
   ExtensionVcsFileSourceRequest,

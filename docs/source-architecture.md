@@ -7,17 +7,24 @@ Use it when adding a new module or deciding where an existing responsibility bel
 ## Ownership
 
 ```text
-src/app/             executable composition: startup plans and shared session bootstrap
-src/core/            normalized review model, loading, patch handling, VCS contracts,
-                     configuration, and runtime primitives
+src/app/             executable composition: CLI parsing, startup plans, and shared session bootstrap
+src/app/session/     mounted-review registration, bridge, and reload authorization
+src/core/            review model, patch handling, VCS contracts, configuration, and
+                     runtime primitives
+src/core/changeset/  the changeset model and the pipeline that acquires one: loaders,
+                     per-file construction, sidecar/source reads, and hunk formatting
+src/core/run/ how a run is asked for: command inputs, layered configuration, the
+                     command catalog, user-facing errors, paths, and version
+src/core/process/    the process and terminal a run lives in: TTY capabilities, the pager,
+                     job control, shutdown, project-root discovery, persisted app state,
+                     and startup/update notices
 src/core/theme/      bundled theme metadata, custom-theme rules, and terminal theme detection
 src/core/watch/      input signatures, observation plans/backends, and refresh coordination
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support
 src/extensions/      extension host, registry, trust, lifecycle, and bundled extensions
-src/session/         shared session protocol, schemas, types, agent surface, app bridge, and broker transport
+src/session/         shared session protocol, schemas, types, agent surface, and broker transport
 src/session/client/  shared session-daemon HTTP and compatibility client support
 src/session/agent/   agent-facing session CLI, command manifest, errors, and formatting
-src/session/app/     mounted-review registration, bridge, and reload authorization
 src/session/broker/  local daemon transport, launcher, Hunk broker state, wire parsing, projections
 src/ui/              interactive review application, rendering, interaction, and chrome
 src/extension-api/   public `hunkdiff/extension` declaration and runtime boundary

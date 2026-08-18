@@ -6,17 +6,20 @@ import { createExtensionCommandControls } from "./extensionCommandControls";
 /** Build one host command without coupling these capability tests to App callbacks. */
 function testCommand({
   id = "hunk.review.nextHunk",
+  aliases,
   enabled = true,
   publicToExtensions = true,
   run = () => {},
 }: {
   id?: string;
+  aliases?: readonly string[];
   enabled?: boolean;
   publicToExtensions?: boolean;
   run?: AppCommand["run"];
 } = {}): AppCommand {
   return {
     id,
+    aliases,
     title: id,
     keys: [],
     keyLabels: [],
@@ -41,6 +44,23 @@ describe("extension command controls", () => {
     expect(controls.execute(command.id, { count: 7 })).toBe(true);
     expect(controls.execute(command.id, { count: MAX_APP_COMMAND_COUNT })).toBe(true);
     expect(counts).toEqual([7, MAX_APP_COMMAND_COUNT]);
+  });
+
+  test("accepts a public compatibility alias without duplicating the command", () => {
+    const counts: number[] = [];
+    const command = testCommand({
+      id: "hunk.view.toggleFilesPane",
+      aliases: ["hunk.view.toggleSidebar"],
+      run: (_key, count) => counts.push(count),
+    });
+    const controls = createExtensionCommandControls({
+      getCommands: () => [command],
+      isLive: () => true,
+    });
+
+    expect(controls.isEnabled("hunk.view.toggleSidebar")).toBe(true);
+    expect(controls.execute("hunk.view.toggleSidebar", { count: 2 })).toBe(true);
+    expect(counts).toEqual([2]);
   });
 
   test("resolves the live table on every call", () => {
