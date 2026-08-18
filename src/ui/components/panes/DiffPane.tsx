@@ -131,7 +131,7 @@ function estimateInitialRenderViewportHeight(rendererHeight: number, screenTop: 
   return Math.max(1, rendererHeight - Math.max(0, screenTop));
 }
 
-/** Keep syntax-highlight warm for the files immediately adjacent to the current selection. */
+/** Keep syntax highlighting warm for files immediately adjacent to the selection. */
 function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
   if (!selectedFileId) {
     return new Set<string>();
@@ -160,10 +160,8 @@ function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string
 /**
  * Start highlight work before files visibly enter the review stream.
  *
- * We intentionally include three groups:
- * - the selected file, so direct navigation always warms the active target
- * - adjacent files, so hunk/file navigation does not wait on a cold highlight
- * - files within a larger viewport halo, so wheel/track scrolling sees colorized rows already ready
+ * Selected and adjacent files cover direct navigation, while the larger viewport halo keeps
+ * wheel and track scrolling warm. Highlight prefetch does not force these files to mount.
  */
 function buildHighlightPrefetchFileIds({
   adjacentPrefetchFileIds,
@@ -1472,7 +1470,6 @@ export function DiffPane({
       windowingEnabled
         ? buildFileRenderWindow({
             fileSectionLayouts,
-            includeFileIds: adjacentPrefetchFileIds,
             indexByFileId: fileSectionIndexById,
             overscanFiles: 1,
             scrollTop: scrollViewport.top,
@@ -1481,7 +1478,6 @@ export function DiffPane({
           })
         : null,
     [
-      adjacentPrefetchFileIds,
       fileSectionIndexById,
       fileSectionLayouts,
       scrollViewport.height,
