@@ -137,7 +137,7 @@ module.exports = {
         "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. core/changeset/loaders.ts is the single exception — loadAppBootstrap assembles the value, so it names the shape it returns; its natural home is the app tier, and moving it there retires this exception.",
       severity: "error",
       from: {
-        path: "^src/core/(changeset|run|process|review|vcs|watch|patch|theme)/",
+        path: "^src/core/(changeset|run|process|install|review|vcs|watch|patch|theme)/",
         pathNot: "^src/core/changeset/loaders\\.ts$",
       },
       to: { path: "^src/core/bootstrap\\.ts$" },

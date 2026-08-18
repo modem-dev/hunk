@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { InstallSource } from "../../src/core/process/installSource";
+import type { InstallSource } from "../../src/core/install/installSource";
 
 /**
  * Runs `hunk update` as a black box with a forced install source.

@@ -175,6 +175,15 @@ shape it assembles; that function is composition living in the domain tier, and 
 `src/core/` root now holds `bootstrap.ts`, `reviewDigest.ts`, and `liveComments.ts` beside the
 eight module directories.
 
+Phase 5 (2026-08-18) grouped **how this binary was installed and how it gets replaced** into
+`core/install/`: install-source detection (`installSource` — which channel owns the executable),
+per-channel release lookup (`latestRelease`), and the `hunk update` execution (`selfUpdate`).
+These arrived with the self-update feature as `core/process/` files because the startup update
+notice lived there, but they are one feature family about the install lifecycle, not about the
+process a run lives in. `process/updateNotice` stays where phase 3 put it — it is a
+startup-notice producer built on `appStateFile` — and consumes `core/install` for detection and
+release lookup. The move is path-only; no exported symbol changed.
+
 ## Snapshot (2026-08-17, v0.19.0)
 
 331 production modules, 1322 internal edges, **zero boundary violations and zero import

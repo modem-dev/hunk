@@ -13,7 +13,7 @@ import type {
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
-import type { InstallSource } from "../process/installSource";
+import type { InstallSource } from "../install/installSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type CursorLine = "row" | "number" | "off";

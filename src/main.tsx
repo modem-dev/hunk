@@ -57,7 +57,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "self-update") {
-    const { runSelfUpdateCommand } = await import("./core/process/selfUpdate");
+    const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
     process.exit(
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => process.stdout.write(text),

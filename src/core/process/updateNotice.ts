@@ -1,11 +1,11 @@
 import { readAppStateRecord, updateAppStateRecord } from "./appStateFile";
-import { detectInstallSource, type InstallSource } from "./installSource";
+import { detectInstallSource, type InstallSource } from "../install/installSource";
 import {
   type ChannelVersions,
   fetchChannelVersions,
   type FetchImpl,
   type UpdateChannel,
-} from "./latestRelease";
+} from "../install/latestRelease";
 import { resolveAppStatePath } from "../run/paths";
 import type { StartupNotice } from "./startupNotice";
 import {

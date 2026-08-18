@@ -18,7 +18,7 @@ import {
   parseUpdateMethod,
   parseUpdateVersion,
   UPDATE_METHOD_VALUES,
-} from "../core/process/selfUpdate";
+} from "../core/install/selfUpdate";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,
