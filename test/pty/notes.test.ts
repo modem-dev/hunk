@@ -120,6 +120,87 @@ describe("PTY notes", () => {
     }
   });
 
+  test("opening a draft keeps the active line fixed while pushing following code down", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 120,
+      rows: 26,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.waitIdle({ timeout: 500 });
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const beforePushedDraft = await session.text({ immediate: true });
+      const firstActiveLine = "export const line09 = 9;";
+      const followingLine = "export const line10 = 10;";
+      const firstActiveRow = lineIndexOf(beforePushedDraft, firstActiveLine);
+      const followingRowBefore = lineIndexOf(beforePushedDraft, followingLine);
+
+      await session.press("c");
+      await session.waitForText(/Draft note - before\.ts -> after\.ts L9/, { timeout: 5_000 });
+      await sleep(100);
+      const pushedDraft = await session.text({ immediate: true });
+
+      expect(firstActiveRow).toBeGreaterThan(0);
+      expect(lineIndexOf(pushedDraft, firstActiveLine)).toBe(firstActiveRow);
+      expect(lineIndexOf(pushedDraft, "Draft note")).toBe(firstActiveRow + 1);
+      expect(lineIndexOf(pushedDraft, followingLine)).toBeGreaterThan(followingRowBefore);
+
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const beforeBottomDraft = await session.text({ immediate: true });
+      const bottomActiveLine = "export const line17 = 17;";
+      const bottomActiveRow = lineIndexOf(beforeBottomDraft, bottomActiveLine);
+      expect(bottomActiveRow).toBeGreaterThan(0);
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const bottomDraft = await session.text({ immediate: true });
+
+      expect(lineIndexOf(bottomDraft, bottomActiveLine)).toBe(bottomActiveRow);
+      expect(lineIndexOf(bottomDraft, "Draft note")).toBe(bottomActiveRow + 1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("cursor-line-off drafts still reveal their default target and full composer", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack", "--cursor-line", "off"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("space");
+      const paged = await session.text({ immediate: true });
+      expect(paged).not.toContain("export const line01 = 1;");
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const draft = await session.text({ immediate: true });
+
+      expect(draft).toContain("Draft note - before.ts -> after.ts R1");
+      expect(draft).toContain("Cancel (Esc)");
+    } finally {
+      session.close();
+    }
+  });
+
   test("user notes can be drafted and saved inline in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
@@ -435,9 +516,19 @@ describe("PTY notes", () => {
       const targetRow = lineIndexOf(initial, "keep = true");
       expect(targetRow).toBeGreaterThan(0);
 
-      await revealAddNoteOnRow(session, targetRow);
+      // Put the keyboard cursor on the deletion, then click the separate context row. Opening the
+      // clicked draft must preserve the clicked row rather than the old keyboard-cursor anchor.
+      await session.press("down");
+      const beforeDraft = await session.text({ immediate: true });
+      const clickedRowBefore = lineIndexOf(beforeDraft, "keep = true");
+      await revealAddNoteOnRow(session, clickedRowBefore);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const withDraft = await session.text({ immediate: true });
+      expect(lineIndexOf(withDraft, "keep = true")).toBe(clickedRowBefore);
+      expect(lineIndexOf(withDraft, "Draft note")).toBeGreaterThan(clickedRowBefore);
+
       await session.type("Save this context draft.");
       await session.press(["ctrl", "s"]);
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
@@ -473,9 +564,9 @@ describe("PTY notes", () => {
       );
       expect(whileFocused).toContain("Draft note");
 
-      // Keyboard cancellation is covered above; click the explicit control here so this test can
-      // focus on whether app-level shortcuts are blocked only while the composer is active.
-      await session.click(/Cancel \(Esc\)/);
+      // Cancel from the focused editor so the tight viewport can keep the target line fixed even
+      // when the form's action row is intentionally below the visible bounds.
+      await session.press("escape");
       await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
       await session.press("]");
       const afterCancel = await harness.waitForSnapshot(

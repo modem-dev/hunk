@@ -74,6 +74,12 @@ interface RowHighlight {
   colRange?: CopySelectedRowRange;
 }
 
+interface CellPrefix {
+  text: string;
+  fg: string;
+  bg: string;
+}
+
 /** Column span covering a row's whole content column, in the global columns selection uses. */
 const FULL_ROW_COL_RANGE: CopySelectedRowRange = { startCol: 0, endCol: Number.MAX_SAFE_INTEGER };
 
@@ -321,6 +327,135 @@ function appendFixedInlineChunks(
       bg: styledTextColor(renderedBackground(fallbackBg)),
     });
   }
+}
+
+/** Append one horizontally windowed nowrap cell directly to OpenTUI styled-text chunks. */
+function appendPlainInlineChunks(
+  chunks: TextChunk[],
+  spans: RenderSpan[],
+  width: number,
+  horizontalOffset: number,
+  fallbackColor: string,
+  fallbackBg: string,
+) {
+  const { spans: trimmed, usedWidth } = sliceSpansWindow(
+    sanitizeTerminalSpans(spans),
+    horizontalOffset,
+    width,
+  );
+  const paddingAmount = Math.max(0, width - usedWidth);
+  const lastSpan = trimmed.at(-1);
+  let paddingMerged = false;
+  if (
+    paddingAmount > 0 &&
+    lastSpan &&
+    (lastSpan.fg ?? fallbackColor) === fallbackColor &&
+    (lastSpan.bg ?? fallbackBg) === fallbackBg
+  ) {
+    lastSpan.text += " ".repeat(paddingAmount);
+    paddingMerged = true;
+  }
+
+  for (const span of trimmed) {
+    chunks.push({
+      __isChunk: true,
+      text: span.text,
+      fg: styledTextColor(span.fg ?? fallbackColor),
+      bg: styledTextColor(span.bg ?? fallbackBg),
+    });
+  }
+  if (!paddingMerged && paddingAmount > 0) {
+    chunks.push({
+      __isChunk: true,
+      text: " ".repeat(paddingAmount),
+      fg: styledTextColor(fallbackColor),
+      bg: styledTextColor(fallbackBg),
+    });
+  }
+}
+
+/** Append one unhighlighted split cell without constructing React span fibers. */
+function appendPlainSplitCellChunks(
+  chunks: TextChunk[],
+  cell: SplitLineCell,
+  width: number,
+  lineNumberDigits: number,
+  showLineNumbers: boolean,
+  theme: AppTheme,
+  contentOffset: number,
+  prefix: CellPrefix,
+) {
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
+  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefix.text.length,
+  );
+  chunks.push(
+    {
+      __isChunk: true,
+      text: prefix.text,
+      fg: styledTextColor(prefix.fg),
+      bg: styledTextColor(prefix.bg),
+    },
+    {
+      __isChunk: true,
+      text: splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth),
+      fg: styledTextColor(palette.numberColor),
+      bg: styledTextColor(palette.gutterBg),
+    },
+  );
+  appendPlainInlineChunks(
+    chunks,
+    cell.spans,
+    contentWidth,
+    contentOffset,
+    theme.syntaxColors.default,
+    palette.contentBg,
+  );
+}
+
+/** Append one unhighlighted stack cell without constructing React span fibers. */
+function appendPlainStackCellChunks(
+  chunks: TextChunk[],
+  cell: StackLineCell,
+  width: number,
+  lineNumberDigits: number,
+  showLineNumbers: boolean,
+  theme: AppTheme,
+  contentOffset: number,
+  prefix: CellPrefix,
+) {
+  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
+  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefix.text.length,
+  );
+  chunks.push(
+    {
+      __isChunk: true,
+      text: prefix.text,
+      fg: styledTextColor(prefix.fg),
+      bg: styledTextColor(prefix.bg),
+    },
+    {
+      __isChunk: true,
+      text: stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth),
+      fg: styledTextColor(palette.numberColor),
+      bg: styledTextColor(palette.gutterBg),
+    },
+  );
+  appendPlainInlineChunks(
+    chunks,
+    cell.spans,
+    contentWidth,
+    contentOffset,
+    theme.syntaxColors.default,
+    palette.contentBg,
+  );
 }
 
 /** Report whether a wrapped highlight can paint existing chunks without slicing token spans. */
@@ -1229,7 +1364,69 @@ function applyHighlightPrefix<P extends { bg: string }>(
   };
 }
 
-/** Render one split-view cell as prefix + gutter + content spans. */
+/** Render selection-invariant split-cell content behind its independently painted rail. */
+const SplitCellContent = memo(function SplitCellContent({
+  cell,
+  width,
+  lineNumberDigits,
+  showLineNumbers,
+  theme,
+  keyPrefix,
+  contentOffset,
+  prefixWidth,
+  highlight,
+  paneOffset,
+}: {
+  cell: SplitLineCell;
+  width: number;
+  lineNumberDigits: number;
+  showLineNumbers: boolean;
+  theme: AppTheme;
+  keyPrefix: string;
+  contentOffset: number;
+  prefixWidth: number;
+  highlight?: RowHighlight;
+  paneOffset: number;
+}) {
+  const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
+  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefixWidth,
+  );
+  const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
+  const globalContentStart = paneOffset + prefixWidth + gutterWidth;
+  const colRange = highlight?.colRange;
+  const localColRange =
+    colRange && globalContentStart < colRange.endCol
+      ? {
+          start: Math.max(0, colRange.startCol - globalContentStart),
+          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
+        }
+      : undefined;
+
+  return (
+    <>
+      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+        {gutterText}
+      </span>
+      {renderInlineSpans(
+        cell.spans,
+        contentWidth,
+        theme.syntaxColors.default,
+        palette.contentBg,
+        `${keyPrefix}:content`,
+        contentOffset,
+        highlight?.bg,
+        localColRange,
+      )}
+    </>
+  );
+});
+
+/** Render one split-view cell while letting a rail-only selection change skip its code spans. */
 function renderSplitCell(
   cell: SplitLineCell,
   width: number,
@@ -1246,20 +1443,64 @@ function renderSplitCell(
   highlight?: RowHighlight,
   paneOffset = 0,
 ) {
-  const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
   const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
-  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+
+  return (
+    <>
+      {resolvedPrefix ? (
+        <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
+          {resolvedPrefix.text}
+        </span>
+      ) : null}
+      <SplitCellContent
+        key={`${keyPrefix}:body`}
+        cell={cell}
+        width={width}
+        lineNumberDigits={lineNumberDigits}
+        showLineNumbers={showLineNumbers}
+        theme={theme}
+        keyPrefix={keyPrefix}
+        contentOffset={contentOffset}
+        prefixWidth={prefixWidth}
+        highlight={highlight}
+        paneOffset={paneOffset}
+      />
+    </>
+  );
+}
+
+/** Render selection-invariant stack-cell content behind its independently painted rail. */
+const StackCellContent = memo(function StackCellContent({
+  cell,
+  width,
+  lineNumberDigits,
+  showLineNumbers,
+  theme,
+  keyPrefix,
+  contentOffset,
+  prefixWidth,
+  highlight,
+}: {
+  cell: StackLineCell;
+  width: number;
+  lineNumberDigits: number;
+  showLineNumbers: boolean;
+  theme: AppTheme;
+  keyPrefix: string;
+  contentOffset: number;
+  prefixWidth: number;
+  highlight?: RowHighlight;
+}) {
+  const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
+  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,
     lineNumberDigits,
     showLineNumbers,
     prefixWidth,
   );
-  const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
-
-  // Convert global selection column range to content-local range.
-  const globalContentStart = paneOffset + prefixWidth + gutterWidth;
+  const globalContentStart = prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
   const localColRange =
     colRange && globalContentStart < colRange.endCol
@@ -1271,13 +1512,8 @@ function renderSplitCell(
 
   return (
     <>
-      {resolvedPrefix ? (
-        <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
-          {resolvedPrefix.text}
-        </span>
-      ) : null}
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {gutterText}
+        {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
         cell.spans,
@@ -1291,9 +1527,9 @@ function renderSplitCell(
       )}
     </>
   );
-}
+});
 
-/** Render one stack-view cell as prefix + combined gutter + content spans. */
+/** Render one stack-view cell while letting a rail-only selection change skip its code spans. */
 function renderStackCell(
   cell: StackLineCell,
   width: number,
@@ -1309,27 +1545,8 @@ function renderStackCell(
   },
   highlight?: RowHighlight,
 ) {
-  const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
   const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
-  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-  );
-
-  // Convert global selection column range to content-local range.
-  const globalContentStart = prefixWidth + gutterWidth;
-  const colRange = highlight?.colRange;
-  const localColRange =
-    colRange && globalContentStart < colRange.endCol
-      ? {
-          start: Math.max(0, colRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
-        }
-      : undefined;
 
   return (
     <>
@@ -1338,19 +1555,18 @@ function renderStackCell(
           {resolvedPrefix.text}
         </span>
       ) : null}
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
-      </span>
-      {renderInlineSpans(
-        cell.spans,
-        contentWidth,
-        theme.syntaxColors.default,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-        contentOffset,
-        highlight?.bg,
-        localColRange,
-      )}
+      <StackCellContent
+        key={`${keyPrefix}:body`}
+        cell={cell}
+        width={width}
+        lineNumberDigits={lineNumberDigits}
+        showLineNumbers={showLineNumbers}
+        theme={theme}
+        keyPrefix={keyPrefix}
+        contentOffset={contentOffset}
+        prefixWidth={prefixWidth}
+        highlight={highlight}
+      />
     </>
   );
 }
@@ -1914,6 +2130,40 @@ function renderRow(
     };
 
     if (!wrapLines) {
+      const plainStyledRow =
+        !leftHighlight && !rightHighlight
+          ? (() => {
+              const chunks: TextChunk[] = [];
+              appendPlainSplitCellChunks(
+                chunks,
+                row.left,
+                leftWidth,
+                lineNumberDigits,
+                showLineNumbers,
+                theme,
+                codeHorizontalOffset,
+                leftPrefix,
+              );
+              appendPlainSplitCellChunks(
+                chunks,
+                row.right,
+                rightRenderWidth,
+                lineNumberDigits,
+                showLineNumbers,
+                theme,
+                codeHorizontalOffset,
+                rightPrefix,
+              );
+              if (guideOnNewSide) {
+                chunks.push({
+                  __isChunk: true,
+                  text: "│",
+                  fg: styledTextColor(theme.noteBorder),
+                });
+              }
+              return new StyledText(chunks);
+            })()
+          : null;
       baseRow = (
         <box
           id={anchorId}
@@ -1926,37 +2176,41 @@ function renderRow(
               height: 1,
             }}
           >
-            <text>
-              {renderSplitCell(
-                row.left,
-                leftWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:left`,
-                codeHorizontalOffset,
-                leftPrefix,
-                leftHighlight,
-                0,
-              )}
-              {renderSplitCell(
-                row.right,
-                rightRenderWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:right`,
-                codeHorizontalOffset,
-                rightPrefix,
-                rightHighlight,
-                leftWidth,
-              )}
-              {guideOnNewSide ? (
-                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null}
-            </text>
+            {plainStyledRow ? (
+              <text key={`${row.key}:plain`} content={plainStyledRow} />
+            ) : (
+              <text key={`${row.key}:painted`}>
+                {renderSplitCell(
+                  row.left,
+                  leftWidth,
+                  lineNumberDigits,
+                  showLineNumbers,
+                  theme,
+                  `${row.key}:left`,
+                  codeHorizontalOffset,
+                  leftPrefix,
+                  leftHighlight,
+                  0,
+                )}
+                {renderSplitCell(
+                  row.right,
+                  rightRenderWidth,
+                  lineNumberDigits,
+                  showLineNumbers,
+                  theme,
+                  `${row.key}:right`,
+                  codeHorizontalOffset,
+                  rightPrefix,
+                  rightHighlight,
+                  leftWidth,
+                )}
+                {guideOnNewSide ? (
+                  <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
+                    │
+                  </span>
+                ) : null}
+              </text>
+            )}
           </box>
           {showAddNoteBadge
             ? renderAddNoteButton(
@@ -2130,6 +2384,29 @@ function renderRow(
     };
 
     if (!wrapLines) {
+      const plainStyledRow = !cellHighlight
+        ? (() => {
+            const chunks: TextChunk[] = [];
+            appendPlainStackCellChunks(
+              chunks,
+              row.cell,
+              contentWidth,
+              lineNumberDigits,
+              showLineNumbers,
+              theme,
+              codeHorizontalOffset,
+              prefix,
+            );
+            if (guideOnNewSide) {
+              chunks.push({
+                __isChunk: true,
+                text: "│",
+                fg: styledTextColor(theme.noteBorder),
+              });
+            }
+            return new StyledText(chunks);
+          })()
+        : null;
       baseRow = (
         <box
           id={anchorId}
@@ -2142,24 +2419,28 @@ function renderRow(
               height: 1,
             }}
           >
-            <text>
-              {renderStackCell(
-                row.cell,
-                contentWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:stack`,
-                codeHorizontalOffset,
-                prefix,
-                cellHighlight,
-              )}
-              {guideOnNewSide ? (
-                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null}
-            </text>
+            {plainStyledRow ? (
+              <text key={`${row.key}:plain`} content={plainStyledRow} />
+            ) : (
+              <text key={`${row.key}:painted`}>
+                {renderStackCell(
+                  row.cell,
+                  contentWidth,
+                  lineNumberDigits,
+                  showLineNumbers,
+                  theme,
+                  `${row.key}:stack`,
+                  codeHorizontalOffset,
+                  prefix,
+                  cellHighlight,
+                )}
+                {guideOnNewSide ? (
+                  <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
+                    │
+                  </span>
+                ) : null}
+              </text>
+            )}
           </box>
           {showAddNoteBadge
             ? renderAddNoteButton(

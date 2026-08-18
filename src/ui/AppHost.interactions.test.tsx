@@ -186,13 +186,14 @@ function createWrapBootstrap(pager = false): AppBootstrap {
   });
 }
 
-function createLineScrollBootstrap(pager = false): AppBootstrap {
+function createLineScrollBootstrap(pager = false, initialMode: LayoutMode = "split"): AppBootstrap {
   const before = lines(...createNumberedAssignmentLines(1, 18));
   const after = lines(...createNumberedAssignmentLines(1, 18, 100));
 
   return createTestVcsAppBootstrap({
     changesetId: "changeset:app-line-scroll",
     files: [createTestDiffFile("scroll", "scroll.ts", before, after, true)],
+    initialMode,
     pager,
   });
 }
@@ -2815,6 +2816,56 @@ describe("App interactions", () => {
 
       expect(lineIncludesBackground("betaValue", theme.addedBg)).toBe(true);
       expect(lineIncludesBackground("beta = 1", theme.removedBg)).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("coalesced line movement opens a draft at the latest cursor without moving its row", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createLineScrollBootstrap(false, "stack")} />,
+      { width: 120, height: 26 },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      });
+
+      const initial = setup.captureCharFrame();
+      const initialActiveRow = initial
+        .split("\n")
+        .findIndex((line) => line.includes("export const line01 = 1;"));
+      const followingRowBefore = initial
+        .split("\n")
+        .findIndex((line) => line.includes("export const line10 = 10;"));
+
+      await act(async () => {
+        await setup.mockInput.pressKeys([...Array(8).fill("\x1b[B"), "c"]);
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      const withDraft = setup.captureCharFrame();
+      const activeRow = withDraft
+        .split("\n")
+        .findIndex((line) => line.includes("export const line09 = 9;"));
+      const draftRow = withDraft.split("\n").findIndex((line) => line.includes("Draft note"));
+      const followingRow = withDraft
+        .split("\n")
+        .findIndex((line) => line.includes("export const line10 = 10;"));
+
+      expect(withDraft).toMatch(/Draft note.*L9/);
+      expect(activeRow).toBe(initialActiveRow + 8);
+      expect(draftRow).toBe(activeRow + 1);
+      expect(followingRow).toBeGreaterThan(followingRowBefore);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

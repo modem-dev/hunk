@@ -131,7 +131,21 @@ function estimateInitialRenderViewportHeight(rendererHeight: number, screenTop: 
   return Math.max(1, rendererHeight - Math.max(0, screenTop));
 }
 
-/** Keep syntax-highlight warm for the files immediately adjacent to the current selection. */
+/** Resolve one file-relative measured row through its precomputed whole-stream section layout. */
+function streamRowBoundsAt(
+  layouts: FileSectionLayout[],
+  geometry: DiffSectionGeometry[],
+  sectionIndex: number,
+  stableKey: string,
+) {
+  const section = layouts[sectionIndex];
+  const bounds = geometry[sectionIndex]?.rowBoundsByStableKey.get(stableKey);
+  return section && bounds
+    ? { top: section.bodyTop + bounds.top, height: bounds.height }
+    : undefined;
+}
+
+/** Keep syntax highlighting warm for files immediately adjacent to the selection. */
 function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
   if (!selectedFileId) {
     return new Set<string>();
@@ -160,10 +174,8 @@ function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string
 /**
  * Start highlight work before files visibly enter the review stream.
  *
- * We intentionally include three groups:
- * - the selected file, so direct navigation always warms the active target
- * - adjacent files, so hunk/file navigation does not wait on a cold highlight
- * - files within a larger viewport halo, so wheel/track scrolling sees colorized rows already ready
+ * Selected and adjacent files cover direct navigation, while the larger viewport halo keeps
+ * wheel and track scrolling warm. Highlight prefetch does not force these files to mount.
  */
 function buildHighlightPrefetchFileIds({
   adjacentPrefetchFileIds,
@@ -278,7 +290,7 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
-  /** Offload eligible large-diff highlighting for this launch. */
+  /** Offload eligible syntax highlighting for this launch. */
   offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
@@ -893,11 +905,7 @@ export function DiffPane({
         return undefined;
       }
 
-      const section = fileSectionLayouts[sectionIndex];
-      const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(stableKey);
-      return section && bounds
-        ? { top: section.bodyTop + bounds.top, height: bounds.height }
-        : undefined;
+      return streamRowBoundsAt(fileSectionLayouts, sectionGeometry, sectionIndex, stableKey);
     },
     [fileSectionIndexById, fileSectionLayouts, sectionGeometry],
   );
@@ -1472,7 +1480,6 @@ export function DiffPane({
       windowingEnabled
         ? buildFileRenderWindow({
             fileSectionLayouts,
-            includeFileIds: adjacentPrefetchFileIds,
             indexByFileId: fileSectionIndexById,
             overscanFiles: 1,
             scrollTop: scrollViewport.top,
@@ -1481,7 +1488,6 @@ export function DiffPane({
           })
         : null,
     [
-      adjacentPrefetchFileIds,
       fileSectionIndexById,
       fileSectionLayouts,
       scrollViewport.height,
@@ -1799,23 +1805,48 @@ export function DiffPane({
 
     if (draftChanged && previousSectionMetrics && previousFiles.length > 0) {
       const previousScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+      const previousSectionHeaderHeights = buildInStreamFileHeaderHeights(previousFiles);
       const anchor =
         lastViewportRowAnchorRef.current ??
         findViewportRowAnchor(
           previousFiles,
           previousSectionMetrics,
           previousScrollTop,
-          buildInStreamFileHeaderHeights(previousFiles),
+          previousSectionHeaderHeights,
         );
-      if (anchor) {
-        const anchorTop = resolveViewportRowAnchorTop(
-          files,
-          sectionGeometry,
-          anchor,
-          sectionHeaderHeights,
-        );
+      const cursorToPreserve = scrollToNote ? null : lineCursor;
+      const previousCursorSectionIndex = cursorToPreserve
+        ? previousFiles.findIndex((file) => file.id === cursorToPreserve.fileId)
+        : -1;
+      const previousCursorBounds =
+        previousCursorSectionIndex >= 0 && cursorToPreserve
+          ? streamRowBoundsAt(
+              buildFileSectionLayouts(
+                previousFiles,
+                previousSectionMetrics.map((metrics) => metrics?.bodyHeight ?? 0),
+                previousSectionHeaderHeights,
+              ),
+              previousSectionMetrics,
+              previousCursorSectionIndex,
+              cursorToPreserve.stableKey,
+            )
+          : undefined;
+      const currentCursorBounds = cursorToPreserve
+        ? rowBoundsInStream(cursorToPreserve.fileId, cursorToPreserve.stableKey)
+        : undefined;
+      const cursorAnchoredTop =
+        previousCursorBounds && currentCursorBounds
+          ? currentCursorBounds.top - (previousCursorBounds.top - previousScrollTop)
+          : null;
+      const anchorTop =
+        cursorAnchoredTop ??
+        (anchor
+          ? resolveViewportRowAnchorTop(files, sectionGeometry, anchor, sectionHeaderHeights)
+          : null);
+
+      if (anchorTop !== null) {
         const draftBounds =
-          draftNoteId && draftNoteFileId
+          draftNoteId && draftNoteFileId && scrollToNote
             ? rowBoundsInStream(draftNoteFileId, inlineNoteStableKey(draftNoteId))
             : undefined;
         const nextTop = draftBounds
@@ -1827,10 +1858,15 @@ export function DiffPane({
             })
           : anchorTop;
         const restoreViewportAnchor = () => {
+          // Cursor- and click-targeted composers are already at the reviewer's position, so their
+          // stream geometry pushes following rows down without pulling the target line upward.
+          // Default draft starts still reveal the full composer because they may target offscreen.
           scrollRef.current?.scrollTo(nextTop);
         };
 
-        lastViewportRowAnchorRef.current = anchor;
+        if (anchor) {
+          lastViewportRowAnchorRef.current = anchor;
+        }
         suppressViewportSelectionSync();
         restoreViewportAnchor();
         const retryDelays = [0, 16, 48];
@@ -1909,6 +1945,7 @@ export function DiffPane({
     draftNoteId,
     files,
     layout,
+    lineCursor,
     layoutToggleRequestId,
     layoutToggleScrollTop,
     rowBoundsInStream,
@@ -1917,6 +1954,7 @@ export function DiffPane({
     scrollViewport.top,
     sectionGeometry,
     sectionHeaderHeights,
+    scrollToNote,
     suppressViewportSelectionSync,
     wrapLines,
     wrapToggleScrollTop,

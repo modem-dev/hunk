@@ -1,4 +1,4 @@
-import { Component, memo, useMemo, type ReactNode } from "react";
+import { Component, memo, useMemo, useRef, type ReactNode } from "react";
 import type {
   ExtensionDiffFile,
   ExtensionNotifyType,
@@ -92,22 +92,29 @@ function ExtensionPaneHostView({
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
   const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
+  // Selection rerenders the pane host, but it does not replace the capabilities these callbacks
+  // represent. Keep the public actions stable so memoized extension rows do not all repaint when
+  // only the selected file changed; ref indirection still invokes the latest host generation.
+  const actionTargetsRef = useRef({ notify, onSelectFile, onSelectHunk, onRevealLine });
+  actionTargetsRef.current = { notify, onSelectFile, onSelectHunk, onRevealLine };
   const actions = useMemo<ExtensionPaneActions>(
     () =>
       Object.freeze({
         ...createGuardedReviewNavigation({
           extensionId,
           getFiles: () => files,
-          notify,
-          onSelectFile,
-          onSelectHunk,
-          onRevealLine,
+          notify: (message, type) => actionTargetsRef.current.notify(message, type),
+          onSelectFile: (fileId) => actionTargetsRef.current.onSelectFile(fileId),
+          onSelectHunk: (fileId, hunkIndex) =>
+            actionTargetsRef.current.onSelectHunk(fileId, hunkIndex),
+          onRevealLine: (fileId, side, line) =>
+            actionTargetsRef.current.onRevealLine(fileId, side, line),
         }),
         notify(message: string, type: ExtensionNotifyType = "info") {
-          notify(`${extensionId}: ${message}`, type);
+          actionTargetsRef.current.notify(`${extensionId}: ${message}`, type);
         },
       }),
-    [extensionId, files, notify, onRevealLine, onSelectFile, onSelectHunk],
+    [extensionId, files],
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {

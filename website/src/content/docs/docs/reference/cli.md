@@ -24,7 +24,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
-| `--fast`                    | experimentally offload eligible large-diff highlighting         |
+| `--fast`                    | experimentally offload eligible syntax highlighting             |
 | `--line-numbers`            | show line numbers                                               |
 | `--no-line-numbers`         | hide line numbers                                               |
 | `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
