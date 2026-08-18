@@ -2923,6 +2923,301 @@ describe("App interactions", () => {
     }
   });
 
+  test("goto line works when the opener and digits arrive in one input chunk", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      // Fast typing and terminal coalescing can deliver ":2" synchronously; the
+      // digit must land in the prompt rather than fire a file-list binding.
+      await act(async () => {
+        await setup.mockInput.typeText(":2");
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note - alpha.ts R2");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line reports lines that are not part of the diff", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText(":");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("99");
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Line 99 is not part of the diff");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line input strips non-digits and Escape cancels without jumping", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText(":");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("a1b");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("goto line: 1");
+
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      // A standalone Escape only parses into a key event once the input
+      // timeout fires, and the cancel commits a render cycle later.
+      let cancelled = false;
+      for (let attempt = 0; attempt < 10 && !cancelled; attempt++) {
+        await act(async () => {
+          await Bun.sleep(200);
+          await setup.renderOnce();
+        });
+        cancelled = !setup.captureCharFrame().includes("goto line:");
+      }
+      expect(cancelled).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line targets the new side by default and the old side with the l prefix", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    const gotoAndAnnotate = async (input: string) => {
+      await act(async () => {
+        await setup.mockInput.typeText(`:${input}`);
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      // A standalone Escape needs the input timeout plus a render cycle.
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await act(async () => {
+          await Bun.sleep(200);
+          await setup.renderOnce();
+        });
+        if (!setup.captureCharFrame().includes("Draft note")) {
+          break;
+        }
+      }
+      return frame;
+    };
+
+    try {
+      await flush(setup);
+
+      // Bare numbers jump by the current file's numbering.
+      expect(await gotoAndAnnotate("1")).toContain("Draft note - alpha.ts R1");
+
+      // The l prefix jumps by the source file's numbering instead.
+      expect(await gotoAndAnnotate("l1")).toContain("Draft note - alpha.ts L1");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line closes an open menu before taking input", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        setup.mockInput.pressKey("F10");
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("Reload");
+
+      await act(async () => {
+        await setup.mockInput.typeText(":");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("goto line:");
+      expect(frame).not.toContain("Reload");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line jumps and annotates precisely when the line cursor is off", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createBootstrap(), initialCursorLine: "off" }} />,
+      { width: 160, height: 40 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText(":2");
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note - alpha.ts R2");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("goto line jumps inside the selected file, not the first visible one", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      // Move the selection off the default first file before jumping.
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText(":1");
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note - beta.ts R1");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("filter prompt Escape clears the text first and closes second", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    const pressEscapeAndWait = async (settled: (frame: string) => boolean) => {
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      // A standalone Escape only parses into a key event once the input
+      // timeout fires, and the cancel commits a render cycle later.
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await act(async () => {
+          await Bun.sleep(200);
+          await setup.renderOnce();
+        });
+        if (settled(setup.captureCharFrame())) {
+          return;
+        }
+      }
+      expect(settled(setup.captureCharFrame())).toBe(true);
+    };
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("/");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("alpha");
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("alpha");
+
+      // First Escape clears the filter text but keeps the prompt focused,
+      // leaving the placeholder where the text was.
+      await pressEscapeAndWait((frame) => frame.includes("type to filter files"));
+
+      // Second Escape on the empty prompt closes it.
+      await pressEscapeAndWait((frame) => !frame.includes("filter:"));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note saves Ctrl-S when tmux sends CSI-u input", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,

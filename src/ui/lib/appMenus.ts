@@ -193,10 +193,11 @@ export function buildAppMenus({
       { commandId: "hunk.review.previousHunk" },
       { commandId: "hunk.review.nextHunk" },
       SEPARATOR,
+      { commandId: "hunk.review.gotoLine", label: "Go to line…" },
+      { commandId: "hunk.review.focusFilter", label: "Focus filter" },
+      SEPARATOR,
       { commandId: "hunk.review.previousAnnotatedHunk", label: "Previous comment" },
       { commandId: "hunk.review.nextAnnotatedHunk", label: "Next comment" },
-      SEPARATOR,
-      { commandId: "hunk.review.focusFilter", label: "Focus filter" },
     ],
     agent: [
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },

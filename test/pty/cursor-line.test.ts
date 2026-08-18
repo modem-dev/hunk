@@ -305,4 +305,31 @@ describe("PTY current line", () => {
       session.close();
     }
   });
+
+  test("goto line jumps to a typed line and anchors a note there", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press(":");
+      await session.waitForText(/goto line:/, { timeout: 5_000 });
+
+      await session.type("62");
+      await session.type("\r");
+
+      await session.press("c");
+      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      expect(draft).toMatch(/Draft note - .*after\.ts R62/);
+    } finally {
+      session.close();
+    }
+  });
 });

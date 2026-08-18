@@ -734,20 +734,20 @@ describe("PTY extensions", () => {
       const centered = await session.text({ immediate: true });
       expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
 
-      // `:` passes into the registered command, whose focused host dialog owns even mode keys.
-      await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      // `;` passes into the registered command, whose focused host dialog owns even mode keys.
+      await session.press(";");
+      await session.waitForText(/Vim command \(;\)/, { timeout: 20_000 });
       await session.type("j-owned");
       await session.waitForText(/j-owned/, { timeout: 20_000 });
       await session.press("escape");
       await harness.waitForSnapshot(
         session,
-        (text) => !text.includes("Vim command (:)") && /Vim navigation.*Esc exits/.test(text),
+        (text) => !text.includes("Vim command (;)") && /Vim navigation.*Esc exits/.test(text),
         20_000,
       );
 
-      await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.press(";");
+      await session.waitForText(/Vim command \(;\)/, { timeout: 20_000 });
       await session.type("bottom");
       await session.press("enter");
       const commandBottom = await harness.waitForSnapshot(
@@ -757,8 +757,8 @@ describe("PTY extensions", () => {
       );
       expect(commandBottom).toContain("second.ts");
 
-      await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.press(";");
+      await session.waitForText(/Vim command \(;\)/, { timeout: 20_000 });
       await session.type("top");
       await session.press("enter");
       const commandTop = await harness.waitForSnapshot(

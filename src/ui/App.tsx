@@ -3,7 +3,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core";
-import { useRenderer, useTerminalDimensions } from "@opentui/react";
+import { flushSync, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { writeFile } from "node:fs/promises";
 import {
   Suspense,
@@ -140,7 +140,7 @@ import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "./themes";
 
-type FocusArea = "files" | "filter" | "note";
+type FocusArea = "files" | "filter" | "goto" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 type ThemeSelectorState = {
   open: boolean;
@@ -331,6 +331,8 @@ export function App({
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [gotoLineText, setGotoLineText] = useState("");
+  const gotoLineTextRef = useRef("");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
   const [paneResize, setPaneResize] = useState<{
@@ -1170,6 +1172,7 @@ export function App({
   }, [extensions, layoutMode, resolvedLayout]);
   const statusBarVisible =
     focusArea === "filter" ||
+    focusArea === "goto" ||
     Boolean(review.filter) ||
     Boolean(
       sessionNoticeText ??
@@ -1404,7 +1407,9 @@ export function App({
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
-    if (!activeLineCursor) {
+    // Cursor stepping needs the stop list; with `cursor_line = "off"` or a file view
+    // replacing the diff there is none, so fall back to plain scrolling.
+    if (!activeLineCursor || lineCursors.length === 0) {
       scrollDiff(delta, "step");
       return;
     }
@@ -1904,6 +1909,63 @@ export function App({
     setFocusArea("filter");
   }, []);
 
+  /** Focus the goto-line input in the status bar. */
+  const focusGotoLine = useCallback(() => {
+    gotoLineTextRef.current = "";
+    setGotoLineText("");
+    // Keys of the same input chunk as the opener must already route to the
+    // prompt: without a synchronous flush the next character would still see
+    // the file-list focus and fire a command binding instead.
+    flushSync(() => setFocusArea("goto"));
+  }, []);
+
+  /** Close the goto-line input without jumping. */
+  const cancelGotoLine = useCallback(() => {
+    gotoLineTextRef.current = "";
+    setGotoLineText("");
+    setFocusArea("files");
+  }, []);
+
+  /** Keep the goto-line input to digits plus one leading side letter (l/r). */
+  const handleGotoLineInput = useCallback((value: string) => {
+    const cleaned = value.replace(/[^0-9lr]/g, "");
+    const next = /^[lr]/.test(cleaned)
+      ? cleaned[0]! + cleaned.slice(1).replace(/[lr]/g, "")
+      : cleaned.replace(/[lr]/g, "");
+    gotoLineTextRef.current = next;
+    setGotoLineText(next);
+  }, []);
+
+  /** Jump the current line to the typed line of the selected file; "l" targets the old side. */
+  const submitGotoLine = useCallback(() => {
+    const text = gotoLineTextRef.current;
+    const side = text.startsWith("l") ? "old" : "new";
+    const line = Number.parseInt(text.replace(/^[lr]/, ""), 10);
+    gotoLineTextRef.current = "";
+    setGotoLineText("");
+    setFocusArea("files");
+    if (!Number.isInteger(line) || line <= 0) {
+      return;
+    }
+
+    const fileId = selectedFileId ?? filteredFiles[0]?.id;
+    if (!fileId) {
+      showSessionNotice("No file selected");
+      return;
+    }
+
+    const result = review.revealLine(fileId, side, line);
+    if (result === "none") {
+      showSessionNotice(
+        `Line ${line}${side === "old" ? " (old side)" : ""} is not part of the diff`,
+      );
+    } else if (result === "hunk") {
+      // The line cursor list is empty with `cursor_line = "off"`, so a line can
+      // degrade to its hunk — say so instead of presenting it as a precise jump.
+      showSessionNotice(`Line ${line} is not visible; jumped to its hunk`);
+    }
+  }, [review.revealLine, selectedFileId, filteredFiles, showSessionNotice]);
+
   // Command-handler navigation lands here each render: the same focus and jump
   // semantics the sidebar's onSelect handlers use, so a command's navigation is
   // indistinguishable from a sidebar row click. Read through a ref because the
@@ -1933,7 +1995,10 @@ export function App({
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget = hoverTarget ?? (fileId === undefined ? activeLineCursor : null);
+      // Read the review cursor directly, not the display-gated active one: with
+      // `cursor_line = "off"` the marker stays hidden, but a line a goto reveal
+      // placed is still the note's intended target.
+      const keyboardTarget = hoverTarget ?? (fileId === undefined ? review.lineCursor : null);
       const draft = review.startUserNote(
         fileId ?? keyboardTarget?.fileId,
         hunkIndex ?? keyboardTarget?.hunkIndex,
@@ -1945,7 +2010,7 @@ export function App({
         setFocusArea("note");
       }
     },
-    [activeAddNoteTarget, activeLineCursor, review.startUserNote],
+    [activeAddNoteTarget, review.lineCursor, review.startUserNote],
   );
 
   /** Mark the inline draft note textarea as the active keyboard input. */
@@ -2029,6 +2094,7 @@ export function App({
         alignCurrentLine,
         applyFilePresentationToAllMatching,
         focusFilter,
+        focusGotoLine,
         moveSelection: review.moveSelection,
         openAgentSkill,
         openThemeSelector,
@@ -2436,7 +2502,27 @@ export function App({
       {statusBarVisible ? (
         <StatusBar
           filter={review.filter}
-          filterFocused={focusArea === "filter"}
+          promptInput={
+            focusArea === "filter"
+              ? {
+                  label: "filter:",
+                  value: review.filter,
+                  placeholder: "type to filter files",
+                  onInput: review.setFilter,
+                  onSubmit: focusFiles,
+                  onEscape: () => (review.filter.length > 0 ? review.setFilter("") : focusFiles()),
+                }
+              : focusArea === "goto"
+                ? {
+                    label: "goto line:",
+                    value: gotoLineText,
+                    placeholder: "42 or l42 (old side)",
+                    onInput: handleGotoLineInput,
+                    onSubmit: submitGotoLine,
+                    onEscape: cancelGotoLine,
+                  }
+                : null
+          }
           modeText={keyboardModeHint ?? undefined}
           noticeText={
             sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
@@ -2444,8 +2530,6 @@ export function App({
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
-          onFilterInput={review.setFilter}
-          onFilterSubmit={focusFiles}
           onExitMode={exitKeyboardMode}
         />
       ) : null}

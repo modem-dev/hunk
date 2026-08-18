@@ -117,6 +117,7 @@ export interface BuildAppCommandsOptions {
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
+  focusGotoLine: () => void;
   /** Step the review selection through one scope, as the catalog entry declares it. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   openAgentSkill: () => void;
@@ -181,6 +182,7 @@ function builtinCommandHandlers(
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.gotoLine": { run: () => options.focusGotoLine() },
     "hunk.review.startNote": { run: () => options.startUserNote() },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
@@ -317,6 +319,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
+    focusGotoLine: noop,
     moveSelection: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,

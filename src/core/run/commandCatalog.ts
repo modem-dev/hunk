@@ -150,6 +150,17 @@ const BUILTIN_COMMANDS = [
     publicToExtensions: true,
   },
   {
+    id: "hunk.review.gotoLine",
+    title: "Go to line",
+    category: "review",
+    defaultKeys: [":"],
+    // The command only opens this client's line-number prompt; submitting it
+    // resolves through the shared reveal path like any line navigation.
+    locus: "client-local",
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.startNote",
     title: "Add a review note",
     category: "review",

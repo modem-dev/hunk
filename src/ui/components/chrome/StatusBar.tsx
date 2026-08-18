@@ -3,28 +3,34 @@ import stringWidth from "string-width";
 import { isEscapeKey } from "../../lib/keyboard";
 import type { AppTheme } from "../../themes";
 
-/** Render the active file filter, transient notice, and persistent keyboard-mode badge. */
+/** One focused prompt input rendered inline in the status bar (file filter, goto line). */
+export interface StatusBarPromptInput {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onInput: (value: string) => void;
+  onSubmit: () => void;
+  onEscape: () => void;
+}
+
+/** Render the active prompt input, active file filter, transient notice, and mode badge. */
 export function StatusBar({
   filter,
-  filterFocused,
+  promptInput,
   modeText,
   noticeText,
   terminalWidth,
   theme,
   onCloseMenu,
-  onFilterInput,
-  onFilterSubmit,
   onExitMode,
 }: {
   filter: string;
-  filterFocused: boolean;
+  promptInput?: StatusBarPromptInput | null;
   modeText?: string;
   noticeText?: string;
   terminalWidth: number;
   theme: AppTheme;
   onCloseMenu: () => void;
-  onFilterInput: (value: string) => void;
-  onFilterSubmit: () => void;
   onExitMode?: () => void;
 }) {
   const modeWidth = modeText
@@ -52,19 +58,19 @@ export function StatusBar({
           flexDirection: "row",
         }}
       >
-        {filterFocused ? (
+        {promptInput ? (
           <>
-            <text fg={theme.badgeNeutral}>filter:</text>
+            <text fg={theme.badgeNeutral}>{promptInput.label}</text>
             <box style={{ width: 1, height: 1 }}>
               <text fg={theme.muted}> </text>
             </box>
             <input
-              width={Math.max(4, terminalWidth - modeWidth - 11)}
-              value={filter}
-              placeholder="type to filter files"
+              width={Math.max(4, terminalWidth - modeWidth - promptInput.label.length - 9)}
+              value={promptInput.value}
+              placeholder={promptInput.placeholder}
               focused={true}
-              onInput={onFilterInput}
-              onSubmit={onFilterSubmit}
+              onInput={promptInput.onInput}
+              onSubmit={promptInput.onSubmit}
               onKeyDown={(key) => {
                 if (!isEscapeKey(key)) {
                   return;
@@ -72,20 +78,16 @@ export function StatusBar({
 
                 key.preventDefault();
                 key.stopPropagation();
-
-                if (filter.length > 0) {
-                  onFilterInput("");
-                  return;
-                }
-
-                onFilterSubmit();
+                promptInput.onEscape();
               }}
             />
           </>
+        ) : noticeText ? (
+          <text fg={theme.muted}>{noticeText}</text>
         ) : filter.length > 0 ? (
           <text fg={theme.muted}>{`filter=${filter}`}</text>
         ) : (
-          <text fg={theme.muted}>{noticeText ?? ""}</text>
+          <text fg={theme.muted}>{""}</text>
         )}
       </box>
       {modeText ? (

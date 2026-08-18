@@ -18,7 +18,7 @@ import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 
-type FocusArea = "files" | "filter" | "note";
+type FocusArea = "files" | "filter" | "goto" | "note";
 
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
@@ -487,6 +487,12 @@ export function useAppKeyboardShortcuts({
 
       // Everything else is the filter's text (its own Escape handling lives on
       // the input, which clears first and closes second).
+      return "focused";
+    }
+
+    if (focusAreaRef.current === "goto") {
+      // The goto-line input owns every key: digits arrive through the renderable
+      // path, and its own Escape/Enter handling cancels or submits.
       return "focused";
     }
 

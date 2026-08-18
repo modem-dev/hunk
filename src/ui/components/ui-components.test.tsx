@@ -2994,12 +2994,16 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
-        filterFocused={true}
+        promptInput={{
+          label: "filter:",
+          value: "beta",
+          onInput: () => {},
+          onSubmit: () => {},
+          onEscape: () => {},
+        }}
         terminalWidth={60}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
       />,
       60,
       3,
@@ -3014,13 +3018,10 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <StatusBar
         filter=""
-        filterFocused={false}
         noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
         terminalWidth={60}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
       />,
       60,
       3,
@@ -3034,14 +3035,11 @@ describe("UI components", () => {
     const noticeFrame = await captureFrame(
       <StatusBar
         filter=""
-        filterFocused={false}
         modeText="Vim navigation — ext vim:normal — Esc exits"
         noticeText="Update available"
         terminalWidth={80}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
         onExitMode={() => {}}
       />,
       80,
@@ -3050,13 +3048,17 @@ describe("UI components", () => {
     const filterFrame = await captureFrame(
       <StatusBar
         filter="beta"
-        filterFocused={true}
+        promptInput={{
+          label: "filter:",
+          value: "beta",
+          onInput: () => {},
+          onSubmit: () => {},
+          onEscape: () => {},
+        }}
         modeText="Vim navigation — ext vim:normal — Esc exits"
         terminalWidth={80}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
         onExitMode={() => {}}
       />,
       80,
@@ -3076,13 +3078,10 @@ describe("UI components", () => {
     let stopped = 0;
     const element = StatusBar({
       filter: "",
-      filterFocused: false,
       modeText: "Vim navigation",
       terminalWidth: 80,
       theme,
       onCloseMenu: () => {},
-      onFilterInput: () => {},
-      onFilterSubmit: () => {},
       onExitMode: () => {
         exits += 1;
       },
@@ -3106,13 +3105,17 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
-        filterFocused={true}
+        promptInput={{
+          label: "filter:",
+          value: "beta",
+          onInput: () => {},
+          onSubmit: () => {},
+          onEscape: () => {},
+        }}
         noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
         terminalWidth={60}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
       />,
       60,
       3,
@@ -3123,25 +3126,22 @@ describe("UI components", () => {
     expect(frame).not.toContain("Update available:");
   });
 
-  test("StatusBar keeps filter summary precedence over a notice", async () => {
+  test("StatusBar shows a transient notice over the filter summary", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
-        filterFocused={false}
         noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
         terminalWidth={60}
         theme={theme}
         onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
       />,
       60,
       3,
     );
 
-    expect(frame).toContain("filter=beta");
-    expect(frame).not.toContain("Update available:");
+    expect(frame).toContain("Update available: 9.9.9");
+    expect(frame).not.toContain("filter=beta");
   });
 
   test("HelpDialog renders every documented control row without overlap", async () => {

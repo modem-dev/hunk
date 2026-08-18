@@ -21,7 +21,7 @@ export default function (hunk: HunkExtensionAPI) {
   });
 
   hunk.registerCommand(
-    { id: "command-line", title: "Open Vim command line", key: ":" },
+    { id: "command-line", title: "Open Vim command line", key: ";" },
     async (ctx) => {
       if (!ctx.keyboardModes.isActive("normal")) {
         ctx.notify("Enter Vim navigation before opening its command line", "info");
@@ -29,7 +29,7 @@ export default function (hunk: HunkExtensionAPI) {
       }
 
       const input = await ctx.dialogs.input({
-        title: "Vim command (:)",
+        title: "Vim command (;)",
         placeholder: "top or bottom",
       });
       if (input === null || !ctx.keyboardModes.isActive("normal")) return;

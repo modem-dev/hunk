@@ -1931,9 +1931,9 @@ describe("useTerminalReview", () => {
     }
   });
 
-  test("falls back to the containing hunk when nothing measured a row for the line", async () => {
-    // With the current-line marker off the pane publishes no stops at all, so there is no
-    // measured row to scroll to; the hunk covering the line is the closest honest landing spot.
+  test("jumps precisely even when the pane publishes no line stops", async () => {
+    // With the current-line marker off the pane publishes no stops, but the target row is
+    // still measured: the reveal synthesizes the line's cursor and lands exactly on it.
     const { controllerRef, setup } = await renderTerminalReview([createThreeHunkFile()], {
       publishLineCursors: false,
     });
@@ -1948,10 +1948,14 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(outcome).toBe("hunk");
+      expect(outcome).toBe("line");
+      expect(expectValue(controllerRef.current).lineCursor).toMatchObject({
+        fileId: "alpha",
+        hunkIndex: 1,
+        target: { side: "new", line: 15 },
+      });
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
-      // A hunk selection reveal, not a line reveal: nothing measured the requested row.
-      expect(expectValue(controllerRef.current).lineCursorRevealRequest.id).toBe(before.id);
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest.id).toBe(before.id + 1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2324,7 +2328,7 @@ describe("useTerminalReview", () => {
     }
   });
 
-  test("navigate line targets fall back to the hunk when no row is measured", async () => {
+  test("navigate line targets land precisely when the pane publishes no stops", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()], {
       publishLineCursors: false,
     });
@@ -2342,7 +2346,11 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(result).toMatchObject({ hunkIndex: 1, revealed: "hunk" });
+      expect(result).toMatchObject({ hunkIndex: 1, revealed: "line" });
+      expect(expectValue(controllerRef.current).lineCursor).toMatchObject({
+        fileId: "alpha",
+        target: { side: "new", line: 12 },
+      });
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
     } finally {
       await act(async () => {

@@ -51,6 +51,7 @@ The built-in commands and the keys they ship with:
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
+| `hunk.review.gotoLine`                         | Go to line                                     | `:`                          |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`                          |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`                          |
 | `hunk.review.jumpToBottom`                     | Jump to end                                    | `G`, `end`                   |

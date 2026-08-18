@@ -49,6 +49,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
+    focusGotoLine: record("focusGotoLine"),
     moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),

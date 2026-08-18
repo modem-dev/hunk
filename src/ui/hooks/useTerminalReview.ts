@@ -604,6 +604,20 @@ export function useTerminalReview({
   );
 
   const reconcileLineCursor = useCallback(() => {
+    // A hidden line-level navigation (`cursor_line = "off"`) keeps no stop list, so there
+    // is nothing to resolve against: keep a cursor a direct reveal placed on the selected
+    // hunk, and drop it once the selection moves somewhere else.
+    if (lineCursors.length === 0) {
+      const current = lineCursorRef.current;
+      if (
+        current !== null &&
+        (current.fileId !== selectedFileId || current.hunkIndex !== selectedHunkIndex)
+      ) {
+        applyLineCursor(null);
+      }
+      return;
+    }
+
     // Expansion remeasures before its source text loads, so a toggle records what it wants and
     // this waits for the list that actually carries the revealed rows. Each request survives until
     // it resolves or the next toggle replaces it.
@@ -711,9 +725,10 @@ export function useTerminalReview({
    */
   const revealLine = useCallback(
     (fileId: string, side: "old" | "new", line: number): RevealedLineResult => {
-      const cursor = findLineCursorAt(lineCursorsForRevealRef.current, fileId, side, line);
-      if (cursor) {
-        revealLineCursor(cursor, "reveal");
+      const cursors = lineCursorsForRevealRef.current;
+      const stopped = findLineCursorAt(cursors, fileId, side, line);
+      if (stopped) {
+        revealLineCursor(stopped, "reveal");
         return "line";
       }
 
@@ -721,6 +736,13 @@ export function useTerminalReview({
       const hunkIndex = file ? reviewHunkIndexForLine(file.metadata.hunks, side, line) : -1;
       if (hunkIndex < 0) {
         return "none";
+      }
+
+      // An empty list means line-level navigation is hidden (`cursor_line = "off"`), not
+      // that the target row is missing: synthesize the line's cursor and reveal it exactly.
+      if (cursors.length === 0) {
+        revealLineCursor(lineCursorAt(cursors, fileId, hunkIndex, { side, line }), "reveal");
+        return "line";
       }
 
       selectHunk(fileId, hunkIndex);

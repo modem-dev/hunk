@@ -72,11 +72,11 @@ describe("vim navigation example state", () => {
     expect(calls).toEqual([{ id: "hunk.review.stepDown", options: { count: 10_000 } }]);
   });
 
-  test("passes colon to the registered command line and ignores unsupported modifiers", () => {
+  test("passes semicolon and unsupported modifiers through, resetting pending counts", () => {
     const { calls, state } = recordingState();
 
     expect(state.handleKey({ sequence: "4" })).toBe("handled");
-    expect(state.handleKey({ sequence: ":" })).toBe("pass");
+    expect(state.handleKey({ sequence: ";" })).toBe("pass");
     expect(state.handleKey({ meta: true, name: "j" })).toBe("pass");
     expect(state.handleKey({ option: true, name: "k" })).toBe("pass");
     expect(state.handleKey({ ctrl: true, option: true, name: "d" })).toBe("pass");

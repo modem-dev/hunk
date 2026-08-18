@@ -126,8 +126,8 @@ export function createVimNavigationState(commands: VimNavigationCommands) {
       return "handled";
     }
 
-    // The registered `:` command opens a host dialog after this mode passes the key onward.
-    if (text === ":") {
+    // The registered `;` command opens a host dialog after this mode passes the key onward.
+    if (text === ";") {
       reset();
       return "pass";
     }

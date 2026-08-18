@@ -29,13 +29,13 @@ cp -R examples/extensions/vim-navigation ~/.config/hunk/extensions/
 | `zt` / `zz` / `zb`  | Align the current line at the top/center/bottom             |
 | `Ctrl-D` / `Ctrl-U` | Move down/up by half pages                                  |
 | positive digits     | Prefix the next relative motion, for example `5j` or `3]`   |
-| `:`                 | Open the host-rendered Vim command line                     |
+| `;`                 | Open the host-rendered Vim command line                     |
 | `Esc`               | Exit the mode (host-owned; the extension never receives it) |
 | everything else     | Pass through to normal Hunk routing                         |
 
 Counts are parsed by the extension and capped at 10,000. Once a normal-mode sequence resolves, the extension calls `ctx.commands.execute(id, { count })` exactly once, so Hunk applies movement atomically. A bare `0` passes to Hunk's normal layout shortcut; `0` can extend a count that already began with `1`–`9`.
 
-Pressing `:` passes the key to the example's registered command, which opens `ctx.dialogs.input()`. That focused host dialog captures typed keys ahead of the still-active session mode until Enter submits or Escape cancels. The deliberately small Ex-style command set is:
+Pressing `;` passes the key to the example's registered command, which opens `ctx.dialogs.input()`. That focused host dialog captures typed keys ahead of the still-active session mode until Enter submits or Escape cancels. The deliberately small Ex-style command set is:
 
 | Command   | Action                          |
 | --------- | ------------------------------- |

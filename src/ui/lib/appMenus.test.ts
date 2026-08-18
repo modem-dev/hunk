@@ -43,6 +43,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
+    focusGotoLine: noop,
     moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
@@ -147,7 +148,7 @@ describe("buildAppMenus", () => {
       "Next annotated file",
       "Previous annotated file",
     ]);
-    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", "/"]);
+    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", ":", "/", "{", "}"]);
   });
 
   test("every item carries the id of the command it runs", () => {
