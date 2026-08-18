@@ -4,5 +4,12 @@
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ./website ./vercel.json ./scripts/generate-docs.ts ./scripts/generate-changelog.ts ./CHANGELOG.md",
   "installCommand": "SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 bun install --frozen-lockfile && bun install --cwd website --frozen-lockfile",
   "buildCommand": "bun run website:build",
-  "outputDirectory": "website/dist"
+  "outputDirectory": "website/dist",
+  "rewrites": [{ "source": "/install", "destination": "/install.sh" }],
+  "headers": [
+    {
+      "source": "/install(.sh)?",
+      "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }]
+    }
+  ]
 }

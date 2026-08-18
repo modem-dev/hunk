@@ -5,13 +5,15 @@ import { isPrereleaseVersion, isStableVersion } from "../run/version";
  * Fetches the versions each install channel publishes for Hunk.
  *
  * One lookup per channel, asked of the registry that channel actually installs from: npm reads the
- * `hunkdiff` dist-tags, Homebrew reads its formula API. Channels Hunk cannot update through — Nix,
- * mise, and local source builds — report nothing rather than borrowing another channel's numbers,
- * which is what made Homebrew users see releases `brew` could not yet install.
+ * `hunkdiff` dist-tags, Homebrew reads its formula API, and the curl installer reads the GitHub
+ * release the archives hang off. Channels Hunk cannot update through — Nix, mise, and local source
+ * builds — report nothing rather than borrowing another channel's numbers, which is what made
+ * Homebrew users see releases `brew` could not yet install.
  */
 
 const NPM_DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const HOMEBREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/hunk.json";
+const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/modem-dev/hunk/releases/latest";
 const DEFAULT_RELEASE_FETCH_TIMEOUT_MS = 5_000;
 
 export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -49,14 +51,18 @@ function createFetchTimeoutSignal(timeoutMs: number) {
 }
 
 /** Fetch and parse one JSON document, returning null for any failure or timeout. */
-async function fetchJson(url: string, deps: ReleaseLookupDeps): Promise<unknown> {
+async function fetchJson(
+  url: string,
+  deps: ReleaseLookupDeps,
+  headers?: Record<string, string>,
+): Promise<unknown> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const { signal, dispose } = createFetchTimeoutSignal(
     deps.fetchTimeoutMs ?? DEFAULT_RELEASE_FETCH_TIMEOUT_MS,
   );
 
   try {
-    const response = await fetchImpl(url, { signal });
+    const response = await fetchImpl(url, { signal, headers });
     if (!response.ok) {
       return null;
     }
@@ -111,9 +117,28 @@ export async function fetchHomebrewChannelVersions(
   return { latest: stable && isStableVersion(stable) ? stable : undefined };
 }
 
+/**
+ * Fetch the version of the newest GitHub release the curl installer downloads from.
+ *
+ * `releases/latest` never points at a prerelease, so a curl install only ever hears about
+ * `latest`. Release tags are spelled `v1.2.3` and versions are not, so the prefix is stripped
+ * before validation.
+ */
+export async function fetchCurlChannelVersions(
+  deps: ReleaseLookupDeps = {},
+): Promise<ChannelVersions> {
+  const payload = await fetchJson(GITHUB_LATEST_RELEASE_URL, deps, {
+    Accept: "application/vnd.github+json",
+  });
+  const tagName = readStringField(payload, "tag_name");
+  const version = tagName?.startsWith("v") ? tagName.slice(1) : tagName;
+
+  return { latest: version && isStableVersion(version) ? version : undefined };
+}
+
 /** Return whether an install source can be updated from a published release at all. */
 export function hasPublishedReleases(installSource: InstallSource) {
-  return installSource === "npm" || installSource === "homebrew";
+  return installSource === "npm" || installSource === "homebrew" || installSource === "curl";
 }
 
 /** Fetch the versions one install source publishes, asking that channel's own registry. */
@@ -123,6 +148,10 @@ export async function fetchChannelVersions(
 ): Promise<ChannelVersions> {
   if (installSource === "homebrew") {
     return fetchHomebrewChannelVersions(deps);
+  }
+
+  if (installSource === "curl") {
+    return fetchCurlChannelVersions(deps);
   }
 
   if (installSource === "npm") {

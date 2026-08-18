@@ -240,14 +240,14 @@ update Hunk with the package manager that installed it
 ```bash
 hunk update [version]
 hunk update --check
-hunk update --method <npm|brew>
+hunk update --method <npm|brew|curl>
 ```
 
 ### Command-specific options
 
 | Option              | Description                                                    |
 | ------------------- | -------------------------------------------------------------- |
-| `--method <method>` | install method instead of the detected one: npm, brew          |
+| `--method <method>` | install method instead of the detected one: npm, brew, curl    |
 | `--check`           | report the installed and available versions without installing |
 
 ## `hunk daemon serve`

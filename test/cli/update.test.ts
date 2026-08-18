@@ -49,9 +49,10 @@ describe("hunk update CLI contract", () => {
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Usage: update [options] [version]");
     expect(result.stdout).toContain("--method <method>");
-    expect(result.stdout).toContain("npm, brew");
+    expect(result.stdout).toContain("npm, brew, curl");
     expect(result.stdout).toContain("--check");
     expect(result.stdout).toContain("hunk update --method brew");
+    expect(result.stdout).toContain("hunk update --method curl");
     expect(result.stdout).not.toContain("[?1049h");
   });
 
@@ -93,7 +94,17 @@ describe("hunk update CLI contract", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Unknown update method: apt");
-    expect(result.stderr).toContain("Supported methods are `npm` and `brew`.");
+    expect(result.stderr).toContain("Supported methods are `npm`, `brew`, and `curl`.");
+  });
+
+  test("accepts curl as an explicit update method", () => {
+    // `--method curl` with an unresolvable version reaches argument validation and stops there,
+    // so the contract is checked without a release lookup or an install.
+    const result = runUpdate(["--method", "curl", "not-a-version"], "dev");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid version: not-a-version");
+    expect(result.stderr).not.toContain("Unknown update method");
   });
 
   test("rejects unknown update flags", () => {

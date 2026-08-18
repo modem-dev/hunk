@@ -17,12 +17,12 @@ const INSTALL_DIR_ENV = "HUNK_INSTALL_DIR";
 /** Path segments Homebrew always puts above its binaries, on macOS and Linux alike. */
 const HOMEBREW_PATH_SEGMENTS = ["cellar", "homebrew", "linuxbrew"];
 
-export type InstallSource = "npm" | "homebrew" | "nix" | "mise" | "dev";
+export type InstallSource = "npm" | "homebrew" | "nix" | "mise" | "curl" | "dev";
 
 /** Package-manager clients that can install the global `hunkdiff` npm package. */
 export type NpmClient = "npm" | "bun" | "pnpm";
 
-const INSTALL_SOURCES: readonly InstallSource[] = ["npm", "homebrew", "nix", "mise", "dev"];
+const INSTALL_SOURCES: readonly InstallSource[] = ["npm", "homebrew", "nix", "mise", "curl", "dev"];
 
 export interface InstallSourceFacts {
   env?: NodeJS.ProcessEnv;
@@ -68,6 +68,19 @@ function isMiseManagedExecutablePath(executablePath: string) {
   return segments.some(
     (segment, index) => segment === "mise" && segments[index + 1] === "installs",
   );
+}
+
+/**
+ * Return whether this executable came from the `hunk.dev/install.sh` curl installer.
+ *
+ * The installer owns a single tree — `~/.hunk`, with the binary at `~/.hunk/bin/hunk` and the
+ * bundled skills beside it — and writes no environment variable, so the adjacent `.hunk`/`bin`
+ * segments are the only signal, read the same way mise's layout is. Adjacency matters: a checkout
+ * that keeps review artifacts in a repo-local `.hunk/` directory is not a curl install.
+ */
+function isCurlInstalledExecutablePath(executablePath: string) {
+  const segments = splitPathSegments(executablePath);
+  return segments.some((segment, index) => segment === ".hunk" && segments[index + 1] === "bin");
 }
 
 /** Executable names the Homebrew formula installs, lowercased and without a Windows suffix. */
@@ -178,6 +191,14 @@ export function detectInstallSource(facts: InstallSourceFacts = {}): InstallSour
     return "homebrew";
   }
 
+  if (isCurlInstalledExecutablePath(executablePath)) {
+    return "curl";
+  }
+
+  // Boundary: a curl install redirected elsewhere with `HUNK_INSTALL_DIR` classifies as `dev`,
+  // because that variable already names the directory `bun run install:bin` writes to. The two
+  // channels are indistinguishable once they share a directory the user chose, and `dev` is the
+  // safe answer — it prints the command to rerun instead of replacing a binary Hunk does not own.
   const homeDir = facts.homeDir ?? env.HOME ?? env.USERPROFILE;
   if (isInsideDirectory(executablePath, resolveDevInstallDir(env, homeDir))) {
     return "dev";
