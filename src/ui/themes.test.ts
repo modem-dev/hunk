@@ -231,6 +231,74 @@ describe("themes", () => {
     }
   });
 
+  test("keeps Everforest surfaces on official palette tokens", () => {
+    const dark = resolveTheme("everforest-dark", null);
+    expect(dark.background).toBe("#2d353b");
+    expect(dark.text).toBe("#d3c6aa");
+    expect(dark.panel).toBe("#343f44");
+    expect(dark.panelAlt).toBe("#3d484d");
+    expect(dark.border).toBe("#4f585e");
+    expect(dark.accent).toBe("#7fbbb3");
+    expect(dark.accentMuted).toBe("#3a515d");
+    expect(dark.addedBg).toBe("#3c4841");
+    expect(dark.removedBg).toBe("#493b40");
+    expect(dark.movedAddedBg).toBe("#384b55");
+    expect(dark.movedRemovedBg).toBe("#384b55");
+    expect(dark.addedContentBg).toBe("#425047");
+    expect(dark.removedContentBg).toBe("#514045");
+    expect(dark.addedSignColor).toBe("#a7c080");
+    expect(dark.removedSignColor).toBe("#e67e80");
+    expect(dark.selectedHunk).toBe("#543a48");
+    expect(dark.lineNumberFg).toBe("#9da9a0");
+    expect(dark.badgeAdded).toBe("#a7c080");
+    expect(dark.fileNew).toBe("#a7c080");
+    expect(dark.fileUntracked).toBe("#a7c080");
+    expect(dark.noteBorder).toBe("#7fbbb3");
+    expect(dark.noteBackground).toBe("#343f44");
+    expect(dark.noteTitleBackground).toBe("#343f44");
+
+    const light = resolveTheme("everforest-light", null);
+    expect(light.background).toBe("#fdf6e3");
+    expect(light.text).toBe("#5c6a72");
+    expect(light.panel).toBe("#f4f0d9");
+    expect(light.panelAlt).toBe("#efebd4");
+    expect(light.border).toBe("#e0dcc7");
+    expect(light.accent).toBe("#3a94c5");
+    expect(light.accentMuted).toBe("#e9f0e9");
+    expect(light.addedBg).toBe("#f3f5d9");
+    expect(light.removedBg).toBe("#ffe7de");
+    expect(light.movedAddedBg).toBe("#ecf5ed");
+    expect(light.movedRemovedBg).toBe("#ecf5ed");
+    expect(light.addedContentBg).toBe("#f0f1d2");
+    expect(light.removedContentBg).toBe("#fde3da");
+    expect(light.removedSignColor).toBe("#f85552");
+    expect(light.selectedHunk).toBe("#eaedc8");
+    expect(light.noteBorder).toBe("#3a94c5");
+  });
+
+  test("keeps Everforest word-level diff emphasis distinct from row tints", () => {
+    for (const theme of [
+      resolveTheme("everforest-dark", null),
+      resolveTheme("everforest-light", null),
+    ]) {
+      expect(theme.addedBg).not.toBe(theme.addedContentBg);
+      expect(theme.removedBg).not.toBe(theme.removedContentBg);
+      expect(hexColorDistance(theme.addedContentBg, theme.contextBg)).toBeGreaterThan(
+        hexColorDistance(theme.addedBg, theme.contextBg),
+      );
+      expect(hexColorDistance(theme.removedContentBg, theme.contextBg)).toBeGreaterThan(
+        hexColorDistance(theme.removedBg, theme.contextBg),
+      );
+    }
+  });
+
+  test("keeps the Everforest dark deleted row red-dominant", () => {
+    const { removedBg } = resolveTheme("everforest-dark", null);
+    const red = Number.parseInt(removedBg.slice(1, 3), 16);
+    const blue = Number.parseInt(removedBg.slice(5, 7), 16);
+    expect(red).toBeGreaterThan(blue);
+  });
+
   test("layers custom theme overrides on a bundled base", () => {
     const custom = resolveTheme(
       "custom",
