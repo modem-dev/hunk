@@ -51,10 +51,10 @@ import {
 
 type HighlightThemeInput = AppTheme | AppTheme["appearance"];
 
-export const HIGHLIGHT_WORKER_MIN_LINES = 2_000;
+export const HIGHLIGHT_WORKER_MIN_LINES = 40;
 
 export interface LoadHighlightedDiffOptions {
-  /** Allow the interactive TUI to move eligible large-file work into the Bun worker. */
+  /** Allow the interactive TUI to move eligible highlighting into the Bun worker. */
   offloadLargeDiff?: boolean;
 }
 

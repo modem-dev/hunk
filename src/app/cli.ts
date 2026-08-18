@@ -87,7 +87,7 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.experimental,
   {
     flag: "--fast",
-    description: "experimentally offload eligible large-diff highlighting",
+    description: "experimentally offload eligible syntax highlighting",
   },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
