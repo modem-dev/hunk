@@ -156,6 +156,12 @@ add_path_line() {
 	info "Added ${bin_dir} to PATH in ${rc_file}."
 }
 
+# Escape one value for inclusion inside single quotes in shell startup syntax, so a directory
+# containing shell-significant characters stays a literal path instead of becoming code.
+squote() {
+	printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
 # Print the first of the given candidate startup files that exists, or the first candidate.
 first_existing() {
 	fallback="$1"
@@ -248,6 +254,11 @@ main() {
 
 	temp_dir="$(mktemp -d)"
 	cleanup() {
+		# A swap interrupted between renames leaves the previous skills tree parked at skills.old;
+		# put it back so an already-installed binary keeps resolving its bundled skills.
+		if [ ! -e "${payload_dir}/skills" ] && [ -e "${payload_dir}/skills.old" ]; then
+			mv "${payload_dir}/skills.old" "${payload_dir}/skills"
+		fi
 		rm -rf "$temp_dir"
 	}
 	# INT/TERM exit explicitly so the shell cannot resume mid-install; EXIT then runs cleanup.
@@ -312,7 +323,8 @@ main() {
 
 	info "Installed hunk ${version} to ${target_binary}"
 
-	path_line="export PATH=\"${bin_dir}:\$PATH\""
+	quoted_bin_dir="'$(squote "$bin_dir")'"
+	path_line="export PATH=${quoted_bin_dir}:\"\$PATH\""
 
 	if [ "$no_modify_path" = "1" ]; then
 		info "Left shell startup files untouched (--no-modify-path)."
@@ -333,13 +345,13 @@ main() {
 				"$path_line"
 			;;
 		fish)
-			add_path_line "${home_dir}/.config/fish/config.fish" "fish_add_path \"${bin_dir}\""
+			add_path_line "${home_dir}/.config/fish/config.fish" "fish_add_path ${quoted_bin_dir}"
 			;;
 		*)
 			add_path_line "${home_dir}/.profile" "$path_line"
 			;;
 		esac
-		info "Restart your shell, or run: export PATH=\"${bin_dir}:\$PATH\""
+		info "Restart your shell, or run: export PATH=${quoted_bin_dir}:\"\$PATH\""
 	fi
 
 	info ""

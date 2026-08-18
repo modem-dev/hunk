@@ -153,14 +153,21 @@ function npmUpdateCommand(
  *
  * The installer is the updater: it already resolves the platform archive, verifies its checksum,
  * and swaps the tree in place, so duplicating any of that here would give curl installs a second
- * download path that can drift from the one users pipe into `sh`. The target version travels in
- * the child environment rather than the command line so the pipeline stays equivalent to the
- * documented one-liner, and wget stands in when curl is absent — the installer itself supports
- * wget-only machines, so its updater must too.
+ * download path that can drift from the one users pipe into `sh`. The script downloads to a file
+ * before executing — piping it straight into `sh` would report the pipeline's last status, so a
+ * failed fetch would feed `sh` empty input and read as a successful update. wget stands in when
+ * curl is absent, since the installer itself supports wget-only machines. The target version
+ * travels in the child environment, where the installer reads `HUNK_VERSION`.
  */
 function curlUpdateCommand() {
-  const fetchScript = `if command -v curl >/dev/null 2>&1; then curl -fsSL ${CURL_INSTALL_SCRIPT_URL}; else wget -qO- ${CURL_INSTALL_SCRIPT_URL}; fi`;
-  return ["sh", "-c", `{ ${fetchScript}; } | sh`];
+  const script = [
+    "set -e",
+    'tmp="$(mktemp)"',
+    "trap 'rm -f \"$tmp\"' EXIT",
+    `if command -v curl >/dev/null 2>&1; then curl -fsSL ${CURL_INSTALL_SCRIPT_URL} -o "$tmp"; else wget -qO "$tmp" ${CURL_INSTALL_SCRIPT_URL}; fi`,
+    'sh "$tmp"',
+  ].join("; ");
+  return ["sh", "-c", script];
 }
 
 /** Choose the command that installs one target version for the channel that owns this binary. */

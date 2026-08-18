@@ -71,9 +71,17 @@ async function runUpdate(options: UpdateRunOptions) {
   };
 }
 
-/** The exact pipeline `hunk update` spawns for curl installs, wget standing in for curl. */
-const CURL_UPDATE_PIPELINE =
-  "{ if command -v curl >/dev/null 2>&1; then curl -fsSL https://hunk.dev/install.sh; else wget -qO- https://hunk.dev/install.sh; fi; } | sh";
+/**
+ * The exact script `hunk update` spawns for curl installs: download to a file, then execute, so
+ * a failed fetch aborts instead of feeding `sh` empty input; wget stands in for curl.
+ */
+const CURL_UPDATE_PIPELINE = [
+  "set -e",
+  'tmp="$(mktemp)"',
+  "trap 'rm -f \"$tmp\"' EXIT",
+  'if command -v curl >/dev/null 2>&1; then curl -fsSL https://hunk.dev/install.sh -o "$tmp"; else wget -qO "$tmp" https://hunk.dev/install.sh; fi',
+  'sh "$tmp"',
+].join("; ");
 
 describe("update method parsing", () => {
   test("normalizes brew to the Homebrew install source", () => {
