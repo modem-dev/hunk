@@ -18,6 +18,9 @@
 #
 # macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
 #
+# This file's canonical home is the repository root; the website build stages it into the
+# deploy output so hunk.dev serves it (scripts/stage-install-script.ts).
+#
 # Everything below only defines functions; the last line runs main. A partially delivered
 # script therefore dies on a syntax error instead of executing a truncated prefix.
 

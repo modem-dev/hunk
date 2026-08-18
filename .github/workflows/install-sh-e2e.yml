@@ -14,7 +14,7 @@ name: Install script E2E
 on:
   pull_request:
     paths:
-      - website/public/install.sh
+      - install.sh
       - .github/workflows/install-sh-e2e.yml
   schedule:
     - cron: "17 6 * * 1"
@@ -53,7 +53,7 @@ jobs:
           github_path="${sandbox}/github_path"
           : >"$github_path"
 
-          HOME="$sandbox" GITHUB_PATH="$github_path" sh website/public/install.sh
+          HOME="$sandbox" GITHUB_PATH="$github_path" sh install.sh
 
           binary="${sandbox}/.hunk/bin/hunk"
           [ -x "$binary" ] || { echo "error: no executable at $binary" >&2; exit 1; }
@@ -68,8 +68,8 @@ jobs:
         run: |
           set -eu
           sandbox="$(mktemp -d)"
-          HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh website/public/install.sh
-          output="$(HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh website/public/install.sh)"
+          HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh install.sh
+          output="$(HOME="$sandbox" GITHUB_PATH="${sandbox}/github_path" sh install.sh)"
           printf '%s\n' "$output" | grep -F "already installed"
 
       - name: Custom directory with spaces installs and resolves skills
@@ -80,7 +80,7 @@ jobs:
           sandbox="$(mktemp -d)"
           custom="${sandbox}/hunk tools"
 
-          HOME="$sandbox" HUNK_INSTALL_DIR="$custom" sh website/public/install.sh --no-modify-path
+          HOME="$sandbox" HUNK_INSTALL_DIR="$custom" sh install.sh --no-modify-path
 
           binary="${custom}/hunk"
           [ -x "$binary" ] || { echo "error: no executable at $binary" >&2; exit 1; }
@@ -92,7 +92,7 @@ jobs:
         run: |
           set -eu
           sandbox="$(mktemp -d)"
-          if HOME="$sandbox" HUNK_VERSION="0.0.999" sh website/public/install.sh --no-modify-path 2>"${sandbox}/err"; then
+          if HOME="$sandbox" HUNK_VERSION="0.0.999" sh install.sh --no-modify-path 2>"${sandbox}/err"; then
             echo "error: installing a nonexistent version should have failed" >&2
             exit 1
           fi

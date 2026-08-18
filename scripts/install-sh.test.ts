@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { PLATFORM_PACKAGE_MATRIX } from "./prebuilt-package-helpers";
 
 /**
- * Covers `website/public/install.sh`, the script published at https://hunk.dev/install.sh.
+ * Covers `install.sh` at the repository root, the script published at https://hunk.dev/install.sh
+ * (staged into the website build by `scripts/stage-install-script.ts`).
  *
  * The script is the one piece of Hunk that runs before Hunk exists, so it is checked as text and
  * as a shell program: it must parse under a POSIX shell, name the same release archives the
@@ -15,7 +16,7 @@ import { PLATFORM_PACKAGE_MATRIX } from "./prebuilt-package-helpers";
  */
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const INSTALL_SCRIPT_PATH = join(REPO_ROOT, "website", "public", "install.sh");
+const INSTALL_SCRIPT_PATH = join(REPO_ROOT, "install.sh");
 const INSTALL_SCRIPT = readFileSync(INSTALL_SCRIPT_PATH, "utf8");
 
 /** Platform pairs the installer serves: every published package except the Windows one. */
