@@ -17,14 +17,6 @@ export const HUNK_EXTENSION_TOPIC = "hunk-extension";
 export const HUNK_EXTENSION_TOPIC_URL = `https://github.com/topics/${HUNK_EXTENSION_TOPIC}`;
 
 /**
- * Extension API version this site documents as current.
- *
- * Mirrors `HUNK_EXTENSION_API_VERSION` in `src/extension-api/types.ts`;
- * `scripts/check-extension-catalog.test.ts` fails the build when they drift.
- */
-export const CURRENT_EXTENSION_API_VERSION = 7;
-
-/**
  * What an extension registers, in the words the docs use for those surfaces.
  *
  * Derived by hand from each extension's entry file today, and declarable by

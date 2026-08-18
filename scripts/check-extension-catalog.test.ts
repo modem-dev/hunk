@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { HUNK_EXTENSION_API_VERSION } from "../src/extension-api/types";
 import { parseExtensionInstallSource } from "../src/extensions/manage/source";
 import {
-  CURRENT_EXTENSION_API_VERSION,
   EXTENSION_CATALOG,
   avatarUrl,
   categoryFacets,
@@ -18,10 +17,6 @@ import {
  * is current.
  */
 describe("extension directory catalog", () => {
-  test("states the extension API version Hunk actually ships", () => {
-    expect(CURRENT_EXTENSION_API_VERSION).toBe(HUNK_EXTENSION_API_VERSION);
-  });
-
   test("lists only extensions this Hunk can load", () => {
     for (const listing of EXTENSION_CATALOG) {
       expect(listing.apiVersion).toBeLessThanOrEqual(HUNK_EXTENSION_API_VERSION);

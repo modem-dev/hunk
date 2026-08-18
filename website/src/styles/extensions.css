@@ -14,10 +14,6 @@
 }
 
 .marketing .xintro {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 40px;
-  align-items: start;
   padding: 72px 0 36px;
 }
 
@@ -49,8 +45,7 @@
   color: var(--hunk-accent-ink);
 }
 
-.marketing .xintro code,
-.marketing .xpublish code {
+.marketing .xintro code {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--hunk-panel);
@@ -66,41 +61,6 @@
   color: var(--soft);
   font-size: 13.5px;
   line-height: 1.6;
-}
-
-.marketing .xcount {
-  display: grid;
-  gap: 2px;
-  justify-items: end;
-  padding: 16px 20px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
-  text-align: right;
-}
-
-.marketing .xcount b {
-  font-size: 30px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.marketing .xcount span {
-  color: var(--soft);
-  font-size: 12px;
-}
-
-.marketing .xcount a {
-  margin-top: 8px;
-  color: var(--acc);
-  font-size: 12.5px;
-}
-
-.marketing .xcount a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .marketing .xcontrols {
@@ -379,58 +339,8 @@
   border-color: var(--ink);
 }
 
-.marketing .xpublish {
-  padding: 56px 0 96px;
-}
-
-.marketing .xpublish h2 {
-  margin: 0 0 26px;
-  font-size: clamp(22px, 3.4vw, 30px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.marketing .xpublish ol {
-  display: grid;
-  gap: 12px;
-  margin: 0 0 28px;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
-}
-
-.marketing .xpublish li {
-  display: grid;
-  grid-template-columns: auto 190px 1fr;
-  gap: 14px;
-  align-items: baseline;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
-  font-size: 13.5px;
-  line-height: 1.6;
-}
-
-.marketing .xpublish li::before {
-  counter-increment: step;
-  content: counter(step);
-  color: var(--acc);
-  font-weight: 700;
-}
-
-.marketing .xpublish li b {
-  font-weight: 700;
-}
-
-.marketing .xpublish li span {
-  color: var(--soft);
-}
-
-.marketing .xpreview {
-  max-width: 60ch;
-  margin: 22px 0 0;
-  color: var(--soft);
-  font-size: 12.5px;
-  line-height: 1.6;
+.marketing .xbrowse {
+  padding-bottom: 96px;
 }
 
 @media (max-width: 760px) {
@@ -439,22 +349,7 @@
   }
 
   .marketing .xintro {
-    grid-template-columns: 1fr;
     padding-top: 48px;
-  }
-
-  /* The count is a summary, not a call to action, so it follows the copy. */
-  .marketing .xcount {
-    justify-items: start;
-    text-align: left;
-  }
-
-  .marketing .xpublish li {
-    grid-template-columns: auto 1fr;
-  }
-
-  .marketing .xpublish li span {
-    grid-column: 2;
   }
 }
 

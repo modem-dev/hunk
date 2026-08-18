@@ -2,7 +2,6 @@
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
 import {
-  CURRENT_EXTENSION_API_VERSION,
   HUNK_EXTENSION_TOPIC,
   HUNK_EXTENSION_TOPIC_URL,
   avatarUrl,
@@ -85,24 +84,16 @@ const schema = {
 
       <main class="xdir">
         <section class="xintro">
-          <div>
-            <p class="kicker"># extensions</p>
-            <h1>Made by people<br />who review a lot of code.</h1>
-            <p class="sub">
-              Extensions are plain TypeScript, published as ordinary GitHub repositories and
-              installed with one command. Every listing is a public repository that tagged itself{" "}
-              <a href={HUNK_EXTENSION_TOPIC_URL}><code>{HUNK_EXTENSION_TOPIC}</code></a> on GitHub.
-            </p>
-            <p class="xcaveat">
-              An extension runs with your full permissions, and a listing here is not a review. Read
-              the source before you install it.
-            </p>
-          </div>
-          <aside class="xcount">
-            <b>{entries.length}</b>
-            <span>{entries.length === 1 ? "extension" : "extensions"} listed</span>
-            <a href="/docs/extend/extensions/">Publish yours →</a>
-          </aside>
+          <h1>Made by people<br />who review a lot of code.</h1>
+          <p class="sub">
+            TypeScript extensions for Hunk. Run <code>hunk extension install</code> to add one, or{" "}
+            <a href="/docs/extend/extensions/">write your own</a>.
+          </p>
+          <p class="xcaveat">
+            Every listing is a public repository that tagged itself{" "}
+            <a href={HUNK_EXTENSION_TOPIC_URL}><code>{HUNK_EXTENSION_TOPIC}</code></a> on GitHub, and
+            an extension runs with your full permissions. Read the source before you install it.
+          </p>
         </section>
 
         <section class="xbrowse" aria-label="Community extensions">
@@ -223,46 +214,6 @@ const schema = {
           <button id="x-more" class="xmore" type="button" hidden></button>
         </section>
 
-        <section class="xpublish">
-          <p class="kicker"># publish yours</p>
-          <h2>Tag a repository, join the list.</h2>
-          <ol>
-            <li>
-              <b>Build it</b>
-              <span
-                >One file that default-exports a function, plus a <code>package.json</code> with a{" "}
-                <code>hunk</code> field.</span
-              >
-            </li>
-            <li>
-              <b>Declare the surface</b>
-              <span
-                >Set <code>"hunk": &lbrace;"apiVersion": N&rbrace;</code> so an older Hunk refuses
-                the install cleanly. Current is v{CURRENT_EXTENSION_API_VERSION}.</span
-              >
-            </li>
-            <li>
-              <b>Tag releases</b>
-              <span>So people can pin with <code>@v1.2.0</code> instead of your default branch.</span
-              >
-            </li>
-            <li>
-              <b>Add the topic</b>
-              <span
-                >Push it public with the <code>{HUNK_EXTENSION_TOPIC}</code> topic, and open a pull request
-                to add it here.</span
-              >
-            </li>
-          </ol>
-          <div class="cta">
-            <a class="ghost" href="/docs/extend/extensions/">Read the authoring guide</a>
-            <a class="plain" href={HUNK_EXTENSION_TOPIC_URL}>Browse the topic on GitHub</a>
-          </div>
-          <p class="xpreview">
-            This directory is curated by hand while it finds its feet. The topic is the signal it
-            will index automatically.
-          </p>
-        </section>
       </main>
 
       <BrandFooter />
