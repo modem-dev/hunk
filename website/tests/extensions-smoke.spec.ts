@@ -54,6 +54,26 @@ test("sorting reorders the same cards without dropping any", async ({ page }) =>
   expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
 });
 
+test("the directory carries its own social card", async ({ page, request }) => {
+  await page.goto("/extensions/");
+  const image = page.locator('meta[property="og:image"]');
+  // Exactly one: the page's card must replace the site-wide image, not sit beside it.
+  await expect(image).toHaveCount(1);
+  await expect(image).toHaveAttribute("content", "https://hunk.dev/extensions/og.png");
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/extensions/og.png",
+  );
+  await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+    "content",
+    /^Hunk extensions/,
+  );
+
+  const response = await request.get("/extensions/og.png");
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["content-type"]).toContain("image/png");
+});
+
 test("the directory is reachable from the marketing navigation on desktop", async ({
   page,
 }, testInfo) => {

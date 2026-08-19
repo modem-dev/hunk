@@ -70,10 +70,9 @@ const PAGE_CARDS: CardTarget[] = [
       slug: "extensions",
       title: "Extensions",
       tagline:
-        "Make hunk your own. Community extensions for panes, themes, highlighters, and VCS backends.",
-      chips: ["Panes", "Themes", "Highlighters", "VCS backends"],
+        "Make hunk your own. Community extensions for panes, themes, highlighters, and more.",
       meta: "hunk extension install <owner>/<repo>",
-      alt: "Hunk extensions: community extensions for panes, themes, highlighters, and VCS backends.",
+      alt: "Hunk extensions: community extensions for panes, themes, highlighters, and more.",
     },
     footer: "hunk.dev/extensions",
     outputFile: join(websiteDir, "public", "extensions", "og.png"),

@@ -34,9 +34,14 @@ function createWebsiteFixture() {
     join(dist, "index.html"),
     `<html><head><title>Hunk</title><meta name="description" content="Hunk"><link rel="canonical" href="https://hunk.dev/">${marketingHead}</head><body><main id="install"><a href="/docs/">Docs</a><img src="/og.png"></main></body></html>`,
   );
+  // The directory publishes its own card in place of the site-wide image.
+  const extensionsHead = marketingHead.replaceAll(
+    "https://hunk.dev/og.png",
+    "https://hunk.dev/extensions/og.png",
+  );
   writeFileSync(
     join(dist, "extensions", "index.html"),
-    `<html><head><title>Extensions</title><meta name="description" content="Extensions"><link rel="canonical" href="https://hunk.dev/extensions/">${marketingHead}</head><body><a href="/docs/">Docs</a><img src="/og.png"></body></html>`,
+    `<html><head><title>Extensions</title><meta name="description" content="Extensions"><link rel="canonical" href="https://hunk.dev/extensions/">${extensionsHead}</head><body><a href="/docs/">Docs</a><img src="/og.png"></body></html>`,
   );
   writeFileSync(
     join(dist, "docs", "index.html"),
@@ -67,14 +72,16 @@ describe("static website link checking", () => {
     expect(() => checkWebsiteBuild(dist)).toThrow("missing anchor #missing");
   });
 
-  test("holds the extension directory to the marketing shell's social metadata", () => {
+  test("requires the extension directory to publish its own social card", () => {
     const dist = createWebsiteFixture();
     const extensionsPath = join(dist, "extensions", "index.html");
     const html = readFileSync(extensionsPath, "utf8");
 
+    // Falling back to the site-wide image is the drift worth catching: the page
+    // still looks complete, and every share of it shows the wrong card.
     writeFileSync(
       extensionsPath,
-      html.replace('<meta property="og:image" content="https://hunk.dev/og.png">', ""),
+      html.replaceAll("https://hunk.dev/extensions/og.png", "https://hunk.dev/og.png"),
     );
     expect(() => checkWebsiteBuild(dist)).toThrow("missing head metadata");
   });
