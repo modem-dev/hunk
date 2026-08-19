@@ -1,0 +1,333 @@
+---
+import BrandFooter from "../components/BrandFooter.astro";
+import BrandHeader from "../components/BrandHeader.astro";
+import {
+  avatarUrl,
+  categoryFacets,
+  formatUpdated,
+  installCommand,
+  loadExtensionEntries,
+  ownerOf,
+  repositoryUrl,
+  toJsonLdScriptBody,
+} from "../data/extensions";
+import "../styles/marketing.css";
+import "../styles/extensions.css";
+
+const title = "hunk extensions — the community directory";
+const description =
+  "Community extensions for Hunk: panes, themes, highlighters, and VCS backends published as public GitHub repositories and installed with one command.";
+
+const entries = await loadExtensionEntries();
+const facets = categoryFacets(entries);
+// One page of cards, matched to the three-, two-, and one-column layouts so a
+// page boundary never lands mid-row. Everything is in the HTML either way; the
+// button only lifts the cap the script applies.
+const PAGE_SIZE = 24;
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  name: "Hunk extensions",
+  description,
+  url: "https://hunk.dev/extensions/",
+  numberOfItems: entries.length,
+  itemListElement: entries.map((entry, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: entry.name,
+    description: entry.summary,
+    url: repositoryUrl(entry),
+  })),
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="description" content={description} />
+    <meta
+      name="keywords"
+      content="hunk extensions, terminal diff, code review, TypeScript extensions, hunk-extension"
+    />
+    <meta name="author" content="Modem" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="hunk" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://hunk.dev/extensions/" />
+    <meta property="og:image" content="https://hunk.dev/extensions/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Hunk extensions: community extensions for panes, themes, highlighters, and more."
+    />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://hunk.dev/extensions/og.png" />
+    <link rel="canonical" href="https://hunk.dev/extensions/" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <title>{title}</title>
+    <script type="application/ld+json" is:inline set:html={toJsonLdScriptBody(schema)}></script>
+    <script is:inline defer src="/_vercel/insights/script.js"></script>
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <BrandHeader current="extensions" />
+      </header>
+
+      <main class="xdir">
+        <section class="xintro">
+          <h1>Make hunk your own<br />with extensions.</h1>
+          <p class="sub">
+            TypeScript extensions for Hunk. Run <code>hunk extension install</code> to add one, or{" "}
+            <a href="/docs/extend/extensions/">write your own</a>.
+          </p>
+          <p class="xcaveat">
+            Extensions run with full permissions on your OS. These are community extensions and have
+            not been vetted. Read the source before installing.
+          </p>
+        </section>
+
+        <section class="xbrowse" aria-label="Community extensions">
+          <div class="xcontrols">
+            <div class="xsearch-wrap">
+              <span class="xsearch-icon" aria-hidden="true">/</span>
+              <input
+                id="x-search"
+                class="xsearch"
+                type="search"
+                placeholder="search name, owner, description"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Search extensions"
+              />
+            </div>
+            <label class="xsort-wrap">
+              <span>sort</span>
+              <select id="x-sort" aria-label="Sort extensions">
+                <option value="popular">Most stars</option>
+                <option value="recent">Recently updated</option>
+                <option value="newest">Newest</option>
+                <option value="name">Name</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="xfacets" role="group" aria-label="Filter by what an extension registers">
+            <button class="xfacet is-on" type="button" data-category="">
+              All <span>{entries.length}</span>
+            </button>
+            {
+              facets.map(({ category, count }) => (
+                <button class="xfacet" type="button" data-category={category}>
+                  {category} <span>{count}</span>
+                </button>
+              ))
+            }
+          </div>
+
+          <p id="x-meta" class="xmeta-line" aria-live="polite">
+            {entries.length} {entries.length === 1 ? "extension" : "extensions"}
+          </p>
+
+          <div id="x-grid" class="xgrid">
+            {
+              entries.map((entry) => {
+                const updated = entry.pushedAt ? formatUpdated(entry.pushedAt) : undefined;
+                return (
+                  <article
+                    class="xcard"
+                    data-categories={entry.categories.join("|")}
+                    data-search={`${entry.repo} ${entry.name} ${entry.summary}`.toLowerCase()}
+                    data-stars={entry.stars ?? 0}
+                    data-pushed={entry.pushedAt ?? ""}
+                    data-created={entry.createdAt ?? ""}
+                    data-name={entry.repo}
+                  >
+                    <div class="xcard-head">
+                      <img
+                        class="xavatar"
+                        src={avatarUrl(entry, 64)}
+                        alt=""
+                        width="32"
+                        height="32"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                      />
+                      <h2 class="xname">
+                        <a href={repositoryUrl(entry)}>
+                          <span class="xowner">{ownerOf(entry)}/</span>
+                          {entry.name}
+                        </a>
+                      </h2>
+                      <button
+                        class="xcopy"
+                        type="button"
+                        data-install={installCommand(entry)}
+                        aria-label={`Copy install command for ${entry.name}`}
+                        title={installCommand(entry)}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.9" />
+                          <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+                        </svg>
+                        <span class="sr-only" aria-live="polite" data-copy-status />
+                      </button>
+                    </div>
+
+                    <p class="xsum">{entry.summary}</p>
+
+                    <ul class="xtags">
+                      {entry.categories.map((category) => (
+                        <li>{category}</li>
+                      ))}
+                    </ul>
+
+                    <div class="xmeta">
+                      {typeof entry.stars === "number" && (
+                        <span class="xstat">
+                          <span class="xstar" aria-hidden="true">
+                            ★
+                          </span>
+                          {entry.stars.toLocaleString("en-US")}
+                        </span>
+                      )}
+                      <span class="xstat">v{entry.version}</span>
+                      <span class="xstat">API v{entry.apiVersion}</span>
+                      {updated && <span class="xstat xwhen">updated {updated}</span>}
+                    </div>
+                  </article>
+                );
+              })
+            }
+          </div>
+
+          <p id="x-empty" class="xempty" hidden>No extensions match that search.</p>
+          <button id="x-more" class="xmore" type="button" hidden></button>
+        </section>
+
+      </main>
+
+      <BrandFooter />
+    </div>
+
+    <script is:inline define:vars={{ PAGE_SIZE }}>
+      // Every card is already in the HTML, so search, filter, sort, and paging
+      // are all reorderings of what is on the page: the directory works without
+      // this script, and stays instant at any catalog size.
+      (() => {
+        const grid = document.getElementById("x-grid");
+        const search = document.getElementById("x-search");
+        const sort = document.getElementById("x-sort");
+        const meta = document.getElementById("x-meta");
+        const empty = document.getElementById("x-empty");
+        const more = document.getElementById("x-more");
+        const facets = [...document.querySelectorAll(".xfacet")];
+        if (!grid) return;
+
+        const cards = [...grid.querySelectorAll(".xcard")];
+        const order = new Map(cards.map((card, index) => [card, index]));
+        let category = "";
+        let limit = PAGE_SIZE;
+
+        const time = (value) => (value ? new Date(value).getTime() || 0 : 0);
+        const number = (card, key) => Number(card.dataset[key] ?? 0) || 0;
+
+        function compare(mode) {
+          if (mode === "recent") return (a, b) => time(b.dataset.pushed) - time(a.dataset.pushed);
+          if (mode === "newest") return (a, b) => time(b.dataset.created) - time(a.dataset.created);
+          if (mode === "name") {
+            return (a, b) => (a.dataset.name ?? "").localeCompare(b.dataset.name ?? "");
+          }
+          return (a, b) => number(b, "stars") - number(a, "stars");
+        }
+
+        function render() {
+          const query = (search?.value ?? "").trim().toLowerCase();
+          const terms = query ? query.split(/\s+/) : [];
+          const matched = cards.filter((card) => {
+            const haystack = card.dataset.search ?? "";
+            if (!terms.every((term) => haystack.includes(term))) return false;
+            if (!category) return true;
+            return (card.dataset.categories ?? "").split("|").includes(category);
+          });
+
+          // A stable secondary order keeps equal values (every star count at
+          // zero, say) in the catalog's own order rather than shuffling.
+          matched.sort(
+            (a, b) => compare(sort?.value ?? "popular")(a, b) || order.get(a) - order.get(b),
+          );
+
+          // Reorder the nodes themselves rather than painting with CSS order,
+          // so reading order, tab order, and visual order never disagree.
+          const shown = new Set(matched.slice(0, limit));
+          grid.append(...matched, ...cards.filter((card) => !matched.includes(card)));
+          for (const card of cards) card.hidden = !shown.has(card);
+
+          const remaining = matched.length - shown.size;
+          if (more) {
+            more.hidden = remaining === 0;
+            more.textContent = `show ${Math.min(PAGE_SIZE, remaining)} more`;
+          }
+          if (empty) empty.hidden = matched.length > 0;
+          if (meta) {
+            const noun = matched.length === 1 ? "extension" : "extensions";
+            meta.textContent =
+              shown.size < matched.length
+                ? `${shown.size} of ${matched.length} ${noun}`
+                : `${matched.length} ${noun}`;
+          }
+        }
+
+        search?.addEventListener("input", () => {
+          limit = PAGE_SIZE;
+          render();
+        });
+        sort?.addEventListener("change", () => {
+          limit = PAGE_SIZE;
+          render();
+        });
+        more?.addEventListener("click", () => {
+          limit += PAGE_SIZE;
+          render();
+        });
+        for (const facet of facets) {
+          facet.addEventListener("click", () => {
+            category = facet.dataset.category ?? "";
+            limit = PAGE_SIZE;
+            for (const other of facets) other.classList.toggle("is-on", other === facet);
+            render();
+          });
+        }
+
+        for (const button of document.querySelectorAll("[data-install]")) {
+          button.addEventListener("click", async () => {
+            const status = button.querySelector("[data-copy-status]");
+            try {
+              await navigator.clipboard.writeText(button.dataset.install ?? "");
+              button.classList.add("is-copied");
+              if (status) status.textContent = "Copied to clipboard";
+              window.setTimeout(() => {
+                button.classList.remove("is-copied");
+                if (status) status.textContent = "";
+              }, 1600);
+            } catch {
+              if (status) status.textContent = "Could not copy. Open the repository instead.";
+            }
+          });
+        }
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

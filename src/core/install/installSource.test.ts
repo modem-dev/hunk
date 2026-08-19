@@ -99,6 +99,51 @@ describe("install source detection", () => {
     ).toBe("npm");
   });
 
+  test("detects curl installer installs from the ~/.hunk/bin layout", () => {
+    expect(
+      detectInstallSource({
+        env: {},
+        executablePath: join(HOME_DIR, ".hunk", "bin", "hunk"),
+        version: "1.2.3",
+        homeDir: HOME_DIR,
+      }),
+    ).toBe("curl");
+  });
+
+  test("accepts curl as a declared install source", () => {
+    expect(
+      detectInstallSource({
+        env: { HUNK_INSTALL_SOURCE: "curl" },
+        executablePath: join("/", "opt", "hunk", "hunk"),
+        version: "1.2.3",
+        homeDir: HOME_DIR,
+      }),
+    ).toBe("curl");
+  });
+
+  test("keeps npm for a .hunk segment that is not followed by bin", () => {
+    expect(
+      detectInstallSource({
+        env: {},
+        executablePath: join(HOME_DIR, "projects", ".hunk", "review", "node_modules", "hunk"),
+        version: "1.2.3",
+        homeDir: HOME_DIR,
+      }),
+    ).toBe("npm");
+  });
+
+  test("classifies a curl install redirected by HUNK_INSTALL_DIR as a local source build", () => {
+    const installDir = join(HOME_DIR, "tools", "bin");
+    expect(
+      detectInstallSource({
+        env: { HUNK_INSTALL_DIR: installDir },
+        executablePath: join(installDir, "hunk"),
+        version: "1.2.3",
+        homeDir: HOME_DIR,
+      }),
+    ).toBe("dev");
+  });
+
   test("detects local source builds installed into the default install directory", () => {
     // Built from this platform's own default so the check tracks `scripts/install-bin.ts`.
     const installDir = resolveDevInstallDir({}, HOME_DIR);

@@ -66,7 +66,7 @@ bun run bench:competitors
 - `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
 - `wrapped-cjk.ts` — reproduces issue #579 with 518 wrapped Japanese Markdown lines plus one pathological long logical line, includes renderer setup in first-frame latency, and measures immediate/coalesced frames from a real wheel burst.
-- `terminal-width.ts` — measures scalar-heavy CJK and emoji width calls plus the complex-cluster fallback against equivalent `string-width` reference paths, verifying identical width checksums.
+- `terminal-width.ts` — measures scalar-heavy CJK and emoji width calls plus cached complex-cluster measurements against equivalent `string-width` reference paths, verifying identical width checksums.
 - `huge-stream.ts` — opt-in huge tier (`--include-huge` or `HUNK_BENCH_INCLUDE_HUGE=1`): cold first frame, scroll-tick and hunk-navigation latency, and memory ceilings on ~1k files / 300k+ diff lines plus one giant ~50k-line file.
 - `large-stream-profile.ts` — optional local profiler for the main pure planning stages behind the large split-stream benchmark.
 - `memory.ts` — optional local RSS/heap profiler after fixture loading, planning, first frame, and next-hunk navigation.

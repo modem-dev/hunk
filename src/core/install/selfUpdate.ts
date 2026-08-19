@@ -6,25 +6,41 @@ import { isComparableVersion, isNewerVersion, resolveCliVersion } from "../run/v
 /**
  * Runs `hunk update`: replaces this Hunk install with a published release, or explains who can.
  *
- * The install source decides everything. npm and Homebrew installs are replaced in place by
- * spawning the package manager that owns them; Nix, mise, and local source builds are owned by
- * something Hunk must not run behind the user's back, so those print the one command that does
- * work and stop. Every input the command reads or writes — environment, executable path, network,
- * child processes, output streams — arrives through `SelfUpdateIo` so tests drive it offline.
+ * The install source decides everything. npm, Homebrew, and curl-installer installs are replaced in
+ * place by re-running whatever owns them; Nix, mise, and local source builds are owned by something
+ * Hunk must not run behind the user's back, so those print the one command that does work and stop.
+ * Every input the command reads or writes — environment, executable path, network, child processes,
+ * output streams — arrives through `SelfUpdateIo` so tests drive it offline.
  */
 
 const NPM_PACKAGE_NAME = "hunkdiff";
 const HOMEBREW_FORMULA_NAME = "hunk";
+const CURL_INSTALL_SCRIPT_URL = "https://hunk.dev/install.sh";
+const CURL_INSTALL_VERSION_ENV = "HUNK_VERSION";
+
+/** Install sources `hunk update` can replace on its own. */
+const SELF_UPDATABLE_SOURCES: readonly InstallSource[] = ["npm", "homebrew", "curl"];
 
 /** Install methods `--method` accepts, keyed by the spelling users type. */
 const UPDATE_METHOD_ALIASES: Record<string, InstallSource> = {
   npm: "npm",
   brew: "homebrew",
   homebrew: "homebrew",
+  curl: "curl",
 };
 
 /** Accepted `--method` values, in the order the help and error messages list them. */
-export const UPDATE_METHOD_VALUES = ["npm", "brew"] as const;
+export const UPDATE_METHOD_VALUES = ["npm", "brew", "curl"] as const;
+
+/** Join accepted values into the "`a`, `b`, and `c`" phrasing the error messages use. */
+function listUpdateMethods() {
+  const quoted = UPDATE_METHOD_VALUES.map((name) => `\`${name}\``);
+  if (quoted.length < 3) {
+    return quoted.join(" and ");
+  }
+
+  return `${quoted.slice(0, -1).join(", ")}, and ${quoted.at(-1)}`;
+}
 
 export interface SelfUpdateInput {
   /** Version to install; the channel's newest release when omitted. */
@@ -41,6 +57,12 @@ export interface SelfUpdateProcessResult {
   stderr: string;
 }
 
+/** Extra spawn settings one update command needs beyond its argv. */
+export interface SelfUpdateCommandOptions {
+  /** Full environment for the child; the parent's own environment when omitted. */
+  env?: NodeJS.ProcessEnv;
+}
+
 export interface SelfUpdateIo {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
@@ -52,7 +74,10 @@ export interface SelfUpdateIo {
   resolveInstallSource?: () => InstallSource;
   fetchImpl?: FetchImpl;
   fetchTimeoutMs?: number;
-  runCommand?: (command: readonly string[]) => Promise<SelfUpdateProcessResult>;
+  runCommand?: (
+    command: readonly string[],
+    options?: SelfUpdateCommandOptions,
+  ) => Promise<SelfUpdateProcessResult>;
 }
 
 /** Normalize one `--method` value, or explain which values exist. */
@@ -60,7 +85,7 @@ export function parseUpdateMethod(value: string): InstallSource {
   const method = UPDATE_METHOD_ALIASES[value.toLowerCase()];
   if (!method) {
     throw new HunkUserError(`Unknown update method: ${value}`, [
-      `Supported methods are ${UPDATE_METHOD_VALUES.map((name) => `\`${name}\``).join(" and ")}.`,
+      `Supported methods are ${listUpdateMethods()}.`,
     ]);
   }
 
@@ -94,6 +119,10 @@ function describeInstallSource(installSource: InstallSource) {
     return "a local source build";
   }
 
+  if (installSource === "curl") {
+    return "the install script";
+  }
+
   return installSource;
 }
 
@@ -119,12 +148,56 @@ function npmUpdateCommand(
   return [shim("npm"), "install", "--global", spec];
 }
 
+/**
+ * Build the command that re-runs the curl installer for one target version.
+ *
+ * The installer is the updater: it already resolves the platform archive, verifies its checksum,
+ * and swaps the tree in place, so duplicating any of that here would give curl installs a second
+ * download path that can drift from the one users pipe into `sh`. The script downloads to a file
+ * before executing — piping it straight into `sh` would report the pipeline's last status, so a
+ * failed fetch would feed `sh` empty input and read as a successful update. wget stands in when
+ * curl is absent, since the installer itself supports wget-only machines. The target version
+ * travels in the child environment, where the installer reads `HUNK_VERSION`.
+ */
+function curlUpdateCommand() {
+  const script = [
+    "set -e",
+    'tmp="$(mktemp)"',
+    "trap 'rm -f \"$tmp\"' EXIT",
+    `if command -v curl >/dev/null 2>&1; then curl -fsSL ${CURL_INSTALL_SCRIPT_URL} -o "$tmp"; else wget -qO "$tmp" ${CURL_INSTALL_SCRIPT_URL}; fi`,
+    'sh "$tmp"',
+  ].join("; ");
+  return ["sh", "-c", script];
+}
+
+/** Choose the command that installs one target version for the channel that owns this binary. */
+function buildUpdateCommand(
+  installSource: InstallSource,
+  executablePath: string,
+  targetVersion: string,
+  platform: NodeJS.Platform,
+) {
+  if (installSource === "homebrew") {
+    return ["brew", "upgrade", HOMEBREW_FORMULA_NAME];
+  }
+
+  if (installSource === "curl") {
+    return curlUpdateCommand();
+  }
+
+  return npmUpdateCommand(executablePath, targetVersion, platform);
+}
+
 /** Spawn one package-manager command, streaming its output and capturing stderr for failures. */
-async function spawnUpdateCommand(command: readonly string[]): Promise<SelfUpdateProcessResult> {
+async function spawnUpdateCommand(
+  command: readonly string[],
+  options: SelfUpdateCommandOptions = {},
+): Promise<SelfUpdateProcessResult> {
   const [executable] = command;
   try {
     const child = Bun.spawn({
       cmd: [...command],
+      env: options.env,
       stdin: "ignore",
       stdout: "inherit",
       stderr: "pipe",
@@ -138,6 +211,19 @@ async function spawnUpdateCommand(command: readonly string[]): Promise<SelfUpdat
       [`Updating this install needs \`${executable}\` on PATH.`],
     );
   }
+}
+
+/** Name the registry a failed release lookup was asking, so the error says where it stalled. */
+function describeFetchFailure(installSource: InstallSource) {
+  if (installSource === "homebrew") {
+    return "Could not read the latest Hunk version from the Homebrew formula API.";
+  }
+
+  if (installSource === "curl") {
+    return "Could not read the latest Hunk version from the GitHub releases API.";
+  }
+
+  return "Could not read the latest Hunk version from the npm registry.";
 }
 
 /** Guidance lines for an install source Hunk must not update itself. */
@@ -195,7 +281,7 @@ export async function runSelfUpdateCommand(
       (() => detectInstallSource({ env, executablePath, version: installedVersion }))
     )();
 
-  if (installSource !== "npm" && installSource !== "homebrew") {
+  if (!SELF_UPDATABLE_SOURCES.includes(installSource)) {
     if (input.version) {
       throw new HunkUserError(
         `Hunk installed with ${describeInstallSource(installSource)} cannot update to a specific version from here.`,
@@ -218,10 +304,7 @@ export async function runSelfUpdateCommand(
   });
   const latestVersion = channelVersions.latest;
   const targetVersion = input.version ?? latestVersion;
-  const fetchFailedMessage =
-    installSource === "homebrew"
-      ? "Could not read the latest Hunk version from the Homebrew formula API."
-      : "Could not read the latest Hunk version from the npm registry.";
+  const fetchFailedMessage = describeFetchFailure(installSource);
 
   // `--check` always reports against the channel's real latest release; a requested version is
   // named separately so it is never mislabeled as "latest".
@@ -261,17 +344,23 @@ export async function runSelfUpdateCommand(
     return 0;
   }
 
-  const command =
-    installSource === "homebrew"
-      ? ["brew", "upgrade", HOMEBREW_FORMULA_NAME]
-      : npmUpdateCommand(executablePath, targetVersion, io.platform ?? process.platform);
+  const command = buildUpdateCommand(
+    installSource,
+    executablePath,
+    targetVersion,
+    io.platform ?? process.platform,
+  );
+  // Only the curl installer reads a version from its environment; every other channel names the
+  // target in its argv, so the child otherwise inherits this process's environment untouched.
+  const commandOptions: SelfUpdateCommandOptions =
+    installSource === "curl" ? { env: { ...env, [CURL_INSTALL_VERSION_ENV]: targetVersion } } : {};
 
   io.stdout(
     `Updating hunk ${installedVersion} -> ${targetVersion} with \`${command.join(" ")}\`\n`,
   );
 
   const runCommand = io.runCommand ?? spawnUpdateCommand;
-  const result = await runCommand(command);
+  const result = await runCommand(command, commandOptions);
   if (result.exitCode !== 0) {
     const details = result.stderr.trim();
     if (details.length > 0) {

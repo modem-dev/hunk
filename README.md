@@ -35,6 +35,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
+Or with the install script on macOS and Linux, which downloads the prebuilt binary, verifies its checksum, and installs into `~/.hunk`:
+
+```bash
+curl -fsSL https://hunk.dev/install.sh | sh
+```
+
 Or with Homebrew:
 
 ```bash
@@ -53,7 +59,8 @@ mise use -g hunk
 Requirements:
 
 - macOS, Linux, or Windows
-- Node.js 18+ for the npm install; Homebrew, mise, and Nix ship a standalone binary
+- On x86-64, a CPU with SSE4.2 (Intel Nehalem 2008+, AMD Bulldozer 2011+); arm64 has no CPU feature floor
+- Node.js 18+ for the npm install; the install script, Homebrew, mise, and Nix ship a standalone binary
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
@@ -75,7 +82,7 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 
 ```bash
 hunk diff                      # review current repo changes, including untracked files
-hunk --fast                    # experimentally offload eligible large-diff highlighting
+hunk --fast                    # experimentally offload eligible syntax highlighting
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit

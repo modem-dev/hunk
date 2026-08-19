@@ -18,7 +18,7 @@ import {
   parseUpdateMethod,
   parseUpdateVersion,
   UPDATE_METHOD_VALUES,
-} from "../core/process/selfUpdate";
+} from "../core/install/selfUpdate";
 import {
   BUNDLED_SKILL_NAMES,
   resolveBundledSkillName,
@@ -87,7 +87,7 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.experimental,
   {
     flag: "--fast",
-    description: "experimentally offload eligible large-diff highlighting",
+    description: "experimentally offload eligible syntax highlighting",
   },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
@@ -243,7 +243,11 @@ export const CLI_REFERENCE_COMMANDS = {
   update: {
     path: "update",
     summary: "update Hunk with the package manager that installed it",
-    synopsis: ["hunk update [version]", "hunk update --check", "hunk update --method <npm|brew>"],
+    synopsis: [
+      "hunk update [version]",
+      "hunk update --check",
+      "hunk update --method <npm|brew|curl>",
+    ],
     options: [
       {
         flag: "--method <method>",
@@ -1688,24 +1692,30 @@ async function parseUpdateCommand(
         [
           command.helpInformation().trimEnd(),
           "",
-          "Hunk updates itself only for installs it owns: npm (or bun/pnpm global installs) and",
-          "Homebrew. Nix, mise, and local source builds print the command that updates them.",
+          "Hunk updates itself only for installs it owns: npm (or bun/pnpm global installs),",
+          "Homebrew, and installs from https://hunk.dev/install.sh. Nix, mise, and local source",
+          "builds print the command that updates them.",
           "",
           "Examples:",
           "  hunk update",
           "  hunk update 1.2.3",
           "  hunk update --check",
           "  hunk update --method brew",
+          "  hunk update --method curl",
         ].join("\n") + "\n",
     };
   }
 
   await parseStandaloneCommand(command, tokens);
 
+  // Validate the flag before the positional argument, so a typo in `--method` is reported as
+  // itself rather than shadowed by whatever version it was paired with.
+  const method = parsedOptions.method ? parseUpdateMethod(parsedOptions.method) : undefined;
+
   return {
     kind: "update",
     version: parsedVersion === undefined ? undefined : parseUpdateVersion(parsedVersion),
-    method: parsedOptions.method ? parseUpdateMethod(parsedOptions.method) : undefined,
+    method,
     check: parsedOptions.check ?? false,
   };
 }

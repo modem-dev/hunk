@@ -66,7 +66,7 @@
     "check:docs": "bun run ./scripts/generate-docs.ts --check",
     "check:changelog": "bun run ./scripts/generate-changelog.ts --check",
     "website:dev": "bun run --cwd website dev",
-    "website:build": "bun run check:docs && bun run check:changelog && bun run --cwd website build",
+    "website:build": "bun run check:docs && bun run check:changelog && bun run --cwd website build && bun run ./scripts/stage-install-script.ts",
     "website:check": "bun run check:docs && bun run check:changelog && bun run --cwd website check",
     "website:links": "bun run ./scripts/check-website-links.ts",
     "website:test:browser": "bun run --cwd website test:browser",

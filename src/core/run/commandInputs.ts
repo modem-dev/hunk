@@ -13,7 +13,7 @@ import type {
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
-import type { InstallSource } from "../process/installSource";
+import type { InstallSource } from "../install/installSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type CursorLine = "row" | "number" | "off";
@@ -30,7 +30,7 @@ export interface CommonOptions {
   watch?: boolean;
   /** Enable launch-scoped experimental review features. */
   experimental?: boolean;
-  /** Offload eligible large-diff highlighting for this launch. */
+  /** Offload eligible syntax highlighting for this launch. */
   fast?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;

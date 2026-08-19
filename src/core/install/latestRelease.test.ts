@@ -38,6 +38,37 @@ describe("release channel lookups", () => {
     expect(requested).toEqual(["https://formulae.brew.sh/api/formula/hunk.json"]);
   });
 
+  test("reads the newest GitHub release tag for curl installer installs", async () => {
+    const requested: string[] = [];
+    const accepts: unknown[] = [];
+
+    await expect(
+      fetchChannelVersions("curl", {
+        fetchImpl: async (input, init) => {
+          requested.push(String(input));
+          accepts.push(new Headers(init?.headers).get("accept"));
+          return jsonResponse({ tag_name: "v1.4.0" });
+        },
+      }),
+    ).resolves.toEqual({ latest: "1.4.0" });
+    expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
+    expect(accepts).toEqual(["application/vnd.github+json"]);
+  });
+
+  test("drops a GitHub release tag that is not a stable version", async () => {
+    await expect(
+      fetchChannelVersions("curl", {
+        fetchImpl: async () => jsonResponse({ tag_name: "v1.4.0-beta.1" }),
+      }),
+    ).resolves.toEqual({ latest: undefined });
+
+    await expect(
+      fetchChannelVersions("curl", {
+        fetchImpl: async () => jsonResponse({ name: "1.4.0" }),
+      }),
+    ).resolves.toEqual({ latest: undefined });
+  });
+
   test("asks no registry for install sources Hunk cannot update", async () => {
     for (const source of ["nix", "mise", "dev"] as const) {
       await expect(

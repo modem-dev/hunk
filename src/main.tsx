@@ -57,7 +57,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "self-update") {
-    const { runSelfUpdateCommand } = await import("./core/process/selfUpdate");
+    const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
     process.exit(
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => process.stdout.write(text),
@@ -112,7 +112,7 @@ async function main() {
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
   // native library. The highlighting client starts the compiled worker only when an opted-in,
-  // eligible large diff needs it, so normal sessions do not pay its startup cost.
+  // eligible diff needs it, so normal sessions do not pay its startup cost.
   try {
     const { runInteractiveApp } = await import("./ui/runInteractiveApp");
     await runInteractiveApp(startupPlan);

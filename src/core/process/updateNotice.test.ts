@@ -20,6 +20,14 @@ function createFormulaResponse(stable: string) {
   });
 }
 
+/** Build one JSON response that mimics the GitHub latest-release payload. */
+function createGitHubReleaseResponse(tagName: string) {
+  return new Response(JSON.stringify({ tag_name: tagName }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 /** Executable path of a plain global npm install, pinned so detection never reads the host. */
 const NPM_EXECUTABLE_PATH = join("/", "usr", "lib", "node_modules", "hunkdiff", "bin", "hunk");
 
@@ -112,6 +120,41 @@ describe("startup update notice", () => {
           fetchImpl: async () => createFormulaResponse("0.7.0"),
           resolveInstalledVersion: () => "0.7.0",
           resolveInstallSource: () => "homebrew",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("reads the GitHub releases API for curl installer installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      const requested: string[] = [];
+
+      await expect(
+        resolveStartupUpdateNotice({
+          fetchImpl: async (input) => {
+            requested.push(String(input));
+            return createGitHubReleaseResponse("v0.7.1");
+          },
+          resolveExecutablePath: () => join("/", "home", "reviewer", ".hunk", "bin", "hunk"),
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • run `hunk update`",
+      });
+      expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
+    });
+  });
+
+  test("stays quiet for curl installs already on the newest release", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          fetchImpl: async () => createGitHubReleaseResponse("v0.7.0"),
+          resolveInstallSource: () => "curl",
+          resolveInstalledVersion: () => "0.7.0",
           statePath,
         }),
       ).resolves.toBeNull();

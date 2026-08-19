@@ -5,7 +5,7 @@ import { createPtyHarness, lineIndexOf, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
 const CURRENT_LINE_LENS_EXTENSION = resolve(
-  fileURLToPath(new URL("../../examples/extensions/current-line-lens", import.meta.url)),
+  fileURLToPath(new URL("./fixtures/current-line-lens", import.meta.url)),
 );
 
 /** Give PTY-backed startup and redraws enough headroom for slower CI machines. */
@@ -49,7 +49,7 @@ describe("PTY current line", () => {
     }
   });
 
-  test("the current-line lens example pins old above new and hides in stack mode", async () => {
+  test("a current-line pane pins old above new and hides in stack mode", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: [

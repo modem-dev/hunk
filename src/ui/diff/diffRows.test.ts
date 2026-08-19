@@ -124,10 +124,10 @@ function createElixirHeredocDiffFile(sourceFetcher?: DiffFile["sourceFetcher"]):
   };
 }
 
-/** Build a large changed TypeScript file that crosses the interactive worker threshold. */
-function createLargeDiffFile(): DiffFile {
+/** Build a changed TypeScript file at or above the interactive worker threshold. */
+function createWorkerEligibleDiffFile(generatedLineCount = HIGHLIGHT_WORKER_MIN_LINES): DiffFile {
   const additions = Array.from(
-    { length: HIGHLIGHT_WORKER_MIN_LINES },
+    { length: generatedLineCount },
     (_, index) => `export const generated${index} = ${index};`,
   ).join("\n");
   const metadata = parseDiffFromFile(
@@ -150,7 +150,7 @@ function createLargeDiffFile(): DiffFile {
     path: "large.ts",
     patch: "",
     language: "typescript",
-    stats: { additions: HIGHLIGHT_WORKER_MIN_LINES + 1, deletions: 1 },
+    stats: { additions: generatedLineCount + 1, deletions: 1 },
     metadata,
     agent: null,
   };
@@ -292,8 +292,32 @@ describe("Pierre diff rows", () => {
     expect(shouldHighlightDiff(createDiffFile())).toBe(true);
   });
 
-  test("matches inline spans when a large bundled-theme diff uses the worker", async () => {
-    const file = createLargeDiffFile();
+  test("offloads bundled-theme highlighting starting at 40 source lines", () => {
+    const eligible = createWorkerEligibleDiffFile(HIGHLIGHT_WORKER_MIN_LINES - 1);
+    const belowThreshold = createWorkerEligibleDiffFile(HIGHLIGHT_WORKER_MIN_LINES - 2);
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(HIGHLIGHT_WORKER_MIN_LINES).toBe(40);
+    expect(
+      Math.max(eligible.metadata.deletionLines.length, eligible.metadata.additionLines.length),
+    ).toBe(40);
+    expect(
+      Math.max(
+        belowThreshold.metadata.deletionLines.length,
+        belowThreshold.metadata.additionLines.length,
+      ),
+    ).toBe(39);
+    expect(shouldOffloadHighlight(eligible.metadata, theme, { offloadLargeDiff: true })).toBe(true);
+    expect(shouldOffloadHighlight(belowThreshold.metadata, theme, { offloadLargeDiff: true })).toBe(
+      false,
+    );
+    expect(shouldOffloadHighlight(eligible.metadata, theme, { offloadLargeDiff: false })).toBe(
+      false,
+    );
+  });
+
+  test("matches inline spans when an eligible bundled-theme diff uses the worker", async () => {
+    const file = createWorkerEligibleDiffFile();
     const theme = resolveTheme("github-dark-default", null);
 
     expect(shouldOffloadHighlight(file.metadata, theme, { offloadLargeDiff: true })).toBe(true);
@@ -408,7 +432,7 @@ describe("Pierre diff rows", () => {
   test("falls back to patch highlighting when source-backed metadata exceeds the cap", async () => {
     // A 6,000-line file produces 12,000 full-source side lines, although the visible patch has
     // only one changed line. It should use the safe patch fragment rather than render plain rows.
-    const file = createLargeSourceBackedDiffFile(HIGHLIGHT_WORKER_MIN_LINES * 3);
+    const file = createLargeSourceBackedDiffFile(6_000);
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file, theme);
     const rows = buildStackRows(file, highlighted, theme);
@@ -426,9 +450,9 @@ describe("Pierre diff rows", () => {
     );
   });
 
-  test("falls back to plain text when the large-diff worker fails", async () => {
+  test("falls back to plain text when the highlight worker fails", async () => {
     registerFailingHighlightWorkerForTest();
-    const file = createLargeDiffFile();
+    const file = createWorkerEligibleDiffFile();
     const theme = resolveTheme("github-dark-default", null);
 
     await expect(loadHighlightedDiff(file, theme, { offloadLargeDiff: true })).resolves.toEqual({

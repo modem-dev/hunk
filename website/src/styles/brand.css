@@ -198,6 +198,14 @@
  * essential one still present. Docs, Changelog, and GitHub survive everywhere. Docs pages hide the
  * whole nav below 50rem in favour of Starlight's menu, so these only affect marketing.
  */
+/* Extensions is the longest label and has its own entry points from the docs and
+   the landing page, so it is the first to go when the header runs out of room. */
+@media (max-width: 560px) {
+  .brand-header-inner[data-context="marketing"] .brand-extensions {
+    display: none;
+  }
+}
+
 @media (max-width: 430px) {
   .brand-header-inner[data-context="marketing"] .brand-discord {
     display: none;

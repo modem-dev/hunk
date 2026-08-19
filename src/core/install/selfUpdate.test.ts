@@ -7,6 +7,7 @@ import {
   runSelfUpdateCommand,
   type SelfUpdateInput,
   type SelfUpdateProcessResult,
+  UPDATE_METHOD_VALUES,
 } from "./selfUpdate";
 
 /** Build one JSON response for an injected fetch. */
@@ -24,6 +25,7 @@ interface UpdateRunOptions {
   executablePath?: string;
   platform?: NodeJS.Platform;
   latestVersion?: string;
+  env?: NodeJS.ProcessEnv;
   commandResult?: SelfUpdateProcessResult;
 }
 
@@ -32,32 +34,54 @@ async function runUpdate(options: UpdateRunOptions) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const commands: string[][] = [];
+  const commandEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+  const latestVersion = options.latestVersion ?? "1.1.0";
 
   const exitCode = await runSelfUpdateCommand(
     { check: false, ...options.input },
     {
       stdout: (text) => stdout.push(text),
       stderr: (text) => stderr.push(text),
-      env: {},
+      env: options.env ?? {},
       executablePath: options.executablePath ?? join("/", "usr", "bin", "hunk"),
       platform: options.platform ?? "linux",
       resolveInstalledVersion: () => options.installedVersion ?? "1.0.0",
       resolveInstallSource: () => options.installSource,
-      // One payload carrying both registry shapes, so a `--method` override still resolves.
+      // One payload carrying every registry shape, so a `--method` override still resolves.
       fetchImpl: async () =>
         jsonResponse({
-          latest: options.latestVersion ?? "1.1.0",
-          versions: { stable: options.latestVersion ?? "1.1.0" },
+          latest: latestVersion,
+          versions: { stable: latestVersion },
+          tag_name: `v${latestVersion}`,
         }),
-      runCommand: async (command) => {
+      runCommand: async (command, commandOptions) => {
         commands.push([...command]);
+        commandEnvs.push(commandOptions?.env);
         return options.commandResult ?? { exitCode: 0, stderr: "" };
       },
     },
   );
 
-  return { exitCode, stdout: stdout.join(""), stderr: stderr.join(""), commands };
+  return {
+    exitCode,
+    stdout: stdout.join(""),
+    stderr: stderr.join(""),
+    commands,
+    commandEnvs,
+  };
 }
+
+/**
+ * The exact script `hunk update` spawns for curl installs: download to a file, then execute, so
+ * a failed fetch aborts instead of feeding `sh` empty input; wget stands in for curl.
+ */
+const CURL_UPDATE_PIPELINE = [
+  "set -e",
+  'tmp="$(mktemp)"',
+  "trap 'rm -f \"$tmp\"' EXIT",
+  'if command -v curl >/dev/null 2>&1; then curl -fsSL https://hunk.dev/install.sh -o "$tmp"; else wget -qO "$tmp" https://hunk.dev/install.sh; fi',
+  'sh "$tmp"',
+].join("; ");
 
 describe("update method parsing", () => {
   test("normalizes brew to the Homebrew install source", () => {
@@ -66,8 +90,23 @@ describe("update method parsing", () => {
     expect(parseUpdateMethod("npm")).toBe("npm");
   });
 
+  test("maps curl to the install-script source", () => {
+    expect(parseUpdateMethod("curl")).toBe("curl");
+    expect(parseUpdateMethod("CURL")).toBe("curl");
+  });
+
   test("names the supported methods for unknown values", () => {
     expect(() => parseUpdateMethod("apt")).toThrow("Unknown update method: apt");
+    expect(UPDATE_METHOD_VALUES).toEqual(["npm", "brew", "curl"]);
+
+    try {
+      parseUpdateMethod("apt");
+      throw new Error("parseUpdateMethod should have rejected an unknown method");
+    } catch (error) {
+      expect((error as { suggestions?: string[] }).suggestions).toEqual([
+        "Supported methods are `npm`, `brew`, and `curl`.",
+      ]);
+    }
   });
 });
 
@@ -154,6 +193,44 @@ describe("hunk update", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.commands).toEqual([["brew", "upgrade", "hunk"]]);
+  });
+
+  test("re-runs the install script for curl installs", async () => {
+    const result = await runUpdate({
+      installSource: "curl",
+      latestVersion: "1.1.0",
+      env: { PATH: "/usr/bin", HOME: "/home/reviewer" },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.commands).toEqual([["sh", "-c", CURL_UPDATE_PIPELINE]]);
+    // The installer resolves the version from its environment, so the child carries the target
+    // alongside the rest of this process's environment.
+    expect(result.commandEnvs).toEqual([
+      { PATH: "/usr/bin", HOME: "/home/reviewer", HUNK_VERSION: "1.1.0" },
+    ]);
+    expect(result.stdout).toContain("Updated hunk to 1.1.0.");
+  });
+
+  test("pins an explicitly requested version for curl installs", async () => {
+    const result = await runUpdate({
+      installSource: "curl",
+      installedVersion: "1.1.0",
+      input: { version: "0.9.0" },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.commands).toEqual([["sh", "-c", CURL_UPDATE_PIPELINE]]);
+    expect(result.commandEnvs[0]?.HUNK_VERSION).toBe("0.9.0");
+  });
+
+  test("reports the GitHub release version for a curl --check", async () => {
+    const result = await runUpdate({ installSource: "curl", input: { check: true } });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.commands).toEqual([]);
+    expect(result.stdout).toContain("hunk 1.0.0 (installed with the install script)");
+    expect(result.stdout).toContain("latest 1.1.0");
   });
 
   test("refuses to pin a version on Homebrew", async () => {

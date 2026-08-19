@@ -17,6 +17,7 @@ function createWebsiteFixture() {
   const dist = mkdtempSync(join(tmpdir(), "hunk-website-links-"));
   tempDirectories.push(dist);
   mkdirSync(join(dist, "docs", "guide"), { recursive: true });
+  mkdirSync(join(dist, "extensions"), { recursive: true });
   mkdirSync(join(dist, "pagefind"), { recursive: true });
   for (const asset of REQUIRED_ASSETS) {
     const path = join(dist, asset);
@@ -33,6 +34,15 @@ function createWebsiteFixture() {
     join(dist, "index.html"),
     `<html><head><title>Hunk</title><meta name="description" content="Hunk"><link rel="canonical" href="https://hunk.dev/">${marketingHead}</head><body><main id="install"><a href="/docs/">Docs</a><img src="/og.png"></main></body></html>`,
   );
+  // The directory publishes its own card in place of the site-wide image.
+  const extensionsHead = marketingHead.replaceAll(
+    "https://hunk.dev/og.png",
+    "https://hunk.dev/extensions/og.png",
+  );
+  writeFileSync(
+    join(dist, "extensions", "index.html"),
+    `<html><head><title>Extensions</title><meta name="description" content="Extensions"><link rel="canonical" href="https://hunk.dev/extensions/">${extensionsHead}</head><body><a href="/docs/">Docs</a><img src="/og.png"></body></html>`,
+  );
   writeFileSync(
     join(dist, "docs", "index.html"),
     `<html><head><title>Docs</title><meta name="description" content="Docs"><link rel="canonical" href="https://hunk.dev/docs/">${docsHead}</head><body id="_top"><a href="/docs/guide/#step">Guide</a><a href="/">Home</a><img src="/og.png"></body></html>`,
@@ -43,14 +53,14 @@ function createWebsiteFixture() {
   );
   writeFileSync(
     join(dist, "sitemap-0.xml"),
-    "<urlset><url><loc>https://hunk.dev/</loc></url><url><loc>https://hunk.dev/docs/</loc></url><url><loc>https://hunk.dev/docs/guide/</loc></url></urlset>",
+    "<urlset><url><loc>https://hunk.dev/</loc></url><url><loc>https://hunk.dev/extensions/</loc></url><url><loc>https://hunk.dev/docs/</loc></url><url><loc>https://hunk.dev/docs/guide/</loc></url></urlset>",
   );
   return dist;
 }
 
 describe("static website link checking", () => {
   test("accepts unified marketing and docs routes, anchors, metadata, and assets", () => {
-    expect(checkWebsiteBuild(createWebsiteFixture())).toEqual({ pages: 3, canonicalPages: 3 });
+    expect(checkWebsiteBuild(createWebsiteFixture())).toEqual({ pages: 4, canonicalPages: 4 });
   });
 
   test("reports missing internal anchors without making network requests", () => {
@@ -60,6 +70,20 @@ describe("static website link checking", () => {
 
     writeFileSync(docsPath, html.replace("#step", "#missing"));
     expect(() => checkWebsiteBuild(dist)).toThrow("missing anchor #missing");
+  });
+
+  test("requires the extension directory to publish its own social card", () => {
+    const dist = createWebsiteFixture();
+    const extensionsPath = join(dist, "extensions", "index.html");
+    const html = readFileSync(extensionsPath, "utf8");
+
+    // Falling back to the site-wide image is the drift worth catching: the page
+    // still looks complete, and every share of it shows the wrong card.
+    writeFileSync(
+      extensionsPath,
+      html.replaceAll("https://hunk.dev/extensions/og.png", "https://hunk.dev/og.png"),
+    );
+    expect(() => checkWebsiteBuild(dist)).toThrow("missing head metadata");
   });
 
   test("reports canonical-route and route-specific social metadata drift", () => {

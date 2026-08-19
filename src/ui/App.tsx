@@ -1933,19 +1933,21 @@ export function App({
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget = hoverTarget ?? (fileId === undefined ? activeLineCursor : null);
+      const keyboardTarget =
+        hoverTarget ??
+        (fileId === undefined && cursorLine !== "off" ? review.getLineCursor() : null);
       const draft = review.startUserNote(
         fileId ?? keyboardTarget?.fileId,
         hunkIndex ?? keyboardTarget?.hunkIndex,
         target ?? keyboardTarget?.target,
-        { preserveViewport: fileId !== undefined || hoverTarget !== null },
+        { preserveViewport: fileId !== undefined || keyboardTarget !== null },
       );
       if (draft) {
         setActiveAddNoteTarget(null);
         setFocusArea("note");
       }
     },
-    [activeAddNoteTarget, activeLineCursor, review.startUserNote],
+    [activeAddNoteTarget, cursorLine, review.getLineCursor, review.startUserNote],
   );
 
   /** Mark the inline draft note textarea as the active keyboard input. */

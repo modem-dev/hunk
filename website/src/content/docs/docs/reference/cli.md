@@ -24,7 +24,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
-| `--fast`                    | experimentally offload eligible large-diff highlighting         |
+| `--fast`                    | experimentally offload eligible syntax highlighting             |
 | `--line-numbers`            | show line numbers                                               |
 | `--no-line-numbers`         | hide line numbers                                               |
 | `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
@@ -240,14 +240,14 @@ update Hunk with the package manager that installed it
 ```bash
 hunk update [version]
 hunk update --check
-hunk update --method <npm|brew>
+hunk update --method <npm|brew|curl>
 ```
 
 ### Command-specific options
 
 | Option              | Description                                                    |
 | ------------------- | -------------------------------------------------------------- |
-| `--method <method>` | install method instead of the detected one: npm, brew          |
+| `--method <method>` | install method instead of the detected one: npm, brew, curl    |
 | `--check`           | report the installed and available versions without installing |
 
 ## `hunk daemon serve`

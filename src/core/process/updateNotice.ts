@@ -1,11 +1,11 @@
 import { readAppStateRecord, updateAppStateRecord } from "./appStateFile";
-import { detectInstallSource, type InstallSource } from "./installSource";
+import { detectInstallSource, type InstallSource } from "../install/installSource";
 import {
   type ChannelVersions,
   fetchChannelVersions,
   type FetchImpl,
   type UpdateChannel,
-} from "./latestRelease";
+} from "../install/latestRelease";
 import { resolveAppStatePath } from "../run/paths";
 import type { StartupNotice } from "./startupNotice";
 import {
@@ -56,8 +56,9 @@ function suppressesNotices(installSource: InstallSource) {
  * Build the install-aware update instruction shown for one release channel.
  *
  * Sources with no notice at all never reach here; they are filtered out before the release lookup.
- * npm and Homebrew installs both update in place through `hunk update`, so the notice names that
- * one command; a beta build names the version because `hunk update` alone tracks `latest`.
+ * npm, Homebrew, and curl-installer installs all update in place through `hunk update`, so the
+ * notice names that one command; a beta build names the version because `hunk update` alone
+ * tracks `latest`.
  */
 function updateInstructionForChannel(
   channel: UpdateChannel,
