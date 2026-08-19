@@ -2,7 +2,7 @@ import type { ThemeMode } from "@opentui/core";
 import { LEGACY_CUSTOM_THEME_ID } from "../core/theme/customThemes";
 import { resolveSyntaxScopeOverrides } from "../core/theme/legacySyntaxScopes";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
-import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
+import { blendHex, contrastRatio, hexColorDistance, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,
   resolveBundledShikiThemeId,
@@ -21,6 +21,7 @@ export const DEFAULT_LIGHT_THEME_ID = "github-light-default";
 
 const MIN_GUTTER_CONTRAST = 4.5;
 export const MIN_DIFF_SIGN_CONTRAST = 3;
+export const MIN_EMPHASIS_SEPARATION = 12;
 
 const FALLBACK_DIFF_COLORS = {
   dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
@@ -98,6 +99,29 @@ function readableTintedBackground(
   return background;
 }
 
+/** Return the strongest readable row tint that stays visibly apart from the word-emphasis tint. */
+function readableSeparatedRowBackground(
+  tintColor: string,
+  background: string,
+  foreground: string,
+  preferredAmount: number,
+  contentBackground: string,
+) {
+  let readableFallback: string | undefined;
+  for (let amount = preferredAmount; amount >= 0.02; amount -= 0.02) {
+    const candidate = blendHex(tintColor, background, amount);
+    if (contrastRatio(foreground, candidate) < MIN_GUTTER_CONTRAST) {
+      continue;
+    }
+    if (hexColorDistance(candidate, contentBackground) >= MIN_EMPHASIS_SEPARATION) {
+      return candidate;
+    }
+    readableFallback ??= candidate;
+  }
+
+  return readableFallback ?? background;
+}
+
 /** Keep semantic status colors readable on sidebar and menu surfaces. */
 function readableChromeColor(preferred: string, panel: string, panelAlt: string) {
   if (
@@ -157,24 +181,6 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     diffColors?.modified ?? fallbackDiffColors.modified,
     editorBackground,
   );
-  const addedBg = readableTintedBackground(
-    addedSignColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
-  const removedBg = readableTintedBackground(
-    removedSignColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
-  const movedBg = readableTintedBackground(
-    modifiedColor,
-    editorBackground,
-    textForeground,
-    rowTint,
-  );
   const addedContentBg = readableTintedBackground(
     addedSignColor,
     editorBackground,
@@ -186,6 +192,26 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     editorBackground,
     textForeground,
     contentTint,
+  );
+  const addedBg = readableSeparatedRowBackground(
+    addedSignColor,
+    editorBackground,
+    textForeground,
+    rowTint,
+    addedContentBg,
+  );
+  const removedBg = readableSeparatedRowBackground(
+    removedSignColor,
+    editorBackground,
+    textForeground,
+    rowTint,
+    removedContentBg,
+  );
+  const movedBg = readableTintedBackground(
+    modifiedColor,
+    editorBackground,
+    textForeground,
+    rowTint,
   );
   const accentMuted = readableTintedBackground(
     modifiedColor,

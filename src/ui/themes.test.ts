@@ -12,6 +12,7 @@ import {
   DEFAULT_DARK_THEME_ID,
   DEFAULT_LIGHT_THEME_ID,
   MIN_DIFF_SIGN_CONTRAST,
+  MIN_EMPHASIS_SEPARATION,
   resolveTheme,
   TRANSPARENT_BACKGROUND,
   withTransparentSurfaces,
@@ -311,6 +312,27 @@ describe("themes", () => {
         }
         const drift = hueDistance(sourceHue, derivedHue);
         return drift <= MAX_RESCUE_HUE_DRIFT ? [] : [`${label}, hue drifted ${drift.toFixed(1)}°`];
+      });
+    });
+
+    expect(failures).toEqual([]);
+  });
+
+  test("keeps word-level emphasis visibly separated from row backgrounds on every bundled theme", () => {
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+      const theme = resolveTheme(themeId, null);
+      return (
+        [
+          ["added", theme.addedBg, theme.addedContentBg],
+          ["removed", theme.removedBg, theme.removedContentBg],
+        ] as const
+      ).flatMap(([slot, rowBackground, contentBackground]) => {
+        const separation = hexColorDistance(rowBackground, contentBackground);
+        return separation >= MIN_EMPHASIS_SEPARATION
+          ? []
+          : [
+              `${themeId} ${slot}: ${rowBackground} vs ${contentBackground} (distance ${separation})`,
+            ];
       });
     });
 
