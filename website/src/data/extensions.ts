@@ -123,6 +123,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 5,
   },
+  {
+    repo: "phl28/hunk-gh-review",
+    name: "hunk-gh-review",
+    summary:
+      "Turns Hunk into a GitHub review client: browse and reply to PR threads, then submit notes as a review.",
+    categories: ["Pane", "Keyboard mode", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
 ];
 
 /**
