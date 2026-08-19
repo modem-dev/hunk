@@ -447,11 +447,13 @@ function renderSkillHelp() {
     "Usage: hunk skill path [name]",
     "",
     "Print a bundled Hunk skill path.",
-    "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+    "Load that file directly in your coding agent.",
+    "For a persistent install, symlink its parent directory so referenced files remain available.",
     "",
     "Skills:",
-    `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
-    `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
+    `  hunk-review (default, "review")     review a live Hunk session with \`hunk session\` commands`,
+    `  hunk-extensions ("extensions")      build extensions against the hunkdiff/extension API`,
+    `  opentui-performance ("performance") profile and optimize React/OpenTUI terminal apps`,
     "",
   ].join("\n");
 }

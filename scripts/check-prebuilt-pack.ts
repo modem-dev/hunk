@@ -2,6 +2,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
 import { releaseNpmDir } from "./prebuilt-package-helpers";
 import { npmCommand } from "./script-helpers";
 
@@ -73,10 +74,25 @@ assertPaths(metaPack, [
   "dist/npm/opentui/index.js",
   "skills/hunk-review/SKILL.md",
   "skills/hunk-extensions/SKILL.md",
+  "skills/opentui-performance/SKILL.md",
+  "skills/opentui-performance/references/rendering-and-geometry.md",
+  "skills/opentui-performance/references/async-and-memory.md",
+  "skills/opentui-performance/references/benchmarking-and-validation.md",
+  "skills/opentui-performance/references/hunk-case-study.md",
   "README.md",
   "LICENSE",
   "package.json",
 ]);
+
+const bundledSkillPrefixes = BUNDLED_SKILL_NAMES.map((name) => `skills/${name}/`);
+for (const file of metaPack.files) {
+  if (
+    file.path.startsWith("skills/") &&
+    !bundledSkillPrefixes.some((prefix) => file.path.startsWith(prefix))
+  ) {
+    throw new Error(`Unexpected maintainer-only skill in prebuilt package: ${file.path}`);
+  }
+}
 
 const packageDirectories = readdirSync(releaseRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && entry.name !== "hunkdiff")

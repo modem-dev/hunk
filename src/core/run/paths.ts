@@ -8,7 +8,11 @@ import { basename, dirname, join, resolve } from "node:path";
  * prebuilt artifact staging; `skills/` also holds maintainer-only documents that
  * never ship, and naming them here would resolve paths users cannot have.
  */
-export const BUNDLED_SKILL_NAMES = ["hunk-review", "hunk-extensions"] as const;
+export const BUNDLED_SKILL_NAMES = [
+  "hunk-review",
+  "hunk-extensions",
+  "opentui-performance",
+] as const;
 export type BundledSkillName = (typeof BUNDLED_SKILL_NAMES)[number];
 
 /** The skill `hunk skill path` prints when the user names none. */
@@ -18,6 +22,7 @@ export const DEFAULT_BUNDLED_SKILL_NAME: BundledSkillName = "hunk-review";
 const BUNDLED_SKILL_ALIASES: Record<string, BundledSkillName> = {
   review: "hunk-review",
   extensions: "hunk-extensions",
+  performance: "opentui-performance",
 };
 
 /** Resolve one user-supplied skill name, or nothing when it names no bundled skill. */

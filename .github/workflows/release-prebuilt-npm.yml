@@ -323,9 +323,19 @@ jobs:
               echo "Missing release binary in $directory" >&2
               exit 1
             fi
-            for skill in hunk-review hunk-extensions; do
+            for skill in hunk-review hunk-extensions opentui-performance; do
               if [ ! -f "$directory/skills/$skill/SKILL.md" ]; then
                 echo "Missing bundled Hunk $skill skill in $directory" >&2
+                exit 1
+              fi
+            done
+            for reference in \
+              rendering-and-geometry.md \
+              async-and-memory.md \
+              benchmarking-and-validation.md \
+              hunk-case-study.md; do
+              if [ ! -f "$directory/skills/opentui-performance/references/$reference" ]; then
+                echo "Missing bundled OpenTUI performance reference $reference in $directory" >&2
                 exit 1
               fi
             done

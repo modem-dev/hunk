@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
 import {
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
@@ -85,7 +86,12 @@ function stageMetaPackage(
   cpSync(path.join(repoRoot, "dist", "npm"), path.join(metaDir, "dist", "npm"), {
     recursive: true,
   });
-  cpSync(path.join(repoRoot, "skills"), path.join(metaDir, "skills"), { recursive: true });
+  ensureDirectory(path.join(metaDir, "skills"));
+  for (const skillName of BUNDLED_SKILL_NAMES) {
+    cpSync(path.join(repoRoot, "skills", skillName), path.join(metaDir, "skills", skillName), {
+      recursive: true,
+    });
+  }
   cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"));
   cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"));
 
@@ -97,7 +103,13 @@ function stageMetaPackage(
       hunk: "./bin/hunk.cjs",
       hunkdiff: "./bin/hunk.cjs",
     },
-    files: ["bin", "dist/npm", "skills", "README.md", "LICENSE"],
+    files: [
+      "bin",
+      "dist/npm",
+      ...BUNDLED_SKILL_NAMES.map((skillName) => `skills/${skillName}`),
+      "README.md",
+      "LICENSE",
+    ],
     type: rootPackage.type,
     exports: rootPackage.exports,
     keywords: rootPackage.keywords,
