@@ -66,6 +66,15 @@ export type ExtensionEntry = ExtensionListing & ExtensionActivity;
  */
 export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   {
+    repo: "modem-dev/hunk-hg",
+    name: "hunk-hg",
+    summary:
+      "Adds Mercurial support, so Hunk reviews an hg working copy the way it reviews a Git one.",
+    categories: ["VCS backend"],
+    version: "0.1.0",
+    apiVersion: 4,
+  },
+  {
     repo: "modem-dev/hunk-lens",
     name: "hunk-lens",
     summary: "Keeps the current split-diff line in view, and paints its context beside the review.",
