@@ -91,6 +91,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "astwys/hunk-diff-context",
+    name: "hunk-diff-context",
+    summary:
+      "Pins the selected file's complete diff in a sidebar pane, so it stays visible beside the review.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "astwys/hunk-exclude-files",
     name: "hunk-exclude-files",
     summary: "Hides files matching configured glob rules from the review stream.",
