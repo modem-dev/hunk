@@ -99,6 +99,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "astwys/hunk-diff-context",
+    name: "hunk-diff-context",
+    summary: "Shows the full selected-file diff alongside the review.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "elucid/hunk-less-search",
     name: "hunk-less-search",
     summary: "less-style forward search across the review stream, with in-diff match marks.",
