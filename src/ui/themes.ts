@@ -20,7 +20,7 @@ export const DEFAULT_DARK_THEME_ID = "github-dark-default";
 export const DEFAULT_LIGHT_THEME_ID = "github-light-default";
 
 const MIN_GUTTER_CONTRAST = 4.5;
-const MIN_DIFF_SIGN_CONTRAST = 3;
+export const MIN_DIFF_SIGN_CONTRAST = 3;
 
 const FALLBACK_DIFF_COLORS = {
   dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
@@ -53,9 +53,15 @@ function readableDiffSign(preferred: string, background: string) {
     return preferred;
   }
 
-  return relativeLuminance(background) > 0.45
-    ? blendHex("#000000", preferred, 0.45)
-    : blendHex("#ffffff", preferred, 0.45);
+  const anchor = relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+  for (let amount = 0.02; amount < 1; amount += 0.02) {
+    const candidate = blendHex(anchor, preferred, amount);
+    if (contrastRatio(candidate, background) >= MIN_DIFF_SIGN_CONTRAST) {
+      return candidate;
+    }
+  }
+
+  return anchor;
 }
 
 /** Build Hunk's fallback semantic syntax palette for non-Shiki custom highlighting. */
