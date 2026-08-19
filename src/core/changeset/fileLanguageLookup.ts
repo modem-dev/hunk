@@ -21,8 +21,22 @@ function applyPendingFileLanguages() {
   }
 }
 
-/** Return the highlight language for one path, or undefined when no grammar matches. */
-export function fileLanguageForPath(path: string) {
+/**
+ * Return the highlight language for one path, or `"text"` when no grammar matches.
+ *
+ * Pierre keys extensionless names (`BUILD`, `Dockerfile`, `Makefile`) on the whole lookup string,
+ * but Hunk looks up repo-relative paths, so a nested `pkg/BUILD` would otherwise render as plain
+ * text while a root-level `BUILD` highlighted. Retrying on the basename is reachable only once
+ * the full path has matched nothing, so a real extension still wins over a filename that merely
+ * happens to appear deeper in the tree.
+ */
+export function fileLanguageForPath(path: string): SupportedLanguages {
   applyPendingFileLanguages();
-  return getFiletypeFromFileName(path);
+  const language = getFiletypeFromFileName(path);
+  if (language !== "text") {
+    return language;
+  }
+
+  const basename = path.split(/[/\\]/).pop() ?? path;
+  return basename === path ? language : getFiletypeFromFileName(basename);
 }

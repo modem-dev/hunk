@@ -44,6 +44,24 @@ describe("buildDiffFile", () => {
     expect(ctsFile.language).toBe("typescript");
   });
 
+  test("pins the resolved language onto the metadata Pierre renders", () => {
+    // Pierre re-derives the language from the path unless the metadata names one, and its own
+    // derivation cannot resolve a whole filename nested in a directory. Without the override a
+    // nested `BUILD` renders as plain text even though `language` says otherwise.
+    const nested = buildDiffFile(
+      metadataFor("a\n", "b\n", "pkg/nested/BUILD"),
+      "P",
+      0,
+      "src",
+      null,
+    );
+    expect(nested.language).toBe("python");
+    expect(nested.metadata.lang).toBe("python");
+
+    const plain = buildDiffFile(metadataFor("a\n", "b\n", "notes"), "P", 1, "src", null);
+    expect(plain.metadata.lang).toBe("text");
+  });
+
   test("infers binary status from the patch when not given explicitly", () => {
     const binary = buildDiffFile(metadata, "Binary files a/x and b/x differ\n", 0, "src", null);
     expect(binary.isBinary).toBe(true);
