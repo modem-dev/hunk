@@ -125,16 +125,16 @@ describe("themes", () => {
 
     expect(dark.background).toBe("#0d1117");
     expect(dark.syntaxColors.default).toBe("#e6edf3");
-    expect(dark.addedSignColor).toBe("#3fb950");
+    expect(dark.addedSignColor).toBe("#2ea043");
     expect(dark.removedSignColor).toBe("#f85149");
-    expect(dark.addedBg).toBe(blendHex("#3fb950", "#0d1117", 0.18));
+    expect(dark.addedBg).toBe(blendHex("#2ea043", "#0d1117", 0.18));
     expect(dark.removedBg).toBe(blendHex("#f85149", "#0d1117", 0.2));
 
     expect(light.background).toBe("#ffffff");
     expect(light.syntaxColors.default).toBe("#1f2328");
-    expect(light.addedSignColor).toBe("#1a7f37");
+    expect(light.addedSignColor).toBe("#116329");
     expect(light.removedSignColor).toBe("#cf222e");
-    expect(light.addedBg).toBe(blendHex("#1a7f37", "#ffffff", 0.12));
+    expect(light.addedBg).toBe(blendHex("#116329", "#ffffff", 0.12));
     expect(light.removedBg).toBe(blendHex("#cf222e", "#ffffff", 0.12));
   });
 

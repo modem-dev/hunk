@@ -100,6 +100,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - When adding or renaming a built-in theme, update validation, public exports, docs/examples, the
   appropriate Changeset, and tests. Keep source palette tokens separate from semantic mappings and
   cover non-trivial derived colors.
+- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
 
 ## testing
 

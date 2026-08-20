@@ -60,6 +60,7 @@
     "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
     "install:bin": "bun run ./scripts/install-bin.ts",
     "generate:skill": "bun run ./scripts/generate-skill.ts",
+    "generate:theme-colors": "bun run ./scripts/generate-theme-diff-colors.ts",
     "generate:docs": "bun run ./scripts/generate-docs.ts",
     "generate:changelog": "bun run ./scripts/generate-changelog.ts",
     "generate:og": "bun run ./website/scripts/generate-og.ts",
