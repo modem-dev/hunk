@@ -101,6 +101,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Built-in themes live in `src/ui/themes/<theme-id>.ts`; register them in `src/ui/themes.ts` `THEMES` to control menu/cycle order.
 - When adding or renaming a built-in theme, update config validation, OpenTUI theme exports, docs/README examples, changelog, and tests that assert theme order.
 - Keep official palette tokens separate from Hunk's semantic `AppTheme` mapping, and cover non-trivial derived colors with tests.
+- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
 
 ## testing
 
