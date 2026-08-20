@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { dirname, join } from "node:path";
 import { BUNDLED_SHIKI_THEME_DIFF_COLORS } from "../src/core/theme/catalog";
 import {
   harvestBundledThemeDiffColors,
@@ -110,5 +111,40 @@ describe("harvestThemeDiffColors", () => {
 describe("checked-in catalog table", () => {
   test("matches a fresh harvest of the installed @shikijs/themes", async () => {
     expect(BUNDLED_SHIKI_THEME_DIFF_COLORS).toEqual(await harvestBundledThemeDiffColors());
+  });
+});
+
+/** Read the package.json that owns a resolved module file by walking up its directories. */
+async function packageJsonAbove(resolvedFile: string, packageName: string) {
+  for (let directory = dirname(resolvedFile); ; directory = dirname(directory)) {
+    const candidate = Bun.file(join(directory, "package.json"));
+    if (await candidate.exists()) {
+      const manifest = (await candidate.json()) as {
+        name?: string;
+        version?: string;
+        dependencies?: Record<string, string>;
+      };
+      if (manifest.name === packageName) {
+        return manifest;
+      }
+    }
+    if (directory === dirname(directory)) {
+      throw new Error(`No ${packageName} package.json above ${resolvedFile}`);
+    }
+  }
+}
+
+describe("pinned @shikijs/themes devDependency", () => {
+  test("stays in sync with the shiki version @pierre/diffs resolves", async () => {
+    const pinnedThemes = await packageJsonAbove(
+      Bun.resolveSync("@shikijs/themes/nord", import.meta.dir),
+      "@shikijs/themes",
+    );
+    const pierreEntry = Bun.resolveSync("@pierre/diffs", import.meta.dir);
+    const pierreShiki = await packageJsonAbove(
+      Bun.resolveSync("shiki", dirname(pierreEntry)),
+      "shiki",
+    );
+    expect(pinnedThemes.version).toBe(pierreShiki.dependencies?.["@shikijs/themes"] ?? "");
   });
 });

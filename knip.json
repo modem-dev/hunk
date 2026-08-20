@@ -25,7 +25,7 @@
       ],
       "ignore": ["examples/extensions/**/fixtures/**"],
       "ignoreBinaries": ["nix"],
-      "ignoreDependencies": ["@changesets/changelog-github"],
+      "ignoreDependencies": ["@changesets/changelog-github", "@shikijs/themes"],
       "ignoreExportsUsedInFile": true
     },
     "packages/session-broker*": {
