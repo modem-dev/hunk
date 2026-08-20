@@ -116,6 +116,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "gentilfp/hunk-codeowners",
+    name: "hunk-codeowners",
+    summary:
+      "Shows CODEOWNERS context for the changeset and selected file, without leaving the terminal.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "mikeclarke/hunk-tutor",
     name: "hunk-tutor",
     summary: "An interactive tour of Hunk, taught inside a practice review.",
