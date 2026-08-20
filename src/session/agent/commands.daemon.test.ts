@@ -56,7 +56,7 @@ describe("resolveDaemonAvailability with no daemon listening", () => {
       action: "list",
       output: "json",
     } satisfies SessionCommandInput);
-    expect(JSON.parse(output)).toEqual({ sessions: [] });
+    expect(JSON.parse(output)).toEqual({ sessions: [], daemon: { available: false } });
   });
 
   probeTest(
