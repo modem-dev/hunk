@@ -1,4 +1,4 @@
-import { type FileDiffMetadata } from "@pierre/diffs";
+import { setLanguageOverride, type FileDiffMetadata } from "@pierre/diffs";
 import { findSidecarFileContext } from "./sidecar";
 import { patchLooksBinary } from "./binary";
 import { fileLanguageForPath } from "./fileLanguageLookup";
@@ -68,6 +68,11 @@ export function buildDiffFile(
     ? (previousPath ?? normalizedMetadata.prevName)
     : (normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName);
   const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
+  // Pierre's renderers re-derive the language from `metadata.name` unless the metadata carries an
+  // override, and that derivation cannot see Hunk's extension registrations for whole filenames
+  // (`pkg/BUILD`) or its basename fallback. Pinning the language Hunk already resolved keeps the
+  // renderer, plain-text detection, and source expansion agreeing on one answer.
+  const language = fileLanguageForPath(path);
   const sourceFetcher = sourceFetcherBuilder?.({
     path,
     previousPath: resolvedPreviousPath,
@@ -81,9 +86,9 @@ export function buildDiffFile(
     path,
     previousPath: resolvedPreviousPath,
     patch,
-    language: fileLanguageForPath(path) ?? undefined,
+    language,
     stats: stats ?? countDiffStats(normalizedMetadata),
-    metadata: normalizedMetadata,
+    metadata: setLanguageOverride(normalizedMetadata, language),
     lineMoveKinds,
     agent: findSidecarFileContext(sidecar, path, resolvedPreviousPath),
     isUntracked,

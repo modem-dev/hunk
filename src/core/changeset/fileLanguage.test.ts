@@ -20,6 +20,42 @@ describe("custom file language registration", () => {
     expect(BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has("mts")).toBe(true);
     expect(BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has("cts")).toBe(true);
     expect(BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has("ts")).toBe(false);
+    // Python is a default for Starlark, not a claim, so an extension may replace it.
+    expect(BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has("bzl")).toBe(false);
+  });
+
+  test("highlights Bazel and Starlark files as Python", () => {
+    expect(fileLanguageForPath("defs.bzl")).toBe("python");
+    expect(fileLanguageForPath("tools/defs.bzl")).toBe("python");
+    expect(fileLanguageForPath("rules.star")).toBe("python");
+    expect(fileLanguageForPath("copy.bara.sky")).toBe("python");
+    expect(fileLanguageForPath("BUILD.bazel")).toBe("python");
+    expect(fileLanguageForPath("pkg/nested/MODULE.bazel")).toBe("python");
+    expect(fileLanguageForPath("WORKSPACE.bzlmod")).toBe("python");
+    expect(fileLanguageForPath("Tiltfile")).toBe("python");
+  });
+});
+
+describe("extensionless filename lookups", () => {
+  test("resolves Bazel package files at any depth", () => {
+    expect(fileLanguageForPath("BUILD")).toBe("python");
+    expect(fileLanguageForPath("pkg/BUILD")).toBe("python");
+    expect(fileLanguageForPath("a/b/c/WORKSPACE")).toBe("python");
+    expect(fileLanguageForPath("third_party/BUCK")).toBe("python");
+  });
+
+  test("resolves Pierre's own special filenames at any depth", () => {
+    expect(fileLanguageForPath("Dockerfile")).toBe("dockerfile");
+    expect(fileLanguageForPath("docker/Dockerfile")).toBe("dockerfile");
+    // Windows-style separators reach Hunk from user-supplied paths, not from VCS output.
+    expect(fileLanguageForPath("build\\tools\\Makefile")).toBe("makefile");
+  });
+
+  test("leaves paths with no matching grammar as plain text", () => {
+    expect(fileLanguageForPath("notes")).toBe("text");
+    expect(fileLanguageForPath("path/to/notes")).toBe("text");
+    // `.bazelrc` is a flag file rather than Starlark, so it stays unhighlighted.
+    expect(fileLanguageForPath(".bazelrc")).toBe("text");
   });
 });
 
