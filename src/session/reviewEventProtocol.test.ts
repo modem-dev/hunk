@@ -249,6 +249,62 @@ describe("review event envelope parsing", () => {
     expect(parseReviewEventBegin(begin)).toEqual(begin);
   });
 
+  test("accepts a well-formed single frame", () => {
+    const single = {
+      eventId: begin.eventId,
+      generation: begin.generation,
+      stateRevision: begin.stateRevision,
+      payload: { hello: "world" },
+    };
+
+    expect(parseReviewEventFrame(single)).toEqual(single);
+  });
+
+  test("refuses a frame whose id names another generation or revision", () => {
+    const otherGeneration = "generation:test:4";
+    const single = {
+      eventId: begin.eventId,
+      generation: begin.generation,
+      stateRevision: begin.stateRevision,
+      payload: {},
+    };
+
+    expect(parseReviewEventFrame({ ...single, generation: otherGeneration })).toBeUndefined();
+    expect(parseReviewEventFrame({ ...single, stateRevision: 9 })).toBeUndefined();
+    expect(parseReviewEventBegin({ ...begin, generation: otherGeneration })).toBeUndefined();
+    expect(parseReviewEventBegin({ ...begin, stateRevision: 9 })).toBeUndefined();
+
+    const chunk: ReviewEventChunkV1 = {
+      eventId: begin.eventId,
+      generation: otherGeneration,
+      offset: 0,
+      byteLength: 10,
+      encoding: "base64",
+      data: "",
+      contentDigest: begin.contentDigest,
+      contentSize: 10,
+      eof: true,
+    };
+    expect(parseReviewEventChunk(chunk)).toBeUndefined();
+    expect(parseReviewEventChunk({ ...chunk, generation: begin.generation })).toEqual({
+      ...chunk,
+      generation: begin.generation,
+    });
+
+    const end: ReviewEventEndV1 = {
+      eventId: begin.eventId,
+      generation: otherGeneration,
+      contentSize: 10,
+      contentDigest: begin.contentDigest,
+      chunkCount: 1,
+    };
+    expect(parseReviewEventEnd(end)).toBeUndefined();
+    expect(parseReviewEventEnd({ ...end, generation: begin.generation })).toEqual({
+      ...end,
+      generation: begin.generation,
+    });
+  });
+
   test("refuses an extra field, an unknown encoding, and a non-canonical digest", () => {
     expect(parseReviewEventBegin({ ...begin, extra: 1 })).toBeUndefined();
     expect(parseReviewEventBegin({ ...begin, encoding: "hex" })).toBeUndefined();
