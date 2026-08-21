@@ -4,29 +4,46 @@ Follow-up to `README.md`, which measures test-code share because executed-line c
 project's suite to actually run. This file records the attempt to run them, 2026-08-21, in a
 sandbox with a filtered outbound proxy.
 
-## Coverage measured (clean runs, 0–3 failing tests)
+## Coverage measured
 
 | Project | Scope run | Lines | Functions | Tests | Tool |
 | --- | --- | ---: | ---: | --- | --- |
 | hunk | `src packages scripts test/cli test/session` | 95.2% | 93.9% | 3002 pass / 3 fail | `bun test --coverage` |
-| opentui | `packages/core` | 82.7% | 78.6% | 5397 pass / 1 fail | `bun test --coverage` |
 | diffs.com | `packages/diffs` | 83.2% | 82.1% | 1510 pass / 0 fail | `bun test --coverage` |
-| pi | `packages/{client,protocol,telemetry}` | 89.2% / 97.1% / 99.0% | — | pass | `vitest --coverage.all` |
+| opentui | `packages/core` | 82.7% | 78.6% | 5397 pass / 1 fail | `bun test --coverage` |
+| pi | 7 of 10 packages | 68.4% | — | 4299 pass / 61 fail | `vitest --coverage.all` |
 
 hunk's 3 failures are daemon/session tests that need a live loopback daemon; opentui's 1 is an
-audio-device test. Neither materially moves the number.
+audio-device test; pi's 61 are model-pricing assertions against the catalog described below.
+
+pi per package: `telemetry` 99.0%, `protocol` 97.1%, `client` 89.2%, `agent` 83.5%, `ai` 81.4%,
+`server` 72.6%, `coding-agent` 60.4%.
+
+## Workarounds that unblocked a run
+
+- **pi** needs a generated model catalog and `generate-models` gets 403 from models.dev. The
+  published `@earendil-works/pi-ai` tarball ships the same JSON under `dist/providers/data`, so
+  `npm pack` plus a copy into `src/providers/data` gets the suites running; the 61 failures are
+  pricing assertions where the published catalog and the checkout disagree.
+- **Vitest writes no coverage report when a run fails** unless `--coverage.reportOnFailure` is set.
+  That, not the failures themselves, is why four pi packages first looked unmeasurable.
+- **Zig** came from PyPI's `ziglang` wheel (0.16.0 and 0.15.2) because ziglang.org is 403.
+- **uucode**, herdr's first blocked zig dep, resolved from upstream: a `zig fetch` of
+  `jacobsandlund/uucode` at tag `v0.2.0` hashes to exactly the
+  `uucode-0.2.0-ZZjBPqZVVABQepOqZHR7vV_NcaN-wats0IB6o-Exj6m9` the mirror serves, so populating the
+  global cache from GitHub satisfies the build without touching the blocked host.
 
 ## Blocked, and why
 
 | Project | Blocker |
 | --- | --- |
-| pi (`ai`, `coding-agent`, `agent`, `server`) | Test imports need a generated model catalog; `generate-models` gets 403 from models.dev through the proxy. |
-| herdr | `build.rs` compiles vendored `libghostty-vt`, whose zig deps resolve to `deps.files.ghostty.org` — 405 through the proxy. Rust toolchain and `cargo-llvm-cov` were fine. |
-| libghostty | 33 of 38 entries in `build.zig.zon` point at `deps.files.ghostty.org` — same 405. Zig 0.16.0 itself had to come from PyPI's `ziglang` wheel because ziglang.org is 403. |
-| opencode | `bun install` cannot resolve `github:anomalyco/ghostty-web` — 403, outside this session's repo scope. |
+| herdr | After uucode, `build.rs` still needs 10 more mirrored C deps (wuffs, oniguruma, libpng, highway, harfbuzz, freetype, fontconfig, libxml2, dcimgui) from `deps.files.ghostty.org` — 405 through the proxy. Upstreams for several are on hosts the proxy also denies, and mirrored release tarballs would not hash-match a git checkout the way uucode did. |
+| libghostty | 33 of 38 entries in `build.zig.zon` point at the same host. |
+| opencode | `bun install` resolves `github:anomalyco/ghostty-web` through api.github.com — 403 outside this session's repo scope, for both the `github:` and `git+https:` spec forms. Dropping that web-app-only dependency lets the install proceed. |
 
 Zig has no built-in coverage instrumentation and ghostty's CI does not produce a coverage number,
-so even a successful build would have needed kcov on top.
+so even a successful build would have needed kcov — which is not in apt here and whose GitHub
+release binaries are not downloadable over the proxy's git-only GitHub access.
 
 ## Why the three numbers are still not comparable
 

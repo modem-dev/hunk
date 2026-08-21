@@ -1,0 +1,302 @@
+<title>Coverage That Actually Ran</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --ink: #080A0D;
+    --card: #10141A;
+    --card-top: #131820;
+    --edge: #1E2630;
+    --track: #1F2833;
+    --fill: #C2842A;
+    --text: #E9ECF1;
+    --dim: #98A2AE;
+    --muted: #6E7885;
+    --value: #E5B15F;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 3vmin;
+  }
+
+  .card {
+    container-type: inline-size;
+    width: min(100%, 1200px);
+    background: linear-gradient(180deg, var(--card-top), var(--card));
+    border: 1px solid var(--edge);
+    border-radius: 1.2cqw;
+    padding: 3.6cqw 4.2cqw 2.8cqw;
+    box-shadow: 0 2cqw 6cqw rgba(0, 0, 0, 0.55);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 1.08cqw;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    margin: 1.1cqw 0 0;
+    font-size: 3.5cqw;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  .rows {
+    --cols: 19cqw 6.4cqw 1fr 8.2cqw;
+    display: grid;
+    gap: 0.3cqw;
+    margin-top: 2.6cqw;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: var(--cols);
+    align-items: center;
+    gap: 1.35cqw;
+    padding: 0.68cqw 0.7cqw;
+    margin: 0 -0.7cqw;
+    border-radius: 0.5cqw;
+    transition: background 120ms ease;
+  }
+  .row:hover { background: rgba(255, 255, 255, 0.035); }
+
+  .name {
+    font-family: var(--mono);
+    font-size: 1.72cqw;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .row.blocked .name { color: var(--dim); }
+  .scope {
+    font-family: var(--mono);
+    font-size: 0.98cqw;
+    color: var(--muted);
+    margin-top: 0.18cqw;
+  }
+
+  .tests {
+    font-family: var(--mono);
+    font-size: 1.12cqw;
+    color: var(--dim);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .row.blocked .tests { color: #454E59; }
+
+  .bar {
+    position: relative;
+    height: 1.85cqw;
+  }
+  .track,
+  .fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background-size: 0.78cqw 100%;
+    background-repeat: repeat-x;
+  }
+  .track {
+    right: 0;
+    background-image: linear-gradient(90deg, var(--track) 0 0.56cqw, transparent 0.56cqw);
+  }
+  .fill {
+    width: var(--w);
+    background-image: linear-gradient(90deg, var(--fill) 0 0.56cqw, transparent 0.56cqw);
+  }
+
+  .reason {
+    display: flex;
+    align-items: center;
+    height: 1.85cqw;
+    font-family: var(--mono);
+    font-size: 1.12cqw;
+    color: var(--muted);
+  }
+  .reason::before {
+    content: "";
+    width: 1.2cqw;
+    height: 1px;
+    margin-right: 0.9cqw;
+    background: #39424E;
+  }
+  .reason b { color: var(--dim); font-weight: 500; }
+
+  .value {
+    font-family: var(--mono);
+    font-size: 1.85cqw;
+    font-weight: 500;
+    color: var(--value);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .value i {
+    font-style: normal;
+    font-size: 0.62em;
+    color: var(--muted);
+    margin-left: 0.15em;
+  }
+  .value.none { color: #454E59; }
+
+  .divider {
+    margin: 1.4cqw 0 0.8cqw;
+    display: flex;
+    align-items: center;
+    gap: 1.1cqw;
+    font-family: var(--mono);
+    font-size: 0.95cqw;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--edge);
+  }
+
+  footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 2cqw;
+    margin-top: 2.2cqw;
+    padding-top: 1.5cqw;
+    border-top: 1px solid var(--edge);
+    font-family: var(--mono);
+    font-size: 0.95cqw;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  footer b { color: var(--dim); font-weight: 500; }
+  footer .right { text-align: right; white-space: nowrap; }
+
+  @media (max-width: 720px) {
+    .rows { --cols: 26cqw 8cqw 1fr 11cqw; }
+    .name { font-size: 2.4cqw; }
+    .scope, .tests, .reason, .eyebrow, footer, .divider { font-size: 1.5cqw; }
+    .value { font-size: 2.5cqw; }
+    h1 { font-size: 4.6cqw; }
+  }
+</style>
+
+<div class="card">
+  <div class="eyebrow">line coverage, suites actually executed &middot; august 2026</div>
+  <h1>Four of seven suites would run.</h1>
+
+  <div class="rows">
+    <div class="row" title="93.9% of functions · 432 files instrumented">
+      <div>
+        <div class="name">hunk</div>
+        <div class="scope">full suite &middot; bun</div>
+      </div>
+      <div class="tests">3,005</div>
+      <div class="bar" role="img" aria-label="hunk: 95.2 percent line coverage">
+        <div class="track"></div>
+        <div class="fill" style="--w: 95.2%"></div>
+      </div>
+      <div class="value">95.2<i>%</i></div>
+    </div>
+
+    <div class="row" title="82.1% of functions · 218 files instrumented">
+      <div>
+        <div class="name">diffs.com</div>
+        <div class="scope">packages/diffs &middot; bun</div>
+      </div>
+      <div class="tests">1,512</div>
+      <div class="bar" role="img" aria-label="diffs.com: 83.2 percent line coverage">
+        <div class="track"></div>
+        <div class="fill" style="--w: 83.2%"></div>
+      </div>
+      <div class="value">83.2<i>%</i></div>
+    </div>
+
+    <div class="row" title="78.6% of functions · 130 of 163 source files instrumented">
+      <div>
+        <div class="name">opentui</div>
+        <div class="scope">packages/core &middot; bun</div>
+      </div>
+      <div class="tests">5,421</div>
+      <div class="bar" role="img" aria-label="opentui: 82.7 percent line coverage">
+        <div class="track"></div>
+        <div class="fill" style="--w: 82.7%"></div>
+      </div>
+      <div class="value">82.7<i>%</i></div>
+    </div>
+
+    <div class="row" title="24,642 of 36,006 lines · every file counted, not just imported ones">
+      <div>
+        <div class="name">pi</div>
+        <div class="scope">7 of 10 packages &middot; vitest</div>
+      </div>
+      <div class="tests">4,360</div>
+      <div class="bar" role="img" aria-label="pi: 68.4 percent line coverage">
+        <div class="track"></div>
+        <div class="fill" style="--w: 68.4%"></div>
+      </div>
+      <div class="value">68.4<i>%</i></div>
+    </div>
+
+    <div class="divider">would not build</div>
+
+    <div class="row blocked">
+      <div>
+        <div class="name">herdr</div>
+        <div class="scope">vendored libghostty-vt build</div>
+      </div>
+      <div class="tests"></div>
+      <div class="reason">10 zig deps &nbsp;&middot;&nbsp; <b>deps.files.ghostty.org 405</b></div>
+      <div class="value none"></div>
+    </div>
+
+    <div class="row blocked">
+      <div>
+        <div class="name">libghostty</div>
+        <div class="scope">zig has no coverage tooling</div>
+      </div>
+      <div class="tests"></div>
+      <div class="reason">33 of 38 deps &nbsp;&middot;&nbsp; <b>same host, same 405</b></div>
+      <div class="value none"></div>
+    </div>
+
+    <div class="row blocked">
+      <div>
+        <div class="name">opencode</div>
+        <div class="scope">bun install &middot; git dependency</div>
+      </div>
+      <div class="tests"></div>
+      <div class="reason">github:anomalyco/ghostty-web &nbsp;&middot;&nbsp; <b>api 403</b></div>
+      <div class="value none"></div>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      run on a sandbox with a filtered outbound proxy<br>
+      hunk 3 failing tests &middot; opentui 1 &middot; pi 61 &middot; diffs.com 0
+    </div>
+    <div class="right">
+      denominators differ: bun instruments only files a test imports,<br>
+      <b>vitest counts every file</b> &mdash; which is why pi sits lower
+    </div>
+  </footer>
+</div>
