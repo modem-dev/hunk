@@ -201,7 +201,7 @@
 
 <div class="card">
   <div class="eyebrow">line coverage, suites actually executed &middot; august 2026</div>
-  <h1>Four of seven suites would run.</h1>
+  <h1>Five of seven suites would run.</h1>
 
   <div class="rows">
     <div class="row" title="93.9% of functions · 432 files instrumented">
@@ -243,6 +243,19 @@
       <div class="value">82.7<i>%</i></div>
     </div>
 
+    <div class="row" title="66.5% of functions · 1017 files instrumented">
+      <div>
+        <div class="name">opencode</div>
+        <div class="scope">packages/opencode &middot; bun</div>
+      </div>
+      <div class="tests">3,321</div>
+      <div class="bar" role="img" aria-label="opencode: 78.3 percent line coverage">
+        <div class="track"></div>
+        <div class="fill" style="--w: 78.3%"></div>
+      </div>
+      <div class="value">78.3<i>%</i></div>
+    </div>
+
     <div class="row" title="24,642 of 36,006 lines · every file counted, not just imported ones">
       <div>
         <div class="name">pi</div>
@@ -277,22 +290,12 @@
       <div class="reason">33 of 38 deps &nbsp;&middot;&nbsp; <b>same host, same 405</b></div>
       <div class="value none"></div>
     </div>
-
-    <div class="row blocked">
-      <div>
-        <div class="name">opencode</div>
-        <div class="scope">bun install &middot; git dependency</div>
-      </div>
-      <div class="tests"></div>
-      <div class="reason">github:anomalyco/ghostty-web &nbsp;&middot;&nbsp; <b>api 403</b></div>
-      <div class="value none"></div>
-    </div>
   </div>
 
   <footer>
     <div>
       run on a sandbox with a filtered outbound proxy<br>
-      hunk 3 failing tests &middot; opentui 1 &middot; pi 61 &middot; diffs.com 0
+      failing tests: pi 61 &middot; opencode 12 &middot; hunk 3 &middot; opentui 1 &middot; diffs.com 0
     </div>
     <div class="right">
       denominators differ: bun instruments only files a test imports,<br>
