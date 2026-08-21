@@ -391,6 +391,70 @@ describe("parseCli", () => {
     });
   });
 
+  test("treats two revision positionals as the two commits to compare", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main", "feature"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "feature" },
+      staged: false,
+    });
+    // Joining them is the backend's job: `A..B` is Git spelling, and jj and
+    // Sapling read it as a revset that drops the from-side changes.
+    expect(parsed).not.toHaveProperty("range", "main..feature");
+  });
+
+  test("treats two revision positionals with -- pathspecs as two commits", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main", "feature", "--", "src/app.ts"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "feature" },
+      pathspecs: ["src/app.ts"],
+    });
+  });
+
+  test("reads a second positional as a revision whether or not it exists on disk", async () => {
+    const dir = createTempDir("hunk-cli-rev-path-");
+    const onDisk = join(dir, "src");
+    mkdirSync(onDisk);
+
+    // A branch and a directory can share a name, so the filesystem cannot decide
+    // this. Both spellings parse the same way, and `--` is how you mean a path.
+    for (const second of [onDisk, join(dir, "missing")]) {
+      expect(await parseCli(["bun", "hunk", "diff", "HEAD", second])).toMatchObject({
+        kind: "vcs",
+        rangeEndpoints: { from: "HEAD", to: second },
+      });
+    }
+
+    expect(await parseCli(["bun", "hunk", "diff", "HEAD", "--", onDisk])).toMatchObject({
+      kind: "vcs",
+      range: "HEAD",
+      pathspecs: [onDisk],
+    });
+  });
+
+  test("keeps a trailing pathspec after a target that already spells a range", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main..feature", "src/missing.ts"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "main..feature",
+      pathspecs: ["src/missing.ts"],
+    });
+  });
+
+  test("keeps bare pathspecs after a target when there are too many for a commit pair", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "HEAD", "src/app.ts", "src/other.ts"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "HEAD",
+      pathspecs: ["src/app.ts", "src/other.ts"],
+    });
+  });
+
   test("parses show mode with optional ref and pathspecs", async () => {
     const parsed = await parseCli(["bun", "hunk", "show", "HEAD~1", "--", "src/app.ts"]);
 

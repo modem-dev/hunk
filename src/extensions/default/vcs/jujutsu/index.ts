@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { describeDiffRange } from "../diffRange";
 import {
   buildJjDiffArgs,
   buildJjShowArgs,
@@ -58,10 +59,11 @@ export const JjVcsAdapter = {
         }
         const repoRoot = resolveJjRepoRoot(input, { cwd });
         const repoName = basename(repoRoot);
+        const range = describeDiffRange(input);
         return {
           repoRoot,
           sourceLabel: repoRoot,
-          title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
+          title: range ? `${repoName} ${range}` : `${repoName} working copy`,
           patchText: runJjText({ input, args: buildJjDiffArgs(input), cwd }),
         };
       },

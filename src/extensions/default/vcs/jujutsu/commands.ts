@@ -3,6 +3,7 @@ import {
   type ExtensionVcsDiffInput,
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
+import { describeDiffTargets } from "../diffRange";
 import { normalizePathForOS } from "../../../../lib/osPath";
 
 export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
@@ -27,7 +28,12 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
 export function buildJjDiffArgs(input: ExtensionVcsDiffInput) {
   const args = ["diff", "--git"];
 
-  if (input.range) {
+  if (input.rangeEndpoints) {
+    // Not `-r from..to`: that revset covers the commits reachable from `to` but
+    // not from `from`, so a diverged `from` side contributes nothing and its
+    // changes never show up as removals. `--from`/`--to` compares the two trees.
+    args.push("--from", input.rangeEndpoints.from, "--to", input.rangeEndpoints.to);
+  } else if (input.range) {
     args.push("-r", input.range);
   }
 
@@ -49,7 +55,8 @@ export function formatJjCommandLabel(input: JjBackedInput) {
       return "hunk diff --staged";
     }
 
-    return input.range ? `hunk diff ${input.range}` : "hunk diff";
+    const targets = describeDiffTargets(input);
+    return targets ? `hunk diff ${targets}` : "hunk diff";
   }
 
   return input.ref ? `hunk show ${input.ref}` : "hunk show";
@@ -111,6 +118,14 @@ export function createJjStagedError(input: ExtensionVcsDiffInput) {
 }
 
 function createInvalidRevsetError(input: JjBackedInput) {
+  if (input.kind === "vcs" && input.rangeEndpoints) {
+    const { from, to } = input.rangeEndpoints;
+    return new HunkExtensionUserError(
+      `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revisions \`${from}\` and \`${to}\`.`,
+      { suggestions: ["Check both revisions and try again."] },
+    );
+  }
+
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? "@");
   return new HunkExtensionUserError(
     `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revset \`${revset}\`.`,

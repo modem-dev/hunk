@@ -19,6 +19,7 @@ import {
   type GitBackedInput,
   type GitDiffEndpoints,
 } from "./commands";
+import { describeDiffRange } from "../diffRange";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
@@ -283,10 +284,11 @@ export function createGitVcsAdapter({
         async load(input, { cwd }) {
           const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
           const repoName = basename(repoRoot);
+          const range = describeDiffRange(input);
           const title = input.staged
             ? `${repoName} staged changes`
-            : input.range
-              ? `${repoName} ${input.range}`
+            : range
+              ? `${repoName} ${range}`
               : `${repoName} working tree`;
           // Ask for stats before the patch so files too large to render can be
           // excluded from the diff instead of generating output nobody reads.

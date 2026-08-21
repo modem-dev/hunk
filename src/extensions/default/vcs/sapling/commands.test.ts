@@ -65,6 +65,21 @@ afterEach(() => {
 });
 
 describe("sl command helpers", () => {
+  test("compares two named revisions with a -r per endpoint rather than a `..` revset", () => {
+    expect(buildSlDiffArgs(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }))).toEqual(
+      ["diff", "--git", "-r", "main", "-r", "feature"],
+    );
+  });
+
+  test("passes a revset the user spelled straight through to -r", () => {
+    expect(buildSlDiffArgs(diffInput({ range: ".^::." }))).toEqual([
+      "diff",
+      "--git",
+      "-r",
+      ".^::.",
+    ]);
+  });
+
   test("reports a friendly error when sl is not installed or not on PATH", () => {
     expect(() =>
       runSlText({

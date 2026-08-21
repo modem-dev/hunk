@@ -97,6 +97,14 @@ describe("git command helpers", () => {
     expect(buildGitDiffArgs(makeGitInput())).toContain("core.quotePath=true");
   });
 
+  test("spells two named revisions as the A..B range Git takes for them", () => {
+    const args = buildGitDiffArgs(
+      makeGitInput({ rangeEndpoints: { from: "main", to: "feature" } }),
+    );
+
+    expect(args).toContain("main..feature");
+  });
+
   test("disables external diff tools for stash patches", () => {
     const args = buildGitStashShowArgs({
       kind: "stash-show",
@@ -348,6 +356,29 @@ describe("resolveGitDiffEndpoints", () => {
 
     const endpoints = resolveGitDiffEndpoints(
       makeGitInput({ range: `${firstSha}..${secondSha}` }),
+      { cwd: repoRoot, repoRoot },
+    );
+
+    expect(endpoints).toEqual({
+      old: { kind: "git-ref", ref: firstSha },
+      new: { kind: "git-ref", ref: secondSha },
+    });
+  });
+
+  test("two named endpoints resolve to the same pair as the range they spell", () => {
+    const repoRoot = createTempRepo("hunk-endpoints-two-targets-");
+    writeFileSync(join(repoRoot, "x.txt"), "first\n");
+    git(repoRoot, "add", "x.txt");
+    git(repoRoot, "commit", "-m", "first");
+    const firstSha = git(repoRoot, "rev-parse", "HEAD").trim();
+
+    writeFileSync(join(repoRoot, "x.txt"), "second\n");
+    git(repoRoot, "add", "x.txt");
+    git(repoRoot, "commit", "-m", "second");
+    const secondSha = git(repoRoot, "rev-parse", "HEAD").trim();
+
+    const endpoints = resolveGitDiffEndpoints(
+      makeGitInput({ rangeEndpoints: { from: firstSha, to: secondSha } }),
       { cwd: repoRoot, repoRoot },
     );
 

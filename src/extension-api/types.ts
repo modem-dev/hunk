@@ -679,10 +679,26 @@ export interface ExtensionVcsReviewOptions {
   colorMoved?: boolean;
 }
 
+/**
+ * The two commits a `hunk diff A B` review compares, left unjoined.
+ *
+ * `A..B` is Git spelling. Jujutsu and Sapling read `..` as a revset over the
+ * commits *between* the endpoints, which drops A-side changes once the two have
+ * diverged, so Hunk cannot join them before it knows the backend. Each adapter
+ * spells this in its own two-sided form.
+ */
+export interface ExtensionVcsRangeEndpoints {
+  from: string;
+  to: string;
+}
+
 /** Working-tree review request, as extension adapters receive it. */
 export interface ExtensionVcsDiffInput {
   kind: "vcs";
+  /** A revision or range expression in the backend's own language, as typed. */
   range?: string;
+  /** Set instead of `range` when the user named both endpoints as `hunk diff A B`. */
+  rangeEndpoints?: ExtensionVcsRangeEndpoints;
   staged: boolean;
   pathspecs?: string[];
   options: ExtensionVcsReviewOptions;

@@ -5,6 +5,7 @@ import {
   type ExtensionVcsDiffInput,
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
+import { describeDiffTargets } from "../diffRange";
 import { normalizePathForOS } from "../../../../lib/osPath";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
@@ -29,7 +30,11 @@ function appendSlPathspecs(args: string[], pathspecs?: string[]) {
 export function buildSlDiffArgs(input: ExtensionVcsDiffInput) {
   const args = ["diff", "--git"];
 
-  if (input.range) {
+  if (input.rangeEndpoints) {
+    // Not `-r from..to`: `..` is a DAG range in Sapling revsets, not the
+    // two-tree comparison Git means by it. A `-r` per endpoint is that request.
+    args.push("-r", input.rangeEndpoints.from, "-r", input.rangeEndpoints.to);
+  } else if (input.range) {
     args.push("-r", input.range);
   }
 
@@ -60,7 +65,8 @@ export function formatSlCommandLabel(input: SlBackedInput) {
       return "hunk diff --staged";
     }
 
-    return input.range ? `hunk diff ${input.range}` : "hunk diff";
+    const targets = describeDiffTargets(input);
+    return targets ? `hunk diff ${targets}` : "hunk diff";
   }
 
   return input.ref ? `hunk show ${input.ref}` : "hunk show";
@@ -123,6 +129,14 @@ export function createSlStagedError(input: ExtensionVcsDiffInput) {
 }
 
 function createInvalidRevsetError(input: SlBackedInput) {
+  if (input.kind === "vcs" && input.rangeEndpoints) {
+    const { from, to } = input.rangeEndpoints;
+    return new HunkExtensionUserError(
+      `\`${formatSlCommandLabel(input)}\` could not resolve Sapling revisions \`${from}\` and \`${to}\`.`,
+      { suggestions: ["Check both revisions and try again."] },
+    );
+  }
+
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? ".");
   return new HunkExtensionUserError(
     `\`${formatSlCommandLabel(input)}\` could not resolve Sapling revset \`${revset}\`.`,

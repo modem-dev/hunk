@@ -139,6 +139,7 @@ export const CLI_REFERENCE_COMMANDS = {
     summary: "review diffs or compare two concrete files",
     synopsis: [
       "hunk diff [target] [-- <pathspec...>]",
+      "hunk diff <commit> <commit> [-- <pathspec...>]",
       "hunk diff --staged [-- <pathspec...>]",
       "hunk diff <left> <right>",
     ],
@@ -465,6 +466,7 @@ function renderCliHelp() {
     "",
     "Commands:",
     "  hunk diff [target] [-- <pathspec...>]   review working tree changes or compare against a target",
+    "  hunk diff <commit> <commit>             compare two commits, like `git diff A B`",
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff <left> <right>                compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
@@ -529,6 +531,11 @@ function splitPathspecArgs(tokens: string[]) {
 /** Return whether both diff operands are concrete files on disk. */
 function areExistingFiles(left: string, right: string) {
   return [left, right].every((path) => existsSync(path) && statSync(path).isFile());
+}
+
+/** Return whether a diff target already spells its own range, as in `A..B` or `A...B`. */
+function isRangeExpression(target: string) {
+  return target.includes("..");
 }
 
 /** Parse one standalone command while letting us capture `--help` as plain text. */
@@ -759,16 +766,40 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
     };
   }
 
-  if (!staged && !normalizedPathspecs) {
-    if (parsedTargets.length === 2 && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
+  if (!staged && parsedTargets.length === 2) {
+    const left = parsedTargets[0]!;
+    const right = parsedTargets[1]!;
+
+    if (!normalizedPathspecs && areExistingFiles(left, right)) {
       return {
         kind: "diff",
-        left: parsedTargets[0]!,
-        right: parsedTargets[1]!,
+        left,
+        right,
         options,
       };
     }
 
+    // Git reads `diff A B` as the two-commit review `diff A..B`, so Hunk does too.
+    // The endpoints stay unjoined because `A..B` is Git spelling: jj and Sapling
+    // read `..` as a revset over the commits between them, so each backend has to
+    // name these two revisions in its own syntax.
+    //
+    // Whether the second token exists on disk deliberately does not enter into
+    // it. That answer depends on the working directory rather than the argument,
+    // and it read deleted files and globs as revisions. A pathspec needs `--`,
+    // unless a side already spells a range and so cannot be half of a new one.
+    if (!isRangeExpression(left) && !isRangeExpression(right)) {
+      return {
+        kind: "vcs",
+        rangeEndpoints: { from: left, to: right },
+        staged,
+        pathspecs: normalizedPathspecs,
+        options,
+      };
+    }
+  }
+
+  if (!staged && !normalizedPathspecs) {
     return {
       kind: "vcs",
       range: parsedTargets[0]!,
@@ -779,7 +810,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   }
 
   throw new Error(
-    "Use `hunk diff [target] [-- pathspec...]`, `hunk diff <left> <right>` for file comparison.",
+    "Use `hunk diff [target] [-- pathspec...]`, `hunk diff <commit> <commit>`, or `hunk diff <left> <right>` for file comparison.",
   );
 }
 

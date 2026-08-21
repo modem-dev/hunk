@@ -51,6 +51,7 @@ review diffs or compare two concrete files
 
 ```bash
 hunk diff [target] [-- <pathspec...>]
+hunk diff <commit> <commit> [-- <pathspec...>]
 hunk diff --staged [-- <pathspec...>]
 hunk diff <left> <right>
 ```

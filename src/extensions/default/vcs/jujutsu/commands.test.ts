@@ -92,6 +92,46 @@ afterEach(() => {
 const jjTest = Bun.which("jj") ? test : test.skip;
 
 describe("jj command helpers", () => {
+  test("compares two named revisions with --from/--to rather than a `..` revset", () => {
+    expect(buildJjDiffArgs(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }))).toEqual(
+      ["diff", "--git", "--from", "main", "--to", "feature"],
+    );
+  });
+
+  test("passes a revset the user spelled straight through to -r", () => {
+    expect(buildJjDiffArgs(diffInput({ range: "trunk()..@" }))).toEqual([
+      "diff",
+      "--git",
+      "-r",
+      "trunk()..@",
+    ]);
+  });
+
+  jjTest("keeps the from-side removals of two diverged revisions", () => {
+    const dir = createTempJjRepo("hunk-jj-diverged-endpoints-");
+    writeFileSync(join(dir, "base.txt"), "base\n");
+    jj(dir, "commit", "-m", "base");
+    jj(dir, "bookmark", "create", "base", "-r", "@-");
+
+    writeFileSync(join(dir, "only-on-a.txt"), "a\n");
+    jj(dir, "commit", "-m", "a");
+    jj(dir, "bookmark", "create", "a", "-r", "@-");
+
+    jj(dir, "new", "base", "-m", "b");
+    writeFileSync(join(dir, "only-on-b.txt"), "b\n");
+    jj(dir, "commit", "-m", "b");
+    jj(dir, "bookmark", "create", "b", "-r", "@-");
+
+    const input = diffInput({ rangeEndpoints: { from: "a", to: "b" } });
+    const patch = runJjText({ input, args: buildJjDiffArgs(input), cwd: dir });
+
+    // `jj diff -r a..b` would show only the b-side addition: the revset holds the
+    // commits reachable from b but not from a, so nothing reverses a's own work.
+    expect(patch).toContain("only-on-b.txt");
+    expect(patch).toContain("deleted file");
+    expect(patch).toContain("only-on-a.txt");
+  });
+
   test("reports a friendly error when jj is not installed or not on PATH", () => {
     expect(() =>
       runJjText({

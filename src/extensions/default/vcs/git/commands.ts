@@ -6,6 +6,7 @@ import {
   type ExtensionVcsShowInput,
   type ExtensionVcsStashShowInput,
 } from "hunkdiff/extension";
+import { describeDiffRange, describeDiffTargets } from "../diffRange";
 import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "../../../../lib/largeFile";
 import { normalizePathForOS } from "../../../../lib/osPath";
 
@@ -129,8 +130,9 @@ export function buildGitDiffArgs(
     args.push("--staged");
   }
 
-  if (input.range) {
-    args.push(input.range);
+  const range = describeDiffRange(input);
+  if (range) {
+    args.push(range);
   }
 
   if (excludedPathspecs.length > 0) {
@@ -154,8 +156,9 @@ export function buildGitDiffNumstatArgs(input: ExtensionVcsDiffInput) {
     args.push("--staged");
   }
 
-  if (input.range) {
-    args.push(input.range);
+  const range = describeDiffRange(input);
+  if (range) {
+    args.push(range);
   }
 
   appendGitPathspecs(args, input.pathspecs);
@@ -267,12 +270,14 @@ export function buildGitStashShowArgs(
 
 export function formatGitCommandLabel(input: GitBackedInput) {
   switch (input.kind) {
-    case "vcs":
+    case "vcs": {
       if (input.staged) {
         return "hunk diff --staged";
       }
 
-      return input.range ? `hunk diff ${input.range}` : "hunk diff";
+      const targets = describeDiffTargets(input);
+      return targets ? `hunk diff ${targets}` : "hunk diff";
+    }
     case "show":
       return input.ref ? `hunk show ${input.ref}` : "hunk show";
     case "stash-show":
@@ -340,9 +345,21 @@ function createMissingRepoError(input: GitBackedInput) {
 
 function createInvalidRevisionError(input: ExtensionVcsDiffInput | ExtensionVcsShowInput) {
   if (input.kind === "vcs") {
+    const endpoints = input.rangeEndpoints;
     return new HunkExtensionUserError(
-      `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${input.range}\`.`,
-      { suggestions: ["Check the revision or range and try again."] },
+      `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${describeDiffRange(input)}\`.`,
+      {
+        suggestions: [
+          "Check the revision or range and try again.",
+          // Two positionals are read as two commits, so someone who meant the
+          // second one as a path needs the separator to say so.
+          ...(endpoints
+            ? [
+                `To limit the review to a path, separate it: \`hunk diff ${endpoints.from} -- ${endpoints.to}\`.`,
+              ]
+            : []),
+        ],
+      },
     );
   }
 
@@ -402,7 +419,7 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
     return createMissingStashError(input);
   }
 
-  if (input.kind === "vcs" && input.range && isUnknownRevisionMessage(stderr)) {
+  if (input.kind === "vcs" && describeDiffRange(input) && isUnknownRevisionMessage(stderr)) {
     return createInvalidRevisionError(input);
   }
 
@@ -552,11 +569,12 @@ function isWorkingTreeGitDiffInput(
     return false;
   }
 
-  if (!input.range) {
+  const range = describeDiffRange(input);
+  if (!range) {
     return true;
   }
 
-  const cacheKey = `${gitExecutable}\0${repoRoot ?? cwd}\0${input.range}`;
+  const cacheKey = `${gitExecutable}\0${repoRoot ?? cwd}\0${range}`;
   const cached = workingTreeGitDiffInputCache.get(cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -564,7 +582,7 @@ function isWorkingTreeGitDiffInput(
 
   const revs = runGitText({
     input,
-    args: ["rev-parse", "--revs-only", input.range],
+    args: ["rev-parse", "--revs-only", range],
     cwd,
     gitExecutable,
     preventOptionalLocks,
@@ -854,8 +872,10 @@ export function resolveGitDiffEndpoints(
     repoRoot,
   }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
 ): GitDiffEndpoints | null {
+  const range = describeDiffRange(input);
+
   if (input.staged) {
-    if (!input.range) {
+    if (!range) {
       const headRef = tryResolveGitCommitRef(input, "HEAD", {
         cwd: repoRoot ?? cwd,
         gitExecutable,
@@ -867,7 +887,7 @@ export function resolveGitDiffEndpoints(
       };
     }
 
-    const { positives, negatives } = resolveRangeRevisions(input, input.range, {
+    const { positives, negatives } = resolveRangeRevisions(input, range, {
       cwd,
       gitExecutable,
       repoRoot,
@@ -880,14 +900,14 @@ export function resolveGitDiffEndpoints(
     return null;
   }
 
-  if (!input.range) {
+  if (!range) {
     return { old: { kind: "index" }, new: { kind: "worktree" } };
   }
 
   // `git diff A...B` compares merge-base(A, B) against B, not HEAD or the
   // working tree. Resolve the merge base explicitly so expanded source rows
   // read from the same revisions the diff was computed from.
-  const symmetric = parseSymmetricDiffRange(input.range);
+  const symmetric = parseSymmetricDiffRange(range);
   if (symmetric) {
     const mergeBase = runGitText({
       input,
@@ -914,7 +934,7 @@ export function resolveGitDiffEndpoints(
 
   // Real rev-parse failures (bogus refs, missing repo) propagate to the caller
   // so the user sees a clear error instead of a silent working-tree fallback.
-  const { positives, negatives } = resolveRangeRevisions(input, input.range, {
+  const { positives, negatives } = resolveRangeRevisions(input, range, {
     cwd,
     gitExecutable,
     repoRoot,
