@@ -156,6 +156,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - fast smoke test: `bun run src/main.tsx -- diff /tmp/before.ts /tmp/after.ts`
 - typecheck: `bun run typecheck`
 - tests: `bun test`
+- tests with CI coverage thresholds: `bun run test:coverage`
 - PTY integration tests: `bun run test:integration`
 - TTY smoke test: `bun run test:tty-smoke`
 - format: `bun run format`
