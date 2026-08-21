@@ -1,0 +1,93 @@
+[
+  {
+    "name": "hunk",
+    "slug": "modem-dev/hunk",
+    "source": 65715,
+    "test": 77472,
+    "total": 143187,
+    "ratio": 1.1789089249029903,
+    "pct": 54.1054704686878,
+    "testFiles": 331,
+    "sourceFiles": 420,
+    "lang": "ts",
+    "langs": "ts:108837 tsx:33453 mjs:496"
+  },
+  {
+    "name": "herdr",
+    "slug": "ogulcancelik/herdr",
+    "source": 118747,
+    "test": 108446,
+    "total": 227193,
+    "ratio": 0.9132525453274609,
+    "pct": 47.73298473104365,
+    "testFiles": 218,
+    "sourceFiles": 268,
+    "lang": "rs",
+    "langs": "rs:215905 py:4948 ts:4618"
+  },
+  {
+    "name": "opentui",
+    "slug": "sst/opentui",
+    "source": 184817,
+    "test": 156945,
+    "total": 341762,
+    "ratio": 0.8491913622664582,
+    "pct": 45.92230850708973,
+    "testFiles": 391,
+    "sourceFiles": 575,
+    "lang": "ts",
+    "langs": "ts:241541 zig:77814 tsx:20215"
+  },
+  {
+    "name": "pi",
+    "slug": "earendil-works/pi",
+    "source": 121269,
+    "test": 100309,
+    "total": 221578,
+    "ratio": 0.8271611046516422,
+    "pct": 45.27028856655444,
+    "testFiles": 496,
+    "sourceFiles": 644,
+    "lang": "ts",
+    "langs": "ts:214539 mjs:5349 js:1502"
+  },
+  {
+    "name": "diffs.com",
+    "slug": "pierrecomputer/pierre",
+    "source": 137604,
+    "test": 76497,
+    "total": 214101,
+    "ratio": 0.5559213394959449,
+    "pct": 35.72939874171536,
+    "testFiles": 231,
+    "sourceFiles": 719,
+    "lang": "ts",
+    "langs": "ts:176294 tsx:34796 js:2835"
+  },
+  {
+    "name": "libghostty",
+    "slug": "ghostty-org/ghostty",
+    "source": 171449,
+    "test": 93474,
+    "total": 264923,
+    "ratio": 0.5452000303297191,
+    "pct": 35.28345972225892,
+    "testFiles": 428,
+    "sourceFiles": 965,
+    "lang": "zig",
+    "langs": "zig:231554 swift:25583 h:4301"
+  },
+  {
+    "name": "opencode",
+    "slug": "sst/opencode",
+    "source": 411928,
+    "test": 168944,
+    "total": 580872,
+    "ratio": 0.41012992561806916,
+    "pct": 29.08454874740046,
+    "testFiles": 849,
+    "sourceFiles": 2346,
+    "lang": "ts",
+    "langs": "ts:450357 tsx:129528 mjs:528"
+  }
+]

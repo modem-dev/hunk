@@ -1,0 +1,308 @@
+<title>How much of the code is tests?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --ink: #080A0D;
+    --card: #10141A;
+    --card-top: #131820;
+    --edge: #1E2630;
+    --track: #1F2833;
+    --fill: #C2842A;
+    --text: #E9ECF1;
+    --dim: #98A2AE;
+    --muted: #6E7885;
+    --value: #E5B15F;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 3vmin;
+  }
+
+  .card {
+    container-type: inline-size;
+    width: min(100%, 1200px);
+    background: linear-gradient(180deg, var(--card-top), var(--card));
+    border: 1px solid var(--edge);
+    border-radius: 1.2cqw;
+    padding: 3.6cqw 4.2cqw 2.8cqw;
+    box-shadow: 0 2cqw 6cqw rgba(0, 0, 0, 0.55);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 1.08cqw;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    margin: 1.1cqw 0 0;
+    font-size: 3.5cqw;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  .scale {
+    display: grid;
+    grid-template-columns: var(--cols);
+    gap: 1.35cqw;
+    margin-top: 2.6cqw;
+    font-family: var(--mono);
+    font-size: 1cqw;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .scale .mark {
+    grid-column: 3;
+    position: relative;
+    height: 1.2cqw;
+  }
+  .scale .mark span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .rows {
+    --cols: 19cqw 5.4cqw 1fr 8.2cqw;
+    display: grid;
+    gap: 0.35cqw;
+    margin-top: 0.4cqw;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: var(--cols);
+    align-items: center;
+    gap: 1.35cqw;
+    padding: 0.72cqw 0.7cqw;
+    margin: 0 -0.7cqw;
+    border-radius: 0.5cqw;
+    transition: background 120ms ease;
+  }
+  .row:hover { background: rgba(255, 255, 255, 0.035); }
+
+  .name {
+    font-family: var(--mono);
+    font-size: 1.72cqw;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .repo {
+    font-family: var(--mono);
+    font-size: 0.98cqw;
+    color: var(--muted);
+    margin-top: 0.18cqw;
+  }
+
+  .size {
+    font-family: var(--mono);
+    font-size: 1.12cqw;
+    color: var(--dim);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bar {
+    position: relative;
+    height: 1.85cqw;
+  }
+  .bar::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -0.7cqw;
+    bottom: -0.7cqw;
+    width: 1px;
+    background: repeating-linear-gradient(180deg, #3A4552 0 3px, transparent 3px 7px);
+  }
+  .track,
+  .fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background-size: 0.78cqw 100%;
+    background-repeat: repeat-x;
+  }
+  .track {
+    right: 0;
+    background-image: linear-gradient(90deg, var(--track) 0 0.56cqw, transparent 0.56cqw);
+  }
+  .fill {
+    width: var(--w);
+    background-image: linear-gradient(90deg, var(--fill) 0 0.56cqw, transparent 0.56cqw);
+  }
+
+  .value {
+    font-family: var(--mono);
+    font-size: 1.85cqw;
+    font-weight: 500;
+    color: var(--value);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .value i {
+    font-style: normal;
+    font-size: 0.62em;
+    color: var(--muted);
+    margin-left: 0.15em;
+  }
+
+  footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 2cqw;
+    margin-top: 2.4cqw;
+    padding-top: 1.5cqw;
+    border-top: 1px solid var(--edge);
+    font-family: var(--mono);
+    font-size: 0.95cqw;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  footer b { color: var(--dim); font-weight: 500; }
+  footer .right { text-align: right; white-space: nowrap; }
+
+  @media (max-width: 720px) {
+    .rows { --cols: 26cqw 7cqw 1fr 11cqw; }
+    .name { font-size: 2.4cqw; }
+    .repo, .size, .eyebrow, footer, .scale { font-size: 1.5cqw; }
+    .value { font-size: 2.5cqw; }
+    h1 { font-size: 4.6cqw; }
+  }
+</style>
+
+<div class="card">
+  <div class="eyebrow">test-code share &middot; august 2026</div>
+  <h1>How much of the code is tests?</h1>
+
+  <div class="scale" style="--cols: 19cqw 5.4cqw 1fr 8.2cqw;">
+    <div></div>
+    <div></div>
+    <div class="mark"><span>50%</span></div>
+    <div></div>
+  </div>
+
+  <div class="rows">
+    <div class="row" title="77,472 test lines / 65,715 source lines">
+      <div>
+        <div class="name">hunk</div>
+        <div class="repo">modem-dev/hunk &middot; ts</div>
+      </div>
+      <div class="size">143k</div>
+      <div class="bar" role="img" aria-label="hunk: 54.1 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 54.1%"></div>
+      </div>
+      <div class="value">54.1<i>%</i></div>
+    </div>
+
+    <div class="row" title="108,446 test lines / 118,747 source lines">
+      <div>
+        <div class="name">herdr</div>
+        <div class="repo">ogulcancelik/herdr &middot; rust</div>
+      </div>
+      <div class="size">227k</div>
+      <div class="bar" role="img" aria-label="herdr: 47.7 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 47.7%"></div>
+      </div>
+      <div class="value">47.7<i>%</i></div>
+    </div>
+
+    <div class="row" title="156,945 test lines / 184,817 source lines">
+      <div>
+        <div class="name">opentui</div>
+        <div class="repo">sst/opentui &middot; ts + zig</div>
+      </div>
+      <div class="size">342k</div>
+      <div class="bar" role="img" aria-label="opentui: 45.9 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 45.9%"></div>
+      </div>
+      <div class="value">45.9<i>%</i></div>
+    </div>
+
+    <div class="row" title="100,309 test lines / 121,269 source lines">
+      <div>
+        <div class="name">pi</div>
+        <div class="repo">earendil-works/pi &middot; ts</div>
+      </div>
+      <div class="size">222k</div>
+      <div class="bar" role="img" aria-label="pi: 45.3 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 45.3%"></div>
+      </div>
+      <div class="value">45.3<i>%</i></div>
+    </div>
+
+    <div class="row" title="76,497 test lines / 137,604 source lines">
+      <div>
+        <div class="name">diffs.com</div>
+        <div class="repo">pierrecomputer/pierre &middot; ts</div>
+      </div>
+      <div class="size">214k</div>
+      <div class="bar" role="img" aria-label="diffs.com: 35.7 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 35.7%"></div>
+      </div>
+      <div class="value">35.7<i>%</i></div>
+    </div>
+
+    <div class="row" title="93,474 test lines / 171,449 source lines">
+      <div>
+        <div class="name">libghostty</div>
+        <div class="repo">ghostty-org/ghostty &middot; zig</div>
+      </div>
+      <div class="size">265k</div>
+      <div class="bar" role="img" aria-label="libghostty: 35.3 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 35.3%"></div>
+      </div>
+      <div class="value">35.3<i>%</i></div>
+    </div>
+
+    <div class="row" title="168,944 test lines / 411,928 source lines">
+      <div>
+        <div class="name">opencode</div>
+        <div class="repo">sst/opencode &middot; ts</div>
+      </div>
+      <div class="size">581k</div>
+      <div class="bar" role="img" aria-label="opencode: 29.1 percent tests">
+        <div class="track"></div>
+        <div class="fill" style="--w: 29.1%"></div>
+      </div>
+      <div class="value">29.1<i>%</i></div>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      <b>test lines &divide; all code lines</b>, whole repo at HEAD, 2026-08-20<br>
+      blanks, comments, generated and vendored code excluded
+    </div>
+    <div class="right">
+      inline <b>zig test&nbsp;{}</b> and <b>rust #[cfg(test)]</b><br>
+      blocks counted as test code
+    </div>
+  </footer>
+</div>
