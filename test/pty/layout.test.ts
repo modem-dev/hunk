@@ -3,7 +3,7 @@ import stringWidth from "string-width";
 import { createPtyHarness, dragMouse, rightmostColumnOf } from "./harness";
 
 const harness = createPtyHarness();
-/** Held-key bursts reach the fixture's horizontal scroll clamps without per-column settling. */
+// Held-key bursts reach the fixture's horizontal scroll clamps without per-column settling.
 const SCROLL_RIGHT_TO_EDGE = Array.from({ length: 96 }, () => "right" as const);
 const SCROLL_LEFT_TO_EDGE = Array.from({ length: 96 }, () => "left" as const);
 
