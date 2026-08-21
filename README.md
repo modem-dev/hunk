@@ -98,6 +98,7 @@ Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hu
 hunk diff before.ts after.ts                # compare two files directly
 hunk diff before.ts after.ts --watch        # auto-reload when either file changes
 git diff --no-color | hunk patch -          # review a patch from stdin
+gh pr diff 123 --patch | hunk patch -       # review a GitHub PR without checking it out
 ```
 
 Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
