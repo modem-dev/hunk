@@ -1,4 +1,4 @@
-import type { KeyEvent } from "@opentui/core";
+import { KeyEvent } from "@opentui/core";
 import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../extension-api/keys";
 
 /**
@@ -39,7 +39,7 @@ export function synthesizeKeyEvent(parsed: ParsedKeyChord): KeyEvent {
       ? parsed.base.toUpperCase()
       : parsed.base;
 
-  return {
+  return new KeyEvent({
     name: isNamed || isLetter ? parsed.base : sequence,
     sequence,
     raw: sequence,
@@ -48,9 +48,9 @@ export function synthesizeKeyEvent(parsed: ParsedKeyChord): KeyEvent {
     option: parsed.option,
     shift: parsed.shift,
     number: false,
-    preventDefault: () => {},
-    stopPropagation: () => {},
-  } as unknown as KeyEvent;
+    eventType: "press",
+    source: "raw",
+  });
 }
 
 /**
