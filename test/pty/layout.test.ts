@@ -3,6 +3,9 @@ import stringWidth from "string-width";
 import { createPtyHarness, dragMouse, rightmostColumnOf } from "./harness";
 
 const harness = createPtyHarness();
+/** Held-key bursts reach the fixture's horizontal scroll clamps without per-column settling. */
+const SCROLL_RIGHT_TO_EDGE = Array.from({ length: 96 }, () => "right" as const);
+const SCROLL_LEFT_TO_EDGE = Array.from({ length: 96 }, () => "left" as const);
 
 /** Give PTY-backed startup and redraws enough headroom for slower CI machines. */
 setDefaultTimeout(20_000);
@@ -474,7 +477,6 @@ describe("PTY layout", () => {
       let anchored = initial;
       for (let index = 0; index < 24; index += 1) {
         await session.press("down");
-        await session.waitIdle({ timeout: 200 });
         anchored = await session.text({ immediate: true });
         if (anchored.includes("line08 = 108") && !anchored.includes("line01 = 101")) {
           break;
@@ -525,28 +527,22 @@ describe("PTY layout", () => {
       expect(initial).toContain("this is a very long");
       expect(initial).not.toContain("ge';");
 
-      let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle, so read the settled frame immediately rather than
-        // paying another render round-trip per column; the loop retries if a frame lags.
-        shifted = await session.text({ immediate: true });
-        if (shifted.includes("ge';")) {
-          break;
-        }
-      }
+      session.sendKey(SCROLL_RIGHT_TO_EDGE);
+      const shifted = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("ge';"),
+        5_000,
+      );
 
       expect(shifted).toContain("ge';");
       expect(shifted).not.toContain("this is a very long");
 
-      let restored = shifted;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("left");
-        restored = await session.text({ immediate: true });
-        if (restored.includes("this is a very long") && !restored.includes("ge';")) {
-          break;
-        }
-      }
+      session.sendKey(SCROLL_LEFT_TO_EDGE);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("this is a very long") && !text.includes("ge';"),
+        5_000,
+      );
 
       expect(restored).toContain("this is a very long");
       expect(restored).not.toContain("ge';");
@@ -571,15 +567,12 @@ describe("PTY layout", () => {
       expect(initial).toContain("this is a very long");
       expect(initial).not.toContain("ge';");
 
-      let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle; read immediately to avoid a redundant settle per column.
-        shifted = await session.text({ immediate: true });
-        if (shifted.includes("ge';")) {
-          break;
-        }
-      }
+      session.sendKey(SCROLL_RIGHT_TO_EDGE);
+      const shifted = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("ge';"),
+        5_000,
+      );
 
       expect(shifted).toContain("ge';");
       expect(shifted).not.toContain("this is a very long");
