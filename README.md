@@ -76,6 +76,37 @@ hunk           # show help
 hunk --version # print the installed version
 ```
 
+## Keyboard shortcuts
+
+Press `?` in Hunk to open the full in-app controls help.
+
+### Navigation
+
+- `↑` / `↓` or `j` / `k` — move line by line
+- `Space` / `f` / `PageDown` — page down
+- `b` / `PageUp` / `Shift+Space` — page up
+- `d` / `u` — half page down / up
+- `Home` / `End` — jump to top / bottom
+- `[` / `]` — previous / next hunk
+- `{` / `}` — previous / next comment
+- `←` / `→` — scroll code horizontally (`Shift+←` / `Shift+→` for faster scrolling)
+
+### View
+
+- `1` / `2` / `0` — split / stack / auto layout
+- `s` — toggle sidebar
+- `t` — cycle theme
+- `a` — toggle AI notes
+- `l` / `w` / `m` — line numbers / wrap / metadata
+
+### Review
+
+- `/` — focus file filter
+- `Tab` — toggle files/filter focus
+- `F10` — open menus
+- `r` — reload, when supported
+- `q` / `Esc` — quit
+
 ### Working with Git
 
 Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI instead of plain text.
