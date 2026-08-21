@@ -60,6 +60,8 @@ describe("paths", () => {
   test("resolves bundled skill names and their short aliases", () => {
     expect(resolveBundledSkillName("hunk-extensions")).toBe("hunk-extensions");
     expect(resolveBundledSkillName("extensions")).toBe("hunk-extensions");
+    expect(resolveBundledSkillName("opentui-performance")).toBe("opentui-performance");
+    expect(resolveBundledSkillName("performance")).toBe("opentui-performance");
     expect(resolveBundledSkillName(" Review ")).toBe("hunk-review");
     expect(resolveBundledSkillName("launch-video")).toBeUndefined();
     expect(resolveBundledSkillName("")).toBeUndefined();

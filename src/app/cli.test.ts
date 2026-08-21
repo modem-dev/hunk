@@ -424,7 +424,12 @@ describe("parseCli", () => {
   });
 
   test("prints a named bundled skill path, by name or alias", async () => {
-    for (const requested of ["hunk-extensions", "extensions"]) {
+    for (const [requested, expected] of [
+      ["hunk-extensions", "hunk-extensions"],
+      ["extensions", "hunk-extensions"],
+      ["opentui-performance", "opentui-performance"],
+      ["performance", "opentui-performance"],
+    ] as const) {
       const parsed = await parseCli(["bun", "hunk", "skill", "path", requested]);
 
       expect(parsed.kind).toBe("help");
@@ -432,7 +437,7 @@ describe("parseCli", () => {
         throw new Error("Expected bundled skill path output.");
       }
 
-      expect(parsed.text).toEndWith(`${join("skills", "hunk-extensions", "SKILL.md")}\n`);
+      expect(parsed.text).toEndWith(`${join("skills", expected, "SKILL.md")}\n`);
     }
   });
 
@@ -445,11 +450,13 @@ describe("parseCli", () => {
         "Usage: hunk skill path [name]",
         "",
         "Print a bundled Hunk skill path.",
-        "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+        "Load that file directly in your coding agent.",
+        "For a persistent install, symlink its parent directory so referenced files remain available.",
         "",
         "Skills:",
-        `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
-        `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
+        `  hunk-review (default, "review")     review a live Hunk session with \`hunk session\` commands`,
+        `  hunk-extensions ("extensions")      build extensions against the hunkdiff/extension API`,
+        `  opentui-performance ("performance") profile and optimize React/OpenTUI terminal apps`,
         "",
       ].join("\n"),
     });
@@ -1534,7 +1541,7 @@ describe("parseCli argument validation", () => {
       "Only `hunk skill path` is supported.",
     );
     await expect(parseCli(["bun", "hunk", "skill", "path", "bogus"])).rejects.toThrow(
-      'Unknown skill "bogus". Bundled skills are hunk-review and hunk-extensions.',
+      'Unknown skill "bogus". Bundled skills are hunk-review and hunk-extensions and opentui-performance.',
     );
     // Maintainer-only skills are not bundled, so naming one is not a path lookup.
     await expect(parseCli(["bun", "hunk", "skill", "path", "launch-video"])).rejects.toThrow(

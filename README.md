@@ -116,6 +116,8 @@ Load the Hunk skill and use it for this review. Run `hunk skill path` to get the
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.
 
+Hunk also bundles agent skills for extension authoring (`hunk skill path extensions`) and profiling React/OpenTUI terminal applications (`hunk skill path performance`). Load the returned file directly; for a persistent symlink, link its parent skill directory so sibling references remain available.
+
 ## Feature comparison
 
 | Capability                         | [hunk](https://github.com/modem-dev/hunk) | [lumen](https://github.com/jnsahaj/lumen) | [difftastic](https://github.com/Wilfred/difftastic) | [delta](https://github.com/dandavison/delta) | [diff-so-fancy](https://github.com/so-fancy/diff-so-fancy) | [diff](https://www.gnu.org/software/diffutils/) |
