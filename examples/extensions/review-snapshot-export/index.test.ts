@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import {
-  resolveSnapshotExportPath,
-  snapshotPositionMatches,
-} from "../examples/extensions/review-snapshot-export";
-import type { ExtensionReviewSnapshot } from "../src/extension-api/types";
+import { resolveSnapshotExportPath, snapshotPositionMatches } from "./index";
+import type { ExtensionReviewSnapshot } from "../../../src/extension-api/types";
 
 /** Build the minimal immutable snapshot position these helper tests compare. */
 function createTestSnapshot(
