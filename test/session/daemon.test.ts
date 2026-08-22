@@ -89,14 +89,15 @@ describe("session daemon lifecycle", () => {
     spawned.push(proc);
 
     const health = await waitUntil("daemon health", () => readHealth(port), 3_000, 50);
-    expect(health).toMatchObject({ ok: true, pid: proc.pid });
+    expect(health).toMatchObject({ ok: true });
 
     let exited = false;
     void proc.exited.then(() => {
       exited = true;
     });
 
-    process.kill(proc.pid, "SIGTERM");
+    // Windows may keep the `bun run` launcher separate from the child serving the daemon.
+    process.kill(health.pid, "SIGTERM");
 
     await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
     await waitUntil("daemon port close", async () =>
