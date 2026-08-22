@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 7;
+export const HUNK_EXTENSION_API_VERSION = 8;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1402,6 +1402,92 @@ export interface ExtensionReviewSelection {
   } | null;
 }
 
+/** One stable reviewed file in an authoritative extension snapshot. */
+export interface ExtensionReviewSnapshotFile {
+  /** Stable semantic address within this review, independent of renderer ids and indexes. */
+  readonly fileKey: string;
+  /** Transitional renderer id for navigation inside this exact generation. */
+  readonly runtimeId: string;
+  readonly path: string;
+  readonly previousPath?: string;
+  readonly changeKind: "change" | "rename-pure" | "rename-changed" | "new" | "deleted";
+  readonly stats: {
+    readonly additions: number;
+    readonly deletions: number;
+    readonly truncated: boolean;
+  };
+  readonly flags: {
+    readonly untracked: boolean;
+    readonly binary: boolean;
+    readonly tooLarge: boolean;
+    readonly partial: boolean;
+  };
+  /** Digest of the file's renderer-neutral review content. */
+  readonly contentIdentity: string;
+  readonly sourceIdentity?: string;
+  readonly sourceAttested?: boolean;
+}
+
+/** The one source line a saved review-note anchor prefers. */
+export interface ExtensionReviewSnapshotLineAddress {
+  readonly side: ExtensionFileSide;
+  readonly line: number;
+}
+
+/** Complete semantic anchor retained for one saved review note. */
+export interface ExtensionReviewSnapshotNoteAnchor {
+  readonly oldRange?: readonly [number, number];
+  readonly newRange?: readonly [number, number];
+  readonly preferred?: ExtensionReviewSnapshotLineAddress;
+  readonly intersectingHunkIndices: readonly number[];
+  readonly ownerHunkIndex?: number;
+}
+
+/** One complete saved note in an authoritative extension review snapshot. */
+export interface ExtensionReviewSnapshotNote {
+  readonly id: string;
+  readonly source: "ai" | "agent" | "user";
+  readonly originalSource?: string;
+  readonly fileKey: string;
+  readonly anchor: ExtensionReviewSnapshotNoteAnchor;
+  readonly summary: string;
+  readonly rationale?: string;
+  readonly markup?: string;
+  readonly title?: string;
+  readonly author?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly editable: boolean;
+  readonly tags?: readonly string[];
+  readonly confidence?: "low" | "medium" | "high";
+  /** Reconciliation verdict against the snapshot's current document. */
+  readonly resolution: "active" | "stale" | "orphaned";
+}
+
+/** Immutable projection of the authoritative review state at one instant. */
+export interface ExtensionReviewSnapshot {
+  /** Opaque producer generation; state revisions compare only within this generation. */
+  readonly generation: string;
+  /** ReviewStore revision captured with the rest of this snapshot. */
+  readonly stateRevision: number;
+  /** Every reviewed file in authoritative review/sidebar order, regardless of filtering. */
+  readonly files: readonly ExtensionReviewSnapshotFile[];
+  /**
+   * Every note saved in ReviewStore: live-note arrival order, then reviewer-note creation order.
+   * Drafts and static sidecar annotations that never entered the store are excluded.
+   */
+  readonly notes: readonly ExtensionReviewSnapshotNote[];
+}
+
+/** Read the authoritative review while one extension command retains authority. */
+export interface ExtensionReviewControls {
+  /**
+   * Capture the current immutable review state, or return null after a reload or host teardown.
+   * Call again before irreversible asynchronous work and compare generation plus stateRevision.
+   */
+  snapshot(): ExtensionReviewSnapshot | null;
+}
+
 /** One question put to the user as a modal confirm dialog. */
 export interface ExtensionConfirmOptions {
   title: string;
@@ -1617,6 +1703,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
   readonly sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
   fileViews: ExtensionFileViewControls;
+  /** Capture complete saved review state from the shared ReviewStore. */
+  readonly review: ExtensionReviewControls;
   /**
    * Where the review was pointing when this command fired.
    *

@@ -265,7 +265,8 @@ topic.
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
 publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
-Installable examples include [review triage](examples/extensions/review-triage/), an optional
+Installable examples include [review triage](examples/extensions/review-triage/),
+[authoritative review snapshot export](examples/extensions/review-snapshot-export/), an optional
 [rendered Markdown file view](examples/extensions/rendered-markdown/), and a
 [Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
 

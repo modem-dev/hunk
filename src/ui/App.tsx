@@ -41,6 +41,7 @@ import {
   emitExtensionEvent,
   toReadOnlyFileViews,
 } from "../extensions/events";
+import { buildExtensionReviewSnapshot } from "../extensions/reviewSnapshot";
 import { writeExtensionTrust } from "../extensions/trust";
 import type {
   ExtensionCommandContext,
@@ -614,6 +615,18 @@ export function App({
       lineCursor: getActiveLineCursor(),
     });
   }, [getExtensionFileViews]);
+  /** Mint authoritative review snapshot controls for one extension command invocation. */
+  const createExtensionReviewControls = useCallback(() => {
+    const lease = createReviewCapabilityLease();
+    return {
+      snapshot() {
+        if (!lease.isLive()) return null;
+        const positioned = reviewProducer?.getPositionedReviewState();
+        if (!positioned) return null;
+        return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
+      },
+    };
+  }, [createReviewCapabilityLease, reviewProducer]);
   /** Read the live internal selection id independently from the frozen public selection. */
   const getSelectedFileId = useCallback(
     () => extensionSelectionInputsRef.current.getSelection().fileId,
@@ -992,6 +1005,9 @@ export function App({
         sidebars: panes,
         fileViews: createFileViewControls(registered.extensionId),
         highlights: createLineHighlightControls(registered.extensionId),
+        // Reads the shared store directly, returning copied immutable state while this
+        // command still owns the current review generation.
+        review: createExtensionReviewControls(),
         // Snapshot semantics: built when the key fires, so the handler sees
         // where the review was at that moment, even if it awaits and the user
         // navigates on.
@@ -1026,6 +1042,7 @@ export function App({
     [
       createExtensionDialogs,
       createExtensionNavigation,
+      createExtensionReviewControls,
       createFileViewControls,
       createKeyboardModeControls,
       createLineHighlightControls,

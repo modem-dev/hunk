@@ -15,6 +15,7 @@ import {
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
+  REVIEW_SNAPSHOT_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
 } from "./consumers";
 import { REVIEW_EVENT_FIXTURES } from "./eventFixtures";
@@ -22,6 +23,7 @@ import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
+import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
   REVIEW_PUBLICATION_ORDER_FIXTURES,
@@ -46,6 +48,7 @@ const REQUIRED_FINDINGS = [
   "C1",
   "C4",
   "D1",
+  "EXT1",
 ];
 
 describe("review conformance corpus", () => {
@@ -62,6 +65,9 @@ describe("review conformance corpus", () => {
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",
       "broker review mirror",
+    ]);
+    expect(REVIEW_SNAPSHOT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "extension review snapshot",
     ]);
     expect(REVIEW_WIRE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review wire protocol",
@@ -80,6 +86,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_PRODUCER_ORDER_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_SNAPSHOT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -100,6 +107,16 @@ for (const consumer of REVIEW_NAVIGATION_CONSUMERS) {
 for (const consumer of REVIEW_GEOMETRY_CONSUMERS) {
   describe(`review conformance: ${consumer.name}`, () => {
     for (const fixture of REVIEW_GEOMETRY_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_SNAPSHOT_CONSUMERS) {
+  describe(`review snapshot conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_SNAPSHOT_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
       });
@@ -204,6 +221,9 @@ describe("review conformance: producer ordering", () => {
       const verdicts = fixture.steps.map((step, index) => {
         if (step.kind === "reload") {
           producer.publish({ files, sourceLabel: "/repo" });
+          // A generation owns its own store. The real host mounts replacement state after
+          // publishing, so the producer consumer must do the same before a later state step.
+          producer.attachStore(createReviewStore(producer.getPublication().document));
         } else {
           // Any real state change advances the store's revision; the filter is the
           // cheapest one that does not depend on what the fixture's files contain.

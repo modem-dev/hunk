@@ -169,9 +169,22 @@ export function selectRevealTarget(
   return hunk ? reviewCanonicalHunkLine(hunk) : undefined;
 }
 
+/**
+ * Return every saved mutable note, live arrival order before reviewer creation order.
+ *
+ * Unlike render selectors, this preserves stale and orphaned entries: exporters and other
+ * authoritative consumers must decide how to report an unplaced note rather than losing it.
+ * Drafts are separate state and never appear here.
+ */
+export function selectStoredReviewNotes(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+): ReviewStoredNote[] {
+  return [...state.liveNotes, ...state.userNotes];
+}
+
 /** Every mutable note currently safe to render, live notes before the reviewer's own. */
 function renderableNotes(state: Pick<ReviewState, "liveNotes" | "userNotes">): ReviewNoteV1[] {
-  return [...state.liveNotes, ...state.userNotes]
+  return selectStoredReviewNotes(state)
     .filter(isRenderableStoredReviewNote)
     .map((entry) => entry.note);
 }
