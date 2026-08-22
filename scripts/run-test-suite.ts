@@ -6,7 +6,8 @@
  * Bun 1.3.14's `--parallel` implies `--isolate`, which makes OpenTUI's native FFI
  * renderer fail to initialize with "Cannot access 'default' before initialization."
  * Independent `--shard=N/M` processes avoid that failure, but Bun runs only the one
- * requested shard, so this module launches and supervises every shard.
+ * requested shard, so this module launches and supervises every shard. Sharding stays
+ * Linux-only because parallel Windows processes can race while reserving daemon ports.
  */
 
 import { availableParallelism } from "node:os";
@@ -27,8 +28,14 @@ type KillableProcess = {
   kill(signal?: number | NodeJS.Signals): void;
 };
 
-/** Resolve an explicit shard override or choose a bounded count from the available CPUs. */
-export function resolveTestShardCount(cpuCount: number, override?: string) {
+/** Resolve a Linux shard override or choose a bounded count from the available CPUs. */
+export function resolveTestShardCount(
+  cpuCount: number,
+  override?: string,
+  platform: NodeJS.Platform = process.platform,
+) {
+  if (platform !== "linux") return 1;
+
   if (override !== undefined) {
     const count = Number(override);
     if (!/^\d+$/.test(override) || !Number.isSafeInteger(count) || count < 1) {
