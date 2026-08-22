@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -370,6 +370,78 @@ describe("extension sidebar views", () => {
           ),
         "the command to report the current line and selection after crossing files",
       );
+    });
+  });
+
+  test("a command handler snapshots complete saved notes from the shared review store", async () => {
+    const repo = createTestRepo("hunk-ext-review-snapshot-");
+    const extDir = createTempDir("hunk-ext-review-snapshot-ext-");
+    const snapshotPath = join(extDir, "snapshot.json");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { writeFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerCommand({ id: "snapshot", title: "Snapshot review", key: "y" }, (ctx) => {\n` +
+        `    const snapshot = ctx.review.snapshot();\n` +
+        `    writeFileSync(${JSON.stringify(snapshotPath)}, JSON.stringify(snapshot));\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render before authoring a note",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Draft note"),
+        "the note editor to open",
+      );
+      await act(async () => {
+        await setup.mockInput.typeText("Export this saved note.");
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Your note"),
+        "the user note to save",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(setup, () => existsSync(snapshotPath), "the extension snapshot to write");
+
+      const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
+        generation: string;
+        stateRevision: number;
+        files: Array<{ fileKey: string; runtimeId: string; path: string }>;
+        notes: Array<{
+          source: string;
+          fileKey: string;
+          summary: string;
+          anchor: { preferred?: { side: string; line: number } };
+        }>;
+      };
+      expect(snapshot.generation).toMatch(/^generation:p.+:\d+$/);
+      expect(snapshot.stateRevision).toBeGreaterThan(0);
+      expect(snapshot.files.map((file) => file.path)).toEqual(["alpha.txt", "beta.txt"]);
+      expect(snapshot.files.every((file) => file.fileKey !== file.runtimeId)).toBe(true);
+      expect(snapshot.notes).toHaveLength(1);
+      expect(snapshot.notes[0]).toMatchObject({
+        source: "user",
+        fileKey: snapshot.files[0]!.fileKey,
+        summary: "Export this saved note.",
+        anchor: { preferred: { side: "new", line: 1 } },
+      });
     });
   });
 

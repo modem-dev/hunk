@@ -107,6 +107,10 @@ describe("review producer generations", () => {
   test("can detach the previous store until a prepared generation mounts", () => {
     const { producer } = createProducer();
     producer.attachStore(createReviewStore(producer.getPublication().document));
+    expect(producer.getPositionedReviewState()).toMatchObject({
+      generation: producer.getPublication().generation,
+      state: { stateRevision: 0 },
+    });
     const prepared = producer.preparePublication({
       files: [createTestDiffFile({ before: BEFORE, after: AFTER })],
       sourceLabel: "/repo",
@@ -115,9 +119,34 @@ describe("review producer generations", () => {
     producer.reservePublication(prepared).commit({ detachStore: true });
 
     expect(producer.getReviewState()).toBeUndefined();
+    expect(producer.getPositionedReviewState()).toBeUndefined();
     expect(() => producer.applyIntent({ type: "filter/set", filter: "stale" })).toThrow(
       "no review state",
     );
+  });
+
+  test("refuses a store left attached across a generation advance until replacement state mounts", () => {
+    const { producer } = createProducer();
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+    const prepared = producer.preparePublication({
+      files: [createTestDiffFile({ before: BEFORE, after: AFTER })],
+      sourceLabel: "/repo",
+    });
+
+    producer.reservePublication(prepared).commit();
+
+    expect(producer.getReviewState()).toBeUndefined();
+    expect(producer.getPositionedReviewState()).toBeUndefined();
+    expect(() => producer.applyIntent({ type: "filter/set", filter: "retired" })).toThrow(
+      "no review state",
+    );
+
+    const replacement = createReviewStore(producer.getPublication().document);
+    producer.attachStore(replacement);
+    expect(producer.getPositionedReviewState()).toEqual({
+      generation: producer.getPublication().generation,
+      state: replacement.getSnapshot(),
+    });
   });
 
   test("refuses stale, foreign, active, and reused publication preparations", () => {
