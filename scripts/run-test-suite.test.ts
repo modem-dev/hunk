@@ -13,9 +13,14 @@ describe("test suite sharding", () => {
     expect(resolveTestShardCount(32)).toBe(2);
   });
 
-  test("accepts an explicit positive shard count", () => {
-    expect(resolveTestShardCount(32, "1")).toBe(1);
-    expect(resolveTestShardCount(2, "16")).toBe(16);
+  test("accepts an explicit positive shard count on Linux", () => {
+    expect(resolveTestShardCount(32, "1", "linux")).toBe(1);
+    expect(resolveTestShardCount(2, "16", "linux")).toBe(16);
+  });
+
+  test("keeps non-Linux suites serial to avoid cross-process port races", () => {
+    expect(resolveTestShardCount(32, undefined, "win32")).toBe(1);
+    expect(resolveTestShardCount(32, "16", "darwin")).toBe(1);
   });
 
   test("rejects malformed or excessive shard overrides", () => {
