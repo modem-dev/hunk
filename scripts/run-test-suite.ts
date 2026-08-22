@@ -7,7 +7,7 @@
  * renderer fail to initialize with "Cannot access 'default' before initialization."
  * Independent `--shard=N/M` processes avoid that failure, but Bun runs only the one
  * requested shard, so this module launches and supervises every shard. Sharding stays
- * Linux-only because parallel Windows processes can race while reserving daemon ports.
+ * Linux-only because the complete multi-process suite is validated and benchmarked there.
  */
 
 import { availableParallelism } from "node:os";
@@ -57,11 +57,12 @@ export function buildTestShardCommand(
   shard: number,
   shardCount: number,
   forwardedArgs: string[] = [],
+  platform: NodeJS.Platform = process.platform,
 ) {
   return [
     bunExecutable,
     "test",
-    "--no-orphans",
+    ...(platform === "win32" ? [] : ["--no-orphans"]),
     ...(shardCount > 1 ? [`--shard=${shard}/${shardCount}`] : []),
     ...DEFAULT_TEST_PATTERNS,
     ...forwardedArgs,
@@ -90,13 +91,16 @@ export async function main(args = Bun.argv.slice(2)) {
   try {
     for (let index = 0; index < shardCount; index += 1) {
       const shard = index + 1;
-      const proc = Bun.spawn(buildTestShardCommand(bunExecutable, shard, shardCount, args), {
-        cwd: process.cwd(),
-        env: { ...process.env, npm_execpath: bunExecutable },
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      });
+      const proc = Bun.spawn(
+        buildTestShardCommand(bunExecutable, shard, shardCount, args, process.platform),
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, npm_execpath: bunExecutable },
+          stdin: "inherit",
+          stdout: "inherit",
+          stderr: "inherit",
+        },
+      );
       shards.push({ proc, shard });
     }
   } catch (error) {
