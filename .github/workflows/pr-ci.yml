@@ -95,7 +95,7 @@ jobs:
         run: bun run test:theme-contrast
 
       - name: Test suite
-        run: bun test ./src ./packages ./scripts ./test/cli ./test/session
+        run: bun run test
 
   compiled-headless-portability:
     name: Compiled headless portability (${{ matrix.os }})
