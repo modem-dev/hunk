@@ -140,6 +140,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 6,
   },
+  {
+    repo: "TreeHappy/hunkydory",
+    name: "hunkydory",
+    summary:
+      "Exports a review's diffs and notes to Markdown and JSON, and re-imports comments from an export into a live session.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 1,
+  },
 ];
 
 /**
