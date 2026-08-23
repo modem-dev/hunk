@@ -1444,7 +1444,10 @@ fields: revisions are comparable only within one generation. Use `fileKey` for
 semantic addressing, `contentIdentity` to detect changed reviewed content, and
 `runtimeId` only for navigation inside that exact generation. The
 [`review-snapshot-export`](../examples/extensions/review-snapshot-export/)
-example writes the complete value as JSON and demonstrates this stale-work check.
+example writes the complete value as JSON and demonstrates this stale-work check. The
+[`review-note-navigator`](../examples/extensions/review-note-navigator/) example composes
+the complete note inventory, authoritative anchors, a selector dialog, and guarded navigation
+to currently visible files.
 
 #### Navigating the review
 

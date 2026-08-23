@@ -183,6 +183,8 @@ Most extension bugs are one of these:
   `note_edited` are incremental UI events, not an authoritative collection. Snapshots
   include stale and orphaned saved notes, exclude drafts and static sidecar annotations,
   and should be re-read before irreversible async work; compare both generation and revision.
+  `review-note-navigator` shows how to join stable note ids and file keys back to guarded
+  navigation after awaiting a selector; file filters can still refuse hidden targets.
 - **Retained review controls expire on reload.** An old handler cannot control
   replacement content: pane/navigation calls become inert, dialogs cancel, and
   workspace reads or not-yet-started writes return `null`/`unavailable`. A

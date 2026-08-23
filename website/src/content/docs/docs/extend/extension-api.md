@@ -188,7 +188,7 @@ hunk.registerCommand(
 
 Drafts are not saved and are excluded. Static sidecar annotations that never entered ReviewStore remain on changeset file views rather than in the snapshot. Saved notes are ordered by live arrival and then reviewer creation, including orphaned notes an exporter may need to move into a summary.
 
-For irreversible asynchronous work, capture once, prepare the request, then call `snapshot()` again and compare both `generation` and `stateRevision`. Revisions compare only within one generation. The [`review-snapshot-export` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export) demonstrates the complete JSON export and stale-work check.
+For irreversible asynchronous work, capture once, prepare the request, then call `snapshot()` again and compare both `generation` and `stateRevision`. Revisions compare only within one generation. The [`review-snapshot-export` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export) demonstrates the complete JSON export and stale-work check. The [`review-note-navigator` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-note-navigator) combines the complete inventory and authoritative anchors with a selector dialog and guarded navigation to currently visible files.
 
 `ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
 
