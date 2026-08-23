@@ -179,10 +179,9 @@ function createGitRevisionSourceCapability(
 function createGitDiffSourceCapability(
   input: ExtensionVcsDiffInput,
   repoRoot: string,
-  cwd: string,
+  endpoints: GitDiffEndpoints | null,
   gitExecutable: string,
 ): GitSourceCapability | undefined {
-  const endpoints = resolveGitDiffEndpoints(input, { cwd, repoRoot, gitExecutable });
   return endpoints
     ? createGitSourceCapability(input, repoRoot, endpoints, gitExecutable)
     : undefined;
@@ -283,6 +282,7 @@ export function createGitVcsAdapter({
       "working-tree-diff": {
         async load(input, { cwd }) {
           const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+          const endpoints = resolveGitDiffEndpoints(input, { cwd, repoRoot, gitExecutable });
           const repoName = basename(repoRoot);
           const range = describeDiffRange(input);
           const title = input.staged
@@ -293,13 +293,18 @@ export function createGitVcsAdapter({
           // Ask for stats before the patch so files too large to render can be
           // excluded from the diff instead of generating output nobody reads.
           const largeTrackedFiles = parseGitNumstat(
-            runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
+            runGitText({
+              input,
+              args: buildGitDiffNumstatArgs(input),
+              cwd,
+              gitExecutable,
+            }),
           ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
           const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
           const sourceCapability = createGitDiffSourceCapability(
             input,
             repoRoot,
-            cwd,
+            endpoints,
             gitExecutable,
           );
 
@@ -338,14 +343,14 @@ export function createGitVcsAdapter({
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
         watchSignature(input, { cwd }) {
-          const trackedPatch = runGitText({
-            input,
-            args: buildGitDiffArgs(input),
+          const repoRoot = resolveGitRepoRoot(input, {
             cwd,
             gitExecutable,
             preventOptionalLocks: true,
           });
-          const repoRoot = resolveGitRepoRoot(input, {
+          const trackedPatch = runGitText({
+            input,
+            args: buildGitDiffArgs(input),
             cwd,
             gitExecutable,
             preventOptionalLocks: true,

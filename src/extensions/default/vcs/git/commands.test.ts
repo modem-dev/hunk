@@ -17,6 +17,7 @@ import {
   resolveGitMetadata,
   runGitText,
   shouldSkipLargeTrackedDiff,
+  type GitDiffEndpoints,
 } from "./commands";
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
@@ -180,6 +181,51 @@ describe("git command helpers", () => {
     );
 
     expect(buildGitDiffArgs(makeGitInput({ range: "main..feature" }))).toContain("main..feature");
+  });
+
+  test("never ignores CR at EOL globally", () => {
+    const worktreeEndpoints = {
+      old: { kind: "index" },
+      new: { kind: "worktree" },
+    } satisfies GitDiffEndpoints;
+    const singleRefWorktreeEndpoints = {
+      old: { kind: "git-ref", ref: "old-ref" },
+      new: { kind: "worktree" },
+    } satisfies GitDiffEndpoints;
+    const storedComparisons = [
+      {
+        input: makeGitInput({ staged: true }),
+        endpoints: {
+          old: { kind: "git-ref", ref: "old-ref" },
+          new: { kind: "index" },
+        },
+      },
+      {
+        input: makeGitInput({ range: "old-ref..new-ref" }),
+        endpoints: {
+          old: { kind: "git-ref", ref: "old-ref" },
+          new: { kind: "git-ref", ref: "new-ref" },
+        },
+      },
+    ] satisfies { input: VcsDiffCommandInput; endpoints: GitDiffEndpoints }[];
+
+    expect(buildGitDiffArgs(makeGitInput(), [], null, worktreeEndpoints)).not.toContain(
+      "--ignore-cr-at-eol",
+    );
+    expect(
+      buildGitDiffArgs(makeGitInput({ range: "old-ref" }), [], null, singleRefWorktreeEndpoints),
+    ).not.toContain("--ignore-cr-at-eol");
+    expect(buildGitDiffNumstatArgs(makeGitInput(), worktreeEndpoints)).not.toContain(
+      "--ignore-cr-at-eol",
+    );
+    expect(
+      buildGitDiffNumstatArgs(makeGitInput({ range: "old-ref" }), singleRefWorktreeEndpoints),
+    ).not.toContain("--ignore-cr-at-eol");
+
+    for (const { input, endpoints } of storedComparisons) {
+      expect(buildGitDiffArgs(input, [], null, endpoints)).not.toContain("--ignore-cr-at-eol");
+      expect(buildGitDiffNumstatArgs(input, endpoints)).not.toContain("--ignore-cr-at-eol");
+    }
   });
 
   test("disables external diff tools for stash patches", () => {
