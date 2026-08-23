@@ -139,7 +139,7 @@ const schema = {
             {entries.length} {entries.length === 1 ? "extension" : "extensions"}
           </p>
 
-          <div id="x-grid" class="xgrid">
+          <div id="x-grid" class="xgrid" data-page-size={PAGE_SIZE}>
             {
               entries.map((entry) => {
                 const updated = entry.pushedAt ? formatUpdated(entry.pushedAt) : undefined;
@@ -193,17 +193,25 @@ const schema = {
                     </ul>
 
                     <div class="xmeta">
-                      {typeof entry.stars === "number" && (
-                        <span class="xstat">
-                          <span class="xstar" aria-hidden="true">
-                            ★
-                          </span>
-                          {entry.stars.toLocaleString("en-US")}
+                      <span
+                        class="xstat"
+                        data-star-stat
+                        hidden={typeof entry.stars !== "number"}
+                      >
+                        <span class="xstar" aria-hidden="true">
+                          ★
                         </span>
-                      )}
+                        <span data-star-value>
+                          {typeof entry.stars === "number"
+                            ? entry.stars.toLocaleString("en-US")
+                            : ""}
+                        </span>
+                      </span>
                       <span class="xstat">v{entry.version}</span>
                       <span class="xstat">API v{entry.apiVersion}</span>
-                      {updated && <span class="xstat xwhen">updated {updated}</span>}
+                      <span class="xstat xwhen" data-updated-stat hidden={!updated}>
+                        updated {updated ?? ""}
+                      </span>
                     </div>
                   </article>
                 );
@@ -220,31 +228,42 @@ const schema = {
       <BrandFooter />
     </div>
 
-    <script is:inline define:vars={{ PAGE_SIZE }}>
+    <script>
+      import { formatUpdated, indexPublishedActivity } from "../data/extensionActivity";
+
       // Every card is already in the HTML, so search, filter, sort, and paging
       // are all reorderings of what is on the page: the directory works without
       // this script, and stays instant at any catalog size.
       (() => {
-        const grid = document.getElementById("x-grid");
-        const search = document.getElementById("x-search");
-        const sort = document.getElementById("x-sort");
+        const foundGrid = document.getElementById("x-grid");
+        if (!foundGrid) return;
+
+        const grid = foundGrid;
+        const search = document.querySelector<HTMLInputElement>("#x-search");
+        const sort = document.querySelector<HTMLSelectElement>("#x-sort");
         const meta = document.getElementById("x-meta");
         const empty = document.getElementById("x-empty");
-        const more = document.getElementById("x-more");
-        const facets = [...document.querySelectorAll(".xfacet")];
-        if (!grid) return;
-
-        const cards = [...grid.querySelectorAll(".xcard")];
+        const more = document.querySelector<HTMLButtonElement>("#x-more");
+        const facets = [...document.querySelectorAll<HTMLButtonElement>(".xfacet")];
+        const cards = [...grid.querySelectorAll<HTMLElement>(".xcard")];
         const order = new Map(cards.map((card, index) => [card, index]));
+        const pageSize = Number(grid.dataset.pageSize);
         let category = "";
-        let limit = PAGE_SIZE;
+        let limit = pageSize;
 
-        const time = (value) => (value ? new Date(value).getTime() || 0 : 0);
-        const number = (card, key) => Number(card.dataset[key] ?? 0) || 0;
+        const time = (value: string | undefined) =>
+          value ? new Date(value).getTime() || 0 : 0;
+        const number = (card: HTMLElement, key: string) =>
+          Number(card.dataset[key] ?? 0) || 0;
 
-        function compare(mode) {
-          if (mode === "recent") return (a, b) => time(b.dataset.pushed) - time(a.dataset.pushed);
-          if (mode === "newest") return (a, b) => time(b.dataset.created) - time(a.dataset.created);
+        /** Choose the card comparator for one sort control value. */
+        function compare(mode: string): (a: HTMLElement, b: HTMLElement) => number {
+          if (mode === "recent") {
+            return (a, b) => time(b.dataset.pushed) - time(a.dataset.pushed);
+          }
+          if (mode === "newest") {
+            return (a, b) => time(b.dataset.created) - time(a.dataset.created);
+          }
           if (mode === "name") {
             return (a, b) => (a.dataset.name ?? "").localeCompare(b.dataset.name ?? "");
           }
@@ -264,7 +283,9 @@ const schema = {
           // A stable secondary order keeps equal values (every star count at
           // zero, say) in the catalog's own order rather than shuffling.
           matched.sort(
-            (a, b) => compare(sort?.value ?? "popular")(a, b) || order.get(a) - order.get(b),
+            (a, b) =>
+              compare(sort?.value ?? "popular")(a, b) ||
+              (order.get(a) ?? 0) - (order.get(b) ?? 0),
           );
 
           // Reorder the nodes themselves rather than painting with CSS order,
@@ -276,7 +297,7 @@ const schema = {
           const remaining = matched.length - shown.size;
           if (more) {
             more.hidden = remaining === 0;
-            more.textContent = `show ${Math.min(PAGE_SIZE, remaining)} more`;
+            more.textContent = `show ${Math.min(pageSize, remaining)} more`;
           }
           if (empty) empty.hidden = matched.length > 0;
           if (meta) {
@@ -288,28 +309,76 @@ const schema = {
           }
         }
 
+        /** Apply current repository facts to card text and sorting attributes. */
+        function applyActivity(activity: ReturnType<typeof indexPublishedActivity>) {
+          for (const card of cards) {
+            const repo = card.dataset.name?.toLowerCase();
+            const current = repo ? activity.get(repo) : undefined;
+            if (!current) continue;
+
+            if (typeof current.stars === "number") {
+              card.dataset.stars = String(current.stars);
+              const stat = card.querySelector<HTMLElement>("[data-star-stat]");
+              const value = card.querySelector<HTMLElement>("[data-star-value]");
+              if (stat) stat.hidden = false;
+              if (value) value.textContent = current.stars.toLocaleString("en-US");
+            }
+            if (current.pushedAt) card.dataset.pushed = current.pushedAt;
+            if (current.createdAt) card.dataset.created = current.createdAt;
+          }
+
+          refreshUpdatedLabels();
+          render();
+        }
+
+        /** Refresh visible activity through Hunk's globally cached endpoint. */
+        async function refreshActivity() {
+          try {
+            const response = await fetch("/api/extension-activity", {
+              headers: { Accept: "application/json" },
+            });
+            if (!response.ok) return;
+
+            const activity = indexPublishedActivity(await response.json());
+            if (activity.size) applyActivity(activity);
+          } catch {
+            // Build-time facts remain a complete, no-JavaScript fallback.
+          }
+        }
+
+        /** Rephrase build-time timestamps against the browser's current date. */
+        function refreshUpdatedLabels() {
+          for (const card of cards) {
+            const stat = card.querySelector<HTMLElement>("[data-updated-stat]");
+            const updated = card.dataset.pushed ? formatUpdated(card.dataset.pushed) : undefined;
+            if (!stat) continue;
+            stat.hidden = !updated;
+            stat.textContent = updated ? `updated ${updated}` : "";
+          }
+        }
+
         search?.addEventListener("input", () => {
-          limit = PAGE_SIZE;
+          limit = pageSize;
           render();
         });
         sort?.addEventListener("change", () => {
-          limit = PAGE_SIZE;
+          limit = pageSize;
           render();
         });
         more?.addEventListener("click", () => {
-          limit += PAGE_SIZE;
+          limit += pageSize;
           render();
         });
         for (const facet of facets) {
           facet.addEventListener("click", () => {
             category = facet.dataset.category ?? "";
-            limit = PAGE_SIZE;
+            limit = pageSize;
             for (const other of facets) other.classList.toggle("is-on", other === facet);
             render();
           });
         }
 
-        for (const button of document.querySelectorAll("[data-install]")) {
+        for (const button of document.querySelectorAll<HTMLElement>("[data-install]")) {
           button.addEventListener("click", async () => {
             const status = button.querySelector("[data-copy-status]");
             try {
@@ -326,7 +395,9 @@ const schema = {
           });
         }
 
+        refreshUpdatedLabels();
         render();
+        void refreshActivity();
       })();
     </script>
   </body>

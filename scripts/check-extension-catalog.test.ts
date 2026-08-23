@@ -5,8 +5,10 @@ import {
   EXTENSION_CATALOG,
   avatarUrl,
   categoryFacets,
+  createExtensionActivityPayload,
   formatUpdated,
   indexActivityByRepo,
+  indexPublishedActivity,
   installCommand,
   ownerOf,
   repositoryUrl,
@@ -108,6 +110,39 @@ describe("extension directory catalog", () => {
     for (const payload of [undefined, null, {}, { items: "nope" }, { items: [null, 7] }]) {
       expect(indexActivityByRepo(payload).size).toBe(0);
     }
+  });
+
+  test("round-trips compact browser-safe activity", () => {
+    const payload = createExtensionActivityPayload(
+      new Map([
+        [
+          "elucid/hunk-less-search",
+          {
+            stars: 12,
+            pushedAt: "2026-08-20T03:25:47Z",
+            createdAt: "2026-08-16T22:57:51Z",
+          },
+        ],
+      ]),
+      new Date("2026-08-20T12:00:00Z"),
+    );
+
+    expect(payload).toEqual({
+      fetchedAt: "2026-08-20T12:00:00.000Z",
+      repositories: [
+        {
+          repo: "elucid/hunk-less-search",
+          stars: 12,
+          pushedAt: "2026-08-20T03:25:47Z",
+          createdAt: "2026-08-16T22:57:51Z",
+        },
+      ],
+    });
+    expect(indexPublishedActivity(payload).get("elucid/hunk-less-search")).toEqual({
+      stars: 12,
+      pushedAt: "2026-08-20T03:25:47Z",
+      createdAt: "2026-08-16T22:57:51Z",
+    });
   });
 
   test("neutralizes markup when serializing JSON-LD", () => {

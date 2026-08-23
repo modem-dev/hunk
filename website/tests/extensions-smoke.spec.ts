@@ -1,6 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+const ACTIVITY_URL = "**/api/extension-activity";
+
+test.beforeEach(async ({ page }) => {
+  // Browser metadata refresh is best-effort; most UI tests exercise the static fallback.
+  await page.route(ACTIVITY_URL, (route) => route.abort());
+});
+
 test("the extension directory lists installable extensions", async ({ page }) => {
   await page.goto("/extensions/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -36,6 +43,37 @@ test("search and category filters narrow the grid", async ({ page }) => {
 
   await page.getByLabel("Search extensions").fill("no-such-extension-anywhere");
   await expect(page.locator("#x-empty")).toBeVisible();
+});
+
+test("cached activity refreshes star counts and card order", async ({ page }) => {
+  await page.unroute(ACTIVITY_URL);
+  await page.route(ACTIVITY_URL, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        fetchedAt: new Date().toISOString(),
+        repositories: [
+          {
+            repo: "elucid/hunk-less-search",
+            stars: 12_345,
+            pushedAt: new Date().toISOString(),
+            createdAt: "2026-08-16T22:57:51Z",
+          },
+        ],
+      }),
+    }),
+  );
+
+  await page.goto("/extensions/");
+  const card = page.locator('[data-name="elucid/hunk-less-search"]');
+  await expect(card).toHaveAttribute("data-stars", "12345");
+  await expect(card.locator("[data-star-stat]")).toBeVisible();
+  await expect(card.locator("[data-star-value]")).toHaveText("12,345");
+  await expect(card.locator("[data-updated-stat]")).toHaveText("updated today");
+  await expect(page.locator(".xcard").first()).toHaveAttribute(
+    "data-name",
+    "elucid/hunk-less-search",
+  );
 });
 
 test("sorting reorders the same cards without dropping any", async ({ page }) => {
