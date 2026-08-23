@@ -198,7 +198,7 @@ describe("Vertical scrollbar", () => {
         contentHeight={40}
         theme={theme}
         height={10}
-        hideDelayMs={5}
+        hideDelayMs={120}
       />,
       { width: 2, height: 10 },
     );
@@ -213,8 +213,9 @@ describe("Vertical scrollbar", () => {
       await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
+      // Keep a wide margin beyond the deadline for Windows CI timer granularity.
       await act(async () => {
-        await Bun.sleep(10);
+        await Bun.sleep(180);
       });
       await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
