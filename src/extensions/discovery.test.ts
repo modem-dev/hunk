@@ -485,6 +485,7 @@ describe("manifest api version requirements", () => {
       repoRoot: undefined,
       globalExtensionsDir: undefined,
       flagPaths: [folder],
+      env: {},
     });
 
     expect(candidates).toEqual([
@@ -503,6 +504,7 @@ describe("manifest api version requirements", () => {
       repoRoot: undefined,
       globalExtensionsDir: undefined,
       flagPaths: [folder],
+      env: {},
     });
 
     expect(candidates).toEqual([
@@ -524,6 +526,7 @@ describe("manifest api version requirements", () => {
       repoRoot: undefined,
       globalExtensionsDir: undefined,
       flagPaths: [folder],
+      env: {},
     });
 
     expect(candidates).toEqual([{ id: "bad-api-ext", path: entry, origin: "flag" }]);

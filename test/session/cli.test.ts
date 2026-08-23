@@ -1,15 +1,19 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
+import { removeTestDirectory } from "../helpers/filesystem";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
+const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-cli-runtime-"));
 
 afterAll(cleanupTestConfigHomes);
+afterAll(() => removeTestDirectory(testRuntimeDir));
 const tempDirs: string[] = [];
 /** Check for the util-linux `script` interface these Unix-only terminal tests require. */
 function supportsControllableScript() {
@@ -27,6 +31,20 @@ function supportsControllableScript() {
 }
 
 const ttyToolsAvailable = supportsControllableScript();
+
+/** Reserve a currently unused loopback port for one isolated daemon test. */
+async function reserveLoopbackPort() {
+  const listener = createServer(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    listener.once("error", reject);
+    listener.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = listener.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolve) => listener.close(() => resolve()));
+  return port;
+}
 
 interface SessionListJson {
   sessions: Array<{
@@ -102,6 +120,7 @@ function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: 
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
+      XDG_RUNTIME_DIR: testRuntimeDir,
       TERM: "xterm-256color",
       COLUMNS: "120",
       LINES: "24",
@@ -193,19 +212,15 @@ async function quitHunkSession(
   }
 }
 
+const ownedDaemonPids = new Map<number, number>();
+
 /** Poll daemon health directly before exercising the CLI boundary once. */
 async function waitForRegisteredSessions(port: number) {
   await waitUntil("registered live session", async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (!response.ok) {
-        return null;
-      }
-      const health = (await response.json()) as { sessions?: number };
-      return (health.sessions ?? 0) > 0 ? true : null;
-    } catch {
-      return null;
-    }
+    const health = await readDaemonHealth(port);
+    if (!health || (health.sessions ?? 0) === 0) return null;
+    ownedDaemonPids.set(port, health.pid);
+    return true;
   });
 
   const { proc, stdout, stderr } = runSessionCli(["list", "--json"], port);
@@ -213,6 +228,88 @@ async function waitForRegisteredSessions(port: number) {
     throw new Error(stderr.trim() || "Failed to list the registered Hunk session.");
   }
   return (JSON.parse(stdout) as SessionListJson).sessions;
+}
+
+/** Read one test daemon's health without leaking connection failures into teardown. */
+async function readDaemonHealth(port: number) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    if (!response.ok) return null;
+    return (await response.json()) as { pid: number; sessions?: number };
+  } catch {
+    return null;
+  }
+}
+
+/** Report whether an owned daemon PID still exists. */
+function isProcessRunning(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+/** Signal an owned daemon while tolerating a concurrent clean exit. */
+function signalProcess(pid: number, signal: NodeJS.Signals) {
+  try {
+    process.kill(pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+}
+
+/** Wait until an owned daemon process exits and releases its loopback port. */
+async function waitForDaemonExit(port: number, pid: number, label: string) {
+  await waitUntil(
+    label,
+    async () => {
+      const health = await readDaemonHealth(port);
+      if (health && health.pid !== pid) {
+        throw new Error(`Refusing to manage unexpected daemon ${health.pid} on port ${port}.`);
+      }
+      return !isProcessRunning(pid) && health === null ? true : null;
+    },
+    1_500,
+    25,
+  );
+}
+
+/** Stop the detached daemon that an integration session auto-started. */
+async function stopTestDaemon(port: number) {
+  const pid = ownedDaemonPids.get(port);
+  ownedDaemonPids.delete(port);
+  if (pid === undefined) return;
+
+  const health = await readDaemonHealth(port);
+  if (health && health.pid !== pid) {
+    throw new Error(`Refusing to stop unexpected daemon ${health.pid} on port ${port}.`);
+  }
+
+  signalProcess(pid, "SIGTERM");
+  try {
+    await waitForDaemonExit(port, pid, "session daemon exit");
+  } catch (error) {
+    const remaining = await readDaemonHealth(port);
+    if (remaining && remaining.pid !== pid) throw error;
+    signalProcess(pid, "SIGKILL");
+    await waitForDaemonExit(port, pid, "killed session daemon exit");
+  }
+}
+
+/** Quit a test session and always stop the detached daemon it owns. */
+async function cleanupHunkSession(
+  proc: HunkSessionProcess,
+  fixture: ReturnType<typeof createFixtureFiles>,
+  port: number,
+) {
+  try {
+    await quitHunkSession(proc, fixture);
+  } finally {
+    await stopTestDaemon(port);
+  }
 }
 
 function runSessionCli(args: string[], port: number, stdinText?: string) {
@@ -224,6 +321,7 @@ function runSessionCli(args: string[], port: number, stdinText?: string) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
+      XDG_RUNTIME_DIR: testRuntimeDir,
       HUNK_MCP_PORT: `${port}`,
     },
   });
@@ -241,7 +339,7 @@ const sessionDescribe = ttyToolsAvailable ? describe : describe.skip;
 
 sessionDescribe("session CLI integration", () => {
   test("list/get/context expose live Hunk sessions through the daemon", async () => {
-    const port = 48961;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "inspect",
       ["export const value = 1;", "console.log(value);"],
@@ -282,12 +380,12 @@ sessionDescribe("session CLI integration", () => {
         },
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   });
 
   test("reload replaces what a live session is showing", async () => {
-    const port = 48963;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "reload-alpha",
       ["export const alpha = 1;"],
@@ -341,12 +439,12 @@ sessionDescribe("session CLI integration", () => {
         },
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
 
   test("reload refuses to read files outside the live session root", async () => {
-    const port = 48966;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "reload-denied",
       ["export const visible = 1;"],
@@ -389,12 +487,12 @@ sessionDescribe("session CLI integration", () => {
         },
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
 
   test("navigate works, and comment add only focuses the session when --focus is passed", async () => {
-    const port = 48962;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "mutate",
       [
@@ -587,12 +685,12 @@ sessionDescribe("session CLI integration", () => {
           : null;
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
 
   test("comment apply adds a batch from stdin without moving focus by default", async () => {
-    const port = 48964;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "apply-batch",
       [
@@ -691,12 +789,12 @@ sessionDescribe("session CLI integration", () => {
         comments: [{ summary: "First hunk note" }, { summary: "Second hunk note" }],
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
 
   test("comment apply with --focus jumps to the first applied comment", async () => {
-    const port = 48965;
+    const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "apply-batch-focus",
       [
@@ -780,7 +878,7 @@ sessionDescribe("session CLI integration", () => {
           : null;
       });
     } finally {
-      await quitHunkSession(session, fixture);
+      await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
 });
