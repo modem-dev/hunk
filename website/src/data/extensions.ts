@@ -116,6 +116,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "evantravers/hunk-notes-to-markdown",
+    name: "notes-to-markdown",
+    summary: "Yanks every review note into the clipboard as formatted Markdown with one key (Y).",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "gentilfp/hunk-codeowners",
     name: "hunk-codeowners",
     summary: "Shows CODEOWNERS context for the current changeset and selected file.",
