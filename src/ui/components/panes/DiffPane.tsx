@@ -1,5 +1,6 @@
 import {
   MouseButton,
+  type CliRenderer,
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core";
@@ -26,7 +27,7 @@ import {
 } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
-import type { CursorHighlight } from "../../diff/renderRows";
+import { isNestedRowMouseAction, type CursorHighlight } from "../../diff/renderRows";
 import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
@@ -98,10 +99,12 @@ import {
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
+  copySelectionDragIsClick,
   copySelectionPointsEqual,
   copySelectionPointsShareRow,
   expandSelectionPoint,
   findCopySelectionPoint,
+  findLineCursorForClick,
   normalizeCopySelectionRange,
   renderCopySelectionText,
   resolveCopySelectionSide,
@@ -221,6 +224,18 @@ const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
 
+/** Keep OpenTUI's drag capture on the persistent scrollbox instead of a repainting text row. */
+function retainCopySelectionCapture(renderer: CliRenderer, scrollBox: ScrollBoxRenderable) {
+  // OpenTUI exposes capture internally but has no public pointer-capture API yet. Its dispatcher
+  // otherwise captures the first dragged text node, which selection highlighting immediately
+  // replaces and leaves unable to receive the rest of the gesture.
+  (
+    renderer as unknown as {
+      setCapturedRenderable: (renderable: ScrollBoxRenderable) => void;
+    }
+  ).setCapturedRenderable(scrollBox);
+}
+
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
@@ -246,7 +261,6 @@ export function DiffPane({
   separatorWidth,
   pagerMode = false,
   copyDecorations = false,
-  screenLeft = 0,
   screenTop = 0,
   showTopChrome,
   showAgentNotes,
@@ -310,7 +324,6 @@ export function DiffPane({
   separatorWidth: number;
   pagerMode?: boolean;
   copyDecorations?: boolean;
-  screenLeft?: number;
   screenTop?: number;
   showTopChrome?: boolean;
   showAgentNotes: boolean;
@@ -1142,31 +1155,34 @@ export function DiffPane({
         return null;
       }
 
-      const reviewPaneTopChromeRows = renderTopChrome ? 2 : 0;
-      const pinnedHeaderHeight = pinnedHeaderFileId ? 1 : 0;
-      const paneY = Math.floor(event.y - screenTop);
-      const pinnedHeaderY = reviewPaneTopChromeRows;
-      if (copyDecorations && pinnedHeaderFileId && paneY === pinnedHeaderY) {
+      // Resolve against OpenTUI's measured viewport instead of reconstructing its screen position
+      // from borders, padding, chrome, and the pinned-header lane. Those decorations can shift by
+      // a row as layouts settle, while the measured viewport and translated content coordinates
+      // always match what OpenTUI actually painted and hit-tested.
+      const viewportScreenX = scrollBox.viewport.screenX;
+      const viewportScreenY = scrollBox.viewport.screenY;
+      const contentScreenY = scrollBox.content.screenY;
+      const column = Math.floor(event.x - viewportScreenX);
+      if (copyDecorations && pinnedHeaderFileId && Math.floor(event.y) === viewportScreenY - 1) {
         return {
           kind: "pinned-header",
-          column: clampCopyColumn(Math.floor(event.x - screenLeft), diffContentWidth),
+          column: clampCopyColumn(column, diffContentWidth),
           fileId: pinnedHeaderFileId,
-          nextVisualRow: Math.floor(scrollBox.scrollTop ?? 0),
+          nextVisualRow: Math.floor(viewportScreenY - contentScreenY),
         };
       }
 
-      const paneChromeHeight = reviewPaneTopChromeRows + pinnedHeaderHeight;
-      const viewportY = Math.floor(event.y - screenTop - paneChromeHeight);
+      const viewportY = Math.floor(event.y - viewportScreenY);
       if (viewportY < 0 || viewportY >= Math.max(1, scrollBox.viewport.height ?? 0)) {
         return null;
       }
 
       return findCopySelectionPoint({
-        column: Math.floor(event.x - screenLeft),
+        column,
         copyDecorations,
         fileSectionLayouts,
         sectionGeometry,
-        visualRow: Math.floor((scrollBox.scrollTop ?? 0) + viewportY),
+        visualRow: Math.floor(event.y - contentScreenY),
         width: diffContentWidth,
       });
     },
@@ -1175,9 +1191,6 @@ export function DiffPane({
       diffContentWidth,
       fileSectionLayouts,
       pinnedHeaderFileId,
-      renderTopChrome,
-      screenLeft,
-      screenTop,
       scrollRef,
       sectionGeometry,
     ],
@@ -1234,6 +1247,7 @@ export function DiffPane({
             anchor: { ...point, column: expanded.startCol },
             focus: { ...point, column: expanded.endCol },
             moved: true,
+            expanded: true,
           };
           copySelectionDragRef.current = drag;
           setCopySelectionDrag(drag);
@@ -1273,6 +1287,7 @@ export function DiffPane({
           anchor: current.anchor,
           focus: point,
           moved: current.moved || !copySelectionPointsEqual(point, current.anchor),
+          expanded: current.expanded,
         };
       });
 
@@ -1287,34 +1302,67 @@ export function DiffPane({
             anchor: refDrag.anchor,
             focus: point,
             moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
+            expanded: refDrag.expanded,
           };
         }
       }
 
       if (copySelectionDragRef.current) {
+        const scrollBox = scrollRef.current;
+        if (scrollBox) {
+          retainCopySelectionCapture(renderer, scrollBox);
+        }
         suppressNativeSelection();
         event.preventDefault();
         event.stopPropagation();
       }
     },
-    [resolveCopySelectionPoint, suppressNativeSelection],
+    [renderer, resolveCopySelectionPoint, scrollRef, suppressNativeSelection],
   );
 
-  /** Finish a drag selection and copy its rendered text. */
+  /** Finish a mouse gesture by selecting its clicked line or copying its deliberate drag. */
   const endCopySelection = useCallback(
     (event?: TuiMouseEvent) => {
-      const current = copySelectionDragRef.current;
-      if (!current) {
+      const pending = copySelectionDragRef.current;
+      if (!pending) {
         return;
       }
+
+      // Resolve mouse-up itself because terminal hosts may coalesce the final motion event.
+      const endPoint = event && !pending.expanded ? resolveCopySelectionPoint(event) : null;
+      const current = endPoint
+        ? {
+            anchor: pending.anchor,
+            focus: endPoint,
+            moved: pending.moved || !copySelectionPointsEqual(endPoint, pending.anchor),
+            expanded: pending.expanded,
+          }
+        : pending;
 
       copySelectionDragRef.current = null;
       setCopySelectionDrag(null);
       event?.preventDefault();
       event?.stopPropagation();
 
-      if (!current.moved) {
-        return;
+      if (copySelectionDragIsClick(current)) {
+        if (event && isNestedRowMouseAction(event)) {
+          return;
+        }
+
+        const clickedCursor = findLineCursorForClick({
+          cursors: lineCursors,
+          fileSectionLayouts,
+          point: current.anchor,
+          sectionGeometry,
+          side: resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth),
+        });
+        if (clickedCursor && onViewportLineCursorChange) {
+          onViewportLineCursorChange(clickedCursor);
+          return;
+        }
+        if (!current.moved) {
+          return;
+        }
       }
 
       const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
@@ -1326,7 +1374,18 @@ export function DiffPane({
       });
       copySelectionText(text);
     },
-    [copySelectionContext, copySelectionSide, copySelectionText],
+    [
+      copySelectionContext,
+      copySelectionSide,
+      copySelectionText,
+      diffContentWidth,
+      fileSectionLayouts,
+      layout,
+      lineCursors,
+      onViewportLineCursorChange,
+      resolveCopySelectionPoint,
+      sectionGeometry,
+    ],
   );
 
   // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when

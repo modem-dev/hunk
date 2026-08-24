@@ -2215,7 +2215,6 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  const diffPaneScreenLeft = bodyPadding / 2 + paneLayout.reviewBounds.x;
   const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
 
   /** Render one pane from the exact accepted host rectangle. */
@@ -2370,7 +2369,6 @@ export function App({
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
-            screenLeft={diffPaneScreenLeft}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
             headerLabelWidth={diffHeaderLabelWidth}

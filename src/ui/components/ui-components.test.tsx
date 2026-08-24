@@ -1,5 +1,6 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
+import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppBootstrap } from "../../core/bootstrap";
@@ -602,6 +603,106 @@ describe("UI components", () => {
         await setup.mockMouse.click(addNoteX + 1, addNoteY);
       });
       expect(startUserNote).toHaveBeenCalledWith(0, { side: "new", line: 2 });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane selects the exact split line side on click without consuming add-note clicks", async () => {
+    const file = createTestDiffFile(
+      "click-line",
+      "click-line.ts",
+      lines("export const answer = 41;", "", "export const stable = true;"),
+      lines("export const answer = 42;", "", "export const stable = true;"),
+    );
+    const theme = resolveTheme("github-dark-default", null);
+    const copyText = mock((_text: string) => undefined);
+    const selectLine = mock((_cursor: LineCursor) => undefined);
+    const startUserNote = mock(() => undefined);
+    const setup = await testRender(
+      <DiffPane
+        {...createDiffPaneProps([file], theme, {
+          cursorLine: "row",
+          onCopySelectionText: copyText,
+          onStartUserNoteAtHunk: startUserNote,
+          onViewportLineCursorChange: selectLine,
+        })}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+      const changedY = frame.split("\n").findIndex((line) => line.includes("answer = 41"));
+      const changedLine = frame.split("\n")[changedY] ?? "";
+      const oldX = changedLine.indexOf("answer = 41") + 2;
+      const newX = changedLine.indexOf("answer = 42") + 2;
+      expect(changedY).toBeGreaterThanOrEqual(0);
+      expect(oldX).toBeGreaterThan(1);
+      expect(newX).toBeGreaterThan(oldX);
+
+      await act(async () => {
+        await setup.mockMouse.click(oldX, changedY);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+      );
+
+      await act(async () => {
+        await setup.mockMouse.click(newX, changedY);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "new", line: 1 } }),
+      );
+
+      selectLine.mockClear();
+      await act(async () => {
+        await setup.mockMouse.click(newX, changedY + 1);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "new", line: 2 } }),
+      );
+
+      await act(async () => {
+        await Bun.sleep(400);
+        selectLine.mockClear();
+        await setup.mockMouse.drag(oldX, changedY, oldX + 1, changedY, MouseButtons.LEFT);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+      );
+      expect(copyText).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await Bun.sleep(400);
+        selectLine.mockClear();
+        await setup.mockMouse.drag(oldX, changedY, oldX + 4, changedY, MouseButtons.LEFT);
+      });
+      expect(copyText).toHaveBeenCalled();
+      expect(selectLine).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(newX, changedY);
+        await setup.renderOnce();
+      });
+      const affordanceFrame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.split("\n")[changedY]?.includes("[+]") === true,
+        12,
+      );
+      const addNoteX = affordanceFrame.split("\n")[changedY]?.indexOf("[+]") ?? -1;
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+      selectLine.mockClear();
+
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, changedY);
+      });
+      expect(startUserNote).toHaveBeenCalled();
+      expect(selectLine).not.toHaveBeenCalled();
+      expect(setup.renderer.hasSelection).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

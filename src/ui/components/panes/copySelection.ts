@@ -16,6 +16,8 @@ import type { FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import type { LineCursor } from "../../lib/lineCursors";
+import { contextLineStableKeySides } from "../../diff/reviewRenderPlan";
 
 export type CopySelectionPoint =
   | {
@@ -38,6 +40,8 @@ export interface CopySelectionDrag {
   anchor: CopySelectionPoint;
   focus: CopySelectionPoint;
   moved: boolean;
+  /** Double/triple-click expansion always copies, even when its range is within click slop. */
+  expanded?: boolean;
 }
 
 export interface CopySelectionContext {
@@ -92,6 +96,94 @@ function copySelectionBodyRange(start: CopySelectionPoint, end: CopySelectionPoi
   const endRow = end.kind === "pinned-header" ? end.nextVisualRow - 1 : end.visualRow;
 
   return { startRow, endRow };
+}
+
+/** Resolve the keyboard line cursor addressed by one un-dragged review-row click. */
+export function findLineCursorForClick({
+  cursors,
+  fileSectionLayouts,
+  point,
+  sectionGeometry,
+  side,
+}: {
+  cursors: LineCursor[];
+  fileSectionLayouts: FileSectionLayout[];
+  point: CopySelectionPoint;
+  sectionGeometry: DiffSectionGeometry[];
+  side?: CopySelectionSide;
+}) {
+  if (point.kind !== "review-row") {
+    return null;
+  }
+
+  for (const section of fileSectionLayouts) {
+    if (point.visualRow < section.bodyTop || point.visualRow >= section.sectionBottom) {
+      continue;
+    }
+
+    const geometry = sectionGeometry[section.sectionIndex];
+    if (!geometry) {
+      return null;
+    }
+
+    const bodyRow = point.visualRow - section.bodyTop;
+    const bounds = geometry.rowBounds.find((candidate) =>
+      rowBoundsContainsVisualRow(candidate, bodyRow),
+    );
+    if (!bounds) {
+      return null;
+    }
+
+    const stableKeys = new Set([bounds.stableKey, ...bounds.stableKeys]);
+    const rowCursors = cursors.filter(
+      (cursor) => cursor.fileId === section.fileId && stableKeys.has(cursor.stableKey),
+    );
+    if (side === undefined) {
+      return rowCursors[0] ?? null;
+    }
+
+    const targetSide = side === "left" ? "old" : "new";
+    return (
+      rowCursors.find((cursor) => cursor.target.side === targetSide) ??
+      (contextLineStableKeySides(bounds.stableKey) ? (rowCursors[0] ?? null) : null)
+    );
+  }
+
+  return null;
+}
+
+const COPY_SELECTION_CLICK_SLOP_CELLS = 1;
+
+/** Treat one-cell pointer jitter as a click while preserving deliberate and expanded drags. */
+export function copySelectionDragIsClick(drag: CopySelectionDrag) {
+  if (drag.expanded) {
+    return false;
+  }
+  if (!drag.moved) {
+    return true;
+  }
+  if (drag.anchor.kind !== drag.focus.kind) {
+    return false;
+  }
+
+  const columnDelta = Math.abs(drag.anchor.column - drag.focus.column);
+  if (columnDelta > COPY_SELECTION_CLICK_SLOP_CELLS) {
+    return false;
+  }
+
+  if (drag.anchor.kind === "pinned-header" && drag.focus.kind === "pinned-header") {
+    return (
+      drag.anchor.fileId === drag.focus.fileId &&
+      Math.abs(drag.anchor.nextVisualRow - drag.focus.nextVisualRow) <=
+        COPY_SELECTION_CLICK_SLOP_CELLS
+    );
+  }
+
+  return (
+    drag.anchor.kind === "review-row" &&
+    drag.focus.kind === "review-row" &&
+    Math.abs(drag.anchor.visualRow - drag.focus.visualRow) <= COPY_SELECTION_CLICK_SLOP_CELLS
+  );
 }
 
 /** Return whether two points represent the same selectable terminal cell. */

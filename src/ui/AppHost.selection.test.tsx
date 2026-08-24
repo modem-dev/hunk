@@ -177,6 +177,34 @@ describe("DiffPane copy selection", () => {
     }
   });
 
+  test("mouse-up extends a copy through drag events coalesced by the terminal host", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const firstMotion = locateText(frame, "item02");
+      const end = locateText(frame, "item05");
+      expect(start).not.toBeNull();
+      expect(firstMotion).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(start!.x + 2, start!.y, MouseButtons.LEFT);
+        await setup.mockMouse.moveTo(firstMotion!.x + 2, firstMotion!.y);
+        await setup.mockMouse.release(end!.x + 8, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+      expect(copied.at(-1)).toContain("item05");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("dragging across wide (CJK) characters copies exactly the selected cells", async () => {
     const { setup, copied } = await renderSelectionApp(createWideCharSelectionBootstrap());
 
@@ -281,6 +309,34 @@ describe("DiffPane copy selection", () => {
 
       // endCopySelection returns early when the drag never moved, so nothing is copied.
       expect(copied.length).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("one-cell drags still copy when current-line selection is disabled", async () => {
+    const bootstrap = { ...createSelectionBootstrap(), initialCursorLine: "off" as const };
+    const { setup, copied } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item07");
+      expect(target).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          target!.x + 2,
+          target!.y,
+          target!.x + 3,
+          target!.y,
+          MouseButtons.LEFT,
+        );
+      });
+      await flush(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
