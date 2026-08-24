@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
 import {
   binaryFilenameForSpec,
   getHostPlatformPackageSpec,
@@ -161,8 +162,12 @@ try {
   // also resolve by name, since the install is what users discover them through.
   const skillPathChecks: [args: string[], skillName: string][] = [
     [["skill", "path"], "hunk-review"],
-    [["skill", "path", "hunk-review"], "hunk-review"],
-    [["skill", "path", "hunk-extensions"], "hunk-extensions"],
+    ...BUNDLED_SKILL_NAMES.map((skillName): [args: string[], skillName: string] => [
+      ["skill", "path", skillName],
+      skillName,
+    ]),
+    [["skill", "path", "extensions"], "hunk-extensions"],
+    [["skill", "path", "performance"], "opentui-performance"],
   ];
 
   for (const [args, skillName] of skillPathChecks) {
@@ -171,6 +176,17 @@ try {
       throw new Error(
         `Expected installed \`hunk ${args.join(" ")}\` to resolve the bundled ${skillName} skill.\n${skillPath}`,
       );
+    }
+
+    if (skillName === "opentui-performance") {
+      const referencePath = path.join(
+        path.dirname(skillPath),
+        "references",
+        "rendering-and-geometry.md",
+      );
+      if (!existsSync(referencePath)) {
+        throw new Error(`Expected installed OpenTUI performance reference at ${referencePath}`);
+      }
     }
   }
 

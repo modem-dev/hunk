@@ -32,6 +32,7 @@
     "dist/npm",
     "skills/hunk-review",
     "skills/hunk-extensions",
+    "skills/opentui-performance",
     "README.md",
     "LICENSE"
   ],

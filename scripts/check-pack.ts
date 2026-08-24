@@ -377,6 +377,11 @@ const requiredPaths = [
   // `hunk skill path [name]` resolves them at runtime.
   "skills/hunk-review/SKILL.md",
   "skills/hunk-extensions/SKILL.md",
+  "skills/opentui-performance/SKILL.md",
+  "skills/opentui-performance/references/rendering-and-geometry.md",
+  "skills/opentui-performance/references/async-and-memory.md",
+  "skills/opentui-performance/references/benchmarking-and-validation.md",
+  "skills/opentui-performance/references/hunk-case-study.md",
 ];
 
 for (const path of requiredPaths) {
