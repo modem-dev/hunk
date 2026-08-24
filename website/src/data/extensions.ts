@@ -140,6 +140,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 6,
   },
+  {
+    repo: "sadick254/hunk-commit-log",
+    name: "hunk-commit-log",
+    summary:
+      "Reviews a branch commit by commit: the series beside the diff, the message above it, and keys to step between them.",
+    categories: ["Pane", "Command", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
 ];
 
 /**
