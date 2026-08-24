@@ -127,9 +127,9 @@ export function binaryFilenameForSpec(spec: PlatformPackageSpec) {
 /**
  * Build the published manifest for one prebuilt platform package.
  *
- * Platform packages are implementation dependencies, so their native executables
- * stay out of `bin`; npm 11 rejects native files there as invalid scripts. The
- * staged executable bit and top-level wrapper preserve direct execution instead.
+ * Declaring the native executable in `bin` makes npm restore its execute bits
+ * during installation, including when release artifact transfer strips the
+ * staged mode before publishing.
  */
 export function buildPlatformPackageManifest(
   rootPackage: {
@@ -148,6 +148,9 @@ export function buildPlatformPackageManifest(
     description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)`,
     os: [spec.os === "windows" ? "win32" : spec.os],
     cpu: [spec.cpu],
+    bin: {
+      hunk: spec.binaryRelativePath,
+    },
     files: ["bin", "LICENSE"],
     repository: rootPackage.repository,
     homepage: rootPackage.homepage,

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdtempSync,
@@ -85,8 +86,17 @@ try {
   // but the Windows `hunk.cmd` shim does not need bash on PATH.
   const bashDir = process.platform === "win32" ? undefined : commandDirectory("bash");
 
+  // Artifact transfer normalizes file modes before the publish job. Reproduce
+  // that boundary so this test proves npm restores execution from the platform
+  // package's `bin` declaration rather than relying on the staged mode.
+  const smokePlatformDir = path.join(smokeMetaDir, hostSpec.packageName);
+  cpSync(path.join(releaseRoot, hostSpec.packageName), smokePlatformDir, { recursive: true });
+  if (process.platform !== "win32") {
+    chmodSync(path.join(smokePlatformDir, "bin", binaryFilenameForSpec(hostSpec)), 0o644);
+  }
+
   run([npmCommand, "pack", "--pack-destination", packageDir], {
-    cwd: path.join(releaseRoot, hostSpec.packageName),
+    cwd: smokePlatformDir,
   });
 
   const platformTarball = path.join(packageDir, `${hostSpec.packageName}-${packageVersion}.tgz`);
