@@ -35,7 +35,7 @@ export type ExtensionCategory =
 export interface ExtensionListing {
   /** `owner/name`, the argument `hunk extension install` takes. */
   repo: string;
-  /** Manifest `name`; the id the extension owns once installed. */
+  /** Extension id Hunk derives from the repository name when installed. */
   name: string;
   /** One curated line. Repository descriptions drift and get noisy. */
   summary: string;
@@ -117,7 +117,7 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   },
   {
     repo: "evantravers/hunk-notes-to-markdown",
-    name: "notes-to-markdown",
+    name: "hunk-notes-to-markdown",
     summary: "Yanks every review note into the clipboard as formatted Markdown with one key (Y).",
     categories: ["Command"],
     version: "0.1.0",
