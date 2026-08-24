@@ -66,6 +66,13 @@ hunk session navigate --repo . --file src/App.tsx --hunk 2
 hunk session navigate --repo . --next-comment
 ```
 
+To jump to an exact comment returned by the JSON list, copy its `commentId` into `--comment`:
+
+```bash
+hunk session comment list --repo . --json
+hunk session navigate --repo . --comment <comment-id> --json
+```
+
 Use `reload` when you want the already-open Hunk window to show a different diff or commit:
 
 ```bash

@@ -255,7 +255,30 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
         break;
       }
       case "navigate": {
+        const commentHasConflictingTarget =
+          input.commentId !== undefined &&
+          (input.commentDirection !== undefined ||
+            input.filePath !== undefined ||
+            input.hunkNumber !== undefined ||
+            input.side !== undefined ||
+            input.line !== undefined);
+        if (commentHasConflictingTarget) {
+          throw new Error("navigate commentId cannot be combined with another navigation target.");
+        }
+
+        const comment =
+          input.commentId === undefined
+            ? undefined
+            : state
+                .listComments(input.selector)
+                .find((candidate) => candidate.commentId === input.commentId);
+        if (input.commentId !== undefined && !comment) {
+          throw new Error(
+            `No live comment with id "${input.commentId}" exists in the selected session.`,
+          );
+        }
         if (
+          input.commentId === undefined &&
           !input.commentDirection &&
           input.hunkNumber === undefined &&
           (input.side === undefined || input.line === undefined)
@@ -269,11 +292,13 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
             command: "navigate_to_hunk",
             input: {
               ...input.selector,
-              filePath: input.filePath,
-              hunkIndex: input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined,
-              side: input.side,
-              line: input.line,
-              commentDirection: input.commentDirection,
+              filePath: comment?.filePath ?? input.filePath,
+              hunkIndex:
+                comment?.hunkIndex ??
+                (input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined),
+              side: comment?.side ?? input.side,
+              line: comment?.line ?? input.line,
+              commentDirection: comment ? undefined : input.commentDirection,
             },
             timeoutMessage: "Timed out waiting for the session to navigate to the requested hunk.",
           }),

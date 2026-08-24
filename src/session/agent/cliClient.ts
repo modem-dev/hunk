@@ -140,6 +140,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         side: input.side,
         line: input.line,
         commentDirection: input.commentDirection,
+        commentId: input.commentId,
       })
     ).result;
   }

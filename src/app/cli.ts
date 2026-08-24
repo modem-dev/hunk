@@ -1099,6 +1099,31 @@ async function parseSessionNavigateCommand(tokens: string[]): Promise<ParsedCliI
 
   await parseStandaloneCommand(command, tokens);
 
+  // A comment id is resolved by the daemon and must not silently discard another selector.
+  const commentHasConflictingSelector =
+    parsedOptions.comment !== undefined &&
+    (parsedOptions.file !== undefined ||
+      parsedOptions.hunk !== undefined ||
+      parsedOptions.oldLine !== undefined ||
+      parsedOptions.newLine !== undefined ||
+      parsedOptions.nextComment === true ||
+      parsedOptions.prevComment === true);
+  if (commentHasConflictingSelector) {
+    throw new Error(
+      "Specify exactly one navigation selector: --comment, --next-comment / --prev-comment, or --file with a navigation target.",
+    );
+  }
+
+  if (parsedOptions.comment !== undefined) {
+    return {
+      kind: "session",
+      action: "navigate",
+      output: resolveJsonOutput(parsedOptions),
+      selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+      commentId: parsedOptions.comment,
+    } as const;
+  }
+
   if (parsedOptions.nextComment || parsedOptions.prevComment) {
     enforceConstraint(COMMENT_DIRECTION_CONSTRAINT, parsedOptions);
     return {

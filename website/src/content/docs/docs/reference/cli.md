@@ -339,6 +339,7 @@ move a live Hunk session to one diff hunk
 
 ```bash
 hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>) [--json]
+hunk session navigate (<session-id> | --repo <path>) --comment <id> [--json]
 hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment) [--json]
 ```
 
@@ -349,13 +350,14 @@ hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-co
 | `--hunk <n>`     | 1-based hunk number within the file                       |
 | `--old-line <n>` | 1-based line number on the old side                       |
 | `--new-line <n>` | 1-based line number on the new side                       |
+| `--comment <id>` | jump to the live comment with this id                     |
 | `--next-comment` | jump to the next annotated hunk                           |
 | `--prev-comment` | jump to the previous annotated hunk                       |
 | `--json`         | emit structured JSON                                      |
 
 **Positionals:** `[sessionId]`.
 
-**Constraints:** exactly one of `--hunk <n>`, `--old-line <n>`, `--new-line <n>`; at most one of `--next-comment`, `--prev-comment`.
+**Constraints:** for `--file` navigation, exactly one of `--hunk <n>`, `--old-line <n>`, `--new-line <n>`; at most one of `--next-comment`, `--prev-comment`.
 
 **Examples:**
 
@@ -363,6 +365,7 @@ hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-co
 hunk session navigate --repo . --file src/App.tsx --hunk 2
 hunk session navigate --repo . --file src/App.tsx --new-line 372
 hunk session navigate --repo . --file src/App.tsx --old-line 355
+hunk session navigate --repo . --comment comment-1
 hunk session navigate --repo . --next-comment
 hunk session navigate --repo . --prev-comment
 ```

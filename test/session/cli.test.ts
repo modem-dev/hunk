@@ -694,6 +694,56 @@ sessionDescribe("session CLI integration", () => {
         },
       });
 
+      const commentId = addedComment.result?.commentId;
+      expect(commentId).toBeDefined();
+      const navigateToComment = runSessionCli(
+        ["navigate", sessionId, "--comment", commentId!, "--json"],
+        port,
+      );
+      expect(navigateToComment.proc.exitCode).toBe(0);
+      expect(navigateToComment.stderr).toBe("");
+      expect(JSON.parse(navigateToComment.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+          side: "new",
+          line: 10,
+        },
+      });
+
+      await waitUntil("comment navigation context", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number } };
+        };
+        return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
+      });
+
+      const resetAfterCommentNavigation = runSessionCli(
+        ["navigate", sessionId, "--file", fixture.afterName, "--hunk", "1", "--json"],
+        port,
+      );
+      expect(resetAfterCommentNavigation.proc.exitCode).toBe(0);
+      expect(resetAfterCommentNavigation.stderr).toBe("");
+
+      await waitUntil("reset after comment navigation", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number }; showAgentNotes?: boolean };
+        };
+        return parsed.context?.selectedHunk?.index === 0 && parsed.context?.showAgentNotes === false
+          ? parsed
+          : null;
+      });
+
       const focusedComment = runSessionCli(
         [
           "comment",

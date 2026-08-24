@@ -64,6 +64,7 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     side: sideSchema.optional(),
     line: z.int().positive().optional(),
     commentDirection: z.enum(["next", "prev"]).optional(),
+    commentId: z.string().min(1).optional(),
   }),
   z.strictObject({
     action: z.literal("reload"),

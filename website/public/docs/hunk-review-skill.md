@@ -59,6 +59,7 @@ hunk session review (<session-id> | --repo <path>) [--include-patch] [--include-
 
 ```bash
 hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>) [--json]
+hunk session navigate (<session-id> | --repo <path>) --comment <id> [--json]
 hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment) [--json]
 ```
 
@@ -68,6 +69,12 @@ Absolute navigation requires `--file` and exactly one of `--hunk`, `--new-line`,
 hunk session navigate --repo . --file src/App.tsx --hunk 2
 hunk session navigate --repo . --file src/App.tsx --new-line 372
 hunk session navigate --repo . --file src/App.tsx --old-line 355
+```
+
+Exact comment navigation uses the `commentId` returned by `hunk session comment list --json` and does not require `--file`:
+
+```bash
+hunk session navigate --repo . --comment comment-1
 ```
 
 Relative comment navigation jumps between annotated hunks and does not require `--file`:

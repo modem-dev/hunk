@@ -1260,6 +1260,54 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session navigate with a comment id", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "navigate",
+      "--repo",
+      "/tmp/repo",
+      "--comment",
+      "comment-1",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "navigate",
+      selector: { repoRoot: resolve("/tmp/repo") },
+      commentId: "comment-1",
+      output: "json",
+    });
+  });
+
+  test("rejects session navigate when --comment is combined with another selector", async () => {
+    const conflictingOptions = [
+      ["--file", "README.md"],
+      ["--hunk", "1"],
+      ["--old-line", "10"],
+      ["--new-line", "10"],
+      ["--next-comment"],
+      ["--prev-comment"],
+    ];
+
+    for (const conflictingOption of conflictingOptions) {
+      await expect(
+        parseCli([
+          "bun",
+          "hunk",
+          "session",
+          "navigate",
+          "session-1",
+          "--comment",
+          "comment-1",
+          ...conflictingOption,
+        ]),
+      ).rejects.toThrow("Specify exactly one navigation selector");
+    }
+  });
+
   test("rejects session navigate with both --next-comment and --prev-comment", async () => {
     await expect(
       parseCli([

@@ -35,6 +35,7 @@ describe("session daemon request validation", () => {
         line: 12,
       },
       { action: "navigate", selector: { sessionId: "s-1" }, commentDirection: "next" },
+      { action: "navigate", selector: { sessionId: "s-1" }, commentId: "comment-1" },
       {
         action: "reload",
         selector: { sessionId: "s-1" },

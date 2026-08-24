@@ -53,6 +53,7 @@ describe("generated website references", () => {
         expect(reference).toContain(option.flag);
       }
     }
+    expect(reference).toContain("for `--file` navigation, exactly one of");
   });
 
   test("renders every runtime-parsed config key with defaults and compatibility metadata", () => {

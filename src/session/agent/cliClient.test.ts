@@ -163,6 +163,15 @@ describe("HTTP Hunk session CLI client", () => {
       }),
     ).toEqual({ fileId: "file-1", filePath: "src/app.ts", hunkIndex: 1 });
     expect(
+      await client.navigateToHunk({
+        kind: "session",
+        action: "navigate",
+        selector,
+        commentId: "comment-1",
+        output: "json",
+      }),
+    ).toEqual({ fileId: "file-1", filePath: "src/app.ts", hunkIndex: 1 });
+    expect(
       await client.reloadSession({
         kind: "session",
         action: "reload",
@@ -263,6 +272,11 @@ describe("HTTP Hunk session CLI client", () => {
         side: "new",
         line: 12,
         commentDirection: "next",
+      },
+      {
+        action: "navigate",
+        selector,
+        commentId: "comment-1",
       },
       {
         action: "reload",

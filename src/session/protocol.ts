@@ -36,7 +36,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * builds can refresh an older daemon even when it still exposes the same API endpoints. Bump this
  * when daemon-forwarded payloads change, even if the supported action names stay stable.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 9;
+export const HUNK_SESSION_DAEMON_VERSION = 10;
 
 export type SessionDaemonAction =
   | "list"
@@ -85,6 +85,7 @@ export type SessionDaemonRequest =
       side?: "old" | "new";
       line?: number;
       commentDirection?: "next" | "prev";
+      commentId?: string;
     }
   | {
       action: "reload";

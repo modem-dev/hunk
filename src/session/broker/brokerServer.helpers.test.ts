@@ -258,6 +258,77 @@ describe("handleSessionApiRequest", () => {
     expect(dispatchInput.hunkIndex).toBe(1);
   });
 
+  test("resolves a comment id before dispatching a navigate command", async () => {
+    const { state, calls } = createFakeState({
+      listComments: () => [
+        {
+          commentId: "comment-1",
+          filePath: "src/example.ts",
+          hunkIndex: 2,
+          side: "old",
+          line: 17,
+          summary: "Inspect this line",
+          createdAt: "2026-08-25T00:00:00.000Z",
+        },
+      ],
+    });
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        commentId: "comment-1",
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(200);
+    const dispatch = calls.find((call) => call.method === "dispatchCommand");
+    expect(dispatch).toBeDefined();
+    expect((dispatch!.args[0] as { input: unknown }).input).toMatchObject({
+      sessionId: "s-1",
+      filePath: "src/example.ts",
+      hunkIndex: 2,
+      side: "old",
+      line: 17,
+    });
+    expect((dispatch!.args[0] as { input: unknown }).input).not.toHaveProperty("commentId");
+  });
+
+  test("rejects navigation to an unknown comment id", async () => {
+    const { state } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        commentId: "missing-comment",
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("missing-comment"),
+    });
+  });
+
+  test("rejects a comment id combined with another navigation target", async () => {
+    const { state } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        commentId: "comment-1",
+        hunkNumber: 2,
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("cannot be combined"),
+    });
+  });
+
   test("dispatches reload, comment-add, comment-rm, and comment-clear commands", async () => {
     const { state, calls } = createFakeState();
     const requests: SessionDaemonRequest[] = [

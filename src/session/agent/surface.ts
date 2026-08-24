@@ -95,10 +95,14 @@ export type AgentCommandConstraint =
       readonly kind: "exactly-one";
       /** Names the choice in the error message, e.g. "navigation target". */
       readonly label: string;
+      /** Optional context shown in generated docs when this rule applies to one command mode. */
+      readonly documentationScope?: string;
       readonly flags: readonly string[];
     }
   | {
       readonly kind: "at-most-one";
+      /** Optional context shown in generated docs when this rule applies to one command mode. */
+      readonly documentationScope?: string;
       readonly flags: readonly string[];
     };
 
@@ -147,6 +151,7 @@ export const RELOAD_SELECTOR_SYNOPSIS = "(<session-id> | --repo <path> | --sessi
 export const NAVIGATE_TARGET_CONSTRAINT = {
   kind: "exactly-one",
   label: "navigation target",
+  documentationScope: "for `--file` navigation",
   flags: ["--hunk <n>", "--old-line <n>", "--new-line <n>"],
 } as const satisfies AgentCommandConstraint;
 
@@ -268,6 +273,7 @@ export const SESSION_AGENT_COMMANDS = {
       },
       oldLineOption,
       newLineOption,
+      { flag: "--comment <id>", description: "jump to the live comment with this id" },
       { flag: "--next-comment", description: "jump to the next annotated hunk" },
       { flag: "--prev-comment", description: "jump to the previous annotated hunk" },
       jsonOption,
@@ -275,12 +281,14 @@ export const SESSION_AGENT_COMMANDS = {
     constraints: [NAVIGATE_TARGET_CONSTRAINT, COMMENT_DIRECTION_CONSTRAINT],
     synopsis: [
       `hunk session navigate ${SESSION_SELECTOR_SYNOPSIS} --file <path> ${constraintSynopsis(NAVIGATE_TARGET_CONSTRAINT)} [--json]`,
+      `hunk session navigate ${SESSION_SELECTOR_SYNOPSIS} --comment <id> [--json]`,
       `hunk session navigate ${SESSION_SELECTOR_SYNOPSIS} ${constraintSynopsis(COMMENT_DIRECTION_CONSTRAINT)} [--json]`,
     ],
     examples: [
       "hunk session navigate --repo . --file src/App.tsx --hunk 2",
       "hunk session navigate --repo . --file src/App.tsx --new-line 372",
       "hunk session navigate --repo . --file src/App.tsx --old-line 355",
+      "hunk session navigate --repo . --comment comment-1",
       "hunk session navigate --repo . --next-comment",
       "hunk session navigate --repo . --prev-comment",
     ],

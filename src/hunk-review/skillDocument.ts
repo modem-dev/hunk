@@ -23,10 +23,18 @@ function synopsisLines(...specs: AgentCommandSpec[]) {
 
 const commands = SESSION_AGENT_COMMANDS;
 
-/** Navigate examples that anchor on a file are absolute; the rest jump between comments. */
-function navigateExamples(kind: "absolute" | "relative") {
+/** Group navigation examples by their selector mode. */
+function navigateExamples(kind: "absolute" | "comment" | "relative") {
   const examples = commands.navigate.examples ?? [];
-  return examples.filter((example) => example.includes("--file") === (kind === "absolute"));
+  return examples.filter((example) => {
+    if (kind === "absolute") {
+      return example.includes("--file");
+    }
+    if (kind === "comment") {
+      return example.includes("--comment ");
+    }
+    return example.includes("--next-comment") || example.includes("--prev-comment");
+  });
 }
 
 const FRONTMATTER = [
@@ -97,6 +105,10 @@ const NAVIGATE_SECTION = [
   "Absolute navigation requires `--file` and exactly one of `--hunk`, `--new-line`, or `--old-line`:",
   "",
   ...bashFence(navigateExamples("absolute")),
+  "",
+  "Exact comment navigation uses the `commentId` returned by `hunk session comment list --json` and does not require `--file`:",
+  "",
+  ...bashFence(navigateExamples("comment")),
   "",
   "Relative comment navigation jumps between annotated hunks and does not require `--file`:",
   "",

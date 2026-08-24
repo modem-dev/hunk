@@ -162,6 +162,7 @@ export interface SessionNavigateCommandInput {
   side?: "old" | "new";
   line?: number;
   commentDirection?: "next" | "prev";
+  commentId?: string;
 }
 
 export interface SessionReloadCommandInput {

@@ -188,11 +188,14 @@ export function renderCliReference() {
         "",
         "**Constraints:** " +
           command.constraints
-            .map((constraint) =>
-              constraint.kind === "exactly-one"
-                ? `exactly one of ${constraint.flags.map((flag) => `\`${flag}\``).join(", ")}`
-                : `at most one of ${constraint.flags.map((flag) => `\`${flag}\``).join(", ")}`,
-            )
+            .map((constraint) => {
+              const scope = constraint.documentationScope
+                ? `${constraint.documentationScope}, `
+                : "";
+              return constraint.kind === "exactly-one"
+                ? `${scope}exactly one of ${constraint.flags.map((flag) => `\`${flag}\``).join(", ")}`
+                : `${scope}at most one of ${constraint.flags.map((flag) => `\`${flag}\``).join(", ")}`;
+            })
             .join("; ") +
           ".",
       );
