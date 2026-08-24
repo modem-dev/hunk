@@ -6,6 +6,7 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
 } from "../core/theme/catalog";
+import { resolveWordDiffHighlightBg } from "./diff/diffRows";
 import {
   availableThemeIds,
   availableThemes,
@@ -13,6 +14,7 @@ import {
   DEFAULT_LIGHT_THEME_ID,
   MIN_DIFF_SIGN_CONTRAST,
   MIN_EMPHASIS_SEPARATION,
+  readableDiffSign,
   resolveTheme,
   TRANSPARENT_BACKGROUND,
   withTransparentSurfaces,
@@ -125,7 +127,7 @@ describe("themes", () => {
     expect(dark.syntaxColors.default).toBe("#e6edf3");
     expect(dark.addedSignColor).toBe("#3fb950");
     expect(dark.removedSignColor).toBe("#f85149");
-    expect(dark.addedBg).toBe(blendHex("#3fb950", "#0d1117", 0.2));
+    expect(dark.addedBg).toBe(blendHex("#3fb950", "#0d1117", 0.18));
     expect(dark.removedBg).toBe(blendHex("#f85149", "#0d1117", 0.2));
 
     expect(light.background).toBe("#ffffff");
@@ -318,21 +320,65 @@ describe("themes", () => {
     expect(failures).toEqual([]);
   });
 
-  test("keeps word-level emphasis visibly separated from row backgrounds on every bundled theme", () => {
+  test("rescues diff signs with the smallest blend that clears the contrast floor", () => {
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+      const { background, slots } = bundledDiffSignSlots(themeId);
+      return slots.flatMap(({ slot, source, derived }) => {
+        if (contrastRatio(source, background) >= MIN_DIFF_SIGN_CONTRAST) {
+          return [];
+        }
+        const minimalRescues = ["#000000", "#ffffff"].flatMap((anchor) => {
+          for (let amount = 0.02; amount < 1; amount += 0.02) {
+            const candidate = blendHex(anchor, source, amount);
+            if (contrastRatio(candidate, background) >= MIN_DIFF_SIGN_CONTRAST) {
+              return [candidate];
+            }
+          }
+          return [];
+        });
+        return minimalRescues.includes(derived)
+          ? []
+          : [
+              `${themeId} ${slot}: ${source} rescued to ${derived}, expected a minimal rescue (${minimalRescues.join(", ")})`,
+            ];
+      });
+    });
+
+    expect(failures).toEqual([]);
+  });
+
+  test("nudges catppuccin-latte's near-miss green instead of washing it out", () => {
+    expect(resolveTheme("catppuccin-latte", null).addedSignColor).toBe("#3f9d2a");
+  });
+
+  test("readableDiffSign upholds the contrast floor on mid-luminance backgrounds", () => {
+    const rescued = readableDiffSign("#b0b0b0", "#aaaaaa");
+    expect(contrastRatio(rescued, "#aaaaaa")).toBeGreaterThanOrEqual(MIN_DIFF_SIGN_CONTRAST);
+  });
+
+  test("keeps the rendered word-level emphasis separated and readable on every bundled theme", () => {
     const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       return (
         [
-          ["added", theme.addedBg, theme.addedContentBg],
-          ["removed", theme.removedBg, theme.removedContentBg],
+          ["added", theme.addedBg, theme.addedContentBg, theme.addedSignColor],
+          ["removed", theme.removedBg, theme.removedContentBg, theme.removedSignColor],
         ] as const
-      ).flatMap(([slot, rowBackground, contentBackground]) => {
-        const separation = hexColorDistance(rowBackground, contentBackground);
-        return separation >= MIN_EMPHASIS_SEPARATION
-          ? []
-          : [
-              `${themeId} ${slot}: ${rowBackground} vs ${contentBackground} (distance ${separation})`,
-            ];
+      ).flatMap(([slot, rowBackground, contentBackground, signColor]) => {
+        const rendered = resolveWordDiffHighlightBg(contentBackground, rowBackground, signColor);
+        const problems: string[] = [];
+        if (rendered !== contentBackground) {
+          problems.push(`renderer rewrote ${contentBackground} to ${rendered}`);
+        }
+        const separation = hexColorDistance(rowBackground, rendered);
+        if (separation < MIN_EMPHASIS_SEPARATION) {
+          problems.push(`separation ${separation} vs ${rowBackground}`);
+        }
+        const textContrast = contrastRatio(theme.text, rendered);
+        if (textContrast + 0.005 < MIN_READABLE_TEXT_CONTRAST) {
+          problems.push(`text contrast ${textContrast.toFixed(2)} on ${rendered}`);
+        }
+        return problems.map((problem) => `${themeId} ${slot}: ${problem}`);
       });
     });
 

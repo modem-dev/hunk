@@ -21,7 +21,7 @@ export const DEFAULT_LIGHT_THEME_ID = "github-light-default";
 
 const MIN_GUTTER_CONTRAST = 4.5;
 export const MIN_DIFF_SIGN_CONTRAST = 3;
-export const MIN_EMPHASIS_SEPARATION = 12;
+export const MIN_EMPHASIS_SEPARATION = 28;
 
 const FALLBACK_DIFF_COLORS = {
   dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
@@ -49,12 +49,15 @@ function readableDimForeground(preferred: string, background: string) {
 }
 
 /** Return a semantic diff marker color that remains legible on a theme editor surface. */
-function readableDiffSign(preferred: string, background: string) {
+export function readableDiffSign(preferred: string, background: string) {
   if (contrastRatio(preferred, background) >= MIN_DIFF_SIGN_CONTRAST) {
     return preferred;
   }
 
-  const anchor = relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+  let anchor = relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+  if (contrastRatio(anchor, background) < MIN_DIFF_SIGN_CONTRAST) {
+    anchor = anchor === "#000000" ? "#ffffff" : "#000000";
+  }
   for (let amount = 0.02; amount < 1; amount += 0.02) {
     const candidate = blendHex(anchor, preferred, amount);
     if (contrastRatio(candidate, background) >= MIN_DIFF_SIGN_CONTRAST) {

@@ -25,7 +25,7 @@ import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
+import { MIN_EMPHASIS_SEPARATION, TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRowModel";
 import {
@@ -116,7 +116,6 @@ function tabify(text: string, tabWidth: number, initialColumn = 0) {
 // into terminal spans. The same highlighted line objects are reused when files remount or when
 // we build both split and stack rows, so memoize flattened spans by line node + theme/background.
 const flattenedHighlightedLineCache = new WeakMap<HastNode, Map<string, RenderSpan[]>>();
-const MIN_WORD_DIFF_BG_DISTANCE = 28;
 const WORD_DIFF_BLEND_STEP = 0.005;
 const WORD_DIFF_MAX_BLEND = 0.2;
 const wordDiffBackgroundCache = new Map<string, Record<SplitLineCell["kind"], string>>();
@@ -131,7 +130,7 @@ function strengthenWordDiffBg(lineBg: string, signColor: string) {
     const candidate = blendHex(signColor, lineBg, blendRatio);
     strongestCandidate = candidate;
 
-    if (hexColorDistance(candidate, lineBg) >= MIN_WORD_DIFF_BG_DISTANCE) {
+    if (hexColorDistance(candidate, lineBg) >= MIN_EMPHASIS_SEPARATION) {
       return candidate;
     }
   }
@@ -144,8 +143,8 @@ function isHexThemeColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color);
 }
 
-/** Resolve one word-diff background without turning transparent surfaces into black blends. */
-function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor: string) {
+/** Strengthen custom-theme overrides whose pair sits too close together. */
+export function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor: string) {
   if (contentBg === TRANSPARENT_BACKGROUND || lineBg === TRANSPARENT_BACKGROUND) {
     return contentBg;
   }
@@ -154,7 +153,7 @@ function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor
     return contentBg;
   }
 
-  return hexColorDistance(contentBg, lineBg) >= MIN_WORD_DIFF_BG_DISTANCE
+  return hexColorDistance(contentBg, lineBg) >= MIN_EMPHASIS_SEPARATION
     ? contentBg
     : strengthenWordDiffBg(lineBg, signColor);
 }

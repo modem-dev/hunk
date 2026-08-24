@@ -185,7 +185,7 @@ export function stackCellPalette(
   };
 }
 
-// Word-diff emphasis guarantees 28 (`MIN_WORD_DIFF_BG_DISTANCE` in diffRows.ts),
+// Word-diff emphasis guarantees 28 (`MIN_EMPHASIS_SEPARATION` in themes.ts),
 // but that floor is tuned for subtle tinting inside already-tinted lines.
 // Extension marks are things the user is looking *for* — search hits,
 // diagnostics — so they target a substantially higher floor: distances are
