@@ -14,6 +14,7 @@ import type {
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
+import type { WheelScrollLines } from "./wheelScrollLines";
 
 export type LayoutMode = "auto" | "split" | "unified";
 export type LayoutModeInput = LayoutMode | "stack";
@@ -51,6 +52,8 @@ export interface CommonOptions {
   fileGap?: number;
   /** Blank rows before each hunk after the first in a file. */
   hunkGap?: number;
+  /** Review rows to move per vertical mouse-wheel event. */
+  wheelScrollLines?: WheelScrollLines;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
