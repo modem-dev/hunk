@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.19.1
+
+### Patch Changes
+
+- [`5cb62af`](https://github.com/modem-dev/hunk/commit/5cb62af8c7c51c8ac63b17db005cc5dab91fb2f1) - Stop installing Pierre dependencies for CLI-only npm users.
+
+- [`3e58eff`](https://github.com/modem-dev/hunk/commit/3e58effad32c6a550921bb312a7022c4997cd0a7) - Restore executable permissions for platform binaries installed through npm.
+
+- [`da696b1`](https://github.com/modem-dev/hunk/commit/da696b1f6bdbdc17b48e432976774815ec994c58) - Accelerate complex Unicode text width measurement in reviews.
+
+- [`87b654c`](https://github.com/modem-dev/hunk/commit/87b654cea79337fe960f14db5c05158173b94cae) - Git's `color.moved` highlights are no longer lost when `wrap_lines` is on.
+
+- [`62441cf`](https://github.com/modem-dev/hunk/commit/62441cfb10dc3e1d6f9375026395fa2c01ca9bbb) - Build the x64 binaries for CPUs without AVX2, so Hunk no longer dies with an illegal instruction on pre-Haswell machines and conservative VM CPU models.
+
 ## 0.19.0
 
 ### Highlights
