@@ -108,6 +108,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "astwys/hunk-file-order",
+    name: "hunk-file-order",
+    summary: "Chooses the file order in Hunk reviews, including Lazygit's mixed order.",
+    categories: ["Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "elucid/hunk-less-search",
     name: "hunk-less-search",
     summary: "less-style forward search across the review stream, with in-diff match marks.",
