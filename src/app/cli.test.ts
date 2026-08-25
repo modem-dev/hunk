@@ -124,6 +124,8 @@ describe("parseCli", () => {
       "notes.json",
       "--no-line-numbers",
       "-x4",
+      "--wheel-scroll-lines",
+      "3",
       "--wrap",
       "--no-hunk-headers",
       "--agent-notes",
@@ -144,12 +146,27 @@ describe("parseCli", () => {
         experimental: true,
         lineNumbers: false,
         tabWidth: 4,
+        wheelScrollLines: 3,
         wrapLines: true,
         hunkHeaders: false,
         agentNotes: true,
         transparentBackground: true,
       },
     });
+  });
+
+  test("parses wheel scroll lines and rejects invalid values", async () => {
+    const automatic = await parseCli(["bun", "hunk", "diff", "--wheel-scroll-lines", "auto"]);
+    const fixed = await parseCli(["bun", "hunk", "diff", "--wheel-scroll-lines", "5"]);
+
+    expect(automatic).toMatchObject({ kind: "vcs", options: { wheelScrollLines: "auto" } });
+    expect(fixed).toMatchObject({ kind: "vcs", options: { wheelScrollLines: 5 } });
+
+    for (const invalid of ["0", "11", "fast"]) {
+      await expect(
+        parseCli(["bun", "hunk", "diff", "--wheel-scroll-lines", invalid]),
+      ).rejects.toThrow(/wheel scroll lines/);
+    }
   });
 
   test("parses the current-line style and rejects an unknown one", async () => {

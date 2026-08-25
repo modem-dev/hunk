@@ -14,6 +14,7 @@ import type {
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
+import type { WheelScrollLines } from "./wheelScrollLines";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type CursorLine = "row" | "number" | "off";
@@ -35,6 +36,7 @@ export interface CommonOptions {
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   tabWidth?: number;
+  wheelScrollLines?: WheelScrollLines;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;

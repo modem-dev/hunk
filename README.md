@@ -151,6 +151,7 @@ watch = false
 exclude_untracked = false
 line_numbers = true
 tab_width = 4        # tab stops, 1-16
+wheel_scroll_lines = "auto" # auto acceleration, or a fixed 1-10 rows per event
 wrap_lines = false
 menu_bar = true
 sidebar = "auto"     # "auto", true, false
@@ -165,6 +166,7 @@ syntax scopes, and legacy syntax-table migration.
 
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `tab_width` controls source-code tab stops and can be overridden with `-x4` or `--tab-width 4`.
+`wheel_scroll_lines` is a user-only preference and can be overridden with `--wheel-scroll-lines 3`.
 `prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
 `transparent_background` can also be written as `transparentBackground`.
 

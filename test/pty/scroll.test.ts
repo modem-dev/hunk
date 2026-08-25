@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, dragMouse, lineIndexOf, measureKeyScroll } from "./harness";
+import {
+  createPtyHarness,
+  dragMouse,
+  lineIndexOf,
+  measureKeyScroll,
+  measureMouseWheelScroll,
+} from "./harness";
 
 const harness = createPtyHarness();
 
@@ -67,6 +73,26 @@ describe("PTY scrolling", () => {
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a fixed wheel-scroll setting moves exactly that many rows per event", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager", "--cursor-line", "off", "--wheel-scroll-lines", "3"],
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+
+      expect(await measureMouseWheelScroll(session, "down", 12)).toBe(3);
+      expect(await measureMouseWheelScroll(session, "up", 9)).toBe(-3);
     } finally {
       session.close();
     }

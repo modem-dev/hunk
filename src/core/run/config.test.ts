@@ -328,6 +328,43 @@ describe("config resolution", () => {
     }
   });
 
+  test("resolves wheel scroll lines from user config and CLI but not repository config", () => {
+    const home = createTempDir("hunk-config-wheel-home-");
+    const repo = createTempDir("hunk-config-wheel-repo-");
+    createRepo(repo);
+    const input = createPatchPagerInput();
+    const env = { HOME: home };
+
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.wheelScrollLines,
+    ).toBe("auto");
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "wheel_scroll_lines = 3\n");
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), "wheel_scroll_lines = 8\n");
+
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.wheelScrollLines,
+    ).toBe(3);
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput({ wheelScrollLines: 6 }), {
+        cwd: repo,
+        env,
+      }).input.options.wheelScrollLines,
+    ).toBe(6);
+
+    for (const invalid of ["0", "11", '"fast"']) {
+      writeFileSync(
+        join(home, ".config", "hunk", "config.toml"),
+        `wheel_scroll_lines = ${invalid}\n`,
+      );
+      expect(() => resolveConfiguredCliInput(input, { cwd: repo, env })).toThrow(
+        /wheel_scroll_lines/,
+      );
+    }
+  });
+
   test("resolves the sidebar preference from config, CLI flags, and the auto default", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
@@ -1037,6 +1074,7 @@ describe("config resolution", () => {
         'theme = "github-light-default"',
         "line_numbers = false",
         "tab_width = 8",
+        "wheel_scroll_lines = 4",
         "wrap_lines = true",
         "menu_bar = false",
         "sidebar = true",
@@ -1066,6 +1104,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTheme).toBe("github-light-default");
     expect(bootstrap.initialShowLineNumbers).toBe(false);
     expect(bootstrap.initialTabWidth).toBe(8);
+    expect(bootstrap.initialWheelScrollLines).toBe(4);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
     expect(bootstrap.initialSidebar).toBe(true);

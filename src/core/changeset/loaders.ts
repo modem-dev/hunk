@@ -16,6 +16,7 @@ import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
 import { DEFAULT_TAB_WIDTH } from "../run/tabWidth";
+import { DEFAULT_WHEEL_SCROLL_LINES } from "../run/wheelScrollLines";
 import {
   getConfiguredVcsAdapter,
   isVcsReviewInput,
@@ -330,6 +331,7 @@ export async function loadAppBootstrap(
     customThemes,
     initialShowLineNumbers: input.options.lineNumbers ?? true,
     initialTabWidth: input.options.tabWidth ?? DEFAULT_TAB_WIDTH,
+    initialWheelScrollLines: input.options.wheelScrollLines ?? DEFAULT_WHEEL_SCROLL_LINES,
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
     initialShowMenuBar: input.options.menuBar ?? true,
