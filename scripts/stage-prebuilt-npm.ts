@@ -36,6 +36,7 @@ type RootPackageJson = {
   exports?: unknown;
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
 };
 
 interface BinaryArtifactMetadata {
@@ -107,6 +108,7 @@ function stageMetaPackage(
     engines: rootPackage.engines,
     dependencies: rootPackage.dependencies,
     peerDependencies: rootPackage.peerDependencies,
+    peerDependenciesMeta: rootPackage.peerDependenciesMeta,
     optionalDependencies: buildOptionalDependencyMap(rootPackage.version, specs),
     license: rootPackage.license,
     publishConfig: {

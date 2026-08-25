@@ -140,6 +140,15 @@ try {
     binaryFilenameForSpec(hostSpec),
   );
   const commandEnv = envWithPath(sanitizedPath);
+  const pierreInstallCandidates = [
+    path.join(installedPackageRoot, "node_modules", "@pierre", "diffs"),
+    path.join(path.dirname(installedPackageRoot), "@pierre", "diffs"),
+    path.join(installDir, "node_modules", "@pierre", "diffs"),
+  ];
+
+  if (pierreInstallCandidates.some((candidate) => existsSync(candidate))) {
+    throw new Error("Expected a CLI-only Hunk install to omit the optional @pierre/diffs peer.");
+  }
 
   if (process.platform !== "win32") {
     const installedBinaryMode = statSync(installedPlatformBinary).mode & 0o777;
