@@ -44,7 +44,7 @@ async function main() {
     ]);
     // A confirmation needs a real terminal on both sides; piped runs use --yes.
     const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
-    process.exit(
+    await exitAfterSweep(
       await runExtensionManageCommand(startupPlan.input, {
         stdout: (text) => process.stdout.write(text),
         stderr: (text) => process.stderr.write(text),
@@ -68,7 +68,7 @@ async function main() {
 
   if (startupPlan.kind === "self-update") {
     const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
-    process.exit(
+    await exitAfterSweep(
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => process.stdout.write(text),
         stderr: (text) => process.stderr.write(text),
