@@ -7,10 +7,10 @@ Use `HunkDiffView` when you want a batteries-included single-file diff, or compo
 ## Install
 
 ```bash
-npm i hunkdiff @opentui/core@^0.5.1 @opentui/react@^0.5.1 react
+npm i hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.1 @opentui/react@^0.5.1 react
 ```
 
-`hunkdiff` declares OpenTUI and React as peer dependencies, so install them in your app.
+`hunkdiff` declares Pierre diffs, OpenTUI, and React as peer dependencies, so install them in your app. Pierre diffs is optional for CLI-only installs but required when importing `hunkdiff/opentui`.
 
 ## Quick start
 
@@ -222,7 +222,7 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 - `HunkDiffSelection`
 - component prop types
 
-`parseDiffFromFile`, `parsePatchFiles`, and `FileDiffMetadata` are re-exported from `@pierre/diffs` so you can build metadata without adding a second diff dependency.
+`parseDiffFromFile`, `parsePatchFiles`, and `FileDiffMetadata` are re-exported from the `@pierre/diffs` peer dependency so the component and your app share one diff implementation.
 
 ## Examples
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { releaseNpmDir } from "./prebuilt-package-helpers";
 import { npmCommand } from "./script-helpers";
@@ -13,6 +13,48 @@ interface PackResult {
   name: string;
   version: string;
   files: PackedFile[];
+}
+
+interface PackageManifest {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+
+/** Read one package manifest from disk. */
+function readPackageManifest(directory: string) {
+  return JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as PackageManifest;
+}
+
+/** Verify CLI installs can omit Pierre while OpenTUI consumers can provide it. */
+function assertPierreDependencyContract(root: PackageManifest, staged: PackageManifest) {
+  const packageName = "@pierre/diffs";
+  const expectedVersion = root.devDependencies?.[packageName];
+
+  if (!expectedVersion) {
+    throw new Error(`Expected ${packageName} to remain a development dependency.`);
+  }
+  if (root.dependencies?.[packageName] !== undefined) {
+    throw new Error(`Expected ${packageName} to stay out of runtime dependencies.`);
+  }
+  if (
+    root.peerDependencies?.[packageName] !== expectedVersion ||
+    root.peerDependenciesMeta?.[packageName]?.optional !== true
+  ) {
+    throw new Error(
+      `Expected ${packageName}@${expectedVersion} to be an optional peer dependency.`,
+    );
+  }
+  if (staged.dependencies?.[packageName] !== undefined) {
+    throw new Error(`Expected staged ${packageName} to stay out of runtime dependencies.`);
+  }
+  if (
+    staged.peerDependencies?.[packageName] !== expectedVersion ||
+    staged.peerDependenciesMeta?.[packageName]?.optional !== true
+  ) {
+    throw new Error(`Expected the staged package to preserve the optional ${packageName} peer.`);
+  }
 }
 
 function runPackDryRun(cwd: string) {
@@ -62,6 +104,8 @@ const metaDir = path.join(releaseRoot, "hunkdiff");
 if (!existsSync(metaDir)) {
   throw new Error(`Missing staged top-level package at ${metaDir}`);
 }
+
+assertPierreDependencyContract(readPackageManifest(repoRoot), readPackageManifest(metaDir));
 
 const metaPack = runPackDryRun(metaDir);
 assertPaths(metaPack, [
