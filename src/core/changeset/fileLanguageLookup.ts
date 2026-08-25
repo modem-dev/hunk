@@ -31,12 +31,7 @@ function applyCurrentFileLanguages(): void {
   appliedRegistrationVersion = snapshot.version;
 }
 
-/** Normalize separators without changing the review's displayed path. */
-function normalizeLanguagePath(path: string): string {
-  return path.replaceAll("\\", "/");
-}
-
-/** Return the basename of one normalized review path. */
+/** Return the basename of one review path, whose only protocol separator is `/`. */
 function basenameForLanguagePath(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
@@ -96,12 +91,11 @@ function extensionLanguage(basename: string, reservedOnly = false): string | und
 /** Return the highlight language for one path, or `"text"` when no grammar matches. */
 export function fileLanguageForPath(path: string): SupportedLanguages {
   applyCurrentFileLanguages();
-  const normalizedPath = normalizeLanguagePath(path);
-  const basename = basenameForLanguagePath(normalizedPath);
+  const basename = basenameForLanguagePath(path);
   const registeredLanguage =
     extensionLanguage(basename, true) ??
     filenameLanguage(basename) ??
-    globLanguage(normalizedPath, basename) ??
+    globLanguage(path, basename) ??
     extensionLanguage(basename);
 
   if (registeredLanguage !== undefined) {

@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
+import { replaceExtensionFileLanguages } from "./fileLanguage";
 import { SourceTextTooLargeError } from "./fileSource";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
 import { createGitVcsAdapter } from "../../extensions/default/vcs/git";
@@ -189,6 +190,7 @@ async function runFromProcessCwd<T>(cwd: string, task: () => Promise<T>) {
 
 afterEach(() => {
   cleanupTempDirs();
+  replaceExtensionFileLanguages([]);
 });
 
 describe("loadAppBootstrap", () => {
@@ -1676,6 +1678,31 @@ describe("loadAppBootstrap", () => {
       additions: 1,
       deletions: 1,
     });
+  });
+
+  test("preserves literal backslashes when matching exact Git-quoted paths", async () => {
+    replaceExtensionFileLanguages([
+      {
+        matcher: { kind: "filename", value: "Hunkfile" },
+        language: "python",
+      },
+    ]);
+    const escapedPath = String.raw`tools\\Hunkfile`;
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        `diff --git "a/${escapedPath}" "b/${escapedPath}"`,
+        `--- "a/${escapedPath}"`,
+        `+++ "b/${escapedPath}"`,
+        "@@ -1 +1 @@",
+        "-one",
+        "+two",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files[0]?.path).toBe("tools\\Hunkfile");
+    expect(bootstrap.changeset.files[0]?.language).toBe("text");
   });
 
   test("preserves trailing control characters in exact Git-quoted paths", async () => {

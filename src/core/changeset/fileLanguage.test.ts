@@ -28,7 +28,7 @@ describe("custom file language registration", () => {
     expect(fileLanguageForPath("foo.mjs")).toBe("javascript");
     expect(fileLanguageForPath("foo.cjs")).toBe("javascript");
     expect(fileLanguageForPath("docker/Dockerfile")).toBe("dockerfile");
-    expect(fileLanguageForPath("build\\tools\\Makefile")).toBe("makefile");
+    expect(fileLanguageForPath("build/tools/Makefile")).toBe("makefile");
   });
 
   test("reports Hunk's own extensions as built in", () => {
@@ -45,11 +45,12 @@ describe("custom file language registration", () => {
 
     expect(fileLanguageForPath("Hunkfile")).toBe("python");
     expect(fileLanguageForPath("tools/Hunkfile")).toBe("python");
-    expect(fileLanguageForPath("tools\\nested\\Hunkfile")).toBe("python");
     expect(fileLanguageForPath("tools/hunkfile")).toBe("text");
+    // Review paths use `/`; a backslash remains a legal filename character on POSIX.
+    expect(fileLanguageForPath("tools\\nested\\Hunkfile")).toBe("text");
   });
 
-  test("matches globs against either the basename or normalized path", () => {
+  test("matches globs against either the basename or exact review path", () => {
     useTestFileLanguages(
       {
         matcher: { kind: "glob", value: "*.hunkbasename", target: "basename" },
@@ -63,7 +64,8 @@ describe("custom file language registration", () => {
 
     expect(fileLanguageForPath("nested/example.hunkbasename")).toBe("ruby");
     expect(fileLanguageForPath("generated/example.hunkpath")).toBe("python");
-    expect(fileLanguageForPath("generated\\nested\\example.hunkpath")).toBe("python");
+    expect(fileLanguageForPath("generated/nested/example.hunkpath")).toBe("python");
+    expect(fileLanguageForPath("generated\\nested\\example.hunkpath")).toBe("text");
     expect(fileLanguageForPath("source/example.hunkpath")).toBe("text");
   });
 
