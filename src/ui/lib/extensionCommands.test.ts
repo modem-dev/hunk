@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RegisteredCommand } from "../../extensions/types";
-import { synthesizeKeyEvent, parseKeyChord } from "../../lib/commandKeys";
+import { parseKeyChord } from "../../lib/commandKeys";
+import { synthesizeKeyEvent } from "./syntheticKeyEvent";
 import { builtinCommandMatchProbes, dispatchAppCommand } from "./appCommands";
 import { buildExtensionAppCommands } from "./extensionCommands";
 

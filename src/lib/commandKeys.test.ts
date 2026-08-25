@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { KeyEvent } from "@opentui/core";
-import { matchesKeyChord, parseKeyChord, synthesizeKeyEvent, toKeyChordList } from "./commandKeys";
+import { matchesKeyChord, parseKeyChord, toKeyChordList } from "./commandKeys";
+import { synthesizeKeyEvent } from "../ui/lib/syntheticKeyEvent";
 
 /**
  * The internal-only pieces of chord handling.
