@@ -118,6 +118,32 @@ describe("createHunkSessionBridge", () => {
     expect(handlers.openAgentNotes).toHaveBeenCalledTimes(1);
   });
 
+  test("prefers exact line coordinates over a hunk hint", async () => {
+    const handlers = createHandlers();
+    const bridge = createHunkSessionBridge(handlers);
+
+    await bridge.dispatchCommand({
+      type: "command",
+      requestId: "nav-line-1",
+      command: "navigate_to_hunk",
+      input: {
+        sessionId: "session-1",
+        filePath: "src/example.ts",
+        hunkIndex: 2,
+        side: "new",
+        line: 17,
+      },
+    });
+
+    expect(handlers.navigateToLocation).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      filePath: "src/example.ts",
+      hunkIndex: undefined,
+      side: "new",
+      line: 17,
+    });
+  });
+
   test("routes navigate, reload, remove, and clear commands through their dedicated handlers", async () => {
     const handlers = createHandlers();
     const bridge = createHunkSessionBridge(handlers);
