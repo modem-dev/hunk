@@ -82,6 +82,38 @@ enables that flag.
   `+15% and +5 ms` rule, and none separate from noise under the evidence bar above.
 - Single machine and single Bun version. Absolute values will differ elsewhere; the ratios are the point.
 
+## Absolute memory is harness-inflated
+
+The memory ratios are sound -- both sides carry identical overhead -- but the absolute values are much
+higher than real operation and should not be published.
+
+Measured against the compiled binary (`dist/hunk`) under a real PTY on a 40-file / 4,800-line
+working-tree diff, sampling the whole process tree, three runs after discarding a cold-start outlier:
+
+| | peak RSS | steady RSS | steady private |
+| --- | ---: | ---: | ---: |
+| `hunk diff`, 40 files / 4,800 lines | ~245 MiB | ~186 MiB | ~133 MiB |
+| `hunk diff`, 1 file / 2 lines (floor) | ~190 MiB | ~143 MiB | ~91 MiB |
+
+So real steady-state is ~186 MiB, against the suite's 315 MiB. Three things inflate the benchmark
+number: it holds the synthetic fixture alongside the parsed model, it runs under the OpenTUI test
+renderer, and `process.memoryUsage().rss` never returns after a GC (destroying the renderer moved RSS
+211 -> 208 MiB). Memory is also dominated by a fixed floor rather than diff size: an 18x larger diff
+adds only ~43 MiB.
+
+For context, same PTY harness, same repo, steady state:
+
+| Tool | RSS | private |
+| --- | ---: | ---: |
+| `git diff \| less` | 9 MiB | 1 MiB |
+| `vim` | 14 MiB | 6 MiB |
+| `hunk` (40-file diff) | 186 MiB | 133 MiB |
+| Claude Code CLI (idle) | 354 MiB | 134 MiB |
+| opencode (idle) | 690 MiB | 580 MiB |
+
+Consider whether `*_rss_bytes` should gate releases at all: RSS is sticky after GC and harness-inflated,
+so it tracks the harness more than anything a user experiences. The heap metrics are closer to reality.
+
 ## Bimodal metrics break the release gate
 
 Running `bun run bench:release:compare` over these two snapshots **fails**, on one metric:
