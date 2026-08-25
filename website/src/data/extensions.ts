@@ -35,7 +35,7 @@ export type ExtensionCategory =
 export interface ExtensionListing {
   /** `owner/name`, the argument `hunk extension install` takes. */
   repo: string;
-  /** Manifest `name`; the id the extension owns once installed. */
+  /** Extension id Hunk derives from the repository name when installed. */
   name: string;
   /** One curated line. Repository descriptions drift and get noisy. */
   summary: string;
@@ -116,6 +116,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "evantravers/hunk-notes-to-markdown",
+    name: "hunk-notes-to-markdown",
+    summary: "Yanks every review note into the clipboard as formatted Markdown with one key (Y).",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "gentilfp/hunk-codeowners",
     name: "hunk-codeowners",
     summary: "Shows CODEOWNERS context for the current changeset and selected file.",
@@ -137,6 +145,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     summary:
       "Turns Hunk into a GitHub review client: browse and reply to PR threads, then submit notes as a review.",
     categories: ["Pane", "Keyboard mode", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
+    repo: "sadick254/hunk-commit-log",
+    name: "hunk-commit-log",
+    summary:
+      "Reviews a branch commit by commit: the series beside the diff, the message above it, and keys to step between them.",
+    categories: ["Pane", "Command", "Changeset transform"],
     version: "0.1.0",
     apiVersion: 6,
   },

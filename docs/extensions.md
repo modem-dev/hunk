@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `7`). Branch on it if you want
-one file to support several Hunk versions. Version 7 adds the current source
-line to command selection snapshots. Version 6 adds session behavior,
+The API generation this Hunk speaks (currently `8`). Branch on it if you want
+one file to support several Hunk versions. Version 8 adds authoritative review
+snapshots to command handlers; version 7 added the current source line to
+command selection snapshots. Version 6 added session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
 version 4 added keyboard modes and docked panes, with API-v3 sidebar names
@@ -1400,6 +1401,54 @@ session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 `{ fileId }`-scoped. See
 [`hunk.registerLineHighlighter`](#hunkregisterlinehighlighterhighlighter).
 
+#### Reading the authoritative review
+
+`ctx.review.snapshot()` returns a deeply immutable projection of the shared
+ReviewStore, or `null` after this command's review generation has been retired.
+It contains the opaque producer `generation`, the store's `stateRevision`, every
+file in authoritative review/sidebar order, and every saved live or reviewer
+note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
+paths, stats, and flags; notes carry their complete resolved old/new anchor and
+`active`/`stale`/`orphaned` reconciliation status.
+
+This is the command-time source for exporters, publishers, and audit tools. Drafts
+are excluded because they are not saved. Static sidecar annotations that never
+entered ReviewStore remain available on the changeset's file views, not in this
+snapshot. Saved notes appear in live-arrival order followed by reviewer-creation
+order, including orphaned notes a publisher may need to move into a summary.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerCommand({ id: "publish", title: "Publish review" }, async (ctx) => {
+    const captured = ctx.review.snapshot();
+    if (!captured) return;
+
+    await Promise.resolve(); // Prepare an external request from `captured` here.
+    const current = ctx.review.snapshot();
+    if (
+      !current ||
+      current.generation !== captured.generation ||
+      current.stateRevision !== captured.stateRevision
+    ) {
+      ctx.notify("Review changed; rebuild the request", "warning");
+      return;
+    }
+  });
+}
+```
+
+Call `snapshot()` again before irreversible asynchronous work and compare both
+fields: revisions are comparable only within one generation. Use `fileKey` for
+semantic addressing, `contentIdentity` to detect changed reviewed content, and
+`runtimeId` only for navigation inside that exact generation. The
+[`review-snapshot-export`](../examples/extensions/review-snapshot-export/)
+example writes the complete value as JSON and demonstrates this stale-work check. The
+[`review-note-navigator`](../examples/extensions/review-note-navigator/) example composes
+the complete note inventory, authoritative anchors, a selector dialog, and guarded navigation
+to currently visible files.
+
 #### Navigating the review
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)`,
@@ -1679,8 +1728,8 @@ refresh key, or the reload after granting extension trust).
 session. Review notes are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
-either. A list accumulated from these events is therefore "notes the user saved
-here this session", not a complete review record; present it as such.
+either. Use them for incremental UI reactions only. A command that needs the
+complete current saved-note record uses `ctx.review.snapshot()` instead.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.
@@ -1769,6 +1818,8 @@ Installable extensions and examples include:
   paint (`hunk extension install modem-dev/hunk-lens`).
 - [`review-triage`](../examples/extensions/review-triage/) for panes, commands,
   dialogs, lifecycle events, and the event bus.
+- [`review-snapshot-export`](../examples/extensions/review-snapshot-export/) for
+  authoritative saved-note export and generation/revision stale-work checks.
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
   parses Markdown into generic host-owned file-view rows. Its README shows how
   to run it from the checkout or copy it into the global extensions directory.

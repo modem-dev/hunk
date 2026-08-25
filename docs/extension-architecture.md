@@ -182,7 +182,14 @@ chord at a time and detected by probing matchers with a synthesized event
 `src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
 panes render plus a copied source address for the active current-line cursor.
 App reads it through a ref so the dispatch table stays stable while line
-navigation moves.
+navigation moves. `ctx.review.snapshot()` takes the complementary whole-review
+path: `src/extensions/reviewSnapshot.ts` copies the active shared ReviewStore's
+document identities and complete saved-note collections, preserving core-owned
+anchors and reconciliation verdicts. App pairs that state with the producer's
+current generation under the same review capability lease, so retained controls
+return `null` after reload instead of reading replacement content. The extension
+projection is registered in `test/review-conformance/` as a real semantic
+consumer rather than rebuilding note placement in the command host.
 
 `src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is

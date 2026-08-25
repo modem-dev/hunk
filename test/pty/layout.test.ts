@@ -555,6 +555,40 @@ describe("PTY layout", () => {
     }
   });
 
+  test("shifted mouse-wheel input scrolls code horizontally in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 102,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("this is a very long");
+      expect(initial).not.toContain("ge';");
+
+      let shifted = initial;
+      for (let index = 0; index < 96; index += 1) {
+        // SGR button 69 is a wheel-down event with the Shift modifier.
+        session.writeRaw("\x1b[<69;61;11M");
+        await session.waitIdle();
+        shifted = await session.text({ immediate: true });
+        if (shifted.includes("ge';")) {
+          break;
+        }
+      }
+
+      expect(shifted).toContain("ge';");
+      expect(shifted).not.toContain("this is a very long");
+    } finally {
+      session.close();
+    }
+  });
+
   test("wrap toggles reset horizontal code scrolling in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({

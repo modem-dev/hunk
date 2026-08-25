@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { removeTestDirectory } from "../test/helpers/filesystem";
 import {
   isGeneratedPrereleasePreparation,
   isGeneratedReleasePath,
@@ -88,10 +89,8 @@ function writeGeneratedPrerelease(root: string, initialVersion = "0.17.7") {
   runGit(root, ["commit", "--quiet", "-m", "prepare prerelease"]);
 }
 
-afterEach(() => {
-  for (const root of tempRoots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((root) => removeTestDirectory(root)));
 });
 
 describe("isGeneratedReleasePath", () => {

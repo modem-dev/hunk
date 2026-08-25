@@ -10,6 +10,7 @@ import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
+import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnapshot";
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
@@ -21,6 +22,7 @@ import type {
   ReviewGeometryConsumer,
   ReviewNavigationConsumer,
   ReviewOrderingConsumer,
+  ReviewSnapshotConsumer,
   ReviewWireConsumer,
 } from "./types";
 
@@ -28,6 +30,11 @@ export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
   reviewProducerConsumer,
+];
+
+/** Consumers that export complete authoritative saved-note state. */
+export const REVIEW_SNAPSHOT_CONSUMERS: readonly ReviewSnapshotConsumer[] = [
+  extensionReviewSnapshotConsumer,
 ];
 
 /**

@@ -22,6 +22,7 @@ import type {
 } from "../../src/core/review/generationOrder";
 import type { ReviewIntent } from "../../src/core/review/intents";
 import type { ReviewSelectionScope } from "../../src/core/review/navigation";
+import type { ReviewState } from "../../src/core/review/state";
 import type { ReviewNoteV1 } from "../../src/core/review/types";
 import type { HunkReviewPublicationBodyV1 } from "../../src/session/reviewHttpProtocol";
 import type { DiffFile } from "../../src/core/changeset/model";
@@ -100,6 +101,38 @@ export interface ReviewGeometryConsumer {
   /** The phase that registered this consumer, for the gate ladder's records. */
   phase: string;
   project: (fixture: ReviewGeometryFixture) => ReviewGeometryProjection;
+}
+
+/** Renderer-neutral facts the authoritative extension snapshot must preserve. */
+export interface ReviewSnapshotProjection {
+  generation: string;
+  stateRevision: number;
+  files: Array<{ fileKey: string; contentIdentity: string }>;
+  notes: Array<{
+    id: string;
+    fileKey: string;
+    resolution: "active" | "stale" | "orphaned";
+    preferred?: ConformanceLineAddress;
+    intersectingHunkIndices: number[];
+    ownerHunkIndex?: number;
+  }>;
+}
+
+/** One hand-authored complete-note fixture for snapshot consumers. */
+export interface ReviewSnapshotFixture {
+  id: string;
+  findings: string[];
+  description: string;
+  generation: string;
+  build: () => ReviewState;
+  expected: ReviewSnapshotProjection;
+}
+
+/** One real projection of authoritative review snapshots. */
+export interface ReviewSnapshotConsumer {
+  name: string;
+  phase: string;
+  project: (fixture: ReviewSnapshotFixture) => ReviewSnapshotProjection;
 }
 
 /**

@@ -21,6 +21,8 @@ Each folder tells a small review story and includes the exact command to run fro
 ## Installable extension examples
 
 - [`extensions/review-triage/`](extensions/review-triage/) adds a session-local hunk triage sidebar.
+- [`extensions/review-note-navigator/`](extensions/review-note-navigator/) inventories every saved ReviewStore note and navigates to visible authoritative anchors.
+- [`extensions/review-snapshot-export/`](extensions/review-snapshot-export/) exports stable file identities and every saved ReviewStore note with a stale-work guard.
 - [`extensions/rendered-markdown/`](extensions/rendered-markdown/) adds an optional parsed Markdown file presentation.
 - [`extensions/inline-edit/`](extensions/inline-edit/) edits the file under review in place, composing a file-view mode, layout refresh, and host-mediated workspace writes.
 - [`extensions/jsx-file-view/`](extensions/jsx-file-view/) is the smallest hook-using fixed-row JSX proof of concept.

@@ -617,6 +617,44 @@ export function createPtyHarness() {
     return { dir };
   }
 
+  /**
+   * Build a block that moves between two files, with Git's move detection enabled.
+   *
+   * `plainAddition` is an ordinary added line in the same diff, so tests can tell a moved tint
+   * from the added tint instead of only asserting that some tint was painted.
+   */
+  function createMovedLinesRepoFixture() {
+    const movedBlock = [
+      "MOVED BLOCK ALPHA",
+      "MOVED BLOCK BRAVO",
+      "MOVED BLOCK CHARLIE",
+      "MOVED BLOCK DELTA",
+    ];
+    const plainAddition = "brand new destination line";
+    const fixture = createGitRepoFixture([
+      {
+        path: "source.txt",
+        before: ["source header one", "source header two", ...movedBlock, "source footer"].join(
+          "\n",
+        ),
+        after: ["source header one", "source header two", "source footer"].join("\n"),
+      },
+      {
+        path: "destination.txt",
+        before: ["destination header one", "destination header two"].join("\n"),
+        after: [
+          "destination header one",
+          "destination header two",
+          ...movedBlock,
+          plainAddition,
+        ].join("\n"),
+      },
+    ]);
+
+    runGit(["config", "diff.colorMoved", "zebra"], fixture.dir);
+    return { ...fixture, movedBlock, plainAddition };
+  }
+
   /** Build the long-path fixture used to verify narrow file-header layout. */
   function createNarrowHeaderTestRepoFixture() {
     return createGitRepoFixture([
@@ -1039,6 +1077,7 @@ end
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
+    createMovedLinesRepoFixture,
     createMultiFilePagerPatchFixture,
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,

@@ -8,6 +8,12 @@ const harness = createPtyHarness();
 const REVIEW_TRIAGE_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-triage", import.meta.url)),
 );
+const REVIEW_NOTE_NAVIGATOR_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-note-navigator", import.meta.url)),
+);
+const REVIEW_SNAPSHOT_EXPORT_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-snapshot-export", import.meta.url)),
+);
 const VIM_NAVIGATION_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
 );
@@ -621,6 +627,111 @@ describe("PTY extensions", () => {
         20_000,
       );
       expect(answered).not.toContain("Reformat the changeset?");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review note navigator inventories and reveals a saved user note", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createBottomClampedRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", REVIEW_NOTE_NAVIGATOR_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 22,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/first\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f8");
+      await session.waitForText(/This review has no saved notes/, { timeout: 5_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Navigate to this exact note.");
+      await session.type("\x13");
+      await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      await session.press("]");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && !text.includes("Navigate to this exact note."),
+        5_000,
+      );
+
+      await session.press("f8");
+      const picker = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("Navigate saved review note") &&
+          text.includes("[active]") &&
+          text.includes("Navigate to this exact note."),
+        5_000,
+      );
+      expect(picker).toContain("first.ts");
+      expect(picker).toMatch(/\((?:old|new)\)/);
+
+      await session.press("enter");
+      const revealed = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          !text.includes("Navigate saved review note") &&
+          text.includes("first.ts") &&
+          text.includes("Your note"),
+        5_000,
+      );
+      expect(revealed).toContain("Navigate to this exact note.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review snapshot example exports a saved user note", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createTwoFileRepoFixture();
+    const outputPath = join(fixture.dir, "review-snapshot.json");
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", REVIEW_SNAPSHOT_EXPORT_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 30,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Publish this exact note.");
+      await session.type("\x13");
+      await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      await session.press("f9");
+      await session.waitForText(/Export review snapshot/, { timeout: 5_000 });
+      await session.type(outputPath);
+      await session.press("enter");
+      await session.waitForText(/Exported 1 saved note/, { timeout: 5_000 });
+
+      const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+        generation: string;
+        stateRevision: number;
+        files: Array<{ fileKey: string; path: string }>;
+        notes: Array<{ source: string; fileKey: string; summary: string }>;
+      };
+      expect(snapshot.generation).toMatch(/^generation:/);
+      expect(snapshot.stateRevision).toBeGreaterThan(0);
+      expect(snapshot.files.some((file) => file.path === "alpha.ts")).toBe(true);
+      expect(snapshot.notes).toEqual([
+        expect.objectContaining({
+          source: "user",
+          fileKey: snapshot.files.find((file) => file.path === "alpha.ts")!.fileKey,
+          summary: "Publish this exact note.",
+        }),
+      ]);
     } finally {
       session.close();
     }

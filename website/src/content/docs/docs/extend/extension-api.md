@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `7`). Branch on it if you want one file to support several Hunk versions. Version 7 adds the current source line to command selection snapshots. Version 6 adds session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `8`). Branch on it if you want one file to support several Hunk versions. Version 8 adds authoritative review snapshots to command handlers; version 7 added the current source line to command selection snapshots. Version 6 added session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
 
 ## `hunk.configureSession(options)`
 
@@ -159,6 +159,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
 - `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts, stops, or checks an [interactive preview](/docs/extend/file-previews/#interactive-previews). Entering selects the view and returns whether its mode started.
+- `ctx.review.snapshot()` — captures stable file identities and every saved note from the authoritative shared ReviewStore.
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.
@@ -180,6 +181,14 @@ hunk.registerCommand(
 ```
 
 `selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` when filtering hides the selected file or when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. `selection.currentLine` is the one-based `{ side, line }` source address carrying the current-line marker, or `null` when that marker is off or the review has not settled on a rendered line. It belongs to this file and hunk, uses Hunk's canonical new-side address for context rows, and can be passed directly to `navigation.revealLine`. The values are captured when the command fires, so an async handler keeps the selection it started from.
+
+### Authoritative review snapshots
+
+`ctx.review.snapshot()` returns a deeply immutable value, or `null` after the command's review generation expires. It contains the opaque producer `generation`, the shared store's `stateRevision`, every file in authoritative review/sidebar order, and every saved live or reviewer note. File records expose stable `fileKey`, transient navigation `runtimeId`, content identity, status, and paths. Note records preserve their complete old/new anchor and `active`, `stale`, or `orphaned` reconciliation status.
+
+Drafts are not saved and are excluded. Static sidecar annotations that never entered ReviewStore remain on changeset file views rather than in the snapshot. Saved notes are ordered by live arrival and then reviewer creation, including orphaned notes an exporter may need to move into a summary.
+
+For irreversible asynchronous work, capture once, prepare the request, then call `snapshot()` again and compare both `generation` and `stateRevision`. Revisions compare only within one generation. The [`review-snapshot-export` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export) demonstrates the complete JSON export and stale-work check. The [`review-note-navigator` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-note-navigator) combines the complete inventory and authoritative anchors with a selector dialog and guarded navigation to currently visible files.
 
 `ctx.navigation.selectFile(fileId)`, `selectHunk(fileId, hunkIndex)`, and `revealLine(fileId, side, line)` route through the same guarded review controller as a pane's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
 
@@ -292,7 +301,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
 - `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
-- `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes — an accumulated list is not a complete review record.
+- `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes. Use them for incremental reactions; use `ctx.review.snapshot()` when a command needs the complete current saved-note record.
 - `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing. UI authority has already been revoked, so shutdown is for releasing extension-owned resources rather than navigation or dialogs.
 
 ## `hunk.events`

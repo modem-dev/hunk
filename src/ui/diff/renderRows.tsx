@@ -1,5 +1,10 @@
 import { Fragment, isValidElement, memo, type ReactNode } from "react";
-import { parseColor, StyledText, type TextChunk } from "@opentui/core";
+import {
+  parseColor,
+  StyledText,
+  type MouseEvent as TuiMouseEvent,
+  type TextChunk,
+} from "@opentui/core";
 import type { DiffFile } from "../../core/changeset/model";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { AppTheme } from "../themes";
@@ -862,7 +867,7 @@ function buildWrappedSplitCell(
   prefixWidth: number,
   theme: AppTheme,
 ) {
-  const palette = splitCellPalette(cell.kind, theme);
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
     width,
     lineNumberDigits,
@@ -894,7 +899,7 @@ function buildWrappedStackCell(
   prefixWidth: number,
   theme: AppTheme,
 ) {
-  const palette = stackCellPalette(cell.kind, theme);
+  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,
     lineNumberDigits,
@@ -1815,13 +1820,28 @@ function renderHeaderRow(
         <box
           key={badge.key}
           style={{ width: badge.text.length + 1, height: 1 }}
-          onMouseUp={badge.onClick}
+          onMouseUp={(event) => {
+            markNestedRowMouseAction(event);
+            badge.onClick();
+          }}
         >
           <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
         </box>
       ))}
     </box>
   );
+}
+
+const nestedRowMouseActions = new WeakSet<TuiMouseEvent>();
+
+/** Mark an event so the parent completes mouse cleanup without selecting the containing line. */
+export function markNestedRowMouseAction(event: TuiMouseEvent) {
+  nestedRowMouseActions.add(event);
+}
+
+/** Return whether a nested control, rather than the diff line, owns this mouse event. */
+export function isNestedRowMouseAction(event: TuiMouseEvent) {
+  return nestedRowMouseActions.has(event);
 }
 
 /** Render the hover-only add-note target as a separate clickable hit area. */
@@ -1836,7 +1856,10 @@ function renderAddNoteButton(
     <box
       key={key}
       style={{ width: addNoteBadgeText.length, height: 1 }}
-      onMouseUp={() => onStartUserNoteAtHunk?.(hunkIndex, target)}
+      onMouseUp={(event) => {
+        markNestedRowMouseAction(event);
+        onStartUserNoteAtHunk?.(hunkIndex, target);
+      }}
     >
       <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
         {addNoteBadgeText}

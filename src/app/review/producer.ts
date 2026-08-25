@@ -119,6 +119,8 @@ export class ReviewProducer {
   private publication: ReviewPublication;
   private resourceStore: ReviewResourceStore;
   private store: ReviewStore | undefined;
+  /** Generation the attached store was mounted for; unequal means the store is retired. */
+  private storeGeneration: string | undefined;
   private publicationReservation: object | undefined;
 
   constructor(input: PublishReviewInput, options: ReviewProducerOptions = {}) {
@@ -142,7 +144,7 @@ export class ReviewProducer {
   getPublicationAddress(): ReviewPublicationAddress {
     return {
       generation: this.publication.generation,
-      stateRevision: this.store?.getSnapshot().stateRevision ?? 0,
+      stateRevision: this.currentStore()?.getSnapshot().stateRevision ?? 0,
     };
   }
 
@@ -209,7 +211,10 @@ export class ReviewProducer {
       this.identity = prepared.identity;
       this.publication = prepared.publication;
       this.resourceStore = prepared.resourceStore;
-      if (options.detachStore) this.store = undefined;
+      if (options.detachStore) {
+        this.store = undefined;
+        this.storeGeneration = undefined;
+      }
       return this.publication;
     };
 
@@ -242,6 +247,7 @@ export class ReviewProducer {
    */
   attachStore(store: ReviewStore) {
     this.store = store;
+    this.storeGeneration = this.publication.generation;
   }
 
   /**
@@ -252,7 +258,19 @@ export class ReviewProducer {
    * see exactly what the next intent will be planned against.
    */
   getReviewState() {
-    return this.store?.getSnapshot();
+    return this.currentStore()?.getSnapshot();
+  }
+
+  /**
+   * Pair the current generation with the state attached for that generation.
+   *
+   * Reload commits a new publication with its previous store detached, then the matching
+   * host attaches replacement state. Returning nothing during that interval prevents a
+   * caller from combining the new generation with state captured from the retired host.
+   */
+  getPositionedReviewState() {
+    const state = this.currentStore()?.getSnapshot();
+    return state ? { generation: this.publication.generation, state } : undefined;
   }
 
   /**
@@ -267,7 +285,7 @@ export class ReviewProducer {
     intent: T,
     facts: ReviewIntentFacts = {},
   ): ReviewIntentOutcomeByType[T["type"]] {
-    const store = this.store;
+    const store = this.currentStore();
     if (!store) {
       throw new Error("Review producer has no review state attached.");
     }
@@ -342,7 +360,7 @@ export class ReviewProducer {
    * annotated navigation would silently find nothing.
    */
   private intentFacts(): ReviewIntentFacts {
-    const document = this.store?.getSnapshot().document ?? this.publication.document;
+    const document = this.currentStore()?.getSnapshot().document ?? this.publication.document;
     const keyByRuntimeId = new Map(document.files.map((file) => [file.runtimeId, file.key]));
     return {
       annotations: buildReviewAnnotationIndex(
@@ -350,6 +368,11 @@ export class ReviewProducer {
         keyByRuntimeId,
       ),
     };
+  }
+
+  /** Return the attached store only while it belongs to the current publication. */
+  private currentStore() {
+    return this.storeGeneration === this.publication.generation ? this.store : undefined;
   }
 
   /** Attach the current generation to one failure so a caller can resynchronize. */
