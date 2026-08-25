@@ -107,6 +107,7 @@
     "bench:non-ascii-stream": "bun run benchmarks/non-ascii-stream.ts",
     "bench:wrapped-cjk": "bun run benchmarks/wrapped-cjk.ts",
     "bench:terminal-width": "bun run benchmarks/terminal-width.ts",
+    "bench:fast-latency": "bun run benchmarks/fast-latency.ts",
     "bench:huge-stream": "bun run benchmarks/huge-stream.ts",
     "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
     "bench:memory": "bun run benchmarks/memory.ts",

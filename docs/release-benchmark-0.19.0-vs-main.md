@@ -61,10 +61,27 @@ Moved the right way, but sample ranges overlap at this sample count:
 | `interaction-latency/scroll_tick_p95_ms`                | 44.0 ms | 22.3 ms |   -49% |
 | `interaction-latency/after_first_frame_heap_used_bytes` |  41 MiB |  31 MiB |   -24% |
 
-### Not measured
+### Fast highlighting
 
-The `--fast` syntax-highlight offload (#810) does not appear in these numbers; the benchmark suite never
-enables that flag.
+The `--fast` offload (#810) is absent from every metric above, because the suite never enables the flag.
+Measuring it from outside the process cannot see it either: offloading relocates highlighting to a worker
+rather than removing it, so total CPU is flat whether or not the flag helps. Driving the shipped binary
+through a PTY found only its cost -- RSS 240 -> 257 MiB, consistent across three rounds.
+
+`bun run bench:fast-latency` toggles the flag through the bootstrap and measures in-app latency instead.
+Three interleaved rounds, 18 samples per arm, on 0.20.0:
+
+| | fast off | fast on | delta |
+| --- | ---: | ---: | ---: |
+| first frame | 29.6 ms | 12.3 ms | **-58%** |
+| hunk-nav press, median | 76.7 ms | 43.8 ms | **-43%** |
+| hunk-nav press, p95 | 225.6 ms | 85.0 ms | **-62%** |
+| scroll tick, median | 12.2 ms | 8.3 ms | -32% |
+| scroll tick, p95 | 64.6 ms | 37.8 ms | -42% |
+
+Every row's bootstrap CI excludes zero. The flag roughly halves interaction latency for about 17 MiB, and
+helps worst-case navigation most, which is what moving blocking work off the main thread should look like.
+These are within-0.20.0 numbers: they say what the flag is worth, not what the release is worth.
 
 ## Attribution
 
@@ -88,11 +105,11 @@ Both tags were compiled with `bun run build:bin` and driven under a real PTY on 
 4,800-line working-tree diff, stepping through 12 hunks with `]`, sampling the whole process tree.
 Three interleaved rounds per side, after a warm-up run to avoid first-execution page-in:
 
-| | 0.19.0 | 0.20.0 | delta |
-| --- | ---: | ---: | ---: |
-| RSS after navigating | 322 MiB | 239 MiB | **-26%** |
+|                                 |  0.19.0 |  0.20.0 |    delta |
+| ------------------------------- | ------: | ------: | -------: |
+| RSS after navigating            | 322 MiB | 239 MiB | **-26%** |
 | Private (anon) after navigating | 273 MiB | 187 MiB | **-32%** |
-| Peak RSS | 345 MiB | 272 MiB | -21% |
+| Peak RSS                        | 345 MiB | 272 MiB |     -21% |
 
 Run-to-run spread is about +/-1 MiB and the two sides never overlap. These reproduce the suite's ratio
 (-26% against -27%) from the shipped artifact, so the ratio is trustworthy even though the suite's
@@ -100,19 +117,19 @@ absolutes are not: it holds the synthetic fixture alongside the parsed model, ru
 test renderer, and reads an RSS that never returns after a GC (destroying the renderer moved RSS
 211 -> 208 MiB).
 
-Scenario matters more than diff size. Opening the same diff *without* navigating gives 204 -> 186 MiB
+Scenario matters more than diff size. Opening the same diff _without_ navigating gives 204 -> 186 MiB
 (-8.5%): most of the win is retained navigation state, not steady-state footprint. Diff size barely
 moves the floor -- an 18x larger diff adds only ~43 MiB.
 
 For context, same PTY harness, same repo, steady state:
 
-| Tool | RSS | private |
-| --- | ---: | ---: |
-| `git diff \| less` | 9 MiB | 1 MiB |
-| `vim` | 14 MiB | 6 MiB |
-| `hunk` (40-file diff) | 186 MiB | 133 MiB |
+| Tool                   |     RSS | private |
+| ---------------------- | ------: | ------: |
+| `git diff \| less`     |   9 MiB |   1 MiB |
+| `vim`                  |  14 MiB |   6 MiB |
+| `hunk` (40-file diff)  | 186 MiB | 133 MiB |
 | Claude Code CLI (idle) | 354 MiB | 134 MiB |
-| opencode (idle) | 690 MiB | 580 MiB |
+| opencode (idle)        | 690 MiB | 580 MiB |
 
 Consider whether `*_rss_bytes` should gate releases at all: RSS is sticky after GC and harness-inflated,
 so it tracks the harness more than anything a user experiences. The heap metrics are closer to reality.

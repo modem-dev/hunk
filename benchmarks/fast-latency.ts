@@ -5,20 +5,25 @@ import React from "react";
 import { AppHost } from "../src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 import {
-  INTERACTION_VIEWPORT, renderPass, destroyRenderer,
-  measureKeyPressLatencies, measureScrollTickLatencies, printLatencyMetrics,
+  INTERACTION_VIEWPORT,
+  renderPass,
+  destroyRenderer,
+  measureKeyPressLatencies,
+  measureScrollTickLatencies,
+  printLatencyMetrics,
 } from "./lib/interaction";
 
 const fast = process.env.HUNK_BENCH_FAST === "1";
 
 function bootstrap() {
   const b = createLargeSplitStreamBootstrap();
-  return fast
-    ? { ...b, input: { ...b.input, options: { ...b.input.options, fast: true } } }
-    : b;
+  return fast ? { ...b, input: { ...b.input, options: { ...b.input.options, fast: true } } } : b;
 }
 
-const setup = await testRender(React.createElement(AppHost, { bootstrap: bootstrap() }), INTERACTION_VIEWPORT);
+const setup = await testRender(
+  React.createElement(AppHost, { bootstrap: bootstrap() }),
+  INTERACTION_VIEWPORT,
+);
 try {
   const t = performance.now();
   await renderPass(setup);
