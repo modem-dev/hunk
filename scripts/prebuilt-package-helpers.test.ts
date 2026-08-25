@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   PLATFORM_PACKAGE_MATRIX,
+  assertOptionalPeerDependencyContract,
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
   buildPlatformPackageManifest,
@@ -10,8 +11,27 @@ import {
   normalizeHostArch,
   normalizeHostPlatform,
   sortPlatformPackageSpecs,
+  type PackageDependencyManifest,
   type PlatformPackageSpec,
 } from "./prebuilt-package-helpers";
+
+/** Build matching source and staged manifests for optional-peer tests. */
+function createOptionalPeerContract(): {
+  root: PackageDependencyManifest;
+  staged: PackageDependencyManifest;
+} {
+  return {
+    root: {
+      devDependencies: { "@pierre/diffs": "1.3.5" },
+      peerDependencies: { "@pierre/diffs": "1.3.5" },
+      peerDependenciesMeta: { "@pierre/diffs": { optional: true } },
+    },
+    staged: {
+      peerDependencies: { "@pierre/diffs": "1.3.5" },
+      peerDependenciesMeta: { "@pierre/diffs": { optional: true } },
+    },
+  };
+}
 
 describe("prebuilt package helpers", () => {
   test("buildOptionalDependencyMap includes every supported platform package at one version", () => {
@@ -22,6 +42,45 @@ describe("prebuilt package helpers", () => {
       PLATFORM_PACKAGE_MATRIX.map((spec) => spec.packageName).sort(),
     );
     expect(new Set(Object.values(dependencies))).toEqual(new Set([version]));
+  });
+
+  test("assertOptionalPeerDependencyContract accepts a preserved optional peer", () => {
+    const { root, staged } = createOptionalPeerContract();
+
+    expect(() => assertOptionalPeerDependencyContract(root, staged, "@pierre/diffs")).not.toThrow();
+  });
+
+  test("assertOptionalPeerDependencyContract rejects dependency contract drift", () => {
+    const mutations: Array<
+      (root: PackageDependencyManifest, staged: PackageDependencyManifest) => void
+    > = [
+      (root) => delete root.devDependencies?.["@pierre/diffs"],
+      (root) => {
+        root.dependencies = { "@pierre/diffs": "1.3.5" };
+      },
+      (root) => {
+        root.peerDependencies = { "@pierre/diffs": "1.3.4" };
+      },
+      (root) => {
+        root.peerDependenciesMeta = { "@pierre/diffs": { optional: false } };
+      },
+      (_root, staged) => {
+        staged.dependencies = { "@pierre/diffs": "1.3.5" };
+      },
+      (_root, staged) => {
+        staged.peerDependencies = { "@pierre/diffs": "1.3.4" };
+      },
+      (_root, staged) => {
+        staged.peerDependenciesMeta = { "@pierre/diffs": { optional: false } };
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const { root, staged } = createOptionalPeerContract();
+      mutate(root, staged);
+
+      expect(() => assertOptionalPeerDependencyContract(root, staged, "@pierre/diffs")).toThrow();
+    }
   });
 
   test("binaryFilenameForSpec keeps unix package binaries extensionless", () => {
@@ -84,7 +143,7 @@ describe("prebuilt package helpers", () => {
     );
   });
 
-  test("buildPlatformPackageManifest carries provenance metadata without a native bin script", () => {
+  test("buildPlatformPackageManifest carries provenance metadata and a native bin script", () => {
     const repository = {
       type: "git",
       url: "git+https://github.com/modem-dev/hunk.git",
@@ -103,7 +162,7 @@ describe("prebuilt package helpers", () => {
 
     expect(manifest.name).toBe("hunkdiff-linux-x64");
     expect(manifest.version).toBe("1.2.3");
-    expect(manifest).not.toHaveProperty("bin");
+    expect(manifest.bin).toEqual({ hunk: "bin/hunk" });
     expect(manifest.repository).toEqual(repository);
     expect(manifest.homepage).toBe("https://github.com/modem-dev/hunk#readme");
     expect(manifest.bugs).toEqual({ url: "https://github.com/modem-dev/hunk/issues" });
@@ -122,7 +181,7 @@ describe("prebuilt package helpers", () => {
     );
 
     expect(manifest.name).toBe("hunkdiff-windows-x64");
-    expect(manifest).not.toHaveProperty("bin");
+    expect(manifest.bin).toEqual({ hunk: "bin/hunk.exe" });
     expect(manifest.os).toEqual(["win32"]);
     expect(manifest.cpu).toEqual(["x64"]);
   });

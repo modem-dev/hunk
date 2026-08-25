@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
-import type { HunkConfigResolution } from "../core/config";
-import { HunkUserError } from "../core/errors";
+import type { HunkConfigResolution } from "../core/run/config";
+import { HunkUserError } from "../core/run/errors";
 import { prepareStartupPlan } from "./startup";
-import type { AppBootstrap, CliInput, NamedCustomThemeConfig, ParsedCliInput } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
+import type { NamedCustomThemeConfig } from "../extension-api/types";
 
 /**
  * Build a config resolution for tests that are not exercising config layering.
@@ -135,7 +137,8 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text });
+    // Captured hosts draw this text themselves, so Git's colors have to survive.
+    expect(plan).toEqual({ kind: "passthrough", text, preserveColor: true });
     expect(loaded).toBe(false);
   });
 
@@ -155,7 +158,8 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text });
+    // A genuinely dumb terminal would print the escape sequences as literal text.
+    expect(plan).toEqual({ kind: "passthrough", text, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
@@ -216,13 +220,14 @@ describe("startup planning", () => {
       readStdinText: async () => patchText,
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: false,
+      env: { TERM: "xterm-256color" },
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(plan).toEqual({ kind: "passthrough", text: patchText, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
@@ -242,7 +247,7 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(plan).toEqual({ kind: "passthrough", text: patchText, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
@@ -333,7 +338,8 @@ describe("startup planning", () => {
       resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input, { customThemes }),
       loadAppBootstrapImpl: async (input, options) => {
         expect(input).toBe(cliInput);
-        expect(options).toEqual({ customThemes, vcsAdapters: [] });
+        expect(options).toMatchObject({ customThemes });
+        expect(options?.vcsCatalog?.defaultAdapterId).toBe("git");
         return {
           ...createBootstrap(input),
           customThemes,

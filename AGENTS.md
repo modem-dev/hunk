@@ -22,12 +22,51 @@ CLI input
   -> Pierre-backed terminal renderer draws diff rows
 ```
 
+### shared review seam
+
+Review core serves multiple surfaces: TUI today; web, API, and agent/runtime consumers later. Do
+not recreate semantic review behavior in a surface:
+
+```text
+DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> surface projection
+```
+
+- **Model:** `src/core/review/{types,document,identity}.ts` owns the ordered, JSON-safe document.
+  File order is review/sidebar order; use `key` (referenced as `fileKey` elsewhere),
+  `contentIdentity`, and `sourceIdentity` (cached source text additionally requires
+  `sourceAttested`) — not runtime IDs or indexes — across reloads/surfaces.
+- **Shared derivations:** `geometry.ts`, `expansion.ts`, `anchors.ts`, `stml.ts`, and
+  `contentManifest.ts` own ranges, gaps, source splitting, note targets/ownership, tag roles, and
+  parity manifests. Consume them; never re-derive those facts in a renderer.
+- **State:** `state.ts` is semantic state; `actions.ts` transitions; `reducer.ts` pure/no-I/O;
+  `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
+  operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
+- **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
+  `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, DOM
+  mechanics, and source I/O stay local. `useHunkSessionBridge.ts` publishes the current terminal
+  session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
+  agent commands. This broker export is not a full `ReviewState` mirror.
+- **Future consumers:** Web/API consumers reuse the model, derivations, state, intents, and then
+  the producer/protocol tier (see Phases 2–3 in `docs/browser-review-rebuild.md` for modules and
+  status). Never build a parallel protocol. Keep presentation/client-local state local;
+  host/extension commands need explicit remote capabilities.
+- **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures and currently
+  covers core plus terminal render planning. Every new semantic consumer registers its real
+  projection and runs the whole corpus. `scripts/source-boundaries.test.ts` keeps the seam
+  renderer/platform-free; its Node-debt list is shrink-only and tombstone lists append-only. A
+  repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
+  fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
+
 - CLI entrypoints: `diff`, `show`, `stash show`, `patch`, `pager`, `difftool`.
 - All input sources normalize into one internal changeset model.
+- Bundled VCS implementations live under `src/extensions/default/vcs/<provider>/` and consume the
+  public extension contract; `src/app` composes their registrations into the provider-neutral
+  core VCS catalog. Do not add provider commands, spawning, or source readers under `src/core`.
 - Pager mode has two paths: full diff UI for patch-like stdin, plain-text fallback for non-diff pager content.
 - View defaults are layered through built-ins, user config, repo `.hunk/config.toml`, command sections, pager sections, and CLI flags.
-- `hunk daemon serve` runs one loopback daemon that brokers agent commands to many live Hunk sessions. Normal Hunk sessions should auto-start and register with that daemon when session brokering is enabled. Keep it local-only and session-brokered rather than opening per-TUI ports.
-- Extensions come in two tiers — user TypeScript extensions and the bundled tier in `src/extensions/default/` — running through one per-extension API object and registry (`src/extensions/runExtension.ts`, resolved via `src/extensions/apply.ts`). Every shipped VCS backend and the built-in sidebar are bundled extensions registering through the public API; that dogfooding keeps `hunkdiff/extension` honest. Hard rules: `src/extension-api/types.ts` stays import-free (declaration emission publishes whatever it reaches; `scripts/check-pack.ts` gates it); `src/extensions/default/vcs/` loads from VCS adapter resolution and must stay renderer-free (the sidebar loads separately via `getBundledSidebarView`); repo-local `.hunk/extensions/` never executes without the trust prompt; bundled extensions stay loaded under `--no-extensions`. The full architecture — host-served runtime modules, sidebar pane model, command dispatch, VCS detection ordering, conversion boundaries — is mapped in `docs/extension-architecture.md` and documented in depth by the module headers it names; the authoring guide is `docs/extensions.md`.
+- `hunk daemon serve` runs one loopback daemon that brokers agent commands to many live Hunk sessions. Normal Hunk sessions should auto-start and register with that daemon when session brokering is enabled. Keep it local-only and session-brokered rather than opening per-TUI ports. The daemon also mirrors each session's current review publication (generation plus resource catalog) and reads bulky content — patch text, canonical files, source — back as bounded, digest-verified resource chunks instead of holding it in the registration. Order publications with `classifyReviewPublication` and assemble chunks with `ReviewChunkAssembler`; do not add a second acceptance rule or a second assembly loop. The same daemon serves each session's review over HTTP (`src/session/broker/browserReviewServer.ts`): loopback and same-origin only, no CORS, and every route authorized by a per-session capability the session mints and publishes only the digest of. That surface is transport and authorization — its routes, capability grammar, SSE event contract, and error messages are the browser-safe modules `src/session/review{HttpProtocol,EventProtocol,ErrorCatalog}.ts`, and its semantic answers come from the producer through the existing intent path.
+- Extensions come in two tiers — user TypeScript extensions and the bundled tier in `src/extensions/default/` — running through one per-extension API object and registry (`src/extensions/runExtension.ts`, resolved via `src/extensions/apply.ts`). Every shipped VCS backend and the built-in sidebar are bundled extensions registering through the public API; that dogfooding keeps `hunkdiff/extension` honest. Hard rules: `src/extension-api/types.ts` stays import-free (declaration emission publishes whatever it reaches; `scripts/check-pack.ts` gates it); `src/extensions/default/vcs/` loads from VCS adapter resolution and must stay renderer-free (the sidebar loads separately via `getBundledSidebarView`); repo-local `.hunk/extensions/` never executes without the trust prompt; bundled extensions stay loaded under `--no-extensions`. The full architecture — host-served runtime modules, sidebar pane model, command dispatch, VCS detection ordering, conversion boundaries — is mapped in `docs/extension-architecture.md` and documented in depth by the module headers it names; the authoring guide is `docs/extensions.md`, and `skills/hunk-extensions/SKILL.md` is the agent-facing map of those touchpoints.
 - Agent rationale is optional sidecar JSON matched onto files/hunks.
 - The order of `files` in the sidecar is intentional. Hunk uses that order for the sidebar and main review stream.
 - Prefer one source of truth for each user-visible behavior. When rendering, navigation, scrolling, or note placement share the same model, derive them from the same planning layer rather than maintaining parallel implementations.
@@ -36,6 +75,10 @@ CLI input
 
 ## architectural rules
 
+- Import boundaries between `src/` top-level trees are enforced by `bun run deps:check`
+  (dependency-cruiser; rules in `.dependency-cruiser.cjs`, target tiers in
+  `docs/module-boundaries.md`). The known-violations baseline is shrink-only: fix an edge, rerun
+  `bun run deps:baseline`, never add to it.
 - Keep the app review-first: the main pane is a single top-to-bottom stream of all visible file diffs.
 - The sidebar is for navigation. Selecting a file jumps to that file in the main review stream; it should not collapse the main pane to one file.
 - Keep Pierre as the diff engine and renderer foundation. Do not switch the main renderer back to OpenTUI's built-in `<diff>` widget.
@@ -68,11 +111,16 @@ CLI input
   - `test/cli/` for black-box CLI contract coverage.
   - `test/session/` for daemon/session integration and end-to-end flows.
   - `test/pty/` for PTY-backed live UI integration tests.
+  - `test/review-conformance/` for the shared review model's golden fixtures and per-consumer conformance suites.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
 
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.
+- Write header comments in active voice: the first sentence says what the module or function
+  does ("Applies one action to the review state and returns the next state."), followed by its
+  invariants. Avoid passive or self-important framing ("The one place where…", "the single
+  source of truth for…") — name the behavior, not the architecture's opinion of itself.
 - Add inline comments for intent, invariants, or tricky behavior that would not be obvious to a fresh reader.
 - Skip comments that only narrate what the code already says.
 
@@ -136,28 +184,13 @@ CLI input
 
 ## releases
 
-- Use Changesets for user-visible release notes. Add a `.changeset/*.md` entry with `bun run changeset` instead of editing `CHANGELOG.md` directly.
-- Target the public `hunkdiff` package in changesets. Use `patch` for fixes and small behavior changes, `minor` for new user-facing features, and `major` for breaking changes.
-- For maintenance-only PRs that should not appear in release notes, add an empty changeset with `bun run changeset -- --empty`.
-- Keep the top-level `CHANGELOG.md` as the released changelog artifact. It is updated during release prep with `bun run release:version`, not by normal feature/fix PRs.
-- Use the released changelog section as the starting point for the GitHub release body.
-- GitHub releases should follow this format:
-
-  ```md
-  ## What's Changed
-
-  - <change title> by @<author> in <PR URL>
-  - ...
-
-  **Full Changelog**: https://github.com/modem-dev/hunk/compare/<previous-tag>...<new-tag>
-  ```
-
-- Do not rely blindly on autogenerated GitHub release notes. After publishing, verify the release body and edit it if needed.
-- Prefer `gh release create/edit --notes-file` for multi-line release notes so the exact body is reviewed before posting.
-- After publishing, verify npm packages and GitHub release assets point at the new version. For Homebrew, Hunk is distributed through `Homebrew/homebrew-core`; do not open manual simple version-bump PRs yourself. Let Homebrew Autobump create the `hunk <version>` PR, then verify it merges and `brew install hunk` resolves to the new version. Only use `brew bump-formula-pr hunk --version <version>` if Homebrew maintainers request a manual bump or Autobump stalls unexpectedly.
-- For patch releases and backports, list only changes actually present between the previous tag and the new tag on that release branch.
-- Prefer concise, user-visible entries over internal refactors unless the refactor changes user-visible behavior.
-- Keep each changeset summary to one concise user-facing sentence; put implementation detail in the PR or supporting docs.
+- Add a Changeset for user-visible changes with `bun run changeset`; do not edit `CHANGELOG.md` directly.
+- Target `hunkdiff`: use `patch` for fixes and small behavior changes, `minor` for new user-facing features, and `major` for breaking changes.
+- Add an empty Changeset with `bun run changeset -- --empty` for maintenance-only PRs that should not appear in release notes.
+- Keep each Changeset summary to one concise, user-facing sentence; put implementation detail in the PR or supporting docs.
+- For release preparation, publishing, backports, and post-release verification, read `skills/hunk-release/SKILL.md`.
+- Never push a release tag or trigger publishing without explicit user confirmation.
+- `hunk.dev/changelog` is generated from `CHANGELOG.md` by `bun run generate:changelog`; hand-author only `website/releases/notes.json`, and never edit its output. `docs/changelog-on-hunk-dev.md` explains how release dates and the pre-tag window work.
 
 ## repo notes
 

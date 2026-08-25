@@ -21,12 +21,14 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
 
+`↑` / `↓` and `k` / `j` move a highlighted current line, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen, and `c` anchors a note on it. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
+
 ## Change the view
 
 | Key             | Action                                           |
 | --------------- | ------------------------------------------------ |
 | `0` / `1` / `2` | Auto / split / stack layout                      |
-| `s`             | Toggle sidebar                                   |
+| `s`             | Toggle files pane                                |
 | `t`             | Choose a theme                                   |
 | `l`             | Toggle line numbers                              |
 | `w`             | Toggle line wrapping                             |

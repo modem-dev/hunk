@@ -1,7 +1,10 @@
-import type { AgentAnnotation } from "../../core/types";
-import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
+import { reviewNoteAnchorLine, reviewNoteOwnerHunkIndex } from "../../core/review/state";
+import type { ReviewRangeAnchorV1 } from "../../core/review/types";
+import type { UserNoteLineTarget } from "../../core/liveComments";
+import type { AgentAnnotation } from "../../extension-api/types";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();
@@ -67,14 +70,24 @@ function uniqueStableKeys(keys: Array<string | undefined>) {
   return next;
 }
 
+/** Build the file-scoped stable anchor for one source line on either diff side. */
+export function lineStableKey(hunkIndex: number, side: "old" | "new", lineNumber: number) {
+  return `line:${hunkIndex}:${side}:${lineNumber}`;
+}
+
+/** Build the stable anchor for one inline note card. */
+export function inlineNoteStableKey(noteId: string) {
+  return `inline-note:${noteId}`;
+}
+
 /** Build the file-scoped stable anchor for one old-side source line. */
 function oldLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:old:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "old", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one new-side source line. */
 function newLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:new:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "new", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one context row shared by both sides. */
@@ -82,6 +95,59 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
   return oldLineNumber === undefined || newLineNumber === undefined
     ? undefined
     : `line:${hunkIndex}:context:${oldLineNumber}:${newLineNumber}`;
+}
+
+const SIDED_LINE_STABLE_KEY = /^line:(\d+):(old|new):(\d+)$/;
+const CONTEXT_LINE_STABLE_KEY = /^line:(\d+):context:\d+:(\d+)$/;
+const CONTEXT_LINE_STABLE_KEY_SIDES = /^line:(\d+):context:(\d+):(\d+)$/;
+
+/** Recover the source line one single-sided stable anchor names. */
+export function lineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = SIDED_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: match[2] as "old" | "new", line: Number(match[3]) };
+}
+
+/**
+ * Recover the source line one shared context anchor names.
+ *
+ * Resolves to the new side, which is what the add-note affordance already anchors to.
+ */
+export function contextLineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = CONTEXT_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: "new", line: Number(match[2]) };
+}
+
+/**
+ * Recover both source lines one shared context anchor names.
+ *
+ * A context row shows the same text on both sides under two different numbers, so a caller
+ * addressing it by line number has to be able to match either one.
+ */
+export function contextLineStableKeySides(
+  stableKey: string,
+): { hunkIndex: number; oldLine: number; newLine: number } | null {
+  const match = CONTEXT_LINE_STABLE_KEY_SIDES.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hunkIndex: Number(match[1]),
+    oldLine: Number(match[2]),
+    newLine: Number(match[3]),
+  };
 }
 
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
@@ -137,63 +203,64 @@ function diffRowStableKeys(row: DiffRow) {
   ]);
 }
 
-/** Check whether a rendered diff row visually covers the note anchor line. */
-function rowMatchesNote(row: DiffLineRow, annotation: AgentAnnotation) {
-  const anchor = annotationAnchor(annotation);
-  if (!anchor) {
-    return false;
-  }
-
+/** The line one rendered row shows on one diff side, when it shows one at all. */
+function rowLineNumber(row: DiffLineRow, side: "old" | "new") {
   if (row.type === "split-line") {
-    return anchor.side === "new"
-      ? row.right.lineNumber === anchor.lineNumber
-      : row.left.lineNumber === anchor.lineNumber;
+    return side === "new" ? row.right.lineNumber : row.left.lineNumber;
   }
 
-  return anchor.side === "new"
-    ? row.cell.newLineNumber === anchor.lineNumber
-    : row.cell.oldLineNumber === anchor.lineNumber;
+  return side === "new" ? row.cell.newLineNumber : row.cell.oldLineNumber;
 }
 
-/** Check whether one rendered diff row falls inside the annotation range on either side. */
-function rowOverlapsAnnotation(row: DiffLineRow, annotation: AgentAnnotation) {
-  const matchesOld =
-    annotation.oldRange &&
-    (row.type === "split-line"
-      ? row.left.lineNumber !== undefined &&
-        row.left.lineNumber >= annotation.oldRange[0] &&
-        row.left.lineNumber <= annotation.oldRange[1]
-      : row.cell.oldLineNumber !== undefined &&
-        row.cell.oldLineNumber >= annotation.oldRange[0] &&
-        row.cell.oldLineNumber <= annotation.oldRange[1]);
-
-  if (matchesOld) {
-    return true;
+/** Check whether one rendered diff row falls inside the note's range on either side. */
+function rowOverlapsNoteRange(row: DiffLineRow, anchor: ReviewRangeAnchorV1) {
+  for (const side of ["old", "new"] as const) {
+    const range = side === "old" ? anchor.oldRange : anchor.newRange;
+    const lineNumber = rowLineNumber(row, side);
+    if (range && lineNumber !== undefined && lineNumber >= range[0] && lineNumber <= range[1]) {
+      return true;
+    }
   }
 
-  return Boolean(
-    annotation.newRange &&
-    (row.type === "split-line"
-      ? row.right.lineNumber !== undefined &&
-        row.right.lineNumber >= annotation.newRange[0] &&
-        row.right.lineNumber <= annotation.newRange[1]
-      : row.cell.newLineNumber !== undefined &&
-        row.cell.newLineNumber >= annotation.newRange[0] &&
-        row.cell.newLineNumber <= annotation.newRange[1]),
-  );
+  return false;
 }
 
 /**
- * Resolve the rendered diff row before which the inline note should appear.
- * Range-less notes intentionally anchor beside the first code row in the file,
- * not above hunk header metadata.
+ * Resolve the rendered diff row after which one inline note should appear.
+ *
+ * The owning hunk is the one the shared anchor resolver named, never the hunk of whatever
+ * row happens to contain the note's range: a note anchored to lines this patch collapsed,
+ * or to a gap line, has an owner but no matching row, and re-deriving placement by
+ * containment strands it at the top of the file. Inside that hunk the note sits beside the
+ * first row at or after its anchor line, falling back to the closest row before it and
+ * then to the hunk's first row — a note always lands next to the code it explains.
  */
-function findInlineNoteAnchorRow(rows: DiffRow[], annotation: AgentAnnotation) {
+function findInlineNoteAnchorRow(rows: DiffRow[], note: VisibleAgentNote) {
   const fileLineRows = lineRows(rows);
-  const headerRow = rows.find((row) => row.type === "hunk-header");
+  const ownerHunkIndex = reviewNoteOwnerHunkIndex(note);
+  const ownerRows = fileLineRows.filter((row) => row.hunkIndex === ownerHunkIndex);
+  const candidates = ownerRows.length > 0 ? ownerRows : fileLineRows;
+  const { side, line } = reviewNoteAnchorLine(note);
+
+  let precedingRow: DiffLineRow | undefined;
+  for (const row of candidates) {
+    const lineNumber = rowLineNumber(row, side);
+    if (lineNumber === undefined) {
+      continue;
+    }
+
+    if (lineNumber >= line) {
+      return row;
+    }
+
+    precedingRow = row;
+  }
 
   return (
-    fileLineRows.find((row) => rowMatchesNote(row, annotation)) ?? fileLineRows[0] ?? headerRow
+    precedingRow ??
+    candidates[0] ??
+    rows.find((row) => row.type === "hunk-header" && row.hunkIndex === ownerHunkIndex) ??
+    rows.find((row) => row.type === "hunk-header")
   );
 }
 
@@ -202,15 +269,13 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
   const placementsByAnchor = new Map<string, InlineVisibleNotePlacement[]>();
 
   for (const note of visibleAgentNotes) {
-    const anchorRow = findInlineNoteAnchorRow(rows, note.annotation);
+    const anchorRow = findInlineNoteAnchorRow(rows, note);
     if (!anchorRow) {
       continue;
     }
 
-    const anchorSide = annotationAnchor(note.annotation)?.side;
-    const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
-    // The inline card already sits directly above its anchor; start any range guide after that row
-    // so the first code line below the note does not show a dangling right-gutter connector.
+    const anchorSide = note.anchor.preferred?.side;
+    const coveredRows = fileLineRows.filter((row) => rowOverlapsNoteRange(row, note.anchor));
     const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
@@ -219,6 +284,8 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
       anchorSide,
       guidedRowKeys:
         guideRows.length > 0 ? new Set(guideRows.map((row) => row.key)) : EMPTY_ROW_KEYS,
+      // The row's own hunk, which is the resolved owner whenever that hunk drew rows;
+      // reporting an owner with no rows here would give it measured bounds it has not got.
       hunkIndex: anchorRow.hunkIndex,
       note,
       noteCount: 1,
@@ -307,23 +374,6 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
-    const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
-    anchoredNotes.forEach((placement) => {
-      plannedRows.push({
-        kind: "inline-note",
-        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
-        stableKey: `inline-note:${placement.note.id}`,
-        fileId,
-        hunkIndex: placement.hunkIndex,
-        annotationId: placement.note.id,
-        annotation: placement.note.annotation,
-        note: placement.note,
-        anchorSide: placement.anchorSide,
-        noteCount: placement.noteCount,
-        noteIndex: placement.noteIndex,
-      });
-    });
-
     plannedRows.push({
       kind: "diff-row",
       key: `diff-row:${row.key}`,
@@ -334,6 +384,23 @@ export function buildReviewRenderPlan({
       row,
       anchorId,
       noteGuideSide: noteGuideSideByRowKey.get(row.key),
+    });
+
+    const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
+    anchoredNotes.forEach((placement) => {
+      plannedRows.push({
+        kind: "inline-note",
+        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
+        stableKey: inlineNoteStableKey(placement.note.id),
+        fileId,
+        hunkIndex: placement.hunkIndex,
+        annotationId: placement.note.id,
+        annotation: placement.note.annotation,
+        note: placement.note,
+        anchorSide: placement.anchorSide,
+        noteCount: placement.noteCount,
+        noteIndex: placement.noteIndex,
+      });
     });
   }
 

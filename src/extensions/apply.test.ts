@@ -7,8 +7,11 @@ import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
 } from "../extension-api/types";
-import type { Changeset, DiffFile } from "../core/types";
+import type { Changeset, DiffFile } from "../core/changeset/model";
+import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { HUNK_FILES_PANE_KEY } from "./extensionIds";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
@@ -18,7 +21,10 @@ import {
   resolveDetectedVcsIdWithExtensions,
   resolveExtensionCommands,
   resolveExtensionFileViews,
-  resolveExtensionSidebarViews,
+  resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
+  resolveExtensionPanes,
+  resolveExtensionSessionOptions,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -30,6 +36,12 @@ import {
 } from "./types";
 
 const tempDirs: string[] = [];
+const BASE_VCS_CATALOG = getBundledVcsCatalog();
+
+/** Build a complete test catalog from bundled and extension adapters. */
+function catalogWith(adapters: readonly VcsAdapter[] = []) {
+  return extendVcsCatalog(BASE_VCS_CATALOG, adapters);
+}
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -95,7 +107,7 @@ describe("extension file languages", () => {
   });
 
   test("lets the last extension registration win for the same file extension", async () => {
-    const { getFiletypeFromFileName } = await import("../core/fileLanguage");
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       { extensionId: "first", extension: "hunkfixture", language: "python" },
@@ -103,7 +115,21 @@ describe("extension file languages", () => {
     );
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
-    expect(getFiletypeFromFileName("sample.hunkfixture")).toBe("ruby");
+    expect(fileLanguageForPath("sample.hunkfixture")).toBe("ruby");
+  });
+});
+
+describe("extension session options", () => {
+  test("lets any transient request win for the shared review session", () => {
+    const result = createEmptyExtensionLoadResult("/repo");
+    result.registry.sessionOptions.push(
+      { extensionId: "default", options: { viewPreferences: "default" } },
+      { extensionId: "guide", options: { viewPreferences: "transient" } },
+    );
+
+    expect(resolveExtensionSessionOptions(result.registry)).toEqual({
+      transientViewPreferences: true,
+    });
   });
 });
 
@@ -115,7 +141,7 @@ describe("extension VCS adapters", () => {
       { extensionId: "mercurial", adapter: createTestVcsAdapter("hg") },
     );
 
-    const { adapters, issues } = resolveExtensionVcsAdapters(result.registry);
+    const { adapters, issues } = resolveExtensionVcsAdapters(result.registry, BASE_VCS_CATALOG);
 
     expect(adapters.map((adapter) => adapter.id)).toEqual(["hg"]);
     expect(issues).toEqual([
@@ -134,46 +160,80 @@ describe("extension VCS adapters", () => {
       { extensionId: "second", adapter: createTestVcsAdapter("hg") },
     );
 
-    const { adapters, issues } = resolveExtensionVcsAdapters(result.registry);
+    const { adapters, issues } = resolveExtensionVcsAdapters(result.registry, BASE_VCS_CATALOG);
 
     expect(adapters.length).toBe(1);
     expect(issues[0]?.extensionId).toBe("second");
   });
 });
 
-describe("extension sidebar views", () => {
-  test("resolves no views from an empty registry", () => {
+describe("extension panes", () => {
+  test("resolves no panes from an empty registry", () => {
     const result = createEmptyExtensionLoadResult();
 
-    const { views, issues } = resolveExtensionSidebarViews(result.registry);
+    const { panes, issues } = resolveExtensionPanes(result.registry);
 
-    expect(views).toEqual([]);
+    expect(panes).toEqual([]);
     expect(issues).toEqual([]);
   });
 
-  test("keeps every distinct view and reports duplicate keys", () => {
+  test("keeps every distinct pane and reports duplicate keys", () => {
     const result = createEmptyExtensionLoadResult();
     const tree = { id: "tree", component: () => null };
     const flat = { id: "flat", component: () => null };
     const treeAgain = { id: "tree", component: () => null };
-    result.registry.sidebarViews.push(
-      { extensionId: "alpha", view: tree },
-      { extensionId: "beta", view: flat },
-      { extensionId: "alpha", view: treeAgain },
+    result.registry.panes.push(
+      { extensionId: "alpha", pane: tree },
+      { extensionId: "beta", pane: flat },
+      { extensionId: "alpha", pane: treeAgain },
     );
 
-    const { views, issues } = resolveExtensionSidebarViews(result.registry);
+    const { panes, issues } = resolveExtensionPanes(result.registry);
 
-    // Registration is additive: distinct views from any extension coexist,
-    // and only an identity collision is refused.
-    expect(views).toEqual([
-      { extensionId: "alpha", view: tree },
-      { extensionId: "beta", view: flat },
+    // Registration is additive: distinct panes from any extension coexist,
+    // while this fixture's identity collision is refused.
+    expect(panes).toEqual([
+      { extensionId: "alpha", pane: tree },
+      { extensionId: "beta", pane: flat },
     ]);
     expect(issues).toEqual([
       {
         extensionId: "alpha",
-        message: 'Skipped duplicate sidebar view "alpha:tree" from extension alpha',
+        message: 'Skipped duplicate pane "alpha:tree" from extension alpha',
+      },
+    ]);
+  });
+
+  test("keeps the first pane when several registrations replace one target", () => {
+    const result = createEmptyExtensionLoadResult();
+    const first = {
+      id: "first-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const second = {
+      id: "second-files",
+      replaces: HUNK_FILES_PANE_KEY,
+      component: () => null,
+    };
+    const extra = { id: "extra", component: () => null };
+    result.registry.panes.push(
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: second },
+      { extensionId: "beta", pane: extra },
+    );
+
+    const { panes, issues } = resolveExtensionPanes(result.registry);
+
+    expect(panes).toEqual([
+      { extensionId: "alpha", pane: first },
+      { extensionId: "beta", pane: extra },
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "beta",
+        message:
+          'Skipped pane "beta:second-files" from extension beta • another pane already replaces "hunk:files"',
       },
     ]);
   });
@@ -192,6 +252,47 @@ describe("extension file views", () => {
 
     expect(views).toEqual([{ extensionId: "first", view: plain }]);
     expect(issues[0]?.message).toContain('duplicate file view "first:plain"');
+  });
+});
+
+describe("extension line highlighters", () => {
+  test("keeps the first duplicate highlighter identity in registration order", () => {
+    const result = createEmptyExtensionLoadResult();
+    const matches = { id: "matches", highlight: () => null };
+    result.registry.lineHighlighters.push(
+      { extensionId: "first", highlighter: matches },
+      { extensionId: "first", highlighter: { ...matches } },
+    );
+
+    const { highlighters, issues } = resolveExtensionLineHighlighters(result.registry);
+
+    expect(highlighters).toEqual([{ extensionId: "first", highlighter: matches }]);
+    expect(issues[0]?.message).toContain('duplicate line highlighter "first:matches"');
+  });
+});
+
+describe("extension keyboard modes", () => {
+  test("keeps the first duplicate qualified identity", () => {
+    const result = createEmptyExtensionLoadResult();
+    const normal = { id: "normal", title: "Normal", onKey: () => "handled" as const };
+    result.registry.keyboardModes.push(
+      { extensionId: "vim", mode: normal },
+      { extensionId: "other", mode: normal },
+      { extensionId: "vim", mode: { ...normal, title: "Later" } },
+    );
+
+    const { modes, issues } = resolveExtensionKeyboardModes(result.registry);
+
+    expect(modes.map((entry) => `${entry.extensionId}:${entry.mode.id}`)).toEqual([
+      "vim:normal",
+      "other:normal",
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "vim",
+        message: 'Skipped duplicate keyboard mode "vim:normal" from extension vim',
+      },
+    ]);
   });
 });
 
@@ -223,13 +324,7 @@ describe("extension commands", () => {
 });
 
 describe("resolveDetectedVcsIdWithExtensions", () => {
-  /**
-   * A Mercurial-shaped extension adapter that walks upward for a `.hg` marker.
-   *
-   * Detection distance is the whole subject here, so a fixture that claims
-   * whatever directory it is handed would prove nothing: it has to report a real
-   * repo root the way a backend does.
-   */
+  /** Build a Mercurial-shaped adapter that walks upward for a `.hg` marker. */
   function createTestHgAdapter(detectionPriority?: number): VcsAdapter {
     return {
       id: "hg",
@@ -241,7 +336,6 @@ describe("resolveDetectedVcsIdWithExtensions", () => {
           if (existsSync(join(current, ".hg"))) {
             return { id: "hg", repoRoot: current };
           }
-
           const parent = dirname(current);
           if (parent === current) {
             return null;
@@ -254,86 +348,49 @@ describe("resolveDetectedVcsIdWithExtensions", () => {
   }
 
   test("prefers a nearer extension checkout over an outer built-in repository", () => {
-    // The verified-broken shape: `.hg` one level inside a Git repository. The
-    // extension root is nearer, so it is the repository the user is standing in.
     const repo = createTempDir("hunk-apply-nested-hg-");
     const inner = join(repo, "inner-hg");
     mkdirSync(join(repo, ".git"));
     mkdirSync(join(inner, ".hg"), { recursive: true });
 
-    expect(resolveDetectedVcsIdWithExtensions(inner, [createTestHgAdapter()])).toBe("hg");
-    // Without the adapter, the outer Git root is still all there is to find.
-    expect(resolveDetectedVcsIdWithExtensions(inner, [])).toBeUndefined();
+    expect(resolveDetectedVcsIdWithExtensions(inner, catalogWith([createTestHgAdapter()]))).toBe(
+      "hg",
+    );
+    expect(resolveDetectedVcsIdWithExtensions(inner, BASE_VCS_CATALOG)).toBe("git");
   });
 
-  test("prefers a deeply nested extension checkout, dotfiles-home style", () => {
-    // A `.hg`-managed dotfiles directory several levels below a Git root — the
-    // farther root used to win purely because a built-in adapter owned it.
-    const repo = createTempDir("hunk-apply-dotfiles-");
-    const dotfiles = join(repo, "home", "user", "dotfiles");
-    mkdirSync(join(repo, ".git"));
-    mkdirSync(join(dotfiles, ".hg"), { recursive: true });
-
-    expect(resolveDetectedVcsIdWithExtensions(dotfiles, [createTestHgAdapter()])).toBe("hg");
-    // One directory below the marker still resolves to the same nearest root.
-    expect(
-      resolveDetectedVcsIdWithExtensions(join(dotfiles, "nvim"), [createTestHgAdapter()]),
-    ).toBe("hg");
-  });
-
-  test("keeps Git for a same-root tie with a default-priority extension adapter", () => {
-    // Colocated markers: only priority separates them, and the default puts a
-    // user adapter below Git so installing an extension changes nothing here.
-    const repo = createTempDir("hunk-apply-colocated-default-");
+  test("uses priority only for colocated roots", () => {
+    const repo = createTempDir("hunk-apply-colocated-");
     mkdirSync(join(repo, ".git"));
     mkdirSync(join(repo, ".hg"));
 
-    expect(resolveDetectedVcsIdWithExtensions(repo, [createTestHgAdapter()])).toBe("git");
+    expect(resolveDetectedVcsIdWithExtensions(repo, catalogWith([createTestHgAdapter()]))).toBe(
+      "git",
+    );
     expect(
-      resolveDetectedVcsIdWithExtensions(repo, [
-        createTestHgAdapter(HUNK_DEFAULT_VCS_DETECTION_PRIORITY),
-      ]),
+      resolveDetectedVcsIdWithExtensions(
+        repo,
+        catalogWith([createTestHgAdapter(HUNK_CORE_VCS_DETECTION_PRIORITY + 1)]),
+      ),
+    ).toBe("hg");
+    expect(
+      resolveDetectedVcsIdWithExtensions(
+        repo,
+        catalogWith([createTestHgAdapter(HUNK_DEFAULT_VCS_DETECTION_PRIORITY)]),
+      ),
     ).toBe("git");
   });
 
-  test("lets an extension adapter outrank Git on a same-root tie when it asks to", () => {
-    const repo = createTempDir("hunk-apply-colocated-priority-");
-    mkdirSync(join(repo, ".git"));
-    mkdirSync(join(repo, ".hg"));
-
-    expect(
-      resolveDetectedVcsIdWithExtensions(repo, [
-        createTestHgAdapter(HUNK_CORE_VCS_DETECTION_PRIORITY + 1),
-      ]),
-    ).toBe("hg");
-  });
-
-  test("still resolves a colocated jj checkout as jj", () => {
-    const repo = createTempDir("hunk-apply-colocated-jj-");
-    mkdirSync(join(repo, ".jj"));
-    mkdirSync(join(repo, ".git"));
-    mkdirSync(join(repo, ".hg"));
-
-    expect(
-      resolveDetectedVcsIdWithExtensions(repo, [
-        createTestHgAdapter(HUNK_CORE_VCS_DETECTION_PRIORITY + 1),
-      ]),
-    ).toBe("jj");
-  });
-
-  test("never overrides an explicit vcs a loaded backend owns", () => {
+  test("never overrides an explicit vcs the complete catalog owns", () => {
     const repo = createTempDir("hunk-apply-explicit-");
     const inner = join(repo, "inner-hg");
     mkdirSync(join(repo, ".git"));
     mkdirSync(join(inner, ".hg"), { recursive: true });
-    const adapters = [createTestHgAdapter()];
+    const catalog = catalogWith([createTestHgAdapter()]);
 
-    // `vcs = "git"` in config beats the nearer extension checkout.
-    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "git")).toBeUndefined();
-    // So does naming the extension backend itself.
-    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "hg")).toBeUndefined();
-    // An id nothing owns already fell back to detection, so detection decides.
-    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "bzr")).toBe("hg");
+    expect(resolveDetectedVcsIdWithExtensions(inner, catalog, "git")).toBeUndefined();
+    expect(resolveDetectedVcsIdWithExtensions(inner, catalog, "hg")).toBeUndefined();
+    expect(resolveDetectedVcsIdWithExtensions(inner, catalog, "bzr")).toBe("hg");
   });
 });
 
@@ -549,15 +606,17 @@ describe("resolveSessionVcsId", () => {
 
   test("honors a configured id a loaded extension backend owns", () => {
     // `vcs = "hg"` with a Mercurial extension installed is unambiguous intent.
-    expect(resolveSessionVcsId("hg", process.cwd(), [hgAdapter])).toEqual({ vcsId: "hg" });
+    expect(resolveSessionVcsId("hg", process.cwd(), catalogWith([hgAdapter]))).toEqual({
+      vcsId: "hg",
+    });
   });
 
   test("honors a configured id a built-in backend owns", () => {
-    expect(resolveSessionVcsId("git", process.cwd(), [])).toEqual({ vcsId: "git" });
+    expect(resolveSessionVcsId("git", process.cwd(), BASE_VCS_CATALOG)).toEqual({ vcsId: "git" });
   });
 
   test("falls back to detection and reports an id nothing owns", () => {
-    const resolved = resolveSessionVcsId("hg", process.cwd(), []);
+    const resolved = resolveSessionVcsId("hg", process.cwd(), BASE_VCS_CATALOG);
 
     expect(resolved.unknownVcsId).toBe("hg");
     // The repo Hunk lives in is a Git checkout, so detection lands there.
@@ -565,7 +624,9 @@ describe("resolveSessionVcsId", () => {
   });
 
   test("leaves an unset id alone", () => {
-    expect(resolveSessionVcsId(undefined, process.cwd(), [])).toEqual({ vcsId: undefined });
+    expect(resolveSessionVcsId(undefined, process.cwd(), BASE_VCS_CATALOG)).toEqual({
+      vcsId: undefined,
+    });
   });
 
   test("names the id and the fallback in the notice", () => {

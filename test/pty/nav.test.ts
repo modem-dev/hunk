@@ -192,7 +192,10 @@ describe("PTY navigation", () => {
       await session.click(/M delta\.ts\s+\+2 -1/);
       const jumped = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("deltaOnly = true") && !text.includes("alphaOnly = true"),
+        (text) =>
+          text.includes("deltaOnly = true") &&
+          !text.includes("alphaOnly = true") &&
+          harness.countMatches(text, /epsilon\.ts/g) >= 2,
         5_000,
       );
 
@@ -222,7 +225,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      for (let index = 0; index < 8; index += 1) {
+      for (let index = 0; index < 16; index += 1) {
         await session.press("down");
       }
 

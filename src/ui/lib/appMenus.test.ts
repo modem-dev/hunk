@@ -16,8 +16,9 @@ import { resolveCommandKeys } from "./keymap";
 /** The app-state half of the menu options, so tests only state what they exercise. */
 const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> = {
   copyDecorations: true,
+  cursorLine: "row" as const,
   layoutMode: "stack",
-  renderSidebar: false,
+  filesPaneVisible: false,
   showAgentNotes: true,
   showHelp: false,
   showHunkHeaders: false,
@@ -36,19 +37,20 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     };
   const noop = () => {};
   const commands = buildAppCommands({
+    canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
-    moveToAnnotatedFile: record("moveToAnnotatedFile"),
-    moveToAnnotatedHunk: noop,
-    moveToFile: noop,
-    moveToHunk: noop,
+    moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),
     scrollCodeHorizontally: noop,
     scrollDiff: noop,
+    selectCursorLine: noop,
+    stepDiffLine: noop,
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
@@ -60,7 +62,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     toggleLineNumbers: noop,
     toggleLineWrap: noop,
     toggleMenuBar: noop,
-    toggleSidebar: record("toggleSidebar"),
+    toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: noop,
     triggerRefreshCurrentInput: noop,
     ...overrides,
@@ -96,6 +98,19 @@ function registeredCommand(
 }
 
 describe("buildAppMenus", () => {
+  test("the current-line entries check the active style", () => {
+    const { commands } = createTestCommands();
+
+    const checkedFor = (cursorLine: BuildAppMenusOptions["cursorLine"]) =>
+      items(buildAppMenus({ commands, ...MENU_STATE, cursorLine }).view)
+        .filter((item) => item.checked && item.label.startsWith("Current line:"))
+        .map((item) => item.label);
+
+    expect(checkedFor("row")).toEqual(["Current line: full row"]);
+    expect(checkedFor("number")).toEqual(["Current line: line number"]);
+    expect(checkedFor("off")).toEqual(["Current line: off"]);
+  });
+
   test("labels, hints, and checked state come from the commands and app state", () => {
     const { commands } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
@@ -123,6 +138,7 @@ describe("buildAppMenus", () => {
       "Line numbers",
       "Line wrapping",
       "Copy decorations",
+      "Current line: full row",
     ]);
     expect(items(menus.view).map((item) => item.label)).toContain("Themes…");
     expect(items(menus.agent).map((item) => item.label)).toEqual([
@@ -147,7 +163,7 @@ describe("buildAppMenus", () => {
     ]);
   });
 
-  test("a remapped command re-labels the menu item that runs it", () => {
+  test("a legacy command alias remaps the canonical menu item", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
       userBindings: { "hunk.view.toggleSidebar": "ctrl+b", "hunk.app.quit": false },
@@ -155,7 +171,10 @@ describe("buildAppMenus", () => {
     const { commands } = createTestCommands({ resolvedKeys: keys as ResolvedCommandKeys });
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    expect(entry(menus, "view", "Sidebar").hint).toBe("Ctrl+B");
+    expect(entry(menus, "view", "Files pane")).toMatchObject({
+      commandId: "hunk.view.toggleFilesPane",
+      hint: "Ctrl+B",
+    });
     // Unbound by the user, and unbound by declaration: neither advertises a key.
     expect(entry(menus, "file", "Quit").hint).toBeUndefined();
     expect(entry(menus, "view", "Copy decorations").hint).toBeUndefined();
@@ -165,18 +184,18 @@ describe("buildAppMenus", () => {
     const { commands, ran } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
 
-    entry(menus, "view", "Sidebar").action();
+    entry(menus, "view", "Files pane").action();
     entry(menus, "view", "Copy decorations").action();
     entry(menus, "agent", "Agent skill").action();
     entry(menus, "agent", "Next annotated file").action();
     entry(menus, "agent", "Previous annotated file").action();
 
     expect(ran).toEqual([
-      "toggleSidebar",
+      "toggleFilesPane",
       "toggleCopyDecorations",
       "openAgentSkill",
-      "moveToAnnotatedFile:1",
-      "moveToAnnotatedFile:-1",
+      "moveSelection:annotated-file,1",
+      "moveSelection:annotated-file,-1",
     ]);
   });
 
@@ -231,11 +250,30 @@ describe("the Extensions menu", () => {
     return buildAppMenus({ commands, extensionCommands, ...MENU_STATE });
   }
 
-  test("is absent when no extension registered a command", () => {
+  test("is absent when no extension command or active keyboard mode needs it", () => {
     const { commands } = createTestCommands();
 
     expect(buildAppMenus({ commands, ...MENU_STATE }).extensions).toBeUndefined();
     expect(menusWithExtensions([]).extensions).toBeUndefined();
+  });
+
+  test("offers the host-owned keyboard-mode exit even without extension commands", () => {
+    const { commands } = createTestCommands();
+    const exits: string[] = [];
+    const menus = buildAppMenus({
+      commands,
+      ...MENU_STATE,
+      keyboardModeExitEntry: {
+        kind: "item",
+        label: "Exit Vim navigation",
+        commandId: "hunk.extensions.exitKeyboardMode",
+        action: () => exits.push("exit"),
+      },
+    });
+
+    expect(items(menus.extensions).map((item) => item.label)).toEqual(["Exit Vim navigation"]);
+    entry(menus, "extensions", "Exit Vim navigation").action();
+    expect(exits).toEqual(["exit"]);
   });
 
   test("lists every registered command with its title and current key", () => {

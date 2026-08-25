@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdtempSync,
@@ -85,8 +86,17 @@ try {
   // but the Windows `hunk.cmd` shim does not need bash on PATH.
   const bashDir = process.platform === "win32" ? undefined : commandDirectory("bash");
 
+  // Artifact transfer normalizes file modes before the publish job. Reproduce
+  // that boundary so this test proves npm restores execution from the platform
+  // package's `bin` declaration rather than relying on the staged mode.
+  const smokePlatformDir = path.join(smokeMetaDir, hostSpec.packageName);
+  cpSync(path.join(releaseRoot, hostSpec.packageName), smokePlatformDir, { recursive: true });
+  if (process.platform !== "win32") {
+    chmodSync(path.join(smokePlatformDir, "bin", binaryFilenameForSpec(hostSpec)), 0o644);
+  }
+
   run([npmCommand, "pack", "--pack-destination", packageDir], {
-    cwd: path.join(releaseRoot, hostSpec.packageName),
+    cwd: smokePlatformDir,
   });
 
   const platformTarball = path.join(packageDir, `${hostSpec.packageName}-${packageVersion}.tgz`);
@@ -130,6 +140,15 @@ try {
     binaryFilenameForSpec(hostSpec),
   );
   const commandEnv = envWithPath(sanitizedPath);
+  const pierreInstallCandidates = [
+    path.join(installedPackageRoot, "node_modules", "@pierre", "diffs"),
+    path.join(path.dirname(installedPackageRoot), "@pierre", "diffs"),
+    path.join(installDir, "node_modules", "@pierre", "diffs"),
+  ];
+
+  if (pierreInstallCandidates.some((candidate) => existsSync(candidate))) {
+    throw new Error("Expected a CLI-only Hunk install to omit the optional @pierre/diffs peer.");
+  }
 
   if (process.platform !== "win32") {
     const installedBinaryMode = statSync(installedPlatformBinary).mode & 0o777;
@@ -157,16 +176,21 @@ try {
     );
   }
 
-  const skillPath = run([installedHunk, "skill", "path"], {
-    env: commandEnv,
-  }).stdout.trim();
-  if (
-    !skillPath.endsWith(path.join("skills", "hunk-review", "SKILL.md")) ||
-    !existsSync(skillPath)
-  ) {
-    throw new Error(
-      `Expected installed hunk skill path to resolve to the bundled skill.\n${skillPath}`,
-    );
+  // The bare command keeps naming the review skill; every bundled skill must
+  // also resolve by name, since the install is what users discover them through.
+  const skillPathChecks: [args: string[], skillName: string][] = [
+    [["skill", "path"], "hunk-review"],
+    [["skill", "path", "hunk-review"], "hunk-review"],
+    [["skill", "path", "hunk-extensions"], "hunk-extensions"],
+  ];
+
+  for (const [args, skillName] of skillPathChecks) {
+    const skillPath = run([installedHunk, ...args], { env: commandEnv }).stdout.trim();
+    if (!skillPath.endsWith(path.join("skills", skillName, "SKILL.md")) || !existsSync(skillPath)) {
+      throw new Error(
+        `Expected installed \`hunk ${args.join(" ")}\` to resolve the bundled ${skillName} skill.\n${skillPath}`,
+      );
+    }
   }
 
   const bunCheck = Bun.spawnSync(

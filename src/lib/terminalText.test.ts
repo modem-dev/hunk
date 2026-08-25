@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sanitizeTerminalSpans, sanitizeTerminalText } from "./terminalText";
+import { formatTerminalPath, sanitizeTerminalSpans, sanitizeTerminalText } from "./terminalText";
 
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const OSC_ST = "\x1b]8;;https://example.test\x1b\\";
@@ -82,6 +82,13 @@ describe("sanitizeTerminalText", () => {
     });
 
     expect(output).toBe("safe0\x1b[31mred\x1b[m");
+  });
+
+  test("renders path controls as visible escapes without confusing literal backslashes", () => {
+    const output = formatTerminalPath("dir/literal\\t-tab\tline\nescape\x1b");
+
+    expect(output).toBe("dir/literal\\\\t-tab\\tline\\nescape\\x1b");
+    expectNoUnsafeTerminalControls(output);
   });
 
   test("returns an already-safe mutable span array unchanged", () => {

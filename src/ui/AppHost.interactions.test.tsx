@@ -5,21 +5,23 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
-  HunkSessionBrokerClient,
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
-import type { AppBootstrap, LayoutMode } from "../core/types";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/process/startupNotice";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { LayoutMode } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
-const { loadAppBootstrap } = await import("../core/loaders");
+const { loadAppBootstrap } = await import("../core/changeset/loaders");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -184,13 +186,14 @@ function createWrapBootstrap(pager = false): AppBootstrap {
   });
 }
 
-function createLineScrollBootstrap(pager = false): AppBootstrap {
+function createLineScrollBootstrap(pager = false, initialMode: LayoutMode = "split"): AppBootstrap {
   const before = lines(...createNumberedAssignmentLines(1, 18));
   const after = lines(...createNumberedAssignmentLines(1, 18, 100));
 
   return createTestVcsAppBootstrap({
     changesetId: "changeset:app-line-scroll",
     files: [createTestDiffFile("scroll", "scroll.ts", before, after, true)],
+    initialMode,
     pager,
   });
 }
@@ -364,15 +367,15 @@ function createRapidViewportLoopBootstrap(): AppBootstrap {
 function createMouseScrollSelectionBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 12);
   const secondBeforeLines = Array.from(
-    { length: 90 },
+    { length: 50 },
     (_, index) => `export const line${String(index + 13).padStart(2, "0")} = ${index + 13};`,
   );
   const secondAfterLines = [...secondBeforeLines];
 
   secondAfterLines[0] = "export const line13 = 1300;";
-  secondAfterLines[59] = "export const line72 = 7200;";
-  secondAfterLines[60] = "export const line73 = 7300;";
-  secondAfterLines[61] = "export const line74 = 7400;";
+  secondAfterLines[29] = "export const line42 = 4200;";
+  secondAfterLines[30] = "export const line43 = 4300;";
+  secondAfterLines[31] = "export const line44 = 4400;";
 
   return createTestVcsAppBootstrap({
     changesetId: "changeset:mouse-scroll-selection",
@@ -751,6 +754,22 @@ describe("App interactions", () => {
     }
   });
 
+  test("menu bar summarizes changed files, additions, and deletions", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("repo working tree  2 files  +3  -2");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("Shift-M hides the menu bar without disabling F10 menus", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
@@ -818,7 +837,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
+  test("theme shortcut opens a selector, j/k move it, and Enter applies the highlighted theme", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -831,16 +850,25 @@ describe("App interactions", () => {
         await setup.mockInput.typeText("t");
       });
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
-      expect(frame).toContain("↑/↓/Tab preview  Enter accept  Esc cancel");
       expect(frame).toContain("›  github-dark-default");
       expect(frame).toContain("active");
 
       await act(async () => {
-        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.typeText("j");
       });
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
       expect(frame).not.toContain("UI");
       expect(frame).not.toContain("Syntax");
+
+      await act(async () => {
+        await setup.mockInput.typeText("k");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-default"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
 
       await act(async () => {
         await setup.mockInput.pressEnter();
@@ -857,7 +885,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme selector mouse hover does not preview and click selects without accepting", async () => {
+  test("theme selector waits for mouse hover to settle before previewing", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -873,29 +901,36 @@ describe("App interactions", () => {
       expect(frame).toContain("›  github-dark-default");
 
       const lines = frame.split("\n");
-      const targetY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
-      expect(targetY).toBeGreaterThanOrEqual(0);
-      const targetX = Math.max(0, lines[targetY]!.indexOf("github-dark-dimmed"));
+      const dimmedY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
+      const highContrastY = lines.findIndex((line) => line.includes("github-dark-high-contrast"));
+      expect(dimmedY).toBeGreaterThanOrEqual(0);
+      expect(highContrastY).toBeGreaterThanOrEqual(0);
+      const targetX = Math.max(0, lines[dimmedY]!.indexOf("github-dark-dimmed"));
 
       await act(async () => {
-        await setup.mockMouse.moveTo(targetX, targetY);
+        await setup.mockMouse.moveTo(targetX, dimmedY);
+        await setup.mockMouse.moveTo(targetX, highContrastY);
       });
       await flush(setup);
       frame = setup.captureCharFrame();
       expect(frame).toContain("›  github-dark-default");
       expect(frame).not.toContain("›  github-dark-dimmed");
+      expect(frame).not.toContain("›  github-dark-high-contrast");
 
       await act(async () => {
-        await setup.mockMouse.click(targetX, targetY);
-      });
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
-      expect(frame).toContain("Theme selector");
-
-      await act(async () => {
-        await setup.mockInput.pressEnter();
+        await new Promise((resolve) => setTimeout(resolve, 250));
       });
       frame = await waitForFrame(setup, (nextFrame) =>
-        nextFrame.includes("Theme: github-dark-dimmed"),
+        nextFrame.includes("›  github-dark-high-contrast"),
+      );
+      expect(frame).toContain("Theme selector");
+      expect(frame).not.toContain("›  github-dark-default");
+
+      await act(async () => {
+        await setup.mockMouse.click(targetX, highContrastY);
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-high-contrast"),
       );
       expect(frame).not.toContain("Theme selector");
     } finally {
@@ -905,7 +940,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme selector mouse wheel previews the next row", async () => {
+  test("theme selector mouse wheel scrolls the window without changing the preview", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -920,13 +955,20 @@ describe("App interactions", () => {
       const frame = await waitForFrame(setup, (nextFrame) =>
         nextFrame.includes("›  github-dark-default"),
       );
+      expect(frame).not.toContain("gruvbox-dark-medium");
       const selectedY = frame.split("\n").findIndex((line) => line.includes("github-dark-default"));
       expect(selectedY).toBeGreaterThanOrEqual(0);
 
       await act(async () => {
         await setup.mockMouse.scroll(120, selectedY, "down");
       });
-      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("gruvbox-dark-medium") &&
+          nextFrame.includes("›  github-dark-default") &&
+          !nextFrame.includes("›  github-dark-dimmed"),
+      );
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1156,9 +1198,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("interaction coverage")) {
-          break;
-        }
       }
 
       expect(frame).toContain("interaction coverage");
@@ -1170,9 +1209,6 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("this is a very")) {
-          break;
-        }
       }
 
       expect(frame).toContain("this is a very");
@@ -1446,7 +1482,7 @@ describe("App interactions", () => {
       expect(frame).toContain("Why prefs.ts changed");
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("1 - export const message");
-      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeLessThan(
+      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeGreaterThan(
         frame.indexOf("export const added = true;"),
       );
     } finally {
@@ -1902,7 +1938,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 48; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -1916,7 +1952,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
@@ -1936,10 +1972,13 @@ describe("App interactions", () => {
   });
 
   test("the first down-arrow step still advances content under the always-pinned file header above a collapsed gap", async () => {
-    const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
-      width: 220,
-      height: 10,
-    });
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createCollapsedTopBootstrap(), initialCursorLine: "off" }} />,
+      {
+        width: 220,
+        height: 10,
+      },
+    );
 
     try {
       await flush(setup);
@@ -2041,7 +2080,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -2055,7 +2094,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
@@ -2784,6 +2823,56 @@ describe("App interactions", () => {
     }
   });
 
+  test("coalesced line movement opens a draft at the latest cursor without moving its row", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createLineScrollBootstrap(false, "stack")} />,
+      { width: 120, height: 26 },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      });
+
+      const initial = setup.captureCharFrame();
+      const initialActiveRow = initial
+        .split("\n")
+        .findIndex((line) => line.includes("export const line01 = 1;"));
+      const followingRowBefore = initial
+        .split("\n")
+        .findIndex((line) => line.includes("export const line10 = 10;"));
+
+      await act(async () => {
+        await setup.mockInput.pressKeys([...Array(8).fill("\x1b[B"), "c"]);
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      const withDraft = setup.captureCharFrame();
+      const activeRow = withDraft
+        .split("\n")
+        .findIndex((line) => line.includes("export const line09 = 9;"));
+      const draftRow = withDraft.split("\n").findIndex((line) => line.includes("Draft note"));
+      const followingRow = withDraft
+        .split("\n")
+        .findIndex((line) => line.includes("export const line10 = 10;"));
+
+      expect(withDraft).toMatch(/Draft note.*L9/);
+      expect(activeRow).toBe(initialActiveRow + 8);
+      expect(draftRow).toBe(activeRow + 1);
+      expect(followingRow).toBeGreaterThan(followingRowBefore);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note focus suppresses app shortcuts while accepting typed shortcut keys", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
@@ -2812,6 +2901,72 @@ describe("App interactions", () => {
       expect(frame).toContain("Draft note");
       expect(frame).toContain("s");
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(betaCountWithSidebar);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note wraps long CJK input instead of scrolling it out of view", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const body =
+        "这个包主要是为了在普通的chatmodel外面包一层,在外层把toolcallid统一转换,方便后续处理";
+      for (const chunk of body.match(/.{1,12}/g) ?? []) {
+        await act(async () => {
+          await setup.mockInput.typeText(chunk);
+        });
+        await flush(setup);
+      }
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain(body.slice(0, 10));
+      expect(frame).toContain(body.slice(-4));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note survives a large burst of input in one chunk", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      // One synchronous burst, the shape chunked pastes and key repeats take.
+      const text = "the quick brown fox jumps over the lazy dog 0123456789".repeat(3);
+      await act(async () => {
+        await setup.mockInput.typeText(text);
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain(text.slice(0, 10));
+      expect(frame).toContain(text.slice(-6));
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -3201,25 +3356,26 @@ describe("App interactions", () => {
       });
 
       let snapshot = getLatestSnapshot();
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 16; index += 1) {
         await act(async () => {
           await setup.mockMouse.scroll(120, 7, "down");
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) =>
-            currentSnapshot.selectedFilePath === "second.ts" &&
-            currentSnapshot.selectedHunkIndex === 1,
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts" && snapshot.selectedHunkIndex === 1) {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) =>
+          currentSnapshot.selectedFilePath === "second.ts" &&
+          currentSnapshot.selectedHunkIndex === 1,
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "second.ts",
         selectedHunkIndex: 1,
@@ -3256,16 +3412,18 @@ describe("App interactions", () => {
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) => currentSnapshot.selectedFilePath === "second.ts",
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts") {
           break;
         }
       }
+
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) => currentSnapshot.selectedFilePath === "second.ts",
+        4,
+      );
 
       // Page-sized scrolling should move selection ownership into the later file. The exact hunk
       // can vary with viewport handoff timing because the page jump may land near either visible
@@ -3280,17 +3438,18 @@ describe("App interactions", () => {
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) => currentSnapshot.selectedFilePath === "first.ts",
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "first.ts") {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) => currentSnapshot.selectedFilePath === "first.ts",
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "first.ts",
         selectedHunkIndex: 0,
@@ -3321,25 +3480,26 @@ describe("App interactions", () => {
       });
 
       let snapshot = getLatestSnapshot();
-      for (let index = 0; index < 80; index += 1) {
+      for (let index = 0; index < 50; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) =>
-            currentSnapshot.selectedFilePath === "second.ts" &&
-            currentSnapshot.selectedHunkIndex === 1,
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts" && snapshot.selectedHunkIndex === 1) {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) =>
+          currentSnapshot.selectedFilePath === "second.ts" &&
+          currentSnapshot.selectedHunkIndex === 1,
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "second.ts",
         selectedHunkIndex: 1,
@@ -3676,6 +3836,37 @@ describe("App interactions", () => {
 
       expect(quit).toHaveBeenCalledTimes(1);
       expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("transient extension sessions never offer to save practice view preferences", async () => {
+    const quit = mock(() => undefined);
+    const bootstrap = createSingleFileBootstrap();
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    extensions.registry.sessionOptions.push({
+      extensionId: "trainer",
+      options: { viewPreferences: "transient" },
+    });
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={quit} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("w");
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+
+      expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+      expect(quit).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

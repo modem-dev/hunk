@@ -83,6 +83,29 @@ describe("PTY layout", () => {
     }
   });
 
+  test("renamed CJK and emoji paths render as Unicode in the sidebar and file header", async () => {
+    const fixture = harness.createUnicodePathRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--staged", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 16,
+    });
+
+    try {
+      const snapshot = await session.waitForText(/한국어-🧪\.txt/, {
+        timeout: 15_000,
+      });
+
+      expect(snapshot).toContain("国際化/");
+      expect(snapshot).toContain("日本語.txt");
+      expect(snapshot).toContain("한국어-🧪.txt");
+      expect(snapshot).not.toContain("\\345\\233\\275");
+    } finally {
+      session.close();
+    }
+  });
+
   test("the CLI tab width reaches interactive app rendering", async () => {
     const fixture = harness.createTabbedFilePair();
     const session = await harness.launchHunk({
@@ -186,6 +209,31 @@ describe("PTY layout", () => {
     }
   });
 
+  test("narrow terminals preserve stats and use three dots for truncated file paths", async () => {
+    const fixture = harness.createNarrowHeaderTestRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "auto"],
+      cwd: fixture.dir,
+      cols: 40,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("packages/visual-studio-cod... +1 -1"),
+        5_000,
+      );
+
+      expect(snapshot).not.toContain("packages/visual-studio-code-.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("auto layout responds to live terminal resize in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
@@ -210,6 +258,55 @@ describe("PTY layout", () => {
         harness.countMatches(wide, /alpha\.ts/g),
       );
       expect(tight).not.toMatch(/▌.*▌/);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("--sidebar shows the sidebar below the viewport width that would reveal it", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--sidebar"],
+      cwd: fixture.dir,
+      cols: 180,
+      rows: 18,
+    });
+
+    try {
+      const frame = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(frame, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("--no-sidebar opens the review with the sidebar closed", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const frame = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(frame, /alpha\.ts/g)).toBe(1);
+
+      await session.type("s");
+      const toggled = await harness.waitForSnapshot(
+        session,
+        (text) => harness.countMatches(text, /alpha\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(harness.countMatches(toggled, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
     } finally {
       session.close();
     }
@@ -266,7 +363,10 @@ describe("PTY layout", () => {
       session.resize({ cols: 140, rows: 24 });
       const tight = await harness.waitForSnapshot(
         session,
-        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) === 1,
+        (text) =>
+          /▌.*▌/.test(text) &&
+          harness.countMatches(text, /alpha\.ts/g) === 1 &&
+          text.includes("betaValue = 1"),
         5_000,
       );
 
@@ -450,6 +550,40 @@ describe("PTY layout", () => {
 
       expect(restored).toContain("this is a very long");
       expect(restored).not.toContain("ge';");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("shifted mouse-wheel input scrolls code horizontally in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 102,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("this is a very long");
+      expect(initial).not.toContain("ge';");
+
+      let shifted = initial;
+      for (let index = 0; index < 96; index += 1) {
+        // SGR button 69 is a wheel-down event with the Shift modifier.
+        session.writeRaw("\x1b[<69;61;11M");
+        await session.waitIdle();
+        shifted = await session.text({ immediate: true });
+        if (shifted.includes("ge';")) {
+          break;
+        }
+      }
+
+      expect(shifted).toContain("ge';");
+      expect(shifted).not.toContain("this is a very long");
     } finally {
       session.close();
     }

@@ -1,5 +1,6 @@
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
-import type { AppBootstrap, DiffFile } from "../src/core/types";
+import type { AppBootstrap } from "../src/core/bootstrap";
+import type { DiffFile } from "../src/core/changeset/model";
 
 export const DEFAULT_FILE_COUNT = 180;
 export const DEFAULT_LINES_PER_FILE = 120;

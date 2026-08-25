@@ -1,8 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
+import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
-import type { AppBootstrap, DiffFile } from "../../core/types";
+import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { AppBootstrap } from "../../core/bootstrap";
+import type { DiffFile } from "../../core/changeset/model";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import {
@@ -10,6 +12,7 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
@@ -17,6 +20,8 @@ import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
+import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
+import type { LineCursor } from "../lib/lineCursors";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
@@ -28,7 +33,7 @@ const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
-const { PierreDiffView } = await import("../diff/PierreDiffView");
+const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { DiffRowView, measureRenderedRowHeight } = await import("../diff/renderRows");
 
 function createTestDiffFile(
@@ -236,6 +241,7 @@ function createDiffPaneProps(
   return {
     diffContentWidth: 72,
     files,
+    offloadLargeDiff: false,
     headerLabelWidth: 40,
     headerStatsWidth: 16,
     layout: "split" as const,
@@ -422,7 +428,7 @@ describe("UI components", () => {
       ),
       createTestDiffFile(
         "watch",
-        "src/core/watch.ts",
+        "src/core/watch/signature.ts",
         "export const watch = 1;\n",
         lines(
           "export const watch = 1;",
@@ -459,7 +465,12 @@ describe("UI components", () => {
         theme={theme}
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
-        actions={{ selectFile: () => {}, selectHunk: () => {}, notify: () => {} }}
+        actions={{
+          selectFile: () => {},
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
       />,
       36,
       12,
@@ -472,7 +483,7 @@ describe("UI components", () => {
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
     expect(frame).toContain(" App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
-    expect(frame).toContain(" watch.ts");
+    expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
     expect(frame).toContain("+5");
     expect(frame).toContain("-3");
@@ -592,6 +603,106 @@ describe("UI components", () => {
         await setup.mockMouse.click(addNoteX + 1, addNoteY);
       });
       expect(startUserNote).toHaveBeenCalledWith(0, { side: "new", line: 2 });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane selects the exact split line side on click without consuming add-note clicks", async () => {
+    const file = createTestDiffFile(
+      "click-line",
+      "click-line.ts",
+      lines("export const answer = 41;", "", "export const stable = true;"),
+      lines("export const answer = 42;", "", "export const stable = true;"),
+    );
+    const theme = resolveTheme("github-dark-default", null);
+    const copyText = mock((_text: string) => undefined);
+    const selectLine = mock((_cursor: LineCursor) => undefined);
+    const startUserNote = mock(() => undefined);
+    const setup = await testRender(
+      <DiffPane
+        {...createDiffPaneProps([file], theme, {
+          cursorLine: "row",
+          onCopySelectionText: copyText,
+          onStartUserNoteAtHunk: startUserNote,
+          onViewportLineCursorChange: selectLine,
+        })}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+      const changedY = frame.split("\n").findIndex((line) => line.includes("answer = 41"));
+      const changedLine = frame.split("\n")[changedY] ?? "";
+      const oldX = changedLine.indexOf("answer = 41") + 2;
+      const newX = changedLine.indexOf("answer = 42") + 2;
+      expect(changedY).toBeGreaterThanOrEqual(0);
+      expect(oldX).toBeGreaterThan(1);
+      expect(newX).toBeGreaterThan(oldX);
+
+      await act(async () => {
+        await setup.mockMouse.click(oldX, changedY);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+      );
+
+      await act(async () => {
+        await setup.mockMouse.click(newX, changedY);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "new", line: 1 } }),
+      );
+
+      selectLine.mockClear();
+      await act(async () => {
+        await setup.mockMouse.click(newX, changedY + 1);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "new", line: 2 } }),
+      );
+
+      await act(async () => {
+        await Bun.sleep(400);
+        selectLine.mockClear();
+        await setup.mockMouse.drag(oldX, changedY, oldX + 1, changedY, MouseButtons.LEFT);
+      });
+      expect(selectLine).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+      );
+      expect(copyText).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await Bun.sleep(400);
+        selectLine.mockClear();
+        await setup.mockMouse.drag(oldX, changedY, oldX + 4, changedY, MouseButtons.LEFT);
+      });
+      expect(copyText).toHaveBeenCalled();
+      expect(selectLine).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(newX, changedY);
+        await setup.renderOnce();
+      });
+      const affordanceFrame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.split("\n")[changedY]?.includes("[+]") === true,
+        12,
+      );
+      const addNoteX = affordanceFrame.split("\n")[changedY]?.indexOf("[+]") ?? -1;
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+      selectLine.mockClear();
+
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, changedY);
+      });
+      expect(startUserNote).toHaveBeenCalled();
+      expect(selectLine).not.toHaveBeenCalled();
+      expect(setup.renderer.hasSelection).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1183,6 +1294,281 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane aligns the current rendered line to top, center, and bottom", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [createTallDiffFile("target", "target.ts", 100)];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let requestAlignment: (alignment: CurrentLineAlignment) => void = () => {};
+    let targetReady = false;
+
+    function LineAlignmentHarness() {
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [request, setRequest] = useState<{
+        id: number;
+        alignment: CurrentLineAlignment;
+      }>({ id: 0, alignment: "center" });
+      requestAlignment = (alignment) =>
+        setRequest((current) => ({ id: current.id + 1, alignment }));
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorAlignmentRequest: request,
+            scrollRef,
+            selectedHunkRevealRequestId: 0,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            if (lineCursor || cursors.length === 0) return;
+            const target = cursors[Math.floor(cursors.length / 2)];
+            if (!target) return;
+            targetReady = true;
+            setLineCursor(target);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<LineAlignmentHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !targetReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(targetReady).toBe(true);
+      expect(scrollRef.current?.viewport.height ?? 0).toBeGreaterThan(0);
+
+      const positions = {} as Record<CurrentLineAlignment, number>;
+      for (const alignment of ["top", "center", "bottom"] as const) {
+        await act(async () => {
+          requestAlignment(alignment);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+        });
+        positions[alignment] = scrollRef.current?.scrollTop ?? 0;
+      }
+
+      // For one row well inside a tall stream, putting it at the viewport top
+      // requires the greatest scroll, followed by center and then bottom.
+      expect(positions.top).toBeGreaterThan(positions.center);
+      expect(positions.center).toBeGreaterThan(positions.bottom);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane defers command alignment until navigation reconciles the current line", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [createWideTwoHunkDiffFile("target", "target.ts")];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let requestNavigationAndAlignment = () => {};
+    let reconcileCurrentLine = () => {};
+    let cursorsReady = false;
+
+    function DeferredAlignmentHarness() {
+      const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+      const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [request, setRequest] = useState<{
+        id: number;
+        alignment: CurrentLineAlignment;
+      }>({ id: 0, alignment: "top" });
+      const targetCursorRef = useRef<LineCursor | null>(null);
+
+      requestNavigationAndAlignment = () => {
+        setSelectedHunkIndex(1);
+        setSelectedHunkRevealRequestId((current) => current + 1);
+        setRequest((current) => ({ id: current.id + 1, alignment: "top" }));
+      };
+      reconcileCurrentLine = () => {
+        if (targetCursorRef.current) setLineCursor(targetCursorRef.current);
+      };
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorAlignmentRequest: request,
+            scrollRef,
+            selectedHunkIndex,
+            selectedHunkRevealRequestId,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            const initialCursor = cursors.find((cursor) => cursor.hunkIndex === 0);
+            targetCursorRef.current = cursors.find((cursor) => cursor.hunkIndex === 1) ?? null;
+            if (!initialCursor || !targetCursorRef.current) return;
+            cursorsReady = true;
+            if (!lineCursor) setLineCursor(initialCursor);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<DeferredAlignmentHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !cursorsReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(cursorsReady).toBe(true);
+      const scrollBox = scrollRef.current;
+      expect(scrollBox).not.toBeNull();
+      const scrollToSpy = spyOn(scrollBox!, "scrollTo");
+      scrollToSpy.mockClear();
+
+      await act(async () => {
+        requestNavigationAndAlignment();
+        await setup.renderOnce();
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy).toHaveBeenCalled();
+      const selectionRevealCallCount = scrollToSpy.mock.calls.length;
+      const selectionRevealTarget = scrollToSpy.mock.calls.at(-1)?.[0];
+      expect(typeof selectionRevealTarget).toBe("number");
+      const selectionRevealScrollTop =
+        typeof selectionRevealTarget === "number" ? selectionRevealTarget : 0;
+
+      await act(async () => {
+        // Reconcile before the selection reveal's zero-delay retry fires. The
+        // successful explicit alignment must supersede that scheduled work.
+        reconcileCurrentLine();
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy.mock.calls.length).toBeGreaterThan(selectionRevealCallCount);
+      const alignedTarget = scrollToSpy.mock.calls.at(-1)?.[0];
+      expect(typeof alignedTarget).toBe("number");
+      const alignedScrollTop = typeof alignedTarget === "number" ? alignedTarget : 0;
+      expect(alignedScrollTop).toBeGreaterThan(selectionRevealScrollTop);
+
+      const alignedCallCount = scrollToSpy.mock.calls.length;
+      await act(async () => {
+        await Bun.sleep(150);
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy).toHaveBeenCalledTimes(alignedCallCount);
+      expect(scrollBox?.scrollTop ?? 0).toBe(alignedScrollTop);
+      scrollToSpy.mockRestore();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a cross-file line reveal against the selection reveal retry", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    // Two files, so revealing a line in the second one also changes the
+    // selected file — the case that schedules selection-reveal retries. The
+    // second file is one tall hunk, so a line near its end sits far from the
+    // hunk anchor the retry would scroll to, making the two outcomes
+    // unmistakably different rather than a row apart.
+    const files = [
+      createWideTwoHunkDiffFile("first", "first.ts", 1),
+      createTallDiffFile("second", "second.ts", 60),
+    ];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let revealDeepLineInSecondFile = () => {};
+    let cursorReady = false;
+
+    function CrossFileRevealHarness() {
+      const [selection, setSelection] = useState({
+        fileId: files[0]!.id,
+        hunkIndex: 0,
+      });
+      const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [revealRequest, setRevealRequest] = useState<{
+        id: number;
+        placement: LineRevealPlacement;
+      }>({ id: 0, placement: "nearest" });
+      const deepCursorRef = useRef<LineCursor | null>(null);
+
+      revealDeepLineInSecondFile = () => {
+        const cursor = deepCursorRef.current;
+        if (!cursor) return;
+        // Exactly what a `revealLine` into another file produces: a new
+        // selection, a hunk reveal request, and an explicit line reveal.
+        setSelection({ fileId: cursor.fileId, hunkIndex: cursor.hunkIndex });
+        setSelectedHunkRevealRequestId((current) => current + 1);
+        setLineCursor(cursor);
+        setRevealRequest((current) => ({ id: current.id + 1, placement: "reveal" }));
+      };
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorRevealRequest: revealRequest,
+            scrollRef,
+            selectedFileId: selection.fileId,
+            selectedHunkIndex: selection.hunkIndex,
+            selectedHunkRevealRequestId,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            const deep = cursors.filter((cursor) => cursor.fileId === files[1]!.id).at(-1);
+            if (!deep) return;
+            deepCursorRef.current = deep;
+            cursorReady = true;
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<CrossFileRevealHarness />, { width: 104, height: 14 });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !cursorReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(cursorReady).toBe(true);
+
+      await act(async () => {
+        revealDeepLineInSecondFile();
+        await setup.renderOnce();
+        await setup.renderOnce();
+      });
+      const revealedScrollTop = scrollRef.current?.scrollTop ?? 0;
+
+      // The selection reveal schedules a zero-delay retry plus a 120ms
+      // pinned-header settle window. Both must leave the exact line where the
+      // reveal put it; without superseding they scroll back to the hunk anchor.
+      await act(async () => {
+        await Bun.sleep(150);
+        await setup.renderOnce();
+      });
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(revealedScrollTop);
+      // Guard the guard: if the fixture ever put the revealed line at the hunk
+      // anchor, this test would pass without proving anything.
+      expect(revealedScrollTop).toBeGreaterThan(20);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane viewport-follow selection does not move the scroll position", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = [
@@ -1374,14 +1760,10 @@ describe("UI components", () => {
     ).bodyHeight;
     const secondHeaderTop = firstBodyHeight + 1;
     const separatorTop = firstBodyHeight;
-    const settleStickyScroll = async () => {
-      await act(async () => {
-        for (let iteration = 0; iteration < 6; iteration += 1) {
-          await Bun.sleep(60);
-          await setup.renderOnce();
-        }
+    const renderStickyScroll = () =>
+      act(async () => {
+        await setup.renderOnce();
       });
-    };
 
     try {
       await settleDiffPane(setup);
@@ -1392,7 +1774,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(3);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
       expect(frame).toContain("first.ts");
@@ -1402,7 +1784,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(separatorTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1415,7 +1797,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1428,7 +1810,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 1);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1442,7 +1824,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 2);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -2023,6 +2405,135 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane reveals the note the shared policy names, not the first one drawn in the hunk", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    // Two hunks far apart. Both notes hang from the second hunk and land on its first row:
+    // one is anchored there, the other to a line the collapsed gap swallowed.
+    const beforeLines = Array.from(
+      { length: 80 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[59] = "export const line60 = 6000;";
+
+    const file = createTestDiffFile(
+      "policy-note",
+      "policy-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    const hunkFirstLine = file.metadata.hunks[1]!.additionStart;
+    file.agent = {
+      path: file.path,
+      summary: "file note",
+      annotations: [
+        {
+          newRange: [hunkFirstLine, hunkFirstLine],
+          summary: "HUNK NOTE",
+          // Tall enough that revealing the note below it pushes this one off the top.
+          rationale: Array.from({ length: 6 }, (_, index) => `filler line ${index + 1}`).join(" "),
+        },
+        { newRange: [hunkFirstLine - 20, hunkFirstLine - 20], summary: "GAP NOTE" },
+      ],
+    };
+
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 40,
+      headerLabelWidth: 20,
+      selectedFileId: file.id,
+      selectedHunkIndex: 1,
+      scrollToNote: true,
+      separatorWidth: 44,
+      showAgentNotes: true,
+      showHunkHeaders: true,
+      width: 48,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 52, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      // Both notes sit on the same row, so the note drawn first is the one a scan of the
+      // hunk's rows finds. The shared policy takes the earliest anchor instead.
+      expect(frame).toContain("GAP NOTE");
+      expect(frame).not.toContain("HUNK NOTE");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane reveal is not confused by an explicit note id that spells an index", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    // Same geometry as the policy test above, but the notes' identities collide under an
+    // index-based id scheme: the policy's winner has no id and sits at index 0, while the
+    // decoy's explicit id is the string "0". If synthesized and explicit ids share a
+    // namespace, the reveal resolves the winner's id to the decoy's row.
+    const beforeLines = Array.from(
+      { length: 80 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line1 = 100;";
+    afterLines[59] = "export const line60 = 6000;";
+
+    const file = createTestDiffFile(
+      "collide-note",
+      "collide-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    const hunkFirstLine = file.metadata.hunks[1]!.additionStart;
+    file.agent = {
+      path: file.path,
+      summary: "file note",
+      annotations: [
+        // The reveal's rightful target: the only note in the selected hunk, with the
+        // explicit id "1" — the string the decoy's index synthesizes.
+        {
+          id: "1",
+          newRange: [hunkFirstLine, hunkFirstLine],
+          summary: "COLLIDE TARGET",
+        },
+        // An id-less note at index 1, two viewports away in the first hunk. Under a shared
+        // namespace its row registers last under the target's id, so the reveal scrolls here.
+        { newRange: [1, 1], summary: "COLLIDE DECOY" },
+      ],
+    };
+
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 40,
+      headerLabelWidth: 20,
+      selectedFileId: file.id,
+      selectedHunkIndex: 1,
+      scrollToNote: true,
+      separatorWidth: 44,
+      showAgentNotes: true,
+      showHunkHeaders: true,
+      width: 48,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 52, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      // The shared policy names the earliest-anchored note; its id must resolve to its own
+      // row even though another note's explicit id spells the winner's index.
+      expect(frame).toContain("COLLIDE TARGET");
+      expect(frame).not.toContain("COLLIDE DECOY");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -2223,8 +2734,8 @@ describe("UI components", () => {
     const saveLineIndex = lines.findIndex(
       (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
     );
-    expect(lines.some((line) => line.includes("soft"))).toBe(true);
-    expect(lines.some((line) => line.includes("wrap inside"))).toBe(true);
+    expect(lines.some((line) => line.includes(body.slice(0, 10)))).toBe(true);
+    expect(lines.some((line) => line.includes(body.slice(-10)))).toBe(true);
     expect(saveLineIndex).toBeGreaterThan(5);
   });
 
@@ -2413,7 +2924,7 @@ describe("UI components", () => {
     expect(frame).toContain("Agent note - alpha.ts R2");
     expect(frame).toContain("Annotation for alpha.ts");
     expect(frame).toContain("Why alpha.ts changed");
-    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeLessThan(
+    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeGreaterThan(
       frame.indexOf("2 + export const add = true;"),
     );
     expect(frame).toContain("Agent note - beta.ts R1");
@@ -2424,7 +2935,7 @@ describe("UI components", () => {
     expect(frame).not.toContain("confidence");
   });
 
-  test("DiffPane split inline notes hand off directly to the anchored row without shifting it", async () => {
+  test("DiffPane split inline notes hand off directly from the anchored row without shifting it", async () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -2452,10 +2963,10 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteBottomIndex = lines.findIndex((line) => line.includes("╰") && line.includes("╯"));
-    expect(noteBottomIndex).toBeGreaterThanOrEqual(0);
-    expect(lines[noteBottomIndex + 1]).toContain("export const add = true;");
-    expect(lines[noteBottomIndex + 1]?.trim()).not.toBe("│");
+    const noteTopIndex = lines.findIndex((line) => line.includes("╭") && line.includes("╮"));
+    expect(noteTopIndex).toBeGreaterThan(0);
+    expect(lines[noteTopIndex - 1]).toContain("export const add = true;");
+    expect(lines[noteTopIndex - 1]?.trim()).not.toBe("│");
 
     const changedLine = lines.find((line) => line.includes("export const alpha = 2;"));
     const annotatedLine = lines.find((line) => line.includes("export const add = true;"));
@@ -2617,6 +3128,78 @@ describe("UI components", () => {
     );
 
     expect(frame).toContain("Update available: 9.9.9");
+  });
+
+  test("StatusBar keeps the keyboard-mode badge visible beside notices and filter input", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const noticeFrame = await captureFrame(
+      <StatusBar
+        filter=""
+        filterFocused={false}
+        modeText="Vim navigation — ext vim:normal — Esc exits"
+        noticeText="Update available"
+        terminalWidth={80}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+        onExitMode={() => {}}
+      />,
+      80,
+      3,
+    );
+    const filterFrame = await captureFrame(
+      <StatusBar
+        filter="beta"
+        filterFocused={true}
+        modeText="Vim navigation — ext vim:normal — Esc exits"
+        terminalWidth={80}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+        onExitMode={() => {}}
+      />,
+      80,
+      3,
+    );
+
+    expect(noticeFrame).toContain("Update available");
+    expect(noticeFrame).toContain("Vim navigation");
+    expect(filterFrame).toContain("filter:");
+    expect(filterFrame).toContain("beta");
+    expect(filterFrame).toContain("Vim navigation");
+  });
+
+  test("StatusBar mode badge uses the host exit callback and stops the outer click", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    let exits = 0;
+    let stopped = 0;
+    const element = StatusBar({
+      filter: "",
+      filterFocused: false,
+      modeText: "Vim navigation",
+      terminalWidth: 80,
+      theme,
+      onCloseMenu: () => {},
+      onFilterInput: () => {},
+      onFilterSubmit: () => {},
+      onExitMode: () => {
+        exits += 1;
+      },
+    }) as unknown as {
+      props: {
+        children: readonly [unknown, { props: { onMouseUp: (event: unknown) => void } }];
+      };
+    };
+
+    element.props.children[1].props.onMouseUp({
+      stopPropagation() {
+        stopped += 1;
+      },
+    });
+    expect(exits).toBe(1);
+    expect(stopped).toBe(1);
   });
 
   test("StatusBar keeps filter input precedence over a notice", async () => {
@@ -2875,11 +3458,11 @@ describe("UI components", () => {
     expect(frame).toContain("1 + export const alpha = 2;");
   });
 
-  test("PierreDiffView renders stack-mode wrapped continuation rows", async () => {
+  test("DiffSectionBody renders stack-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -2906,12 +3489,12 @@ describe("UI components", () => {
     expect(addedLines.slice(1).some((line) => line.includes("age';"))).toBe(true);
   });
 
-  test("PierreDiffView can reveal offscreen code columns in nowrap mode", async () => {
+  test("DiffSectionBody can reveal offscreen code columns in nowrap mode", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
 
     const baseFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -2924,7 +3507,7 @@ describe("UI components", () => {
       12,
     );
     const shiftedFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -2950,7 +3533,7 @@ describe("UI components", () => {
     const width = 64;
 
     const splitFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -2963,7 +3546,7 @@ describe("UI components", () => {
       18,
     );
     const stackFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="stack"
         theme={theme}
@@ -2984,7 +3567,7 @@ describe("UI components", () => {
     expect(splitContinuationRows.length).toBeGreaterThan(stackContinuationRows.length);
   });
 
-  test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
+  test("DiffSectionBody anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
     const file = createTestDiffFile(
       "note-fallback",
       "note-fallback.ts",
@@ -2993,20 +3576,20 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
         width={88}
         selectedHunkIndex={0}
         visibleAgentNotes={[
-          {
+          createVisibleAgentNote(file.metadata.hunks, {
             id: "note:ungrounded",
             annotation: {
               summary: "Ungrounded note",
               rationale: "Falls back to the first visible row.",
             },
-          },
+          }),
         ]}
         showHunkHeaders={false}
         scrollable={false}
@@ -3020,16 +3603,16 @@ describe("UI components", () => {
     expect(frame).toContain("Ungrounded note");
     expect(frame).toContain("Falls back to the first visible");
     expect(frame).toContain("row.");
-    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeLessThan(
+    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeGreaterThan(
       frame.indexOf("1 - export const value = 1;"),
     );
   });
 
-  test("PierreDiffView shows contextual messages when there is no selected file or no textual hunks", async () => {
+  test("DiffSectionBody shows contextual messages when there is no selected file or no textual hunks", async () => {
     const theme = resolveTheme("github-dark-default", null);
 
     const noFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={undefined}
         layout="split"
         theme={theme}
@@ -3043,7 +3626,7 @@ describe("UI components", () => {
     expect(noFileFrame).toContain("No file selected.");
 
     const renameOnlyFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("rename-pure")}
         layout="split"
         theme={theme}
@@ -3057,7 +3640,7 @@ describe("UI components", () => {
     expect(renameOnlyFrame).toContain("This change only renames the file.");
 
     const newFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("new")}
         layout="split"
         theme={theme}
@@ -3071,7 +3654,7 @@ describe("UI components", () => {
     expect(newFileFrame).toContain("The file is marked as new.");
 
     const deletedFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={createEmptyDiffFile("deleted")}
         layout="split"
         theme={theme}
@@ -3085,7 +3668,7 @@ describe("UI components", () => {
     expect(deletedFileFrame).toContain("The file is marked as deleted.");
 
     const binaryFileFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={{
           ...createEmptyDiffFile("change"),
           id: "empty:binary",
@@ -3104,12 +3687,12 @@ describe("UI components", () => {
     expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
-  test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {
+  test("DiffSectionBody shows the expand chevron only when a source fetcher is attached", async () => {
     const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
     const theme = resolveTheme("github-dark-default", null);
 
     const noFetcherFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={baseFile}
         layout="split"
         theme={theme}
@@ -3129,7 +3712,7 @@ describe("UI components", () => {
     };
 
     const expandableFrame = await captureFrame(
-      <PierreDiffView
+      <DiffSectionBody
         file={fileWithFetcher}
         layout="split"
         theme={theme}
@@ -3144,7 +3727,7 @@ describe("UI components", () => {
     expect(expandableFrame).toContain("▾");
   });
 
-  test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
+  test("DiffSectionBody hides add-note affordances on collapsed and hunk-header rows", async () => {
     const expandable = createExpandableContextDiffFile("meta-hover", "meta-hover.ts");
     const file = {
       ...expandable.file,
@@ -3152,7 +3735,7 @@ describe("UI components", () => {
     };
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3215,7 +3798,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView toggles a collapsed gap when clicked", async () => {
+  test("DiffSectionBody toggles a collapsed gap when clicked", async () => {
     const expandable = createExpandableContextDiffFile("expand-click", "expand-click.ts");
     const file = {
       ...expandable.file,
@@ -3224,7 +3807,7 @@ describe("UI components", () => {
     const toggledGaps: string[] = [];
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3269,7 +3852,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView highlights expanded unchanged source rows", async () => {
+  test("DiffSectionBody highlights expanded unchanged source rows", async () => {
     const beforeLines = Array.from({ length: 30 }, (_, index) =>
       index === 0
         ? "export const expandedMarker = 1;"
@@ -3287,7 +3870,7 @@ describe("UI components", () => {
     });
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3324,7 +3907,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView renders word-diff spans with a visibly different background in split view", async () => {
+  test("DiffSectionBody renders word-diff spans with a visibly different background in split view", async () => {
     const file = createTestDiffFile(
       "word-diff",
       "word-diff.ts",
@@ -3333,7 +3916,7 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3379,7 +3962,7 @@ describe("UI components", () => {
     }
   });
 
-  test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
+  test("DiffSectionBody reuses highlighted rows after unmounting and remounting a file section", async () => {
     const file = createTestDiffFile(
       "cache",
       "cache.ts",
@@ -3389,7 +3972,7 @@ describe("UI components", () => {
     const theme = resolveTheme("github-dark-default", null);
 
     const firstSetup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3424,7 +4007,7 @@ describe("UI components", () => {
     }
 
     const secondSetup = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={file}
         layout="split"
         theme={theme}
@@ -3463,7 +4046,7 @@ describe("UI components", () => {
       { width: 100, height: 10 },
     );
     const thirdFileCheck = await testRender(
-      <PierreDiffView
+      <DiffSectionBody
         file={files[2]}
         layout="split"
         theme={theme}

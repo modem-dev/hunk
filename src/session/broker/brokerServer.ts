@@ -10,11 +10,14 @@ import {
   isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
+import { BrowserReviewServer } from "./browserReviewServer";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  AppliedHighlightResult,
   ClearedCommentsResult,
+  ClearedHighlightsResult,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigatedSelectionResult,
@@ -54,6 +57,8 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-list",
   "comment-rm",
   "comment-clear",
+  "highlight-add",
+  "highlight-clear",
 ];
 
 export interface ServeSessionBrokerDaemonOptions {
@@ -239,8 +244,10 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
         response = { context: state.getSelectedContext(input.selector) };
         break;
       case "review": {
+        // Patch bodies are read back from the publishing session as review resources, so
+        // this is the one session action whose projection is asynchronous.
         response = {
-          review: state.getSessionReview(input.selector, {
+          review: await state.getSessionReviewWithResources(input.selector, {
             includePatch: input.includePatch,
             includeNotes: input.includeNotes,
           }),
@@ -372,6 +379,38 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
           }),
         };
         break;
+      case "highlight-add":
+        response = {
+          result: await state.dispatchCommand<AppliedHighlightResult, "highlight">({
+            selector: input.selector,
+            command: "highlight",
+            input: {
+              ...input.selector,
+              filePath: input.filePath,
+              side: input.side,
+              line: input.line,
+              start: input.start,
+              end: input.end,
+              tone: input.tone,
+              reveal: input.reveal,
+            },
+            timeoutMessage: "Timed out waiting for the session to apply the highlight.",
+          }),
+        };
+        break;
+      case "highlight-clear":
+        response = {
+          result: await state.dispatchCommand<ClearedHighlightsResult, "clear_highlights">({
+            selector: input.selector,
+            command: "clear_highlights",
+            input: {
+              ...input.selector,
+              filePath: input.filePath,
+            },
+            timeoutMessage: "Timed out waiting for the session to clear the requested highlights.",
+          }),
+        };
+        break;
       default:
         throw new Error("Unknown session API action.");
     }
@@ -426,6 +465,8 @@ export function serveSessionBrokerDaemon(
   const staleSessionSweepIntervalMs =
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
   const state = createHunkSessionBrokerState();
+  // One loopback process serves every attached review, rather than a port per terminal.
+  const browserReview = new BrowserReviewServer(state);
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
@@ -480,6 +521,14 @@ export function serveSessionBrokerDaemon(
         return handleSessionApiRequest(state, request);
       }
 
+      // The review surface authorizes every one of its own routes with a per-session
+      // capability, so it is mounted after the daemon's host/origin checks and before the
+      // legacy tombstone; it declines anything that is not a review route.
+      const review = await browserReview.handle(request);
+      if (review) {
+        return review;
+      }
+
       if (url.pathname === LEGACY_MCP_PATH) {
         // Preserve an explicit tombstone for the removed MCP route so stale automation gets a clear
         // upgrade message instead of a generic 404.
@@ -496,6 +545,7 @@ export function serveSessionBrokerDaemon(
   const shutdown = () => {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
+    browserReview.close();
     server.stop(true);
   };
 

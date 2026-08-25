@@ -8,11 +8,13 @@ import type {
 import type { Hunk } from "@pierre/diffs";
 import type {
   ExtensionDiffHunk,
+  ExtensionDialogs,
   ExtensionEventContext,
-  ExtensionSidebarControls,
+  ExtensionPaneControls,
+  ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
-import { summarizeHunk } from "../core/hunkSummary";
+import { summarizeHunk } from "../core/changeset/hunkSummary";
 
 /**
  * How long `shutdown` handlers may run before Hunk exits anyway.
@@ -288,14 +290,14 @@ function toHandlerPayload<Event extends ExtensionEventName>(
   }) as ExtensionEventPayloads[Event];
 }
 
-/** Sidebar controls used only before the mounted app has installed live controls. */
-function unavailableSidebarControls(
+/** Pane controls used only before the mounted app has installed live controls. */
+function unavailablePaneControls(
   result: ExtensionLoadResult,
   extensionId: string,
-): ExtensionSidebarControls {
+): ExtensionPaneControls {
   const unavailable = (method: string, viewId: string) => {
     result.context.notify(
-      `Extension ${extensionId} cannot ${method} sidebar view "${viewId}" before the app is ready`,
+      `Extension ${extensionId} cannot ${method} pane "${viewId}" before the app is ready`,
       "warning",
     );
   };
@@ -308,22 +310,66 @@ function unavailableSidebarControls(
   };
 }
 
+/** Navigation controls used before the mounted app can safely move a review. */
+function unavailableReviewNavigation(
+  result: ExtensionLoadResult,
+  extensionId: string,
+): ExtensionReviewNavigation {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot navigate the review before the app is ready`,
+      "warning",
+    );
+  return { selectFile: unavailable, selectHunk: unavailable, revealLine: unavailable };
+}
+
+/** Dialog controls used before the mounted app has installed its modal queue. */
+function unavailableDialogs(result: ExtensionLoadResult, extensionId: string): ExtensionDialogs {
+  const unavailable = () =>
+    result.context.notify(
+      `Extension ${extensionId} cannot open a dialog before the app is ready`,
+      "warning",
+    );
+  return {
+    confirm: async () => {
+      unavailable();
+      return false;
+    },
+    select: async () => {
+      unavailable();
+      return null;
+    },
+    input: async () => {
+      unavailable();
+      return null;
+    },
+  };
+}
+
 /** Build the runtime event context for one owning extension. */
 function createEventContext(
   result: ExtensionLoadResult,
   extensionId: string,
 ): ExtensionEventContext {
-  return (
-    result.eventContextProvider?.(extensionId) ?? {
-      ...result.context,
-      sidebars: unavailableSidebarControls(result, extensionId),
-      events: {
-        emit(event, payload) {
-          emitExtensionCustomEvent(result, event, payload);
-        },
+  const provided = result.eventContextProvider?.(extensionId);
+  if (provided) {
+    return provided;
+  }
+
+  // The deprecated name is an alias, not another control path.
+  const panes = unavailablePaneControls(result, extensionId);
+  return {
+    ...result.context,
+    panes,
+    sidebars: panes,
+    navigation: unavailableReviewNavigation(result, extensionId),
+    dialogs: unavailableDialogs(result, extensionId),
+    events: {
+      emit(event, payload) {
+        emitExtensionCustomEvent(result, event, payload);
       },
-    }
-  );
+    },
+  };
 }
 
 /**
@@ -337,14 +383,15 @@ function runExtensionEventHandlers<Event extends ExtensionEventName>(
   result: ExtensionLoadResult,
   event: Event,
   rawPayload: ExtensionEventPayloads[Event],
-  /** Restrict delivery to handlers owned by these extensions; all of them when omitted. */
-  extensionIds?: ReadonlySet<string>,
 ): Promise<void>[] {
-  const registered = result.registry.eventHandlers[event];
-  const handlers = extensionIds
-    ? registered.filter((entry) => extensionIds.has(entry.extensionId))
-    : registered;
+  const handlers = result.registry.eventHandlers[event];
   const settled: Promise<void>[] = [];
+
+  // Revocation closes ordinary lifecycle delivery synchronously. Retirement is
+  // the sole exception: shutdown runs once after authority has become inert.
+  if (result.registry.eventBusPhase === "closed" && event !== "shutdown") {
+    return settled;
+  }
 
   if (handlers.length === 0) {
     return settled;
@@ -387,7 +434,7 @@ export function emitExtensionCustomEvent(
   event: string,
   rawPayload: unknown,
 ) {
-  if (!result) {
+  if (!result || result.registry.eventBusPhase === "closed") {
     return;
   }
 
@@ -425,6 +472,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   }
 
   const { registry } = result;
+  if (registry.eventBusPhase === "closed") return false;
   registry.emitCustomEvent = (event, payload) => {
     emitExtensionCustomEvent(result, event, payload);
   };
@@ -435,6 +483,7 @@ export function bindExtensionEventBus(result: ExtensionLoadResult | undefined) {
   for (const { event, payload } of registry.pendingCustomEvents.splice(0)) {
     emitExtensionCustomEvent(result, event, payload);
   }
+  return true;
 }
 
 /**
@@ -454,29 +503,6 @@ export function emitExtensionEvent<Event extends ExtensionEventName>(
   }
 
   runExtensionEventHandlers(result, event, payload);
-}
-
-/**
- * Emit one lifecycle event to a named subset of the loaded extensions.
- *
- * This exists for `startup`, which is a per-extension promise ("once, after the
- * app mounts with its first changeset") rather than a per-session one. Granting
- * repo trust mid-session loads extensions that missed the mount emit entirely,
- * and re-emitting to everyone would fire `startup` a second time for the
- * extensions that already had it. Delivering to just the newly loaded ones
- * keeps both halves of the promise.
- */
-export function emitExtensionEventToExtensions<Event extends ExtensionEventName>(
-  result: ExtensionLoadResult | undefined,
-  event: Event,
-  payload: ExtensionEventPayloads[Event],
-  extensionIds: ReadonlySet<string>,
-) {
-  if (!result || extensionIds.size === 0) {
-    return;
-  }
-
-  runExtensionEventHandlers(result, event, payload, extensionIds);
 }
 
 /**
@@ -512,4 +538,27 @@ export async function emitExtensionEventBounded<Event extends ExtensionEventName
   if (timer) {
     clearTimeout(timer);
   }
+}
+
+/** Revoke one runtime's UI/event authority before asynchronous teardown begins. */
+export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefined) {
+  if (!result || result.registry.eventBusPhase === "closed") {
+    return false;
+  }
+
+  result.registry.emitCustomEvent = undefined;
+  result.registry.eventBusPhase = "closed";
+  result.registry.pendingCustomEvents.length = 0;
+  return true;
+}
+
+/** Shut down one retired extension runtime through the registry's shared completion. */
+export function retireExtensionLoadResult(result: ExtensionLoadResult | undefined): Promise<void> {
+  if (!result) return Promise.resolve();
+  const { registry } = result;
+  if (registry.retirementPromise) return registry.retirementPromise;
+  if (!revokeExtensionLoadResult(result)) return Promise.resolve();
+
+  registry.retirementPromise = emitExtensionEventBounded(result, "shutdown", {});
+  return registry.retirementPromise;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../app/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
@@ -39,6 +39,7 @@ function createTrustHarness(initial: AppBootstrap) {
     return (
       <App
         bootstrap={bootstrap}
+        onRegisterWorkspaceRefreshRequest={() => () => {}}
         onReloadSession={async () => ({
           sessionId: "test",
           inputKind: bootstrap.input.kind,
@@ -47,6 +48,11 @@ function createTrustHarness(initial: AppBootstrap) {
           fileCount: bootstrap.changeset.files.length,
           selectedHunkIndex: 0,
         })}
+        onWorkspaceWriteCompleted={() => {}}
+        runWorkspaceWrite={async (write) => {
+          await write();
+          return true;
+        }}
       />
     );
   }

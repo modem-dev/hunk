@@ -1,6 +1,6 @@
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import { reviewRowId } from "../lib/ids";
-import type { PlannedHunkBounds } from "../diff/plannedReviewRows";
+import type { PlannedHunkBounds } from "../diff/reviewRowGeometry";
 import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
 import type { ValidatedFileViewLayout } from "./layout";
 import type { PlannedFileViewRow } from "./renderPlan";
@@ -49,14 +49,19 @@ export function measureFileViewGeometry({
     const entry: DiffSectionRowBounds = {
       key: row.key,
       stableKey: row.stableKey,
-      stableKeys: [row.stableKey],
+      stableKeys:
+        row.kind === "file-view-row" && row.stableAliasKeys
+          ? [row.stableKey, ...row.stableAliasKeys]
+          : [row.stableKey],
       top: bodyHeight,
       height: plannedFileViewRowHeight(row, resolved, width),
     };
     rowBounds.push(entry);
     rowBoundsByKey.set(entry.key, entry);
-    if (!rowBoundsByStableKey.has(entry.stableKey)) {
-      rowBoundsByStableKey.set(entry.stableKey, entry);
+    for (const stableKey of entry.stableKeys) {
+      if (!rowBoundsByStableKey.has(stableKey)) {
+        rowBoundsByStableKey.set(stableKey, entry);
+      }
     }
     bodyHeight += entry.height;
   }

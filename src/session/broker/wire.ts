@@ -1,5 +1,5 @@
-import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../../core/experimental";
-import type { CliInput } from "../../core/types";
+import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../../core/run/experimental";
+import type { CliInput } from "../../core/run/commandInputs";
 import {
   MAX_REGISTRATION_FILES,
   MAX_REGISTRATION_HUNKS_PER_FILE,
@@ -11,6 +11,11 @@ import {
   parseSessionSnapshotEnvelope,
   utf8ByteLength,
 } from "@hunk/session-broker-core";
+import {
+  parseHunkReviewPublicationAddress,
+  parseHunkReviewResourceCatalog,
+} from "../reviewProtocol";
+import { isReviewSha256Digest } from "../../core/review/validation";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
 import type {
   HunkSessionInfo,
@@ -226,12 +231,35 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     return null;
   }
 
+  // The review catalog is parsed by the wire protocol itself, so the broker never grows a
+  // second opinion about what a resource descriptor is (`docs/browser-review-seam-audit.md`,
+  // D5). A session from before the mirror existed sends none; one that sends a malformed
+  // catalog is refused outright rather than mirrored half-parsed.
+  const reviewCatalog =
+    record.reviewCatalog === undefined
+      ? undefined
+      : parseHunkReviewResourceCatalog(record.reviewCatalog);
+  if (record.reviewCatalog !== undefined && reviewCatalog === undefined) {
+    return null;
+  }
+
+  // The capability verifier is a digest and nothing else, checked with the shared
+  // canonical-form validator rather than an inline pattern (D5). A registration that
+  // offers something else in its place is refused rather than mirrored with an
+  // unverifiable credential attached.
+  const reviewCapabilityDigest = record.reviewCapabilityDigest;
+  if (reviewCapabilityDigest !== undefined && !isReviewSha256Digest(reviewCapabilityDigest)) {
+    return null;
+  }
+
   return {
     inputKind,
     title,
     sourceLabel,
     experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
     files: files as SessionReviewFile[],
+    ...(reviewCatalog ? { reviewCatalog } : {}),
+    ...(reviewCapabilityDigest ? { reviewCapabilityDigest } : {}),
   };
 }
 
@@ -250,6 +278,16 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
   const selectedHunkIndex = brokerWireParsers.parseNonNegativeInt(record.selectedHunkIndex);
   const showAgentNotes = typeof record.showAgentNotes === "boolean" ? record.showAgentNotes : null;
   if (selectedHunkIndex === null || showAgentNotes === null) {
+    return null;
+  }
+
+  // Where the review sits is the one fact the mirror orders on, so it is parsed as the
+  // shared publication address rather than as two loose numbers (C1).
+  const reviewPublication =
+    record.reviewPublication === undefined
+      ? undefined
+      : parseHunkReviewPublicationAddress(record.reviewPublication);
+  if (record.reviewPublication !== undefined && reviewPublication === undefined) {
     return null;
   }
 
@@ -272,6 +310,7 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     liveComments,
     reviewNoteCount: reviewNotes.length,
     reviewNotes,
+    ...(reviewPublication ? { reviewPublication } : {}),
   };
 }
 

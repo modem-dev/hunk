@@ -1,13 +1,16 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { resolveConfiguredCliInput } from "../core/config";
-import { loadAppBootstrap } from "../core/loaders";
-import type { AppBootstrap } from "../core/types";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
+import { resolveConfiguredCliInput } from "../core/run/config";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { loadAppBootstrap } from "../core/changeset/loaders";
+import type { AppBootstrap } from "../core/bootstrap";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AppHost } from "./AppHost";
 
 /**
@@ -22,9 +25,9 @@ import { AppHost } from "./AppHost";
 const tempDirs: string[] = [];
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTestDirectory(dir);
   }
   if (originalXdgConfigHome === undefined) {
     delete process.env.XDG_CONFIG_HOME;
@@ -74,8 +77,9 @@ async function launchWithConfig(repo: string, configToml: string): Promise<AppBo
     staged: false,
     options: { mode: "stack" as const, promptSaveViewPreferences: false },
   };
-  const configured = resolveConfiguredCliInput(input, { cwd: repo });
-  const bootstrap = await loadAppBootstrap(configured.input, { cwd: repo });
+  const vcsCatalog = getBundledVcsCatalog();
+  const configured = resolveConfiguredCliInput(input, { cwd: repo, vcsCatalog });
+  const bootstrap = await loadAppBootstrap(configured.input, { cwd: repo, vcsCatalog });
   bootstrap.keybindings = configured.keybindings;
   return bootstrap;
 }
@@ -92,10 +96,15 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
+  externalQuitSignal?: AbortSignal,
 ) {
   let quitCount = 0;
   const setup = await testRender(
-    <AppHost bootstrap={bootstrap} onQuit={() => (quitCount += 1)} />,
+    <AppHost
+      bootstrap={bootstrap}
+      externalQuitSignal={externalQuitSignal}
+      onQuit={() => (quitCount += 1)}
+    />,
     { width: 120, height: 24 },
   );
 
@@ -171,6 +180,199 @@ describe("user keybindings", () => {
       });
       await flush(setup);
       expect(quits()).toBe(1);
+    });
+  });
+
+  test("a legacy command id remaps the canonical files-pane command", async () => {
+    const repo = createTestRepo("hunk-keybindings-files-pane-alias-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.view.toggleSidebar" = "f6"\n',
+    );
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+      expect(seen).toEqual([]);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F6");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.view.toggleFilesPane"]);
+    });
+  });
+
+  test("theme selector honors configured vertical review bindings", async () => {
+    const repo = createTestRepo("hunk-keybindings-theme-selector-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.review.stepDown" = ["down", "j", "ctrl+n"]\n"hunk.review.stepUp" = ["up", "k", "ctrl+p"]\n',
+    );
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("Theme selector");
+
+      await act(async () => {
+        setup.mockInput.pressKey("n", { ctrl: true });
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("›  github-dark-dimmed");
+
+      await act(async () => {
+        setup.mockInput.pressKey("p", { ctrl: true });
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("›  github-dark-default");
+    });
+  });
+
+  test("emits command_executed after keyboard dispatch", async () => {
+    const repo = createTestRepo("hunk-keybindings-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      await flush(setup);
+      expect(seen).toContain("hunk.review.stepDown");
+    });
+  });
+
+  test("observes commands invoked through extension command controls exactly once", async () => {
+    const repo = createTestRepo("hunk-keybindings-programmatic-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.commands.push({
+      extensionId: "coach",
+      command: { id: "toggle-lines", title: "Toggle lines", key: "y" },
+      handler: (ctx) => {
+        ctx.commands.execute("hunk.view.toggleLineNumbers");
+      },
+    });
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.view.toggleLineNumbers", "coach.toggle-lines"]);
+    });
+  });
+
+  test("observes quit before shutdown remains the terminal lifecycle event", async () => {
+    const repo = createTestRepo("hunk-keybindings-quit-event-order-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(`command:${commandId}`);
+      },
+    });
+    extensions.registry.eventHandlers.shutdown.push({
+      extensionId: "coach",
+      handler: () => {
+        seen.push("shutdown");
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup, quits) => {
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+      expect(seen).toEqual(["command:hunk.app.quit", "shutdown"]);
+      expect(quits()).toBe(1);
+    });
+  });
+
+  test("retires extensions before an external terminal interrupt quits", async () => {
+    const repo = createTestRepo("hunk-keybindings-interrupt-shutdown-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const quitController = new AbortController();
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.shutdown.push({
+      extensionId: "coach",
+      handler: () => {
+        seen.push("shutdown");
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(
+      bootstrap,
+      async (setup, quits) => {
+        await act(async () => quitController.abort());
+        await flush(setup);
+        expect(seen).toEqual(["shutdown"]);
+        expect(quits()).toBe(1);
+      },
+      quitController.signal,
+    );
+  });
+
+  test("emits command_executed when Tab leaves the focused file filter", async () => {
+    const repo = createTestRepo("hunk-keybindings-focused-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      seen.length = 0;
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      expect(seen).toEqual(["hunk.app.toggleFocusArea"]);
     });
   });
 });

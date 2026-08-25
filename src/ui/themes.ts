@@ -1,7 +1,7 @@
 import type { ThemeMode } from "@opentui/core";
-import { LEGACY_CUSTOM_THEME_ID } from "../core/customThemes";
-import { resolveSyntaxScopeOverrides } from "../core/legacySyntaxScopes";
-import type { NamedCustomThemeConfig } from "../core/types";
+import { LEGACY_CUSTOM_THEME_ID } from "../core/theme/customThemes";
+import { resolveSyntaxScopeOverrides } from "../core/theme/legacySyntaxScopes";
+import type { NamedCustomThemeConfig } from "../extension-api/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,
@@ -9,12 +9,11 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
-  type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
-} from "../core/themeCatalog";
+} from "../core/theme/catalog";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
-export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
+export type { AppTheme } from "./themes/types";
 
 export const TRANSPARENT_BACKGROUND = "transparent";
 export const DEFAULT_DARK_THEME_ID = "github-dark-default";
@@ -350,11 +349,6 @@ export function resolveTheme(
   }
 
   return fallbackTheme(themeMode);
-}
-
-/** Return known semantic diff colors for a bundled Shiki-backed theme. */
-export function bundledThemeDiffColors(themeId: string): BundledShikiThemeDiffColors | undefined {
-  return getBundledShikiThemeDiffColors(themeId);
 }
 
 /**

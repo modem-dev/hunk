@@ -24,7 +24,18 @@ export function isEscapeKey(key: KeyEvent) {
   );
 }
 
-/** Match Ctrl-S across raw, Kitty/CSI-u, and tmux control-mode encodings. */
+/**
+ * Match Ctrl-S across raw, Kitty/CSI-u, and tmux control-mode encodings.
+ *
+ * Deliberately not delegated to the published `matchesKey("ctrl+s", key)`,
+ * which now understands the bare C0 byte: this predicate is wider than a chord
+ * can be. It reads `raw`, a channel `ExtensionKeyEvent` does not carry; it
+ * accepts the CSI-u form the chord grammar has no spelling for; and it treats
+ * a bare `\u0013` byte as Ctrl-S whatever else the event reports, where chord
+ * matching must stay strict about modifiers so `ctrl+shift+s` remains a
+ * different binding. Delegating would narrow saving a draft note, so the
+ * overlap stays duplicated on purpose.
+ */
 export function isSaveDraftNoteKey(key: KeyEvent) {
   const name = key.name?.toLowerCase();
   const sequence = key.sequence;

@@ -2,6 +2,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
 import {
   binaryFilenameForSpec,
   getHostPlatformPackageSpec,
@@ -77,12 +78,18 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
     throw new Error(`Missing skills directory at ${skillsSource}.`);
   }
 
-  const hunkReviewSkill = path.join(skillsSource, "hunk-review", "SKILL.md");
-  if (!existsSync(hunkReviewSkill)) {
-    throw new Error(`Missing bundled Hunk review skill at ${hunkReviewSkill}.`);
-  }
+  // Stage the bundled skills by name rather than the whole directory: `skills/`
+  // also holds maintainer-only documents that reference paths no artifact ships.
+  for (const skillName of BUNDLED_SKILL_NAMES) {
+    const skillSource = path.join(skillsSource, skillName, "SKILL.md");
+    if (!existsSync(skillSource)) {
+      throw new Error(`Missing bundled Hunk ${skillName} skill at ${skillSource}.`);
+    }
 
-  cpSync(skillsSource, path.join(outputDir, "skills"), { recursive: true });
+    cpSync(path.join(skillsSource, skillName), path.join(outputDir, "skills", skillName), {
+      recursive: true,
+    });
+  }
   writeFileSync(
     path.join(outputDir, "metadata.json"),
     `${JSON.stringify(

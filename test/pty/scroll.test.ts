@@ -14,7 +14,7 @@ describe("PTY scrolling", () => {
   test("a short last file does not trap upward scrolling at the bottom edge", async () => {
     const fixture = harness.createBottomClampedRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "split"],
+      args: ["diff", "--mode", "split", "--cursor-line", "off"],
       cwd: fixture.dir,
       cols: 220,
       rows: 10,
@@ -55,7 +55,7 @@ describe("PTY scrolling", () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunkWithFileBackedStdin({
       stdinFile: fixture.patchFile,
-      args: ["pager"],
+      args: ["pager", "--cursor-line", "off"],
       cols: 140,
       rows: 24,
     });
@@ -75,7 +75,7 @@ describe("PTY scrolling", () => {
   test("step keys still move one row after a click in the review stream", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD"],
+      args: ["show", "HEAD", "--cursor-line", "off"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

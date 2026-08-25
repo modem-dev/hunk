@@ -48,7 +48,7 @@ Detection prefers the **nearest** checkout: a Git repository nested inside a jj 
 | ------------------------ | -------------------------------------------- |
 | bundled `jj`             | 200                                          |
 | bundled `sl`             | 100                                          |
-| bundled `git`            | 0 (`HUNK_CORE_VCS_DETECTION_PRIORITY`)       |
+| bundled `git`            | 0 (`HUNK_VCS_DETECTION_BASELINE_PRIORITY`)   |
 | your adapter, by default | -100 (`HUNK_DEFAULT_VCS_DETECTION_PRIORITY`) |
 
 Higher is consulted first; equal priorities fall back to registration order. jj and Sapling sit above Git because a colocated jj repository — or a Sapling repository created with `sl init --git` — also carries Git metadata, and the Git view is the wrong one.
@@ -56,19 +56,19 @@ Higher is consulted first; equal priorities fall back to registration order. jj 
 The default puts your adapter below Git, so installing an extension never silently changes how an existing repository is reviewed. Set `detectionPriority` explicitly to outrank a shipped backend; it is your machine.
 
 ```ts
-import { HUNK_CORE_VCS_DETECTION_PRIORITY } from "hunkdiff/extension";
+import { HUNK_VCS_DETECTION_BASELINE_PRIORITY } from "hunkdiff/extension";
 
 hunk.registerVcsAdapter({
   id: "hg",
   name: "Mercurial",
-  detectionPriority: HUNK_CORE_VCS_DETECTION_PRIORITY + 10,
+  detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 10,
   detect,
 });
 ```
 
 Detection runs the same way for every adapter, whichever tier registered it: the nearest checkout wins, `detectionPriority` breaks ties between adapters that recognize the same root, and equal priorities fall back to registration order. Config resolves the session's VCS before your extension has been imported, so detection runs again once extensions are loaded — with the full adapter list — and that second answer is the one the session uses.
 
-What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk config naming a backend this session loaded is honored as-is, however near a checkout some other adapter finds.
+What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk config naming a backend this session loaded is honored as-is, however near a checkout some other adapter finds. A repository-local adapter can bootstrap a provider Hunk has never seen because `.hunk` itself establishes the project root; global, config-path, and `--extension` adapters also participate in a staged root/config pass before the review loads.
 
 ## Watch support
 
@@ -118,7 +118,7 @@ async load(input, ctx) {
 }
 ```
 
-Return `null` for a side that has no content — the old side of an added file, a path the revision never contained — rather than throwing. Hunk calls the reader **at most once per file and side** and caches what it resolves, so you do not need your own cache, and it never calls it for a file the diff reports as binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the patch itself carries, which renders the same diff with less context available.
+Return `null` for a side that has no content — the old side of an added file, a path the revision never contained — rather than throwing. Return `{ kind: "too-large", maxBytes }` when fetching the source would exceed your resource limit; Hunk shows expansion as unavailable without treating the result as an extension failure. Hunk calls the reader **at most once per file and side** and caches what it resolves, so you do not need your own cache, and it never calls it for a file the diff reports as binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the patch itself carries, which renders the same diff with less context available.
 
 ## Files outside the patch
 

@@ -10,6 +10,7 @@ import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
+import { createVisibleAgentNote } from "../../lib/agentAnnotations";
 import { reviewRowId } from "../../lib/ids";
 import { resolveTheme } from "../../themes";
 import { FileView, isFileViewRowSelected } from "./FileView";
@@ -97,7 +98,7 @@ describe("FileView custom rows", () => {
     }
   });
 
-  test("renders a host-owned note immediately before its bound alternate row", async () => {
+  test("renders a host-owned note immediately after its bound alternate row", async () => {
     const file = createTestDiffFile({ id: "noted", path: "noted.ts" });
     const fileView = resolveTestLayout(
       {
@@ -113,10 +114,10 @@ describe("FileView custom rows", () => {
       60,
     );
     const plan = buildFileViewRenderPlan(fileView.layout, [
-      {
+      createVisibleAgentNote([], {
         id: "note",
         annotation: { id: "note", summary: "Review bound output", newRange: [1, 1] },
-      },
+      }),
     ]);
     const geometry = measureFileViewGeometry({
       resolved: fileView,
@@ -140,7 +141,7 @@ describe("FileView custom rows", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Review bound output");
       expect(frame).toContain("BOUND PRESENTATION");
-      expect(frame.indexOf("Review bound output")).toBeLessThan(
+      expect(frame.indexOf("Review bound output")).toBeGreaterThan(
         frame.indexOf("BOUND PRESENTATION"),
       );
       expect(
@@ -386,10 +387,10 @@ describe("FileView custom rows", () => {
     });
     const fileView = resolveTestLayout(largeLayout, 20);
     const plan = buildFileViewRenderPlan(fileView.layout, [
-      {
+      createVisibleAgentNote([], {
         id: "windowed-note",
         annotation: { summary: "WINDOWED NOTE", newRange: [500, 500] },
-      },
+      }),
     ]);
     const geometry = measureFileViewGeometry({
       resolved: fileView,

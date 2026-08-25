@@ -1,9 +1,10 @@
 import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { normalizeDiffPath } from "../../core/diffPaths";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import { normalizeDiffPath } from "../../core/changeset/diffPaths";
+import type { DiffFile } from "../../core/changeset/model";
+import type { AgentAnnotation } from "../../extension-api/types";
 import { readMetadataChangeType } from "../../extensions/events";
-import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { formatTerminalPath } from "../../lib/terminalText";
 
 export interface FileListEntry {
   kind: "file";
@@ -47,9 +48,9 @@ export type SidebarEntry = FileListEntry | FileGroupEntry;
 
 /** Build the filename-first label shown inside one sidebar row. */
 function sidebarFileName(file: SidebarFileSource) {
-  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
   const previousPath = file.previousPath
-    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    ? formatTerminalPath(normalizeDiffPath(file.previousPath) ?? file.previousPath)
     : undefined;
 
   if (!previousPath || previousPath === path) {
@@ -121,33 +122,13 @@ export function mergeFileAnnotationsByFileId<T extends AgentAnnotation>(
   });
 }
 
-/** Apply the app's file filter query to the visible review stream. */
-export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] {
-  const trimmedQuery = query.trim().toLowerCase();
-  if (!trimmedQuery) {
-    return files;
-  }
-
-  return files.filter((file) => {
-    const haystack = [
-      normalizeDiffPath(file.path),
-      normalizeDiffPath(file.previousPath),
-      file.agent?.summary,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(trimmedQuery);
-  });
-}
-
 /** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: readonly SidebarFileSource[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeGroup: string | undefined;
 
   files.forEach((file, index) => {
-    const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+    const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
     const group = dirname(path);
 
     if (group !== activeGroup) {
@@ -191,9 +172,9 @@ export function fileLabelParts(file: DiffFile | undefined): {
     return { filename: "No file selected", stateLabel: null };
   }
 
-  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
   const previousPath = file.previousPath
-    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    ? formatTerminalPath(normalizeDiffPath(file.previousPath) ?? file.previousPath)
     : undefined;
   const baseLabel = previousPath && previousPath !== path ? `${previousPath} -> ${path}` : path;
 

@@ -1,31 +1,46 @@
-import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
+import type { SessionBootstrapResult } from "./sessionBootstrap";
 import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
-import { loadBundledExtensions } from "../extensions/default/vcs";
-import {
-  createExtensionLoadNotices,
-  loadStartupExtensions,
-  mergeStartupNotices,
-} from "../extensions/startup";
-import { resolveConfiguredCliInput } from "../core/config";
-import { HunkUserError } from "../core/errors";
-import { loadAppBootstrap } from "../core/loaders";
-import { looksLikePatchInput } from "../core/pager";
-import { detectTerminalThemeModeFromBackground } from "../core/themeDetection";
+import type { loadStartupExtensions } from "../extensions/startup";
+import { resolveConfiguredCliInput } from "../core/run/config";
+import { HunkUserError } from "../core/run/errors";
+import type { loadAppBootstrap } from "../core/changeset/loaders";
+import { looksLikePatchInput } from "../core/process/pager";
+import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
   usesPipedPatchInput,
   type ControllingTerminal,
-} from "../core/terminal";
+} from "../core/process/terminal";
+import type { AppBootstrap } from "./types";
 import type {
-  AppBootstrap,
   CliInput,
+  ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
+  SelfUpdateCommandInput,
   SessionCommandInput,
-} from "../core/types";
-import { canReloadInput } from "../core/watch";
-import { parseCli } from "../core/cli";
+} from "../core/run/commandInputs";
+import { canReloadInput } from "../core/run/inputReload";
+import { parseCli } from "./cli";
+import { resolveSessionSelectorBoundary } from "./sessionSelector";
+import type { VcsCatalog } from "../core/vcs/types";
+
+/**
+ * Load the bundled VCS catalog, memoized per call to `prepareStartupPlan`.
+ *
+ * The catalog reaches the VCS adapters, which reach changeset construction and from there the
+ * diff engine and its syntax grammars. `--version`, `--help`, `daemon serve`, and the markup
+ * and extension-management commands all answer without it, so it is resolved on demand rather
+ * than at module load; every command paid for it otherwise.
+ */
+function createBundledVcsCatalogLoader() {
+  let cached: VcsCatalog | undefined;
+  return async () => {
+    cached ??= (await import("./vcsCatalog")).getBundledVcsCatalog();
+    return cached;
+  };
+}
 
 export type StartupPlan =
   | {
@@ -46,6 +61,7 @@ export type StartupPlan =
   | {
       kind: "passthrough";
       text: string;
+      preserveColor: boolean;
     }
   | {
       kind: "static-diff-pager";
@@ -59,6 +75,14 @@ export type StartupPlan =
     }
   | {
       kind: "markup-guide";
+    }
+  | {
+      kind: "extension-manage";
+      input: ExtensionManageCommandInput;
+    }
+  | {
+      kind: "self-update";
+      input: SelfUpdateCommandInput;
     }
   | {
       kind: "app";
@@ -104,8 +128,6 @@ export async function prepareStartupPlan(
   const resolveRuntimeCliInputImpl = deps.resolveRuntimeCliInputImpl ?? resolveRuntimeCliInput;
   const resolveConfiguredCliInputImpl =
     deps.resolveConfiguredCliInputImpl ?? resolveConfiguredCliInput;
-  const loadAppBootstrapImpl = deps.loadAppBootstrapImpl ?? loadAppBootstrap;
-  const loadStartupExtensionsImpl = deps.loadStartupExtensionsImpl ?? loadStartupExtensions;
   const usesPipedPatchInputImpl = deps.usesPipedPatchInputImpl ?? usesPipedPatchInput;
   const openControllingTerminalImpl = deps.openControllingTerminalImpl ?? openControllingTerminal;
   const detectTerminalThemeModeFromBackgroundImpl =
@@ -114,6 +136,7 @@ export async function prepareStartupPlan(
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
+  const loadBaseVcsCatalog = createBundledVcsCatalogLoader();
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
@@ -132,9 +155,19 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "session") {
+    const sessionInput =
+      "selector" in parsedCliInput
+        ? {
+            ...parsedCliInput,
+            selector: resolveSessionSelectorBoundary(
+              parsedCliInput.selector,
+              await loadBaseVcsCatalog(),
+            ),
+          }
+        : parsedCliInput;
     return {
       kind: "session-command",
-      input: parsedCliInput,
+      input: sessionInput,
     };
   }
 
@@ -151,10 +184,25 @@ export async function prepareStartupPlan(
     };
   }
 
+  if (parsedCliInput.kind === "extension-manage") {
+    return {
+      kind: "extension-manage",
+      input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "update") {
+    return {
+      kind: "self-update",
+      input: parsedCliInput,
+    };
+  }
+
   if (parsedCliInput.kind === "pager") {
     const stdinText = await readStdinText();
     const pagerOptions = parsedCliInput.options;
-    const staticPagerPlan = () => {
+    const capturedPagerHost = isCapturedPagerHost(env);
+    const staticPagerPlan = async () => {
       const staticPatchInput: CliInput = {
         kind: "patch",
         file: "-",
@@ -166,6 +214,9 @@ export async function prepareStartupPlan(
       };
       const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
+        {
+          vcsCatalog: await loadBaseVcsCatalog(),
+        },
       );
       const staticPlan = {
         kind: "static-diff-pager" as const,
@@ -179,13 +230,18 @@ export async function prepareStartupPlan(
         : staticPlan;
     };
 
+    // Captured hosts render Hunk's stdout in their own panel, so passed-through text keeps
+    // the color Git already put in it.
+    const passthroughPlan = {
+      kind: "passthrough" as const,
+      text: stdinText,
+      preserveColor: capturedPagerHost,
+    };
+
     if (!looksLikePatchInputImpl(stdinText)) {
       // Dumb-terminal and captured pager hosts cannot safely own an interactive text pager.
       if (env.TERM === "dumb") {
-        return {
-          kind: "passthrough",
-          text: stdinText,
-        };
+        return passthroughPlan;
       }
 
       return {
@@ -195,22 +251,16 @@ export async function prepareStartupPlan(
     }
 
     if (!stdoutIsTTY) {
-      return {
-        kind: "passthrough",
-        text: stdinText,
-      };
+      return passthroughPlan;
     }
 
-    if (env.TERM === "dumb" && !isCapturedPagerHost(env)) {
-      return {
-        kind: "passthrough",
-        text: stdinText,
-      };
+    if (env.TERM === "dumb" && !capturedPagerHost) {
+      return passthroughPlan;
     }
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
-    if (isCapturedPagerHost(env)) {
+    if (capturedPagerHost) {
       return staticPagerPlan();
     }
 
@@ -231,7 +281,15 @@ export async function prepareStartupPlan(
   }
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
-  const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
+  const startupCwd = process.cwd();
+  // Past this point the plan always builds a changeset, so the catalog and the loading pipeline
+  // are needed for certain; resolve them together rather than at each use.
+  const baseVcsCatalog = await loadBaseVcsCatalog();
+  let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
+    cwd: startupCwd,
+    env,
+    vcsCatalog: baseVcsCatalog,
+  });
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
 
@@ -262,15 +320,33 @@ export async function prepareStartupPlan(
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and
-  // changeset transforms to the loading pipeline. Failures never reach here: the host
-  // isolates them into issues that become startup notices below.
-  const startupCwd = process.cwd();
-  const extensionResult = await loadStartupExtensionsImpl({
-    extensions: configured.extensions,
-    cwd: startupCwd,
-    env,
-    cliExtensionPaths: cliInput.options.extensionPaths,
-  });
+  // changeset transforms to the loading pipeline. External adapters may settle a root the
+  // bundled catalog could not; the shared resolver then appends newly discovered repo
+  // candidates without executing the provisional factory prefix twice.
+  const [{ resolveConfiguredExtensions }, { loadConfiguredSessionBootstrap }, startupExtensions] =
+    await Promise.all([
+      import("./extensionBootstrap"),
+      import("./sessionBootstrap"),
+      import("../extensions/startup"),
+    ]);
+  const loadAppBootstrapImpl =
+    deps.loadAppBootstrapImpl ?? (await import("../core/changeset/loaders")).loadAppBootstrap;
+  const loadStartupExtensionsImpl =
+    deps.loadStartupExtensionsImpl ?? startupExtensions.loadStartupExtensions;
+
+  const resolvedExtensions = await resolveConfiguredExtensions(
+    {
+      runtimeInput: runtimeCliInput,
+      configured,
+      cwd: startupCwd,
+      env,
+      baseVcsCatalog,
+    },
+    { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
+  );
+  configured = resolvedExtensions.configured;
+  cliInput = configured.input;
+  const extensionResult = resolvedExtensions.extensions;
 
   let preparedSession: SessionBootstrapResult;
   try {
@@ -280,6 +356,7 @@ export async function prepareStartupPlan(
       extensions: extensionResult,
       initialThemeMode,
       loadAppBootstrapImpl,
+      baseVcsCatalog,
     });
   } catch (error) {
     controllingTerminal?.close();
@@ -297,9 +374,12 @@ export async function prepareStartupPlan(
   // Bundled extensions load with the VCS adapters, well before this point, so a
   // failure there is reported here rather than lost. It should be unreachable —
   // these factories are Hunk's own — but the isolation contract is the contract.
-  const bundledNotices = createExtensionLoadNotices(loadBundledExtensions().issues);
+  const { loadBundledExtensions } = await import("../extensions/default/vcs");
+  const bundledNotices = startupExtensions.createExtensionLoadNotices(
+    loadBundledExtensions().issues,
+  );
 
-  bootstrap.startupNotices = mergeStartupNotices(
+  bootstrap.startupNotices = startupExtensions.mergeStartupNotices(
     // Keep the resolved array identity when extensions contributed no theme notices.
     sessionThemes.notices.length > 0 ||
       applied.issues.length > 0 ||

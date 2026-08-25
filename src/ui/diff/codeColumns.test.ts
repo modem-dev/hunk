@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/changeset/model";
 import {
   expandDiffTabs,
   findMaxLineNumberInRows,
   maxFileCodeLineWidth,
   measureRenderedCodeLineWidth,
 } from "./codeColumns";
-import type { DiffRow } from "./pierre";
+import type { DiffRow } from "./diffRows";
 
 /** Generate a large diff metadata fixture without checking a huge file into the repo. */
 function createLargeLineFixture(lineCount: number, widestLine: string): DiffFile {

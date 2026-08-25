@@ -1,4 +1,4 @@
-import { BUNDLED_SHIKI_THEME_IDS } from "../core/themeCatalog";
+import { BUNDLED_SHIKI_THEME_IDS } from "../core/theme/catalog";
 
 export const HUNK_DIFF_THEME_NAMES = BUNDLED_SHIKI_THEME_IDS;
 

@@ -1,11 +1,11 @@
-import type { BuildDiffFileOptions } from "../diffFile";
-import type { WatchPlan } from "../watchPlan";
+import type { ExtensionVcsWatchPlan } from "../../extension-api/types";
+import type { DiffFile } from "../changeset/model";
 import type {
-  DiffFile,
+  VcsDiffCommandInput,
   VcsShowCommandInput,
   VcsStashShowCommandInput,
-  VcsDiffCommandInput,
-} from "../types";
+} from "../run/commandInputs";
+import type { BuildDiffFileOptions } from "../changeset/diffFile";
 
 export type VcsId = string;
 
@@ -16,7 +16,6 @@ export interface VcsDetection {
 
 export interface VcsLoadContext {
   cwd: string;
-  gitExecutable?: string;
 }
 
 export type VcsReviewInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
@@ -31,7 +30,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
   watchSignature?: (input: Input, context: VcsLoadContext) => string;
-  watchPlan?: (input: Input, context: VcsLoadContext) => WatchPlan;
+  watchPlan?: (input: Input, context: VcsLoadContext) => ExtensionVcsWatchPlan;
 }
 
 export interface VcsOperations {
@@ -59,6 +58,14 @@ export interface VcsPatchResult {
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
   /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
+}
+
+/** Complete ordered VCS capability set used throughout one session. */
+export interface VcsCatalog {
+  adapters: readonly VcsAdapter[];
+  defaultAdapterId: VcsId;
+  /** Adapter ids owned by the base product and unavailable to user registrations. */
+  reservedIds: ReadonlySet<VcsId>;
 }
 
 export interface VcsAdapter {

@@ -1,5 +1,7 @@
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, LayoutMode } from "../../core/types";
+import { reviewExpansionSide } from "../../core/review/expansion";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
@@ -9,7 +11,7 @@ import {
   buildStackRows,
   type HighlightedDiffCode,
   type RenderSpan,
-} from "./pierre";
+} from "./diffRows";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "./reviewRenderPlan";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
@@ -67,14 +69,13 @@ export function buildDiffSectionRowPlan({
   }
 
   const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth);
-  const expansionSide = file.metadata.type === "deleted" ? "old" : "new";
   const rows = expandCollapsedRows(baseRows, {
     layout,
     expandedKeys,
     sourceLineSpans,
     sourceStatus,
     tabWidth,
-    side: expansionSide,
+    side: reviewExpansionSide(file.metadata.type),
   });
 
   return {

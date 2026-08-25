@@ -5,9 +5,9 @@ import {
   emitExtensionCustomEvent,
   emitExtensionEvent,
   emitExtensionEventBounded,
-  emitExtensionEventToExtensions,
   readMetadataHunkCount,
   readMetadataHunkSummaries,
+  retireExtensionLoadResult,
   toReadOnlyFileViews,
 } from "./events";
 import { createExtensionNotificationHub } from "./notifications";
@@ -61,6 +61,24 @@ describe("extension event dispatch", () => {
     emitExtensionEvent(result, "startup", { cwd: "/repo" });
 
     expect(seen).toEqual(["first:/repo:/repo", "second"]);
+  });
+
+  test("reports named command execution with an immutable payload", () => {
+    let seen: { commandId: string } | undefined;
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "coach",
+        event: "command_executed",
+        handler: (payload) => {
+          seen = payload as { commandId: string };
+        },
+      },
+    ]);
+
+    emitExtensionEvent(result, "command_executed", { commandId: "hunk.review.nextHunk" });
+
+    expect(seen).toEqual({ commandId: "hunk.review.nextHunk" });
+    expect(Object.isFrozen(seen)).toBe(true);
   });
 
   test("isolates a throwing handler and keeps dispatching the rest", () => {
@@ -146,32 +164,48 @@ describe("extension event dispatch", () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
-  test("gives lifecycle handlers live sidebar controls for their owning extension", () => {
+  test("gives lifecycle handlers live pane controls and one deprecated alias", () => {
     const opened: string[] = [];
+    let aliasesSame = false;
     const { result } = createTestLoadResult([
       {
         extensionId: "summary",
         event: "changeset_loaded",
-        handler: (_payload, ctx) => ctx.sidebars.open("summary"),
+        handler: (_payload, ctx) => {
+          aliasesSame = ctx.panes === ctx.sidebars;
+          ctx.panes.open("summary");
+          ctx.sidebars.open("legacy");
+        },
       },
     ]);
-    result.eventContextProvider = (extensionId) => ({
-      cwd: "/repo",
-      notify: () => {},
-      sidebars: {
-        open: (viewId) => opened.push(`${extensionId}:${viewId}`),
+    result.eventContextProvider = (extensionId) => {
+      const panes = {
+        open: (viewId: string) => opened.push(`${extensionId}:${viewId}`),
         close: () => {},
         toggle: () => {},
         isOpen: () => false,
-      },
-      events: { emit: () => {} },
-    });
+      };
+      return {
+        cwd: "/repo",
+        notify: () => {},
+        panes,
+        sidebars: panes,
+        navigation: { selectFile: () => {}, selectHunk: () => {}, revealLine: () => {} },
+        dialogs: {
+          confirm: async () => false,
+          select: async () => null,
+          input: async () => null,
+        },
+        events: { emit: () => {} },
+      };
+    };
 
     emitExtensionEvent(result, "changeset_loaded", {
       changeset: { id: "c", sourceLabel: "repo", title: "t", files: [] },
     });
 
-    expect(opened).toEqual(["summary:summary"]);
+    expect(aliasesSame).toBe(true);
+    expect(opened).toEqual(["summary:summary", "summary:legacy"]);
   });
 
   test("is a no-op when the session has no extensions", () => {
@@ -180,6 +214,91 @@ describe("extension event dispatch", () => {
 });
 
 describe("extension event bus", () => {
+  test("revokes retained contexts before an asynchronous shutdown settles", async () => {
+    let retainedContext: Parameters<ExtensionEventHandler<"startup">>[1] | undefined;
+    let deliveries = 0;
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "sender",
+        event: "startup",
+        handler: (_payload, context) => {
+          retainedContext = context;
+        },
+      },
+    ]);
+    result.registry.customEventHandlers.push({
+      extensionId: "receiver",
+      event: "probe",
+      handler: () => {
+        deliveries += 1;
+      },
+    });
+    let releaseShutdown!: () => void;
+    result.registry.eventHandlers.shutdown.push({
+      extensionId: "sender",
+      handler: () => new Promise<void>((resolve) => (releaseShutdown = resolve)),
+    });
+    bindExtensionEventBus(result);
+    emitExtensionEvent(result, "startup", { cwd: "/repo" });
+
+    const retirement = retireExtensionLoadResult(result);
+    expect(result.registry.eventBusPhase).toBe("closed");
+    retainedContext?.events.emit("probe", {});
+    expect(deliveries).toBe(0);
+
+    releaseShutdown();
+    await retirement;
+  });
+
+  test("shares one retirement completion while shutdown is still pending", async () => {
+    const { result } = createTestLoadResult();
+    let releaseShutdown!: () => void;
+    result.registry.eventHandlers.shutdown.push({
+      extensionId: "probe",
+      handler: () => new Promise<void>((resolve) => (releaseShutdown = resolve)),
+    });
+    bindExtensionEventBus(result);
+
+    const first = retireExtensionLoadResult(result);
+    const second = retireExtensionLoadResult({ ...result });
+    expect(second).toBe(first);
+
+    let settled = false;
+    void second.then(() => (settled = true));
+    await Bun.sleep(0);
+    expect(settled).toBe(false);
+
+    releaseShutdown();
+    await Promise.all([first, second]);
+  });
+
+  test("drops ordinary lifecycle events after revocation and runs shutdown once", async () => {
+    const seen: string[] = [];
+    const { result } = createTestLoadResult([
+      {
+        extensionId: "probe",
+        event: "selection_changed",
+        handler: () => {
+          seen.push("selection");
+        },
+      },
+      {
+        extensionId: "probe",
+        event: "shutdown",
+        handler: () => {
+          seen.push("shutdown");
+        },
+      },
+    ]);
+    bindExtensionEventBus(result);
+
+    await retireExtensionLoadResult(result);
+    emitExtensionEvent(result, "selection_changed", { fileId: null, hunkIndex: null });
+    await retireExtensionLoadResult(result);
+
+    expect(seen).toEqual(["shutdown"]);
+  });
+
   test("delivers a namespaced event to every listener and isolates failures", async () => {
     const seen: string[] = [];
     const { result, notices } = createTestLoadResult();
@@ -495,64 +614,5 @@ describe("read-only file views", () => {
 
     expect(views[0]!.hunks).toEqual([]);
     expect(views[1]!.hunks).toBe(views[0]!.hunks);
-  });
-});
-
-describe("emitExtensionEventToExtensions", () => {
-  test("delivers only to the named extensions", () => {
-    const seen: string[] = [];
-    const { result } = createTestLoadResult([
-      {
-        extensionId: "already-started",
-        event: "startup",
-        handler: () => {
-          seen.push("already-started");
-        },
-      },
-      {
-        extensionId: "newly-trusted",
-        event: "startup",
-        handler: () => {
-          seen.push("newly-trusted");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set(["newly-trusted"]));
-
-    expect(seen).toEqual(["newly-trusted"]);
-  });
-
-  test("does nothing when the id set is empty", () => {
-    const seen: string[] = [];
-    const { result } = createTestLoadResult([
-      {
-        extensionId: "any",
-        event: "startup",
-        handler: () => {
-          seen.push("any");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set());
-
-    expect(seen).toEqual([]);
-  });
-
-  test("still isolates a throwing handler", () => {
-    const { result, notices } = createTestLoadResult([
-      {
-        extensionId: "broken",
-        event: "startup",
-        handler: () => {
-          throw new Error("boom");
-        },
-      },
-    ]);
-
-    emitExtensionEventToExtensions(result, "startup", { cwd: "/repo" }, new Set(["broken"]));
-
-    expect(notices[0]).toContain("Extension broken failed handling startup • boom");
   });
 });

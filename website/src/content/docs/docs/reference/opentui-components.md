@@ -8,8 +8,10 @@ The `hunkdiff/opentui` export exposes Hunk's renderer without the CLI shell, glo
 ## Install peers
 
 ```bash
-npm install hunkdiff @opentui/core@^0.4.3 @opentui/react@^0.4.3 react
+npm install hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.1 @opentui/react@^0.5.1 react
 ```
+
+Pierre diffs is optional for CLI-only installs but required when importing `hunkdiff/opentui`.
 
 ## Render one file
 

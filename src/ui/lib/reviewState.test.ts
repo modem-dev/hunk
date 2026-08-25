@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { buildReviewAnnotationIndex } from "../../core/review/annotations";
 import { createTestAgentFileContext, createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import {
+  buildReviewStreamState,
   buildSelectedHunkSummary,
-  findNextAnnotatedFile,
   resolveReviewNavigationTarget,
 } from "./reviewState";
 
@@ -26,32 +27,51 @@ describe("review state helpers", () => {
     expect(buildSelectedHunkSummary(file, 99)).toEqual({ index: 99 });
   });
 
-  // Intent: annotated-file navigation wraps predictably and handles no-note streams.
-  test("findNextAnnotatedFile wraps through annotated files and handles empty streams", () => {
-    const alpha = createAnnotatedFile("alpha", "alpha.ts");
-    const beta = createTestDiffFile({ id: "beta", path: "beta.ts", agent: null });
-    const gamma = createAnnotatedFile("gamma", "gamma.ts");
+  // Intent: the visible stream answers the same query the shared filter matcher does.
+  test("buildReviewStreamState filters on path, previous path, and agent summary", () => {
+    const alpha = createTestDiffFile({ id: "alpha", path: "src/alpha.ts" });
+    const beta = createTestDiffFile({
+      id: "beta",
+      path: "src/beta.ts",
+      previousPath: "src/legacy-name.ts",
+    });
+    const gamma = createAnnotatedFile("gamma", "src/gamma.ts");
+    const files = [alpha, beta, gamma];
 
-    expect(findNextAnnotatedFile([alpha, beta, gamma], "alpha", 1)).toBe(gamma);
-    expect(findNextAnnotatedFile([alpha, beta, gamma], "gamma", 1)).toBe(alpha);
-    expect(findNextAnnotatedFile([alpha, beta, gamma], undefined, -1)).toBe(gamma);
-    expect(findNextAnnotatedFile([beta], "beta", 1)).toBeNull();
+    const visibleFor = (filterQuery: string) =>
+      buildReviewStreamState({ files, liveCommentsByFileId: {}, filterQuery }).visibleFiles.map(
+        (file) => file.id,
+      );
+
+    expect(visibleFor("")).toEqual(["alpha", "beta", "gamma"]);
+    expect(visibleFor("ALPHA")).toEqual(["alpha"]);
+    expect(visibleFor("legacy-name")).toEqual(["beta"]);
+    // The agent's file summary is part of the haystack, not just the path.
+    expect(visibleFor("gamma.ts note")).toEqual(["gamma"]);
+    expect(visibleFor("nothing-matches")).toEqual([]);
   });
 
-  // Intent: comment navigation targets the next noted hunk and scrolls to the note.
-  test("resolveReviewNavigationTarget follows annotated comment navigation", () => {
-    const alpha = createAnnotatedFile("alpha", "alpha.ts");
-    const gamma = createAnnotatedFile("gamma", "gamma.ts");
-
-    const target = resolveReviewNavigationTarget({
-      allFiles: [alpha, gamma],
-      visibleFiles: [alpha, gamma],
-      currentFileId: "alpha",
-      currentHunkIndex: 0,
-      input: { commentDirection: "next" },
+  // Intent: annotated navigation plans against a file-key index the terminal derives once.
+  test("buildReviewAnnotationIndex separates annotated files from annotated hunks", () => {
+    const annotated = createAnnotatedFile("alpha", "alpha.ts");
+    const summaryOnly = createTestDiffFile({
+      id: "beta",
+      path: "beta.ts",
+      agent: createTestAgentFileContext("beta.ts", { annotations: [] }),
     });
+    const plain = createTestDiffFile({ id: "gamma", path: "gamma.ts", agent: null });
+    const keyByFileId = new Map([
+      ["alpha", "key:alpha"],
+      ["beta", "key:beta"],
+      ["gamma", "key:gamma"],
+    ]);
 
-    expect(target).toEqual({ file: gamma, hunkIndex: 0, scrollToNote: true });
+    const index = buildReviewAnnotationIndex([annotated, summaryOnly, plain], keyByFileId);
+
+    // A file carrying review context but no note inside a hunk is still an annotated file.
+    expect([...index.annotatedFileKeys]).toEqual(["key:alpha", "key:beta"]);
+    expect([...index.annotatedHunkIndicesByFileKey.keys()]).toEqual(["key:alpha"]);
+    expect([...(index.annotatedHunkIndicesByFileKey.get("key:alpha") ?? [])]).toEqual([0]);
   });
 
   // Intent: absolute navigation supports both hunk index and side+line addressing.
@@ -61,40 +81,23 @@ describe("review state helpers", () => {
     expect(
       resolveReviewNavigationTarget({
         allFiles: [file],
-        visibleFiles: [file],
-        currentFileId: "alpha",
-        currentHunkIndex: 0,
         input: { filePath: "src/alpha.ts", hunkIndex: 0 },
       }),
-    ).toEqual({ file, hunkIndex: 0, scrollToNote: false });
+    ).toEqual({ file, hunkIndex: 0 });
 
     expect(
       resolveReviewNavigationTarget({
         allFiles: [file],
-        visibleFiles: [file],
-        currentFileId: "alpha",
-        currentHunkIndex: 0,
         input: { filePath: "src/alpha.ts", side: "new", line: 1 },
       }),
-    ).toEqual({ file, hunkIndex: 0, scrollToNote: false });
+    ).toEqual({ file, hunkIndex: 0 });
   });
 
   // Intent: invalid agent navigation requests fail before mutating review state.
   test("resolveReviewNavigationTarget rejects missing and invalid targets", () => {
     const file = createTestDiffFile({ id: "alpha", path: "src/alpha.ts" });
-    const baseInput = {
-      allFiles: [file],
-      visibleFiles: [file],
-      currentFileId: "alpha",
-      currentHunkIndex: 0,
-    };
+    const baseInput = { allFiles: [file] };
 
-    expect(() =>
-      resolveReviewNavigationTarget({
-        ...baseInput,
-        input: { commentDirection: "next" },
-      }),
-    ).toThrow("No annotated hunks");
     expect(() => resolveReviewNavigationTarget({ ...baseInput, input: {} })).toThrow(
       "navigate requires --file",
     );

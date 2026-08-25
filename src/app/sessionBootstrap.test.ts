@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { HunkConfigResolution } from "../core/config";
-import type { AppBootstrap, CliInput } from "../core/types";
+import type { HunkConfigResolution } from "../core/run/config";
+import type { AppBootstrap } from "../core/bootstrap";
+import type { CliInput } from "../core/run/commandInputs";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { loadConfiguredSessionBootstrap } from "./sessionBootstrap";
 

@@ -19,10 +19,12 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | Option                      | Description                                                     |
 | --------------------------- | --------------------------------------------------------------- |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
+| `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
+| `--fast`                    | experimentally offload eligible syntax highlighting             |
 | `--line-numbers`            | show line numbers                                               |
 | `--no-line-numbers`         | hide line numbers                                               |
 | `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
@@ -30,6 +32,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-wrap`                 | truncate long diff lines to one row                             |
 | `--hunk-headers`            | show hunk metadata rows                                         |
 | `--no-hunk-headers`         | hide hunk metadata rows                                         |
+| `--sidebar`                 | show files pane                                                 |
+| `--no-sidebar`              | hide files pane                                                 |
 | `--agent-notes`             | show agent notes by default                                     |
 | `--no-agent-notes`          | hide agent notes by default                                     |
 | `--transparent-bg`          | let terminal background show through Hunk surfaces              |
@@ -163,13 +167,88 @@ hunk markup guide
 
 ## `hunk skill path`
 
-print the bundled Hunk review skill path
+print a bundled Hunk skill path
 
 ### Usage
 
 ```bash
-hunk skill path
+hunk skill path [name]
 ```
+
+## `hunk extension install`
+
+install a shared extension from a git repository
+
+### Usage
+
+```bash
+hunk extension install <owner>/<repo>[@ref]
+hunk extension install git:<host>/<path>[@ref]
+hunk extension install <git-url or local path>[@ref]
+```
+
+**Aliases:** `hunk ext install`.
+
+### Command-specific options
+
+| Option  | Description                                           |
+| ------- | ----------------------------------------------------- |
+| `--yes` | skip the confirmation prompt (required without a TTY) |
+
+## `hunk extension list`
+
+list extensions installed with `hunk extension install`
+
+### Usage
+
+```bash
+hunk extension list
+```
+
+**Aliases:** `hunk ext list`.
+
+## `hunk extension update`
+
+re-clone managed extension installs from their recorded sources
+
+### Usage
+
+```bash
+hunk extension update [name]
+```
+
+**Aliases:** `hunk ext update`.
+
+## `hunk extension remove`
+
+remove one managed extension install
+
+### Usage
+
+```bash
+hunk extension remove <name>
+```
+
+**Aliases:** `hunk ext remove`.
+
+## `hunk update`
+
+update Hunk with the package manager that installed it
+
+### Usage
+
+```bash
+hunk update [version]
+hunk update --check
+hunk update --method <npm|brew|curl>
+```
+
+### Command-specific options
+
+| Option              | Description                                                    |
+| ------------------- | -------------------------------------------------------------- |
+| `--method <method>` | install method instead of the detected one: npm, brew, curl    |
+| `--check`           | report the installed and available versions without installing |
 
 ## `hunk daemon serve`
 
@@ -438,3 +517,56 @@ hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--inc
 | `--json`         | emit structured JSON                                      |
 
 **Positionals:** `[sessionId]`.
+
+### `hunk session highlight add`
+
+paint one attention mark inside a diff line
+
+```bash
+hunk session highlight add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --start <n> --end <n> [--tone <tone>] [--focus] [--json]
+```
+
+| Option           | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `--file <path>`  | diff file path as shown by Hunk Required.                                         |
+| `--start <n>`    | 0-based inclusive start offset into the line's text (UTF-16 code units) Required. |
+| `--end <n>`      | exclusive end offset; must be greater than --start Required.                      |
+| `--repo <path>`  | target the live session whose repo root matches this path                         |
+| `--old-line <n>` | 1-based line number on the old side                                               |
+| `--new-line <n>` | 1-based line number on the new side                                               |
+| `--tone <tone>`  | mark tone: match, current, info, warning, error (default match)                   |
+| `--focus`        | add the mark and land the viewport on its line                                    |
+| `--json`         | emit structured JSON                                                              |
+
+**Positionals:** `[sessionId]`.
+
+**Constraints:** exactly one of `--old-line <n>`, `--new-line <n>`.
+
+**Examples:**
+
+```bash
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19
+hunk session highlight add --repo . --file src/App.tsx --new-line 42 --start 6 --end 19 --tone warning --focus
+```
+
+### `hunk session highlight clear`
+
+clear agent attention marks
+
+```bash
+hunk session highlight clear (<session-id> | --repo <path>) [--file <path>] [--json]
+```
+
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--repo <path>` | target the live session whose repo root matches this path |
+| `--file <path>` | clear only one diff file's marks                          |
+| `--json`        | emit structured JSON                                      |
+
+**Positionals:** `[sessionId]`.
+
+**Examples:**
+
+```bash
+hunk session highlight clear --repo .
+```

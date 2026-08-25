@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Hunk releases</title>
+    <link>https://hunk.dev/changelog/</link>
+    <description>Release notes for Hunk, the review-first terminal diff viewer.</description>
+    <language>en</language>
+    <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Hunk 0.19</title>
+      <link>https://hunk.dev/changelog/0.19/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.19/</guid>
+      <pubDate>Mon, 24 Aug 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.19.0 expands the extension platform, makes live agent guidance more precise, and keeps large reviews responsive.</description>
+    </item>
+    <item>
+      <title>Hunk 0.18</title>
+      <link>https://hunk.dev/changelog/0.18/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.18/</guid>
+      <pubDate>Fri, 14 Aug 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories and diverse terminals.</description>
+    </item>
+    <item>
+      <title>Hunk 0.17</title>
+      <link>https://hunk.dev/changelog/0.17/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.17/</guid>
+      <pubDate>Tue, 28 Jul 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.17 makes the review chrome configurable, adds an Agent menu for setting up the review skill, and smooths out scrolling, theming, and session reliability across platforms.</description>
+    </item>
+    <item>
+      <title>Hunk 0.16</title>
+      <link>https://hunk.dev/changelog/0.16/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.16/</guid>
+      <pubDate>Fri, 19 Jun 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.16 rebuilds the built-in theme system around a single theme setting with a live selector, and lets custom themes inherit from any built-in theme.</description>
+    </item>
+    <item>
+      <title>Hunk 0.15</title>
+      <link>https://hunk.dev/changelog/0.15/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.15/</guid>
+      <pubDate>Sat, 13 Jun 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.15 adds release benchmark gating, Sapling support, and a run of rendering performance work that keeps large reviews responsive on Windows and Unix alike.</description>
+    </item>
+    <item>
+      <title>Hunk 0.14</title>
+      <link>https://hunk.dev/changelog/0.14/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.14/</guid>
+      <pubDate>Mon, 01 Jun 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.14 adds mouse-drag selection with clipboard copy, inline expansion of collapsed unchanged context, and the Catppuccin Latte and Mocha themes.</description>
+    </item>
+    <item>
+      <title>Hunk 0.13</title>
+      <link>https://hunk.dev/changelog/0.13/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.13/</guid>
+      <pubDate>Tue, 19 May 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.13 adds human-authored inline notes saved with c, an e shortcut to open the selected file in $EDITOR, and g/G jump navigation.</description>
+    </item>
+    <item>
+      <title>Hunk 0.12</title>
+      <link>https://hunk.dev/changelog/0.12/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.12/</guid>
+      <pubDate>Thu, 14 May 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.12 brings native Windows support, Homebrew release automation, terminal-aware light and dark theme detection, and row windowing for very large single-file reviews.</description>
+    </item>
+    <item>
+      <title>Hunk 0.11</title>
+      <link>https://hunk.dev/changelog/0.11/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.11/</guid>
+      <pubDate>Sun, 10 May 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.11 adds Jujutsu support through vcs = &quot;jj&quot;, a pager-mode sidebar file tree, and steadier cross-file hunk navigation.</description>
+    </item>
+    <item>
+      <title>Hunk 0.10</title>
+      <link>https://hunk.dev/changelog/0.10/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.10/</guid>
+      <pubDate>Tue, 21 Apr 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.10 introduces hunk daemon serve as the standard session entrypoint, publishes reusable session-broker packages, and surfaces agent comment counts in the sidebar.</description>
+    </item>
+    <item>
+      <title>Hunk 0.9</title>
+      <link>https://hunk.dev/changelog/0.9/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.9/</guid>
+      <pubDate>Tue, 21 Apr 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.9: 6 releases, April 8, 2026 – April 21, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.8</title>
+      <link>https://hunk.dev/changelog/0.8/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.8/</guid>
+      <pubDate>Mon, 30 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.8: 2 releases, March 29, 2026 – March 30, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.7</title>
+      <link>https://hunk.dev/changelog/0.7/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.7/</guid>
+      <pubDate>Wed, 25 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.7: 1 release, March 25, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.6</title>
+      <link>https://hunk.dev/changelog/0.6/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.6/</guid>
+      <pubDate>Tue, 24 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.6: 2 releases, March 23, 2026 – March 24, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.5</title>
+      <link>https://hunk.dev/changelog/0.5/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.5/</guid>
+      <pubDate>Mon, 23 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.5: 2 releases, March 22, 2026 – March 23, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.4</title>
+      <link>https://hunk.dev/changelog/0.4/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.4/</guid>
+      <pubDate>Sun, 22 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.4: 1 release, March 22, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.3</title>
+      <link>https://hunk.dev/changelog/0.3/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.3/</guid>
+      <pubDate>Sun, 22 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.3: 1 release, March 22, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.2</title>
+      <link>https://hunk.dev/changelog/0.2/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.2/</guid>
+      <pubDate>Fri, 20 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.2: 1 release, March 20, 2026.</description>
+    </item>
+    <item>
+      <title>Hunk 0.1</title>
+      <link>https://hunk.dev/changelog/0.1/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.1/</guid>
+      <pubDate>Fri, 20 Mar 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.1: 1 release, March 20, 2026.</description>
+    </item>
+  </channel>
+</rss>

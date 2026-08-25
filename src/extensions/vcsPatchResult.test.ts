@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import { HunkExtensionUserError } from "../extension-api/types";
-import { HunkUserError, toUserFacingError } from "../core/errors";
+import { HunkUserError, toUserFacingError } from "../core/run/errors";
+import { SourceTextTooLargeError } from "../core/changeset/fileSource";
 import { toInternalVcsAdapter } from "./runExtension";
 import type {
   ExtensionVcsFileSourceRequest,
@@ -33,6 +34,7 @@ describe("published source readers", () => {
     const requests: ExtensionVcsFileSourceRequest[] = [];
     const result = toInternalVcsPatchResult(
       baseResult({
+        sourceCacheKey: "snapshot-1",
         readFileSource: async (request) => {
           requests.push(request);
           return `${request.side} text`;
@@ -48,6 +50,7 @@ describe("published source readers", () => {
       isBinary: false,
     });
 
+    expect(fetcher?.cacheKey).toBe("snapshot-1");
     expect(await fetcher?.getFullText("old")).toBe("old text");
     expect(await fetcher?.getFullText("new")).toBe("new text");
     // Asking again is served from the cache the boundary owns, so an adapter
@@ -116,6 +119,28 @@ describe("published source readers", () => {
 
     await expect(fetcher?.getFullText("new")).rejects.toThrow("source too large");
     expect(await fetcher?.getFullText("new")).toBe("recovered");
+  });
+
+  test("translate and cache public too-large results without re-reading the adapter", async () => {
+    let attempts = 0;
+    const result = toInternalVcsPatchResult(
+      baseResult({
+        readFileSource: async () => {
+          attempts += 1;
+          return attempts === 1 ? { kind: "too-large", maxBytes: 42 } : "recovered";
+        },
+      }),
+    );
+    const fetcher = result.sourceFetcherBuilder?.({
+      path: "src/a.ts",
+      type: "change",
+      isUntracked: false,
+      isBinary: false,
+    });
+
+    await expect(fetcher?.getFullText("new")).rejects.toEqual(new SourceTextTooLargeError(42));
+    await expect(fetcher?.getFullText("new")).rejects.toEqual(new SourceTextTooLargeError(42));
+    expect(attempts).toBe(1);
   });
 
   test("are absent when the result declares none", () => {

@@ -76,6 +76,24 @@ afterEach(() => {
 });
 
 describe("Hunk session daemon client", () => {
+  test("keeps its previous registration when the live connection rejects replacement", () => {
+    const registration = createRegistration();
+    const client = new SessionBrokerClient(registration, createSnapshot());
+    (client as any).connection = {
+      replaceSession() {
+        throw new Error("connection exploded");
+      },
+    };
+
+    expect(() =>
+      client.replaceSession(
+        { ...registration, sessionId: "replacement-session" },
+        createSnapshot(),
+      ),
+    ).toThrow("connection exploded");
+    expect(client.getRegistration()).toBe(registration);
+  });
+
   test("logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in", async () => {
     process.env.HUNK_MCP_HOST = "0.0.0.0";
     process.env.HUNK_MCP_PORT = "47657";
@@ -251,14 +269,16 @@ describe("Hunk session daemon client", () => {
       messages.push(args.map((value) => String(value)).join(" "));
     };
 
-    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      daemonStartupTimeoutMs: 100,
+      reconnectDelayMs: 10_000,
+    });
 
     try {
-      client.start();
-      await waitUntil("initial session-daemon conflict warning", () => messages.length === 1);
+      await client.start();
+      expect(messages).toHaveLength(1);
 
-      client.start();
-      await Bun.sleep(2_000);
+      await client.start();
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain(

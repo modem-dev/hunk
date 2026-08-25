@@ -3,7 +3,7 @@ import type {
   ExtensionChangeset,
   ExtensionDiffFile,
   ExtensionReviewNote,
-  ExtensionSidebarViewProps,
+  ExtensionPaneProps,
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 
@@ -42,7 +42,7 @@ function hunkKey(fileId: string, hunkIndex: number) {
   return `${fileId}:${hunkIndex}`;
 }
 
-/** Publish an immutable store snapshot so a closed sidebar never loses its state. */
+/** Publish an immutable store snapshot so a closed pane never loses its state. */
 function updateSnapshot(update: (current: TriageSnapshot) => TriageSnapshot) {
   const next = update(snapshot);
   if (next === snapshot) {
@@ -55,7 +55,7 @@ function updateSnapshot(update: (current: TriageSnapshot) => TriageSnapshot) {
   }
 }
 
-/** Subscribe a mounted sidebar to lifecycle state gathered outside React. */
+/** Subscribe a mounted pane to lifecycle state gathered outside React. */
 function useTriageSnapshot() {
   return useSyncExternalStore(
     (listener) => {
@@ -125,14 +125,14 @@ function clearDecisions() {
   updateSnapshot((current) => ({ ...current, decisions: new Map() }));
 }
 
-/** Render a compact, clickable hunk triage board from public sidebar props. */
-function ReviewTriageSidebar({
+/** Render a compact, clickable hunk triage board from public pane props. */
+function ReviewTriagePane({
   files,
   selectedFileId,
   selectedHunkIndex,
   theme,
   actions,
-}: ExtensionSidebarViewProps): ReactNode {
+}: ExtensionPaneProps): ReactNode {
   const state = useTriageSnapshot();
   const summary = useMemo(() => {
     const total = files.reduce((count, file) => count + (file.hunks?.length ?? 0), 0);
@@ -225,16 +225,22 @@ function ReviewTriageSidebar({
 
 /** Register a session-local review board that drives only documented Hunk extension APIs. */
 export default function registerReviewTriage(hunk: HunkExtensionAPI) {
-  hunk.registerSidebarView({
+  hunk.registerPane({
     id: "triage",
     title: "Review triage",
     placement: "right",
-    component: ReviewTriageSidebar,
+    component: ReviewTriagePane,
   });
 
   hunk.registerCommand({ id: "toggle", title: "Toggle review triage", key: "y" }, (ctx) =>
-    ctx.sidebars.toggle("triage"),
+    ctx.panes.toggle("triage"),
   );
+
+  hunk.registerCommand({ id: "center", title: "Center current review line" }, (ctx) => {
+    if (!ctx.commands.execute("hunk.review.alignCurrentLineCenter")) {
+      ctx.notify("Enable the current-line marker before centering it", "warning");
+    }
+  });
 
   hunk.registerCommand({ id: "mark", title: "Mark selected hunk…", key: "x" }, async (ctx) => {
     const { file, hunkIndex } = ctx.selection;
@@ -282,7 +288,7 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
       return;
     }
     updateSnapshot((current) => ({ ...current, focus: focus.trim() }));
-    ctx.sidebars.open("triage");
+    ctx.panes.open("triage");
   });
 
   hunk.registerCommand({ id: "clear", title: "Clear triage decisions" }, async (ctx) => {
@@ -317,5 +323,5 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
   });
 
   // Lets another extension reveal this board without importing its module state.
-  hunk.events.on("review-triage:open", (_payload, ctx) => ctx.sidebars.open("triage"));
+  hunk.events.on("review-triage:open", (_payload, ctx) => ctx.panes.open("triage"));
 }

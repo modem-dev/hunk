@@ -67,7 +67,8 @@ export function sleep(ms: number) {
  * sat on a fixed screen row.
  *
  * Positive means the content moved up (scrolled down); zero means the anchor
- * row did not move at all.
+ * row did not move at all. `press` already performs Tuistory's bounded idle
+ * wait, so another wait would only repeat the same readiness contract.
  */
 export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
   const before = (await session.text({ immediate: true })).split("\n");
@@ -77,7 +78,6 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   }
 
   await session.press(key);
-  await session.waitIdle({ timeout: 400 });
 
   const after = (await session.text({ immediate: true })).split("\n");
   const movedTo = after.findIndex((line) => line.trim() === anchor);
@@ -140,6 +140,21 @@ export function rightmostColumnOf(text: string, needle: string) {
       .filter((column) => column >= 0),
     -1,
   );
+}
+
+/**
+ * Expand one rendered row into its per-cell background colors.
+ *
+ * Chrome rows and body rows only line up visually when their gutter cells paint
+ * the same background, which plain text snapshots cannot show.
+ */
+export function rowCellBackgrounds(session: Session, row: number) {
+  const line = session.getTerminalData().lines[row];
+  if (!line) {
+    throw new Error(`rowCellBackgrounds: row ${row} is not on screen.`);
+  }
+
+  return line.spans.flatMap((span) => [...span.text].map(() => span.bg));
 }
 
 /** Locate a visible terminal row containing text so mouse tests can target rendered content. */
@@ -311,6 +326,51 @@ export function createPtyHarness() {
                 summary: "Adds bonus export.",
                 rationale: "Highlights the follow-up addition for review.",
                 markup: '<badge color="success">STML ACTIVE</badge>',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { dir, before, after, agentContext };
+  }
+
+  /**
+   * Two hunks with a collapsed gap between them, annotated on a line inside that gap.
+   *
+   * The annotated lines are unchanged context the patch omits, so no rendered row carries
+   * them: the note has to hang from the hunk owning the gap rather than from the file's
+   * first row.
+   */
+  function createGapAnnotatedAgentFilePair() {
+    const dir = makeTempDir("hunk-tuistory-gap-note-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+    const agentContext = join(dir, "agent.json");
+
+    const beforeLines = Array.from(
+      { length: 12 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[1] = "export const line2 = 200;";
+    afterLines[10] = "export const line11 = 1100;";
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "after.ts",
+            annotations: [
+              {
+                newRange: [6, 7],
+                summary: "GAP NOTE",
+                rationale: "Anchored to lines the patch collapsed away.",
               },
             ],
           },
@@ -501,20 +561,37 @@ export function createPtyHarness() {
    * test shows only the two changed source files, keeping snapshot assertions
    * about the extension's effect unambiguous.
    */
-  function createRepoExtensionFixture(source: string, entryName = "fixture.ts") {
+  function createRepoExtensionFixture(
+    source: string,
+    entryName = "fixture.ts",
+    changedFiles: ChangedFileSpec[] = [
+      {
+        path: "alpha.ts",
+        before: "export const alpha = 1;\n",
+        after: "export const alphaValue = 2;\n",
+      },
+      {
+        path: "beta.ts",
+        before: "export const beta = 1;\n",
+        after: "export const betaValue = 2;\n",
+      },
+    ],
+  ) {
     const dir = makeTempDir("hunk-tuistory-extension-");
 
     runGit(["init"], dir);
     runGit(["config", "user.name", "Pi"], dir);
     runGit(["config", "user.email", "pi@example.com"], dir);
-    writeText(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-    writeText(join(dir, "beta.ts"), "export const beta = 1;\n");
+    for (const file of changedFiles) {
+      writeText(join(dir, file.path), file.before);
+    }
     writeText(join(dir, ".hunk", "extensions", entryName), source);
     runGit(["add", "."], dir);
     runGit(["commit", "-m", "initial"], dir);
 
-    writeText(join(dir, "alpha.ts"), "export const alphaValue = 2;\n");
-    writeText(join(dir, "beta.ts"), "export const betaValue = 2;\n");
+    for (const file of changedFiles) {
+      writeText(join(dir, file.path), file.after);
+    }
 
     return { dir };
   }
@@ -538,6 +615,100 @@ export function createPtyHarness() {
     }
 
     return { dir };
+  }
+
+  /**
+   * Build a block that moves between two files, with Git's move detection enabled.
+   *
+   * `plainAddition` is an ordinary added line in the same diff, so tests can tell a moved tint
+   * from the added tint instead of only asserting that some tint was painted.
+   */
+  function createMovedLinesRepoFixture() {
+    const movedBlock = [
+      "MOVED BLOCK ALPHA",
+      "MOVED BLOCK BRAVO",
+      "MOVED BLOCK CHARLIE",
+      "MOVED BLOCK DELTA",
+    ];
+    const plainAddition = "brand new destination line";
+    const fixture = createGitRepoFixture([
+      {
+        path: "source.txt",
+        before: ["source header one", "source header two", ...movedBlock, "source footer"].join(
+          "\n",
+        ),
+        after: ["source header one", "source header two", "source footer"].join("\n"),
+      },
+      {
+        path: "destination.txt",
+        before: ["destination header one", "destination header two"].join("\n"),
+        after: [
+          "destination header one",
+          "destination header two",
+          ...movedBlock,
+          plainAddition,
+        ].join("\n"),
+      },
+    ]);
+
+    runGit(["config", "diff.colorMoved", "zebra"], fixture.dir);
+    return { ...fixture, movedBlock, plainAddition };
+  }
+
+  /** Build the long-path fixture used to verify narrow file-header layout. */
+  function createNarrowHeaderTestRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "packages/visual-studio-code-vscode/extension-postgres.ts",
+        before: "export const value = 1;\n",
+        after: "export const value = 2;\n",
+      },
+    ]);
+  }
+
+  /** Build a staged Unicode rename for exact Git path rendering coverage. */
+  function createUnicodePathRepoFixture() {
+    const dir = makeTempDir("hunk-tuistory-unicode-path-");
+    const previousPath = "国際化/日本語.txt";
+    const path = "国際化/한국어-🧪.txt";
+
+    runGit(["init"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    writeText(join(dir, previousPath), "shared\nold-only\nshared\n");
+    runGit(["add", "."], dir);
+    runGit(["commit", "-m", "initial"], dir);
+    runGit(["config", "core.quotePath", "false"], dir);
+    runGit(["mv", previousPath, path], dir);
+    writeText(join(dir, path), "shared\nnew-only\nshared\n");
+    runGit(["add", "."], dir);
+
+    return { dir, path, previousPath };
+  }
+
+  /** Build issue #664's Elixir heredoc edit in a real source-backed Git review. */
+  function createElixirHeredocRepoFixture() {
+    const before = `defmodule Repro do
+  @doc """
+  Line one.
+  Line two.
+  Line three.
+  Line four.
+  Line five.
+  """
+  def hello do
+    :world
+  end
+end
+`;
+
+    return createGitRepoFixture([
+      {
+        path: "repro.ex",
+        before,
+        after: before.replace("Line five.", "Line five, edited."),
+      },
+    ]);
   }
 
   function createTwoFileRepoFixture() {
@@ -895,23 +1066,28 @@ export function createPtyHarness() {
     countMatches,
     createAgentFilePair,
     createAgentNavigationRepoFixture,
+    createGapAnnotatedAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createElixirHeredocRepoFixture,
     createIsolatedConfigHome,
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
+    createMovedLinesRepoFixture,
     createMultiFilePagerPatchFixture,
     createMultiHunkFilePair,
+    createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
+    createUnicodePathRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,
     ensureKeyboardIsLive,

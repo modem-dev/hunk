@@ -222,6 +222,174 @@ describe("open in editor helpers", () => {
     expect(renderer.resume).toHaveBeenCalledTimes(1);
   });
 
+  test("opens the current line instead of the selected hunk start", () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 1,
+          target: { side: "new", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([["vim", "+3", join(basePath, "example.ts")]]);
+  });
+
+  test("maps an old-side current line onto the line on disk", () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+    });
+
+    expect(
+      openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
+  });
+
+  test("walks leading context when mapping an old-side current line", () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+      context: 1,
+    });
+
+    expect(
+      openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    // Old line 3 ("three") was removed, so the editor lands on the line that now follows "one".
+    expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
+  });
+
+  test("preserves the deleted line's offset within a multi-line replacement", () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nTWO\nTHREE\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nTWO\nTHREE\nfour\n",
+    });
+
+    expect(
+      openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    // Old line 3 ("three") is the second of two replaced lines, so the editor
+    // lands on the second replacement line ("THREE") rather than the first.
+    expect(spawnCalls).toEqual([["vim", "+3", join(basePath, "example.ts")]]);
+  });
+
+  test("falls back to the selected hunk when the cursor is in another file", () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: "other-file",
+          hunkIndex: 0,
+          target: { side: "new", line: 42 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[1],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([
+      ["vim", `+${file.metadata.hunks[1]!.additionStart}`, join(basePath, "example.ts")],
+    ]);
+  });
+
   test("uses deletion line numbers for deleted files", () => {
     const basePath = createTempDir();
     writeFileSync(join(basePath, "deleted.ts"), "const old = true;\n");

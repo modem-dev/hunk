@@ -5,7 +5,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
-import { loadAppBootstrap } from "../core/loaders";
+import { loadAppBootstrap } from "../core/changeset/loaders";
 import { AppHost } from "./AppHost";
 import { resolveTheme } from "./themes";
 

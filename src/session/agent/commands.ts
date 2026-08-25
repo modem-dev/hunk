@@ -2,7 +2,7 @@ import type {
   SessionCommandInput,
   SessionCommandOutput,
   SessionSelectorInput,
-} from "../../core/types";
+} from "../../core/run/commandInputs";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
 import {
@@ -17,10 +17,12 @@ import { matchesSessionSelector, normalizeSessionSelector } from "@hunk/session-
 import {
   createHttpHunkSessionCliClient,
   formatClearCommentsOutput,
+  formatClearHighlightsOutput,
   formatCommentApplyOutput,
   formatCommentListOutput,
   formatCommentOutput,
   formatContextOutput,
+  formatHighlightOutput,
   formatListOutput,
   formatNavigationOutput,
   formatNoteListOutput,
@@ -46,6 +48,8 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   "comment-list": "comment-list",
   "comment-rm": "comment-rm",
   "comment-clear": "comment-clear",
+  "highlight-add": "highlight-add",
+  "highlight-clear": "highlight-clear",
 };
 
 export type HunkDaemonCliClient = HunkSessionCliClient;
@@ -274,6 +278,24 @@ export async function runSessionCommand(input: SessionCommandInput) {
       });
       return renderOutput(input.output, { result }, () =>
         formatClearCommentsOutput(input.selector, result),
+      );
+    }
+    case "highlight-add": {
+      const result = await client.addHighlight({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { result }, () =>
+        formatHighlightOutput(input.selector, result),
+      );
+    }
+    case "highlight-clear": {
+      const result = await client.clearHighlights({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { result }, () =>
+        formatClearHighlightsOutput(input.selector, result),
       );
     }
   }

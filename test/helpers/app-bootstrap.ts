@@ -1,4 +1,6 @@
-import type { AppBootstrap, DiffFile, VcsDiffCommandInput, LayoutMode } from "../../src/core/types";
+import type { AppBootstrap } from "../../src/core/bootstrap";
+import type { DiffFile } from "../../src/core/changeset/model";
+import type { VcsDiffCommandInput, LayoutMode } from "../../src/core/run/commandInputs";
 
 export function createTestVcsAppBootstrap({
   agentSummary,

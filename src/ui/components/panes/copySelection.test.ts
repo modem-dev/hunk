@@ -1,16 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
 import { measureDiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import { buildFileSectionLayouts } from "../../lib/fileSectionLayout";
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
+  copySelectionDragIsClick,
   copySelectionPointsEqual,
   copySelectionPointsShareRow,
   expandSelectionPoint,
   findCopySelectionPoint,
+  findLineCursorForClick,
   normalizeCopySelectionRange,
   renderCopySelectionText,
   resolveCopySelectionSide,
@@ -24,6 +26,7 @@ import {
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
 import { measureTextWidth } from "../../lib/text";
+import { buildLineCursors } from "../../lib/lineCursors";
 
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
@@ -176,6 +179,133 @@ describe("clampCopyColumn", () => {
 
   test("returns zero when width is zero", () => {
     expect(clampCopyColumn(5, 0)).toBe(0);
+  });
+});
+
+describe("findLineCursorForClick", () => {
+  test("resolves exact split sides and treats context rows as one cursor", () => {
+    const file = createDiffFile();
+    const { fileSectionLayouts, sectionGeometry } = buildContext("split", 120, file);
+    const cursors = buildLineCursors([file], sectionGeometry);
+    const oldCursor = cursors.find(
+      (cursor) => cursor.target.side === "old" && cursor.target.line === 1,
+    );
+    const newCursor = cursors.find(
+      (cursor) => cursor.target.side === "new" && cursor.target.line === 1,
+    );
+    const contextCursor = cursors.find((cursor) => cursor.target.line === 2);
+    expect(oldCursor).toBeDefined();
+    expect(newCursor).toBeDefined();
+    expect(contextCursor).toBeDefined();
+
+    const section = fileSectionLayouts[0]!;
+    const changedBounds = sectionGeometry[0]!.rowBoundsByStableKey.get(oldCursor!.stableKey)!;
+    const changedPoint: CopySelectionPoint = {
+      kind: "review-row",
+      column: 10,
+      visualRow: section.bodyTop + changedBounds.top,
+    };
+    expect(
+      findLineCursorForClick({
+        cursors,
+        fileSectionLayouts,
+        point: changedPoint,
+        sectionGeometry,
+        side: "left",
+      }),
+    ).toBe(oldCursor!);
+    expect(
+      findLineCursorForClick({
+        cursors,
+        fileSectionLayouts,
+        point: changedPoint,
+        sectionGeometry,
+        side: "right",
+      }),
+    ).toBe(newCursor!);
+
+    const contextBounds = sectionGeometry[0]!.rowBoundsByStableKey.get(contextCursor!.stableKey)!;
+    expect(
+      findLineCursorForClick({
+        cursors,
+        fileSectionLayouts,
+        point: {
+          kind: "review-row",
+          column: 10,
+          visualRow: section.bodyTop + contextBounds.top,
+        },
+        sectionGeometry,
+        side: "left",
+      }),
+    ).toBe(contextCursor!);
+  });
+
+  test("resolves a stacked row and ignores non-line rows", () => {
+    const file = createDiffFile();
+    const { fileSectionLayouts, sectionGeometry } = buildContext("stack", 120, file);
+    const cursors = buildLineCursors([file], sectionGeometry);
+    const cursor = cursors.find(
+      (candidate) => candidate.target.side === "new" && candidate.target.line === 1,
+    )!;
+    const section = fileSectionLayouts[0]!;
+    const bounds = sectionGeometry[0]!.rowBoundsByStableKey.get(cursor.stableKey)!;
+
+    expect(
+      findLineCursorForClick({
+        cursors,
+        fileSectionLayouts,
+        point: {
+          kind: "review-row",
+          column: 10,
+          visualRow: section.bodyTop + bounds.top,
+        },
+        sectionGeometry,
+      }),
+    ).toBe(cursor);
+    expect(
+      findLineCursorForClick({
+        cursors,
+        fileSectionLayouts,
+        point: { kind: "review-row", column: 10, visualRow: section.bodyTop },
+        sectionGeometry,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("copySelectionDragIsClick", () => {
+  const point = (column: number, visualRow: number): CopySelectionPoint => ({
+    kind: "review-row",
+    column,
+    visualRow,
+  });
+
+  test("accepts one-cell mouse jitter around a click", () => {
+    expect(
+      copySelectionDragIsClick({
+        anchor: point(20, 8),
+        focus: point(21, 9),
+        moved: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects deliberate drags and double-click expansion", () => {
+    expect(
+      copySelectionDragIsClick({
+        anchor: point(20, 8),
+        focus: point(22, 8),
+        moved: true,
+      }),
+    ).toBe(false);
+    expect(
+      copySelectionDragIsClick({
+        anchor: point(20, 8),
+        focus: point(21, 8),
+        moved: true,
+        expanded: true,
+      }),
+    ).toBe(false);
   });
 });
 

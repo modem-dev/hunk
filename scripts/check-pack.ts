@@ -23,22 +23,41 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
+  ExtensionKeyboardModeControls,
+  ExtensionKeyboardModeKeyResult,
+  ExtensionLineHighlight,
+  ExtensionLineHighlightTone,
   ExtensionPaintTheme,
+  ExtensionHorizontalPane,
+  ExtensionPaneProps,
+  ExtensionPaneSize,
   ExtensionReviewSelection,
+  ExtensionSessionOptions,
+  ExtensionVerticalPane,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
   ExtensionVcsPatchResult,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   NamedCustomThemeConfig,
 } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
-  const noSelection: ExtensionReviewSelection = { file: null, hunkIndex: null };
+  const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
+  hunk.configureSession(sessionOptions);
+  const noSelection: ExtensionReviewSelection = {
+    file: null,
+    hunkIndex: null,
+    currentLine: null,
+  };
   hunk.log(noSelection.file === null ? "nothing selected" : noSelection.file.path);
+  hunk.log(noSelection.currentLine?.side ?? "no current line");
 
   const theme: NamedCustomThemeConfig = {
     id: "midnight-review",
@@ -49,6 +68,40 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.registerTheme(theme);
   hunk.registerFileLanguage(".zig", "zig");
+
+  const pane = (props: ExtensionPaneProps) => {
+    hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);
+    props.currentLine?.render("new", props.width);
+    return null;
+  };
+  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4 };
+  for (const placement of ["left", "right"] as const) {
+    const verticalPane: ExtensionVerticalPane = {
+      id: placement,
+      placement,
+      width: paneSize,
+      component: pane,
+    };
+    hunk.registerPane(verticalPane);
+  }
+  for (const placement of ["top", "bottom"] as const) {
+    const horizontalPane: ExtensionHorizontalPane = {
+      id: placement,
+      placement,
+      height: paneSize,
+      currentLine: placement === "bottom",
+      component: pane,
+    };
+    hunk.registerPane(horizontalPane);
+  }
+  hunk.registerSidebarView({
+    id: "legacy",
+    placement: "right",
+    component: ({ files, width }) => {
+      hunk.log(\`legacy:\${files.length}:\${width}\`);
+      return null;
+    },
+  });
 
   const renderRow = (props: ExtensionFileViewRowComponentProps) => {
     const paintTheme: ExtensionPaintTheme = props.theme;
@@ -96,9 +149,90 @@ export default function (hunk: HunkExtensionAPI) {
       };
     },
   });
+  const matchTone: ExtensionLineHighlightTone = "match";
+  hunk.registerLineHighlighter({
+    id: "needles",
+    async highlight(input) {
+      const document: string | null = await input.readDocument("old");
+      hunk.log(document === null ? input.file.path : "read old side");
+      const mark: ExtensionLineHighlight = {
+        side: "new",
+        line: 1,
+        range: [0, 4],
+        tone: matchTone,
+      };
+      const invalidTone: ExtensionLineHighlightTone[] = ["current", "info", "warning", "error"];
+      hunk.log(String(invalidTone.length));
+      // @ts-expect-error Ranges are immutable tuples.
+      mark.range[0] = 2;
+      return [mark];
+    },
+  });
+  hunk.registerKeyboardMode({
+    id: "review-keys",
+    title: "Review keys",
+    onKey(key, ctx): ExtensionKeyboardModeKeyResult {
+      if (key.name !== "j") return "pass";
+      ctx.commands.execute("hunk.review.stepDown");
+      return "handled";
+    },
+  });
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
+    const commandControls: ExtensionCommandControls = ctx.commands;
+    const modeControls: ExtensionKeyboardModeControls = ctx.keyboardModes;
+    const execution: ExtensionCommandExecutionOptions = { count: 2 };
+    if (commandControls.isEnabled("hunk.review.nextHunk")) {
+      const executed: boolean = commandControls.execute("hunk.review.nextHunk", execution);
+      hunk.log(executed ? "moved" : "not moved");
+    }
+    // @ts-expect-error Count must be numeric.
+    commandControls.execute("hunk.review.nextHunk", { count: "two" });
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
+    ctx.fileViews.refresh("raw");
+    if (ctx.fileViews.isActive("raw") && !ctx.fileViews.isModeActive("raw")) {
+      const entered: boolean = ctx.fileViews.enterMode("raw");
+      hunk.log(entered ? "mode running" : "mode refused");
+    }
+    ctx.fileViews.exitMode();
+    ctx.highlights.refresh("needles");
+    ctx.highlights.refresh("needles", { fileId: ctx.selection.file?.id ?? "" });
+    if (!modeControls.isActive("review-keys")) {
+      modeControls.enterMode("review-keys");
+    }
+    modeControls.exitMode();
+    ctx.panes.toggle("bottom");
+    if (ctx.sidebars.isOpen("legacy")) ctx.sidebars.close("legacy");
+
+    const targetFile = ctx.selection.file;
+    if (targetFile) {
+      ctx.navigation.selectFile(targetFile.id);
+      ctx.navigation.selectHunk(targetFile.id, 0);
+      ctx.navigation.revealLine(targetFile.id, "new", 211);
+      ctx.navigation.revealLine(targetFile.id, "old", 1);
+      // @ts-expect-error Only the two diff sides address a line.
+      ctx.navigation.revealLine(targetFile.id, "both", 1);
+    }
+  });
+
+  hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      return;
+    }
+
+    // A read answers with the document or with nothing; a side outside the
+    // union is a compile error rather than a runtime surprise.
+    const current: string | null = await ctx.workspace.readDocument(file.id, "new");
+    // @ts-expect-error Only the two document sides can be read.
+    void ctx.workspace.readDocument(file.id, "both");
+
+    const written: ExtensionWorkspaceWriteResult = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: (current ?? "").toUpperCase(),
+    });
+    // The result is a discriminated union: \`detail\` exists only on refusals.
+    hunk.log(written.ok ? "written" : written.detail);
   });
 
   const adapter: ExtensionVcsAdapter = {
@@ -124,7 +258,12 @@ export default function (hunk: HunkExtensionAPI) {
             title: "Mercurial working copy",
             patchText: "",
             untrackedPaths: [],
-            readFileSource: async ({ path, side }) => (side === "old" ? null : path),
+            readFileSource: async ({ path, side }) =>
+              side === "old"
+                ? null
+                : path.endsWith(".generated")
+                  ? { kind: "too-large", maxBytes: 1_000_000 }
+                  : path,
             extraFiles: [
               { kind: "patch", path: "notes.md", patchText: "", isUntracked: true },
               {
@@ -159,8 +298,14 @@ export default function (hunk: HunkExtensionAPI) {
     files: changeset.files.filter((file) => !file.path.endsWith(".lock")),
   }));
 
-  hunk.on("startup", (event, ctx) => {
+  hunk.on("startup", async (event, ctx) => {
     ctx.notify(\`started in \${event.cwd}\`, "info");
+    if (await ctx.dialogs.confirm({ title: "Reveal the first line?" })) {
+      ctx.navigation.revealLine("file-id", "new", 1);
+    }
+  });
+  hunk.on("command_executed", ({ commandId }) => {
+    hunk.log(\`terminal command \${commandId}\`);
   });
   hunk.on("changeset_loaded", (event) => {
     hunk.log(\`loaded \${event.changeset.files.length} files\`);
@@ -228,6 +373,10 @@ const requiredPaths = [
   "README.md",
   "LICENSE",
   "package.json",
+  // The bundled skills must survive the narrowed per-skill files entries —
+  // `hunk skill path [name]` resolves them at runtime.
+  "skills/hunk-review/SKILL.md",
+  "skills/hunk-extensions/SKILL.md",
 ];
 
 for (const path of requiredPaths) {
@@ -244,6 +393,9 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
+  // Maintainer-only workflows reference repository scripts and never ship.
+  "skills/hunk-launch-video/",
+  "skills/hunk-release/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 

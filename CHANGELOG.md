@@ -1,5 +1,234 @@
 # Changelog
 
+## 0.19.1
+
+### Patch Changes
+
+- [`5cb62af`](https://github.com/modem-dev/hunk/commit/5cb62af8c7c51c8ac63b17db005cc5dab91fb2f1) - Stop installing Pierre dependencies for CLI-only npm users.
+
+- [`3e58eff`](https://github.com/modem-dev/hunk/commit/3e58effad32c6a550921bb312a7022c4997cd0a7) - Restore executable permissions for platform binaries installed through npm.
+
+- [`da696b1`](https://github.com/modem-dev/hunk/commit/da696b1f6bdbdc17b48e432976774815ec994c58) - Accelerate complex Unicode text width measurement in reviews.
+
+- [`87b654c`](https://github.com/modem-dev/hunk/commit/87b654cea79337fe960f14db5c05158173b94cae) - Git's `color.moved` highlights are no longer lost when `wrap_lines` is on.
+
+- [`62441cf`](https://github.com/modem-dev/hunk/commit/62441cfb10dc3e1d6f9375026395fa2c01ca9bbb) - Build the x64 binaries for CPUs without AVX2, so Hunk no longer dies with an illegal instruction on pre-Haswell machines and conservative VM CPU models.
+
+## 0.19.0
+
+### Highlights
+
+Hunk 0.19.0 expands the extension platform, makes live agent guidance more precise, and keeps large reviews responsive.
+
+- **Install and build richer extensions.** Install shared extensions from Git, dock panes on every edge, add session-scoped keyboard modes and guided workflows, and use the bundled authoring skill to discover the public API.
+- **Point agents and reviewers at exact code.** Live sessions and extensions can highlight character ranges and navigate directly to a source line, while `$EDITOR` opens at the line currently under review.
+- **Stay responsive in large repositories.** Untracked-file diffs avoid per-file subprocesses, syntax caches follow the active review, generated files skip expensive highlighting, and experimental `--fast` highlighting can offload eligible large diffs to a worker.
+- **Control the workspace more precisely.** Configure sidebar visibility, keep files and extension panes independent, and use review keybindings consistently in selectors and extension modes.
+- **Verify and install releases confidently.** Release archives carry build provenance attestations, and mise installation is documented across macOS, Linux, and Windows.
+
+### Minor Changes
+
+- [#728](https://github.com/modem-dev/hunk/pull/728) [`bb6405e`](https://github.com/modem-dev/hunk/commit/bb6405e43c22bee359cd75b24b3c0fc08b0f24fa) - Agents can now light up exact character ranges in a live review with `hunk session highlight add` / `clear` (five contrast-guaranteed tones, painted through the same pipeline as extension line highlights), and `hunk session navigate` line targets now land the viewport on the exact line instead of just its hunk.
+
+- [#697](https://github.com/modem-dev/hunk/pull/697) [`cb91c4b`](https://github.com/modem-dev/hunk/commit/cb91c4bb5f94be1a009d010ee82fd5875cefc407) - Ship an extension-authoring skill for coding agents and let `hunk skill path [name]` print any bundled skill.
+
+- [#713](https://github.com/modem-dev/hunk/pull/713) [`ee97fef`](https://github.com/modem-dev/hunk/commit/ee97fefbc492a52543bfb4fe8be2a56e8f420622) - Open `$EDITOR` at the current line instead of the start of the selected hunk.
+
+- [#710](https://github.com/modem-dev/hunk/pull/710) [`cd0df72`](https://github.com/modem-dev/hunk/commit/cd0df72e402ea968c74f38239d98790ac86432bd) - Generalize extension sidebars into dockable panes on all four review edges.
+
+- [#717](https://github.com/modem-dev/hunk/pull/717) [`fe9373b`](https://github.com/modem-dev/hunk/commit/fe9373bcc7cd19d8c86333dcbf1079aa9c6fce6b) - Add extension APIs for transient sessions and observing or navigating guided review workflows.
+
+- [#712](https://github.com/modem-dev/hunk/pull/712) [`994f66d`](https://github.com/modem-dev/hunk/commit/994f66d7bcdfe48a5f17b78436cb078dde0f12b3) - Install shared extensions straight from git with `hunk extension install <owner>/<repo>[@ref]` (plus `list`, `update`, and `remove`), let extension manifests declare a minimum API version via `"hunk": {"apiVersion": N}`, and find community extensions under the `hunk-extension` GitHub topic.
+
+- [#726](https://github.com/modem-dev/hunk/pull/726) [`9bdb0bb`](https://github.com/modem-dev/hunk/commit/9bdb0bb94c28ce6b5ca5b052d3717ab6763ca2fb) - Extensions can mark character ranges inside diff lines with `hunk.registerLineHighlighter` (API v5): source-addressed, tone-based marks painted inside Hunk's own rendering with guaranteed contrast on every line kind, invalidated through `ctx.highlights.refresh`.
+
+- [#749](https://github.com/modem-dev/hunk/pull/749) [`76e5eb2`](https://github.com/modem-dev/hunk/commit/76e5eb22efd759025615c96c7cafa98dfaa35ca1) - Hunk now runs on OpenTUI 0.5, picking up its faster FFI layout reads and a fix for duplicate live frame timers. Embedders of `hunkdiff/opentui` need to move their `@opentui/core` and `@opentui/react` peer installs to `^0.5.1`.
+
+- [#706](https://github.com/modem-dev/hunk/pull/706) [`51df868`](https://github.com/modem-dev/hunk/commit/51df86850184b2b1a68be24c51b73465d32d50fb) - Let extensions invoke public Hunk review commands with atomic movement counts.
+
+- [`f1bc9bf`](https://github.com/modem-dev/hunk/commit/f1bc9bfb562dad43023d88e49a57b7a1f26ace9c) - Let every configured vertical review key move open selection dialogs, including the theme selector.
+
+- [#727](https://github.com/modem-dev/hunk/pull/727) [`b941e0f`](https://github.com/modem-dev/hunk/commit/b941e0f7e05b7e18516ddc4b8bd5748494dae0c1) - Extensions can jump the review to one exact source line with `ctx.navigation.revealLine(fileId, side, line)` (API v5), so a target deep inside a tall hunk lands near the top of the viewport instead of pages below its anchor.
+
+- [#708](https://github.com/modem-dev/hunk/pull/708) [`61cc6b1`](https://github.com/modem-dev/hunk/commit/61cc6b167b09f3238f83c6c4e45a128972a44771) - Let extensions activate visible session-scoped keyboard modes that route keys through Hunk's public semantic commands.
+
+- [#648](https://github.com/modem-dev/hunk/pull/648) [`c16206f`](https://github.com/modem-dev/hunk/commit/c16206f54da138b9fc21be60d8d414838af89a68) - Add configuration and CLI flags to control the sidebar in non-pager mode.
+
+- [#711](https://github.com/modem-dev/hunk/pull/711) [`e31f7ad`](https://github.com/modem-dev/hunk/commit/e31f7ad8dac6b5e84523d6aac7aee67fe7b152cd) - Decouple bundled VCS providers from core, add provider-neutral repository bootstrapping, and let extension source readers report files that exceed their safe read limit.
+
+### Patch Changes
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Publish GitHub build provenance attestations for the release archives so installs can be cryptographically verified.
+
+- [#743](https://github.com/modem-dev/hunk/pull/743) [`f5314d6`](https://github.com/modem-dev/hunk/commit/f5314d65757062091892105c19921a397fafd7a8) - Make the theme picker scroll independently, preview themes after a brief hover, and apply them on click.
+
+- [#695](https://github.com/modem-dev/hunk/pull/695) [`63babe0`](https://github.com/modem-dev/hunk/commit/63babe0021396357ed9aa8cd4ea9617b01ce95c4) - Fix malformed `@@` hunk headers so each side's line range and count are emitted correctly.
+
+- [#750](https://github.com/modem-dev/hunk/pull/750) [`781074d`](https://github.com/modem-dev/hunk/commit/781074d81c946e65744d93dece07e541ede96c44) - Start up faster for commands that never build a changeset. `hunk --version`, `--help`,
+  `daemon serve`, the markup commands, and `hunk session *` no longer load the VCS, extension, and
+  diff-engine graph before answering.
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Document installing Hunk with mise, and note that Hunk ships as a default Omarchy tool.
+
+- [#682](https://github.com/modem-dev/hunk/pull/682) [`cbd77c4`](https://github.com/modem-dev/hunk/commit/cbd77c4890ee4a07bed679162f6dbc1bf6e34885) - Wrap draft review notes by terminal cells instead of scrolling horizontally, so long CJK notes stay fully visible while typing; previously the composer stayed one row high and hid everything before the cursor.
+
+- [#740](https://github.com/modem-dev/hunk/pull/740) [`772212d`](https://github.com/modem-dev/hunk/commit/772212dd9a1d8a5ced8b5290c6efafbf762ac5f6) - Agent notes anchored to collapsed or expanded-away lines now render beside their owning hunk instead of the top of the file.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Budget the syntax highlighting cache by lines instead of file count, so reviews of many small files stop re-highlighting as you scroll and reviews of very large files stay within a bounded memory footprint.
+
+- [#757](https://github.com/modem-dev/hunk/pull/757) [`6d8752a`](https://github.com/modem-dev/hunk/commit/6d8752a132c96a8a618404f34e2e9c3fa073eda7) - Toggle the files pane without hiding independently controlled extension panes.
+
+- [#733](https://github.com/modem-dev/hunk/pull/733) [`ef5798e`](https://github.com/modem-dev/hunk/commit/ef5798ee3998f6ec026b204adfcc0fb6aa827054) - Fix extension line highlights: marks now paint per file as they resolve instead of waiting for every file, never paint a previous review's offsets onto a reloaded file, stay visible on transparent line backgrounds, keep every active file's result retained however large the review is, and paint a row carrying thousands of ranges in milliseconds instead of seconds. Marks still resolve their tint against an assumed background on transparent cells, and a range covering only zero-width characters paints nothing.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Keep syntax highlighting cached for the files you are actually reviewing, so scrolling back to a recent file no longer re-highlights it.
+
+- [#693](https://github.com/modem-dev/hunk/pull/693) [`505d9d3`](https://github.com/modem-dev/hunk/commit/505d9d373aec50b7c855e536dbab477560e5168d) - Keep the top menu bar inside the same one-column margin as the rest of the app instead of painting its background into the outer gutter.
+
+- [#759](https://github.com/modem-dev/hunk/pull/759) [`5ebe975`](https://github.com/modem-dev/hunk/commit/5ebe97549edeeef855da92f1086f7bdc41354377) - Add an experimental `hunk --fast` mode that keeps eligible large syntax-highlighted diffs responsive with a Bun worker.
+
+- [#714](https://github.com/modem-dev/hunk/pull/714) [`bf981ee`](https://github.com/modem-dev/hunk/commit/bf981eed6eabd4390fadb29d57bcd459383e93e0) - Recognize mise-managed installs and skip the startup update notice for them, since mise already keeps Hunk up to date.
+
+- [#777](https://github.com/modem-dev/hunk/pull/777) [`bdec620`](https://github.com/modem-dev/hunk/commit/bdec620a7e977d0aaa8d6670b4f2d349590838f6) - Document that `mise use -g hunk` now installs Hunk on Windows with mise 2026.8.6 or newer.
+
+- [#753](https://github.com/modem-dev/hunk/pull/753) [`cfe8eee`](https://github.com/modem-dev/hunk/commit/cfe8eee842a60d1f7946d1dbbb24b184b7ef62f8) - Improved diff alignment when a change block adds and removes different numbers of lines: the changed line now pairs with the line it actually resembles instead of whichever line happened to sit in the same position, so split view lines up correctly and the word-level highlight marks just the edited part instead of most of an unrelated line.
+
+- [#703](https://github.com/modem-dev/hunk/pull/703) [`5afddf1`](https://github.com/modem-dev/hunk/commit/5afddf130c16a20870b20f36b6c2e869da28e182) - Keep Git's colors in non-diff `hunk pager` output for captured pager hosts, so LazyGit's branch log renders in its normal per-branch palette instead of a single color.
+
+- [#754](https://github.com/modem-dev/hunk/pull/754) [`859bdac`](https://github.com/modem-dev/hunk/commit/859bdac0027dfb7260a9c556164d6fbfd442a2bf) - Render diffs larger than 10,000 lines as plain rows instead of syntax highlighting them, so a regenerated lockfile appears immediately and stops delaying color on the files around it.
+
+- [#738](https://github.com/modem-dev/hunk/pull/738) [`58c7d48`](https://github.com/modem-dev/hunk/commit/58c7d48fffa693eeee5e6a9ef94e9e892439b8fe) - Fix `hunk diff` taking tens of seconds in repos with many untracked files by synthesizing untracked diffs in-process instead of spawning one `git diff --no-index` subprocess per file.
+
+- [#760](https://github.com/modem-dev/hunk/pull/760) [`e5116b3`](https://github.com/modem-dev/hunk/commit/e5116b3a35a8733eb9e4985dade9a66e0327f3ca) - Name the public files-pane command `hunk.view.toggleFilesPane`, preserve `hunk.view.toggleSidebar` as a compatibility alias, and require `hunk:files` when directly controlling the built-in pane.
+
+## 0.18.2
+
+### Patch Changes
+
+- [#742](https://github.com/modem-dev/hunk/pull/742) [`568e7a5`](https://github.com/modem-dev/hunk/commit/568e7a50ff34ba64fb1784cc74ffd1c7d0baaafc) - Fix `hunk diff` taking tens of seconds in repos with many untracked files by synthesizing untracked diffs in-process instead of spawning one `git diff --no-index` subprocess per file.
+
+## 0.18.1
+
+### Patch Changes
+
+- [`f0c2d88`](https://github.com/modem-dev/hunk/commit/f0c2d88bbc5cd6c98cb1174988466eda640fe12c) - Fix malformed `@@` hunk headers so each side's line range and count are emitted correctly.
+
+- [`85f441b`](https://github.com/modem-dev/hunk/commit/85f441b1474b02a00cc029c1e6db06287c0b571e) - Keep the top menu bar inside the same one-column margin as the rest of the app instead of painting its background into the outer gutter.
+
+- [`a890077`](https://github.com/modem-dev/hunk/commit/a89007730f46b7a809a457039c856f736e0d22be) - Keep Git's colors in non-diff `hunk pager` output for captured pager hosts, so LazyGit's branch log renders in its normal per-branch palette instead of a single color.
+
+## 0.18.0
+
+### Highlights
+
+Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories and diverse terminals.
+
+- **A full extension platform.** Install TypeScript extensions that add VCS backends, commands, sidebars, dialogs, interactive file views, themes, and workspace actions.
+- **Line-level review and commenting.** A visible cursor moves with `j`/`k`, and `c` adds a comment exactly where you are looking—even across large reviews and wrapped lines.
+- **Richer agent context.** Experimental STML notes can present structured, terminal-native explanations with preview tools and layout-aware feedback.
+- **Full reviews from pipelines.** Piped diffs now retain Hunk’s navigation, filtering, layouts, sidebars, and other review controls.
+- **A UI that follows your preferences.** Remappable shortcuts appear correctly in menus and help, view settings can be saved on quit, and tabs and syntax colors are configurable.
+- **Faster and more dependable reviews.** Watch mode uses less CPU, navigation retains less memory, Unicode filenames render correctly, narrow terminals stay readable, and saved state and session behavior are more resilient.
+
+### Minor Changes
+
+- [#570](https://github.com/modem-dev/hunk/pull/570) [`94d61e1`](https://github.com/modem-dev/hunk/commit/94d61e173c1934513b53b178f3b3c2e55ae98aa5) - Let custom themes override exact Shiki/TextMate syntax scopes while keeping deprecated syntax-role colors compatible.
+
+- [#629](https://github.com/modem-dev/hunk/pull/629) [`e65e84a`](https://github.com/modem-dev/hunk/commit/e65e84a1d0f3d381c95a0626899ffb12c9d43192) - Let extension commands navigate directly to visible files and hunks.
+
+- [#616](https://github.com/modem-dev/hunk/pull/616) [`fe21ef9`](https://github.com/modem-dev/hunk/commit/fe21ef9ee3fbac7e9ee8366e6f88b65bf6e48605) - Give extension commands a snapshot of the file and hunk the user is reviewing.
+
+- [#588](https://github.com/modem-dev/hunk/pull/588) [`928f607`](https://github.com/modem-dev/hunk/commit/928f607d897227b10ad3453f397c684dec54a18d) - Render tabs at four-column stops by default, with CLI and config overrides.
+
+- [#632](https://github.com/modem-dev/hunk/pull/632) [`86bf722`](https://github.com/modem-dev/hunk/commit/86bf722550fa0e4552b62e6a90e06cc32d5199f9) - Add experimental React/OpenTUI component rows to extension file views without giving up Hunk's review navigation and notes.
+
+- [#662](https://github.com/modem-dev/hunk/pull/662) [`5150d21`](https://github.com/modem-dev/hunk/commit/5150d211babd504a05219891d40b5f9ac78fd80f) - Add a visible current-line cursor so `j`/`k` move line by line and `c` comments exactly where the cursor sits.
+
+- [#617](https://github.com/modem-dev/hunk/pull/617) [`548f56d`](https://github.com/modem-dev/hunk/commit/548f56d9985e187bbcb069573e3263852742a74a) - Let extension commands open Hunk-native confirmation, selection, and text-input dialogs.
+
+- [#619](https://github.com/modem-dev/hunk/pull/619) [`926324d`](https://github.com/modem-dev/hunk/commit/926324d978b430e08284626ea9827528f4dd17f6) - Add extension UI lifecycle events, sidebar controls, and inter-extension events.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) [`883fad7`](https://github.com/modem-dev/hunk/commit/883fad7920a3039dbc1038a0d40ea5b2ec4feab0) - Add experimental TypeScript extensions for custom themes, VCS backends, changeset transforms, lifecycle hooks, config, and notifications.
+
+- [#675](https://github.com/modem-dev/hunk/pull/675) [`efa2203`](https://github.com/modem-dev/hunk/commit/efa2203f86845e1da5849ae64fe7cd50ceeba06e) - Let interactive extension file views handle keys until Escape returns control to Hunk.
+
+- [#673](https://github.com/modem-dev/hunk/pull/673) [`378ec4b`](https://github.com/modem-dev/hunk/commit/378ec4b3f7043dcd8ceecec2d22041a71e7bf8b1) - Let stateful extension file views refresh their rendered layouts in place.
+
+- [#615](https://github.com/modem-dev/hunk/pull/615) [`1501eb6`](https://github.com/modem-dev/hunk/commit/1501eb669e807061bd9ff70dd9e9e8351ac3e64c) - Expose resolved user keybindings to extension sidebars so their controls honor remapping and unbinding.
+
+- [#512](https://github.com/modem-dev/hunk/pull/512) [`8a8dbc7`](https://github.com/modem-dev/hunk/commit/8a8dbc7b014cdd0eb9554b9f7677948d5deb6108) - Add experimental rich STML agent notes with preview commands and live width feedback.
+
+- [#614](https://github.com/modem-dev/hunk/pull/614) [`fa0500d`](https://github.com/modem-dev/hunk/commit/fa0500d5dbca558fabfc7be705b1e4d08c26bf89) - Make menus and help reflect actual keybindings, and add an Extensions menu for contributed commands.
+
+- [#611](https://github.com/modem-dev/hunk/pull/611) [`449b328`](https://github.com/modem-dev/hunk/commit/449b328b0c32415ba2fbd7586fbd73989b0ac054) - Let extensions add commands and multiple sidebars, with configurable keybindings and safe conflict handling.
+
+- [#647](https://github.com/modem-dev/hunk/pull/647) [`aa1c24a`](https://github.com/modem-dev/hunk/commit/aa1c24a152ac11dc8f2343b24d932774cde70632) - Give piped pager reviews the same navigation, filtering, layout, and sidebar controls as regular reviews.
+
+- [#626](https://github.com/modem-dev/hunk/pull/626) [`b6737d8`](https://github.com/modem-dev/hunk/commit/b6737d8d1df08349168329bf24bc597cfa3c2d83) - Expose stable hunk summaries to extension events, sidebars, commands, and file views.
+
+- [#632](https://github.com/modem-dev/hunk/pull/632) [`86bf722`](https://github.com/modem-dev/hunk/commit/86bf722550fa0e4552b62e6a90e06cc32d5199f9) - Add an experimental extension file-view API and an optional rendered Markdown example.
+
+- [#468](https://github.com/modem-dev/hunk/pull/468) [`e098b3a`](https://github.com/modem-dev/hunk/commit/e098b3a3dc12143aafad3582ac9096b5c8db646b) - Offer to save changed themes and view preferences when quitting.
+
+- [#609](https://github.com/modem-dev/hunk/pull/609) [`46ef38a`](https://github.com/modem-dev/hunk/commit/46ef38acfcd733cdb706a7bd41458b2c96c3d136) - Let extensions replace file navigation with custom React sidebars while safely falling back to Hunk's sidebar on errors.
+
+- [#674](https://github.com/modem-dev/hunk/pull/674) [`4a656c7`](https://github.com/modem-dev/hunk/commit/4a656c7dc11117ce75f40147f73a06958f011a0f) - Let extension commands read reviewed files and write them back with user confirmation.
+
+### Patch Changes
+
+- [#531](https://github.com/modem-dev/hunk/pull/531) [`2458366`](https://github.com/modem-dev/hunk/commit/2458366fbf028759ac7ca7da729f4f6089e22b02) - Reduce Git polling and CPU use in watch mode while preserving reliable refreshes.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) [`883fad7`](https://github.com/modem-dev/hunk/commit/883fad7920a3039dbc1038a0d40ea5b2ec4feab0) - Make repo-extension trust persist across symlinked and alternate path spellings.
+
+- [#684](https://github.com/modem-dev/hunk/pull/684) [`0886985`](https://github.com/modem-dev/hunk/commit/0886985702235347a3bd31baf4842c13b241bc9e) - Show the changed-file count beside addition and deletion totals.
+
+- [#669](https://github.com/modem-dev/hunk/pull/669) [`ab570a0`](https://github.com/modem-dev/hunk/commit/ab570a006e54b34140210523d8edd1d9519dc491) - Preserve syntax highlighting when visible hunks begin inside folded multiline constructs.
+
+- [#675](https://github.com/modem-dev/hunk/pull/675) [`efa2203`](https://github.com/modem-dev/hunk/commit/efa2203f86845e1da5849ae64fe7cd50ceeba06e) - Make remapped `ctrl+letter` shortcuts work when terminals send bare control characters.
+
+- [#625](https://github.com/modem-dev/hunk/pull/625) [`8396284`](https://github.com/modem-dev/hunk/commit/8396284c48a8157ab751f71cf26b02f0e4334864) - Discover `.tsx` and `.jsx` extension entries and clarify extension authoring guidance.
+
+- [#606](https://github.com/modem-dev/hunk/pull/606) [`a9910f1`](https://github.com/modem-dev/hunk/commit/a9910f1d1ea5b43cbe1a3cb29f473a90f151467e) - Let folder extensions declare multiple entry points and dependencies in `package.json`.
+
+- [#685](https://github.com/modem-dev/hunk/pull/685) [`61a561a`](https://github.com/modem-dev/hunk/commit/61a561a744f1dee11472d5a0f79a52515ff88ef4) - Keep current-line navigation responsive and memory-efficient in large reviews and long wrapped rows.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) [`883fad7`](https://github.com/modem-dev/hunk/commit/883fad7920a3039dbc1038a0d40ea5b2ec4feab0) - Make extensions safer and more reliable across loading, reloads, themes, lifecycle handlers, and custom VCS detection.
+
+- [#606](https://github.com/modem-dev/hunk/pull/606) [`a9910f1`](https://github.com/modem-dev/hunk/commit/a9910f1d1ea5b43cbe1a3cb29f473a90f151467e) - Load a directory passed as an extension from its `index` entry instead of treating every file as a separate extension.
+
+- [#668](https://github.com/modem-dev/hunk/pull/668) [`5230cc5`](https://github.com/modem-dev/hunk/commit/5230cc56a81655d3a86e9f54a4536a38ad269705) - Keep file statistics visible and paths readable on narrow terminals.
+
+- [#649](https://github.com/modem-dev/hunk/pull/649) [`815f343`](https://github.com/modem-dev/hunk/commit/815f34378e6cb334eddb1e8b7e67ab589477348d) - Prevent one keypress from triggering both a modal action and the focused review control.
+
+- [#589](https://github.com/modem-dev/hunk/pull/589) [`6ccc3a6`](https://github.com/modem-dev/hunk/commit/6ccc3a6812eb3500297f5bcd0694fed7bd699755) - Require `--experimental` before rendering rich STML agent notes.
+
+- [#519](https://github.com/modem-dev/hunk/pull/519) [`dcf66e8`](https://github.com/modem-dev/hunk/commit/dcf66e8074e177cfdd7b700e06bdb213ac139eb7) - Label repository-root files with `./` in the sidebar.
+
+- [#531](https://github.com/modem-dev/hunk/pull/531) [`2458366`](https://github.com/modem-dev/hunk/commit/2458366fbf028759ac7ca7da729f4f6089e22b02) - Reduce watch-mode startup time on macOS and Windows with native recursive observation.
+
+- [#670](https://github.com/modem-dev/hunk/pull/670) [`45af37c`](https://github.com/modem-dev/hunk/commit/45af37c5e048dbaa84e06b04acdc304ea6d3739b) - Display tracked CJK and emoji filenames correctly throughout reviews and session APIs.
+
+- [#574](https://github.com/modem-dev/hunk/pull/574) [`53fcb2c`](https://github.com/modem-dev/hunk/commit/53fcb2cdace2cc2788790f712165f842ec6b9cf3) - Warn when deprecated custom syntax colors are translated to approximate Shiki scopes.
+
+- [#572](https://github.com/modem-dev/hunk/pull/572) [`d3d90d8`](https://github.com/modem-dev/hunk/commit/d3d90d8eea899489b7e2a9f46d328fa8e2d21b78) - Restart stale session daemons after upgrades so live comments keep working.
+
+- [#627](https://github.com/modem-dev/hunk/pull/627) [`afc2b89`](https://github.com/modem-dev/hunk/commit/afc2b89ed05df18aae66d9cf211436b27b9efea9) - Resolve a shell-quote denial-of-service vulnerability and keep direct-file watch refreshes responsive.
+
+- [#630](https://github.com/modem-dev/hunk/pull/630) [`076ac6f`](https://github.com/modem-dev/hunk/commit/076ac6f6186a03345bd091748d34b57fb8efccd7) - Document the supported scrolling and selection-following contract for custom extension sidebars.
+
+- [#596](https://github.com/modem-dev/hunk/pull/596) [`31fc677`](https://github.com/modem-dev/hunk/commit/31fc677bd44678f3e7a473ba8596a18d2c336c11) - Generate the bundled review skill from the CLI surface so commands, errors, and flags stay accurate.
+
+- [#652](https://github.com/modem-dev/hunk/pull/652) [`89052f5`](https://github.com/modem-dev/hunk/commit/89052f51f6a1f5005d7870023845f38700798add) - Avoid preparing inactive custom file views, reducing work and retained memory in normal diff reviews.
+
+- [#655](https://github.com/modem-dev/hunk/pull/655) [`c2ad4dc`](https://github.com/modem-dev/hunk/commit/c2ad4dc35666ccb1fc71c57336161fc7f612111c) - Keep file navigation focused on the file it just selected, even on loaded machines.
+
+- [#645](https://github.com/modem-dev/hunk/pull/645) [`8e1f5fd`](https://github.com/modem-dev/hunk/commit/8e1f5fd265da3d0b45978db67350436cfaa05c05) - Keep one-line scrolling consistent after clicking inside the review stream.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) [`883fad7`](https://github.com/modem-dev/hunk/commit/883fad7920a3039dbc1038a0d40ea5b2ec4feab0) - Write saved state atomically and preserve corrupt state files for recovery.
+
+- [#573](https://github.com/modem-dev/hunk/pull/573) [`1887d46`](https://github.com/modem-dev/hunk/commit/1887d46b578c927c1bde433c32eb0065eaf8a0d2) - Improve STML guidance for composing rich content inside Hunk's native note frame.
+
+- [#598](https://github.com/modem-dev/hunk/pull/598) [`cbf652e`](https://github.com/modem-dev/hunk/commit/cbf652edab44bbec7912de308ecc1ee27b20320c) - Show Nix-specific update instructions for Nix installations.
+
 ## 0.18.0-beta.0
 
 ### Minor Changes

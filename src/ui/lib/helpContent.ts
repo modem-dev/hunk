@@ -85,7 +85,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "split / stack / auto",
       },
       {
-        commandIds: ["hunk.view.toggleSidebar", "hunk.view.openThemeSelector"],
+        commandIds: ["hunk.view.toggleFilesPane", "hunk.view.openThemeSelector"],
         description: "sidebar / theme selector",
       },
       { commandIds: ["hunk.view.toggleAgentNotes"], description: "toggle AI notes" },
@@ -114,6 +114,16 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     ],
   },
 ];
+
+/**
+ * Every command id the help dialog documents.
+ *
+ * Exported so the command-parity check can assert help names only catalogued commands: a
+ * row pointing at an id nobody registered would silently vanish instead of failing.
+ */
+export const HELP_COMMAND_IDS: readonly string[] = HELP_SECTIONS.flatMap((section) =>
+  section.entries.flatMap((entry) => ("commandIds" in entry ? [...entry.commandIds] : [])),
+);
 
 /**
  * Render one entry's key column, or nothing when it documents no live key.

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CliInput } from "../core/types";
+import type { CliInput } from "../core/run/commandInputs";
 import type { SessionDaemonRequest } from "./protocol";
 
 /**
@@ -16,6 +16,7 @@ const selectorSchema = z.strictObject({
   sessionId: z.string().optional(),
   sessionPath: z.string().optional(),
   repoRoot: z.string().optional(),
+  repoBoundary: z.string().optional(),
 });
 
 const sideSchema = z.enum(["old", "new"]);
@@ -104,6 +105,22 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     selector: selectorSchema,
     filePath: z.string().optional(),
     includeUser: z.boolean().optional(),
+  }),
+  z.strictObject({
+    action: z.literal("highlight-add"),
+    selector: selectorSchema,
+    filePath: z.string(),
+    side: sideSchema,
+    line: z.int().positive(),
+    start: z.int().nonnegative(),
+    end: z.int().positive(),
+    tone: z.enum(["match", "current", "info", "warning", "error"]).optional(),
+    reveal: z.boolean(),
+  }),
+  z.strictObject({
+    action: z.literal("highlight-clear"),
+    selector: selectorSchema,
+    filePath: z.string().optional(),
   }),
 ]);
 

@@ -1,7 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ExtensionSidebarViewProps } from "../../../../extension-api/types";
+import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import {
   buildSidebarEntries,
   sidebarEntryStatsWidth,
@@ -11,29 +11,23 @@ import { fileRowId } from "../../../../ui/lib/ids";
 import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
 import { FileGroupHeader, FileListItem } from "../../../../ui/components/panes/FileListItem";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../../extensionIds";
-import { runExtensionFactory } from "../../../runExtension";
-import {
-  createEmptyExtensionRegistry,
-  type ExtensionFactory,
-  type ExtensionLoadIssue,
-  type RegisteredSidebarView,
-} from "../../../types";
+import type { ExtensionFactory } from "../../../types";
 
 /**
  * Hunk's file-navigation sidebar, shipped as a bundled extension.
  *
  * Like the Git backend, the built-in sidebar registers through the public API —
- * `registerSidebarView` — and its component consumes exactly the published
- * `ExtensionSidebarViewProps`: the frozen file views for its entries, the theme
+ * `registerPane` — and its component consumes exactly the published
+ * `ExtensionPaneProps`: the frozen file views for its entries, the theme
  * token slice for its colors, `actions.selectFile` for navigation, and the
  * host-served `@opentui/react` for its hooks. That is what keeps the sidebar
  * contract honest: anything this pane needs that the props cannot express is a
- * real gap in what third-party sidebars can build.
+ * real gap in what third-party panes can build.
  *
  * Unlike the VCS tier this module is UI code, so it is deliberately *not* part
  * of `loadBundledExtensions` — that list is imported from VCS adapter
- * resolution, which must stay renderer-free. The sidebar instead loads through
- * `getBundledSidebarView` at the one place the app resolves its active sidebar.
+ * resolution, which must stay renderer-free. The pane instead loads through
+ * `getBundledUIRegistry` at the one place the app resolves its active panes.
  * Rendering helpers (row components, the render window) are imported from Hunk
  * directly: this is host code, and the dogfooding boundary is the data,
  * actions, and theme crossing the props — not utility code.
@@ -41,7 +35,7 @@ import {
  * The scrollbox usage below is itself part of the published contract: the ref
  * reads (`scrollTop`, `viewport.height`), the scrollbar/viewport change
  * events, and `scrollChildIntoView` over child `id` props are documented in
- * docs/extensions.md as the supported way third-party sidebars scroll and
+ * docs/extensions.md as the supported way third-party panes scroll and
  * follow the selection. Changing how this component talks to its scrollbox
  * means updating that contract — same honesty mechanism as the props.
  */
@@ -58,14 +52,17 @@ import {
 export const BUNDLED_SIDEBAR_EXTENSION_ID = HUNK_VENDOR_EXTENSION_ID;
 export const BUNDLED_SIDEBAR_VIEW_ID = "files";
 
-/** Render the built-in file navigation sidebar from the public sidebar props. */
+type BuiltInSidebarProps = Omit<ExtensionPaneProps, "placement" | "height" | "currentLine"> &
+  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine">>;
+
+/** Render the built-in file navigation pane from public pane props. */
 export function BuiltInSidebarView({
   files,
   selectedFileId,
   theme,
   width,
   actions,
-}: ExtensionSidebarViewProps): ReactNode {
+}: BuiltInSidebarProps): ReactNode {
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const terminal = useTerminalDimensions();
@@ -197,47 +194,14 @@ export function BuiltInSidebarView({
 
 /** The factory the bundled sidebar registers through, same as any extension. */
 const registerBundledSidebar: ExtensionFactory = (hunk) => {
-  hunk.registerSidebarView({ id: BUNDLED_SIDEBAR_VIEW_ID, component: BuiltInSidebarView });
+  hunk.registerPane({
+    id: BUNDLED_SIDEBAR_VIEW_ID,
+    title: "Files",
+    placement: "left",
+    width: { preferred: 34, min: 22 },
+    defaultOpen: true,
+    component: BuiltInSidebarView,
+  });
 };
 
 export default registerBundledSidebar;
-
-let cachedView: RegisteredSidebarView | undefined;
-
-/**
- * Load the bundled sidebar registration, once per process.
- *
- * Runs the factory through `runExtensionFactory` — the same seal, validation,
- * and registry path user extensions take — and hands back the one registration
- * it produced. The app uses it as the default a user-registered sidebar view
- * overrides. A failure here is a Hunk bug, not an extension author's, so it
- * throws instead of degrading.
- */
-export function getBundledSidebarView(): RegisteredSidebarView {
-  if (cachedView) {
-    return cachedView;
-  }
-
-  const registry = createEmptyExtensionRegistry();
-  const issues: ExtensionLoadIssue[] = [];
-  runExtensionFactory({
-    metadata: {
-      id: BUNDLED_SIDEBAR_EXTENSION_ID,
-      sourcePath: "hunk:bundled/sidebar",
-      origin: "bundled",
-    },
-    registry,
-    issues,
-    factory: registerBundledSidebar,
-  });
-
-  const view = registry.sidebarViews[0];
-  if (issues.length > 0 || !view) {
-    throw new Error(
-      `Bundled sidebar failed to register: ${issues[0]?.message ?? "no view registered"}`,
-    );
-  }
-
-  cachedView = view;
-  return cachedView;
-}

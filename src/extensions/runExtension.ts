@@ -11,17 +11,22 @@ import {
   type ExtensionEventBus,
   type ExtensionMetadata,
   type ExtensionRegistry,
+  type ExtensionPane,
   type ExtensionSidebarView,
+  type ExtensionSessionOptions,
   type ExtensionFileView,
+  type ExtensionKeyboardMode,
+  type ExtensionLineHighlighter,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
-import { toUserFacingError } from "../core/errors";
+import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
+import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
 
 /**
  * Running one extension factory into the shared registry.
@@ -212,12 +217,15 @@ interface ExtensionApiHandle {
 
 /** Registration counts captured before one extension runs, for failure rollback. */
 interface RegistrySnapshot {
+  sessionOptions: number;
   themes: number;
   fileLanguages: number;
   vcsAdapters: number;
   changesetTransforms: number;
-  sidebarViews: number;
+  panes: number;
   fileViews: number;
+  lineHighlighters: number;
+  keyboardModes: number;
   commands: number;
   eventHandlers: Record<string, number>;
   customEventHandlers: number;
@@ -232,12 +240,15 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
   }
 
   return {
+    sessionOptions: registry.sessionOptions.length,
     themes: registry.themes.length,
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
-    sidebarViews: registry.sidebarViews.length,
+    panes: registry.panes.length,
     fileViews: registry.fileViews.length,
+    lineHighlighters: registry.lineHighlighters.length,
+    keyboardModes: registry.keyboardModes.length,
     commands: registry.commands.length,
     eventHandlers,
     customEventHandlers: registry.customEventHandlers.length,
@@ -252,12 +263,15 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
  * not stay in the registry. Collected logs are kept as failure diagnostics.
  */
 function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapshot) {
+  registry.sessionOptions.length = snapshot.sessionOptions;
   registry.themes.length = snapshot.themes;
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
-  registry.sidebarViews.length = snapshot.sidebarViews;
+  registry.panes.length = snapshot.panes;
   registry.fileViews.length = snapshot.fileViews;
+  registry.lineHighlighters.length = snapshot.lineHighlighters;
+  registry.keyboardModes.length = snapshot.keyboardModes;
   registry.commands.length = snapshot.commands;
   registry.customEventHandlers.length = snapshot.customEventHandlers;
   registry.pendingCustomEvents.length = snapshot.pendingCustomEvents;
@@ -279,9 +293,9 @@ export function createExtensionApi(
 ): ExtensionApiHandle {
   let sealed = false;
 
-  /** Guard one registration call against use after the load pass finished. */
+  /** Guard one registration call against use after the load pass finished or retired. */
   const assertOpen = (method: string) => {
-    if (sealed) {
+    if (sealed || registry.eventBusPhase === "closed") {
       throw new Error(
         `${metadata.id}: hunk.${method}() can only be called while the extension is loading.`,
       );
@@ -318,6 +332,21 @@ export function createExtensionApi(
     apiVersion: HUNK_EXTENSION_API_VERSION,
     config,
     events,
+    configureSession(options: ExtensionSessionOptions) {
+      assertOpen("configureSession");
+      if (!isPlainObject(options)) {
+        throw new Error("configureSession requires an options object.");
+      }
+      if (
+        options.viewPreferences !== undefined &&
+        options.viewPreferences !== "default" &&
+        options.viewPreferences !== "transient"
+      ) {
+        throw new Error('configureSession viewPreferences must be "default" or "transient".');
+      }
+
+      registry.sessionOptions.push({ extensionId: metadata.id, options: { ...options } });
+    },
     registerTheme(theme: ExtensionThemeConfig) {
       assertOpen("registerTheme");
       assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");
@@ -352,19 +381,76 @@ export function createExtensionApi(
         }),
       });
     },
+    registerPane(pane: ExtensionPane) {
+      assertOpen("registerPane");
+      assertNonEmptyString(pane?.id, "registerPane requires a pane with a non-empty id.");
+      if (typeof pane.component !== "function") {
+        throw new Error("registerPane requires a pane with a component function.");
+      }
+      const placement = pane.placement ?? "left";
+      if (!(["left", "right", "top", "bottom"] as const).includes(placement)) {
+        throw new Error(
+          `registerPane placement must be "left", "right", "top", or "bottom", got "${String(placement)}".`,
+        );
+      }
+      const dimension = isVerticalPanePlacement(placement) ? "width" : "height";
+      const wrongDimension = dimension === "width" ? "height" : "width";
+      if (pane[wrongDimension] !== undefined) {
+        throw new Error(`registerPane ${placement} panes use ${dimension}, not ${wrongDimension}.`);
+      }
+      const size = extensionPaneSize(pane, placement);
+      const min = size.min ?? 1;
+      const max = size.max ?? Number.MAX_SAFE_INTEGER;
+      for (const [name, value] of Object.entries({ preferred: size.preferred, min, max })) {
+        if (!Number.isSafeInteger(value) || value <= 0) {
+          throw new Error(`registerPane ${dimension}.${name} must be a positive safe integer.`);
+        }
+      }
+      if (min > size.preferred || size.preferred > max) {
+        throw new Error(`registerPane ${dimension} must satisfy min <= preferred <= max.`);
+      }
+      if (pane.available !== undefined && typeof pane.available !== "function") {
+        throw new Error("registerPane available must be a function.");
+      }
+      if (pane.currentLine !== undefined && typeof pane.currentLine !== "boolean") {
+        throw new Error("registerPane currentLine must be a boolean.");
+      }
+      if (pane.replaces !== undefined) {
+        assertNonEmptyString(pane.replaces, "registerPane replaces must be a non-empty pane key.");
+        if (pane.replaces === `${metadata.id}:${pane.id}`) {
+          throw new Error("registerPane cannot replace itself.");
+        }
+      }
+
+      const normalizedSize = { preferred: size.preferred, min, max };
+      registry.panes.push({
+        extensionId: metadata.id,
+        pane: {
+          ...pane,
+          placement,
+          ...(dimension === "width"
+            ? { width: normalizedSize, height: undefined }
+            : { height: normalizedSize, width: undefined }),
+        } as ExtensionPane,
+      });
+    },
     registerSidebarView(view: ExtensionSidebarView) {
       assertOpen("registerSidebarView");
       assertNonEmptyString(view?.id, "registerSidebarView requires a view with a non-empty id.");
-      if (typeof view.component !== "function") {
-        throw new Error("registerSidebarView requires a view with a component function.");
-      }
       if (view.placement !== undefined && view.placement !== "left" && view.placement !== "right") {
         throw new Error(
           `registerSidebarView placement must be "left" or "right", got "${String(view.placement)}".`,
         );
       }
-
-      registry.sidebarViews.push({ extensionId: metadata.id, view });
+      api.registerPane({
+        id: view.id,
+        ...(view.title ? { title: view.title } : {}),
+        placement: view.placement ?? "left",
+        width: defaultExtensionPaneSize("left"),
+        defaultOpen: view.defaultOpen,
+        replaces: view.replacesDefault ? "hunk:files" : undefined,
+        component: view.component as unknown as ExtensionPane["component"],
+      });
     },
     registerFileView(view: ExtensionFileView) {
       assertOpen("registerFileView");
@@ -376,8 +462,44 @@ export function createExtensionApi(
       if (typeof view.layout !== "function") {
         throw new Error("registerFileView requires a layout() function.");
       }
+      // A mode is optional, but one declared without a key handler could never
+      // be entered — fail the registration rather than the first `enterMode`.
+      if (view.mode !== undefined && typeof view.mode?.onKey !== "function") {
+        throw new Error("registerFileView mode requires an onKey() function.");
+      }
 
       registry.fileViews.push({ extensionId: metadata.id, view });
+    },
+    registerLineHighlighter(highlighter: ExtensionLineHighlighter) {
+      assertOpen("registerLineHighlighter");
+      assertNonEmptyString(
+        highlighter?.id,
+        "registerLineHighlighter requires a highlighter with a non-empty id.",
+      );
+      if (typeof highlighter.highlight !== "function") {
+        throw new Error("registerLineHighlighter requires a highlight() function.");
+      }
+
+      registry.lineHighlighters.push({ extensionId: metadata.id, highlighter });
+    },
+    registerKeyboardMode(mode: ExtensionKeyboardMode) {
+      assertOpen("registerKeyboardMode");
+      assertNonEmptyString(mode?.id, "registerKeyboardMode requires a mode with a non-empty id.");
+      assertNonEmptyString(
+        mode?.title,
+        "registerKeyboardMode requires a mode with a non-empty title.",
+      );
+      if (typeof mode.onKey !== "function") {
+        throw new Error("registerKeyboardMode requires an onKey() function.");
+      }
+      if (mode.onEnter !== undefined && typeof mode.onEnter !== "function") {
+        throw new Error("registerKeyboardMode onEnter must be a function when provided.");
+      }
+      if (mode.onExit !== undefined && typeof mode.onExit !== "function") {
+        throw new Error("registerKeyboardMode onExit must be a function when provided.");
+      }
+
+      registry.keyboardModes.push({ extensionId: metadata.id, mode });
     },
     registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler) {
       assertOpen("registerCommand");
@@ -507,19 +629,38 @@ export function runExtensionFactory({
     return;
   }
 
-  if (!isThenable(pending)) {
+  let thenable: boolean;
+  try {
+    thenable = isThenable(pending);
+  } catch (error) {
     seal();
-    registry.extensions.push(metadata);
+    fail(error);
     return;
   }
 
-  return pending.then(
+  if (!thenable) {
+    seal();
+    if (registry.eventBusPhase !== "closed") registry.extensions.push(metadata);
+    return;
+  }
+
+  // Promise assimilation turns a throwing or otherwise hostile `then` access
+  // into the ordinary rejection path instead of leaking out of the load pass.
+  return Promise.resolve(pending).then(
     () => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       registry.extensions.push(metadata);
     },
     (error: unknown) => {
       seal();
+      if (registry.eventBusPhase === "closed") {
+        rollbackRegistry(registry, snapshot);
+        return;
+      }
       fail(error);
     },
   );

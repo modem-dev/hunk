@@ -23,6 +23,12 @@ import {
   readHunkSessionDaemonCapabilities,
   reportHunkDaemonUpgradeRestart,
 } from "../client/capabilities";
+import type {
+  HunkSessionCommandResult,
+  HunkSessionInfo,
+  HunkSessionServerMessage,
+  HunkSessionState,
+} from "../types";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
@@ -36,6 +42,19 @@ type SessionAppBridge<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   Result = unknown,
 > = SessionBrokerConnectionBridge<ServerMessage, Result>;
+
+interface SessionBrokerClientTiming {
+  daemonStartupTimeoutMs?: number;
+  reconnectDelayMs?: number;
+}
+
+/** The broker client bound to Hunk's session info, state, message, and result types. */
+export type HunkSessionBrokerClient = SessionBrokerClient<
+  HunkSessionInfo,
+  HunkSessionState,
+  HunkSessionServerMessage,
+  HunkSessionCommandResult
+>;
 
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<
@@ -60,6 +79,7 @@ export class SessionBrokerClient<
   constructor(
     private registration: SessionRegistration<Info>,
     private snapshot: SessionSnapshot<State>,
+    private timing: SessionBrokerClientTiming = {},
   ) {}
 
   start() {
@@ -68,7 +88,7 @@ export class SessionBrokerClient<
     }
 
     if (this.startupPromise) {
-      return;
+      return this.startupPromise;
     }
 
     this.startupPromise = this.ensureDaemonAndConnect()
@@ -83,6 +103,8 @@ export class SessionBrokerClient<
       .finally(() => {
         this.startupPromise = null;
       });
+
+    return this.startupPromise;
   }
 
   stop() {
@@ -101,9 +123,11 @@ export class SessionBrokerClient<
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
+    // Let the connection validate/send first. If it throws, the client keeps
+    // serving the previous registration and snapshot as one coherent pair.
+    this.connection?.replaceSession(registration, snapshot);
     this.registration = registration;
     this.snapshot = snapshot;
-    this.connection?.replaceSession(registration, snapshot);
   }
 
   private resolveConfig() {
@@ -119,7 +143,7 @@ export class SessionBrokerClient<
   private async ensureDaemonAvailable(config: ResolvedSessionBrokerConfig) {
     await ensureSessionBrokerAvailable({
       config,
-      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+      timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
     });
 
     const capabilities = await readHunkSessionDaemonCapabilities(config);
@@ -127,7 +151,7 @@ export class SessionBrokerClient<
       await this.restartIncompatibleDaemon(config);
       await ensureSessionBrokerAvailable({
         config,
-        timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+        timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
       });
 
       if (!(await readHunkSessionDaemonCapabilities(config))) {
@@ -205,7 +229,7 @@ export class SessionBrokerClient<
       snapshot: this.snapshot,
       bridge: this.bridge,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
-      reconnectDelayMs: RECONNECT_DELAY_MS,
+      reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
       resolveClose: (event) =>
         this.isIncompatibleSessionClose(event)
           ? { reconnect: false, warning: INCOMPATIBLE_SESSION_CLOSE_MESSAGE }
@@ -216,7 +240,7 @@ export class SessionBrokerClient<
     this.connection.start();
   }
 
-  private scheduleReconnect(delayMs = RECONNECT_DELAY_MS) {
+  private scheduleReconnect(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
     if (this.reconnectTimer || this.stopped) {
       return;
     }

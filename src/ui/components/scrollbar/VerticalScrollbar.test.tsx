@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
-import { act } from "react";
-import type { AppBootstrap, DiffFile } from "../../../core/types";
+import { act, createRef } from "react";
+import { capturedTestColorToHex } from "../../../../test/helpers/test-color-helpers";
+import type { AppBootstrap } from "../../../core/bootstrap";
+import type { DiffFile } from "../../../core/changeset/model";
+import { resolveTheme } from "../../themes";
+import { VerticalScrollbar, type VerticalScrollbarHandle } from "./VerticalScrollbar";
 
 const { AppHost } = await import("../../AppHost");
 
@@ -83,35 +87,94 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+/** Return whether the terminal frame contains the requested painted background. */
+function frameHasBackground(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  backgroundColor: string,
+  column?: number,
+) {
+  return setup.captureSpans().lines.some((line) => {
+    let spanStart = 0;
+    return line.spans.some((span) => {
+      const spanEnd = spanStart + span.width;
+      const includesColumn = column === undefined || (spanStart <= column && column < spanEnd);
+      spanStart = spanEnd;
+      return (
+        includesColumn &&
+        span.width > 0 &&
+        capturedTestColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase()
+      );
+    });
+  });
+}
+
+/** Create an observable scroll target for direct scrollbar interaction tests. */
+function createTestScrollRef(scrollTop = 0, height = 10) {
+  const positions: number[] = [];
+  const scrollRef = createRef<{
+    scrollTop: number;
+    scrollTo: (y: number) => void;
+    viewport: { height: number };
+  }>();
+  scrollRef.current = {
+    scrollTop,
+    scrollTo: (y) => {
+      positions.push(y);
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = y;
+      }
+    },
+    viewport: { height },
+  };
+  return { positions, scrollRef };
+}
+
+/** Wait until input produces a new rendered review frame. */
+async function waitForFrameChange(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  previousFrame: string,
+) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const frame = setup.captureCharFrame();
+    if (frame !== previousFrame) {
+      return frame;
+    }
+
+    await act(async () => {
+      await Bun.sleep(5);
+      await setup.renderOnce();
+    });
+  }
+
+  throw new Error("Timed out waiting for scroll input to change the rendered review frame.");
+}
+
 describe("Vertical scrollbar", () => {
   test("shows scrollbar when content exceeds viewport height", async () => {
-    const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 20,
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { scrollRef } = createTestScrollRef();
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={40}
+        theme={theme}
+        height={10}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
 
-      // Trigger scroll activity to make scrollbar appear
       await act(async () => {
-        await setup.mockInput.pressArrow("down");
-        await flush(setup);
+        handle.current?.show();
       });
+      await flush(setup);
 
-      // Wait for scrollbar to render
-      await act(async () => {
-        await Bun.sleep(100);
-        await setup.renderOnce();
-      });
-
-      const frame = setup.captureCharFrame();
-      // Look for scrollbar characters in the rightmost column
-      // The scrollbar renders as background-colored cells (spaces with ANSI color codes)
-      // which appear as regular spaces in captureCharFrame
-      // Instead, check that content is scrollable by verifying we can scroll down
-      expect(frame).toBeTruthy();
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -120,35 +183,42 @@ describe("Vertical scrollbar", () => {
   });
 
   test("hides scrollbar after scroll activity stops", async () => {
-    const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 20,
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const scrollRef = createRef<{
+      scrollTop: number;
+      scrollTo: (y: number) => void;
+      viewport: { height: number };
+    }>();
+    scrollRef.current = { scrollTop: 0, scrollTo: () => {}, viewport: { height: 10 } };
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={40}
+        theme={theme}
+        height={10}
+        hideDelayMs={120}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
-
-      // Trigger scroll activity
-      await act(async () => {
-        await setup.mockInput.pressArrow("down");
-        await flush(setup);
-      });
-
-      // Verify app is responsive
-      const frame = setup.captureCharFrame();
-      expect(frame).toBeTruthy();
-
-      // Wait for auto-hide timeout (2 seconds + buffer)
-      await Bun.sleep(2500);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
 
       await act(async () => {
-        await setup.renderOnce();
+        handle.current?.show();
       });
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
-      // After auto-hide, the app should still be functional
-      const frameAfter = setup.captureCharFrame();
-      expect(frameAfter).toBeTruthy();
+      // Keep a wide margin beyond the deadline for Windows CI timer granularity.
+      await act(async () => {
+        await Bun.sleep(180);
+      });
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -156,7 +226,7 @@ describe("Vertical scrollbar", () => {
     }
   });
 
-  test("scrollbar shows on mouse scroll wheel activity", async () => {
+  test("mouse wheel activity scrolls overflowing review content", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
@@ -165,23 +235,17 @@ describe("Vertical scrollbar", () => {
 
     try {
       await flush(setup);
+      const initialFrame = setup.captureCharFrame();
 
-      // Wait for initial state to settle
-      await Bun.sleep(500);
-      await act(async () => {
-        await setup.renderOnce();
-      });
-
-      // Trigger mouse scroll
       await act(async () => {
         await setup.mockMouse.scroll(50, 10, "down");
-        await Bun.sleep(100);
-        await setup.renderOnce();
       });
+      await flush(setup);
 
-      // Verify scroll activity was processed
-      const frame = setup.captureCharFrame();
-      expect(frame).toBeTruthy();
+      const scrolledFrame = await waitForFrameChange(setup, initialFrame);
+      // Character frames omit background-only scrollbar cells, so changed review rows prove that
+      // the wheel moved visible content rather than merely revealing the scrollbar.
+      expect(scrolledFrame.split("\n").slice(2)).not.toEqual(initialFrame.split("\n").slice(2));
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -189,68 +253,42 @@ describe("Vertical scrollbar", () => {
     }
   });
 
-  test("up/down arrow keys enable scrolling", async () => {
-    // Create a file with enough content to scroll
-    const before = Array.from(
-      { length: 30 },
-      (_, j) => `export const line${String(j + 1).padStart(2, "0")} = ${j + 1};`,
-    ).join("\n");
-    const after = before.replace("line15 = 15", "line15 = 115 // modified");
-
-    const bootstrap: AppBootstrap = {
-      reloadContext: { cwd: process.cwd() },
-      input: {
-        kind: "vcs",
-        staged: false,
-        options: { mode: "split" },
-      },
-      changeset: {
-        id: "scroll-test",
-        sourceLabel: "repo",
-        title: "scrollable test",
-        files: [createDiffFile("scroll", "src/scroll.ts", before, after)],
-      },
-      initialMode: "split",
-      initialTheme: "github-dark-default",
-    };
-
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 15, // Small viewport to force scrolling
-    });
+  test("repeated activity restarts the auto-hide deadline", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { scrollRef } = createTestScrollRef();
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={40}
+        theme={theme}
+        height={10}
+        hideDelayMs={120}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
+      // Real timers, so keep wide margins on both sides of the deadline:
+      // Windows CI timer granularity oversleeps enough to flip tight ones.
       await act(async () => {
+        handle.current?.show();
         await Bun.sleep(100);
+        handle.current?.show();
+        await Bun.sleep(60);
       });
+      await flush(setup);
+      // 160ms since the first show() but only 60ms since the second: still
+      // visible only because the second show() restarted the deadline.
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
-      // Verify app renders and is responsive to scroll commands
-      const frame1 = setup.captureCharFrame();
-      expect(frame1).toContain("line");
-
-      // Press down arrow multiple times to scroll
-      for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          await setup.mockInput.pressArrow("down");
-          await flush(setup);
-        });
-      }
-
-      // Verify content changed after scrolling
-      const frame2 = setup.captureCharFrame();
-      expect(frame2).toContain("line");
-
-      // Press up arrow to scroll back
-      for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          await setup.mockInput.pressArrow("up");
-          await flush(setup);
-        });
-      }
-
-      const frame3 = setup.captureCharFrame();
-      expect(frame3).toContain("line");
+      await act(async () => {
+        await Bun.sleep(180);
+      });
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -259,43 +297,28 @@ describe("Vertical scrollbar", () => {
   });
 
   test("scrollbar is hidden when content fits in viewport", async () => {
-    // Create bootstrap with just 1 small file
-    const before = "export const a = 1;\n";
-    const after = "export const a = 2;\n";
-    const bootstrap: AppBootstrap = {
-      reloadContext: { cwd: process.cwd() },
-      input: {
-        kind: "vcs",
-        staged: false,
-        options: {
-          mode: "split",
-        },
-      },
-      changeset: {
-        id: "scroll-test-small",
-        sourceLabel: "repo",
-        title: "small test changeset",
-        files: [createDiffFile("small", "src/small.ts", before, after)],
-      },
-      initialMode: "split",
-      initialTheme: "github-dark-default",
-    };
-
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 60, // Large viewport
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { scrollRef } = createTestScrollRef();
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={10}
+        theme={theme}
+        height={10}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
       await act(async () => {
-        await Bun.sleep(100);
-        await setup.renderOnce();
+        handle.current?.show();
       });
+      await flush(setup);
 
-      const frame = setup.captureCharFrame();
-      // Small content in large viewport should be fully visible
-      expect(frame).toContain("export const a =");
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -304,64 +327,33 @@ describe("Vertical scrollbar", () => {
   });
 
   test("thumb drag scrolls content", async () => {
-    // Create a file with many lines to ensure scrolling
-    const before = Array.from({ length: 100 }, (_, j) => `line${j + 1}`).join("\n");
-    const after = before.replace("line50", "line50modified");
-
-    const bootstrap: AppBootstrap = {
-      reloadContext: { cwd: process.cwd() },
-      input: {
-        kind: "vcs",
-        staged: false,
-        options: { mode: "split" },
-      },
-      changeset: {
-        id: "drag-test",
-        sourceLabel: "repo",
-        title: "drag test",
-        files: [createDiffFile("drag", "src/drag.ts", before, after)],
-      },
-      initialMode: "split",
-      initialTheme: "github-dark-default",
-    };
-
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 20, // Small viewport to force scrolling
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { positions, scrollRef } = createTestScrollRef();
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={100}
+        theme={theme}
+        height={10}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
       await act(async () => {
-        await Bun.sleep(100);
+        handle.current?.show();
       });
+      await flush(setup);
 
-      // Get initial frame - app centers on the hunk at line 50
-      const frame1 = setup.captureCharFrame();
-      expect(frame1).toContain("line50");
-
-      // Drag scrollbar thumb down (rightmost column is scrollbar at x=159, y ranges 0-19)
-      // Thumb should be at some position, drag it down to scroll
       await act(async () => {
-        // Drag from top area of scrollbar down
-        await setup.mockMouse.drag(159, 2, 159, 10);
-        await flush(setup);
-        await Bun.sleep(100);
+        await setup.mockMouse.drag(1, 0, 1, 4);
       });
+      await flush(setup);
 
-      // After dragging down, we should see different content
-      const frame2 = setup.captureCharFrame();
-      expect(frame2).toBeTruthy();
-
-      // Drag back up
-      await act(async () => {
-        await setup.mockMouse.drag(159, 10, 159, 2);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
-
-      const frame3 = setup.captureCharFrame();
-      expect(frame3).toBeTruthy();
+      expect(positions.at(-1)).toBeCloseTo(45, 0);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -370,74 +362,38 @@ describe("Vertical scrollbar", () => {
   });
 
   test("track click scrolls by one viewport", async () => {
-    // Create a file with many lines to ensure scrolling
-    const lines = Array.from({ length: 80 }, (_, j) => `line${String(j + 1).padStart(3, "0")}`);
-    const before = lines.join("\n");
-    const after = before.replace("line040", "line040modified");
-
-    const bootstrap: AppBootstrap = {
-      reloadContext: { cwd: process.cwd() },
-      input: {
-        kind: "vcs",
-        staged: false,
-        options: { mode: "split" },
-      },
-      changeset: {
-        id: "track-click-test",
-        sourceLabel: "repo",
-        title: "track click test",
-        files: [createDiffFile("track", "src/track.ts", before, after)],
-      },
-      initialMode: "split",
-      initialTheme: "github-dark-default",
-    };
-
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 15, // Viewport of 15 lines
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { positions, scrollRef } = createTestScrollRef(20);
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={100}
+        theme={theme}
+        height={10}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
       await act(async () => {
-        await Bun.sleep(100);
+        handle.current?.show();
       });
+      await flush(setup);
 
-      // Get initial content - app centers on the hunk at line 40
-      const frame1 = setup.captureCharFrame();
-      expect(frame1).toContain("line040");
-
-      // First scroll down a bit to make scrollbar visible and move thumb down
       await act(async () => {
-        for (let i = 0; i < 5; i++) {
-          await setup.mockInput.pressArrow("down");
-        }
-        await flush(setup);
-        await Bun.sleep(100);
+        await setup.mockMouse.click(1, 8);
       });
+      await flush(setup);
+      expect(positions.at(-1)).toBe(30);
 
-      // Click on scrollbar track below thumb to page down
-      // Scrollbar is at rightmost column (x=159), click near bottom
       await act(async () => {
-        await setup.mockMouse.click(159, 12);
-        await flush(setup);
-        await Bun.sleep(100);
+        await setup.mockMouse.click(1, 0);
       });
-
-      const frame2 = setup.captureCharFrame();
-      // Should have scrolled down further after track click
-      expect(frame2).toBeTruthy();
-
-      // Click on scrollbar track above thumb to page up
-      await act(async () => {
-        await setup.mockMouse.click(159, 2);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
-
-      const frame3 = setup.captureCharFrame();
-      // Should have scrolled back up
-      expect(frame3).toBeTruthy();
+      await flush(setup);
+      expect(positions.at(-1)).toBe(10);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -446,67 +402,33 @@ describe("Vertical scrollbar", () => {
   });
 
   test("handles edge case when content barely exceeds viewport", async () => {
-    // Create content that's just slightly larger than viewport
-    // This tests the division-by-zero guard in drag calculations
-    // Use the same pattern as other tests which work correctly
-    const before = Array.from(
-      { length: 25 },
-      (_, j) => `export const line${String(j + 1).padStart(2, "0")} = ${j + 1};`,
-    ).join("\n");
-    const after = before.replace("line08 = 8;", "line08 = 999; // modified");
-
-    const bootstrap: AppBootstrap = {
-      reloadContext: { cwd: process.cwd() },
-      input: {
-        kind: "vcs",
-        staged: false,
-        options: { mode: "split" },
-      },
-      changeset: {
-        id: "edge-case-test",
-        sourceLabel: "repo",
-        title: "edge case test",
-        files: [createDiffFile("edge", "src/edge.ts", before, after)],
-      },
-      initialMode: "split",
-      initialTheme: "github-dark-default",
-    };
-
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
-      width: 160,
-      height: 15, // Small viewport to force scrolling (25 lines of content in 15-line viewport)
-    });
+    const theme = resolveTheme("github-dark-default", null);
+    const handle = createRef<VerticalScrollbarHandle>();
+    const { positions, scrollRef } = createTestScrollRef();
+    const setup = await testRender(
+      <VerticalScrollbar
+        ref={handle}
+        scrollRef={scrollRef}
+        contentHeight={11}
+        theme={theme}
+        height={10}
+      />,
+      { width: 2, height: 10 },
+    );
 
     try {
       await flush(setup);
       await act(async () => {
-        await Bun.sleep(100);
+        handle.current?.show();
       });
+      await flush(setup);
 
-      // Verify app renders with the hunk visible - look for the modified line
-      const frame1 = setup.captureCharFrame();
-      expect(frame1).toContain("line08");
-
-      // Try to drag - should not crash with division by zero
       await act(async () => {
-        await setup.mockMouse.drag(159, 0, 159, 5);
-        await flush(setup);
-        await Bun.sleep(100);
+        await setup.mockMouse.drag(1, 0, 1, 5);
       });
+      await flush(setup);
 
-      // App should still be responsive after drag attempt
-      const frame2 = setup.captureCharFrame();
-      expect(frame2).toBeTruthy();
-
-      // Try track click - should not crash
-      await act(async () => {
-        await setup.mockMouse.click(159, 10);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
-
-      const frame3 = setup.captureCharFrame();
-      expect(frame3).toBeTruthy();
+      expect(positions.at(-1)).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -1,9 +1,13 @@
 ---
 import Search from "@astrojs/starlight/components/Search.astro";
 import BrandHeader from "../BrandHeader.astro";
+
+// Starlight renders the changelog and the docs through the same shell, so the active nav item
+// comes from the route rather than the component that mounted it.
+const current = Astro.url.pathname.startsWith("/changelog") ? "changelog" : "docs";
 ---
 
-<BrandHeader current="docs" context="docs">
+<BrandHeader current={current} context="docs">
   <div slot="tools" class="docs-header-tools print:hidden">
     <Search />
   </div>

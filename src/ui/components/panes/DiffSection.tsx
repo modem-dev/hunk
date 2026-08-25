@@ -1,29 +1,39 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import type { DiffFile } from "../../../core/changeset/model";
+import type { LayoutMode } from "../../../core/run/commandInputs";
+import type { UserNoteLineTarget } from "../../../core/liveComments";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
-import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import { DiffSectionBody, type ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
+import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
-import type { CopySelectedRowRange } from "./copySelection";
+import type { ValidatedLineHighlight } from "../../highlights/validate";
+import type { CopySelectedRowRange } from "../../lib/diffSpatial";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { FileView, type FileViewRowFailure } from "./FileView";
+import { FileView } from "./FileView";
+import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
+  /** Validated extension marks for this file, in source coordinates. */
+  extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
   fileView?: ResolvedFileViewLayout;
+  offloadLargeDiff: boolean;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorHighlight?: CursorHighlight;
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -45,6 +55,7 @@ interface DiffSectionProps {
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
 }
@@ -53,14 +64,17 @@ interface DiffSectionProps {
 function DiffSectionComponent({
   codeHorizontalOffset,
   expandedGapKeys,
+  extensionLineHighlights,
   file,
   fileView,
+  offloadLargeDiff,
   headerLabelWidth,
   headerStatsWidth,
   layout,
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorHighlight,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -82,6 +96,7 @@ function DiffSectionComponent({
   onFileViewRowFailure,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
+  onRowPlanChange,
   onSelect,
   onToggleGap,
 }: DiffSectionProps) {
@@ -137,6 +152,7 @@ function DiffSectionComponent({
               rowBoundsByStableKey: new Map(),
             }
           }
+          cursorHighlight={cursorHighlight}
           selectedHunkIndex={selectedHunkIndex}
           theme={theme}
           visibleBodyBounds={visibleBodyBounds}
@@ -144,10 +160,12 @@ function DiffSectionComponent({
           onRowFailure={onFileViewRowFailure}
         />
       ) : (
-        <PierreDiffView
+        <DiffSectionBody
           expandedGapKeys={expandedGapKeys}
+          extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
+          offloadLargeDiff={offloadLargeDiff}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           sourceStatus={sourceStatus}
@@ -156,6 +174,7 @@ function DiffSectionComponent({
           codeHorizontalOffset={codeHorizontalOffset}
           copySelectedRowRanges={copySelectedRowRanges}
           copySelectedSide={copySelectedSide}
+          cursorHighlight={cursorHighlight}
           theme={theme}
           width={viewWidth}
           visibleAgentNotes={visibleAgentNotes}
@@ -164,6 +183,7 @@ function DiffSectionComponent({
           onHover={onHover}
           onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
           onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+          onRowPlanChange={onRowPlanChange}
           onToggleGap={onToggleGap}
           selectedHunkIndex={selectedHunkIndex}
           sectionGeometry={sectionGeometry}
@@ -185,14 +205,17 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
+    previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&
+    previous.offloadLargeDiff === next.offloadLargeDiff &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.cursorHighlight === next.cursorHighlight &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
@@ -209,6 +232,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.onFileViewRowFailure === next.onFileViewRowFailure &&
     previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
     previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+    previous.onRowPlanChange === next.onRowPlanChange &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

@@ -61,6 +61,37 @@ describe("PTY notes", () => {
     }
   });
 
+  test("a note anchored to collapsed lines renders inside its owning hunk", async () => {
+    const fixture = harness.createGapAnnotatedAgentFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--agent-context",
+        fixture.agentContext,
+      ],
+      cols: 140,
+      rows: 30,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("a");
+      const withNotes = await session.waitForText(/GAP NOTE/, { timeout: 5_000 });
+
+      // Lines 6-7 are collapsed away, so the note hangs from the hunk that owns the gap:
+      // it lands just below that hunk's first row, not at the top of the file.
+      const noteIndex = lineIndexOf(withNotes, "GAP NOTE");
+      expect(noteIndex).toBeGreaterThan(lineIndexOf(withNotes, "line8 = 8;"));
+      expect(noteIndex).toBeLessThan(lineIndexOf(withNotes, "line9 = 9;"));
+    } finally {
+      session.close();
+    }
+  });
+
   test("experimental launches render STML note bodies", async () => {
     const fixture = harness.createAgentFilePair();
     const session = await harness.launchHunk({
@@ -84,6 +115,92 @@ describe("PTY notes", () => {
       const withMarkup = await session.waitForText(/STML ACTIVE/, { timeout: 5_000 });
 
       expect(withMarkup).not.toContain("Highlights the follow-up addition for review.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("opening a draft keeps the active line fixed while pushing following code down", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 120,
+      rows: 26,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.waitIdle({ timeout: 500 });
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const beforePushedDraft = await session.text({ immediate: true });
+      const firstActiveLine = "export const line09 = 9;";
+      const followingLine = "export const line10 = 10;";
+      const firstActiveRow = lineIndexOf(beforePushedDraft, firstActiveLine);
+      const followingRowBefore = lineIndexOf(beforePushedDraft, followingLine);
+
+      await session.press("c");
+      await session.waitForText(/Draft note - before\.ts -> after\.ts L9/, { timeout: 5_000 });
+      await sleep(100);
+      const pushedDraft = await session.text({ immediate: true });
+
+      expect(firstActiveRow).toBeGreaterThan(0);
+      expect(lineIndexOf(pushedDraft, firstActiveLine)).toBe(firstActiveRow);
+      expect(lineIndexOf(pushedDraft, "Draft note")).toBe(firstActiveRow + 1);
+      expect(lineIndexOf(pushedDraft, followingLine)).toBeGreaterThan(followingRowBefore);
+
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const beforeBottomDraft = await session.text({ immediate: true });
+      const bottomActiveLine = "export const line17 = 17;";
+      const bottomActiveRow = lineIndexOf(beforeBottomDraft, bottomActiveLine);
+      expect(bottomActiveRow).toBeGreaterThan(0);
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const bottomDraft = await session.text({ immediate: true });
+
+      expect(lineIndexOf(bottomDraft, bottomActiveLine)).toBe(bottomActiveRow);
+      expect(lineIndexOf(bottomDraft, "Draft note")).toBe(bottomActiveRow + 1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("cursor-line-off drafts still reveal their default target and full composer", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack", "--cursor-line", "off"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      // Paging is a render, not a keypress: snapshotting before it settles reads
+      // the pre-scroll frame. The same page-down assertion in cursor-line.test.ts
+      // brackets the key with the same waits.
+      await session.waitIdle({ timeout: 300 });
+      await session.press("space");
+      await session.waitIdle({ timeout: 400 });
+      const paged = await session.text({ immediate: true });
+      expect(paged).not.toContain("export const line01 = 1;");
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const draft = await session.text({ immediate: true });
+
+      expect(draft).toContain("Draft note - before.ts -> after.ts R1");
+      expect(draft).toContain("Cancel (Esc)");
     } finally {
       session.close();
     }
@@ -140,6 +257,42 @@ describe("PTY notes", () => {
       const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
       expect(savedNote).toContain("Please cover this edge case.");
       expect(savedNote).toContain("Second line.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("CJK draft notes wrap instead of scrolling out of view in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      // 48 characters, 86 cells: past the wrap point of any reasonable
+      // composer width, and long enough that a code-unit row estimate would
+      // keep the composer at one row.
+      const body =
+        "这个包主要是为了在普通的chatmodel外面包一层,把工具调用的编号统一转换后再返回给调用方使用";
+      await session.type(body);
+
+      const draft = await session.waitForText(/这个包主要是为了/, { timeout: 5_000 });
+      expect(draft).toContain(body.slice(0, 10));
+      expect(draft).toContain(body.slice(-6));
+
+      await session.type("\x13");
+      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(savedNote).toContain(body.slice(0, 10));
+      expect(savedNote).toContain(body.slice(-6));
     } finally {
       session.close();
     }
@@ -368,9 +521,19 @@ describe("PTY notes", () => {
       const targetRow = lineIndexOf(initial, "keep = true");
       expect(targetRow).toBeGreaterThan(0);
 
-      await revealAddNoteOnRow(session, targetRow);
+      // Put the keyboard cursor on the deletion, then click the separate context row. Opening the
+      // clicked draft must preserve the clicked row rather than the old keyboard-cursor anchor.
+      await session.press("down");
+      const beforeDraft = await session.text({ immediate: true });
+      const clickedRowBefore = lineIndexOf(beforeDraft, "keep = true");
+      await revealAddNoteOnRow(session, clickedRowBefore);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await sleep(100);
+      const withDraft = await session.text({ immediate: true });
+      expect(lineIndexOf(withDraft, "keep = true")).toBe(clickedRowBefore);
+      expect(lineIndexOf(withDraft, "Draft note")).toBeGreaterThan(clickedRowBefore);
+
       await session.type("Save this context draft.");
       await session.press(["ctrl", "s"]);
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
@@ -406,9 +569,9 @@ describe("PTY notes", () => {
       );
       expect(whileFocused).toContain("Draft note");
 
-      // Keyboard cancellation is covered above; click the explicit control here so this test can
-      // focus on whether app-level shortcuts are blocked only while the composer is active.
-      await session.click(/Cancel \(Esc\)/);
+      // Cancel from the focused editor so the tight viewport can keep the target line fixed even
+      // when the form's action row is intentionally below the visible bounds.
+      await session.press("escape");
       await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
       await session.press("]");
       const afterCancel = await harness.waitForSnapshot(

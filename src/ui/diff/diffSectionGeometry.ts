@@ -1,5 +1,6 @@
-import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, LayoutMode } from "../../core/types";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";
@@ -11,7 +12,7 @@ import { type FileSourceStatus } from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
-} from "./plannedReviewRows";
+} from "./reviewRowGeometry";
 import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
@@ -23,6 +24,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
   stableKey: string;
   stableKeys: string[];
+  /** Exact collapsed gap that produced this synthesized source row. */
+  expandedGapKey?: string;
 }
 
 /**
@@ -257,7 +260,7 @@ function measurePlannedDiffSectionRowHeight(
   );
 }
 
-/** Measure one file section from the same render plan used by PierreDiffView. */
+/** Measure one file section from the same render plan used by DiffSectionBody. */
 export function measureDiffSectionGeometry(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
@@ -348,6 +351,11 @@ export function measureDiffSectionGeometry(
       key: row.key,
       stableKey: row.stableKey,
       stableKeys,
+      ...(row.kind === "diff-row" &&
+      (row.row.type === "split-line" || row.row.type === "stack-line") &&
+      row.row.expandedGapKey
+        ? { expandedGapKey: row.row.expandedGapKey }
+        : {}),
       // Record both the starting top and the measured height so callers can translate between
       // scroll positions and stable review-row identities across wrap/layout changes.
       top: bodyHeight,
@@ -417,24 +425,4 @@ export function estimateDiffSectionBodyRows(
   theme: AppTheme,
 ) {
   return measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).bodyHeight;
-}
-
-/** Estimate the body-row position for the anchor that should represent the selected hunk. */
-export function estimateHunkAnchorBodyRow(
-  file: DiffFile,
-  layout: Exclude<LayoutMode, "auto">,
-  showHunkHeaders: boolean,
-  hunkIndex: number,
-  theme: AppTheme,
-) {
-  if (file.metadata.hunks.length === 0) {
-    return 0;
-  }
-
-  const clampedHunkIndex = Math.max(0, Math.min(hunkIndex, file.metadata.hunks.length - 1));
-  return (
-    measureDiffSectionGeometry(file, layout, showHunkHeaders, theme).hunkAnchorRows.get(
-      clampedHunkIndex,
-    ) ?? 0
-  );
 }

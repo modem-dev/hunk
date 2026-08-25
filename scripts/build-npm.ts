@@ -132,9 +132,9 @@ runBun([
 
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.extension.json")]);
 
-// The extension entry re-exports core façade types, so its declarations span several
-// source directories. Ship the emitted tree as-is and point the subpath export at a
-// one-line barrel so consumers still resolve `hunkdiff/extension` from a single file.
+// The extension entry emits only the import-free public API declaration tree. Ship it
+// as-is and point the subpath export at a one-line barrel so consumers still resolve
+// `hunkdiff/extension` from a single file.
 // The specifier carries an explicit `.js` extension because `moduleResolution:
 // "nodenext"` consumers reject extensionless relative imports in ESM declarations.
 cpSync(extensionTypesOutdir, extensionOutdir, { recursive: true });

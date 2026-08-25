@@ -1,7 +1,7 @@
 // Profile large split-mode review streams by timing the main pure planning stages
 // before the React tree and renderer get involved.
 import { performance } from "perf_hooks";
-import { buildSplitRows } from "../src/ui/diff/pierre";
+import { buildSplitRows } from "../src/ui/diff/diffRows";
 import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
 import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
 import { resolveTheme } from "../src/ui/themes";

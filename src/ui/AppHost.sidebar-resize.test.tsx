@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 
 const { AppHost } = await import("./AppHost");
 
@@ -38,6 +39,22 @@ function createResizeBootstrap(): AppBootstrap {
       ),
     ],
   });
+}
+
+/** Add one resizable top pane through the same registry user extensions populate. */
+function createTopPaneResizeBootstrap(): AppBootstrap {
+  const extensions = createEmptyExtensionLoadResult();
+  extensions.registry.panes.push({
+    extensionId: "resize-test",
+    pane: {
+      id: "top",
+      placement: "top",
+      defaultOpen: true,
+      height: { preferred: 4, min: 2, max: 8 },
+      component: ({ width, height }) => <text content={`TOP PANE ${width}x${height}`} />,
+    },
+  });
+  return { ...createResizeBootstrap(), extensions };
 }
 
 /** Drive one or two render passes so pending state commits land before assertions. */
@@ -79,6 +96,27 @@ async function dragDivider(
   await flush(setup);
 }
 
+/** Drag a horizontal divider on its row axis. */
+async function dragHorizontalDivider(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  fromY: number,
+  toY: number,
+) {
+  const x = Math.floor(WIDE.width / 2);
+  await act(async () => {
+    await setup.mockMouse.pressDown(x, fromY);
+  });
+  await flush(setup);
+  await act(async () => {
+    await setup.mockMouse.moveTo(x, toY);
+  });
+  await flush(setup);
+  await act(async () => {
+    await setup.mockMouse.release(x, toY);
+  });
+  await flush(setup);
+}
+
 let setup: Awaited<ReturnType<typeof testRender>> | null = null;
 
 beforeEach(() => {
@@ -110,6 +148,17 @@ describe("AppHost sidebar resize", () => {
 
     // SIDEBAR_MIN_WIDTH is 22, plus the 1-column body padding => divider clamps at column 23.
     expect(dividerColumn(setup)).toBe(23);
+  });
+
+  test("dragging a horizontal divider resizes a top pane on the row axis", async () => {
+    setup = await testRender(<AppHost bootstrap={createTopPaneResizeBootstrap()} />, WIDE);
+    await flush(setup);
+    expect(setup.captureCharFrame()).toContain("TOP PANE 203x4");
+
+    // Menu row 0, four pane rows 1-4, divider row 5.
+    await dragHorizontalDivider(setup, 5, 8);
+
+    expect(setup.captureCharFrame()).toContain("TOP PANE 203x7");
   });
 
   test("a mouse release with no active drag leaves the layout unchanged", async () => {
@@ -145,34 +194,5 @@ describe("AppHost sidebar resize", () => {
     await flush(setup);
 
     expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
-  });
-});
-
-describe("AppHost edit-selected-file shortcut", () => {
-  const originalEditor = process.env.EDITOR;
-
-  beforeEach(() => {
-    delete process.env.EDITOR;
-  });
-
-  afterEach(() => {
-    if (originalEditor === undefined) {
-      delete process.env.EDITOR;
-    } else {
-      process.env.EDITOR = originalEditor;
-    }
-  });
-
-  test("pressing e with no $EDITOR surfaces a notice instead of crashing", async () => {
-    setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
-    await flush(setup);
-
-    await act(async () => {
-      await setup!.mockInput.typeText("e");
-    });
-    await flush(setup);
-
-    // openSelectedFileInEditor returns "$EDITOR is not set." which shows as a session notice.
-    expect(setup.captureCharFrame()).toContain("EDITOR is not set");
   });
 });

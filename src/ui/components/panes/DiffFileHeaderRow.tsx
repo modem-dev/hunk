@@ -1,6 +1,5 @@
-import type { DiffFile } from "../../../core/types";
-import { fileLabelParts } from "../../lib/files";
-import { fitText } from "../../lib/text";
+import type { DiffFile } from "../../../core/changeset/model";
+import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import type { AppTheme } from "../../themes";
 
 interface DiffFileHeaderRowProps {
@@ -19,9 +18,8 @@ export function DiffFileHeaderRow({
   theme,
   onSelect,
 }: DiffFileHeaderRowProps) {
-  const additionsText = `+${file.stats.additions}${file.statsTruncated ? "+" : ""}`;
-  const deletionsText = `-${file.stats.deletions}`;
-  const { filename, stateLabel } = fileLabelParts(file);
+  const { additionsText, deletionsText } = fileHeaderStats(file);
+  const { filename, stateLabel } = fitFileHeaderLabel(file, headerLabelWidth);
 
   return (
     <box
@@ -39,9 +37,7 @@ export function DiffFileHeaderRow({
     >
       {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
       <box style={{ flexDirection: "row" }}>
-        <text fg={theme.text}>
-          {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
-        </text>
+        <text fg={theme.text}>{filename}</text>
         {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
       </box>
       <box

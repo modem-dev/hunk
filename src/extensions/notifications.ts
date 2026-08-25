@@ -1,4 +1,4 @@
-import type { ExtensionNotifyType } from "./types";
+import type { ExtensionNotifyType } from "../extension-api/types";
 
 /**
  * Cap on notifications held while nothing is listening.

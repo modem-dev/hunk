@@ -15,22 +15,32 @@ const DOCS_HEAD_TAGS = [
 const MARKETING_HEAD_TAGS = [
   '<link rel="icon" href="/icon.png"',
   '<meta property="og:type" content="website"',
-  '<meta property="og:image" content="https://hunk.dev/og.png"',
   '<meta name="twitter:card" content="summary_large_image"',
-  '<meta name="twitter:image" content="https://hunk.dev/og.png"',
 ] as const;
-const REQUIRED_ASSETS = [
+/**
+ * Social image each marketing-shell route publishes.
+ *
+ * A route with a card of its own replaces the site-wide image rather than
+ * sitting beside it, so the pair is checked per route instead of globally.
+ */
+const MARKETING_SOCIAL_IMAGES: Record<string, string> = {
+  "index.html": "https://hunk.dev/og.png",
+  "extensions/index.html": "https://hunk.dev/extensions/og.png",
+};
+/** Public files every build must ship; the link-check test builds its fixture from this. */
+export const REQUIRED_ASSETS = [
   "apple-icon.png",
   "favicon.svg",
   "icon.png",
+  "extensions/og.png",
   "modem-light.svg",
   "og.png",
-  "shot-ember.webp",
-  "shot-graphite.webp",
-  "shot-latte.webp",
-  "shot-midnight.webp",
-  "shot-mocha.webp",
-  "shot-zenburn.webp",
+  "shot-catppuccin-mocha.webp",
+  "shot-github-dark.webp",
+  "shot-github-light.webp",
+  "shot-gruvbox.webp",
+  "shot-nord.webp",
+  "shot-tokyo-night.webp",
   "docs/favicon.svg",
   "docs/hunk-review-skill.md",
   "pagefind/pagefind.js",
@@ -75,8 +85,15 @@ function canonicalUrlForOutput(label: string) {
 }
 
 /** Return metadata required for one canonical page type. */
-function requiredHeadTags(label: string) {
-  if (label === "index.html") return MARKETING_HEAD_TAGS;
+function requiredHeadTags(label: string): readonly string[] {
+  const socialImage = MARKETING_SOCIAL_IMAGES[label];
+  if (socialImage) {
+    return [
+      ...MARKETING_HEAD_TAGS,
+      `<meta property="og:image" content="${socialImage}"`,
+      `<meta name="twitter:image" content="${socialImage}"`,
+    ];
+  }
   if (label.startsWith("docs/")) return DOCS_HEAD_TAGS;
   return [];
 }

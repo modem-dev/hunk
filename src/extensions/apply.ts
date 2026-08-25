@@ -1,8 +1,11 @@
-import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
-import type { StartupNotice } from "../core/startupNotice";
-import type { Changeset } from "../core/types";
-import { detectVcs, getDefaultVcsAdapter, isVcsId, resolveVcsAdapters } from "../core/vcs";
-import type { VcsAdapter } from "../core/vcs/types";
+import {
+  BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
+  registerFileLanguage,
+} from "../core/changeset/fileLanguage";
+import type { StartupNotice } from "../core/process/startupNotice";
+import type { Changeset } from "../core/changeset/model";
+import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
+import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import type {
   ExtensionContext,
@@ -10,7 +13,9 @@ import type {
   ExtensionRegistry,
   RegisteredCommand,
   RegisteredFileView,
-  RegisteredSidebarView,
+  RegisteredKeyboardMode,
+  RegisteredLineHighlighter,
+  RegisteredPane,
 } from "./types";
 
 /**
@@ -77,13 +82,14 @@ export interface ResolvedExtensionVcsAdapters {
  */
 export function resolveExtensionVcsAdapters(
   registry: ExtensionRegistry,
+  baseCatalog: VcsCatalog,
 ): ResolvedExtensionVcsAdapters {
   const adapters: VcsAdapter[] = [];
   const issues: ExtensionApplyIssue[] = [];
   const claimed = new Set<string>();
 
   for (const { extensionId, adapter } of registry.vcsAdapters) {
-    if (isVcsId(adapter.id)) {
+    if (baseCatalog.reservedIds.has(adapter.id)) {
       issues.push({
         extensionId,
         message: `Skipped VCS adapter "${adapter.id}" from extension ${extensionId} • a built-in backend owns that id`,
@@ -121,47 +127,48 @@ export function registeredViewKey(registered: { extensionId: string; view: { id:
   return qualifiedViewKey(registered.extensionId, registered.view.id);
 }
 
-/** Derive the key one sidebar view is addressed by everywhere in the app. */
-export function sidebarViewKey(registered: RegisteredSidebarView) {
-  return registeredViewKey(registered);
+/** Derive the key one pane is addressed by everywhere in the app. */
+export function paneKey(registered: RegisteredPane) {
+  return qualifiedViewKey(registered.extensionId, registered.pane.id);
 }
 
-/** The sidebar views one session offers, plus the registrations skipped as duplicates. */
-export interface ResolvedExtensionSidebarViews {
-  views: RegisteredSidebarView[];
+/** The panes one session offers, plus registrations skipped as duplicates. */
+export interface ResolvedExtensionPanes {
+  panes: RegisteredPane[];
   issues: ExtensionApplyIssue[];
 }
 
-/**
- * Collect every sidebar view a session offers.
- *
- * Registration is additive — any number of views coexist beside the built-in
- * file navigation — so the only thing resolved here is identity: two
- * registrations sharing one `<extensionId>:<viewId>` key would make open/close
- * state ambiguous, so the first wins and the duplicate is reported.
- */
-export function resolveExtensionSidebarViews(
-  registry: ExtensionRegistry,
-): ResolvedExtensionSidebarViews {
-  const views: RegisteredSidebarView[] = [];
+/** Resolve pane identities and replacement ownership in registration order. */
+export function resolveExtensionPanes(
+  registry: Pick<ExtensionRegistry, "panes">,
+): ResolvedExtensionPanes {
+  const panes: RegisteredPane[] = [];
   const issues: ExtensionApplyIssue[] = [];
-  const claimed = new Set<string>();
+  const claimedKeys = new Set<string>();
+  const claimedReplacementTargets = new Set<string>();
 
-  for (const registered of registry.sidebarViews) {
-    const key = sidebarViewKey(registered);
-    if (claimed.has(key)) {
+  for (const registered of registry.panes) {
+    const key = paneKey(registered);
+    if (claimedKeys.has(key)) {
       issues.push({
         extensionId: registered.extensionId,
-        message: `Skipped duplicate sidebar view "${key}" from extension ${registered.extensionId}`,
+        message: `Skipped duplicate pane "${key}" from extension ${registered.extensionId}`,
       });
       continue;
     }
-
-    claimed.add(key);
-    views.push(registered);
+    const replacementTarget = registered.pane.replaces;
+    if (replacementTarget && claimedReplacementTargets.has(replacementTarget)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped pane "${key}" from extension ${registered.extensionId} • another pane already replaces "${replacementTarget}"`,
+      });
+      continue;
+    }
+    claimedKeys.add(key);
+    if (replacementTarget) claimedReplacementTargets.add(replacementTarget);
+    panes.push(registered);
   }
-
-  return { views, issues };
+  return { panes, issues };
 }
 
 /** Derive the key one file view is addressed by everywhere in the app. */
@@ -196,6 +203,78 @@ export function resolveExtensionFileViews(registry: ExtensionRegistry): Resolved
   }
 
   return { views, issues };
+}
+
+/** Derive the key one line highlighter is addressed by everywhere in the app. */
+export function lineHighlighterKey(registered: RegisteredLineHighlighter) {
+  return qualifiedViewKey(registered.extensionId, registered.highlighter.id);
+}
+
+/** The line highlighters one session runs, plus registrations skipped as duplicates. */
+export interface ResolvedExtensionLineHighlighters {
+  highlighters: RegisteredLineHighlighter[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve line-highlighter identities while retaining registration order as the priority rule. */
+export function resolveExtensionLineHighlighters(
+  registry: ExtensionRegistry,
+): ResolvedExtensionLineHighlighters {
+  const highlighters: RegisteredLineHighlighter[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.lineHighlighters) {
+    const key = lineHighlighterKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate line highlighter "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    highlighters.push(registered);
+  }
+
+  return { highlighters, issues };
+}
+
+/** Derive the key one session keyboard mode is addressed by everywhere in the app. */
+export function keyboardModeKey(registered: RegisteredKeyboardMode) {
+  return qualifiedViewKey(registered.extensionId, registered.mode.id);
+}
+
+/** The session keyboard modes one session offers, plus duplicate diagnostics. */
+export interface ResolvedExtensionKeyboardModes {
+  modes: RegisteredKeyboardMode[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve session keyboard-mode identities with first registration winning. */
+export function resolveExtensionKeyboardModes(
+  registry: ExtensionRegistry,
+): ResolvedExtensionKeyboardModes {
+  const modes: RegisteredKeyboardMode[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.keyboardModes) {
+    const key = keyboardModeKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate keyboard mode "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    modes.push(registered);
+  }
+
+  return { modes, issues };
 }
 
 /** The commands one session offers, plus the registrations skipped as duplicates. */
@@ -235,10 +314,29 @@ export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedE
   return { commands, issues };
 }
 
+/** Host-level behavior resolved across every extension in one shared session. */
+export interface ResolvedExtensionSessionOptions {
+  /** Any transient request wins so a guide cannot accidentally persist practice state. */
+  transientViewPreferences: boolean;
+}
+
+/** Resolve extension session requests through their documented shared-session policy. */
+export function resolveExtensionSessionOptions(
+  registry: ExtensionRegistry,
+): ResolvedExtensionSessionOptions {
+  return {
+    transientViewPreferences: registry.sessionOptions.some(
+      ({ options }) => options.viewPreferences === "transient",
+    ),
+  };
+}
+
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */
 export interface AppliedExtensionRegistrations {
-  /** Extension adapters to thread into `loadAppBootstrap`. */
+  /** Accepted user adapters, retained for notices and extension-facing UI state. */
   vcsAdapters: VcsAdapter[];
+  /** Complete bundled plus user catalog used by loading, reload, and watch. */
+  vcsCatalog: VcsCatalog;
   issues: ExtensionApplyIssue[];
 }
 
@@ -251,34 +349,40 @@ export interface AppliedExtensionRegistrations {
  */
 export function applyExtensionRegistrations(
   result: ExtensionLoadResult | undefined,
+  baseCatalog: VcsCatalog,
 ): AppliedExtensionRegistrations {
   if (!result) {
-    return { vcsAdapters: [], issues: [] };
+    return { vcsAdapters: [], vcsCatalog: baseCatalog, issues: [] };
   }
 
   const languageIssues = applyExtensionFileLanguages(result.registry);
-  const vcs = resolveExtensionVcsAdapters(result.registry);
+  const vcs = resolveExtensionVcsAdapters(result.registry, baseCatalog);
   // Resolved again where the UI consumes them; consulted here so skipped
   // duplicate registrations surface through the same notice path as every
   // other refusal.
-  const sidebars = resolveExtensionSidebarViews(result.registry);
+  const panes = resolveExtensionPanes(result.registry);
   const fileViews = resolveExtensionFileViews(result.registry);
+  const lineHighlighters = resolveExtensionLineHighlighters(result.registry);
+  const keyboardModes = resolveExtensionKeyboardModes(result.registry);
   const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
+    vcsCatalog: extendVcsCatalog(baseCatalog, vcs.adapters),
     issues: [
       ...languageIssues,
       ...vcs.issues,
-      ...sidebars.issues,
+      ...panes.issues,
       ...fileViews.issues,
+      ...lineHighlighters.issues,
+      ...keyboardModes.issues,
       ...commands.issues,
     ],
   };
 }
 
 /** Report whether one id names a backend this session actually loaded. */
-function ownsVcsId(adapters: readonly VcsAdapter[], vcsId: string) {
-  return resolveVcsAdapters(adapters).some((adapter) => adapter.id === vcsId);
+function ownsVcsId(catalog: VcsCatalog, vcsId: string) {
+  return catalog.adapters.some((adapter) => adapter.id === vcsId);
 }
 
 /**
@@ -304,19 +408,14 @@ function ownsVcsId(adapters: readonly VcsAdapter[], vcsId: string) {
  */
 export function resolveDetectedVcsIdWithExtensions(
   cwd: string,
-  adapters: readonly VcsAdapter[],
+  catalog: VcsCatalog,
   explicitVcsId?: string,
 ): string | undefined {
-  if (adapters.length === 0) {
-    // Config already detected across exactly this adapter list.
+  if (explicitVcsId !== undefined && ownsVcsId(catalog, explicitVcsId)) {
     return undefined;
   }
 
-  if (explicitVcsId !== undefined && ownsVcsId(adapters, explicitVcsId)) {
-    return undefined;
-  }
-
-  return detectVcs(cwd, adapters)?.id;
+  return detectVcs(cwd, catalog)?.id;
 }
 
 /** The backend one session will load with, plus a configured id nothing owned. */
@@ -347,19 +446,19 @@ export interface ResolvedSessionVcsId {
 export function resolveSessionVcsId(
   configuredVcsId: string | undefined,
   cwd: string,
-  adapters: readonly VcsAdapter[],
+  catalog: VcsCatalog,
 ): ResolvedSessionVcsId {
   if (!configuredVcsId) {
     return { vcsId: configuredVcsId };
   }
 
-  if (ownsVcsId(adapters, configuredVcsId)) {
+  if (ownsVcsId(catalog, configuredVcsId)) {
     return { vcsId: configuredVcsId };
   }
 
   // Same fallback config itself would have produced had it dropped the id.
   return {
-    vcsId: detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id,
+    vcsId: detectVcs(cwd, catalog)?.id ?? getDefaultVcsAdapter(catalog).id,
     unknownVcsId: configuredVcsId,
   };
 }

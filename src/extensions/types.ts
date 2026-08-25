@@ -9,8 +9,11 @@ import type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionFileView,
+  ExtensionKeyboardMode,
+  ExtensionLineHighlighter,
   ExtensionNotifyType,
-  ExtensionSidebarView,
+  ExtensionPane,
+  ExtensionSessionOptions,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -28,44 +31,41 @@ export type {
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionCommandHandler,
-  ExtensionConfirmOptions,
   ExtensionContext,
   ExtensionCustomEventHandler,
-  ExtensionDialogs,
   ExtensionDiffFile,
   ExtensionEventBus,
   ExtensionEventContext,
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionEventPayloads,
-  ExtensionFileChangeRange,
   ExtensionFileSide,
   ExtensionFileView,
   ExtensionFileViewControls,
-  ExtensionFileViewInput,
-  ExtensionFileViewLayout,
-  ExtensionFileViewRow,
-  ExtensionFileViewRowComponentProps,
-  ExtensionFileViewSourceRange,
-  ExtensionFileViewSpan,
+  ExtensionFileViewModeKeyResult,
   ExtensionFactory,
-  ExtensionInputOptions,
+  ExtensionKeyEvent,
+  ExtensionKeyboardMode,
+  ExtensionKeyboardModeKeyResult,
+  ExtensionLineHighlighter,
+  ExtensionReviewControls,
   ExtensionReviewNote,
+  ExtensionReviewSnapshot,
+  ExtensionReviewSnapshotFile,
+  ExtensionReviewSnapshotLineAddress,
+  ExtensionReviewSnapshotNote,
+  ExtensionReviewSnapshotNoteAnchor,
   ExtensionNotifyType,
-  ExtensionPaintTheme,
-  ExtensionSelectOptions,
-  ExtensionSidebarActions,
-  ExtensionSidebarComponent,
-  ExtensionSidebarControls,
-  ExtensionSidebarPlacement,
-  ExtensionSidebarTheme,
+  ExtensionPane,
+  ExtensionPaneControls,
   ExtensionSidebarView,
-  ExtensionSidebarViewProps,
+  ExtensionSessionOptions,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
+  ExtensionWorkspace,
+  ExtensionWorkspaceWriteRequest,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
-  HunkExtensionApiVersion,
-  SessionReloadReason,
 } from "../extension-api/types";
 
 /**
@@ -93,6 +93,12 @@ export interface ExtensionCandidate {
   /** Absolute, resolved path to the entry file. */
   path: string;
   origin: ExtensionOrigin;
+  /**
+   * Minimum extension API version the folder's manifest requires
+   * (`"hunk": { "apiVersion": N }`). The host refuses the candidate before
+   * importing it when this Hunk's API is older.
+   */
+  requiresApiVersion?: number;
 }
 
 export interface RegisteredTheme {
@@ -117,9 +123,9 @@ export interface RegisteredChangesetTransform {
   transform: ChangesetTransform;
 }
 
-export interface RegisteredSidebarView {
+export interface RegisteredPane {
   extensionId: string;
-  view: ExtensionSidebarView;
+  pane: ExtensionPane;
 }
 
 /** A host-rendered alternative file presentation registered by one extension. */
@@ -128,10 +134,28 @@ export interface RegisteredFileView {
   view: ExtensionFileView;
 }
 
+/** A contributor of paint-time diff line marks registered by one extension. */
+export interface RegisteredLineHighlighter {
+  extensionId: string;
+  highlighter: ExtensionLineHighlighter;
+}
+
+/** One session-scoped keyboard mode registered by an extension. */
+export interface RegisteredKeyboardMode {
+  extensionId: string;
+  mode: ExtensionKeyboardMode;
+}
+
 export interface RegisteredCommand {
   extensionId: string;
   command: ExtensionCommand;
   handler: ExtensionCommandHandler;
+}
+
+/** One extension's host-level behavior request for the current session. */
+export interface RegisteredSessionOptions {
+  extensionId: string;
+  options: ExtensionSessionOptions;
 }
 
 export interface RegisteredEventHandler<Event extends ExtensionEventName = ExtensionEventName> {
@@ -165,12 +189,15 @@ export type ExtensionEventHandlerMap = {
 /** Everything extensions registered, in load order, for the rest of the app to consume. */
 export interface ExtensionRegistry {
   extensions: ExtensionMetadata[];
+  sessionOptions: RegisteredSessionOptions[];
   themes: RegisteredTheme[];
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
-  sidebarViews: RegisteredSidebarView[];
+  panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
+  lineHighlighters: RegisteredLineHighlighter[];
+  keyboardModes: RegisteredKeyboardMode[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   customEventHandlers: RegisteredCustomEventHandler[];
@@ -180,6 +207,8 @@ export interface ExtensionRegistry {
   eventBusPhase: "loading" | "ready" | "closed";
   /** Bound after loading so hunk.events.emit can dispatch at runtime. */
   emitCustomEvent?: (event: string, payload: unknown) => void;
+  /** Shared completion for the one terminal retirement of this registry. */
+  retirementPromise?: Promise<void>;
   logs: ExtensionLogEntry[];
 }
 
@@ -192,6 +221,13 @@ export interface ExtensionLoadIssue {
 }
 
 /** Result of one extension load pass. */
+export interface ExtensionLoadState {
+  /** Full discovery order used to build this registry, including refused candidates. */
+  candidates: readonly ExtensionCandidate[];
+  /** Config snapshot factories in this registry were created against. */
+  extensionConfigs: Record<string, Record<string, unknown>>;
+}
+
 export interface ExtensionLoadResult {
   registry: ExtensionRegistry;
   issues: ExtensionLoadIssue[];
@@ -211,6 +247,8 @@ export interface ExtensionLoadResult {
    * the same hub instead of orphaning the UI's subscription.
    */
   notifications: ExtensionNotificationHub;
+  /** Internal inputs retained so a staged pass can append newly discovered candidates safely. */
+  loadState: ExtensionLoadState;
   /**
    * Repo root holding repo-local extensions that have no trust decision yet.
    * Set only when such extensions exist and were therefore skipped, so the UI
@@ -239,16 +277,20 @@ export function deriveExtensionId(entryPath: string) {
 export function createEmptyExtensionRegistry(): ExtensionRegistry {
   return {
     extensions: [],
+    sessionOptions: [],
     themes: [],
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],
-    sidebarViews: [],
+    panes: [],
     fileViews: [],
+    lineHighlighters: [],
+    keyboardModes: [],
     commands: [],
     eventHandlers: {
       startup: [],
       changeset_loaded: [],
+      command_executed: [],
       selection_changed: [],
       file_viewed: [],
       filter_changed: [],
@@ -291,5 +333,6 @@ export function createEmptyExtensionLoadResult(
     loaded: [],
     context: createExtensionContext(cwd, notifications.notify),
     notifications,
+    loadState: { candidates: [], extensionConfigs: {} },
   };
 }

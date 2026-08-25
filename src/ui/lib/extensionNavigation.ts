@@ -46,6 +46,13 @@ export interface CreateGuardedReviewNavigationOptions {
   notify: ExtensionNotifySink;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
+  /**
+   * Jump to one source line, reporting which target the review could reach.
+   *
+   * `"line"` and `"hunk"` both moved the review; `"none"` means the line is nowhere in the
+   * file, which only this guard can report with the extension's name on it.
+   */
+  onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
 }
 
 /**
@@ -65,6 +72,7 @@ export function createGuardedReviewNavigation({
   notify,
   onSelectFile,
   onSelectHunk,
+  onRevealLine,
 }: CreateGuardedReviewNavigationOptions): ExtensionReviewNavigation {
   /** Resolve a navigation target, or report one the review stream cannot show. */
   const resolveVisibleFile = (method: string, fileId: string) => {
@@ -122,6 +130,38 @@ export function createGuardedReviewNavigation({
 
         const maxHunkIndex = Math.max(0, file.metadata.hunks.length - 1);
         onSelectHunk(fileId, Math.min(Math.max(0, Math.floor(hunkIndex)), maxHunkIndex));
+      });
+    },
+    revealLine(fileId: string, side: "old" | "new", line: number) {
+      guard("revealLine", () => {
+        if (!resolveVisibleFile("revealLine", fileId)) {
+          return;
+        }
+
+        // Line numbers are 1-based whole numbers as a patch writes them; anything else is a
+        // bug in the caller rather than a line the review failed to find.
+        if (side !== "old" && side !== "new") {
+          notify(
+            `Extension ${extensionId} revealLine received an invalid side for "${fileId}"`,
+            "warning",
+          );
+          return;
+        }
+
+        if (typeof line !== "number" || !Number.isInteger(line) || line < 1) {
+          notify(
+            `Extension ${extensionId} revealLine received an invalid line number for "${fileId}"`,
+            "warning",
+          );
+          return;
+        }
+
+        if (onRevealLine(fileId, side, line) === "none") {
+          notify(
+            `Extension ${extensionId} revealLine found no ${side} line ${line} in "${fileId}"`,
+            "warning",
+          );
+        }
       });
     },
   });

@@ -110,6 +110,7 @@ export function buildExtensionAppCommands(
       title: command.title,
       keys: bound.map((binding) => binding.chord),
       keyLabels: bound.map((binding) => formatKeyChord(binding.chord)),
+      publicToExtensions: false,
       match: (key) => bound.some((binding) => binding.match(key)),
       run: () => options.runCommand(registered),
       closesMenu: true,

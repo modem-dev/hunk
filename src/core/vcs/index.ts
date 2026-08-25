@@ -1,9 +1,10 @@
-import { dirname, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
-import { getBundledVcsAdapters } from "../../extensions/default/vcs";
-import { HunkUserError } from "../errors";
+import { HunkUserError } from "../run/errors";
+import type { CliInput } from "../run/commandInputs";
 import type {
   VcsAdapter,
+  VcsCatalog,
   VcsDetection,
   VcsId,
   VcsLoadContext,
@@ -14,16 +15,7 @@ import type {
   VcsReviewOperationKind,
 } from "./types";
 
-/** The backend a session falls back to when config names none. */
-const DEFAULT_VCS_ID = "git";
-
-/**
- * Order adapters the way detection consults them: highest priority first.
- *
- * The sort is stable, so adapters that declare the same priority keep the order
- * they were assembled in — bundled extensions in load order, then user
- * extensions in registration order.
- */
+/** Order adapters by detection priority while preserving assembly order for ties. */
 function orderByDetectionPriority(adapters: readonly VcsAdapter[]): VcsAdapter[] {
   return [...adapters].sort(
     (left, right) =>
@@ -32,104 +24,79 @@ function orderByDetectionPriority(adapters: readonly VcsAdapter[]): VcsAdapter[]
   );
 }
 
-/** Adapters that are part of the product, in detection order. */
-let builtInAdapters: VcsAdapter[] | undefined;
-
-/**
- * Return the adapters Hunk ships with, assembled once per process.
- *
- * Every one of them — Git included — comes from the bundled extension tier, so
- * this is a pure ordering step over what those factories registered. They are
- * all product behavior, they all take part in first-class detection, and they
- * all reserve their id against user extensions. Bundled loading is resolved
- * lazily so this module can be imported from anywhere in the graph without
- * depending on module evaluation order.
- */
-export function getBuiltInVcsAdapters(): readonly VcsAdapter[] {
-  builtInAdapters ??= orderByDetectionPriority(getBundledVcsAdapters());
-  return builtInAdapters;
+/** Create the complete provider-neutral adapter catalog used by a composition root. */
+export function createVcsCatalog(
+  adapters: readonly VcsAdapter[],
+  defaultAdapterId: VcsId,
+  reservedIds: Iterable<VcsId> = adapters.map((adapter) => adapter.id),
+): VcsCatalog {
+  return {
+    adapters: orderByDetectionPriority(adapters),
+    defaultAdapterId,
+    reservedIds: new Set(reservedIds),
+  };
 }
 
-/**
- * Combine the built-in adapters with the session's user-extension ones.
- *
- * This is the one place adapter order is decided. Ids owned by a built-in
- * backend are dropped here (callers report the skip once, at registration
- * time), and everything else sorts by `detectionPriority` — which puts user
- * adapters below Git unless they explicitly ask for more.
- */
-export function resolveVcsAdapters(extraAdapters: readonly VcsAdapter[] = []): VcsAdapter[] {
-  const builtIns = getBuiltInVcsAdapters();
-  if (extraAdapters.length === 0) {
-    return [...builtIns];
-  }
+/** Add user adapters without allowing them to replace ids owned by the base catalog. */
+export function extendVcsCatalog(
+  base: VcsCatalog,
+  extraAdapters: readonly VcsAdapter[],
+): VcsCatalog {
+  const claimed = new Set(base.adapters.map((adapter) => adapter.id));
+  const accepted = extraAdapters.filter((adapter) => {
+    if (base.reservedIds.has(adapter.id) || claimed.has(adapter.id)) {
+      return false;
+    }
+    claimed.add(adapter.id);
+    return true;
+  });
 
-  return orderByDetectionPriority([
-    ...builtIns,
-    ...extraAdapters.filter((adapter) => !isVcsId(adapter.id)),
-  ]);
+  return createVcsCatalog([...base.adapters, ...accepted], base.defaultAdapterId, base.reservedIds);
 }
 
-/** Return the fallback adapter used when config has not selected a provider explicitly. */
-export function getDefaultVcsAdapter(): VcsAdapter {
-  const adapter = getBuiltInVcsAdapters().find((candidate) => candidate.id === DEFAULT_VCS_ID);
+/** Return the catalog's fallback adapter. */
+export function getDefaultVcsAdapter(catalog: VcsCatalog): VcsAdapter {
+  const adapter = catalog.adapters.find((candidate) => candidate.id === catalog.defaultAdapterId);
   if (!adapter) {
-    // Only reachable if the bundled Git factory itself failed to load, which
-    // would leave Hunk with no default backend at all.
-    throw new HunkUserError("Hunk's bundled Git backend failed to load.", [
+    throw new HunkUserError(`Hunk's default ${catalog.defaultAdapterId} backend failed to load.`, [
       "Reinstall Hunk, or report this at https://github.com/modem-dev/hunk/issues.",
     ]);
   }
-
   return adapter;
 }
 
-/** Return the configured adapter, or the default adapter when no VCS id was supplied. */
-export function getConfiguredVcsAdapter(
-  id: VcsId | undefined,
-  extraAdapters: readonly VcsAdapter[] = [],
-): VcsAdapter {
-  return id ? getVcsAdapter(id, extraAdapters) : getDefaultVcsAdapter();
+/** Return the configured adapter, or the catalog default when no id was supplied. */
+export function getConfiguredVcsAdapter(id: VcsId | undefined, catalog: VcsCatalog): VcsAdapter {
+  return id ? getVcsAdapter(id, catalog) : getDefaultVcsAdapter(catalog);
 }
 
-export function getVcsAdapter(id: VcsId, extraAdapters: readonly VcsAdapter[] = []): VcsAdapter {
-  const adapter = resolveVcsAdapters(extraAdapters).find((candidate) => candidate.id === id);
+/** Resolve one adapter id from the complete session catalog. */
+export function getVcsAdapter(id: VcsId, catalog: VcsCatalog): VcsAdapter {
+  const adapter = catalog.adapters.find((candidate) => candidate.id === id);
   if (!adapter) {
     throw new Error(`Unsupported VCS: ${id}`);
   }
   return adapter;
 }
 
-/** Report whether one value names a backend Hunk ships with (core Git or a bundled one). */
-export function isVcsId(value: unknown): value is VcsId {
-  return getBuiltInVcsAdapters().some((adapter) => adapter.id === value);
+/** Report whether a catalog reserves one adapter id against user extensions. */
+export function isVcsId(value: unknown, catalog: VcsCatalog): value is VcsId {
+  return typeof value === "string" && catalog.reservedIds.has(value);
 }
 
-/**
- * Detect the nearest containing VCS checkout.
- *
- * Distance decides first, so a Git checkout nested inside a jj workspace is
- * reviewed as Git. Detection priority only breaks same-root ties — the
- * colocated case, where one directory carries markers for two backends.
- */
-export function detectVcs(
-  cwd: string,
-  extraAdapters: readonly VcsAdapter[] = [],
-): VcsDetection | null {
+/** Detect the nearest containing checkout across one complete catalog. */
+export function detectVcs(cwd: string, catalog: VcsCatalog): VcsDetection | null {
   const start = resolve(cwd);
   let bestDetection: VcsDetection | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (const adapter of resolveVcsAdapters(extraAdapters)) {
-    // Extension adapters run third-party detection code here; a throwing
-    // adapter must not stop the remaining adapters from being consulted.
+  for (const adapter of catalog.adapters) {
     let detected: VcsDetection | null;
     try {
       detected = adapter.detect(start);
     } catch {
       continue;
     }
-
     if (!detected) {
       continue;
     }
@@ -146,29 +113,12 @@ export function detectVcs(
   return bestDetection;
 }
 
-/**
- * Walk upward for the nearest directory a shipped backend calls a repo root.
- *
- * Config resolution and extension discovery both run before user extensions
- * exist, so this deliberately consults built-ins only — which, since the whole
- * bundled tier is loaded by then, still covers every backend Hunk ships with.
- */
-export function findVcsRepoRootCandidate(cwd = process.cwd()) {
-  let current = resolve(cwd);
-
-  for (;;) {
-    if (getBuiltInVcsAdapters().some((adapter) => adapter.detect(current)?.repoRoot === current)) {
-      return current;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-    current = parent;
-  }
+/** Return whether one CLI input loads a review through a VCS adapter. */
+export function isVcsReviewInput(input: CliInput): input is VcsReviewInput {
+  return input.kind === "vcs" || input.kind === "show" || input.kind === "stash-show";
 }
 
+/** Translate a CLI review input into the neutral operation map key. */
 export function operationFromInput(input: VcsReviewInput): VcsReviewOperation {
   switch (input.kind) {
     case "vcs":
@@ -180,14 +130,7 @@ export function operationFromInput(input: VcsReviewInput): VcsReviewOperation {
   }
 }
 
-/**
- * Return the adapter operation handler for one neutral review operation, if supported.
- *
- * The operation map is optional at the extension-authoring boundary and can be
- * missing entirely on an adapter registered from JavaScript, so a missing map
- * reads the same as a missing operation: unsupported, which callers turn into a
- * `HunkUserError` instead of a TypeError.
- */
+/** Return one operation handler from an adapter's optional operation map. */
 export function getVcsOperation(
   adapter: VcsAdapter,
   operation: VcsReviewOperation,
@@ -195,56 +138,58 @@ export function getVcsOperation(
   return adapter.operations?.[operation.kind] as VcsOperation<VcsReviewInput> | undefined;
 }
 
-/** Load a review through the adapter operation map instead of adapter-local switch dispatch. */
+/** Load a review through a provider-neutral adapter operation. */
 export async function loadVcsReview(
   adapter: VcsAdapter,
   operation: VcsReviewOperation,
   context: VcsLoadContext,
+  catalog: VcsCatalog,
 ): Promise<VcsPatchResult> {
   const handler = getVcsOperation(adapter, operation);
   if (!handler) {
-    throw createUnsupportedVcsOperationError(adapter, operation.kind);
+    throw createUnsupportedVcsOperationError(adapter, operation.kind, catalog);
   }
-
   return await handler.load(operation.input, context);
 }
 
-/** Build an adapter-backed event plan, falling back to signature polling when unsupported. */
+/** Build an adapter event plan, falling back to signature polling. */
 export function createVcsWatchPlan(
   adapter: VcsAdapter,
   operation: VcsReviewOperation,
   context: VcsLoadContext,
+  catalog: VcsCatalog,
 ) {
   const handler = getVcsOperation(adapter, operation);
   if (!handler) {
-    throw createUnsupportedVcsOperationError(adapter, operation.kind);
+    throw createUnsupportedVcsOperationError(adapter, operation.kind, catalog);
   }
-
   return handler.watchPlan?.(operation.input, context) ?? { coverage: "poll-only", targets: [] };
 }
 
-/** Build an adapter-backed watch signature when the selected operation supports it. */
+/** Build an adapter watch signature when the selected operation supports it. */
 export function createVcsWatchSignature(
   adapter: VcsAdapter,
   operation: VcsReviewOperation,
   context: VcsLoadContext,
+  catalog: VcsCatalog,
 ) {
   const handler = getVcsOperation(adapter, operation);
   if (!handler) {
-    throw createUnsupportedVcsOperationError(adapter, operation.kind);
+    throw createUnsupportedVcsOperationError(adapter, operation.kind, catalog);
   }
   if (!handler.watchSignature) {
     throw new Error(`${adapter.name} does not support watch signatures for ${operation.kind}.`);
   }
-
   return handler.watchSignature(operation.input, context);
 }
 
+/** Build a user-facing unsupported-operation error using the active catalog. */
 export function createUnsupportedVcsOperationError(
   adapter: VcsAdapter,
   operationKind: VcsReviewOperationKind,
+  catalog: VcsCatalog,
 ) {
-  const supportingAdapter = getBuiltInVcsAdapters().find(
+  const supportingAdapter = catalog.adapters.find(
     (candidate) => candidate.operations?.[operationKind],
   );
   if (operationKind === "stash-show" && supportingAdapter) {

@@ -2,7 +2,7 @@
 // fixed-width line/span rows.
 //
 // Hunk's review stream is row-windowed: every planned row must know its exact
-// terminal height before it mounts (see plannedReviewRows.ts). A flexbox
+// terminal height before it mounts (see reviewRowGeometry.ts). A flexbox
 // renderer cannot promise that, so this is a small deterministic layout
 // engine instead — the same (markup, width) input always produces the same
 // lines, and a note's height is simply `lines.length`.
@@ -11,6 +11,7 @@
 // against the active AppTheme happens at render time in resolveStmlColor, so
 // measurement never needs a theme.
 
+import { isInlineStmlRole, stmlTagRole } from "../../../core/review/stml";
 import { measureTextWidth, sliceTextByWidth } from "../text";
 import { decodeStmlEntities, parseStml, type StmlElement, type StmlNode } from "./parse";
 
@@ -55,26 +56,8 @@ export function validateStmlMarkup(markup: string, width: number = STML_REFERENC
 
 const MAX_LAYOUT_ERRORS = 20;
 
-const INLINE_TAGS = new Set([
-  "b",
-  "strong",
-  "i",
-  "em",
-  "u",
-  "dim",
-  "muted",
-  "s",
-  "strike",
-  "del",
-  "c",
-  "color",
-  "span",
-  "a",
-  "link",
-  "kbd",
-  "badge",
-  "br",
-]);
+/** Answer whether a tag joins inline flow, using core's shared tag vocabulary. */
+const isInlineTag = (tag: string) => isInlineStmlRole(stmlTagRole(tag));
 
 interface BorderChars {
   topLeft: string;
@@ -175,23 +158,18 @@ function attrStyle(attrs: Record<string, string>): StmlStyle {
 }
 
 function inlineStyle(tag: string, attrs: Record<string, string>): StmlStyle {
-  switch (tag) {
-    case "b":
+  switch (stmlTagRole(tag)) {
     case "strong":
       return { bold: true };
-    case "i":
-    case "em":
+    case "emphasis":
       return { italic: true };
-    case "u":
+    case "underline":
       return { underline: true };
-    case "s":
     case "strike":
-    case "del":
       return { strike: true };
-    case "dim":
     case "muted":
       return { dim: true };
-    case "kbd":
+    case "key":
       return { bg: "subtle", fg: "heading" };
     case "badge":
       return {
@@ -199,9 +177,11 @@ function inlineStyle(tag: string, attrs: Record<string, string>): StmlStyle {
         fg: attrs.fg ?? "badge-text",
         bold: true,
       };
-    case "a":
     case "link":
       return { fg: "accent", underline: true };
+    // A styled run has no look of its own — its attributes are the style. Tags
+    // with no role land here too and keep whatever styling attributes they carry.
+    case "styled":
     default:
       return attrStyle(attrs);
   }
@@ -227,11 +207,12 @@ function inlineSpans(node: StmlNode, style: StmlStyle): StmlSpan[] {
     const text = collapseWs(decodeStmlEntities(node.value));
     return text === "" ? [] : [{ ...style, text }];
   }
-  if (node.tag === "br") {
+  const role = stmlTagRole(node.tag);
+  if (role === "line-break") {
     return [{ ...style, text: "\n" }];
   }
   const next = mergeStyle(style, inlineStyle(node.tag, node.attrs));
-  const padded = node.tag === "badge" || node.tag === "kbd";
+  const padded = role === "badge" || role === "key";
   const out: StmlSpan[] = [];
   if (padded) {
     out.push({ ...next, text: " " });
@@ -578,10 +559,10 @@ function layoutRow(
   errors: LayoutErrors,
 ): StmlLine[] {
   const children = el.children.filter(
-    (child): child is StmlElement => child.type === "element" && !INLINE_TAGS.has(child.tag),
+    (child): child is StmlElement => child.type === "element" && !isInlineTag(child.tag),
   );
   const looseInline = el.children.filter(
-    (child) => child.type === "text" || (child.type === "element" && INLINE_TAGS.has(child.tag)),
+    (child) => child.type === "text" || (child.type === "element" && isInlineTag(child.tag)),
   );
 
   if (children.length === 0) {
@@ -631,14 +612,11 @@ function layoutBlock(
   errors: LayoutErrors,
 ): StmlLine[] {
   const tag = el.tag;
-  switch (tag) {
-    case "box":
-    case "card":
-    case "col":
-    case "column":
-    case "stack":
-    case "section": {
-      const isCard = tag === "card";
+  const role = stmlTagRole(tag);
+  switch (role) {
+    case "container":
+    case "card": {
+      const isCard = role === "card";
       const border =
         "border" in el.attrs ? truthyAttr(el.attrs.border) : isCard || "border-style" in el.attrs;
       const { chars, unknown } = borderChars(
@@ -672,24 +650,19 @@ function layoutBlock(
     case "row":
       return layoutRow(el, width, style, errors);
 
-    case "text":
-    case "p":
+    case "paragraph":
       return wrapSpans(
         el.children.flatMap((child) => inlineSpans(child, mergeStyle(style, attrStyle(el.attrs)))),
         width,
       );
 
-    case "h":
-    case "h1":
-    case "h2":
-    case "h3":
     case "heading":
     case "title": {
       const base = mergeStyle(style, {
         bold: true,
         fg: el.attrs.fg ?? el.attrs.color ?? "heading",
       });
-      if (tag === "h1" || tag === "title") {
+      if (role === "title") {
         base.underline = true;
       }
       return wrapSpans(
@@ -698,8 +671,6 @@ function layoutBlock(
       );
     }
 
-    case "hr":
-    case "rule":
     case "divider":
       return [
         {
@@ -707,21 +678,19 @@ function layoutBlock(
         },
       ];
 
-    case "spacer":
-    case "space": {
+    case "spacer": {
       const size = Math.max(1, Math.min(20, numAttr(el.attrs.size) ?? 1));
       return Array.from({ length: size }, () => ({ spans: [{ text: "" }] }));
     }
 
     case "list":
-    case "ul":
-    case "ol": {
-      const ordered = tag === "ol";
+    case "ordered-list": {
+      const ordered = role === "ordered-list";
       const marker = el.attrs.marker ?? "•";
       const lines: StmlLine[] = [];
       let index = 1;
       for (const child of el.children) {
-        if (child.type !== "element" || (child.tag !== "item" && child.tag !== "li")) {
+        if (child.type !== "element" || stmlTagRole(child.tag) !== "list-item") {
           continue;
         }
         const prefix = ordered ? `${index++}. ` : `${marker} `;
@@ -730,12 +699,10 @@ function layoutBlock(
       return lines;
     }
 
-    case "item":
-    case "li":
+    case "list-item":
       return bulletLines("• ", el.children, width, style, errors);
 
-    case "code":
-    case "pre": {
+    case "code": {
       const { chars } = borderChars(el.attrs["border-style"], "single");
       const codeStyle: StmlStyle = { ...style, fg: el.attrs.fg ?? style.fg };
       const codeWidth = Math.max(1, width - 4);
@@ -790,7 +757,7 @@ function layoutBlockNodes(
   };
 
   for (const node of nodes) {
-    if (node.type === "text" || INLINE_TAGS.has(node.tag)) {
+    if (node.type === "text" || isInlineTag(node.tag)) {
       run.push(node);
       continue;
     }
@@ -834,7 +801,7 @@ export function layoutStml(markup: string, width: number): StmlLayoutResult {
   return { lines, errors: errors.messages };
 }
 
-// Layout is recomputed by both measurement (plannedReviewRows) and rendering
+// Layout is recomputed by both measurement (reviewRowGeometry) and rendering
 // (AgentInlineNote) on every plan pass, so memoize per (markup, width).
 const layoutCache = new Map<string, StmlLayoutResult>();
 const LAYOUT_CACHE_LIMIT = 256;

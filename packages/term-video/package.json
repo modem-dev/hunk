@@ -1,0 +1,29 @@
+{
+  "name": "@hunk/term-video",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Keyframe-based terminal product videos: drive a TUI over a PTY, snap styled keyframes, composite a captioned storyboard in Chromium, and encode with ffmpeg.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./capture": {
+      "types": "./src/capture.ts",
+      "import": "./src/capture.ts"
+    },
+    "./compose": {
+      "import": "./src/compose.mjs"
+    },
+    "./plan": {
+      "types": "./src/plan.d.mts",
+      "import": "./src/plan.mjs"
+    }
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=18"
+  }
+}

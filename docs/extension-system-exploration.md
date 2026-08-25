@@ -112,12 +112,12 @@ seams in very different states of readiness:
 - The session broker (`packages/session-broker*`) is generic over session
   info/state/message types by design, and the app installs its command
   dispatcher at runtime via `createHunkSessionBridge(handlers)` +
-  `hostClient.setBridge(...)` (`src/session/app/bridge.ts`). That bridge is
+  `hostClient.setBridge(...)` (`src/app/session/bridge.ts`). That bridge is
   the single clearest injection point for extension-provided session commands.
 - Dynamic theme registration exists (`ensureSyntaxHighlightThemeRegistered` →
   Pierre's `registerCustomTheme`), but the config layer caps custom themes at
   one `"custom"` slot.
-- Pierre's `setCustomExtension` (`src/core/fileLanguage.ts`) is already used at
+- Pierre's `setCustomExtension` (`src/core/changeset/fileLanguage.ts`) is already used at
   import time for `.mts`/`.cts`; extending it to plugin-declared mappings is
   trivial.
 - `StartupDeps` (`src/app/startup.ts`) fully injects the startup pipeline
@@ -171,7 +171,7 @@ export default function (hunk: HunkExtensionAPI) {
 ````
 
 - Discovery: `~/.config/hunk/extensions/*.ts` and `*/index.ts` (global, follows
-  our existing XDG path logic in `src/core/paths.ts`), `.hunk/extensions/`
+  our existing XDG path logic in `src/core/run/paths.ts`), `.hunk/extensions/`
   (repo-local, **trust-gated**, same posture as pi's project trust), explicit
   `[extensions] paths = [...]` in `config.toml`, and a `--extension <path>`
   dev flag. `--no-extensions` for a clean run and for bug triage.

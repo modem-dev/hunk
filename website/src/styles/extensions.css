@@ -1,0 +1,360 @@
+/*
+ * Extension directory. The page reuses the marketing shell, so only the
+ * directory's own geometry lives here: a two-column grid of fixed-anatomy
+ * cards that stays legible from five listings to several hundred. Each card
+ * answers the same four questions in the same places — who publishes it, what
+ * it does, what it registers, how alive it is — so a reader scans down a
+ * column rather than re-reading every card.
+ */
+
+.marketing .xdir {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px;
+}
+
+.marketing .xintro {
+  padding: 72px 0 36px;
+}
+
+.marketing .xintro h1 {
+  margin: 0 0 18px;
+  font-size: clamp(30px, 5vw, 46px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.marketing .xintro .sub {
+  max-width: 56ch;
+  margin: 0 0 14px;
+  color: var(--hunk-body);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.marketing .xintro .sub a {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The accent green clears AA on paper but not on the panel chip behind inline
+   code, so the linked topic name drops to the darker accent ink. */
+.marketing .xintro .sub a code {
+  color: var(--hunk-accent-ink);
+}
+
+.marketing .xintro code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hunk-panel);
+  font-size: 0.92em;
+}
+
+/* The consent warning is the one thing on the page that must not read as chrome. */
+.marketing .xcaveat {
+  max-width: 56ch;
+  margin: 0;
+  padding-left: 13px;
+  border-left: 2.5px solid var(--acc);
+  color: var(--soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.marketing .xcontrols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.marketing .xsearch-wrap {
+  position: relative;
+  flex: 1 1 260px;
+}
+
+.marketing .xsearch-icon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--soft);
+  font-size: 13px;
+  transform: translateY(-50%);
+}
+
+.marketing .xsearch {
+  width: 100%;
+  padding: 9px 12px 9px 28px;
+  border: 1.5px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.marketing .xsearch:focus-visible,
+.marketing .xsort-wrap select:focus-visible {
+  border-color: var(--acc);
+  outline: none;
+}
+
+.marketing .xsort-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.marketing .xsort-wrap select {
+  padding: 9px 10px;
+  border: 1.5px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.marketing .xfacets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.marketing .xfacet {
+  padding: 4px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.marketing .xfacet span {
+  margin-left: 5px;
+  color: var(--hunk-muted);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.marketing .xfacet:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .xfacet.is-on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--hunk-button-ink);
+}
+
+.marketing .xfacet.is-on span {
+  color: var(--hunk-button-ink);
+}
+
+.marketing .xmeta-line {
+  margin: 16px 0 12px;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.marketing .xgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 12px;
+}
+
+.marketing .xcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  transition: 0.12s;
+}
+
+.marketing .xcard:hover {
+  background: var(--hunk-paper-hover);
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: translate(-1px, -1px);
+}
+
+.marketing .xcard[hidden] {
+  display: none;
+}
+
+.marketing .xcard-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.marketing .xavatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--hunk-panel);
+}
+
+.marketing .xname {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* The title link covers the card, so a click anywhere opens the repository
+   while the copy button keeps its own hit area above it. */
+.marketing .xname a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+}
+
+.marketing .xcard:hover .xname a {
+  color: var(--acc);
+}
+
+.marketing .xowner {
+  color: var(--soft);
+  font-weight: 400;
+}
+
+.marketing .xcopy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--soft);
+  cursor: pointer;
+}
+
+.marketing .xcopy:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .xcopy.is-copied {
+  border-color: var(--acc);
+  color: var(--acc);
+}
+
+.marketing .xsum {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin: 0;
+  overflow: hidden;
+  color: var(--hunk-body);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.marketing .xtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marketing .xtags li {
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.marketing .xmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 4px;
+  color: var(--soft);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.marketing .xstat {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.marketing .xstar {
+  color: #b07d00;
+}
+
+.marketing .xwhen {
+  margin-left: auto;
+}
+
+.marketing .xempty {
+  padding: 40px 0;
+  color: var(--soft);
+  font-size: 13px;
+  text-align: center;
+}
+
+.marketing .xmore {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1.5px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.marketing .xmore:hover {
+  border-color: var(--ink);
+}
+
+.marketing .xbrowse {
+  padding-bottom: 96px;
+}
+
+@media (max-width: 760px) {
+  .marketing .xdir {
+    padding: 0 20px;
+  }
+
+  .marketing .xintro {
+    padding-top: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing .xcard:hover {
+    transform: none;
+  }
+}

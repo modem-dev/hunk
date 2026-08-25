@@ -2,10 +2,14 @@ import {
   buildDiffFile,
   createSkippedLargeMetadata,
   type BuildDiffFileOptions,
-} from "../core/diffFile";
+} from "../core/changeset/diffFile";
 import { parseSingleFilePatch } from "../core/patch/singleFile";
-import type { FileSourceSide } from "../core/fileSource";
-import type { DiffFile } from "../core/types";
+import {
+  DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  SourceTextTooLargeError,
+  type FileSourceSide,
+} from "../core/changeset/fileSource";
+import type { DiffFile } from "../core/changeset/model";
 import type { VcsPatchResult } from "../core/vcs/types";
 import type {
   ExtensionVcsExtraFile,
@@ -31,32 +35,55 @@ type SourceFetcherBuilder = NonNullable<BuildDiffFileOptions["sourceFetcherBuild
  * read, because there is no source text worth highlighting and every backend
  * would otherwise repeat the check. And each side is read at most once and
  * cached, so the published contract can promise that and adapters can stay
- * stateless. A rejected read is deliberately left uncached: a source that was
- * too large to expand once should be retried, not remembered as broken.
+ * stateless. Ordinary rejected reads remain retryable, while a structural
+ * too-large answer is cached and rethrown without asking the adapter again.
  */
-function toSourceFetcherBuilder(read: ExtensionVcsFileSourceReader): SourceFetcherBuilder {
+function toSourceFetcherBuilder(
+  read: ExtensionVcsFileSourceReader,
+  sourceCacheKey: string | undefined,
+): SourceFetcherBuilder {
   return (file) => {
     if (file.isBinary) {
       return undefined;
     }
 
     const cache = new Map<FileSourceSide, string | null>();
+    const tooLargeCache = new Map<FileSourceSide, number>();
 
     return {
+      cacheKey: sourceCacheKey,
       async getFullText(side) {
         if (cache.has(side)) {
           return cache.get(side) ?? null;
         }
+        const cachedLimit = tooLargeCache.get(side);
+        if (cachedLimit !== undefined) {
+          throw new SourceTextTooLargeError(cachedLimit);
+        }
 
-        const text = await read({
+        const result = await read({
           path: file.path,
           previousPath: file.previousPath,
           changeType: file.type,
           isUntracked: file.isUntracked,
           side,
         });
-        cache.set(side, text);
-        return text;
+        if (typeof result === "object" && result !== null) {
+          if (result.kind === "too-large") {
+            const maxBytes =
+              typeof result.maxBytes === "number" &&
+              Number.isFinite(result.maxBytes) &&
+              result.maxBytes > 0
+                ? result.maxBytes
+                : DEFAULT_SOURCE_TEXT_MAX_BYTES;
+            tooLargeCache.set(side, maxBytes);
+            throw new SourceTextTooLargeError(maxBytes);
+          }
+          throw new Error("VCS source readers must return text, null, or a too-large result.");
+        }
+
+        cache.set(side, result);
+        return result;
       },
     };
   };
@@ -109,7 +136,7 @@ function toInternalExtraFile(
 /** Convert one published patch result into the internal result loaders consume. */
 export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPatchResult {
   const sourceFetcherBuilder = result.readFileSource
-    ? toSourceFetcherBuilder(result.readFileSource)
+    ? toSourceFetcherBuilder(result.readFileSource, result.sourceCacheKey)
     : undefined;
 
   return {

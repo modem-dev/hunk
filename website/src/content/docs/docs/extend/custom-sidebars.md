@@ -1,16 +1,16 @@
 ---
-title: Custom sidebars
-description: Render your own React sidebar view inside Hunk, with selection, scrolling, and event-driven state.
+title: Custom panes
+description: Render React panes around Hunk's review stream.
 ---
 
-`hunk.registerSidebarView(view)` contributes a sidebar view — your own React component, rendered inside Hunk's OpenTUI tree. Registration is additive: your view exists beside the built-in file navigation, on either side of the review stream, and any number of views can be open at once. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
+`hunk.registerPane(pane)` renders a React component on the left, right, top, or bottom of the review. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
 
 ```tsx
 // ~/.config/hunk/extensions/flat-sidebar.tsx
 import { useMemo } from "react";
-import type { ExtensionSidebarViewProps, HunkExtensionAPI } from "hunkdiff/extension";
+import type { ExtensionPaneProps, HunkExtensionAPI } from "hunkdiff/extension";
 
-function FlatSidebar({ files, selectedFileId, theme, actions }: ExtensionSidebarViewProps) {
+function FlatPane({ files, selectedFileId, theme, actions }: ExtensionPaneProps) {
   const ordered = useMemo(() => [...files].sort((a, b) => a.path.localeCompare(b.path)), [files]);
 
   return (
@@ -31,22 +31,25 @@ function FlatSidebar({ files, selectedFileId, theme, actions }: ExtensionSidebar
 }
 
 export default function (hunk: HunkExtensionAPI) {
-  hunk.registerSidebarView({
+  hunk.registerPane({
     id: "flat",
     title: "Flat files",
     placement: "right",
-    component: FlatSidebar,
+    component: FlatPane,
   });
-  hunk.registerCommand(
-    { id: "toggle-flat", title: "Toggle flat sidebar", key: "ctrl+f" },
-    (ctx) => {
-      ctx.sidebars.toggle("flat");
-    },
-  );
+  hunk.registerCommand({ id: "toggle-flat", title: "Toggle flat pane", key: "ctrl+f" }, (ctx) => {
+    ctx.panes.toggle("flat");
+  });
 }
 ```
 
-Beyond `id` and `component`, a view may declare a `title` (for diagnostics and future menu listings), a `placement` of `"left"` (default) or `"right"`, `defaultOpen: true` to start open, or `replacesDefault: true` to start open _in place of_ the built-in file navigation — which stays available, just closed, so a command can reopen it.
+`placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes use `height`. Both accept `{ preferred, min?, max? }`, defaulting to `{ preferred: 34, min: 22 }` columns or `{ preferred: 8, min: 3 }` rows. Equal bounds make a fixed pane. Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace it (and override `defaultOpen`), or `available(context)` to hide it conditionally. One pane may replace each named target; the first registration owns that slot and later claims are skipped with a warning. `replaces` may also name another pane by its fully qualified `"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+
+`hunk:files` is a named role, not a left-edge location. The `hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane** follow the resolved owner of that slot on any edge and leave independently registered panes alone. User remaps and unbindings apply to that command normally; the former `hunk.view.toggleSidebar` id remains a compatibility alias. `ctx.panes.toggle("hunk:files")`, by contrast, addresses the literal built-in pane; use `ctx.commands.execute("hunk.view.toggleFilesPane")` when an extension wants the role-aware slot behavior.
+
+Set `currentLine: true` to receive Hunk's opaque selected-row painter. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses it and is not bundled with Hunk. Install it with `hunk extension install modem-dev/hunk-lens`.
+
+API-v3 sidebar names remain as deprecated aliases.
 
 Import `react` normally — Hunk serves its own React instance to extension files at import time, so hooks, context, and JSX all run on the reconciler drawing the rest of the app. **Never bundle or vendor a copy of React into an extension**: a second React means a second hooks dispatcher, and the component will fail to render. OpenTUI elements (`box`, `text`, `scrollbox`, ...) are plain intrinsic elements and need no import.
 
@@ -59,12 +62,15 @@ The component receives fresh props as the app changes:
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
-| `width`             | terminal columns the sidebar pane occupies                                                                                                                                |
+| `placement`         | the accepted terminal edge                                                                                                                                                |
+| `width`             | exact terminal columns in the host-owned rectangle                                                                                                                        |
+| `height`            | exact terminal rows in the host-owned rectangle                                                                                                                           |
+| `currentLine`       | opaque selected-row painter when the registration opts in, otherwise `null`                                                                                               |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
-| `actions`           | navigation the sidebar may trigger                                                                                                                                        |
+| `actions`           | guarded navigation and notifications the pane may trigger                                                                                                                 |
 
-`actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route through the same review controller as the built-in sidebar and the keyboard shortcuts, so the review stream scrolls, selection updates, and the `selection_changed` event fires exactly as if the user had clicked a built-in row. `actions.notify(message, type?)` shows a toast attributed to your extension. An action given a file id that is not currently visible is refused with a warning rather than corrupting the selection.
+`actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route through the same review controller as the built-in files pane and the keyboard shortcuts, so the review stream scrolls, selection updates, and the `selection_changed` event fires exactly as if the user had clicked a built-in row. `actions.notify(message, type?)` shows a toast attributed to your extension. An action given a file id that is not currently visible is refused with a warning rather than corrupting the selection.
 
 The three hunk surfaces line up by design: each file's `hunks` lists public `ExtensionDiffHunk` summaries (`index`, the `@@` header, inclusive old/new line spans) in render order, `selectedHunkIndex` reports the same index, and `actions.selectHunk(fileId, hunkIndex)` accepts it. That is everything a hunk checklist, a per-hunk progress view, or an agent-annotation navigator needs — match an annotation's `oldRange`/`newRange` against the summaries' spans to find its hunk — without touching the opaque `metadata`.
 
@@ -73,9 +79,9 @@ The three hunk surfaces line up by design: each file's `hunks` lists public `Ext
 A component that owns a key event should ask the injected `keybindings` manager about a **command id**, rather than hard-coding the command's default chord. This keeps local component behavior synchronized with the user's remaps and unbindings:
 
 ```ts
-import type { ExtensionKeyEvent, ExtensionSidebarViewProps } from "hunkdiff/extension";
+import type { ExtensionKeyEvent, ExtensionPaneProps } from "hunkdiff/extension";
 
-export function handleSidebarKey(props: ExtensionSidebarViewProps, key: ExtensionKeyEvent) {
+export function handlePaneKey(props: ExtensionPaneProps, key: ExtensionKeyEvent) {
   const nextFile = props.files[1];
   if (nextFile && props.keybindings.matches(key, "hunk.review.nextFile")) {
     // The user may have remapped this from `.` to another chord.
@@ -90,18 +96,18 @@ export function handleSidebarKey(props: ExtensionSidebarViewProps, key: Extensio
 
 ## The pane is Hunk's, the content is yours
 
-Hunk keeps owning pane arrangement — widths, resize dividers, responsive show/hide, and dropping panes that no longer fit a narrow terminal — and your component fills the pane it is given. A component that throws while rendering costs you the pane, not the user the session: the failure is reported as a toast naming your extension, the pane closes, and the built-in file navigation reopens if nothing else is showing.
+Hunk owns pane geometry, dividers, and responsive omission. Render failures are contained to the pane; a failed files-pane replacement restores file navigation.
 
-Props carry the pane's `width` but not its height: the pane is a flex cell, so give your root element `height="100%"` and let layout size it. Everything else about scrolling — pane viewport height, scroll position, keeping a row visible — goes through the `<scrollbox>` itself, via a plain React ref. Hunk serves its own `@opentui/core` to extension files, so the renderable a ref hands you is the very instance the host renders with.
+Props carry the pane's exact `width` and `height`. Use a `<scrollbox>` ref for scroll position and selection following; Hunk serves the matching `@opentui/core` instance.
 
 ## Scrolling: the scrollbox ref contract
 
-The one behavior a list sidebar always ends up needing is following the selection. Give your rows stable `id` props, hold a ref to the scrollbox, and scroll the selected row into view from an effect:
+The one behavior a list pane always ends up needing is following the selection. Give your rows stable `id` props, hold a ref to the scrollbox, and scroll the selected row into view from an effect:
 
 ```tsx
 import { useEffect, useRef } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { ExtensionSidebarViewProps } from "hunkdiff/extension";
+import type { ExtensionPaneProps } from "hunkdiff/extension";
 
 function HunkList({
   files,
@@ -109,7 +115,7 @@ function HunkList({
   selectedHunkIndex,
   theme,
   actions,
-}: ExtensionSidebarViewProps) {
+}: ExtensionPaneProps) {
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   // Follow policy is deliberately yours: the host never scrolls a pane it
@@ -145,21 +151,21 @@ function HunkList({
 }
 ```
 
-The ref surface this recipe stands on is the exact one the built-in sidebar runs on:
+The ref surface this recipe stands on is the exact one the built-in files pane runs on:
 
 - **`scrollChildIntoView(id)`** scrolls the descendant with that `id` prop into view.
-- **`scrollTop`** and **`viewport.height`** read the current scroll offset and the pane's viewport rows — the pane-height number the props do not carry. A read before the first layout pass reports `0`, so viewport-dependent code belongs behind the events below rather than a bare mount effect.
+- **`scrollTop`** and **`viewport.height`** read the current scroll offset and the scrollbox's live viewport rows. A read before the first layout pass reports `0`, so viewport-dependent code belongs behind the events below rather than a bare mount effect.
 - **`verticalScrollBar.on("change", handler)`**, **`viewport.on("layout-changed", handler)`**, and **`viewport.on("resized", handler)`** report scrolling and pane resizes; unsubscribe with the matching `.off` in your effect's cleanup.
 
-That is enough to window a long list yourself: the built-in sidebar renders only the rows near the viewport, plus spacer boxes sized from those same reads (its render-window helper is host code, but nothing it computes needs anything beyond this surface — `useTerminalDimensions` from `@opentui/react` serves as its pre-first-layout viewport estimate).
+That is enough to window a long list yourself: the built-in files pane renders only the rows near the viewport, plus spacer boxes sized from those same reads (its render-window helper is host code, but nothing it computes needs anything beyond this surface — `useTerminalDimensions` from `@opentui/react` serves as its pre-first-layout viewport estimate).
 
-One honest caveat: this contract rides on OpenTUI's renderable API, served at whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself. The built-in sidebar exercising the exact same calls is the compatibility guarantee: a change that breaks your scroll code breaks Hunk's own sidebar first. Still, keep scroll handling small and behind your own helpers.
+One honest caveat: this contract rides on OpenTUI's renderable API, served at whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself. The built-in files pane exercising the exact same calls is the compatibility guarantee: a change that breaks your scroll code breaks Hunk's own files pane first. Still, keep scroll handling small and behind your own helpers.
 
-The built-in sidebar is itself a bundled extension (`src/extensions/default/ui/sidebar/` in the Hunk repository): it registers through this exact call, its component consumes exactly the props documented above, and its windowing and selection follow run on exactly the ref contract above — so it doubles as the reference implementation for everything a third-party sidebar can build, from grouping and stat badges down to scroll behavior.
+The built-in files pane is itself a bundled extension (`src/extensions/default/ui/sidebar/` in the Hunk repository): it registers through this exact call, its component consumes exactly the props documented above, and its windowing and selection follow run on exactly the ref contract above — so it doubles as the reference implementation for everything a third-party pane can build, from grouping and stat badges down to scroll behavior.
 
-## Sidebar state from events
+## Pane state from events
 
-Lifecycle handlers run outside React, but a sidebar component only rerenders when React sees a change. The recipe that connects them is a module-local store read through `useSyncExternalStore`: the event handler updates the store, and any mounted component subscribed to it rerenders — while the store keeps accumulating even when the pane is closed.
+Lifecycle handlers run outside React, but a pane component only rerenders when React sees a change. The recipe that connects them is a module-local store read through `useSyncExternalStore`: the event handler updates the store, and any mounted component subscribed to it rerenders — while the store keeps accumulating even when the pane is closed.
 
 ```tsx
 import { useSyncExternalStore } from "react";
@@ -191,7 +197,7 @@ function ViewedCount() {
 
 export default function (hunk: HunkExtensionAPI) {
   hunk.on("file_viewed", ({ file }) => markViewed(file.path));
-  hunk.registerSidebarView({ id: "progress", component: ViewedCount });
+  hunk.registerPane({ id: "progress", component: ViewedCount });
 }
 ```
 

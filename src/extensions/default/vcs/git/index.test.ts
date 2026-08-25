@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -8,12 +8,16 @@ import type {
   ExtensionVcsOperations,
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
-} from "../../../../extension-api/types";
+} from "hunkdiff/extension";
 
 // The adapter is written against the published contract, so the tests read it
 // through that contract too — including the capabilities Git is the only
 // bundled backend to use.
 const gitOperations: ExtensionVcsOperations = GitVcsAdapter.operations;
+
+// Hosted Windows runners can spend several seconds starting each real Git process.
+// Keep this integration-like adapter suite bounded without using Bun's five-second default.
+setDefaultTimeout(30_000);
 
 describe("GitVcsAdapter published surface", () => {
   test("implements every review operation the contract defines", () => {
@@ -101,7 +105,13 @@ describe("GitVcsAdapter", () => {
     expect(result.title).toContain("working tree");
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
-    expect(result.extraFiles?.map((file) => file.path)).toContain("untracked.txt");
+    expect(result.untrackedPaths).toContain("untracked.txt");
+    expect(result.sourceCacheKey).toContain("git-source-v1");
+
+    const equivalentResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
+      cwd: repo,
+    });
+    expect(equivalentResult.sourceCacheKey).toBe(result.sourceCacheKey);
 
     const readSource = result.readFileSource;
     expect(readSource).toBeDefined();
@@ -109,12 +119,16 @@ describe("GitVcsAdapter", () => {
     expect(await readSource?.({ ...trackedFile, side: "old" })).toBe("old\n");
     expect(await readSource?.({ ...trackedFile, side: "new" })).toBe("new\n");
 
-    // The untracked file is reported as its own one-file patch rather than as a
-    // path Hunk reads back, so Git's own binary detection and quoting decide
-    // what it says.
-    const untracked = result.extraFiles?.find((file) => file.path === "untracked.txt");
-    expect(untracked?.kind).toBe("patch");
-    expect(untracked?.isUntracked).toBe(true);
+    git(repo, "add", "tracked.txt");
+    const changedIndexResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
+      cwd: repo,
+    });
+    expect(changedIndexResult.sourceCacheKey).not.toBe(result.sourceCacheKey);
+
+    // Untracked files come back as paths for Hunk to synthesize in-process:
+    // one `git status` covers all of them instead of one `git diff --no-index`
+    // subprocess per file, which made review scale with the untracked count.
+    expect(result.extraFiles ?? []).toHaveLength(0);
   });
 
   test("loads revision and stash patches through adapter operations", async () => {
@@ -137,6 +151,7 @@ describe("GitVcsAdapter", () => {
     expect(showResult.title).toContain("show HEAD");
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(showResult.patchText).toContain("+two");
+    expect(showResult.sourceCacheKey).toContain("git-source-v1");
 
     const showFile = { path: "file.txt", changeType: "change", isUntracked: false } as const;
     expect(await showResult.readFileSource?.({ ...showFile, side: "old" })).toBe("one\n");
@@ -155,6 +170,7 @@ describe("GitVcsAdapter", () => {
 
     expect(stashResult.title).toContain("stash");
     expect(stashResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+    expect(stashResult.sourceCacheKey).toContain("git-source-v1");
     expect(stashResult.patchText).toContain("+three");
   });
 

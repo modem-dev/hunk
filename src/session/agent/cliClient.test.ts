@@ -9,7 +9,7 @@ import {
   createTestSessionReviewHunk,
   createTestSessionSnapshot,
 } from "../../../test/helpers/session-daemon-fixtures";
-import type { SessionSelectorInput } from "../../core/types";
+import type { SessionSelectorInput } from "../../core/run/commandInputs";
 import {
   HUNK_SESSION_API_PATH,
   HUNK_SESSION_API_VERSION,
@@ -18,10 +18,12 @@ import {
 import {
   createHttpHunkSessionCliClient,
   formatClearCommentsOutput,
+  formatClearHighlightsOutput,
   formatCommentApplyOutput,
   formatCommentListOutput,
   formatCommentOutput,
   formatContextOutput,
+  formatHighlightOutput,
   formatListOutput,
   formatNavigationOutput,
   formatReloadOutput,
@@ -88,6 +90,27 @@ describe("HTTP Hunk session CLI client", () => {
         result: {
           removedCount: 1,
           remainingCommentCount: 0,
+          filePath: "src/app.ts",
+        },
+      },
+      "highlight-add": {
+        result: {
+          fileId: "file-1",
+          filePath: "src/app.ts",
+          hunkIndex: 0,
+          side: "new" as const,
+          line: 12,
+          start: 2,
+          end: 9,
+          tone: "warning" as const,
+          fileMarkCount: 1,
+          revealed: "line" as const,
+        },
+      },
+      "highlight-clear": {
+        result: {
+          removedCount: 2,
+          remainingCount: 0,
           filePath: "src/app.ts",
         },
       },
@@ -202,6 +225,30 @@ describe("HTTP Hunk session CLI client", () => {
         output: "json",
       }),
     ).toMatchObject({ removedCount: 1 });
+    expect(
+      await client.addHighlight({
+        kind: "session",
+        action: "highlight-add",
+        selector,
+        filePath: "src/app.ts",
+        side: "new",
+        line: 12,
+        start: 2,
+        end: 9,
+        tone: "warning",
+        reveal: true,
+        output: "json",
+      }),
+    ).toMatchObject({ fileMarkCount: 1, revealed: "line" });
+    expect(
+      await client.clearHighlights({
+        kind: "session",
+        action: "highlight-clear",
+        selector,
+        filePath: "src/app.ts",
+        output: "json",
+      }),
+    ).toMatchObject({ removedCount: 2 });
 
     expect(requests).toEqual([
       { action: "list" },
@@ -243,6 +290,18 @@ describe("HTTP Hunk session CLI client", () => {
       { action: "comment-list", selector, filePath: "src/app.ts" },
       { action: "comment-rm", selector, commentId: "comment-1" },
       { action: "comment-clear", selector, filePath: "src/app.ts" },
+      {
+        action: "highlight-add",
+        selector,
+        filePath: "src/app.ts",
+        side: "new",
+        line: 12,
+        start: 2,
+        end: 9,
+        tone: "warning",
+        reveal: true,
+      },
+      { action: "highlight-clear", selector, filePath: "src/app.ts" },
     ]);
   });
 
@@ -323,6 +382,40 @@ describe("Hunk session CLI formatters", () => {
     expect(formatSessionOutput(session)).toContain("Agent notes visible: yes\n");
     expect(formatSessionOutput(session)).toContain("Live comments: 4\n");
     expect(formatSessionOutput(session)).toContain("  - src/app.ts (+3 -1, hunks: 1)");
+  });
+
+  test("human-readable session paths cannot emit terminal controls", () => {
+    const unsafePath = "src/日本語\x1b[2J\tline\n🧪.ts";
+    const session = createTestListedSession({
+      title: unsafePath,
+      sourceLabel: unsafePath,
+      cwd: unsafePath,
+      repoRoot: unsafePath,
+      files: [createTestSessionFileSummary({ path: unsafePath })],
+      snapshot: createTestSessionSnapshot({ selectedFilePath: unsafePath }),
+    });
+    const output = formatSessionOutput(session);
+
+    expect(output).not.toContain("\x1b");
+    expect(output).not.toContain("\t");
+    expect(output).toContain("src/日本語line🧪.ts");
+
+    const reloadOutput = formatReloadOutput(
+      { sessionPath: unsafePath },
+      {
+        sessionId: "session-1",
+        inputKind: "vcs",
+        title: "repo working tree",
+        sourceLabel: "/repo",
+        fileCount: 1,
+        selectedFilePath: unsafePath,
+        selectedHunkIndex: 0,
+      },
+    );
+    expect(reloadOutput).not.toContain("\x1b");
+    expect(reloadOutput).not.toContain("\t");
+    expect(reloadOutput).toContain("session path src/日本語line🧪.ts");
+    expect(reloadOutput).toContain("Selected: src/日本語line🧪.ts hunk 1");
   });
 
   test("empty and unselected summaries stay explicit in human-readable output", () => {
@@ -541,5 +634,73 @@ describe("Hunk session CLI formatters", () => {
         remainingCommentCount: 0,
       }),
     ).toBe("Cleared 5 live comments from session session-1. Remaining comments: 0.\n");
+  });
+
+  test("highlight formatters describe marks, reveals, and line-exact navigation", () => {
+    expect(
+      formatNavigationOutput(selector, {
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 1,
+        revealed: "line",
+        side: "new",
+        line: 42,
+      }),
+    ).toBe("Revealed src/app.ts:42 (new) in hunk 2 of session session-1.\n");
+    // A hunk fallback reads as the classic focus message, not a false line claim.
+    expect(
+      formatNavigationOutput(selector, {
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 1,
+        revealed: "hunk",
+        side: "new",
+        line: 42,
+      }),
+    ).toBe("Focused src/app.ts hunk 2 in session session-1.\n");
+
+    expect(
+      formatHighlightOutput(selector, {
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 0,
+        side: "new",
+        line: 12,
+        start: 2,
+        end: 9,
+        tone: "warning",
+        fileMarkCount: 3,
+        revealed: "line",
+      }),
+    ).toBe(
+      "Marked src/app.ts:12 (new) [2, 9) as warning in session session-1 and revealed its line. File marks: 3.\n",
+    );
+    expect(
+      formatHighlightOutput(selector, {
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 0,
+        side: "old",
+        line: 7,
+        start: 0,
+        end: 4,
+        tone: "match",
+        fileMarkCount: 1,
+      }),
+    ).toBe("Marked src/app.ts:7 (old) [0, 4) as match in session session-1. File marks: 1.\n");
+
+    expect(
+      formatClearHighlightsOutput(selector, {
+        removedCount: 2,
+        remainingCount: 1,
+        filePath: "src/app.ts",
+      }),
+    ).toBe("Cleared 2 attention marks from src/app.ts in session session-1. Remaining marks: 1.\n");
+    expect(
+      formatClearHighlightsOutput(selector, {
+        removedCount: 4,
+        remainingCount: 0,
+      }),
+    ).toBe("Cleared 4 attention marks from session session-1. Remaining marks: 0.\n");
   });
 });

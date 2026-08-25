@@ -18,6 +18,15 @@ function git(cwd: string, ...args: string[]) {
   }
 }
 
+/** Drop the ambient markers that would make Hunk treat this run as a captured pager host. */
+function uncapturedPagerEnv() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => key !== "LV" && key !== "GIT_PAGER" && !key.startsWith("LAZYGIT"),
+    ),
+  );
+}
+
 describe("CLI entrypoint contracts", () => {
   test("bare hunk prints standard help without terminal takeover sequences", () => {
     const proc = Bun.spawnSync(["bun", "run", "src/main.tsx"], {
@@ -223,6 +232,40 @@ describe("CLI entrypoint contracts", () => {
     expect(stdout).toContain("feature/demo");
     expect(stdout).not.toContain("View  Navigate  Agent  Help");
     expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
+  test("general pager mode keeps Git colors in non-diff stdin for captured pager hosts", () => {
+    const coloredLog = "\u001b[33m*\u001b[m \u001b[32mabc1234\u001b[m feat: thing\n";
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from(coloredLog),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...uncapturedPagerEnv(), TERM: "dumb", LAZYGIT_NEW_DIR_FILE: "/tmp/lazygit-dir" },
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+    expect(stdout).toBe(coloredLog);
+  });
+
+  test("general pager mode strips colors from non-diff stdin outside captured pager hosts", () => {
+    const coloredLog = "\u001b[33m*\u001b[m \u001b[32mabc1234\u001b[m feat: thing\n";
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from(coloredLog),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...uncapturedPagerEnv(), TERM: "dumb" },
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+    expect(stdout).toBe("* abc1234 feat: thing\n");
   });
 
   test("general pager mode passes diff stdin through when stdout is not a terminal", () => {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { removeTestDirectory } from "../test/helpers/filesystem";
 import {
   isGeneratedPrereleasePreparation,
   isGeneratedReleasePath,
@@ -88,10 +89,8 @@ function writeGeneratedPrerelease(root: string, initialVersion = "0.17.7") {
   runGit(root, ["commit", "--quiet", "-m", "prepare prerelease"]);
 }
 
-afterEach(() => {
-  for (const root of tempRoots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((root) => removeTestDirectory(root)));
 });
 
 describe("isGeneratedReleasePath", () => {
@@ -197,6 +196,28 @@ describe("verifyPrReleaseNotes", () => {
 
     await expect(verifyPrReleaseNotes(base, "HEAD", root)).resolves.toBe("generated-prerelease");
     expect(existsSync(path.join(root, "status-call.json"))).toBe(false);
+  });
+
+  test("routes a stable promotion that removes prerelease state through Changesets", async () => {
+    const { root } = createTestRepo();
+    writeGeneratedPrerelease(root);
+    const prereleaseBase = runGit(root, ["rev-parse", "HEAD"]);
+    const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    packageJson.version = "0.18.0";
+    writeJson(path.join(root, "package.json"), packageJson);
+    writeFileSync(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.18.0\n\n## 0.17.7\n");
+    rmSync(path.join(root, ".changeset", "pre.json"));
+    rmSync(path.join(root, ".changeset", "new-feature.md"));
+    writeFileSync(path.join(root, ".changeset", "stable-release.md"), "---\n---\n");
+    runGit(root, ["add", "-A"]);
+    runGit(root, ["commit", "--quiet", "-m", "prepare stable release"]);
+
+    await expect(verifyPrReleaseNotes(prereleaseBase, "HEAD", root)).resolves.toBe(
+      "changeset-status",
+    );
+    expect(JSON.parse(readFileSync(path.join(root, "status-call.json"), "utf8"))).toEqual([
+      `--since=${prereleaseBase}`,
+    ]);
   });
 
   test("rejects an initial version older than the carried stable changelog", async () => {

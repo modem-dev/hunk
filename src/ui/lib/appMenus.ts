@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -6,11 +6,9 @@ import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appComma
  * The dropdown menus, expressed as references into the command table.
  *
  * A menu item is a command plus presentation: nothing here re-implements an
- * action or re-states which key runs it. Labels and checkbox state are the two
- * things the menu genuinely owns — a menu reads "Sidebar" under "View" where
- * the command is titled "Toggle sidebar", and only App knows whether the
- * sidebar is currently showing — so those are declared per entry and everything
- * else is derived from the command the entry names.
+ * action or re-states which key runs it. Labels and checkbox state are the
+ * presentation details the menu owns; App supplies whether the active files
+ * pane is visible, and everything else comes from the command it names.
  */
 
 /** One dropdown item, named by the command it runs. */
@@ -34,11 +32,14 @@ export interface BuildAppMenusOptions {
   extensionCommands?: readonly AppCommand[];
   /** Host-owned per-file presentation choices appended to View. */
   fileViewEntries?: readonly MenuEntry[];
+  /** Host-owned escape hatch shown while a session keyboard mode is active. */
+  keyboardModeExitEntry?: MenuEntry;
   /** Live label for the stable host command that applies the selected presentation changeset-wide. */
   fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
+  cursorLine: CursorLine;
   layoutMode: LayoutMode;
-  renderSidebar: boolean;
+  filesPaneVisible: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
@@ -124,9 +125,11 @@ export function buildAppMenus({
   extensionCommands = [],
   fileViewEntries = [],
   fileViewApplyAllLabel,
+  keyboardModeExitEntry,
   copyDecorations,
+  cursorLine,
   layoutMode,
-  renderSidebar,
+  filesPaneVisible,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
@@ -152,7 +155,7 @@ export function buildAppMenus({
       },
       { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
       SEPARATOR,
-      { commandId: "hunk.view.toggleSidebar", label: "Sidebar", checked: renderSidebar },
+      { commandId: "hunk.view.toggleFilesPane", label: "Files pane", checked: filesPaneVisible },
       { commandId: "hunk.view.toggleMenuBar", label: "Menu bar", checked: showMenuBar },
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },
@@ -169,6 +172,21 @@ export function buildAppMenus({
         commandId: "hunk.view.toggleCopyDecorations",
         label: "Copy decorations",
         checked: copyDecorations,
+      },
+      {
+        commandId: "hunk.view.cursorLineRow",
+        label: "Current line: full row",
+        checked: cursorLine === "row",
+      },
+      {
+        commandId: "hunk.view.cursorLineNumber",
+        label: "Current line: line number",
+        checked: cursorLine === "number",
+      },
+      {
+        commandId: "hunk.view.cursorLineOff",
+        label: "Current line: off",
+        checked: cursorLine === "off",
       },
     ],
     navigate: [
@@ -194,7 +212,15 @@ export function buildAppMenus({
     specs.view.push(SEPARATOR);
   }
 
-  const extensions = toExtensionMenuEntries(commands, extensionCommands);
+  const extensionCommandEntries = toExtensionMenuEntries(commands, extensionCommands);
+  const extensions = keyboardModeExitEntry
+    ? [
+        keyboardModeExitEntry,
+        ...(extensionCommandEntries.length > 0
+          ? [{ kind: "separator" as const }, ...extensionCommandEntries]
+          : []),
+      ]
+    : extensionCommandEntries;
   const applyAllEntries = fileViewApplyAllLabel
     ? toMenuEntries(commands, [
         {

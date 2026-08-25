@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { formatCliError } from "./core/errors";
-import { pagePlainText } from "./core/pager";
+import { formatCliError } from "./core/run/errors";
+import { pagePlainText } from "./core/process/pager";
 import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
@@ -37,6 +37,45 @@ async function main() {
     await exitAfterSweep(0);
   }
 
+  if (startupPlan.kind === "extension-manage") {
+    const [{ runExtensionManageCommand }, readline] = await Promise.all([
+      import("./extensions/manage/cli"),
+      import("node:readline/promises"),
+    ]);
+    // A confirmation needs a real terminal on both sides; piped runs use --yes.
+    const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+    process.exit(
+      await runExtensionManageCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+        confirm: canConfirm
+          ? async (question) => {
+              const prompt = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+              });
+              try {
+                const answer = await prompt.question(question);
+                return ["y", "yes"].includes(answer.trim().toLowerCase());
+              } finally {
+                prompt.close();
+              }
+            }
+          : undefined,
+      }),
+    );
+  }
+
+  if (startupPlan.kind === "self-update") {
+    const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
+    process.exit(
+      await runSelfUpdateCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
     await exitAfterSweep(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
@@ -60,7 +99,9 @@ async function main() {
   }
 
   if (startupPlan.kind === "passthrough") {
-    process.stdout.write(sanitizeTerminalText(startupPlan.text));
+    process.stdout.write(
+      sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
+    );
     await exitAfterSweep(0);
   }
 
@@ -79,8 +120,10 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  // OpenTUI stays behind the interactive plan so headless commands never
-  // materialize its embedded native library.
+  // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
+  // native library. The highlighting client starts the compiled worker only when an opted-in,
+  // eligible diff needs it, so normal sessions do not pay its startup cost. The interactive
+  // app owns that worker's disposal: this call returns once the app is mounted, not once it exits.
   const { runInteractiveApp } = await import("./ui/runInteractiveApp");
   await runInteractiveApp(startupPlan);
 }

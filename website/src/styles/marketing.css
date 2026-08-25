@@ -241,7 +241,8 @@ a:focus-visible {
 .marketing .shot-stack {
   position: relative;
   width: 100%;
-  aspect-ratio: 2200 / 1413;
+  /* Matches the capture geometry in capture-media.ts (131 cols × 35 rows at DPR 2). */
+  aspect-ratio: 2202 / 1400;
   background: #0c0e10;
 }
 
@@ -283,6 +284,23 @@ a:focus-visible {
   border-color: var(--acc);
   background: var(--acc);
   color: var(--paper);
+}
+
+/* Sits in the pill row without pretending to be one: the picker shows a
+   sample, and this says how much more is behind it. */
+.marketing .tmore {
+  padding: 5px 4px;
+  color: var(--soft);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+  transition: 0.12s;
+}
+
+.marketing .tmore:hover {
+  color: var(--acc);
+  text-decoration-color: var(--acc);
 }
 
 .marketing .feats,
@@ -496,6 +514,27 @@ a:focus-visible {
     box-shadow: 6px 6px 0 var(--ink);
     transform: scale(1) translateY(0);
   }
+}
+
+/* The extensions row's media is source rather than a capture, so it wears the
+   same frame with a title bar carrying the path the file lives at. */
+.marketing .show-code pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 18px 20px;
+  color: #ccd3da;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* Fixed colors on the fixed-dark card, like the terminal captures. */
+.marketing .show-code .k {
+  color: #7fd1ff;
+}
+
+.marketing .show-code .s {
+  color: #b5cea8;
 }
 
 /* Community videos: paused-embed cards that link out, so no third-party player script loads.
@@ -786,5 +825,53 @@ a:focus-visible {
   .marketing *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Release ribbon under the hero call to action: the landing page's entry point into the
+   changelog, carrying the current version so returning visitors can see what shipped. */
+.marketing .release-ribbon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 7px 14px;
+  border: 1px solid var(--hunk-rule);
+  border-radius: 100px;
+  background: var(--paper);
+  color: var(--hunk-body);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.3;
+  text-decoration: none;
+  transition: 0.12s;
+}
+
+.marketing .release-ribbon:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .release-ribbon .rv {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 100px;
+  background: var(--hunk-accent-soft);
+  color: var(--hunk-accent-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.marketing .release-ribbon .ra {
+  color: var(--soft);
+}
+
+.marketing .release-ribbon:hover .ra {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .marketing .release-ribbon .rs {
+    display: none;
   }
 }

@@ -6,7 +6,7 @@
 // width their STML will actually be laid out at — all three must agree or
 // note heights and agent feedback drift from what the terminal shows.
 
-import type { LayoutMode } from "../../core/types";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import { resolveSplitPaneWidths } from "../diff/codeColumns";
 
 export interface AgentNoteGeometryInput {

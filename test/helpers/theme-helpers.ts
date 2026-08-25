@@ -1,4 +1,4 @@
-import type { CustomThemeConfig, NamedCustomThemeConfig } from "../../src/core/types";
+import type { CustomThemeConfig, NamedCustomThemeConfig } from "../../src/extension-api/types";
 
 /**
  * Name one custom palette so it can be passed to the theme APIs, which take the

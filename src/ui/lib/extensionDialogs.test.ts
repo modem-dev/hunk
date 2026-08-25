@@ -80,6 +80,7 @@ describe("createExtensionDialogQueue", () => {
     expect(queue.current()).toMatchObject({
       kind: "confirm",
       extensionId: "carrier",
+      showAttribution: true,
       bodyLines: ["one", "two"],
       confirmLabel: "ok",
       cancelLabel: "cancel",
@@ -88,6 +89,19 @@ describe("createExtensionDialogQueue", () => {
     queue.cancel(queue.current()!.id);
     void dialogs.confirm({ title: "Delete?", confirmLabel: "delete", cancelLabel: "keep" });
     expect(queue.current()).toMatchObject({ confirmLabel: "delete", cancelLabel: "keep" });
+  });
+
+  test("can omit attribution only when the host marks the dialog as native UI", () => {
+    const queue = createExtensionDialogQueue();
+    const dialogs = queue.createDialogs("bundled-guide", { showAttribution: false });
+
+    void dialogs.confirm({ title: "Welcome" });
+
+    expect(queue.current()).toMatchObject({
+      extensionId: "bundled-guide",
+      showAttribution: false,
+      title: "Welcome",
+    });
   });
 
   test("strips terminal escapes out of extension-authored text", () => {
@@ -129,6 +143,24 @@ describe("createExtensionDialogQueue", () => {
     expect(queue.current()).toMatchObject({ title: "After the reload?" });
     queue.accept(queue.current()!.id);
     expect(await again).toBe(true);
+  });
+
+  test("refuses retained controls and cancels acceptance after their lease expires", async () => {
+    const queue = createExtensionDialogQueue();
+    let live = true;
+    const retired = queue.createDialogs("retired", { isLive: () => live });
+
+    const open = retired.confirm({ title: "Still current?" });
+    live = false;
+    queue.accept(queue.current()!.id);
+    expect(await open).toBe(false);
+    expect(await retired.input({ title: "Too late" })).toBeNull();
+    expect(queue.current()).toBeNull();
+
+    const replacement = queue.createDialogs("replacement", { isLive: () => true });
+    const next = replacement.confirm({ title: "Current" });
+    queue.accept(queue.current()!.id);
+    expect(await next).toBe(true);
   });
 
   test("cancels the pending and queued dialogs on shutdown, and refuses later ones", async () => {

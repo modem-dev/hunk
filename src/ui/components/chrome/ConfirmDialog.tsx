@@ -1,6 +1,7 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
 import type { AppTheme } from "../../themes";
 import { ModalFrame } from "./ModalFrame";
 
@@ -15,11 +16,54 @@ export interface ConfirmDialogAction {
 }
 
 /** Rows ConfirmDialog adds around the body: ModalFrame chrome plus spacer and action row. */
-const CONFIRM_DIALOG_CHROME_ROWS = 7;
+const CONFIRM_DIALOG_CHROME_ROWS = MODAL_FRAME_CHROME_ROWS + 2;
 
 /** Modal height for a ConfirmDialog whose body renders the given number of rows. */
 export function confirmDialogHeight(bodyRows: number) {
   return bodyRows + CONFIRM_DIALOG_CHROME_ROWS;
+}
+
+/** Render the shared mouse-clickable key legend used by modal action footers. */
+export function DialogActionRow({
+  actions,
+  theme,
+}: {
+  actions: ConfirmDialogAction[];
+  theme: AppTheme;
+}) {
+  const [hoveredActionKey, setHoveredActionKey] = useState<string | null>(null);
+
+  return (
+    <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
+      {actions.map((action, index) => {
+        const hovered = hoveredActionKey === action.keyLabel;
+        return (
+          <box key={action.keyLabel} style={{ flexDirection: "row" }}>
+            {index > 0 ? <text fg={theme.badgeNeutral}> · </text> : null}
+            <box
+              style={{
+                flexDirection: "row",
+                paddingLeft: 1,
+                paddingRight: 1,
+                backgroundColor: hovered ? theme.accentMuted : undefined,
+              }}
+              onMouseOver={() => setHoveredActionKey(action.keyLabel)}
+              onMouseOut={() =>
+                setHoveredActionKey((current) => (current === action.keyLabel ? null : current))
+              }
+              onMouseUp={(event: TuiMouseEvent) => {
+                event.stopPropagation();
+                action.run();
+              }}
+            >
+              <text fg={theme.accent}>{action.keyLabel}</text>
+              <text fg={hovered ? theme.text : theme.muted}> {action.label}</text>
+            </box>
+          </box>
+        );
+      })}
+    </box>
+  );
 }
 
 /**
@@ -58,7 +102,9 @@ export function ConfirmDialog({
   title: string;
   width: number;
 }) {
-  const [hoveredActionKey, setHoveredActionKey] = useState<string | null>(null);
+  const frame = resolveModalGeometry({ width, height, terminalWidth, terminalHeight });
+  const showActions = frame.height > MODAL_FRAME_CHROME_ROWS;
+  const showActionGap = frame.height >= confirmDialogHeight(0);
 
   return (
     <ModalFrame
@@ -71,36 +117,8 @@ export function ConfirmDialog({
       onClose={onClose}
     >
       {children}
-      <box style={{ width: "100%", height: 1 }} />
-      <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
-        {actions.map((action, index) => {
-          const hovered = hoveredActionKey === action.keyLabel;
-          return (
-            <box key={action.keyLabel} style={{ flexDirection: "row" }}>
-              {index > 0 ? <text fg={theme.badgeNeutral}> · </text> : null}
-              <box
-                style={{
-                  flexDirection: "row",
-                  paddingLeft: 1,
-                  paddingRight: 1,
-                  backgroundColor: hovered ? theme.accentMuted : undefined,
-                }}
-                onMouseOver={() => setHoveredActionKey(action.keyLabel)}
-                onMouseOut={() =>
-                  setHoveredActionKey((current) => (current === action.keyLabel ? null : current))
-                }
-                onMouseUp={(event: TuiMouseEvent) => {
-                  event.stopPropagation();
-                  action.run();
-                }}
-              >
-                <text fg={theme.accent}>{action.keyLabel}</text>
-                <text fg={hovered ? theme.text : theme.muted}> {action.label}</text>
-              </box>
-            </box>
-          );
-        })}
-      </box>
+      {showActionGap ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {showActions ? <DialogActionRow actions={actions} theme={theme} /> : null}
     </ModalFrame>
   );
 }
