@@ -14,6 +14,13 @@ export interface PlatformPackageSpec {
   binaryRelativePath: string;
 }
 
+export interface PackageDependencyManifest {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+
 const PLATFORM_NAME_MAP: Partial<Record<NodeJS.Platform, SupportedPlatform>> = {
   darwin: "darwin",
   linux: "linux",
@@ -117,6 +124,39 @@ export function buildOptionalDependencyMap(
   specs: readonly PlatformPackageSpec[] = PLATFORM_PACKAGE_MATRIX,
 ) {
   return Object.fromEntries(specs.map((spec) => [spec.packageName, version]));
+}
+
+/** Verify a package stays development-only and an optional peer after staging. */
+export function assertOptionalPeerDependencyContract(
+  root: PackageDependencyManifest,
+  staged: PackageDependencyManifest,
+  packageName: string,
+) {
+  const expectedVersion = root.devDependencies?.[packageName];
+
+  if (!expectedVersion) {
+    throw new Error(`Expected ${packageName} to remain a development dependency.`);
+  }
+  if (root.dependencies?.[packageName] !== undefined) {
+    throw new Error(`Expected ${packageName} to stay out of runtime dependencies.`);
+  }
+  if (
+    root.peerDependencies?.[packageName] !== expectedVersion ||
+    root.peerDependenciesMeta?.[packageName]?.optional !== true
+  ) {
+    throw new Error(
+      `Expected ${packageName}@${expectedVersion} to be an optional peer dependency.`,
+    );
+  }
+  if (staged.dependencies?.[packageName] !== undefined) {
+    throw new Error(`Expected staged ${packageName} to stay out of runtime dependencies.`);
+  }
+  if (
+    staged.peerDependencies?.[packageName] !== expectedVersion ||
+    staged.peerDependenciesMeta?.[packageName]?.optional !== true
+  ) {
+    throw new Error(`Expected the staged package to preserve the optional ${packageName} peer.`);
+  }
 }
 
 /** Return the executable filename for a platform package. */
