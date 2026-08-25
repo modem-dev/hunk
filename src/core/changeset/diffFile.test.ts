@@ -1,6 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { parseDiffFromFile, type FileDiffMetadata } from "@pierre/diffs";
 import { buildDiffFile, countDiffStats, createSkippedLargeMetadata } from "./diffFile";
+import { replaceExtensionFileLanguages } from "./fileLanguage";
+
+afterEach(() => {
+  replaceExtensionFileLanguages([]);
+});
 
 /** Parse real Pierre metadata for a small before/after pair. */
 function metadataFor(before: string, after: string, name = "foo.ts"): FileDiffMetadata {
@@ -42,6 +47,28 @@ describe("buildDiffFile", () => {
 
     expect(mtsFile.language).toBe("typescript");
     expect(ctsFile.language).toBe("typescript");
+  });
+
+  test("pins extension-selected languages onto the metadata Pierre renders", () => {
+    replaceExtensionFileLanguages([
+      {
+        matcher: { kind: "filename", value: "HunkSyntaxFile" },
+        language: "python",
+      },
+    ]);
+    const nested = buildDiffFile(
+      metadataFor("a\n", "b\n", "pkg/HunkSyntaxFile"),
+      "PATCH",
+      0,
+      "src",
+      null,
+    );
+
+    expect(nested.language).toBe("python");
+    expect(nested.metadata.lang).toBe("python");
+
+    const plain = buildDiffFile(metadataFor("a\n", "b\n", "notes"), "PATCH", 1, "src", null);
+    expect(plain.metadata.lang).toBe("text");
   });
 
   test("infers binary status from the patch when not given explicitly", () => {

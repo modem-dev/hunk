@@ -21,10 +21,20 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 8;
+export const HUNK_EXTENSION_API_VERSION = 9;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
+
+/** Selects files whose syntax language an extension overrides. */
+export type ExtensionFileLanguageMatcher =
+  | { readonly kind: "extension"; readonly value: string }
+  | { readonly kind: "filename"; readonly value: string }
+  | {
+      readonly kind: "glob";
+      readonly value: string;
+      readonly target: "basename" | "path";
+    };
 
 /** Capability object handed to every extension event handler and transform. */
 export interface ExtensionContext {
@@ -1855,8 +1865,8 @@ export interface HunkExtensionAPI {
   configureSession(options: ExtensionSessionOptions): void;
   /** Contribute one selectable theme. */
   registerTheme(theme: ExtensionThemeConfig): void;
-  /** Map one file extension (with or without a leading dot) to a highlight language. */
-  registerFileLanguage(extension: string, language: string): void;
+  /** Map a file extension, exact filename, or glob to a syntax-highlighting language. */
+  registerFileLanguage(matcher: string | ExtensionFileLanguageMatcher, language: string): void;
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
   /**

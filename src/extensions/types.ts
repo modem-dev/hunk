@@ -8,6 +8,7 @@ import type {
   ExtensionCustomEventHandler,
   ExtensionEventHandler,
   ExtensionEventName,
+  ExtensionFileLanguageMatcher,
   ExtensionFileView,
   ExtensionKeyboardMode,
   ExtensionLineHighlighter,
@@ -39,6 +40,7 @@ export type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionEventPayloads,
+  ExtensionFileLanguageMatcher,
   ExtensionFileSide,
   ExtensionFileView,
   ExtensionFileViewControls,
@@ -108,8 +110,7 @@ export interface RegisteredTheme {
 
 export interface RegisteredFileLanguage {
   extensionId: string;
-  /** Normalized extension without a leading dot, lowercased. */
-  extension: string;
+  matcher: ExtensionFileLanguageMatcher;
   language: string;
 }
 

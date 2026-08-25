@@ -3,6 +3,7 @@ import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";
@@ -315,6 +316,7 @@ export function AppHost({
       // registry, broker snapshot, pending lifecycle, and React state all agree.
       // Quit therefore linearizes either wholly before or wholly after adoption.
       if (quitRequestedRef.current) {
+        restoreFileLanguageRegistrations(loaded.previousFileLanguages);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw reloadRefusedDuringShutdown();
       }
@@ -362,6 +364,7 @@ export function AppHost({
           throw error;
         }
       } catch (error) {
+        restoreFileLanguageRegistrations(loaded.previousFileLanguages);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw error;
       }

@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `8`). Branch on it if you want one file to support several Hunk versions. Version 8 adds authoritative review snapshots to command handlers; version 7 added the current source line to command selection snapshots. Version 6 added session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `9`). Branch on it if you want one file to support several Hunk versions. Version 9 adds exact-filename and glob selectors to `registerFileLanguage`; version 8 added authoritative review snapshots to command handlers; version 7 added the current source line to command selection snapshots. Version 6 added session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
 
 ## `hunk.configureSession(options)`
 
@@ -38,16 +38,22 @@ hunk.registerTheme({
 
 Theme ids are lowercase words separated by `-` or `_` and cannot reuse a built-in id. Config-defined themes win over extension themes for the same id. Extension themes appear in the selector after config themes, in load order.
 
-## `hunk.registerFileLanguage(extension, language)`
+## `hunk.registerFileLanguage(matcher, language)`
 
-Map a file extension to a syntax-highlighting language. The extension may be written with or without a leading dot and is lowercased.
+Map an extension, exact filename, or glob to an existing syntax-highlighting language. A string remains shorthand for a case-insensitive extension:
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");
-hunk.registerFileLanguage("bzl", "python");
+hunk.registerFileLanguage({ kind: "filename", value: "BUILD" }, "python");
+hunk.registerFileLanguage(
+  { kind: "glob", value: "generated/**/*.proto", target: "path" },
+  "protobuf",
+);
 ```
 
-Later registrations win. Hunk's own `.mts` and `.cts` mappings cannot be overridden.
+Filename and glob matching is case-sensitive. Filename selectors match at any directory depth; globs explicitly target the basename or normalized repo-relative path. Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact filenames take precedence over globs, then extensions. Later registrations win ties.
+
+This selects a grammar already available to Pierre/Shiki; it does not load a new syntax grammar.
 
 ## `hunk.registerVcsAdapter(adapter)`
 

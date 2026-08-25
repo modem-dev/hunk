@@ -1,61 +1,80 @@
 import type { SupportedLanguages } from "@pierre/diffs";
+import type { ExtensionFileLanguageMatcher } from "../../extension-api/types";
 
 /**
- * Records file-extension → highlight-language mappings without loading the diff engine.
+ * Records file-language selectors without loading the diff engine.
  *
- * Registration happens during startup, on every invocation, while the mappings are only read
- * when a changeset is built. Applying them eagerly would pull the whole diff engine — and its
- * syntax grammars — into commands that never render anything, so this module holds them as
- * plain data and `fileLanguageLookup` applies them at the first lookup instead.
+ * Registration happens during startup, on every invocation, while the selectors are only read
+ * when a changeset is built. Compiling them eagerly would pull the whole diff engine — and its
+ * syntax grammars — into commands that never render anything, so this module holds them as plain
+ * data and `fileLanguageLookup` compiles them at the first lookup for each registration version.
  *
- * Keep this module free of runtime imports from `@pierre/diffs`; that is the only thing making
- * the deferral worth anything.
+ * Keep this module free of runtime imports from `@pierre/diffs`; that is the only thing making the
+ * deferral worth anything.
  */
 
-// Pierre omits these TypeScript extensions, so Hunk registers them itself.
+export interface FileLanguageRegistration {
+  matcher: ExtensionFileLanguageMatcher;
+  language: string;
+  /** Prevents a broader extension selector from replacing a core syntax guarantee. */
+  reserved?: boolean;
+}
+
+export interface FileLanguageRegistrationSnapshot {
+  version: number;
+  registrations: readonly FileLanguageRegistration[];
+}
+
+// Pierre omits these TypeScript extensions, so Hunk registers and reserves them itself.
 const HUNK_CUSTOM_EXTENSIONS: Record<string, SupportedLanguages> = {
   mts: "typescript",
   cts: "typescript",
 };
 
-/**
- * Extensions Hunk itself registers, in Pierre's dotless lowercase form.
- *
- * Extension-contributed mappings are skipped rather than allowed to shadow
- * these, so a third-party language pack cannot silently break TypeScript
- * highlighting for everyone.
- */
+/** Extensions Hunk refuses to yield to an extension, in dotless lowercase form. */
 export const BUILT_IN_FILE_LANGUAGE_EXTENSIONS: ReadonlySet<string> = new Set(
   Object.keys(HUNK_CUSTOM_EXTENSIONS),
 );
 
-// Hunk's own mappings are seeded here rather than applied on import, so they land in the same
-// pass as extension-contributed ones. `apply.ts` refuses extension mappings that collide with
-// BUILT_IN_FILE_LANGUAGE_EXTENSIONS, so seeding first cannot lose to a later registration.
-const pendingFileLanguages = new Map<string, string>(Object.entries(HUNK_CUSTOM_EXTENSIONS));
+const builtInFileLanguages: FileLanguageRegistration[] = Object.entries(HUNK_CUSTOM_EXTENSIONS).map(
+  ([value, language]) => ({
+    matcher: { kind: "extension", value },
+    language,
+    reserved: true,
+  }),
+);
 
-/**
- * Map one dotless, lowercased file extension to a highlight language.
- *
- * Pierre's language union is closed, but extensions supply plain strings; an
- * unknown language simply fails to match a grammar at render time, which is a
- * better failure than refusing the registration outright.
- *
- * The mapping takes effect at the next lookup rather than immediately. Nothing reads the
- * language table except `fileLanguageLookup`, so the delay is not observable.
- */
-export function registerFileLanguage(extension: string, language: string) {
-  pendingFileLanguages.set(extension, language);
+let registrationVersion = 0;
+let activeFileLanguages: readonly FileLanguageRegistration[] = builtInFileLanguages;
+
+/** Copy registrations into the active set and invalidate compiled selectors. */
+function setActiveFileLanguages(registrations: readonly FileLanguageRegistration[]): void {
+  activeFileLanguages = registrations.map((registration) => ({
+    matcher: { ...registration.matcher },
+    language: registration.language,
+    reserved: registration.reserved,
+  }));
+  registrationVersion += 1;
 }
 
 /**
- * Hand over every mapping registered since the last drain, emptying the queue.
+ * Atomically replace extension-contributed selectors while retaining Hunk's reserved mappings.
  *
- * Draining rather than replaying keeps repeat lookups free once the queue is empty, while a
- * registration made after the first lookup still lands on the next one.
+ * Reloads call this even when no selectors remain, so removed extensions cannot leave stale rules
+ * or compiled globs active in the process.
  */
-export function drainPendingFileLanguages(): Array<[string, string]> {
-  const drained = [...pendingFileLanguages];
-  pendingFileLanguages.clear();
-  return drained;
+export function replaceExtensionFileLanguages(
+  registrations: readonly FileLanguageRegistration[],
+): void {
+  setActiveFileLanguages([...builtInFileLanguages, ...registrations]);
+}
+
+/** Restore the active set captured before a candidate session bootstrap began. */
+export function restoreFileLanguageRegistrations(snapshot: FileLanguageRegistrationSnapshot): void {
+  setActiveFileLanguages(snapshot.registrations);
+}
+
+/** Return the current immutable registration set and its compilation version. */
+export function fileLanguageRegistrationSnapshot(): FileLanguageRegistrationSnapshot {
+  return { version: registrationVersion, registrations: activeFileLanguages };
 }

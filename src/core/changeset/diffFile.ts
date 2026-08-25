@@ -1,4 +1,4 @@
-import { type FileDiffMetadata } from "@pierre/diffs";
+import { setLanguageOverride, type FileDiffMetadata } from "@pierre/diffs";
 import { findSidecarFileContext } from "./sidecar";
 import { patchLooksBinary } from "./binary";
 import { fileLanguageForPath } from "./fileLanguageLookup";
@@ -68,6 +68,7 @@ export function buildDiffFile(
     ? (previousPath ?? normalizedMetadata.prevName)
     : (normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName);
   const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
+  const language = fileLanguageForPath(path);
   const sourceFetcher = sourceFetcherBuilder?.({
     path,
     previousPath: resolvedPreviousPath,
@@ -81,9 +82,10 @@ export function buildDiffFile(
     path,
     previousPath: resolvedPreviousPath,
     patch,
-    language: fileLanguageForPath(path) ?? undefined,
+    language,
     stats: stats ?? countDiffStats(normalizedMetadata),
-    metadata: normalizedMetadata,
+    // Pierre otherwise re-derives the language from the path and cannot see Hunk-only selectors.
+    metadata: setLanguageOverride(normalizedMetadata, language),
     lineMoveKinds,
     agent: findSidecarFileContext(sidecar, path, resolvedPreviousPath),
     isUntracked,

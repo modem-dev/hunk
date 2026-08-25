@@ -160,7 +160,11 @@ export default function (hunk: HunkExtensionAPI) {
     ]);
     // Extensions may write ".Prisma"; Pierre wants a dotless, lowercased key.
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "kitchen-sink", extension: "prisma", language: "graphql" },
+      {
+        extensionId: "kitchen-sink",
+        matcher: { kind: "extension", value: "prisma" },
+        language: "graphql",
+      },
     ]);
     expect(result.registry.vcsAdapters.map((entry) => entry.adapter.id)).toEqual(["fossil"]);
     expect(result.registry.eventHandlers.changeset_loaded).toHaveLength(1);
@@ -227,7 +231,11 @@ export default function (hunk: { registerFileLanguage: (e: string, l: string) =>
       { id: "folder-ext", sourcePath: candidate.path, origin: "config" },
     ]);
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "folder-ext", extension: "proof", language: "graphql" },
+      {
+        extensionId: "folder-ext",
+        matcher: { kind: "extension", value: "proof" },
+        language: "graphql",
+      },
     ]);
   });
 
@@ -277,7 +285,11 @@ export default function (hunk: { registerFileLanguage: (e: string, l: string) =>
     expect(result.issues).toEqual([]);
     expect(result.loaded).toEqual([{ id: "dep-ext", sourcePath: entryPath, origin: "flag" }]);
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "dep-ext", extension: "dep", language: "graphql" },
+      {
+        extensionId: "dep-ext",
+        matcher: { kind: "extension", value: "dep" },
+        language: "graphql",
+      },
     ]);
   });
 
@@ -336,7 +348,11 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
 
     expect(result.issues).toEqual([]);
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "async-pack", extension: "zig", language: "rust" },
+      {
+        extensionId: "async-pack",
+        matcher: { kind: "extension", value: "zig" },
+        language: "rust",
+      },
     ]);
   });
 
@@ -382,7 +398,11 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     expect(result.issues[2]?.message).toContain("default-export a function");
     // A partially applied extension must not leave registrations behind.
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "healthy", extension: "prisma", language: "graphql" },
+      {
+        extensionId: "healthy",
+        matcher: { kind: "extension", value: "prisma" },
+        language: "graphql",
+      },
     ]);
   });
 
@@ -410,7 +430,11 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     expect(result.issues[0]?.message).toContain(vendor.path);
     expect(result.issues[1]?.message).toContain("reserved by Hunk");
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "healthy", extension: "prisma", language: "graphql" },
+      {
+        extensionId: "healthy",
+        matcher: { kind: "extension", value: "prisma" },
+        language: "graphql",
+      },
     ]);
   });
 

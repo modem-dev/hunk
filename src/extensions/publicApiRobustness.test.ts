@@ -171,7 +171,50 @@ describe("registerFileLanguage with junk", () => {
     );
 
     expect(issues).toEqual([]);
-    expect(registry.fileLanguages.map((entry) => entry.extension)).toEqual(["zig", "bzl"]);
+    expect(registry.fileLanguages.map((entry) => entry.matcher)).toEqual([
+      { kind: "extension", value: "zig" },
+      { kind: "extension", value: "bzl" },
+    ]);
+  });
+
+  test("accepts exact filenames and explicit basename or path globs", () => {
+    const { registry, issues } = loadFactory(
+      (hunk: { registerFileLanguage: (matcher: unknown, language: string) => void }) => {
+        hunk.registerFileLanguage({ kind: "filename", value: "Hunkfile" }, "python");
+        hunk.registerFileLanguage({ kind: "glob", value: "*.hunk", target: "basename" }, "ruby");
+        hunk.registerFileLanguage(
+          { kind: "glob", value: "generated/**/*.ts", target: "path" },
+          "typescript",
+        );
+      },
+    );
+
+    expect(issues).toEqual([]);
+    expect(registry.fileLanguages.map((entry) => entry.matcher)).toEqual([
+      { kind: "filename", value: "Hunkfile" },
+      { kind: "glob", value: "*.hunk", target: "basename" },
+      { kind: "glob", value: "generated/**/*.ts", target: "path" },
+    ]);
+  });
+
+  test("refuses malformed matcher objects", () => {
+    for (const matcher of [
+      { kind: "filename", value: "" },
+      { kind: "filename", value: "path/Hunkfile" },
+      { kind: "glob", value: "*.ts" },
+      { kind: "glob", value: "*.ts", target: "somewhere" },
+      { kind: "regex", value: ".*" },
+      /.*\.ts/,
+    ]) {
+      const { registry, issues } = loadFactory(
+        (hunk: { registerFileLanguage: (matcher: unknown, language: string) => void }) => {
+          hunk.registerFileLanguage(matcher, "python");
+        },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(registry.fileLanguages).toEqual([]);
+    }
   });
 });
 

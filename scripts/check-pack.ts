@@ -25,6 +25,7 @@ import type {
   ExtensionChangeset,
   ExtensionCommandControls,
   ExtensionCommandExecutionOptions,
+  ExtensionFileLanguageMatcher,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
@@ -68,6 +69,12 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.registerTheme(theme);
   hunk.registerFileLanguage(".zig", "zig");
+  const generatedTypeScript: ExtensionFileLanguageMatcher = {
+    kind: "glob",
+    value: "generated/**/*.ts",
+    target: "path",
+  };
+  hunk.registerFileLanguage(generatedTypeScript, "typescript");
 
   const pane = (props: ExtensionPaneProps) => {
     hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);

@@ -47,8 +47,12 @@ Registrations (session behavior, themes, file languages, VCS adapters,
 changeset transforms, panes, commands, lifecycle/UI events, and inter-extension
 bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
-through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
-bootstrap retains the provisional candidate/config snapshot: a final pass that
+through `src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
+declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
+Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
+language. A live reload replaces the compiled selector generation while preparing its changeset
+and restores the previous generation if any pre-commit step fails. Staged external-VCS bootstrap
+retains the provisional candidate/config snapshot: a final pass that
 only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses
 the same shutdown/startup lifecycle. A factory that throws is rolled back to its
