@@ -158,6 +158,6 @@ export async function fetchChannelVersions(
     return fetchNpmChannelVersions(deps);
   }
 
-  // Nix, mise, and source builds install from somewhere Hunk cannot query or act on.
+  // Nix, mise, pacman and source builds install from somewhere Hunk cannot query or act on.
   return {};
 }

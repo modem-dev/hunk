@@ -17,12 +17,20 @@ const INSTALL_DIR_ENV = "HUNK_INSTALL_DIR";
 /** Path segments Homebrew always puts above its binaries, on macOS and Linux alike. */
 const HOMEBREW_PATH_SEGMENTS = ["cellar", "homebrew", "linuxbrew"];
 
-export type InstallSource = "npm" | "homebrew" | "nix" | "mise" | "curl" | "dev";
+export type InstallSource = "npm" | "homebrew" | "nix" | "mise" | "pacman" | "curl" | "dev";
 
 /** Package-manager clients that can install the global `hunkdiff` npm package. */
 export type NpmClient = "npm" | "bun" | "pnpm";
 
-const INSTALL_SOURCES: readonly InstallSource[] = ["npm", "homebrew", "nix", "mise", "curl", "dev"];
+const INSTALL_SOURCES: readonly InstallSource[] = [
+  "npm",
+  "homebrew",
+  "nix",
+  "mise",
+  "pacman",
+  "curl",
+  "dev",
+];
 
 export interface InstallSourceFacts {
   env?: NodeJS.ProcessEnv;

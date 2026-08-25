@@ -270,6 +270,21 @@ describe("startup update notice", () => {
     });
   });
 
+  test("suppresses update notices for pacman-managed installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "pacman" },
+          fetchImpl: async () => {
+            throw new Error("should not fetch for pacman installs");
+          },
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
   test("detects unmarked mise installs from their mise install path", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(

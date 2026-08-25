@@ -34,8 +34,10 @@ export type { InstallSource, UpdateChannel };
  * starts. A notice there would ask the user to fix something mise just fixed. A local source build
  * is replaced by rebuilding the checkout it came from, which is the developer's own workflow and
  * not something a published version number should interrupt.
+ *
+ * Arch packages installed through pacman or an AUR helper are updated externally.
  */
-const SILENT_INSTALL_SOURCES: readonly InstallSource[] = ["mise", "dev"];
+const SILENT_INSTALL_SOURCES: readonly InstallSource[] = ["mise", "pacman", "dev"];
 
 export interface UpdateNoticeDeps {
   env?: NodeJS.ProcessEnv;

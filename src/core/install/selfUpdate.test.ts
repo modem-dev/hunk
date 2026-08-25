@@ -341,6 +341,14 @@ describe("hunk update", () => {
     expect(result.stdout).toContain("Run `mise up hunk` to update it.");
   });
 
+  test("points pacman installs at pacman or an AUR helper", async () => {
+    const result = await runUpdate({ installSource: "pacman" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.commands).toEqual([]);
+    expect(result.stdout).toContain("Update it through pacman or your AUR helper.");
+  });
+
   test("points source builds at install:bin", async () => {
     const result = await runUpdate({ installSource: "dev", installedVersion: "0.0.0-unknown" });
 

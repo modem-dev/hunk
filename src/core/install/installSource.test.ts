@@ -121,6 +121,17 @@ describe("install source detection", () => {
     ).toBe("curl");
   });
 
+  test("accepts pacman as declared install source", () => {
+    expect(
+      detectInstallSource({
+        env: { HUNK_INSTALL_SOURCE: "pacman" },
+        executablePath: join("/", "usr", "lib", "hunkdiff", "hunk"),
+        version: "1.2.3",
+        homeDir: HOME_DIR,
+      }),
+    ).toBe("pacman");
+  });
+
   test("keeps npm for a .hunk segment that is not followed by bin", () => {
     expect(
       detectInstallSource({
