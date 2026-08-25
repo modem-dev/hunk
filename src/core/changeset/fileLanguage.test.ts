@@ -37,6 +37,18 @@ describe("custom file language registration", () => {
     expect(BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has("ts")).toBe(false);
   });
 
+  test("treats extension selectors only as dotted extensions", () => {
+    useTestFileLanguages({
+      matcher: { kind: "extension", value: "hunklegacy" },
+      language: "python",
+    });
+
+    expect(fileLanguageForPath("x.hunklegacy")).toBe("python");
+    expect(fileLanguageForPath("nested/x.hunklegacy")).toBe("python");
+    expect(fileLanguageForPath("hunklegacy")).toBe("text");
+    expect(fileLanguageForPath("nested/hunklegacy")).toBe("text");
+  });
+
   test("matches exact filenames at any path depth with stable casing", () => {
     useTestFileLanguages({
       matcher: { kind: "filename", value: "Hunkfile" },
