@@ -82,24 +82,27 @@ enables that flag.
   `+15% and +5 ms` rule, and none separate from noise under the evidence bar above.
 - Single machine and single Bun version. Absolute values will differ elsewhere; the ratios are the point.
 
-## Absolute memory is harness-inflated
+## Memory, measured on the shipped binaries
 
-The memory ratios are sound -- both sides carry identical overhead -- but the absolute values are much
-higher than real operation and should not be published.
+Both tags were compiled with `bun run build:bin` and driven under a real PTY on the same 40-file /
+4,800-line working-tree diff, stepping through 12 hunks with `]`, sampling the whole process tree.
+Three interleaved rounds per side, after a warm-up run to avoid first-execution page-in:
 
-Measured against the compiled binary (`dist/hunk`) under a real PTY on a 40-file / 4,800-line
-working-tree diff, sampling the whole process tree, three runs after discarding a cold-start outlier:
-
-| | peak RSS | steady RSS | steady private |
+| | 0.19.0 | 0.20.0 | delta |
 | --- | ---: | ---: | ---: |
-| `hunk diff`, 40 files / 4,800 lines | ~245 MiB | ~186 MiB | ~133 MiB |
-| `hunk diff`, 1 file / 2 lines (floor) | ~190 MiB | ~143 MiB | ~91 MiB |
+| RSS after navigating | 322 MiB | 239 MiB | **-26%** |
+| Private (anon) after navigating | 273 MiB | 187 MiB | **-32%** |
+| Peak RSS | 345 MiB | 272 MiB | -21% |
 
-So real steady-state is ~186 MiB, against the suite's 315 MiB. Three things inflate the benchmark
-number: it holds the synthetic fixture alongside the parsed model, it runs under the OpenTUI test
-renderer, and `process.memoryUsage().rss` never returns after a GC (destroying the renderer moved RSS
-211 -> 208 MiB). Memory is also dominated by a fixed floor rather than diff size: an 18x larger diff
-adds only ~43 MiB.
+Run-to-run spread is about +/-1 MiB and the two sides never overlap. These reproduce the suite's ratio
+(-26% against -27%) from the shipped artifact, so the ratio is trustworthy even though the suite's
+absolutes are not: it holds the synthetic fixture alongside the parsed model, runs under the OpenTUI
+test renderer, and reads an RSS that never returns after a GC (destroying the renderer moved RSS
+211 -> 208 MiB).
+
+Scenario matters more than diff size. Opening the same diff *without* navigating gives 204 -> 186 MiB
+(-8.5%): most of the win is retained navigation state, not steady-state footprint. Diff size barely
+moves the floor -- an 18x larger diff adds only ~43 MiB.
 
 For context, same PTY harness, same repo, steady state:
 
