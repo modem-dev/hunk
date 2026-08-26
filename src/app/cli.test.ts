@@ -1630,6 +1630,46 @@ describe("parseCli argument validation", () => {
 });
 
 describe("parseCli session reload validation", () => {
+  test("scopes reload help flags around the nested command separator", async () => {
+    const outerHelp = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "reload",
+      "--help",
+      "--",
+      "show",
+      "--help",
+    ]);
+    expect(outerHelp).toMatchObject({
+      kind: "help",
+      text: expect.stringContaining("replace the contents of one live Hunk session"),
+    });
+
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-1", "--", "show", "--help"]),
+    ).rejects.toThrow("Session reload requires a Hunk review command after --");
+
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "reload",
+        "session-1",
+        "--",
+        "show",
+        "HEAD",
+        "--",
+        "--help",
+      ]),
+    ).toMatchObject({
+      kind: "session",
+      action: "reload",
+      nextInput: { kind: "show", ref: "HEAD", pathspecs: ["--help"] },
+    });
+  });
+
   test("rejects a reload with the `--` separator but no nested command", async () => {
     await expect(parseCli(["bun", "hunk", "session", "reload", "session-1", "--"])).rejects.toThrow(
       "Pass the replacement Hunk command after `--`",

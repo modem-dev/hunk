@@ -1023,6 +1023,9 @@ async function parseSessionListCommand(tokens: string[]): Promise<ParsedCliInput
   };
 }
 
+/** Options shared by the get and context read-command parser. */
+type SessionReadCommandOptions = SessionCommandOptions<"get"> | SessionCommandOptions<"context">;
+
 /** Parse a session get or context command with their shared selector shape. */
 async function parseSessionReadCommand(
   action: "get" | "context",
@@ -1031,9 +1034,9 @@ async function parseSessionReadCommand(
   const spec = SESSION_AGENT_COMMANDS[action];
   const command = buildSessionCommand(spec);
   let parsedSessionId: string | undefined;
-  let parsedOptions: SessionCommandOptions<"get"> = {};
+  let parsedOptions: SessionReadCommandOptions = {};
 
-  command.action((sessionId: string | undefined, options: SessionCommandOptions<"get">) => {
+  command.action((sessionId: string | undefined, options: SessionReadCommandOptions) => {
     parsedSessionId = sessionId;
     parsedOptions = options;
   });
