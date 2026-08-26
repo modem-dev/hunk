@@ -943,7 +943,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffRowView matches planned split and stack geometry at new-guide wrap boundaries", async () => {
+  test("DiffRowView matches planned split and stack geometry at guide and add-note wrap boundaries", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const plannedRows = [
       {
@@ -992,46 +992,50 @@ describe("UI components", () => {
     ];
 
     for (const { width, ...plannedRow } of plannedRows) {
-      const measuredHeight = measurePlannedRenderedRowHeight(plannedRow, {
-        width,
-        lineNumberDigits: 1,
-        showLineNumbers: false,
-        showHunkHeaders: true,
-        wrapLines: true,
-      });
-      const setup = await testRender(
-        <DiffRowView
-          plannedRow={plannedRow}
-          width={width}
-          lineNumberDigits={1}
-          showLineNumbers={false}
-          showHunkHeaders={true}
-          wrapLines={true}
-          codeHorizontalOffset={0}
-          theme={theme}
-          selected={false}
-        />,
-        { width: 24, height: 4 },
-      );
+      for (const reserveAddNoteColumn of [false, true]) {
+        const measuredHeight = measurePlannedRenderedRowHeight(plannedRow, {
+          width,
+          lineNumberDigits: 1,
+          reserveAddNoteColumn,
+          showLineNumbers: false,
+          showHunkHeaders: true,
+          wrapLines: true,
+        });
+        const setup = await testRender(
+          <DiffRowView
+            plannedRow={plannedRow}
+            width={width}
+            lineNumberDigits={1}
+            showLineNumbers={false}
+            showHunkHeaders={true}
+            wrapLines={true}
+            codeHorizontalOffset={0}
+            theme={theme}
+            selected={false}
+            onStartUserNoteAtHunk={reserveAddNoteColumn ? () => {} : undefined}
+          />,
+          { width: 24, height: 5 },
+        );
 
-      try {
-        await act(async () => {
-          await setup.renderOnce();
-        });
-        const renderedHeight = setup
-          .captureSpans()
-          .lines.filter((line) =>
-            line.spans.some(
-              (span) =>
-                capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
-            ),
-          ).length;
-        expect(measuredHeight).toBe(2);
-        expect(renderedHeight).toBe(measuredHeight);
-      } finally {
-        await act(async () => {
-          setup.renderer.destroy();
-        });
+        try {
+          await act(async () => {
+            await setup.renderOnce();
+          });
+          const renderedHeight = setup
+            .captureSpans()
+            .lines.filter((line) =>
+              line.spans.some(
+                (span) =>
+                  capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+              ),
+            ).length;
+          expect(measuredHeight).toBe(reserveAddNoteColumn ? 3 : 2);
+          expect(renderedHeight).toBe(measuredHeight);
+        } finally {
+          await act(async () => {
+            setup.renderer.destroy();
+          });
+        }
       }
     }
   });

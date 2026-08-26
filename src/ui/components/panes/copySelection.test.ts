@@ -3,6 +3,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
 import { measureDiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import { planCodeRowLayout } from "../../diff/renderRows";
 import { buildFileSectionLayouts } from "../../lib/fileSectionLayout";
 import {
   buildCopySelectedRowKeys,
@@ -19,6 +20,7 @@ import {
   type CopySelectionContext,
   type CopySelectionDrag,
   type CopySelectionPoint,
+  type CopySelectionSide,
 } from "./copySelection";
 import {
   DIFF_RAIL_PREFIX_WIDTH,
@@ -199,6 +201,7 @@ function buildMultiFileTestContext({
     headerStatsWidth: 12,
     layout,
     pinnedHeaderFile: files[0] ?? null,
+    reserveAddNoteColumn: false,
     sectionGeometry,
     showHunkHeaders: true,
     showLineNumbers: true,
@@ -208,6 +211,26 @@ function buildMultiFileTestContext({
   };
 
   return { context, fileSectionLayouts, sectionGeometry };
+}
+
+/** Build a one-line change that sits on both split and stack add-note wrap boundaries. */
+function createWrappedBoundaryDiffFile(): DiffFile {
+  const metadata = parseDiffFromFile(
+    { name: "boundary.ts", contents: "", cacheKey: "boundary-before" },
+    { name: "boundary.ts", contents: "1234567\n", cacheKey: "boundary-after" },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "boundary",
+    path: "boundary.ts",
+    patch: "",
+    language: "typescript",
+    stats: { additions: 1, deletions: 0 },
+    metadata,
+    agent: null,
+  };
 }
 
 function buildContext(
@@ -220,6 +243,47 @@ function buildContext(
   sectionGeometry: ReturnType<typeof measureDiffSectionGeometry>[];
 } {
   return buildMultiFileTestContext({ files: [file], layout, width });
+}
+
+/** Build copy and measured geometry with the same wrapped add-note reservation policy. */
+function buildWrappedBoundaryContext(layout: "stack" | "split", reserveAddNoteColumn: boolean) {
+  const file = createWrappedBoundaryDiffFile();
+  const theme = resolveTheme("github-dark-default", null);
+  const width = layout === "split" ? 20 : 10;
+  const geometry = measureDiffSectionGeometry(
+    file,
+    layout,
+    true,
+    theme,
+    [],
+    width,
+    false,
+    true,
+    new Set(),
+    undefined,
+    reserveAddNoteColumn,
+  );
+  const sectionGeometry = [geometry];
+  const fileSectionLayouts = buildFileSectionLayouts([file], [geometry.bodyHeight]);
+  const context: CopySelectionContext = {
+    codeHorizontalOffset: 0,
+    copyDecorations: true,
+    files: [file],
+    fileSectionLayouts,
+    headerLabelWidth: 6,
+    headerStatsWidth: 4,
+    layout,
+    pinnedHeaderFile: file,
+    reserveAddNoteColumn,
+    sectionGeometry,
+    showHunkHeaders: true,
+    showLineNumbers: false,
+    theme,
+    width,
+    wrapLines: true,
+  };
+
+  return { context, geometry, section: fileSectionLayouts[0]! };
 }
 
 describe("clampCopyColumn", () => {
@@ -1195,6 +1259,77 @@ describe("renderCopySelectionText in split with side", () => {
     // First line should be included
     expect(text).toContain("export const answer = 42;");
   });
+});
+
+describe("wrapped add-note copy parity", () => {
+  for (const layout of ["split", "stack"] as const) {
+    test(`${layout} continuation rows match measured, decorated, code-only, and word-selection boundaries`, () => {
+      const unreserved = buildWrappedBoundaryContext(layout, false);
+      const { context, geometry, section } = buildWrappedBoundaryContext(layout, true);
+      const isAddedCodeRow = (row: (typeof geometry.plannedRows)[number]) =>
+        row.kind === "diff-row" &&
+        (row.row.type === "split-line"
+          ? row.row.right.kind === "addition"
+          : row.row.type === "stack-line" && row.row.cell.kind === "addition");
+      const rowIndex = geometry.plannedRows.findIndex(isAddedCodeRow);
+      const unreservedRowIndex = unreserved.geometry.plannedRows.findIndex(isAddedCodeRow);
+      expect(rowIndex).toBeGreaterThanOrEqual(0);
+      expect(unreservedRowIndex).toBeGreaterThanOrEqual(0);
+
+      const row = geometry.plannedRows[rowIndex]!;
+      const bounds = geometry.rowBounds[rowIndex]!;
+      expect(unreserved.geometry.rowBounds[unreservedRowIndex]!.height).toBe(1);
+      expect(bounds.height).toBe(2);
+
+      const rowTop = section.bodyTop + bounds.top;
+      const side: CopySelectionSide | undefined = layout === "split" ? "right" : undefined;
+      const paneStart = layout === "split" ? resolveSplitPaneWidths(context.width).leftWidth : 0;
+      const range = {
+        start: { kind: "review-row" as const, column: paneStart, visualRow: rowTop },
+        end: {
+          kind: "review-row" as const,
+          column: context.width - 1,
+          visualRow: rowTop + bounds.height - 1,
+        },
+        side,
+      };
+      const decoratedLines = renderCopySelectionText({ context, ...range }).split("\n");
+      const codeOnlyContext = { ...context, copyDecorations: false };
+      const codeOnlyLines = renderCopySelectionText({
+        context: codeOnlyContext,
+        ...range,
+      }).split("\n");
+      expect(decoratedLines).toHaveLength(bounds.height);
+      expect(codeOnlyLines).toEqual(["1234", "567"]);
+
+      const plan = planCodeRowLayout(row, {
+        width: context.width,
+        lineNumberDigits: geometry.lineNumberDigits,
+        reserveAddNoteColumn: context.reserveAddNoteColumn,
+        showLineNumbers: context.showLineNumbers,
+        wrapLines: context.wrapLines,
+      })!;
+      const cell = plan.kind === "split" ? plan.right : plan.cell;
+      const codeStart = paneStart + cell.prefixWidth + cell.gutterWidth;
+      const continuationPoint = {
+        kind: "review-row" as const,
+        column: codeStart,
+        visualRow: rowTop + 1,
+      };
+      expect(expandSelectionPoint(continuationPoint, 2, codeOnlyContext)).toEqual({
+        startCol: codeStart,
+        endCol: codeStart + 2,
+      });
+      expect(
+        renderCopySelectionText({
+          context: codeOnlyContext,
+          side,
+          start: continuationPoint,
+          end: { ...continuationPoint, column: codeStart + 2 },
+        }),
+      ).toBe("567");
+    });
+  }
 });
 
 describe("copy selection with wide (CJK) characters", () => {

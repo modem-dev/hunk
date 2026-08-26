@@ -1,12 +1,11 @@
 import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
+import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import {
-  DIFF_RAIL_PREFIX_WIDTH,
-  resolveSplitCellGeometry,
-  resolveSplitPaneWidths,
-  resolveStackCellGeometry,
-} from "../../diff/codeColumns";
-import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "../../diff/renderRows";
+  planCodeRowLayout,
+  renderCodeOnlyPlannedRowText,
+  renderDecoratedPlannedRowText,
+} from "../../diff/renderRows";
 import {
   type DiffSectionGeometry,
   type DiffSectionRowBounds,
@@ -53,6 +52,7 @@ export interface CopySelectionContext {
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   pinnedHeaderFile?: DiffFile | null;
+  reserveAddNoteColumn: boolean;
   sectionGeometry: DiffSectionGeometry[];
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
@@ -283,35 +283,30 @@ function resolveCopyVisualLineOffset({
   lineNumberDigits: number;
   row: PlannedReviewRow;
 }) {
-  const { copyDecorations, layout, showLineNumbers, width } = context;
+  const { copyDecorations, layout, width } = context;
   const splitPaneWidths = layout === "split" ? resolveSplitPaneWidths(width) : null;
 
   if (copyDecorations) {
     return copySide === "right" && splitPaneWidths ? splitPaneWidths.leftWidth : 0;
   }
 
-  if (row.kind !== "diff-row") {
-    return 0;
+  const codeLayout = planCodeRowLayout(row, {
+    lineNumberDigits,
+    reserveAddNoteColumn: context.reserveAddNoteColumn,
+    showLineNumbers: context.showLineNumbers,
+    width,
+    wrapLines: context.wrapLines,
+  });
+  if (codeLayout?.kind === "stack") {
+    return codeLayout.cell.prefixWidth + codeLayout.cell.gutterWidth;
   }
-  if (row.row.type === "stack-line") {
-    return (
-      DIFF_RAIL_PREFIX_WIDTH +
-      resolveStackCellGeometry(width, lineNumberDigits, showLineNumbers, DIFF_RAIL_PREFIX_WIDTH)
-        .gutterWidth
-    );
-  }
-  if (row.row.type !== "split-line" || !copySide || !splitPaneWidths) {
+  if (codeLayout?.kind !== "split" || !copySide) {
     return 0;
   }
 
-  const paneOffset = copySide === "right" ? splitPaneWidths.leftWidth : 0;
-  const paneWidth =
-    copySide === "right" ? width - splitPaneWidths.leftWidth : splitPaneWidths.leftWidth;
+  const cell = copySide === "right" ? codeLayout.right : codeLayout.left;
   return (
-    paneOffset +
-    DIFF_RAIL_PREFIX_WIDTH +
-    resolveSplitCellGeometry(paneWidth, lineNumberDigits, showLineNumbers, DIFF_RAIL_PREFIX_WIDTH)
-      .gutterWidth
+    (copySide === "right" ? codeLayout.leftPaneWidth : 0) + cell.prefixWidth + cell.gutterWidth
   );
 }
 
@@ -424,6 +419,7 @@ export function renderCopySelectionText({
     headerLabelWidth,
     headerStatsWidth,
     pinnedHeaderFile,
+    reserveAddNoteColumn,
     sectionGeometry,
     showHunkHeaders,
     showLineNumbers,
@@ -522,19 +518,21 @@ export function renderCopySelectionText({
         continue;
       }
 
-      const renderRowText = copyDecorations
-        ? renderDecoratedPlannedRowText
-        : renderCodeOnlyPlannedRowText;
-      const renderedLines = renderRowText(row, {
+      const rowTextOptions = {
         codeHorizontalOffset,
         lineNumberDigits: geometry.lineNumberDigits,
+        reserveAddNoteColumn,
         showHunkHeaders,
         showLineNumbers,
         side: copySide,
         theme,
         width,
         wrapLines,
-      });
+      };
+      const renderRowText = copyDecorations
+        ? renderDecoratedPlannedRowText
+        : renderCodeOnlyPlannedRowText;
+      const renderedLines = renderRowText(row, rowTextOptions);
 
       const globalColumnOffset = resolveCopyVisualLineOffset({
         context,
@@ -574,7 +572,14 @@ export function expandSelectionPoint(
   clickCount: 2 | 3,
   context: CopySelectionContext,
 ): { startCol: number; endCol: number } | null {
-  const { fileSectionLayouts, layout, sectionGeometry, showLineNumbers, width } = context;
+  const {
+    fileSectionLayouts,
+    layout,
+    reserveAddNoteColumn,
+    sectionGeometry,
+    showLineNumbers,
+    width,
+  } = context;
 
   // Find the section and row at this visual row.
   for (const section of fileSectionLayouts) {
@@ -621,43 +626,34 @@ export function expandSelectionPoint(
     // Double-click: expand to word boundaries within the code content (excluding rail/gutter).
     const side = resolveCopySelectionSide(point.column, layout, width);
 
-    // Compute how many global columns the prefix and gutter consume so we can convert between
-    // code-local and global column spaces.
-    let globalContentStart: number;
-    if (layout === "split") {
-      const { leftWidth } = resolveSplitPaneWidths(width);
-      const paneOffset = side === "left" ? 0 : leftWidth;
-      const paneWidth = side === "left" ? leftWidth : width - leftWidth;
-      const { gutterWidth } = resolveSplitCellGeometry(
-        paneWidth,
-        geometry.lineNumberDigits,
-        showLineNumbers,
-        DIFF_RAIL_PREFIX_WIDTH,
-      );
-      globalContentStart = paneOffset + DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
-    } else {
-      const { gutterWidth } = resolveStackCellGeometry(
-        width,
-        geometry.lineNumberDigits,
-        showLineNumbers,
-        DIFF_RAIL_PREFIX_WIDTH,
-      );
-      globalContentStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
-    }
-
-    const lineIndex = bodyRow - geometry.rowBounds[rowIndex]!.top;
-
-    // Use code-only text so word detection ignores the rail, line numbers, and diff signs.
-    const codeText = renderCodeOnlyPlannedRowText(row, {
+    const rowTextOptions = {
       codeHorizontalOffset: context.codeHorizontalOffset,
       lineNumberDigits: geometry.lineNumberDigits,
+      reserveAddNoteColumn,
       showHunkHeaders: context.showHunkHeaders,
       showLineNumbers,
       side,
       theme: context.theme,
       width,
       wrapLines: context.wrapLines,
-    });
+    };
+    const codeLayout = planCodeRowLayout(row, rowTextOptions);
+
+    // Compute how many global columns the planned prefix and gutter consume so we can convert
+    // between code-local and global column spaces.
+    let globalContentStart = 0;
+    if (codeLayout?.kind === "split") {
+      const cell = side === "left" ? codeLayout.left : codeLayout.right;
+      globalContentStart =
+        (side === "left" ? 0 : codeLayout.leftPaneWidth) + cell.prefixWidth + cell.gutterWidth;
+    } else if (codeLayout?.kind === "stack") {
+      globalContentStart = codeLayout.cell.prefixWidth + codeLayout.cell.gutterWidth;
+    }
+
+    const lineIndex = bodyRow - geometry.rowBounds[rowIndex]!.top;
+
+    // Use code-only text so word detection ignores the rail, line numbers, and diff signs.
+    const codeText = renderCodeOnlyPlannedRowText(row, rowTextOptions);
 
     const lineText = codeText[lineIndex];
     if (lineText === undefined || lineText.length === 0) {

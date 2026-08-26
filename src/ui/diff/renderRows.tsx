@@ -893,13 +893,17 @@ function planCodeCellLayout(
   wrapLines: boolean,
 ): CodeCellLayoutPlan {
   const contentWidth = Math.max(0, width - prefixWidth - gutterWidth);
+  let measuredWrappedLineCount: number | undefined;
   return {
     width,
     prefixWidth,
     gutterWidth,
     contentWidth,
     get wrappedLineCount() {
-      return wrapLines ? measureWrappedSpansLineCount(spans, contentWidth) : 1;
+      measuredWrappedLineCount ??= wrapLines
+        ? measureWrappedSpansLineCount(spans, contentWidth)
+        : 1;
+      return measuredWrappedLineCount;
     },
   };
 }
@@ -960,6 +964,7 @@ export function planCodeRowLayout(
       wrapLines,
     );
 
+    let measuredWrappedLineCount: number | undefined;
     return {
       kind: "split",
       left,
@@ -970,7 +975,8 @@ export function planCodeRowLayout(
       trailingGuideWidth,
       addNoteBadgeWidth,
       get wrappedLineCount() {
-        return Math.max(left.wrappedLineCount, right.wrappedLineCount);
+        measuredWrappedLineCount ??= Math.max(left.wrappedLineCount, right.wrappedLineCount);
+        return measuredWrappedLineCount;
       },
     };
   }
@@ -990,6 +996,7 @@ export function planCodeRowLayout(
     wrapLines,
   );
 
+  let measuredWrappedLineCount: number | undefined;
   return {
     kind: "stack",
     cell,
@@ -997,7 +1004,8 @@ export function planCodeRowLayout(
     trailingGuideWidth,
     addNoteBadgeWidth,
     get wrappedLineCount() {
-      return cell.wrappedLineCount;
+      measuredWrappedLineCount ??= cell.wrappedLineCount;
+      return measuredWrappedLineCount;
     },
   };
 }

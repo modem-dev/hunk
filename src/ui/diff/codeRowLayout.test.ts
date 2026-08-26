@@ -132,6 +132,42 @@ describe("planned code-row layout", () => {
     expect(decoratedLines(guided, options).every((line) => line.endsWith("│"))).toBe(true);
   });
 
+  test("memoizes wrapped measurement while preserving lazy plan construction", () => {
+    for (const row of [splitPlannedRow(), stackPlannedRow()]) {
+      if (row.row.type !== "split-line" && row.row.type !== "stack-line") {
+        throw new Error("expected a code row");
+      }
+      const spans = row.row.type === "split-line" ? row.row.right.spans : row.row.cell.spans;
+      const span = spans[0]!;
+      let textReads = 0;
+      Object.defineProperty(span, "text", {
+        configurable: true,
+        get() {
+          textReads += 1;
+          return boundaryText;
+        },
+      });
+
+      const plan = planCodeRowLayout(row, {
+        width: row.row.type === "split-line" ? 20 : 10,
+        lineNumberDigits: 1,
+        showLineNumbers: false,
+        wrapLines: true,
+      });
+      expect(plan).not.toBeNull();
+      expect(textReads).toBe(0);
+
+      expect(plan!.wrappedLineCount).toBe(1);
+      const readsAfterMeasurement = textReads;
+      expect(readsAfterMeasurement).toBeGreaterThan(0);
+      expect(plan!.wrappedLineCount).toBe(1);
+      expect(
+        plan!.kind === "split" ? plan!.right.wrappedLineCount : plan!.cell.wrappedLineCount,
+      ).toBe(1);
+      expect(textReads).toBe(readsAfterMeasurement);
+    }
+  });
+
   test("guide, badge, and wrapping policies reserve the same total width in split and stack", () => {
     for (const rowFactory of [splitPlannedRow, stackPlannedRow]) {
       for (const noteGuideSide of [undefined, "old", "new"] as const) {
