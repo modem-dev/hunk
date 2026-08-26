@@ -79,6 +79,7 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import {
   useTerminalReview,
   type AgentNoteGeometrySnapshot,
@@ -139,15 +140,9 @@ import { verifyWorkspaceWriteTarget } from "./lib/workspaceWriteGuard";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme, withTransparentSurfaces } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
-type ThemeSelectorState = {
-  open: boolean;
-  selectedIndex: number;
-  previewThemeId: string | null;
-};
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -297,17 +292,26 @@ export function App({
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Show a short-lived status-bar notice and replace any pending notice timer. */
+  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
+    if (transientTimerRef.current !== null) {
+      clearTimeout(transientTimerRef.current);
+    }
+    setTransientNoticeText(text);
+    transientTimerRef.current = setTimeout(() => {
+      transientTimerRef.current = null;
+      setTransientNoticeText((current) => (current === text ? null : current));
+    }, durationMs);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (transientTimerRef.current !== null) {
+        clearTimeout(transientTimerRef.current);
+      }
+    };
+  }, []);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () =>
-      resolveTheme(
-        bootstrap.initialTheme,
-        bootstrap.initialThemeMode ?? renderer.themeMode,
-        bootstrap.customThemes,
-      ).id,
-  );
-  // Soft reloads replace bootstrap without re-running startup terminal theme detection.
-  const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -319,11 +323,6 @@ export function App({
   }>({ id: 0, alignment: "center" });
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
-  const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
-    open: false,
-    selectedIndex: 0,
-    previewThemeId: null,
-  });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(
     () => !pagerMode && bootstrap.initialSidebar === true,
@@ -392,33 +391,26 @@ export function App({
   const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
   const extensionTrustPromptOpen = extensionTrustPromptRoot !== null;
 
-  const themeOptions = useMemo(
-    () => availableThemes(bootstrap.customThemes),
-    [bootstrap.customThemes],
-  );
-  const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
-  const baseTheme = useMemo(
-    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customThemes),
-    [effectiveThemeId, detectedThemeMode, bootstrap.customThemes],
-  );
-  const activeTheme = useMemo(
-    () =>
-      bootstrap.input.options.transparentBackground
-        ? withTransparentSurfaces(baseTheme)
-        : baseTheme,
-    [baseTheme, bootstrap.input.options.transparentBackground],
-  );
-
-  const themeSelectorItems = useMemo(
-    () =>
-      themeOptions.map((theme) => ({
-        id: theme.id,
-        label: theme.label,
-        description: theme.id === activeTheme.id ? "active" : "",
-        active: theme.id === activeTheme.id,
-      })),
-    [activeTheme.id, themeOptions],
-  );
+  const {
+    activeTheme,
+    baseTheme,
+    themeId,
+    themeSelectorItems,
+    themeSelectorOpen,
+    themeSelectorSelectedIndex,
+    acceptThemeSelector,
+    acceptThemeSelectorItem,
+    closeThemeSelector,
+    moveThemeSelector,
+    openThemeSelector,
+    previewThemeSelectorItem,
+  } = useThemeSelectorController({
+    customThemes: bootstrap.customThemes,
+    initialTheme: bootstrap.initialTheme,
+    initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
+    onTransientNotice: showTransientNotice,
+    transparentBackground: bootstrap.input.options.transparentBackground ?? false,
+  });
   const currentViewPreferences = useMemo<PersistedViewPreferences>(
     () => ({
       mode: layoutMode,
@@ -1483,30 +1475,6 @@ export function App({
     setCopyDecorations((current) => !current);
   };
 
-  // Show a short-lived status-bar message. Used to surface clipboard-copy outcomes that would
-  // otherwise be invisible to the user (OSC52 unsupported, etc.).
-  // Track the timer so we can clear it on unmount and avoid React state updates after unmount.
-  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
-    if (transientTimerRef.current !== null) {
-      clearTimeout(transientTimerRef.current);
-    }
-    setTransientNoticeText(text);
-    transientTimerRef.current = setTimeout(() => {
-      transientTimerRef.current = null;
-      setTransientNoticeText((current) => (current === text ? null : current));
-    }, durationMs);
-  }, []);
-
-  // Clear any pending transient-notice timer on unmount to avoid state updates after unmount.
-  useEffect(() => {
-    return () => {
-      if (transientTimerRef.current !== null) {
-        clearTimeout(transientTimerRef.current);
-      }
-    };
-  }, []);
-
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
   const toggleLineWrap = () => {
     // Capture the pre-toggle viewport position synchronously so DiffPane can restore the same
@@ -1523,83 +1491,6 @@ export function App({
     }
     reportedThemeIdRef.current = themeId;
   }, [extensions, themeId]);
-
-  /** Switch the active theme. */
-  const selectTheme = useCallback(
-    (nextThemeId: string) => {
-      const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
-      setThemeId(nextThemeId);
-      showTransientNotice(`Theme: ${nextTheme?.label ?? nextThemeId}`);
-    },
-    [showTransientNotice, themeOptions],
-  );
-
-  /** Open the keyboard-driven theme selector with the current theme highlighted. */
-  const openThemeSelector = useCallback(() => {
-    const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
-    setThemeSelectorState({
-      open: true,
-      selectedIndex: Math.max(0, currentIndex),
-      previewThemeId: null,
-    });
-  }, [activeTheme.id, themeSelectorItems]);
-
-  const closeThemeSelector = useCallback(() => {
-    // Dropping the preview id reverts all previewed colors in the same state transition.
-    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-  }, []);
-
-  const moveThemeSelector = useCallback(
-    (delta: number) => {
-      setThemeSelectorState((current) => {
-        if (themeSelectorItems.length === 0) {
-          return { ...current, selectedIndex: 0, previewThemeId: null };
-        }
-
-        const nextIndex =
-          (current.selectedIndex + delta + themeSelectorItems.length) % themeSelectorItems.length;
-        const item = themeSelectorItems[nextIndex]!;
-        return { ...current, selectedIndex: nextIndex, previewThemeId: item.id };
-      });
-    },
-    [themeSelectorItems],
-  );
-
-  /** Preview the theme under the pointer without committing it. */
-  const previewThemeSelectorItem = useCallback(
-    (index: number) => {
-      const item = themeSelectorItems[index];
-      if (!item) {
-        return;
-      }
-
-      setThemeSelectorState((current) => ({
-        ...current,
-        selectedIndex: index,
-        previewThemeId: item.id,
-      }));
-    },
-    [themeSelectorItems],
-  );
-
-  /** Commit one theme and close the selector. */
-  const acceptThemeSelectorItem = useCallback(
-    (index: number) => {
-      const item = themeSelectorItems[index];
-      if (!item) {
-        return;
-      }
-
-      selectTheme(item.id);
-      // Close without a preview id; the committed theme id now supplies the same effective theme.
-      setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-    },
-    [selectTheme, themeSelectorItems],
-  );
-
-  const acceptThemeSelector = useCallback(() => {
-    acceptThemeSelectorItem(themeSelectorState.selectedIndex);
-  }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
 
   /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleFilesPane = () => {
@@ -2164,7 +2055,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleFocusArea,
-    themeSelectorOpen: themeSelectorState.open,
+    themeSelectorOpen,
   });
 
   /** Start a mouse drag for one resizable pane. */
@@ -2604,11 +2495,11 @@ export function App({
         </ConfirmDialog>
       ) : null}
 
-      {themeSelectorState.open ? (
+      {themeSelectorOpen ? (
         <Suspense fallback={null}>
           <LazyThemeSelectorDialog
             items={themeSelectorItems}
-            selectedIndex={themeSelectorState.selectedIndex}
+            selectedIndex={themeSelectorSelectedIndex}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}
