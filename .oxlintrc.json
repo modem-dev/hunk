@@ -1,5 +1,6 @@
 {
   "rules": {
+    "complexity": ["error", { "max": 80 }],
     "no-control-regex": "off"
   }
 }
