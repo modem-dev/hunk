@@ -1,3 +1,7 @@
+/**
+ * Coordinates view-preference dirty state, persistence choices, prompt state, and safe delayed quits.
+ * App continues to render the dialog and own its keyboard and UI composition.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   diffPersistedViewPreferences,
