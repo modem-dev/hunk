@@ -19,10 +19,10 @@ import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
+import { App } from "./App";
 import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
-const { App } = await import("./App");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
