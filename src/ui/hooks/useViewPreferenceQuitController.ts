@@ -51,7 +51,7 @@ export interface UseViewPreferenceQuitControllerOptions {
   showNotice: (message: string) => void;
   showError: (message: string) => void;
   closeHelp: () => void;
-  homeDirectory?: string;
+  homeDirectory: string | undefined;
   quitScheduler?: ViewPreferenceQuitScheduler;
 }
 
@@ -77,7 +77,7 @@ export function useViewPreferenceQuitController({
   showNotice,
   showError,
   closeHelp,
-  homeDirectory = process.env.HOME,
+  homeDirectory,
   quitScheduler = DEFAULT_QUIT_SCHEDULER,
 }: UseViewPreferenceQuitControllerOptions): ViewPreferenceQuitController {
   const [savedPreferences, setSavedPreferences] = useState(currentPreferences);

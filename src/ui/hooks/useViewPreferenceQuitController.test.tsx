@@ -155,7 +155,7 @@ describe("useViewPreferenceQuitController", () => {
     }
   });
 
-  test("shortens config paths beneath HOME and preserves other labels", async () => {
+  test("shortens config paths only when an explicit HOME contains them", async () => {
     const harness = await renderController({
       configPath: "/users/probe/.config/hunk/config.toml",
       homeDirectory: "/users/probe",
@@ -166,6 +166,14 @@ describe("useViewPreferenceQuitController", () => {
 
       await harness.update({ configPath: "/etc/hunk/config.toml" });
       expect(harness.controller().viewPreferencesConfigLabel).toBe("/etc/hunk/config.toml");
+
+      await harness.update({
+        configPath: "/users/probe/.config/hunk/config.toml",
+        homeDirectory: undefined,
+      });
+      expect(harness.controller().viewPreferencesConfigLabel).toBe(
+        "/users/probe/.config/hunk/config.toml",
+      );
 
       await harness.update({ configPath: undefined });
       expect(harness.controller().viewPreferencesConfigLabel).toBe("~/.config/hunk/config.toml");

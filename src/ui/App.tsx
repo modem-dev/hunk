@@ -649,6 +649,7 @@ export function App({
     showNotice: showSessionNotice,
     showError: showSessionNotice,
     closeHelp,
+    homeDirectory: process.env.HOME,
   });
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
