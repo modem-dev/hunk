@@ -95,7 +95,9 @@ describe("built-in command chords", () => {
     expect(press({ name: "up" })).toBe("hunk.review.stepUp");
     expect(press({ name: "k", sequence: "k" })).toBe("hunk.review.stepUp");
     expect(press({ name: "d", sequence: "d" })).toBe("hunk.review.halfPageDown");
+    expect(press({ name: "d", ctrl: true })).toBe("hunk.review.halfPageDown");
     expect(press({ name: "u", sequence: "u" })).toBe("hunk.review.halfPageUp");
+    expect(press({ name: "u", ctrl: true })).toBe("hunk.review.halfPageUp");
     expect(ran).toEqual([
       "scrollDiff:1,viewport",
       "scrollDiff:1,viewport",
@@ -108,6 +110,8 @@ describe("built-in command chords", () => {
       "stepDiffLine:-1",
       "stepDiffLine:-1",
       "scrollDiff:1,half",
+      "scrollDiff:1,half",
+      "scrollDiff:-1,half",
       "scrollDiff:-1,half",
     ]);
   });
@@ -255,6 +259,14 @@ describe("builtinCommandKeyDefaults", () => {
       "pagedown",
       "space",
       "f",
+    ]);
+    expect(defaults.find((entry) => entry.id === "hunk.review.halfPageDown")?.defaultKeys).toEqual([
+      "d",
+      "ctrl+d",
+    ]);
+    expect(defaults.find((entry) => entry.id === "hunk.review.halfPageUp")?.defaultKeys).toEqual([
+      "u",
+      "ctrl+u",
     ]);
     // The menu-only commands ship unbound, and are reported so users can bind them.
     expect(

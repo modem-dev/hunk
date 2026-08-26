@@ -82,7 +82,7 @@ describe("PTY pager", () => {
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
-      await session.press("d");
+      await session.press(["ctrl", "d"]);
       const halfPaged = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("before_01"),
@@ -91,7 +91,7 @@ describe("PTY pager", () => {
 
       expect(halfPaged).not.toContain("before_01");
 
-      await session.press("u");
+      await session.press(["ctrl", "u"]);
       const halfPageRestored = await harness.waitForSnapshot(
         session,
         (text) => text.includes("before_01"),
