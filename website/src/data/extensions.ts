@@ -116,6 +116,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "evantravers/hunk-mark-as-reviewed",
+    name: "mark-as-reviewed",
+    summary:
+      "Marks hunks and files as reviewed, tracks progress in a review pane, and can hide what you've finished.",
+    categories: ["Pane", "Command", "Line highlighter", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 8,
+  },
+  {
     repo: "evantravers/hunk-notes-to-markdown",
     name: "hunk-notes-to-markdown",
     summary: "Yanks every review note into the clipboard as formatted Markdown with one key (Y).",
