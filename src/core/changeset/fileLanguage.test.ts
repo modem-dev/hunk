@@ -63,6 +63,10 @@ describe("custom file language registration", () => {
         matcher: { kind: "filename", value: " " },
         language: "ruby",
       },
+      {
+        matcher: { kind: "filename", value: "zero\0name" },
+        language: "ruby",
+      },
     );
 
     expect(fileLanguageForPath("Hunkfile")).toBe("python");
@@ -70,6 +74,7 @@ describe("custom file language registration", () => {
     expect(fileLanguageForPath("tools/hunkfile")).toBe("text");
     expect(fileLanguageForPath("nested/ Tool\\Hunkfile ")).toBe("ruby");
     expect(fileLanguageForPath("nested/ ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/zero\0name")).toBe("ruby");
     // Review paths use `/`; a backslash remains a legal filename character on POSIX.
     expect(fileLanguageForPath("tools\\nested\\Hunkfile")).toBe("text");
   });
@@ -91,6 +96,29 @@ describe("custom file language registration", () => {
     expect(fileLanguageForPath("generated/nested/example.hunkpath")).toBe("python");
     expect(fileLanguageForPath("generated\\nested\\example.hunkpath")).toBe("text");
     expect(fileLanguageForPath("source/example.hunkpath")).toBe("text");
+  });
+
+  test("treats literal backslash as one glob character and excludes decoded NUL paths", () => {
+    useTestFileLanguages(
+      {
+        matcher: { kind: "glob", value: "foo?bar", target: "basename" },
+        language: "python",
+      },
+      {
+        matcher: { kind: "glob", value: "foo??bar", target: "basename" },
+        language: "ruby",
+      },
+    );
+    expect(fileLanguageForPath("foo\\bar")).toBe("python");
+    expect(fileLanguageForPath("fooXYbar")).toBe("ruby");
+    expect(fileLanguageForPath("foo\0bar")).toBe("text");
+
+    useTestFileLanguages({
+      matcher: { kind: "glob", value: "foo[\\]bar", target: "basename" },
+      language: "ruby",
+    });
+    expect(fileLanguageForPath("foo\\bar")).toBe("ruby");
+    expect(fileLanguageForPath("fooXbar")).toBe("text");
   });
 
   test("prefers filenames, then globs, then the longest extension", () => {

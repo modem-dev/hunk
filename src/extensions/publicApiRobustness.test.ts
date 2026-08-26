@@ -186,10 +186,8 @@ describe("registerFileLanguage with junk", () => {
         hunk.registerFileLanguage({ kind: "filename", value: " " }, "python");
         hunk.registerFileLanguage({ kind: "glob", value: "*.hunk ", target: "basename" }, "ruby");
         hunk.registerFileLanguage({ kind: "glob", value: "  ", target: "basename" }, "ruby");
-        hunk.registerFileLanguage(
-          { kind: "glob", value: " *\\\\name ", target: "basename" },
-          "ruby",
-        );
+        hunk.registerFileLanguage({ kind: "glob", value: " *\\name ", target: "basename" }, "ruby");
+        hunk.registerFileLanguage({ kind: "glob", value: "foo?bar", target: "basename" }, "json");
         hunk.registerFileLanguage(
           { kind: "glob", value: "generated/**/*.ts", target: "path" },
           "typescript",
@@ -204,7 +202,8 @@ describe("registerFileLanguage with junk", () => {
       { kind: "filename", value: " " },
       { kind: "glob", value: "*.hunk ", target: "basename" },
       { kind: "glob", value: "  ", target: "basename" },
-      { kind: "glob", value: " *\\\\name ", target: "basename" },
+      { kind: "glob", value: " *\\name ", target: "basename" },
+      { kind: "glob", value: "foo?bar", target: "basename" },
       { kind: "glob", value: "generated/**/*.ts", target: "path" },
       { kind: "extension", value: "hunkexact" },
     ]);
@@ -215,6 +214,8 @@ describe("registerFileLanguage with junk", () => {
     expect(fileLanguageForPath("nested/example.hunk ")).toBe("ruby");
     expect(fileLanguageForPath("nested/  ")).toBe("ruby");
     expect(fileLanguageForPath("nested/ x\\name ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/foo\\bar")).toBe("json");
+    expect(fileLanguageForPath("nested/foo\0bar")).toBe("text");
     expect(fileLanguageForPath("generated/nested/example.ts")).toBe("typescript");
     expect(fileLanguageForPath("nested/example.hunkexact")).toBe("typescript");
   });
@@ -225,6 +226,7 @@ describe("registerFileLanguage with junk", () => {
       { kind: "filename", value: "path/Hunkfile" },
       { kind: "glob", value: "*.ts" },
       { kind: "glob", value: "*.ts", target: "somewhere" },
+      { kind: "glob", value: "*\0name", target: "basename" },
       { kind: "regex", value: ".*" },
       /.*\.ts/,
     ]) {

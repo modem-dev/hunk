@@ -51,7 +51,7 @@ hunk.registerFileLanguage(
 );
 ```
 
-Filename and glob matching is case-sensitive. Filename selectors match at any directory depth; globs explicitly target the basename or review path exactly as decoded. `/` is the path separator, backslashes stay literal, and filename/glob whitespace is preserved. VCS review paths are normally repo-relative, while generic patches may carry absolute paths. Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact filenames take precedence over globs, then extensions. Later registrations win ties.
+Filename and glob matching is case-sensitive. Filename selectors match at any directory depth; globs explicitly target the basename or review path exactly as decoded. `/` is the path separator, backslashes stay literal, and filename/glob whitespace is preserved. Globs reject NUL and skip NUL-bearing decoded patch paths; exact filenames can still match them. VCS review paths are normally repo-relative, while generic patches may carry absolute paths. Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact filenames take precedence over globs, then extensions. Later registrations win ties.
 
 This selects a grammar already available to Pierre/Shiki; it does not load a new syntax grammar.
 

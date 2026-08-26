@@ -88,6 +88,9 @@ function normalizeFileLanguageMatcher(matcher: unknown): ExtensionFileLanguageMa
     if (matcher.target !== "basename" && matcher.target !== "path") {
       throw new Error('registerFileLanguage glob target must be "basename" or "path".');
     }
+    if (value.includes("\0")) {
+      throw new Error("registerFileLanguage glob matchers cannot contain NUL.");
+    }
     // Construct once during loading so any runtime rejection still rolls the factory back cleanly.
     new Bun.Glob(value);
     return { kind: "glob", value, target: matcher.target };

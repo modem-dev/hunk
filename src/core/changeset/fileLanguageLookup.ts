@@ -16,6 +16,15 @@ interface AppliedFileLanguageRegistration extends FileLanguageRegistration {
 let appliedRegistrationVersion = -1;
 let appliedFileLanguages: AppliedFileLanguageRegistration[] = [];
 
+// NUL cannot occur in a filesystem path and counts as one code unit, so it keeps Bun.Glob from
+// interpreting a literal backslash as a Windows separator without changing `?` or class width.
+const GLOB_LITERAL_BACKSLASH = "\0";
+
+/** Encode literal backslashes before handing a review path or pattern to platform-aware Bun.Glob. */
+function encodeGlobBackslashes(value: string): string {
+  return value.replaceAll("\\", GLOB_LITERAL_BACKSLASH);
+}
+
 /** Compile the current selector set once per registration version. */
 function applyCurrentFileLanguages(): void {
   const snapshot = fileLanguageRegistrationSnapshot();
@@ -26,7 +35,9 @@ function applyCurrentFileLanguages(): void {
   appliedFileLanguages = snapshot.registrations.map((registration) => ({
     ...registration,
     glob:
-      registration.matcher.kind === "glob" ? new Bun.Glob(registration.matcher.value) : undefined,
+      registration.matcher.kind === "glob" && !registration.matcher.value.includes("\0")
+        ? new Bun.Glob(encodeGlobBackslashes(registration.matcher.value))
+        : undefined,
   }));
   appliedRegistrationVersion = snapshot.version;
 }
@@ -49,13 +60,19 @@ function filenameLanguage(basename: string): string | undefined {
 
 /** Find the latest matching glob registration. */
 function globLanguage(path: string, basename: string): string | undefined {
+  // Decoded external patches may contain NUL even though filesystems cannot. Excluding those paths
+  // keeps the one-code-unit backslash encoding collision-free; exact filename selectors still work.
+  if (path.includes("\0")) {
+    return undefined;
+  }
+
   for (let index = appliedFileLanguages.length - 1; index >= 0; index -= 1) {
     const registration = appliedFileLanguages[index]!;
     if (registration.matcher.kind !== "glob") {
       continue;
     }
     const candidate = registration.matcher.target === "path" ? path : basename;
-    if (registration.glob?.match(candidate)) {
+    if (registration.glob?.match(encodeGlobBackslashes(candidate))) {
       return registration.language;
     }
   }
