@@ -15,12 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  diffPersistedViewPreferences,
-  saveGlobalViewPreferences,
-  saveViewPreferencesPromptPreference,
-  type PersistedViewPreferences,
-} from "../core/run/config";
+import type { PersistedViewPreferences } from "../core/run/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
@@ -84,6 +79,7 @@ import {
   type AgentNoteGeometrySnapshot,
   type RevealedLineResult,
 } from "./hooks/useTerminalReview";
+import { useViewPreferenceQuitController } from "./hooks/useViewPreferenceQuitController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
@@ -330,7 +326,6 @@ export function App({
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
@@ -443,30 +438,6 @@ export function App({
       wrapLines,
     ],
   );
-  const initialViewPreferencesRef = useRef(currentViewPreferences);
-  const changedViewPreferences = useMemo(
-    () => diffPersistedViewPreferences(initialViewPreferencesRef.current, currentViewPreferences),
-    [currentViewPreferences],
-  );
-  // Render each change as the -/+ pair of TOML assignments the save would rewrite,
-  // with the key column aligned across all changed preferences.
-  const viewPreferenceDiffLines = useMemo(() => {
-    const keyWidth = changedViewPreferences.reduce(
-      (width, change) => Math.max(width, change.configKey.length),
-      0,
-    );
-    return changedViewPreferences.flatMap((change) => [
-      { removed: true, text: `- ${change.configKey.padEnd(keyWidth)} = ${change.previousValue}` },
-      { removed: false, text: `+ ${change.configKey.padEnd(keyWidth)} = ${change.nextValue}` },
-    ]);
-  }, [changedViewPreferences]);
-  const hasUnsavedViewPreferences = changedViewPreferences.length > 0;
-  const viewPreferencesConfigLabel = useMemo(() => {
-    const path = bootstrap.viewPreferencesConfigPath ?? "~/.config/hunk/config.toml";
-    return process.env.HOME && path.startsWith(process.env.HOME)
-      ? `~${path.slice(process.env.HOME.length)}`
-      : path;
-  }, [bootstrap.viewPreferencesConfigPath]);
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -654,6 +625,31 @@ export function App({
       sessionNoticeTimeoutRef.current = null;
     }, 4000);
   }, []);
+  /** Close the modal keyboard help overlay. */
+  const closeHelp = useCallback(() => {
+    setShowHelp(false);
+  }, []);
+  const {
+    changedViewPreferences,
+    saveConfigPromptOpen,
+    viewPreferenceDiffLines,
+    viewPreferencesConfigLabel,
+    requestQuit,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    neverAskToSaveViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
+  } = useViewPreferenceQuitController({
+    currentPreferences: currentViewPreferences,
+    configPath: bootstrap.viewPreferencesConfigPath,
+    pagerMode,
+    promptSaveViewPreferences: bootstrap.input.options.promptSaveViewPreferences !== false,
+    transientViewPreferences: extensionSessionOptions.transientViewPreferences,
+    onQuit,
+    showNotice: showSessionNotice,
+    showError: showSessionNotice,
+    closeHelp,
+  });
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
@@ -1815,74 +1811,6 @@ export function App({
     reloadContext: bootstrap.reloadContext,
     runtime: watchRuntime,
   });
-
-  /** Save current view preferences to user config and then leave the app. */
-  const saveViewPreferencesAndQuit = useCallback(() => {
-    try {
-      const configPath = saveGlobalViewPreferences(currentViewPreferences, {
-        configPath: bootstrap.viewPreferencesConfigPath,
-      });
-      initialViewPreferencesRef.current = currentViewPreferences;
-      showSessionNotice(`Saved view preferences to ${configPath}`);
-      setTimeout(onQuit, 120);
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to save view preferences.",
-      );
-    }
-  }, [bootstrap.viewPreferencesConfigPath, currentViewPreferences, onQuit, showSessionNotice]);
-
-  /** Leave the app without writing view preference changes. */
-  const discardViewPreferencesAndQuit = useCallback(() => {
-    setSaveConfigPromptOpen(false);
-    onQuit();
-  }, [onQuit]);
-
-  /** Persist the user's choice to stop prompting about view preference changes. */
-  const neverAskToSaveViewPreferencesAndQuit = useCallback(() => {
-    try {
-      const configPath = saveViewPreferencesPromptPreference(false, {
-        configPath: bootstrap.viewPreferencesConfigPath,
-      });
-      showSessionNotice(`Won't ask to save view preferences again (${configPath})`);
-      setTimeout(onQuit, 120);
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to save prompt preference.",
-      );
-    }
-  }, [bootstrap.viewPreferencesConfigPath, onQuit, showSessionNotice]);
-
-  /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
-  const requestQuit = useCallback(() => {
-    if (
-      !pagerMode &&
-      !extensionSessionOptions.transientViewPreferences &&
-      bootstrap.input.options.promptSaveViewPreferences !== false &&
-      hasUnsavedViewPreferences
-    ) {
-      setShowHelp(false);
-      setSaveConfigPromptOpen(true);
-      return;
-    }
-
-    onQuit();
-  }, [
-    bootstrap.input.options.promptSaveViewPreferences,
-    extensionSessionOptions.transientViewPreferences,
-    hasUnsavedViewPreferences,
-    onQuit,
-    pagerMode,
-  ]);
-
-  const closeSaveConfigPrompt = useCallback(() => {
-    setSaveConfigPromptOpen(false);
-  }, []);
-
-  /** Close the modal keyboard help overlay. */
-  const closeHelp = useCallback(() => {
-    setShowHelp(false);
-  }, []);
 
   /** Close the agent skill setup overlay. */
   const closeAgentSkill = useCallback(() => {
