@@ -34,7 +34,8 @@ const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
-const { DiffRowView, measureRenderedRowHeight } = await import("../diff/renderRows");
+const { DiffRowView, measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
+  await import("../diff/renderRows");
 
 function createTestDiffFile(
   id: string,
@@ -939,6 +940,99 @@ describe("UI components", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("DiffRowView matches planned split and stack geometry at new-guide wrap boundaries", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const plannedRows = [
+      {
+        kind: "diff-row" as const,
+        key: "alpha:split:guide-boundary",
+        stableKey: "alpha:split:guide-boundary",
+        fileId: "alpha",
+        hunkIndex: 0,
+        noteGuideSide: "new" as const,
+        row: {
+          type: "split-line" as const,
+          key: "alpha:split:guide-boundary",
+          fileId: "alpha",
+          hunkIndex: 0,
+          left: { kind: "empty" as const, sign: " " as const, spans: [] },
+          right: {
+            kind: "addition" as const,
+            sign: "+" as const,
+            lineNumber: 1,
+            spans: [{ text: "1234567" }],
+          },
+        },
+        width: 20,
+      },
+      {
+        kind: "diff-row" as const,
+        key: "alpha:stack:guide-boundary",
+        stableKey: "alpha:stack:guide-boundary",
+        fileId: "alpha",
+        hunkIndex: 0,
+        noteGuideSide: "new" as const,
+        row: {
+          type: "stack-line" as const,
+          key: "alpha:stack:guide-boundary",
+          fileId: "alpha",
+          hunkIndex: 0,
+          cell: {
+            kind: "addition" as const,
+            sign: "+" as const,
+            newLineNumber: 1,
+            spans: [{ text: "1234567" }],
+          },
+        },
+        width: 10,
+      },
+    ];
+
+    for (const { width, ...plannedRow } of plannedRows) {
+      const measuredHeight = measurePlannedRenderedRowHeight(plannedRow, {
+        width,
+        lineNumberDigits: 1,
+        showLineNumbers: false,
+        showHunkHeaders: true,
+        wrapLines: true,
+      });
+      const setup = await testRender(
+        <DiffRowView
+          plannedRow={plannedRow}
+          width={width}
+          lineNumberDigits={1}
+          showLineNumbers={false}
+          showHunkHeaders={true}
+          wrapLines={true}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+        />,
+        { width: 24, height: 4 },
+      );
+
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        const renderedHeight = setup
+          .captureSpans()
+          .lines.filter((line) =>
+            line.spans.some(
+              (span) =>
+                capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+            ),
+          ).length;
+        expect(measuredHeight).toBe(2);
+        expect(renderedHeight).toBe(measuredHeight);
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
     }
   });
 

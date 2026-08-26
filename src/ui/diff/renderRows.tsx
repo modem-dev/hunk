@@ -383,7 +383,7 @@ function appendPlainInlineChunks(
 function appendPlainSplitCellChunks(
   chunks: TextChunk[],
   cell: SplitLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   theme: AppTheme,
@@ -391,12 +391,6 @@ function appendPlainSplitCellChunks(
   prefix: CellPrefix,
 ) {
   const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefix.text.length,
-  );
   chunks.push(
     {
       __isChunk: true,
@@ -406,7 +400,7 @@ function appendPlainSplitCellChunks(
     },
     {
       __isChunk: true,
-      text: splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth),
+      text: splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(geometry.gutterWidth),
       fg: styledTextColor(palette.numberColor),
       bg: styledTextColor(palette.gutterBg),
     },
@@ -414,7 +408,7 @@ function appendPlainSplitCellChunks(
   appendPlainInlineChunks(
     chunks,
     cell.spans,
-    contentWidth,
+    geometry.contentWidth,
     contentOffset,
     theme.syntaxColors.default,
     palette.contentBg,
@@ -425,7 +419,7 @@ function appendPlainSplitCellChunks(
 function appendPlainStackCellChunks(
   chunks: TextChunk[],
   cell: StackLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   theme: AppTheme,
@@ -433,12 +427,6 @@ function appendPlainStackCellChunks(
   prefix: CellPrefix,
 ) {
   const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefix.text.length,
-  );
   chunks.push(
     {
       __isChunk: true,
@@ -448,7 +436,7 @@ function appendPlainStackCellChunks(
     },
     {
       __isChunk: true,
-      text: stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth),
+      text: stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(geometry.gutterWidth),
       fg: styledTextColor(palette.numberColor),
       bg: styledTextColor(palette.gutterBg),
     },
@@ -456,7 +444,7 @@ function appendPlainStackCellChunks(
   appendPlainInlineChunks(
     chunks,
     cell.spans,
-    contentWidth,
+    geometry.contentWidth,
     contentOffset,
     theme.syntaxColors.default,
     palette.contentBg,
@@ -503,11 +491,6 @@ function appendWrappedCellChunks(
     palette.contentBg,
     contentHighlightBg,
   );
-}
-
-/** Reserve the hover affordance column in wrapped rows so hover cannot reflow code. */
-function wrappedAddNoteReserveWidth(wrapLines: boolean, reserveAddNoteColumn = false) {
-  return wrapLines && reserveAddNoteColumn ? addNoteBadgeText.length : 0;
 }
 
 /** Render a fixed-width inline span sequence for one diff cell. */
@@ -858,33 +841,187 @@ function measureWrappedSpansLineCount(spans: RenderSpan[], width: number) {
   return lineCount;
 }
 
-/** Build wrapped split-cell gutter/content lines while keeping continuation gutters blank. */
-function buildWrappedSplitCell(
-  cell: SplitLineCell,
+export type PlannedDiffReviewRow = Extract<PlannedReviewRow, { kind: "diff-row" }>;
+
+/** Concrete width and wrapping decisions for one rendered code cell. */
+export interface CodeCellLayoutPlan {
+  width: number;
+  prefixWidth: number;
+  gutterWidth: number;
+  contentWidth: number;
+  wrappedLineCount: number;
+}
+
+/** Inputs that affect the terminal columns reserved by one code row. */
+export interface CodeRowLayoutOptions {
+  width: number;
+  lineNumberDigits: number;
+  showLineNumbers: boolean;
+  wrapLines: boolean;
+  reserveAddNoteColumn?: boolean;
+  showAddNoteBadge?: boolean;
+}
+
+/** Concrete split or stack layout used to measure, copy, and paint one planned code row. */
+export type CodeRowLayoutPlan =
+  | {
+      kind: "split";
+      left: CodeCellLayoutPlan;
+      right: CodeCellLayoutPlan;
+      leftPaneWidth: number;
+      rightPaneWidth: number;
+      noteGuideSide?: "old" | "new";
+      trailingGuideWidth: number;
+      addNoteBadgeWidth: number;
+      wrappedLineCount: number;
+    }
+  | {
+      kind: "stack";
+      cell: CodeCellLayoutPlan;
+      noteGuideSide?: "old" | "new";
+      trailingGuideWidth: number;
+      addNoteBadgeWidth: number;
+      wrappedLineCount: number;
+    };
+
+/** Plan one cell from its concrete outer width, prefix, gutter, and wrapping policy. */
+function planCodeCellLayout(
+  spans: RenderSpan[],
   width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
   prefixWidth: number,
-  theme: AppTheme,
-) {
-  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+  gutterWidth: number,
+  wrapLines: boolean,
+): CodeCellLayoutPlan {
+  const contentWidth = Math.max(0, width - prefixWidth - gutterWidth);
+  return {
     width,
+    prefixWidth,
+    gutterWidth,
+    contentWidth,
+    get wrappedLineCount() {
+      return wrapLines ? measureWrappedSpansLineCount(spans, contentWidth) : 1;
+    },
+  };
+}
+
+/** Plan all width-sensitive terminal geometry for one complete planned code row. */
+export function planCodeRowLayout(
+  plannedRow: PlannedReviewRow,
+  {
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    wrapLines,
+    reserveAddNoteColumn = false,
+    showAddNoteBadge = false,
+  }: CodeRowLayoutOptions,
+): CodeRowLayoutPlan | null {
+  if (plannedRow.kind !== "diff-row") {
+    return null;
+  }
+
+  const row = plannedRow.row;
+  if (row.type !== "split-line" && row.type !== "stack-line") {
+    return null;
+  }
+
+  const prefixWidth = 1;
+  const trailingGuideWidth = plannedRow.noteGuideSide === "new" ? 1 : 0;
+  const addNoteBadgeWidth =
+    showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
+
+  if (row.type === "split-line") {
+    const { leftWidth: leftPaneWidth, rightWidth: rightPaneWidth } = resolveSplitPaneWidths(width);
+    const rightWidth = Math.max(0, rightPaneWidth - trailingGuideWidth - addNoteBadgeWidth);
+    const leftGeometry = resolveSplitCellGeometry(
+      leftPaneWidth,
+      lineNumberDigits,
+      showLineNumbers,
+      prefixWidth,
+    );
+    const rightGeometry = resolveSplitCellGeometry(
+      rightWidth,
+      lineNumberDigits,
+      showLineNumbers,
+      prefixWidth,
+    );
+    const left = planCodeCellLayout(
+      row.left.spans,
+      leftPaneWidth,
+      prefixWidth,
+      leftGeometry.gutterWidth,
+      wrapLines,
+    );
+    const right = planCodeCellLayout(
+      row.right.spans,
+      rightWidth,
+      prefixWidth,
+      rightGeometry.gutterWidth,
+      wrapLines,
+    );
+
+    return {
+      kind: "split",
+      left,
+      right,
+      leftPaneWidth,
+      rightPaneWidth,
+      noteGuideSide: plannedRow.noteGuideSide,
+      trailingGuideWidth,
+      addNoteBadgeWidth,
+      get wrappedLineCount() {
+        return Math.max(left.wrappedLineCount, right.wrappedLineCount);
+      },
+    };
+  }
+
+  const cellWidth = Math.max(0, width - trailingGuideWidth - addNoteBadgeWidth);
+  const cellGeometry = resolveStackCellGeometry(
+    cellWidth,
     lineNumberDigits,
     showLineNumbers,
     prefixWidth,
   );
-  const firstGutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
-    gutterWidth,
+  const cell = planCodeCellLayout(
+    row.cell.spans,
+    cellWidth,
+    prefixWidth,
+    cellGeometry.gutterWidth,
+    wrapLines,
   );
-  const wrappedSpans = wrapSpans(cell.spans, contentWidth);
 
   return {
-    gutterWidth,
-    contentWidth,
+    kind: "stack",
+    cell,
+    noteGuideSide: plannedRow.noteGuideSide,
+    trailingGuideWidth,
+    addNoteBadgeWidth,
+    get wrappedLineCount() {
+      return cell.wrappedLineCount;
+    },
+  };
+}
+
+/** Build wrapped split-cell gutter/content lines while keeping continuation gutters blank. */
+function buildWrappedSplitCell(
+  cell: SplitLineCell,
+  geometry: CodeCellLayoutPlan,
+  lineNumberDigits: number,
+  showLineNumbers: boolean,
+  theme: AppTheme,
+) {
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
+  const firstGutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+    geometry.gutterWidth,
+  );
+  const wrappedSpans = wrapSpans(cell.spans, geometry.contentWidth);
+
+  return {
+    gutterWidth: geometry.gutterWidth,
+    contentWidth: geometry.contentWidth,
     palette,
     lines: wrappedSpans.map((spans, index) => ({
-      gutterText: index === 0 ? firstGutterText : " ".repeat(gutterWidth),
+      gutterText: index === 0 ? firstGutterText : " ".repeat(geometry.gutterWidth),
       spans,
     })),
   } satisfies WrappedCellLayout;
@@ -893,30 +1030,23 @@ function buildWrappedSplitCell(
 /** Build wrapped stack-cell gutter/content lines while keeping continuation gutters blank. */
 function buildWrappedStackCell(
   cell: StackLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
-  prefixWidth: number,
   theme: AppTheme,
 ) {
   const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-  );
   const firstGutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
-    gutterWidth,
+    geometry.gutterWidth,
   );
-  const wrappedSpans = wrapSpans(cell.spans, contentWidth);
+  const wrappedSpans = wrapSpans(cell.spans, geometry.contentWidth);
 
   return {
-    gutterWidth,
-    contentWidth,
+    gutterWidth: geometry.gutterWidth,
+    contentWidth: geometry.contentWidth,
     palette,
     lines: wrappedSpans.map((spans, index) => ({
-      gutterText: index === 0 ? firstGutterText : " ".repeat(gutterWidth),
+      gutterText: index === 0 ? firstGutterText : " ".repeat(geometry.gutterWidth),
       spans,
     })),
   } satisfies WrappedCellLayout;
@@ -954,40 +1084,29 @@ function cellCodeText(spans: RenderSpan[], horizontalOffset = 0) {
 
 function buildPlainSplitCellLines(
   cell: SplitLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
-  prefixWidth: number,
   theme: AppTheme,
   wrapLines: boolean,
   codeHorizontalOffset = 0,
 ) {
   if (!wrapLines) {
-    const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
-      width,
-      lineNumberDigits,
-      showLineNumbers,
-      prefixWidth,
+    const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+      geometry.gutterWidth,
     );
-    const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
 
     return [
       {
-        contentWidth,
-        gutterWidth,
-        spansText: gutterText + spansToPlainText(cell.spans, contentWidth, codeHorizontalOffset),
+        contentWidth: geometry.contentWidth,
+        gutterWidth: geometry.gutterWidth,
+        spansText:
+          gutterText + spansToPlainText(cell.spans, geometry.contentWidth, codeHorizontalOffset),
       },
     ];
   }
 
-  const layout = buildWrappedSplitCell(
-    cell,
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-    theme,
-  );
+  const layout = buildWrappedSplitCell(cell, geometry, lineNumberDigits, showLineNumbers, theme);
 
   // Mirror the TUI renderer, which does not apply horizontal scrolling to wrapped rows.
   // Keeping the plain-text path aligned avoids visual/clipboard drift.
@@ -1000,40 +1119,29 @@ function buildPlainSplitCellLines(
 
 function buildPlainStackCellLines(
   cell: StackLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
-  prefixWidth: number,
   theme: AppTheme,
   wrapLines: boolean,
   codeHorizontalOffset = 0,
 ) {
   if (!wrapLines) {
-    const { gutterWidth, contentWidth } = resolveStackCellGeometry(
-      width,
-      lineNumberDigits,
-      showLineNumbers,
-      prefixWidth,
+    const gutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+      geometry.gutterWidth,
     );
-    const gutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
 
     return [
       {
-        contentWidth,
-        gutterWidth,
-        spansText: gutterText + spansToPlainText(cell.spans, contentWidth, codeHorizontalOffset),
+        contentWidth: geometry.contentWidth,
+        gutterWidth: geometry.gutterWidth,
+        spansText:
+          gutterText + spansToPlainText(cell.spans, geometry.contentWidth, codeHorizontalOffset),
       },
     ];
   }
 
-  const layout = buildWrappedStackCell(
-    cell,
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-    theme,
-  );
+  const layout = buildWrappedStackCell(cell, geometry, lineNumberDigits, showLineNumbers, theme);
 
   // Mirror the TUI renderer, which does not apply horizontal scrolling to wrapped rows.
   return layout.lines.map((line) => ({
@@ -1057,6 +1165,8 @@ interface PlannedRowTextOptions {
   wrapLines: boolean;
   codeHorizontalOffset: number;
   theme: AppTheme;
+  reserveAddNoteColumn?: boolean;
+  showAddNoteBadge?: boolean;
   // When set, split-line rows produce text only for this side. Stack rows ignore the filter.
   side?: "left" | "right";
 }
@@ -1103,60 +1213,53 @@ export function renderDecoratedPlannedRowText(
   }
 
   if (preparedRow.type === "split-line") {
-    const guideOnOldSide = row.noteGuideSide === "old";
-    const guideOnNewSide = row.noteGuideSide === "new";
+    const codeLayout = planCodeRowLayout(row, options) as Extract<
+      CodeRowLayoutPlan,
+      { kind: "split" }
+    >;
+    const guideOnOldSide = codeLayout.noteGuideSide === "old";
+    const guideOnNewSide = codeLayout.noteGuideSide === "new";
     const leftPrefix = guideOnOldSide ? "│" : marker();
     const rightPrefix = "▌";
-    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
 
     const leftCell = buildPlainSplitCellLines(
       preparedRow.left,
-      leftWidth,
+      codeLayout.left,
       lineNumberDigits,
       showLineNumbers,
-      leftPrefix.length,
       theme,
       wrapLines,
       codeHorizontalOffset,
     );
     const rightCell = buildPlainSplitCellLines(
       preparedRow.right,
-      rightRenderWidth,
+      codeLayout.right,
       lineNumberDigits,
       showLineNumbers,
-      rightPrefix.length,
       theme,
       wrapLines,
       codeHorizontalOffset,
     );
-    const visualLineCount = Math.max(leftCell.length, rightCell.length);
-    const leftGutterWidth = leftCell[0]?.gutterWidth ?? 0;
-    const rightGutterWidth = rightCell[0]?.gutterWidth ?? 0;
-    const leftPrefixPad = leftPrefix.length;
-    const rightPrefixPad = rightPrefix.length;
-    const leftContentWidth = resolvePlainContentWidth(leftWidth, leftPrefixPad, leftGutterWidth);
-    const rightContentWidth = resolvePlainContentWidth(
-      rightRenderWidth,
-      rightPrefixPad,
-      rightGutterWidth,
-    );
 
+    const visualLineCount = Math.max(leftCell.length, rightCell.length);
     return Array.from({ length: visualLineCount }, (_, index) => {
       const leftLine = leftCell[index] ?? {
-        gutterWidth: leftGutterWidth,
-        contentWidth: leftContentWidth,
-        spansText: " ".repeat(Math.max(0, leftWidth - leftPrefixPad)),
+        gutterWidth: codeLayout.left.gutterWidth,
+        contentWidth: codeLayout.left.contentWidth,
+        spansText: " ".repeat(Math.max(0, codeLayout.left.width - codeLayout.left.prefixWidth)),
       };
       const rightLine = rightCell[index] ?? {
-        gutterWidth: rightGutterWidth,
-        contentWidth: rightContentWidth,
-        spansText: " ".repeat(Math.max(0, rightRenderWidth - rightPrefixPad)),
+        gutterWidth: codeLayout.right.gutterWidth,
+        contentWidth: codeLayout.right.contentWidth,
+        spansText: " ".repeat(Math.max(0, codeLayout.right.width - codeLayout.right.prefixWidth)),
       };
-      const normalizedLeft = padTextByWidth(`${leftPrefix}${leftLine.spansText}`, leftWidth);
+      const normalizedLeft = padTextByWidth(
+        `${leftPrefix}${leftLine.spansText}`,
+        codeLayout.left.width,
+      );
       const normalizedRight = padTextByWidth(
         `${rightPrefix}${rightLine.spansText}`,
-        rightRenderWidth,
+        codeLayout.right.width,
       );
 
       if (side === "left") {
@@ -1174,16 +1277,18 @@ export function renderDecoratedPlannedRowText(
     return [];
   }
 
-  const guideOnOldSide = row.noteGuideSide === "old";
-  const guideOnNewSide = row.noteGuideSide === "new";
-  const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
+  const codeLayout = planCodeRowLayout(row, options) as Extract<
+    CodeRowLayoutPlan,
+    { kind: "stack" }
+  >;
+  const guideOnOldSide = codeLayout.noteGuideSide === "old";
+  const guideOnNewSide = codeLayout.noteGuideSide === "new";
   const prefix = guideOnOldSide ? "│" : marker();
   const cellLines = buildPlainStackCellLines(
     preparedRow.cell,
-    contentWidth,
+    codeLayout.cell,
     lineNumberDigits,
     showLineNumbers,
-    prefix.length,
     theme,
     wrapLines,
     codeHorizontalOffset,
@@ -1191,7 +1296,7 @@ export function renderDecoratedPlannedRowText(
 
   return cellLines.map((line) => {
     const visibleLine = `${prefix}${line.spansText}`;
-    const normalized = padTextByWidth(visibleLine, Math.max(1, contentWidth + prefix.length));
+    const normalized = padTextByWidth(visibleLine, Math.max(1, codeLayout.cell.width));
     return `${normalized}${guideOnNewSide ? "│" : ""}`;
   });
 }
@@ -1225,12 +1330,15 @@ export function renderCodeOnlyPlannedRowText(
       return [cellCodeText(preparedRow.cell.spans, codeHorizontalOffset)].filter(Boolean);
     }
 
+    const codeLayout = planCodeRowLayout(row, options) as Extract<
+      CodeRowLayoutPlan,
+      { kind: "stack" }
+    >;
     return buildWrappedStackCell(
       preparedRow.cell,
-      width,
+      codeLayout.cell,
       lineNumberDigits,
       showLineNumbers,
-      marker().length,
       theme,
     )
       .lines.map((line) => spansText(line.spans))
@@ -1265,21 +1373,22 @@ export function renderCodeOnlyPlannedRowText(
     return [leftText, rightText].filter(Boolean);
   }
 
-  const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
+  const codeLayout = planCodeRowLayout(row, options) as Extract<
+    CodeRowLayoutPlan,
+    { kind: "split" }
+  >;
   const leftLayout = buildWrappedSplitCell(
     preparedRow.left,
-    leftWidth,
+    codeLayout.left,
     lineNumberDigits,
     showLineNumbers,
-    marker().length,
     theme,
   );
   const rightLayout = buildWrappedSplitCell(
     preparedRow.right,
-    rightWidth,
+    codeLayout.right,
     lineNumberDigits,
     showLineNumbers,
-    1,
     theme,
   );
   const visualLineCount = Math.max(leftLayout.lines.length, rightLayout.lines.length);
@@ -1317,11 +1426,6 @@ export function renderCodeOnlyPlannedRowText(
   }
 
   return lines;
-}
-
-/** Resolve the code content width after fixed rail and gutter columns. */
-function resolvePlainContentWidth(totalWidth: number, prefixWidth: number, gutterWidth: number) {
-  return Math.max(0, totalWidth - prefixWidth - gutterWidth);
 }
 
 /**
@@ -1372,7 +1476,8 @@ function applyHighlightPrefix<P extends { bg: string }>(
 /** Render selection-invariant split-cell content behind its independently painted rail. */
 const SplitCellContent = memo(function SplitCellContent({
   cell,
-  width,
+  gutterWidth,
+  contentWidth,
   lineNumberDigits,
   showLineNumbers,
   theme,
@@ -1383,7 +1488,8 @@ const SplitCellContent = memo(function SplitCellContent({
   paneOffset,
 }: {
   cell: SplitLineCell;
-  width: number;
+  gutterWidth: number;
+  contentWidth: number;
   lineNumberDigits: number;
   showLineNumbers: boolean;
   theme: AppTheme;
@@ -1395,12 +1501,6 @@ const SplitCellContent = memo(function SplitCellContent({
 }) {
   const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
-  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-  );
   const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
@@ -1434,7 +1534,7 @@ const SplitCellContent = memo(function SplitCellContent({
 /** Render one split-view cell while letting a rail-only selection change skip its code spans. */
 function renderSplitCell(
   cell: SplitLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   theme: AppTheme,
@@ -1461,7 +1561,8 @@ function renderSplitCell(
       <SplitCellContent
         key={`${keyPrefix}:body`}
         cell={cell}
-        width={width}
+        gutterWidth={geometry.gutterWidth}
+        contentWidth={geometry.contentWidth}
         lineNumberDigits={lineNumberDigits}
         showLineNumbers={showLineNumbers}
         theme={theme}
@@ -1478,7 +1579,8 @@ function renderSplitCell(
 /** Render selection-invariant stack-cell content behind its independently painted rail. */
 const StackCellContent = memo(function StackCellContent({
   cell,
-  width,
+  gutterWidth,
+  contentWidth,
   lineNumberDigits,
   showLineNumbers,
   theme,
@@ -1488,7 +1590,8 @@ const StackCellContent = memo(function StackCellContent({
   highlight,
 }: {
   cell: StackLineCell;
-  width: number;
+  gutterWidth: number;
+  contentWidth: number;
   lineNumberDigits: number;
   showLineNumbers: boolean;
   theme: AppTheme;
@@ -1499,12 +1602,6 @@ const StackCellContent = memo(function StackCellContent({
 }) {
   const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
-  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    prefixWidth,
-  );
   const globalContentStart = prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
   const localColRange =
@@ -1537,7 +1634,7 @@ const StackCellContent = memo(function StackCellContent({
 /** Render one stack-view cell while letting a rail-only selection change skip its code spans. */
 function renderStackCell(
   cell: StackLineCell,
-  width: number,
+  geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   theme: AppTheme,
@@ -1563,7 +1660,8 @@ function renderStackCell(
       <StackCellContent
         key={`${keyPrefix}:body`}
         cell={cell}
-        width={width}
+        gutterWidth={geometry.gutterWidth}
+        contentWidth={geometry.contentWidth}
         lineNumberDigits={lineNumberDigits}
         showLineNumbers={showLineNumbers}
         theme={theme}
@@ -1893,7 +1991,41 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   );
 }
 
-/** Measure how many terminal rows one rendered diff row occupies. */
+/** Adapt a raw diff row for surfaces that do not use the review render plan. */
+function legacyPlannedDiffRow(
+  row: DiffRow,
+  anchorId?: string,
+  noteGuideSide?: "old" | "new",
+): PlannedDiffReviewRow {
+  return {
+    kind: "diff-row",
+    key: row.key,
+    stableKey: row.key,
+    fileId: row.fileId,
+    hunkIndex: row.hunkIndex,
+    row,
+    anchorId,
+    noteGuideSide,
+  };
+}
+
+/** Measure how many terminal rows one complete planned diff row occupies. */
+export function measurePlannedRenderedRowHeight(
+  plannedRow: PlannedDiffReviewRow,
+  options: CodeRowLayoutOptions & { showHunkHeaders: boolean },
+) {
+  if (plannedRow.row.type === "hunk-header") {
+    return options.showHunkHeaders ? 1 : 0;
+  }
+
+  if (plannedRow.row.type === "collapsed" || !options.wrapLines) {
+    return 1;
+  }
+
+  return planCodeRowLayout(plannedRow, options)?.wrappedLineCount ?? 1;
+}
+
+/** Measure a raw diff row for renderer-only consumers outside the planned review stream. */
 export function measureRenderedRowHeight(
   row: DiffRow,
   width: number,
@@ -1904,56 +2036,14 @@ export function measureRenderedRowHeight(
   _theme: AppTheme,
   reserveAddNoteColumn = false,
 ) {
-  if (row.type === "hunk-header") {
-    return showHunkHeaders ? 1 : 0;
-  }
-
-  if (row.type === "collapsed") {
-    return 1;
-  }
-
-  if (row.type === "split-line") {
-    if (!wrapLines) {
-      return 1;
-    }
-
-    const markerWidth = 1;
-    const hoverReserveWidth = wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn);
-    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const leftGeometry = resolveSplitCellGeometry(
-      leftWidth,
-      lineNumberDigits,
-      showLineNumbers,
-      markerWidth,
-    );
-    const rightGeometry = resolveSplitCellGeometry(
-      Math.max(0, rightWidth - hoverReserveWidth),
-      lineNumberDigits,
-      showLineNumbers,
-      markerWidth,
-    );
-
-    return Math.max(
-      measureWrappedSpansLineCount(row.left.spans, leftGeometry.contentWidth),
-      measureWrappedSpansLineCount(row.right.spans, rightGeometry.contentWidth),
-    );
-  }
-
-  if (row.type !== "stack-line") {
-    return 1;
-  }
-
-  if (!wrapLines) {
-    return 1;
-  }
-
-  const cellGeometry = resolveStackCellGeometry(
-    Math.max(0, width - wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn)),
+  return measurePlannedRenderedRowHeight(legacyPlannedDiffRow(row), {
+    width,
     lineNumberDigits,
     showLineNumbers,
-    marker().length,
-  );
-  return measureWrappedSpansLineCount(row.cell.spans, cellGeometry.contentWidth);
+    showHunkHeaders,
+    wrapLines,
+    reserveAddNoteColumn,
+  });
 }
 
 /** Repaint one split cell's spans over its extension highlight ranges, if any. */
@@ -2033,7 +2123,7 @@ function withRowLineHighlights(
 
 /** Render one diff row. */
 function renderRow(
-  sourceRow: DiffRow,
+  plannedRow: PlannedDiffReviewRow,
   width: number,
   lineNumberDigits: number,
   showLineNumbers: boolean,
@@ -2046,17 +2136,24 @@ function renderRow(
   copySelectedSide: "left" | "right" | undefined,
   cursorHighlight: CursorHighlight | undefined,
   lineHighlights: LineHighlightPaintIndex | undefined,
-  anchorId?: string,
-  noteGuideSide?: "old" | "new",
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
   onToggleGap?: (gapKey: string) => void,
 ) {
   // Extension marks repaint span backgrounds only; geometry inputs keep using the source row.
-  const row = withRowLineHighlights(sourceRow, lineHighlights, theme);
+  const row = withRowLineHighlights(plannedRow.row, lineHighlights, theme);
+  const { anchorId } = plannedRow;
   const hasCopySelection = !!copySelectedRowRange;
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
+  const codeRowLayout = planCodeRowLayout(plannedRow, {
+    lineNumberDigits,
+    reserveAddNoteColumn,
+    showAddNoteBadge,
+    showLineNumbers,
+    width,
+    wrapLines,
+  });
 
   // For split rows, the user's drag is anchored to one column-half of the diff. Apply the
   // selection-highlight blend only to that side so it is clear which file (A or B) the
@@ -2125,8 +2222,10 @@ function renderRow(
         )
       : null;
   } else if (row.type === "split-line") {
-    const guideOnOldSide = noteGuideSide === "old";
-    const guideOnNewSide = noteGuideSide === "new";
+    // The planner and row type are derived from the same complete planned row.
+    const splitLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "split" }>;
+    const guideOnOldSide = splitLayout.noteGuideSide === "old";
+    const guideOnNewSide = splitLayout.noteGuideSide === "new";
     const addNoteTarget: UserNoteLineTarget | undefined =
       row.right.lineNumber !== undefined
         ? { side: "new", line: row.right.lineNumber }
@@ -2134,11 +2233,8 @@ function renderRow(
           ? { side: "old", line: row.left.lineNumber }
           : undefined;
 
-    // Reserve fixed columns for the diff rails, center separator slot, and hover affordance.
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
-    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    const addBadgeWidth = splitLayout.addNoteBadgeWidth;
+    const leftWidth = splitLayout.left.width;
     const leftPrefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide
@@ -2160,7 +2256,7 @@ function renderRow(
               appendPlainSplitCellChunks(
                 chunks,
                 row.left,
-                leftWidth,
+                splitLayout.left,
                 lineNumberDigits,
                 showLineNumbers,
                 theme,
@@ -2170,7 +2266,7 @@ function renderRow(
               appendPlainSplitCellChunks(
                 chunks,
                 row.right,
-                rightRenderWidth,
+                splitLayout.right,
                 lineNumberDigits,
                 showLineNumbers,
                 theme,
@@ -2205,7 +2301,7 @@ function renderRow(
               <text key={`${row.key}:painted`}>
                 {renderSplitCell(
                   row.left,
-                  leftWidth,
+                  splitLayout.left,
                   lineNumberDigits,
                   showLineNumbers,
                   theme,
@@ -2217,7 +2313,7 @@ function renderRow(
                 )}
                 {renderSplitCell(
                   row.right,
-                  rightRenderWidth,
+                  splitLayout.right,
                   lineNumberDigits,
                   showLineNumbers,
                   theme,
@@ -2249,28 +2345,21 @@ function renderRow(
     } else {
       const leftLayout = buildWrappedSplitCell(
         row.left,
-        leftWidth,
+        splitLayout.left,
         lineNumberDigits,
         showLineNumbers,
-        leftPrefix.text.length,
         theme,
       );
       const rightLayout = buildWrappedSplitCell(
         row.right,
-        rightRenderWidth,
+        splitLayout.right,
         lineNumberDigits,
         showLineNumbers,
-        rightPrefix.text.length,
         theme,
       );
-      const leftContentWidth = Math.max(
-        0,
-        leftWidth - leftPrefix.text.length - leftLayout.gutterWidth,
-      );
-      const rightContentWidth = Math.max(
-        0,
-        rightRenderWidth - rightPrefix.text.length - rightLayout.gutterWidth,
-      );
+      const leftContentWidth = splitLayout.left.contentWidth;
+      const rightContentWidth = splitLayout.right.contentWidth;
+      // The concrete wrapped arrays already carry their line counts; avoid measuring spans twice.
       const visualLineCount = Math.max(leftLayout.lines.length, rightLayout.lines.length);
 
       baseRow = (
@@ -2387,17 +2476,17 @@ function renderRow(
       );
     }
   } else if (row.type === "stack-line") {
-    const guideOnOldSide = noteGuideSide === "old";
-    const guideOnNewSide = noteGuideSide === "new";
+    // The planner and row type are derived from the same complete planned row.
+    const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
+    const guideOnOldSide = stackLayout.noteGuideSide === "old";
+    const guideOnNewSide = stackLayout.noteGuideSide === "new";
     const addNoteTarget: UserNoteLineTarget | undefined =
       row.cell.newLineNumber !== undefined
         ? { side: "new", line: row.cell.newLineNumber }
         : row.cell.oldLineNumber !== undefined
           ? { side: "old", line: row.cell.oldLineNumber }
           : undefined;
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
-    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    const addBadgeWidth = stackLayout.addNoteBadgeWidth;
     const prefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide
@@ -2413,7 +2502,7 @@ function renderRow(
             appendPlainStackCellChunks(
               chunks,
               row.cell,
-              contentWidth,
+              stackLayout.cell,
               lineNumberDigits,
               showLineNumbers,
               theme,
@@ -2448,7 +2537,7 @@ function renderRow(
               <text key={`${row.key}:painted`}>
                 {renderStackCell(
                   row.cell,
-                  contentWidth,
+                  stackLayout.cell,
                   lineNumberDigits,
                   showLineNumbers,
                   theme,
@@ -2479,16 +2568,12 @@ function renderRow(
     } else {
       const layout = buildWrappedStackCell(
         row.cell,
-        contentWidth,
+        stackLayout.cell,
         lineNumberDigits,
         showLineNumbers,
-        prefix.text.length,
         theme,
       );
-      const wrappedContentWidth = Math.max(
-        0,
-        contentWidth - prefix.text.length - layout.gutterWidth,
-      );
+      const wrappedContentWidth = stackLayout.cell.contentWidth;
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
@@ -2578,7 +2663,10 @@ function renderRow(
 }
 
 interface DiffRowViewProps {
-  row: DiffRow;
+  /** Complete review-stream row; preferred when the caller owns the shared render plan. */
+  plannedRow?: PlannedDiffReviewRow;
+  /** Raw row fallback for renderer-only surfaces outside the shared review stream. */
+  row?: DiffRow;
   width: number;
   lineNumberDigits: number;
   showLineNumbers: boolean;
@@ -2609,6 +2697,7 @@ interface DiffRowViewProps {
  */
 export const DiffRowView = memo(
   function DiffRowViewComponent({
+    plannedRow,
     row,
     width,
     lineNumberDigits,
@@ -2629,8 +2718,14 @@ export const DiffRowView = memo(
     onStartUserNoteAtHunk,
     onToggleGap,
   }: DiffRowViewProps) {
+    const resolvedPlannedRow =
+      plannedRow ?? (row ? legacyPlannedDiffRow(row, anchorId, noteGuideSide) : undefined);
+    if (!resolvedPlannedRow) {
+      return null;
+    }
+
     return renderRow(
-      row,
+      resolvedPlannedRow,
       width,
       lineNumberDigits,
       showLineNumbers,
@@ -2643,8 +2738,6 @@ export const DiffRowView = memo(
       copySelectedSide,
       cursorHighlight,
       lineHighlights,
-      anchorId,
-      noteGuideSide,
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
@@ -2653,6 +2746,7 @@ export const DiffRowView = memo(
   },
   (previous, next) => {
     return (
+      previous.plannedRow === next.plannedRow &&
       previous.row === next.row &&
       previous.width === next.width &&
       previous.lineNumberDigits === next.lineNumberDigits &&

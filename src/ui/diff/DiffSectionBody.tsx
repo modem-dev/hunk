@@ -425,7 +425,7 @@ export function DiffSectionBody({
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
-              row={plannedRow.row}
+              plannedRow={plannedRow}
               width={width}
               lineNumberDigits={lineNumberDigits}
               showLineNumbers={showLineNumbers}
@@ -438,8 +438,6 @@ export function DiffSectionBody({
               copySelectedSide={copySelectedSide}
               cursorHighlight={isCursorRow ? cursorHighlight : undefined}
               lineHighlights={lineHighlightPaintIndex}
-              anchorId={plannedRow.anchorId}
-              noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
                 startUserNoteAtHunkHandler !== undefined &&
                 hoveredRowKey === plannedRow.row.key &&
