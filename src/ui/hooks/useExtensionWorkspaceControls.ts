@@ -1,3 +1,8 @@
+/**
+ * Coordinates extension reads and consented workspace writes against the live review.
+ * App supplies authority and host callbacks; this hook checks leases, verifies targets, obtains
+ * consent, executes writes, and reconciles successful results.
+ */
 import { writeFile } from "node:fs/promises";
 import { useCallback, useMemo, useRef } from "react";
 import type { CliInput } from "../../core/run/commandInputs";
