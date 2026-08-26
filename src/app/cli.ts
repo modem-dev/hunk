@@ -980,469 +980,534 @@ function sessionUsageLines(specs: readonly AgentCommandSpec[]) {
   return specs.flatMap((spec) => spec.synopsis.map((line) => `  ${line}`));
 }
 
-/** Parse `hunk session ...` as live-session daemon-backed commands. */
-async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
-  const [subcommand, ...rest] = tokens;
-  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    return {
-      kind: "help",
-      text:
-        [
-          "Usage: hunk session <subcommand> [options]",
-          "",
-          "Inspect and control live Hunk review sessions through the local daemon.",
-          "",
-          "Commands:",
-          ...sessionUsageLines(SESSION_AGENT_COMMAND_LIST),
-        ].join("\n") + "\n",
-    };
+/** Return whether one session command token list requests help. */
+function hasSessionHelpFlag(tokens: readonly string[]) {
+  return tokens.includes("--help") || tokens.includes("-h");
+}
+
+/** Render the top-level session command overview. */
+function sessionOverviewHelp(): HelpCommandInput {
+  return {
+    kind: "help",
+    text:
+      [
+        "Usage: hunk session <subcommand> [options]",
+        "",
+        "Inspect and control live Hunk review sessions through the local daemon.",
+        "",
+        "Commands:",
+        ...sessionUsageLines(SESSION_AGENT_COMMAND_LIST),
+      ].join("\n") + "\n",
+  };
+}
+
+/** Parse `hunk session list`. */
+async function parseSessionListCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS.list;
+  const command = buildSessionCommand(spec);
+  let parsedOptions: SessionCommandOptions<"list"> = {};
+
+  command.action((options: SessionCommandOptions<"list">) => {
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
   }
 
-  if (subcommand === "list") {
-    const command = buildSessionCommand(SESSION_AGENT_COMMANDS.list);
-    let parsedOptions: SessionCommandOptions<"list"> = {};
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action: "list",
+    output: resolveJsonOutput(parsedOptions),
+  };
+}
 
-    command.action((options: SessionCommandOptions<"list">) => {
-      parsedOptions = options;
-    });
+/** Parse a session get or context command with their shared selector shape. */
+async function parseSessionReadCommand(
+  action: "get" | "context",
+  tokens: string[],
+): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS[action];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"get"> = {};
 
-    if (rest.includes("--help") || rest.includes("-h")) {
-      return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS.list);
-    }
+  command.action((sessionId: string | undefined, options: SessionCommandOptions<"get">) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
 
-    await parseStandaloneCommand(command, rest);
-    return {
-      kind: "session",
-      action: "list",
-      output: resolveJsonOutput(parsedOptions),
-    };
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
   }
 
-  if (subcommand === "get" || subcommand === "context" || subcommand === "review") {
-    const spec = SESSION_AGENT_COMMANDS[subcommand];
-    const command = buildSessionCommand(spec);
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action,
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+  };
+}
 
-    let parsedSessionId: string | undefined;
-    // Review's parsed shape is a strict superset of get/context, so it types the shared branch.
-    let parsedOptions: SessionCommandOptions<"review"> = {};
+/** Parse `hunk session review`. */
+async function parseSessionReviewCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS.review;
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"review"> = {};
 
-    command.action((sessionId: string | undefined, options: SessionCommandOptions<"review">) => {
-      parsedSessionId = sessionId;
-      parsedOptions = options;
-    });
+  command.action((sessionId: string | undefined, options: SessionCommandOptions<"review">) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
 
-    if (rest.includes("--help") || rest.includes("-h")) {
-      return sessionCommandHelpText(command, spec);
-    }
-
-    await parseStandaloneCommand(command, rest);
-    if (subcommand === "review") {
-      return {
-        kind: "session",
-        action: "review",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        includePatch: parsedOptions.includePatch ?? false,
-        includeNotes: parsedOptions.includeNotes ?? false,
-      };
-    }
-
-    return {
-      kind: "session",
-      action: subcommand,
-      output: resolveJsonOutput(parsedOptions),
-      selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-    };
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
   }
 
-  if (subcommand === "navigate") {
-    const command = buildSessionCommand(SESSION_AGENT_COMMANDS.navigate);
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action: "review",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    includePatch: parsedOptions.includePatch ?? false,
+    includeNotes: parsedOptions.includeNotes ?? false,
+  };
+}
 
-    let parsedSessionId: string | undefined;
-    let parsedOptions: SessionCommandOptions<"navigate"> = {};
+/** Parse `hunk session navigate`. */
+async function parseSessionNavigateCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS.navigate;
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"navigate"> = {};
 
-    command.action((sessionId: string | undefined, options: SessionCommandOptions<"navigate">) => {
-      parsedSessionId = sessionId;
-      parsedOptions = options;
-    });
+  command.action((sessionId: string | undefined, options: SessionCommandOptions<"navigate">) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
 
-    if (rest.includes("--help") || rest.includes("-h")) {
-      return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS.navigate);
-    }
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
 
-    await parseStandaloneCommand(command, rest);
+  await parseStandaloneCommand(command, tokens);
 
-    /** Relative comment navigation mode. */
-    if (parsedOptions.nextComment || parsedOptions.prevComment) {
-      enforceConstraint(COMMENT_DIRECTION_CONSTRAINT, parsedOptions);
-
-      return {
-        kind: "session",
-        action: "navigate",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        commentDirection: parsedOptions.nextComment ? "next" : "prev",
-      } as const;
-    }
-
-    /** Absolute navigation mode requires --file and a target. */
-    if (!parsedOptions.file) {
-      throw new Error(
-        "Specify --file <path> with a navigation target, or use --next-comment / --prev-comment.",
-      );
-    }
-
-    enforceConstraint(NAVIGATE_TARGET_CONSTRAINT, parsedOptions);
-
+  if (parsedOptions.nextComment || parsedOptions.prevComment) {
+    enforceConstraint(COMMENT_DIRECTION_CONSTRAINT, parsedOptions);
     return {
       kind: "session",
       action: "navigate",
       output: resolveJsonOutput(parsedOptions),
       selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-      filePath: parsedOptions.file,
-      hunkNumber: parsedOptions.hunk,
-      side:
-        parsedOptions.oldLine !== undefined
-          ? "old"
-          : parsedOptions.newLine !== undefined
-            ? "new"
-            : undefined,
-      line: parsedOptions.oldLine ?? parsedOptions.newLine,
-    };
+      commentDirection: parsedOptions.nextComment ? "next" : "prev",
+    } as const;
   }
 
-  if (subcommand === "reload") {
-    const separatorIndex = rest.indexOf("--");
-    const outerTokens = separatorIndex === -1 ? rest : rest.slice(0, separatorIndex);
+  if (!parsedOptions.file) {
+    throw new Error(
+      "Specify --file <path> with a navigation target, or use --next-comment / --prev-comment.",
+    );
+  }
 
-    const command = buildSessionCommand(SESSION_AGENT_COMMANDS.reload);
+  enforceConstraint(NAVIGATE_TARGET_CONSTRAINT, parsedOptions);
+  return {
+    kind: "session",
+    action: "navigate",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+    hunkNumber: parsedOptions.hunk,
+    side:
+      parsedOptions.oldLine !== undefined
+        ? "old"
+        : parsedOptions.newLine !== undefined
+          ? "new"
+          : undefined,
+    line: parsedOptions.oldLine ?? parsedOptions.newLine,
+  };
+}
 
-    let parsedSessionId: string | undefined;
-    let parsedOptions: SessionCommandOptions<"reload"> = {};
+/** Parse `hunk session reload`, keeping nested command tokens isolated after `--`. */
+async function parseSessionReloadCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const separatorIndex = tokens.indexOf("--");
+  const outerTokens = separatorIndex === -1 ? tokens : tokens.slice(0, separatorIndex);
+  const spec = SESSION_AGENT_COMMANDS.reload;
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"reload"> = {};
 
-    command.action((sessionId: string | undefined, options: SessionCommandOptions<"reload">) => {
+  command.action((sessionId: string | undefined, options: SessionCommandOptions<"reload">) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(outerTokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  if (separatorIndex === -1) {
+    throw new Error(RELOAD_SEPARATOR_MESSAGE);
+  }
+
+  const nestedTokens = tokens.slice(separatorIndex + 1);
+  if (nestedTokens.length === 0) {
+    throw new Error(RELOAD_SEPARATOR_MESSAGE);
+  }
+
+  await parseStandaloneCommand(command, outerTokens);
+  const nextInput = requireReloadableCliInput(await parseCli(["bun", "hunk", ...nestedTokens]));
+  const resolvedReload = resolveReloadSelector(
+    parsedSessionId,
+    parsedOptions.sessionPath,
+    parsedOptions.repo,
+    parsedOptions.source,
+  );
+
+  return {
+    kind: "session",
+    action: "reload",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolvedReload.selector,
+    sourcePath: resolvedReload.sourcePath,
+    nextInput,
+  };
+}
+
+/** Parse `hunk session comment add`. */
+async function parseSessionCommentAddCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-add"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"comment-add"> = {
+    file: "",
+    summary: "",
+  };
+
+  command.action((sessionId: string | undefined, options: SessionCommandOptions<"comment-add">) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  enforceConstraint(COMMENT_TARGET_CONSTRAINT, parsedOptions);
+
+  return {
+    kind: "session",
+    action: "comment-add",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+    side: parsedOptions.oldLine !== undefined ? "old" : "new",
+    line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
+    summary: parsedOptions.summary,
+    rationale: parsedOptions.rationale,
+    markup: parsedOptions.markup,
+    author: parsedOptions.author,
+    reveal: parsedOptions.focus ?? false,
+  };
+}
+
+/** Parse `hunk session comment apply`, reading stdin only after option validation. */
+async function parseSessionCommentApplyCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-apply"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"comment-apply"> = {};
+
+  command.action(
+    (sessionId: string | undefined, options: SessionCommandOptions<"comment-apply">) => {
       parsedSessionId = sessionId;
       parsedOptions = options;
-    });
+    },
+  );
 
-    if (outerTokens.includes("--help") || outerTokens.includes("-h")) {
-      return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS.reload);
-    }
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
 
-    if (separatorIndex === -1) {
-      throw new Error(RELOAD_SEPARATOR_MESSAGE);
-    }
+  await parseStandaloneCommand(command, tokens);
+  if (!parsedOptions.stdin) {
+    throw new Error(COMMENT_APPLY_STDIN_MESSAGE);
+  }
 
-    const nestedTokens = rest.slice(separatorIndex + 1);
-    if (nestedTokens.length === 0) {
-      throw new Error(RELOAD_SEPARATOR_MESSAGE);
-    }
+  const comments = parseSessionCommentApplyPayload(await new Response(Bun.stdin.stream()).text());
+  return {
+    kind: "session",
+    action: "comment-apply",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    comments,
+    revealMode: parsedOptions.focus ? "first" : "none",
+  };
+}
 
-    await parseStandaloneCommand(command, outerTokens);
-    const nextInput = requireReloadableCliInput(await parseCli(["bun", "hunk", ...nestedTokens]));
-    const resolvedReload = resolveReloadSelector(
-      parsedSessionId,
-      parsedOptions.sessionPath,
-      parsedOptions.repo,
-      parsedOptions.source,
+/** Parse `hunk session comment list`. */
+async function parseSessionCommentListCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-list"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"comment-list"> = {};
+
+  command.action(
+    (sessionId: string | undefined, options: SessionCommandOptions<"comment-list">) => {
+      parsedSessionId = sessionId;
+      parsedOptions = options;
+    },
+  );
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  if (
+    parsedOptions.type !== undefined &&
+    parsedOptions.type !== "live" &&
+    parsedOptions.type !== "all" &&
+    parsedOptions.type !== "ai" &&
+    parsedOptions.type !== "agent" &&
+    parsedOptions.type !== "user"
+  ) {
+    throw new Error("Comment type must be one of live, all, ai, agent, or user.");
+  }
+
+  return {
+    kind: "session",
+    action: "comment-list",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+    ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
+  };
+}
+
+/** Parse `hunk session comment rm`. */
+async function parseSessionCommentRmCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-rm"];
+  const command = buildSessionCommand(spec);
+  let parsedTargets: string[] = [];
+  let parsedOptions: SessionCommandOptions<"comment-rm"> = {};
+
+  command.action((targets: string[], options: SessionCommandOptions<"comment-rm">) => {
+    parsedTargets = targets;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  const expectedTargetCount = parsedOptions.repo ? 1 : 2;
+  if (parsedTargets.length !== expectedTargetCount) {
+    throw new Error(
+      parsedOptions.repo
+        ? "Specify exactly one comment id with --repo <path>."
+        : "Specify a session id and comment id, or pass --repo <path> with one comment id.",
     );
+  }
 
+  const parsedSessionId = parsedOptions.repo ? undefined : parsedTargets[0];
+  const parsedCommentId = parsedOptions.repo ? parsedTargets[0] : parsedTargets[1];
+  return {
+    kind: "session",
+    action: "comment-rm",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    commentId: parsedCommentId ?? "",
+  };
+}
+
+/** Parse `hunk session comment clear`. */
+async function parseSessionCommentClearCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-clear"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"comment-clear"> = {};
+
+  command.action(
+    (sessionId: string | undefined, options: SessionCommandOptions<"comment-clear">) => {
+      parsedSessionId = sessionId;
+      parsedOptions = options;
+    },
+  );
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  if (!parsedOptions.yes) {
+    throw new Error("Pass --yes to clear comments.");
+  }
+
+  return {
+    kind: "session",
+    action: "comment-clear",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+    ...(parsedOptions.includeUser || parsedOptions.all ? { includeUser: true } : {}),
+    confirmed: true,
+  };
+}
+
+/** Dispatch one command under the session comment namespace. */
+function parseSessionCommentCommand(tokens: string[]): Promise<ParsedCliInput> | ParsedCliInput {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
-      kind: "session",
-      action: "reload",
-      output: resolveJsonOutput(parsedOptions),
-      selector: resolvedReload.selector,
-      sourcePath: resolvedReload.sourcePath,
-      nextInput,
+      kind: "help",
+      text: ["Usage:", ...sessionUsageLines(SESSION_COMMENT_COMMAND_LIST)].join("\n") + "\n",
     };
   }
 
-  if (subcommand === "comment") {
-    const [commentSubcommand, ...commentRest] = rest;
-    if (!commentSubcommand || commentSubcommand === "--help" || commentSubcommand === "-h") {
-      return {
-        kind: "help",
-        text: ["Usage:", ...sessionUsageLines(SESSION_COMMENT_COMMAND_LIST)].join("\n") + "\n",
-      };
-    }
+  switch (subcommand) {
+    case "add":
+      return parseSessionCommentAddCommand(rest);
+    case "apply":
+      return parseSessionCommentApplyCommand(rest);
+    case "list":
+      return parseSessionCommentListCommand(rest);
+    case "rm":
+      return parseSessionCommentRmCommand(rest);
+    case "clear":
+      return parseSessionCommentClearCommand(rest);
+    default:
+      throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
+  }
+}
 
-    if (commentSubcommand === "add") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["comment-add"]);
+/** Parse `hunk session highlight add`. */
+async function parseSessionHighlightAddCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["highlight-add"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"highlight-add"> = {
+    file: "",
+    start: 0,
+    end: 0,
+  };
 
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"comment-add"> = {
-        file: "",
-        summary: "",
-      };
+  command.action(
+    (sessionId: string | undefined, options: SessionCommandOptions<"highlight-add">) => {
+      parsedSessionId = sessionId;
+      parsedOptions = options;
+    },
+  );
 
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"comment-add">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (commentRest.includes("--help") || commentRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["comment-add"]);
-      }
-
-      await parseStandaloneCommand(command, commentRest);
-
-      enforceConstraint(COMMENT_TARGET_CONSTRAINT, parsedOptions);
-
-      return {
-        kind: "session",
-        action: "comment-add",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-        side: parsedOptions.oldLine !== undefined ? "old" : "new",
-        line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
-        summary: parsedOptions.summary,
-        rationale: parsedOptions.rationale,
-        markup: parsedOptions.markup,
-        author: parsedOptions.author,
-        reveal: parsedOptions.focus ?? false,
-      };
-    }
-
-    if (commentSubcommand === "apply") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["comment-apply"]);
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"comment-apply"> = {};
-
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"comment-apply">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (commentRest.includes("--help") || commentRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["comment-apply"]);
-      }
-
-      await parseStandaloneCommand(command, commentRest);
-      if (!parsedOptions.stdin) {
-        throw new Error(COMMENT_APPLY_STDIN_MESSAGE);
-      }
-
-      const comments = parseSessionCommentApplyPayload(
-        await new Response(Bun.stdin.stream()).text(),
-      );
-
-      return {
-        kind: "session",
-        action: "comment-apply",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        comments,
-        revealMode: parsedOptions.focus ? "first" : "none",
-      };
-    }
-
-    if (commentSubcommand === "list") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["comment-list"]);
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"comment-list"> = {};
-
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"comment-list">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (commentRest.includes("--help") || commentRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["comment-list"]);
-      }
-
-      await parseStandaloneCommand(command, commentRest);
-      if (
-        parsedOptions.type !== undefined &&
-        parsedOptions.type !== "live" &&
-        parsedOptions.type !== "all" &&
-        parsedOptions.type !== "ai" &&
-        parsedOptions.type !== "agent" &&
-        parsedOptions.type !== "user"
-      ) {
-        throw new Error("Comment type must be one of live, all, ai, agent, or user.");
-      }
-
-      return {
-        kind: "session",
-        action: "comment-list",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-        ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
-      };
-    }
-
-    if (commentSubcommand === "rm") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["comment-rm"]);
-
-      let parsedTargets: string[] = [];
-      let parsedOptions: SessionCommandOptions<"comment-rm"> = {};
-
-      command.action((targets: string[], options: SessionCommandOptions<"comment-rm">) => {
-        parsedTargets = targets;
-        parsedOptions = options;
-      });
-
-      if (commentRest.includes("--help") || commentRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["comment-rm"]);
-      }
-
-      await parseStandaloneCommand(command, commentRest);
-
-      const expectedTargetCount = parsedOptions.repo ? 1 : 2;
-      if (parsedTargets.length !== expectedTargetCount) {
-        throw new Error(
-          parsedOptions.repo
-            ? "Specify exactly one comment id with --repo <path>."
-            : "Specify a session id and comment id, or pass --repo <path> with one comment id.",
-        );
-      }
-
-      const parsedSessionId = parsedOptions.repo ? undefined : parsedTargets[0];
-      const parsedCommentId = parsedOptions.repo ? parsedTargets[0] : parsedTargets[1];
-
-      return {
-        kind: "session",
-        action: "comment-rm",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        commentId: parsedCommentId ?? "",
-      };
-    }
-
-    if (commentSubcommand === "clear") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["comment-clear"]);
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"comment-clear"> = {};
-
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"comment-clear">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (commentRest.includes("--help") || commentRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["comment-clear"]);
-      }
-
-      await parseStandaloneCommand(command, commentRest);
-      if (!parsedOptions.yes) {
-        throw new Error("Pass --yes to clear comments.");
-      }
-
-      return {
-        kind: "session",
-        action: "comment-clear",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-        ...(parsedOptions.includeUser || parsedOptions.all ? { includeUser: true } : {}),
-        confirmed: true,
-      };
-    }
-
-    throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
   }
 
-  if (subcommand === "highlight") {
-    const [highlightSubcommand, ...highlightRest] = rest;
-    if (!highlightSubcommand || highlightSubcommand === "--help" || highlightSubcommand === "-h") {
-      return {
-        kind: "help",
-        text: ["Usage:", ...sessionUsageLines(SESSION_HIGHLIGHT_COMMAND_LIST)].join("\n") + "\n",
-      };
-    }
-
-    if (highlightSubcommand === "add") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["highlight-add"]);
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"highlight-add"> = {
-        file: "",
-        start: 0,
-        end: 0,
-      };
-
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"highlight-add">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (highlightRest.includes("--help") || highlightRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["highlight-add"]);
-      }
-
-      await parseStandaloneCommand(command, highlightRest);
-
-      enforceConstraint(HIGHLIGHT_TARGET_CONSTRAINT, parsedOptions);
-      if (parsedOptions.end <= parsedOptions.start) {
-        throw new Error(HIGHLIGHT_RANGE_MESSAGE);
-      }
-      const tone = parsedOptions.tone;
-      if (tone !== undefined && !isHighlightTone(tone)) {
-        throw new Error(`Highlight tone must be one of ${HIGHLIGHT_TONES.join(", ")}.`);
-      }
-
-      return {
-        kind: "session",
-        action: "highlight-add",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-        side: parsedOptions.oldLine !== undefined ? "old" : "new",
-        line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
-        start: parsedOptions.start,
-        end: parsedOptions.end,
-        ...(tone !== undefined && isHighlightTone(tone) ? { tone } : {}),
-        reveal: parsedOptions.focus ?? false,
-      };
-    }
-
-    if (highlightSubcommand === "clear") {
-      const command = buildSessionCommand(SESSION_AGENT_COMMANDS["highlight-clear"]);
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: SessionCommandOptions<"highlight-clear"> = {};
-
-      command.action(
-        (sessionId: string | undefined, options: SessionCommandOptions<"highlight-clear">) => {
-          parsedSessionId = sessionId;
-          parsedOptions = options;
-        },
-      );
-
-      if (highlightRest.includes("--help") || highlightRest.includes("-h")) {
-        return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS["highlight-clear"]);
-      }
-
-      await parseStandaloneCommand(command, highlightRest);
-
-      return {
-        kind: "session",
-        action: "highlight-clear",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-      };
-    }
-
-    throw new Error("Supported highlight subcommands are add and clear.");
+  await parseStandaloneCommand(command, tokens);
+  enforceConstraint(HIGHLIGHT_TARGET_CONSTRAINT, parsedOptions);
+  if (parsedOptions.end <= parsedOptions.start) {
+    throw new Error(HIGHLIGHT_RANGE_MESSAGE);
   }
 
-  throw new Error(`Unknown session command: ${subcommand}`);
+  const tone = parsedOptions.tone;
+  if (tone !== undefined && !isHighlightTone(tone)) {
+    throw new Error(`Highlight tone must be one of ${HIGHLIGHT_TONES.join(", ")}.`);
+  }
+
+  return {
+    kind: "session",
+    action: "highlight-add",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+    side: parsedOptions.oldLine !== undefined ? "old" : "new",
+    line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
+    start: parsedOptions.start,
+    end: parsedOptions.end,
+    ...(tone !== undefined && isHighlightTone(tone) ? { tone } : {}),
+    reveal: parsedOptions.focus ?? false,
+  };
+}
+
+/** Parse `hunk session highlight clear`. */
+async function parseSessionHighlightClearCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["highlight-clear"];
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  let parsedOptions: SessionCommandOptions<"highlight-clear"> = {};
+
+  command.action(
+    (sessionId: string | undefined, options: SessionCommandOptions<"highlight-clear">) => {
+      parsedSessionId = sessionId;
+      parsedOptions = options;
+    },
+  );
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action: "highlight-clear",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    filePath: parsedOptions.file,
+  };
+}
+
+/** Dispatch one command under the session highlight namespace. */
+function parseSessionHighlightCommand(tokens: string[]): Promise<ParsedCliInput> | ParsedCliInput {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return {
+      kind: "help",
+      text: ["Usage:", ...sessionUsageLines(SESSION_HIGHLIGHT_COMMAND_LIST)].join("\n") + "\n",
+    };
+  }
+
+  switch (subcommand) {
+    case "add":
+      return parseSessionHighlightAddCommand(rest);
+    case "clear":
+      return parseSessionHighlightClearCommand(rest);
+    default:
+      throw new Error("Supported highlight subcommands are add and clear.");
+  }
+}
+
+/** Dispatch `hunk session ...` to one focused live-session command parser. */
+function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> | ParsedCliInput {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return sessionOverviewHelp();
+  }
+
+  switch (subcommand) {
+    case "list":
+      return parseSessionListCommand(rest);
+    case "get":
+    case "context":
+      return parseSessionReadCommand(subcommand, rest);
+    case "review":
+      return parseSessionReviewCommand(rest);
+    case "navigate":
+      return parseSessionNavigateCommand(rest);
+    case "reload":
+      return parseSessionReloadCommand(rest);
+    case "comment":
+      return parseSessionCommentCommand(rest);
+    case "highlight":
+      return parseSessionHighlightCommand(rest);
+    default:
+      throw new Error(`Unknown session command: ${subcommand}`);
+  }
 }
 
 const MARKUP_HELP = [

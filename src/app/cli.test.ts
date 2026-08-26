@@ -494,6 +494,15 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session context by direct session id", async () => {
+    expect(await parseCli(["bun", "hunk", "session", "context", "session-1", "--json"])).toEqual({
+      kind: "session",
+      action: "context",
+      selector: { sessionId: "session-1" },
+      output: "json",
+    });
+  });
+
   test("keeps --repo provider-neutral while canonicalizing the selected subdirectory", async () => {
     const repoRoot = realpathSync.native(createTempDir("hunk-cli-repo-"));
     mkdirSync(join(repoRoot, ".git"));
@@ -1405,6 +1414,12 @@ describe("parseCli command help text", () => {
   test("renders help for each session subcommand", async () => {
     expect(await expectHelp(["session", "list", "--help"])).toContain("list live Hunk sessions");
     expect(await expectHelp(["session", "get", "--help"])).toContain("show one live Hunk session");
+    expect(await expectHelp(["session", "context", "--help"])).toContain(
+      "show the selected file and hunk",
+    );
+    expect(await expectHelp(["session", "review", "--help"])).toContain(
+      "export the live review model",
+    );
     expect(await expectHelp(["session", "navigate", "--help"])).toContain(
       "move a live Hunk session to one diff hunk",
     );
@@ -1441,6 +1456,18 @@ describe("parseCli command help text", () => {
     );
     expect(await expectHelp(["session", "comment", "clear", "--help"])).toContain(
       "clear inline review notes",
+    );
+  });
+
+  test("renders the highlight overview and per-highlight-subcommand help", async () => {
+    const overview = await expectHelp(["session", "highlight"]);
+    expect(overview).toContain("hunk session highlight add");
+    expect(overview).toBe(await expectHelp(["session", "highlight", "--help"]));
+    expect(await expectHelp(["session", "highlight", "add", "--help"])).toContain(
+      "paint one attention mark",
+    );
+    expect(await expectHelp(["session", "highlight", "clear", "--help"])).toContain(
+      "clear agent attention marks",
     );
   });
 });
