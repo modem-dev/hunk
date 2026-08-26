@@ -615,30 +615,137 @@ describe("buildCopySelectedRowKeys", () => {
     ).toBe(0);
   });
 
-  test("collects every row key intersected by a multi-row drag", () => {
-    const { fileSectionLayouts, sectionGeometry } = buildContext();
-    const firstLayout = fileSectionLayouts[0]!;
-    const anchor: CopySelectionPoint = {
-      kind: "review-row",
-      column: 0,
-      visualRow: firstLayout.bodyTop,
+  const width = 80;
+  const bodyTop = 10;
+  const selectionStartRow = 15;
+  const selectionEndRow = 20;
+
+  /** Build one synthetic row range so interval boundary behavior stays explicit. */
+  function selectedRangeForRow({
+    pinnedStart = false,
+    reverse = false,
+    rowHeight,
+    rowTop,
+  }: {
+    pinnedStart?: boolean;
+    reverse?: boolean;
+    rowHeight: number;
+    rowTop: number;
+  }) {
+    const rowBounds = {
+      key: "target-row",
+      stableKey: "target-row",
+      stableKeys: ["target-row"],
+      top: rowTop,
+      height: rowHeight,
     };
-    const focus: CopySelectionPoint = {
+    const fileSectionLayouts = [
+      {
+        fileId: "example",
+        sectionIndex: 0,
+        sectionTop: bodyTop,
+        headerTop: bodyTop,
+        bodyTop,
+        bodyHeight: 20,
+        sectionBottom: bodyTop + 20,
+      },
+    ];
+    const sectionGeometry = [
+      {
+        bodyHeight: 20,
+        hunkAnchorRows: new Map(),
+        hunkBounds: new Map(),
+        lineNumberDigits: 1,
+        plannedRows: [],
+        rowBounds: [rowBounds],
+        rowBoundsByKey: new Map([[rowBounds.key, rowBounds]]),
+        rowBoundsByStableKey: new Map([[rowBounds.stableKey, rowBounds]]),
+      },
+    ];
+    const start: CopySelectionPoint = pinnedStart
+      ? {
+          kind: "pinned-header",
+          column: 11,
+          fileId: "example",
+          nextVisualRow: selectionStartRow,
+        }
+      : { kind: "review-row", column: 11, visualRow: selectionStartRow };
+    const end: CopySelectionPoint = {
       kind: "review-row",
-      column: 0,
-      visualRow: firstLayout.sectionBottom - 1,
+      column: 29,
+      visualRow: selectionEndRow,
+    };
+    const drag: CopySelectionDrag = {
+      anchor: reverse ? end : start,
+      focus: reverse ? start : end,
+      moved: true,
     };
 
-    const map = buildCopySelectedRowKeys({
-      drag: { anchor, focus, moved: true },
-      fileSectionLayouts,
-      sectionGeometry,
-      width: 120,
+    return buildCopySelectedRowKeys({ drag, fileSectionLayouts, sectionGeometry, width }).get(
+      "example",
+    );
+  }
+
+  for (const { name, reverse, rowHeight, rowTop, expected } of [
+    {
+      name: "clips an unwrapped row at the selection start column",
+      rowTop: 5,
+      rowHeight: 1,
+      expected: { startCol: 11, endCol: width - 1 },
+    },
+    {
+      name: "selects an unwrapped row inside the selection at full width",
+      rowTop: 7,
+      rowHeight: 1,
+      expected: { startCol: 0, endCol: width - 1 },
+    },
+    {
+      name: "clips an unwrapped row at the inclusive selection end column",
+      rowTop: 10,
+      rowHeight: 1,
+      expected: { startCol: 0, endCol: 29 },
+    },
+    {
+      name: "clips a wrapped row beginning before the selection",
+      rowTop: 4,
+      rowHeight: 3,
+      expected: { startCol: 11, endCol: width - 1 },
+    },
+    {
+      name: "clips a wrapped row ending after the selection",
+      rowTop: 9,
+      rowHeight: 3,
+      expected: { startCol: 0, endCol: 29 },
+    },
+    {
+      name: "clips a wrapped row spanning the selection during a reverse drag",
+      rowTop: 4,
+      rowHeight: 8,
+      reverse: true,
+      expected: { startCol: 11, endCol: 29 },
+    },
+    {
+      name: "selects a wrapped row inside the selection at full width",
+      rowTop: 7,
+      rowHeight: 2,
+      expected: { startCol: 0, endCol: width - 1 },
+    },
+  ] as const) {
+    test(name, () => {
+      const rows = selectedRangeForRow({ reverse, rowHeight, rowTop });
+      expect([...rows!.entries()]).toEqual([["target-row", expected]]);
+    });
+  }
+
+  test("keeps a reverse drag from the body to the pinned header on body-row boundaries", () => {
+    const rows = selectedRangeForRow({
+      pinnedStart: true,
+      reverse: true,
+      rowHeight: 1,
+      rowTop: 5,
     });
 
-    const rows = map.get("example");
-    expect(rows).toBeDefined();
-    expect(rows?.size ?? 0).toBeGreaterThan(0);
+    expect([...rows!.entries()]).toEqual([["target-row", { startCol: 11, endCol: width - 1 }]]);
   });
 });
 

@@ -715,31 +715,10 @@ export function buildCopySelectedRowKeys({
         continue;
       }
 
-      // Determine the global column range for this planned row.
-      // For unwrapped rows (height=1) this is straightforward.
-      // For wrapped rows (height>1) the same row key spans multiple visual rows;
-      // we use the visual row that overlaps the selection boundary to decide.
-      const rowLastVisualRow = rowBottom - 1;
-      let rangeStartCol: number;
-      let rangeEndCol: number;
-
-      if (rowTop >= startRow && rowLastVisualRow <= endRow) {
-        // Row is fully inside the selection range.
-        rangeStartCol = rowTop === startRow ? start.column : 0;
-        rangeEndCol = rowLastVisualRow === endRow ? end.column : width - 1;
-      } else if (rowTop <= startRow && rowLastVisualRow >= startRow && rowLastVisualRow <= endRow) {
-        // Row starts above the selection and the last visual row is within it.
-        rangeStartCol = start.column;
-        rangeEndCol = rowLastVisualRow === endRow ? end.column : width - 1;
-      } else if (rowTop >= startRow && rowTop <= endRow && rowLastVisualRow >= endRow) {
-        // Row starts within the selection and extends past it.
-        rangeStartCol = rowTop === startRow ? start.column : 0;
-        rangeEndCol = end.column;
-      } else {
-        // Row spans across the entire selection (starts above, ends below).
-        rangeStartCol = start.column;
-        rangeEndCol = end.column;
-      }
+      // A row crossing either inclusive selection boundary inherits that boundary's column.
+      // Otherwise the row is selected across the full content width.
+      const rangeStartCol = rowTop <= startRow ? start.column : 0;
+      const rangeEndCol = rowBottom > endRow ? end.column : width - 1;
 
       const fileRows = selected.get(section.fileId) ?? new Map<string, CopySelectedRowRange>();
       fileRows.set(rowBounds.key, { startCol: rangeStartCol, endCol: rangeEndCol });
