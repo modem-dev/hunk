@@ -22,6 +22,7 @@ import {
 } from "./copySelection";
 import {
   DIFF_RAIL_PREFIX_WIDTH,
+  resolveSplitCellGeometry,
   resolveStackCellGeometry,
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
@@ -104,6 +105,39 @@ function createMaliciousDiffFile(): DiffFile {
   };
 }
 
+/** Build a small test diff with caller-controlled text and identity. */
+function createTestDiffFile({
+  after,
+  before,
+  id,
+  path,
+}: {
+  after: string;
+  before: string;
+  id: string;
+  path: string;
+}): DiffFile {
+  const metadata = parseDiffFromFile(
+    { name: path, contents: before, cacheKey: `${id}-before` },
+    { name: path, contents: after, cacheKey: `${id}-after` },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id,
+    path,
+    patch: "",
+    language: "text",
+    stats: {
+      additions: Math.max(0, after.split("\n").length - before.split("\n").length),
+      deletions: Math.max(0, before.split("\n").length - after.split("\n").length),
+    },
+    metadata,
+    agent: null,
+  };
+}
+
 function createCjkDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
     {
@@ -134,6 +168,48 @@ function createCjkDiffFile(): DiffFile {
   };
 }
 
+/** Build the copy context and measured stream for test files. */
+function buildMultiFileTestContext({
+  copyDecorations = true,
+  files,
+  layout = "stack",
+  width = 120,
+  wrapLines = false,
+}: {
+  copyDecorations?: boolean;
+  files: DiffFile[];
+  layout?: "stack" | "split";
+  width?: number;
+  wrapLines?: boolean;
+}) {
+  const theme = resolveTheme("github-dark-default", null);
+  const sectionGeometry = files.map((file) =>
+    measureDiffSectionGeometry(file, layout, true, theme, [], width, true, wrapLines),
+  );
+  const fileSectionLayouts = buildFileSectionLayouts(
+    files,
+    sectionGeometry.map((geometry) => geometry.bodyHeight),
+  );
+  const context: CopySelectionContext = {
+    codeHorizontalOffset: 0,
+    copyDecorations,
+    files,
+    fileSectionLayouts,
+    headerLabelWidth: 60,
+    headerStatsWidth: 12,
+    layout,
+    pinnedHeaderFile: files[0] ?? null,
+    sectionGeometry,
+    showHunkHeaders: true,
+    showLineNumbers: true,
+    theme,
+    width,
+    wrapLines,
+  };
+
+  return { context, fileSectionLayouts, sectionGeometry };
+}
+
 function buildContext(
   layout: "stack" | "split" = "stack",
   width = 120,
@@ -143,29 +219,7 @@ function buildContext(
   fileSectionLayouts: ReturnType<typeof buildFileSectionLayouts>;
   sectionGeometry: ReturnType<typeof measureDiffSectionGeometry>[];
 } {
-  const theme = resolveTheme("github-dark-default", null);
-  const geometry = measureDiffSectionGeometry(file, layout, true, theme, [], width, true, false);
-  const sectionGeometry = [geometry];
-  const fileSectionLayouts = buildFileSectionLayouts([file], [geometry.bodyHeight]);
-
-  const context: CopySelectionContext = {
-    codeHorizontalOffset: 0,
-    copyDecorations: true,
-    files: [file],
-    fileSectionLayouts,
-    headerLabelWidth: 60,
-    headerStatsWidth: 12,
-    layout,
-    pinnedHeaderFile: file,
-    sectionGeometry,
-    showHunkHeaders: true,
-    showLineNumbers: true,
-    theme,
-    width,
-    wrapLines: false,
-  };
-
-  return { context, fileSectionLayouts, sectionGeometry };
+  return buildMultiFileTestContext({ files: [file], layout, width });
 }
 
 describe("clampCopyColumn", () => {
@@ -530,6 +584,140 @@ describe("renderCopySelectionText", () => {
     expect(text).toContain("after");
     expectNoUnsafeTerminalControls(text);
   });
+
+  test("clips wrapped code-only selections across partial first, middle, and last visual lines", () => {
+    const sourceLine = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const file = createTestDiffFile({
+      after: `${sourceLine}\n`,
+      before: "",
+      id: "wrapped",
+      path: "wrapped.txt",
+    });
+    const { context, fileSectionLayouts, sectionGeometry } = buildMultiFileTestContext({
+      copyDecorations: false,
+      files: [file],
+      width: 24,
+      wrapLines: true,
+    });
+    const geometry = sectionGeometry[0]!;
+    const rowIndex = geometry.plannedRows.findIndex(
+      (row) =>
+        row.kind === "diff-row" &&
+        row.row.type === "stack-line" &&
+        row.row.cell.kind === "addition",
+    );
+    const bounds = geometry.rowBounds[rowIndex]!;
+    expect(bounds.height).toBeGreaterThan(2);
+
+    const { gutterWidth, contentWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const codeStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const chunks = Array.from({ length: Math.ceil(sourceLine.length / contentWidth) }, (_, index) =>
+      sourceLine.slice(index * contentWidth, (index + 1) * contentWidth),
+    );
+    const rowTop = fileSectionLayouts[0]!.bodyTop + bounds.top;
+
+    const text = renderCopySelectionText({
+      context,
+      start: { kind: "review-row", column: codeStart + 2, visualRow: rowTop },
+      end: {
+        kind: "review-row",
+        column: codeStart + 4,
+        visualRow: rowTop + bounds.height - 1,
+      },
+    });
+
+    expect(text).toBe(
+      [chunks[0]!.slice(2), ...chunks.slice(1, -1), chunks.at(-1)!.slice(0, 5)].join("\n"),
+    );
+  });
+
+  test("omits blank source lines from code-only output", () => {
+    const file = createTestDiffFile({
+      after: "const first = 1;\n\nconst last = 2;\n",
+      before: "const first = 1;\nconst last = 2;\n",
+      id: "blank",
+      path: "blank.ts",
+    });
+    const { context, fileSectionLayouts } = buildMultiFileTestContext({
+      copyDecorations: false,
+      files: [file],
+    });
+    const section = fileSectionLayouts[0]!;
+
+    const text = renderCopySelectionText({
+      context,
+      start: { kind: "review-row", column: 0, visualRow: section.bodyTop },
+      end: { kind: "review-row", column: context.width - 1, visualRow: section.sectionBottom - 1 },
+    });
+
+    expect(text).toBe("const first = 1;\nconst last = 2;");
+    expect(text).not.toContain("\n\n");
+  });
+
+  test("retains an empty partial first line only in decorated output", () => {
+    const { context, fileSectionLayouts } = buildContext();
+    const section = fileSectionLayouts[0]!;
+    const start: CopySelectionPoint = {
+      kind: "review-row",
+      column: context.width - 1,
+      visualRow: section.bodyTop,
+    };
+    const end: CopySelectionPoint = {
+      kind: "review-row",
+      column: context.width - 1,
+      visualRow: section.bodyTop + 1,
+    };
+
+    const decoratedText = renderCopySelectionText({ context, start, end });
+    const codeOnlyText = renderCopySelectionText({
+      context: { ...context, copyDecorations: false },
+      start,
+      end,
+    });
+
+    expect(decoratedText.startsWith("\n")).toBe(true);
+    expect(codeOnlyText.startsWith("\n")).toBe(false);
+    expect(codeOnlyText).toContain("export const answer = 41;");
+  });
+
+  test("clips an in-stream file header at the end of a multi-file selection", () => {
+    const firstFile = createTestDiffFile({
+      after: "first file after\n",
+      before: "first file before\n",
+      id: "first",
+      path: "first.txt",
+    });
+    const secondFile = createTestDiffFile({
+      after: "second file after\n",
+      before: "second file before\n",
+      id: "second",
+      path: "second.txt",
+    });
+    const { context, fileSectionLayouts } = buildMultiFileTestContext({
+      files: [firstFile, secondFile],
+    });
+    const firstSection = fileSectionLayouts[0]!;
+    const secondSection = fileSectionLayouts[1]!;
+
+    const text = renderCopySelectionText({
+      context,
+      start: {
+        kind: "review-row",
+        column: 0,
+        visualRow: firstSection.sectionBottom - 1,
+      },
+      end: { kind: "review-row", column: 7, visualRow: secondSection.headerTop },
+    });
+
+    expect(text).toContain("first file after");
+    expect(text.split("\n").at(-1)).toBe(" second.");
+    expect(text).not.toContain("second file after");
+  });
 });
 
 describe("resolveCopySelectionSide", () => {
@@ -549,6 +737,33 @@ describe("resolveCopySelectionSide", () => {
 });
 
 describe("renderCopySelectionText with side", () => {
+  test("clips partial code-only text against the split right pane's global origin", () => {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("split");
+    const geometry = sectionGeometry[0]!;
+    const section = fileSectionLayouts[0]!;
+    const rowIndex = geometry.plannedRows.findIndex(
+      (row) => row.kind === "diff-row" && row.row.type === "split-line",
+    );
+    const visualRow = section.bodyTop + geometry.rowBounds[rowIndex]!.top;
+    const { leftWidth } = resolveSplitPaneWidths(context.width);
+    const { gutterWidth } = resolveSplitCellGeometry(
+      context.width - leftWidth,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const codeStart = leftWidth + DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+
+    const text = renderCopySelectionText({
+      context: { ...context, copyDecorations: false },
+      start: { kind: "review-row", column: codeStart + 7, visualRow },
+      end: { kind: "review-row", column: codeStart + 11, visualRow },
+      side: "right",
+    });
+
+    expect(text).toBe("const");
+  });
+
   test("includes only the left side text when side is 'left' and decorations are off", () => {
     const { context, fileSectionLayouts } = buildContext("split");
     const splitContext: CopySelectionContext = {
