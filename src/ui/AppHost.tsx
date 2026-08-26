@@ -27,13 +27,12 @@ import {
 } from "../app/session/reloadBounds";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadSessionOptions } from "../session/types";
-import {
-  App,
-  type WorkspaceFileWriter,
-  type WorkspaceRefreshRequest,
-  type WorkspaceWriteRunner,
-} from "./App";
+import { App, type WorkspaceRefreshRequest } from "./App";
 import { useStartupNotices } from "./hooks/useStartupNotices";
+import type {
+  WorkspaceFileWriter,
+  WorkspaceWriteRunner,
+} from "./hooks/useExtensionWorkspaceControls";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 
 /** A replacement registry prepared for adoption and optionally already retiring. */

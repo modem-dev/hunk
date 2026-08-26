@@ -4,7 +4,6 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import { writeFile } from "node:fs/promises";
 import {
   Suspense,
   lazy,
@@ -46,13 +45,9 @@ import { writeExtensionTrust } from "../extensions/trust";
 import type {
   ExtensionCommandContext,
   ExtensionEventContext,
-  ExtensionFileSide,
   ExtensionNotifyType,
   ExtensionReviewNote,
   ExtensionPaneControls,
-  ExtensionWorkspace,
-  ExtensionWorkspaceWriteRequest,
-  ExtensionWorkspaceWriteResult,
   ExtensionLoadResult,
   RegisteredCommand,
   RegisteredPane,
@@ -77,6 +72,11 @@ import type { ActiveAddNoteAffordance } from "./diff/DiffSectionBody";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
+import {
+  useExtensionWorkspaceControls,
+  type WorkspaceFileWriter,
+  type WorkspaceWriteRunner,
+} from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import {
@@ -129,13 +129,7 @@ import type { ExtensionPanePlacement } from "../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { extensionPaneSize } from "../extensions/panes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
-import {
-  normalizeWorkspaceWriteRequest,
-  resolveExtensionWorkspaceRead,
-  resolveExtensionWorkspaceWriteTarget,
-} from "./lib/extensionWorkspace";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
-import { verifyWorkspaceWriteTarget } from "./lib/workspaceWriteGuard";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -212,17 +206,6 @@ export interface WorkspaceRefreshRequest {
   sourcePath?: string;
 }
 
-/** Filesystem write implementation used by the host-mediated extension workspace. */
-export type WorkspaceFileWriter = (absolutePath: string, text: string) => Promise<void>;
-
-/** Host-owned boundary that tracks irreversible writes through graceful shutdown. */
-export type WorkspaceWriteRunner = (write: () => Promise<void>) => Promise<boolean>;
-
-/** Write UTF-8 text through the production filesystem implementation. */
-const writeWorkspaceFile: WorkspaceFileWriter = async (absolutePath, text) => {
-  await writeFile(absolutePath, text, "utf8");
-};
-
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
@@ -235,7 +218,7 @@ export function App({
   reviewProducer,
   runWorkspaceWrite,
   watchRuntime,
-  workspaceFileWriter = writeWorkspaceFile,
+  workspaceFileWriter,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -524,19 +507,6 @@ export function App({
     getSelection: review.getSelection,
     getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
   };
-  // What `ctx.workspace` decides against, re-read on every render because a soft
-  // reload swaps the bootstrap under a mounted App: the input can change what is
-  // writable at all, and the changeset decides which ids exist and which source
-  // a read reaches. Unfiltered on purpose — a file hidden by the filter is still
-  // a reviewed file. These are internal `DiffFile`s, so each carries the
-  // `sourceFetcher` a read delegates to.
-  const extensionWorkspaceInputs = {
-    files: reviewFiles,
-    input: bootstrap.input,
-    root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
-  };
-  const extensionWorkspaceInputsRef = useRef(extensionWorkspaceInputs);
-  extensionWorkspaceInputsRef.current = extensionWorkspaceInputs;
   const getExtensionFileViews = useCallback(() => {
     const source = extensionSelectionInputsRef.current.filteredFiles;
     const cache = extensionViewsCacheRef.current;
@@ -838,131 +808,16 @@ export function App({
     [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
   );
 
-  /** Build host-mediated reviewed-document read and write controls for one extension command. */
-  const createWorkspaceControls = useCallback(
-    (extensionId: string): ExtensionWorkspace => {
-      const lease = createReviewCapabilityLease();
-      const expired = (): ExtensionWorkspaceWriteResult => ({
-        ok: false,
-        reason: "unavailable",
-        detail: "The review reloaded before this extension operation could finish.",
-      });
-      const resolveTarget = (fileId: string) =>
-        resolveExtensionWorkspaceWriteTarget({
-          fileId,
-          ...extensionWorkspaceInputsRef.current,
-        });
-
-      return {
-        async readDocument(fileId: string, side: ExtensionFileSide) {
-          if (!lease.isLive()) return null;
-          // Unlike a write, a read asks nothing of the user and nothing of the
-          // review kind: it hands back the document the review is already
-          // showing. Only a malformed side throws, from inside the policy.
-          const read = resolveExtensionWorkspaceRead({
-            fileId,
-            files: extensionWorkspaceInputsRef.current.files,
-            side,
-          });
-          // Every failure the fetcher can raise — a missing side, a read error,
-          // the host's source-size cap — is the same "no document" answer. Recheck
-          // after the fetch so a retired generation cannot publish stale text.
-          const document = read ? await read().catch(() => null) : null;
-          return lease.isLive() ? document : null;
-        },
-        canWriteDocument(fileId: string) {
-          // The probe answers for anything, including an id that is not even a
-          // string: an affordance question should not throw at a caller who is
-          // only deciding whether to offer the action.
-          return lease.isLive() && typeof fileId === "string" && resolveTarget(fileId).writable;
-        },
-        async writeDocument(
-          request: ExtensionWorkspaceWriteRequest,
-        ): Promise<ExtensionWorkspaceWriteResult> {
-          // Throws rather than resolving a reason: a malformed request is a bug
-          // in the extension, not an answer about this review.
-          const { fileId, text } = normalizeWorkspaceWriteRequest(request);
-          if (!lease.isLive()) return expired();
-          const target = resolveTarget(fileId);
-          if (!target.writable) {
-            return { ok: false, reason: "unavailable", detail: target.detail };
-          }
-
-          // The policy's confinement is lexical; only the filesystem can say
-          // whether the reviewed path is a link, or sits under one, and would
-          // land the write somewhere the prompt never named. Ask both before
-          // prompting and again after consent, since the filesystem can change
-          // while the user is deciding.
-          const root = extensionWorkspaceInputsRef.current.root;
-          const verifyTarget = () =>
-            verifyWorkspaceWriteTarget({
-              absolutePath: target.absolutePath,
-              path: target.path,
-              root,
-            });
-          const refusal = await verifyTarget();
-          if (!lease.isLive()) return expired();
-          if (refusal) {
-            return { ok: false, reason: "unavailable", detail: refusal };
-          }
-
-          // The same attributed, FIFO-queued modal `ctx.dialogs` uses, so a
-          // write prompt queues behind an extension's own questions and can
-          // never present itself as Hunk asking.
-          const confirmed = await createExtensionDialogs(extensionId).confirm({
-            title: `Write ${target.path}?`,
-            body: `Extension ${extensionId} will replace this file's contents on disk.`,
-            confirmLabel: "write",
-          });
-          if (!lease.isLive()) return expired();
-          if (!confirmed) {
-            return {
-              ok: false,
-              reason: "cancelled",
-              detail: `The write to ${target.path} was declined.`,
-            };
-          }
-
-          const changedTargetRefusal = await verifyTarget();
-          if (!lease.isLive()) return expired();
-          if (changedTargetRefusal) {
-            return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
-          }
-
-          // This is the final revocable boundary. Once the irreversible write
-          // starts, its real filesystem outcome wins even if the review changes.
-          if (!lease.isLive()) return expired();
-          try {
-            const started = await runWorkspaceWrite(() =>
-              workspaceFileWriter(target.absolutePath, text),
-            );
-            if (!started) return expired();
-          } catch (error) {
-            return {
-              ok: false,
-              reason: "failed",
-              detail: `Failed to write ${target.path} • ${
-                error instanceof Error ? error.message || error.name : String(error)
-              }`,
-            };
-          }
-
-          // AppHost dereferences the mounted review descriptor only when this
-          // reconciliation reaches the reload queue, so a retired App cannot
-          // restore the source or view options it started from.
-          onWorkspaceWriteCompleted();
-          return { ok: true };
-        },
-      };
-    },
-    [
-      createExtensionDialogs,
-      createReviewCapabilityLease,
-      onWorkspaceWriteCompleted,
-      runWorkspaceWrite,
-      workspaceFileWriter,
-    ],
-  );
+  const extensionWorkspaceController = useExtensionWorkspaceControls({
+    createExtensionDialogs,
+    createReviewCapabilityLease,
+    files: reviewFiles,
+    input: bootstrap.input,
+    onWorkspaceWriteCompleted,
+    root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
+    runWorkspaceWrite,
+    workspaceFileWriter,
+  });
 
   // Lifecycle and bus listeners receive the same pane, navigation, and dialog
   // controls as commands, so onboarding can stay entirely in the public API.
@@ -1019,7 +874,7 @@ export function App({
         // Bound to the requesting extension the same way, because a write is a
         // question first: the confirm it raises names this extension, and the
         // review it may reload is read live rather than captured here.
-        workspace: createWorkspaceControls(registered.extensionId),
+        workspace: extensionWorkspaceController.createWorkspaceControls(registered.extensionId),
         // Live, unlike `selection`: reads the visible files and delegates to
         // the same focus/jump callbacks a sidebar row click runs, so a handler
         // that awaits a dialog before navigating still acts on the current
@@ -1048,7 +903,7 @@ export function App({
       createLineHighlightControls,
       createPaneControls,
       extensionCommandControls,
-      createWorkspaceControls,
+      extensionWorkspaceController.createWorkspaceControls,
       extensions,
       getExtensionSelection,
     ],
