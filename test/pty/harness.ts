@@ -726,6 +726,33 @@ end
     ]);
   }
 
+  /** Build a many-file stream whose changed lines wrap into tall sections at test widths. */
+  function createWrappedStreamRepoFixture(fileCount = 8) {
+    function markerLine(fileNumber: number, suffix: string) {
+      const filler = Array.from(
+        { length: 3 },
+        (_, part) => `segment${part}OfFile${fileNumber}PaddedWideEnoughToForceContinuationRows`,
+      ).join(" ");
+
+      return `export const marker${fileNumber} = "${filler} ${suffix}";`;
+    }
+
+    return createGitRepoFixture(
+      Array.from({ length: fileCount }, (_, index) => {
+        const fileNumber = index + 1;
+        return {
+          path: `wrapped-${String(fileNumber).padStart(2, "0")}.ts`,
+          before: `${markerLine(fileNumber, "before")}\n`,
+          after: [
+            markerLine(fileNumber, "after"),
+            `export const marker${fileNumber}Extra = ${fileNumber * 100};`,
+            "",
+          ].join("\n"),
+        };
+      }),
+    );
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1090,6 +1117,7 @@ end
     createUnicodePathRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,
+    createWrappedStreamRepoFixture,
     ensureKeyboardIsLive,
     launchHunk,
     launchHunkWithFileBackedStdin,

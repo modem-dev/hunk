@@ -5,13 +5,13 @@ import { buildFileRenderWindow, type FileRenderWindowItem } from "./fileRenderWi
 
 /** Build simple file-section layouts with realistic separator/header rows after the first file. */
 function createLayouts(count: number, bodyHeight = 10) {
-  const files = Array.from({ length: count }, (_, index) => ({
-    id: `file-${index}`,
-  })) as DiffFile[];
-  return buildFileSectionLayouts(
-    files,
-    Array.from({ length: count }, () => bodyHeight),
-  );
+  return createVariableLayouts(Array.from({ length: count }, () => bodyHeight));
+}
+
+/** Build layouts from explicit per-file body heights, as wrapped files are never uniform. */
+function createVariableLayouts(bodyHeights: number[]) {
+  const files = bodyHeights.map((_, index) => ({ id: `file-${index}` })) as DiffFile[];
+  return buildFileSectionLayouts(files, bodyHeights);
 }
 
 /** Sum exact rendered item heights using the source section layouts for file items. */
@@ -120,6 +120,29 @@ describe("buildFileRenderWindow", () => {
     expect(renderedHeight(plan.items, layouts)).toBe(layouts.at(-1)!.sectionBottom);
   });
 
+  test("keeps a distant selected file sparse without mounting its offscreen neighbors", () => {
+    const layouts = createLayouts(10);
+    const plan = buildFileRenderWindow({
+      fileSectionLayouts: layouts,
+      overscanFiles: 1,
+      scrollTop: 0,
+      selectedFileId: "file-8",
+      viewportHeight: 4,
+    });
+
+    expect(plan.mountedFileIndices).toEqual([0, 1, 8]);
+    expect(plan.mountedFileIndices).not.toContain(7);
+    expect(plan.mountedFileIndices).not.toContain(9);
+    expect(itemSummary(plan.items)).toEqual([
+      { kind: "file", sectionIndex: 0 },
+      { kind: "file", sectionIndex: 1 },
+      { kind: "spacer", height: 72, startIndex: 2, endIndex: 7 },
+      { kind: "file", sectionIndex: 8 },
+      { kind: "spacer", height: 12, startIndex: 9, endIndex: 9 },
+    ]);
+    expect(renderedHeight(plan.items, layouts)).toBe(layouts.at(-1)!.sectionBottom);
+  });
+
   test("mounts explicitly included prefetch files as sparse islands", () => {
     const layouts = createLayouts(6);
     const plan = buildFileRenderWindow({
@@ -173,5 +196,21 @@ describe("buildFileRenderWindow", () => {
     expect(plan.topSpacerHeight).toBe(22);
     expect(plan.bottomSpacerHeight).toBe(22);
     expect(renderedHeight(plan.items, layouts)).toBe(layouts.at(-1)!.sectionBottom);
+  });
+
+  test("preserves exact stream height across variable wrapped file bodies", () => {
+    const layouts = createVariableLayouts([3, 17, 5, 29, 2, 13]);
+    const scrollPositions = [0, 4, layouts[2]!.bodyTop, layouts[4]!.bodyTop, 999];
+
+    for (const scrollTop of scrollPositions) {
+      const plan = buildFileRenderWindow({
+        fileSectionLayouts: layouts,
+        overscanFiles: 1,
+        scrollTop,
+        viewportHeight: 7,
+      });
+
+      expect(renderedHeight(plan.items, layouts)).toBe(layouts.at(-1)!.sectionBottom);
+    }
   });
 });

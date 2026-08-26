@@ -24,6 +24,7 @@ import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import {
+  DIFF_MESSAGE_BODY_HEIGHT,
   diffMessage,
   DiffRowView,
   fitText,
@@ -363,7 +364,14 @@ export function DiffSectionBody({
 
   if (file.metadata.hunks.length === 0) {
     return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+      <box
+        style={{
+          width: "100%",
+          height: DIFF_MESSAGE_BODY_HEIGHT,
+          paddingLeft: 1,
+          paddingRight: 1,
+        }}
+      >
         <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
       </box>
     );

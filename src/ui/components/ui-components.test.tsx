@@ -1,10 +1,11 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, jest, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
+import type { ExtensionFileViewLayout } from "../../extension-api/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import {
@@ -15,13 +16,17 @@ import {
 import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
+import { VIEWPORT_READ_COALESCE_MS } from "../lib/viewportTiming";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
 import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
+import type { DiffRow } from "../diff/diffRows";
 import type { LineCursor } from "../lib/lineCursors";
+import { validateFileViewLayout } from "../fileViews/layout";
+import type { ResolvedFileViewLayout } from "../fileViews/useFileViews";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
@@ -29,6 +34,7 @@ const { BuiltInSidebarView } = await import("../../extensions/default/ui/sidebar
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
+const highlightPrefetchModule = await import("../diff/highlightPrefetch");
 const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
@@ -81,28 +87,30 @@ function createWindowingFiles(count: number) {
   );
 }
 
-function createHighlightPrefetchWindowFiles() {
-  return Array.from({ length: 4 }, (_, index) => {
-    const marker = `prefetchMarker${index + 1}`;
-    const before = lines(
-      `export const ${marker} = ${index + 1};`,
-      ...Array.from(
-        { length: 8 },
-        (_, lineIndex) =>
-          `export function keep${index + 1}_${lineIndex}(value: number) { return value + ${lineIndex}; }`,
-      ),
-    );
-    const after = lines(
-      `export const ${marker} = ${index + 100};`,
-      ...Array.from(
-        { length: 8 },
-        (_, lineIndex) =>
-          `export function keep${index + 1}_${lineIndex}(value: number) { return value * ${lineIndex + 2}; }`,
-      ),
-    );
+/** Build validated custom FileViews so scheduler wiring tests never mount the real diff highlighter. */
+function createSchedulerTestFileViews(files: DiffFile[], width: number) {
+  return new Map<string, ResolvedFileViewLayout>(
+    files.map((file, index) => {
+      const layout: ExtensionFileViewLayout = {
+        rows: [{ id: "summary", spans: [{ text: `custom view ${index + 1}` }] }],
+        hunkRows: file.metadata.hunks.map(() => ({ startRow: 0, endRow: 0 })),
+      };
+      const checked = validateFileViewLayout(layout, file.metadata.hunks.length, width);
+      if (!checked.valid) throw new Error(checked.issue);
 
-    return createTestDiffFile(`prefetch-${index + 1}`, `prefetch-${index + 1}.ts`, before, after);
-  });
+      return [
+        file.id,
+        {
+          ...checked.value,
+          key: `test:scheduler:${file.id}`,
+          extensionId: "test",
+          viewId: "scheduler",
+          registrationIdentity: index + 1,
+          layoutGeneration: 1,
+        },
+      ];
+    }),
+  );
 }
 
 function createMultiHunkDiffFile(id: string, path: string) {
@@ -905,7 +913,13 @@ describe("UI components", () => {
         spans: [{ text: "ำำ" }],
       },
     };
-    const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+    const measuredHeight = measureRenderedRowHeight(row, {
+      width: 4,
+      lineNumberDigits: 1,
+      showLineNumbers: false,
+      showHunkHeaders: true,
+      wrapLines: true,
+    });
     const setup = await testRender(
       <DiffRowView
         row={row}
@@ -1002,7 +1016,13 @@ describe("UI components", () => {
           spans,
         },
       };
-      const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+      const measuredHeight = measureRenderedRowHeight(row, {
+        width: 4,
+        lineNumberDigits: 1,
+        showLineNumbers: false,
+        showHunkHeaders: true,
+        wrapLines: true,
+      });
       const setup = await testRender(
         <DiffRowView
           row={row}
@@ -1036,6 +1056,100 @@ describe("UI components", () => {
         await act(async () => {
           setup.renderer.destroy();
         });
+      }
+    }
+  });
+
+  test("DiffRowView rendering matches wrapped width reservations at exact boundaries", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const width = 24;
+
+    for (const layout of ["split", "stack"] as const) {
+      const rowForLength = (length: number): DiffRow =>
+        layout === "split"
+          ? {
+              type: "split-line",
+              key: `alpha:split:${length}`,
+              fileId: "alpha",
+              hunkIndex: 0,
+              left: {
+                kind: "context",
+                sign: " ",
+                lineNumber: 1,
+                spans: [{ text: "old" }],
+              },
+              right: {
+                kind: "addition",
+                sign: "+",
+                lineNumber: 1,
+                spans: [{ text: "x".repeat(length) }],
+              },
+            }
+          : {
+              type: "stack-line",
+              key: `alpha:stack:${length}`,
+              fileId: "alpha",
+              hunkIndex: 0,
+              cell: {
+                kind: "addition",
+                sign: "+",
+                newLineNumber: 1,
+                spans: [{ text: "x".repeat(length) }],
+              },
+            };
+      const measure = (length: number) =>
+        measureRenderedRowHeight(rowForLength(length), {
+          width,
+          lineNumberDigits: 1,
+          showLineNumbers: false,
+          showHunkHeaders: true,
+          wrapLines: true,
+          noteGuideSide: "new",
+          reserveAddNoteColumn: true,
+        });
+      let boundary = 1;
+      while (measure(boundary + 1) === 1) {
+        boundary += 1;
+      }
+
+      for (const length of [boundary, boundary + 1]) {
+        const row = rowForLength(length);
+        const measuredHeight = measure(length);
+        const setup = await testRender(
+          <DiffRowView
+            row={row}
+            width={width}
+            lineNumberDigits={1}
+            showLineNumbers={false}
+            showHunkHeaders={true}
+            wrapLines={true}
+            codeHorizontalOffset={0}
+            theme={theme}
+            selected={false}
+            noteGuideSide="new"
+            onStartUserNoteAtHunk={() => {}}
+          />,
+          { width: width + 4, height: 4 },
+        );
+
+        try {
+          await act(async () => {
+            await setup.renderOnce();
+          });
+          const renderedHeight = setup
+            .captureSpans()
+            .lines.filter((line) =>
+              line.spans.some(
+                (span) =>
+                  capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+              ),
+            ).length;
+          expect(renderedHeight).toBe(measuredHeight);
+        } finally {
+          await act(async () => {
+            setup.renderer.destroy();
+          });
+        }
       }
     }
   });
@@ -1249,6 +1363,146 @@ describe("UI components", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("DiffPane keeps wrapped reviews bounded to nearby file sections", async () => {
+    const files = createWindowingFiles(12);
+    const theme = resolveTheme("github-dark-default", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 48,
+      scrollRef,
+      separatorWidth: 44,
+      width: 52,
+      wrapLines: true,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 56,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      const mountedFileIds = files
+        .filter((file) => scrollRef.current?.content.findDescendantById(`diff-section:${file.id}`))
+        .map((file) => file.id);
+
+      expect(mountedFileIds).toContain(files[0]!.id);
+      expect(mountedFileIds.length).toBeLessThan(files.length);
+      expect(mountedFileIds).not.toContain(files.at(-1)!.id);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane cleans up and reschedules speculative highlighting for selection and coalesced viewport changes", async () => {
+    jest.useFakeTimers();
+    const files = createWindowingFiles(8);
+    const theme = resolveTheme("github-dark-default", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const fileViews = createSchedulerTestFileViews(files, 48);
+    const cleanupCalls: Array<ReturnType<typeof mock<() => void>>> = [];
+    const immediateSpy = spyOn(
+      highlightPrefetchModule,
+      "prefetchImmediateHighlightedFiles",
+    ).mockImplementation(() => {});
+    const scheduleSpy = spyOn(
+      highlightPrefetchModule,
+      "scheduleSpeculativeHighlightedFiles",
+    ).mockImplementation(() => {
+      const cleanup = mock(() => {});
+      cleanupCalls.push(cleanup);
+      return cleanup;
+    });
+    let selectFile: ((fileId: string) => void) | undefined;
+    let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+    let destroyed = false;
+
+    function SelectionHarness() {
+      const [selectedFileId, setSelectedFileId] = useState(files[0]!.id);
+      selectFile = setSelectedFileId;
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 48,
+            fileViews,
+            offloadLargeDiff: true,
+            scrollRef,
+            selectedFileId,
+            separatorWidth: 44,
+            width: 52,
+            wrapLines: true,
+          })}
+        />
+      );
+    }
+
+    try {
+      setup = await testRender(<SelectionHarness />, { width: 56, height: 12 });
+      await act(async () => {
+        await setup!.renderOnce();
+        jest.advanceTimersByTime(VIEWPORT_READ_COALESCE_MS);
+        await setup!.renderOnce();
+      });
+
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+      expect(immediateSpy).toHaveBeenCalled();
+      const initialCleanup = cleanupCalls[0]!;
+      scheduleSpy.mockClear();
+
+      await act(async () => {
+        selectFile?.(files[1]!.id);
+        await setup!.renderOnce();
+      });
+
+      expect(initialCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+      const selectionCleanup = cleanupCalls[1]!;
+      scheduleSpy.mockClear();
+
+      scrollRef.current?.scrollTo(1);
+      expect(selectionCleanup).not.toHaveBeenCalled();
+      expect(scheduleSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(Math.floor(VIEWPORT_READ_COALESCE_MS / 2) - 1);
+        await setup!.renderOnce();
+      });
+      expect(selectionCleanup).not.toHaveBeenCalled();
+      expect(scheduleSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+        await setup!.renderOnce();
+      });
+      expect(selectionCleanup).toHaveBeenCalledTimes(1);
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+      const viewportCleanup = cleanupCalls[2]!;
+
+      await act(async () => {
+        setup!.renderer.destroy();
+      });
+      destroyed = true;
+
+      expect(viewportCleanup).toHaveBeenCalledTimes(1);
+      // OpenTUI's test renderer retains one host timer after destruction; clear the isolated fake
+      // clock explicitly so no renderer or component work can escape into the next timer case.
+      jest.clearAllTimers();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      if (setup && !destroyed) {
+        await act(async () => {
+          setup!.renderer.destroy();
+        });
+      }
+      jest.clearAllTimers();
+      scheduleSpy.mockRestore();
+      immediateSpy.mockRestore();
+      jest.useRealTimers();
     }
   });
 
@@ -3687,6 +3941,33 @@ describe("UI components", () => {
     expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
+  test("DiffSectionBody reserves two rendered rows for a no-hunk message", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <box style={{ width: 72, flexDirection: "column" }}>
+        <DiffSectionBody
+          file={createEmptyDiffFile("rename-pure")}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+        <text>after-placeholder</text>
+      </box>,
+      76,
+      6,
+    );
+    const frameLines = frame.split("\n");
+    const messageLine = frameLines.findIndex((line) =>
+      line.includes("This change only renames the file."),
+    );
+    const sentinelLine = frameLines.findIndex((line) => line.includes("after-placeholder"));
+
+    expect(messageLine).toBeGreaterThanOrEqual(0);
+    expect(sentinelLine - messageLine).toBe(2);
+  });
+
   test("DiffSectionBody shows the expand chevron only when a source fetcher is attached", async () => {
     const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
     const theme = resolveTheme("github-dark-default", null);
@@ -4028,64 +4309,6 @@ describe("UI components", () => {
     } finally {
       await act(async () => {
         secondSetup.renderer.destroy();
-      });
-    }
-  });
-
-  test("DiffPane prefetches highlight data for files approaching the viewport before they mount", async () => {
-    const files = createHighlightPrefetchWindowFiles();
-    const theme = resolveTheme("github-dark-default", null);
-    const setup = await testRender(
-      <DiffPane
-        {...createDiffPaneProps(files, theme, {
-          diffContentWidth: 92,
-          separatorWidth: 88,
-          width: 96,
-        })}
-      />,
-      { width: 100, height: 10 },
-    );
-    const thirdFileCheck = await testRender(
-      <DiffSectionBody
-        file={files[2]}
-        layout="split"
-        theme={theme}
-        width={180}
-        selectedHunkIndex={0}
-        shouldLoadHighlight={false}
-        scrollable={false}
-      />,
-      { width: 184, height: 10 },
-    );
-
-    try {
-      await settleDiffPane(setup);
-
-      const initialFrame = setup.captureCharFrame();
-      expect(initialFrame).not.toContain("prefetch-3.ts");
-
-      let prefetched = false;
-      for (let iteration = 0; iteration < 400; iteration += 1) {
-        await act(async () => {
-          await setup.renderOnce();
-          await thirdFileCheck.renderOnce();
-          await Bun.sleep(0);
-          await setup.renderOnce();
-          await thirdFileCheck.renderOnce();
-          await Bun.sleep(0);
-        });
-
-        if (frameHasHighlightedMarker(thirdFileCheck.captureSpans(), "prefetchMarker3")) {
-          prefetched = true;
-          break;
-        }
-      }
-
-      expect(prefetched).toBe(true);
-    } finally {
-      await act(async () => {
-        thirdFileCheck.renderer.destroy();
-        setup.renderer.destroy();
       });
     }
   });
