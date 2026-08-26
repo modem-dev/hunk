@@ -70,17 +70,17 @@ function normalizeFileLanguageMatcher(matcher: unknown): ExtensionFileLanguageMa
     throw new Error("registerFileLanguage requires an extension string or matcher object.");
   }
 
-  const value = assertNonEmptyString(
-    matcher.value,
-    "registerFileLanguage matcher value must be a non-empty string.",
-  ).trim();
+  if (typeof matcher.value !== "string" || matcher.value.length === 0) {
+    throw new Error("registerFileLanguage matcher value must be a non-empty string.");
+  }
+  const value = matcher.value;
 
   if (matcher.kind === "extension") {
     return { kind: "extension", value: normalizeFileExtension(value) };
   }
   if (matcher.kind === "filename") {
-    if (value.includes("/") || value.includes("\\")) {
-      throw new Error("registerFileLanguage filename matchers cannot contain path separators.");
+    if (value.includes("/")) {
+      throw new Error("registerFileLanguage filename matchers cannot contain `/`.");
     }
     return { kind: "filename", value };
   }

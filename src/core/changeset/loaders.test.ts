@@ -1686,6 +1686,10 @@ describe("loadAppBootstrap", () => {
         matcher: { kind: "filename", value: "Hunkfile" },
         language: "python",
       },
+      {
+        matcher: { kind: "filename", value: "tools\\Hunkfile" },
+        language: "ruby",
+      },
     ]);
     const escapedPath = String.raw`tools\\Hunkfile`;
     const bootstrap = await loadAppBootstrap({
@@ -1702,7 +1706,7 @@ describe("loadAppBootstrap", () => {
     });
 
     expect(bootstrap.changeset.files[0]?.path).toBe("tools\\Hunkfile");
-    expect(bootstrap.changeset.files[0]?.language).toBe("text");
+    expect(bootstrap.changeset.files[0]?.language).toBe("ruby");
   });
 
   test("preserves trailing control characters in exact Git-quoted paths", async () => {

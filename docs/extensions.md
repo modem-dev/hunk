@@ -328,7 +328,8 @@ selector after config themes, in load order.
 ### `hunk.registerFileLanguage(matcher, language)`
 
 Map file extensions, exact filenames, or globs to an existing syntax-highlighting language. The
-string shorthand registers a case-insensitive extension with or without its leading dot:
+string shorthand registers a case-insensitive extension with or without its leading dot. Explicit
+extension matchers use the same trimming, leading-dot removal, and lowercasing:
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");
@@ -344,8 +345,9 @@ hunk.registerFileLanguage({ kind: "glob", value: "*.component", target: "basenam
 Filename and glob matching is case-sensitive on every platform. Exact filenames match a basename
 at any directory depth. Globs use Bun's shell-style glob syntax and must explicitly target either
 the basename or the review path exactly as Hunk decoded it. `/` is the review-path separator;
-backslashes remain literal filename characters. VCS review paths are normally repo-relative, while
-generic patch input may carry an absolute path.
+backslashes remain literal filename characters. Exact filename and glob values preserve leading and
+trailing whitespace. VCS review paths are normally repo-relative, while generic patch input may
+carry an absolute path.
 
 Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact
 filenames take precedence over globs, which take precedence over extensions. The longest matching

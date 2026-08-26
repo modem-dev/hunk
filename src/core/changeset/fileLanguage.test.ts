@@ -49,15 +49,27 @@ describe("custom file language registration", () => {
     expect(fileLanguageForPath("nested/hunklegacy")).toBe("text");
   });
 
-  test("matches exact filenames at any path depth with stable casing", () => {
-    useTestFileLanguages({
-      matcher: { kind: "filename", value: "Hunkfile" },
-      language: "python",
-    });
+  test("matches exact filenames at any path depth without altering their characters", () => {
+    useTestFileLanguages(
+      {
+        matcher: { kind: "filename", value: "Hunkfile" },
+        language: "python",
+      },
+      {
+        matcher: { kind: "filename", value: " Tool\\Hunkfile " },
+        language: "ruby",
+      },
+      {
+        matcher: { kind: "filename", value: " " },
+        language: "ruby",
+      },
+    );
 
     expect(fileLanguageForPath("Hunkfile")).toBe("python");
     expect(fileLanguageForPath("tools/Hunkfile")).toBe("python");
     expect(fileLanguageForPath("tools/hunkfile")).toBe("text");
+    expect(fileLanguageForPath("nested/ Tool\\Hunkfile ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/ ")).toBe("ruby");
     // Review paths use `/`; a backslash remains a legal filename character on POSIX.
     expect(fileLanguageForPath("tools\\nested\\Hunkfile")).toBe("text");
   });
