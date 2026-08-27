@@ -34,7 +34,9 @@ describe("runExtensionFactory", () => {
     expect(apiVersion).toBe(HUNK_EXTENSION_API_VERSION);
     expect(issues).toEqual([]);
     expect(registry.extensions.map((extension) => extension.id)).toEqual(["demo"]);
-    expect(registry.fileLanguages.map((entry) => entry.extension)).toEqual(["demo"]);
+    expect(registry.fileLanguages.map((entry) => entry.matcher)).toEqual([
+      { kind: "extension", value: "demo" },
+    ]);
   });
 
   test("rolls a throwing synchronous factory back before returning", () => {

@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `8`). Branch on it if you want
-one file to support several Hunk versions. Version 8 adds authoritative review
-snapshots to command handlers; version 7 added the current source line to
+The API generation this Hunk speaks (currently `9`). Branch on it if you want
+one file to support several Hunk versions. Version 9 adds exact-filename and glob selectors to
+`registerFileLanguage`; version 8 added authoritative review snapshots to command handlers;
+version 7 added the current source line to
 command selection snapshots. Version 6 added session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
@@ -324,18 +325,38 @@ built-in id. Config-defined themes always win over extension themes for the same
 id; the loser is reported as a startup notice. Extension themes appear in the
 selector after config themes, in load order.
 
-### `hunk.registerFileLanguage(extension, language)`
+### `hunk.registerFileLanguage(matcher, language)`
 
-Map a file extension to a syntax-highlighting language. The extension may be
-written with or without a leading dot and is lowercased.
+Map file extensions, exact filenames, or globs to an existing syntax-highlighting language. The
+string shorthand registers a case-insensitive extension with or without its leading dot. Explicit
+extension matchers use the same trimming, leading-dot removal, and lowercasing:
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");
-hunk.registerFileLanguage("bzl", "python");
+hunk.registerFileLanguage({ kind: "extension", value: "bzl" }, "python");
+hunk.registerFileLanguage({ kind: "filename", value: "BUILD" }, "python");
+hunk.registerFileLanguage(
+  { kind: "glob", value: "generated/**/*.proto", target: "path" },
+  "protobuf",
+);
+hunk.registerFileLanguage({ kind: "glob", value: "*.component", target: "basename" }, "typescript");
 ```
 
-Later registrations win over earlier ones. Hunk's own `.mts` and `.cts`
-mappings cannot be overridden; attempts are skipped with a notice.
+Filename and glob matching is case-sensitive on every platform. Exact filenames match a basename
+at any directory depth. Globs use Bun's shell-style glob syntax and must explicitly target either
+the basename or the review path exactly as Hunk decoded it. `/` is the review-path separator;
+backslashes remain literal filename characters. Exact filename and glob values preserve leading and
+trailing whitespace. Globs reject NUL and do not run against NUL-bearing decoded patch paths; exact
+filename selectors can still address those paths. VCS review paths are normally repo-relative,
+while generic patch input may carry an absolute path.
+
+Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact
+filenames take precedence over globs, which take precedence over extensions. The longest matching
+extension wins, and later registrations win ties within each category. Direct attempts to register
+those two reserved extensions are skipped with a notice.
+
+This API selects a language already available to Pierre/Shiki. It does not load a new syntax
+grammar; an unknown language remains plain text.
 
 ### `hunk.registerVcsAdapter(adapter)`
 

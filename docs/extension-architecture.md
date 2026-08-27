@@ -47,8 +47,12 @@ Registrations (session behavior, themes, file languages, VCS adapters,
 changeset transforms, panes, commands, lifecycle/UI events, and inter-extension
 bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
-through `src/extensions/apply.ts` on both startup and reload. Staged external-VCS
-bootstrap retains the provisional candidate/config snapshot: a final pass that
+through `src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
+declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
+Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
+language. A live reload replaces the compiled selector generation while preparing its changeset
+and restores the previous generation if any pre-commit step fails. Staged external-VCS bootstrap
+retains the provisional candidate/config snapshot: a final pass that
 only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses
 the same shutdown/startup lifecycle. A factory that throws is rolled back to its
@@ -124,10 +128,13 @@ clusters, with context and gap lines sharing one range list under both side
 keys — and the one span transform that repaints backgrounds without changing
 text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
 background with the word-diff minimum-contrast guarantee.
-`src/ui/diff/renderRows.tsx` applies the transform per rendered cell, which
-keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
-geometry measurement: a highlight change is a repaint, never a re-plan. The
-static pager never runs extension code, so highlights are interactive-only.
+`src/ui/diff/CodeRowView.tsx` applies the transform through the cell painter,
+which keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
+geometry measurement: a highlight change is a repaint, never a re-plan.
+`src/ui/diff/DiffRowView.tsx` remains only the memoized dispatch facade; raw-row
+adaptation there supports the public OpenTUI and extension current-line surfaces, while
+`src/ui/diff/cursorHighlight.ts` owns stable-key cursor matching. The static pager never
+runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
 pipeline rather than growing a second one: `useTerminalReview.ts` validates

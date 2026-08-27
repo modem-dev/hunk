@@ -97,7 +97,7 @@ bad or duplicate id is skipped with a startup notice.
 | -------------------------------------------------------- | -------------------------------------------- |
 | Keep demo/training view settings temporary               | `hunk.configureSession(options)`             |
 | Add a selectable color theme                             | `hunk.registerTheme(theme)`                  |
-| Highlight an unrecognized file extension                 | `hunk.registerFileLanguage(ext, lang)`       |
+| Highlight an extension, exact filename, or filename glob | `hunk.registerFileLanguage(matcher, lang)`   |
 | Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`           |
 | Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                    |
 | Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
@@ -109,7 +109,7 @@ bad or duplicate id is skipped with a startup notice.
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `8`)             | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `9`)             | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.

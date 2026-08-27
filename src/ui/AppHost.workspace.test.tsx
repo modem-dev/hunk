@@ -20,8 +20,8 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/run/commandInputs";
 import { loadStartupExtensions } from "../extensions/startup";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
-import type { WorkspaceFileWriter } from "./App";
 import { AppHost } from "./AppHost";
+import type { WorkspaceFileWriter } from "./hooks/useExtensionWorkspaceControls";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
 function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {

@@ -23,13 +23,9 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./diffRows";
 import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import {
-  diffMessage,
-  DiffRowView,
-  fitText,
-  plannedRowMatchesCursor,
-  type CursorHighlight,
-} from "./renderRows";
+import { diffMessage, fitText } from "./plannedRowText";
+import { DiffRowView } from "./DiffRowView";
+import { plannedRowMatchesCursor, type CursorHighlight } from "./cursorHighlight";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -425,7 +421,7 @@ export function DiffSectionBody({
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
-              row={plannedRow.row}
+              plannedRow={plannedRow}
               width={width}
               lineNumberDigits={lineNumberDigits}
               showLineNumbers={showLineNumbers}
@@ -438,8 +434,6 @@ export function DiffSectionBody({
               copySelectedSide={copySelectedSide}
               cursorHighlight={isCursorRow ? cursorHighlight : undefined}
               lineHighlights={lineHighlightPaintIndex}
-              anchorId={plannedRow.anchorId}
-              noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
                 startUserNoteAtHunkHandler !== undefined &&
                 hoveredRowKey === plannedRow.row.key &&

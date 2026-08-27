@@ -120,6 +120,11 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   does ("Applies one action to the review state and returns the next state."), followed by its
   invariants. Avoid passive or self-important framing ("The one place where…", "the single
   source of truth for…") — name the behavior, not the architecture's opinion of itself.
+- For orchestration and controller modules, explain the product workflow before the mechanics:
+  name the user-visible triggers that converge there, state what the module owns, identify the
+  neighboring authority it deliberately leaves elsewhere, and call out preservation or
+  non-reloadable invariants. Prefer concrete flows ("watch changes and manual refresh both rebuild
+  the mounted review") over abstract labels ("handles refresh").
 - Add inline comments for intent, invariants, or tricky behavior that would not be obvious to a fresh reader.
 - Skip comments that only narrate what the code already says.
 

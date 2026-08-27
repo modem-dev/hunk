@@ -44,6 +44,7 @@ export type {
   ExtensionDiffFile,
   ExtensionDiffHunk,
   ExtensionFileChangeRange,
+  ExtensionFileLanguageMatcher,
   ExtensionFileSide,
   ExtensionFileView,
   ExtensionFileViewControls,

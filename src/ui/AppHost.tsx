@@ -3,6 +3,7 @@ import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
+import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";
@@ -26,13 +27,13 @@ import {
 } from "../app/session/reloadBounds";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadSessionOptions } from "../session/types";
-import {
-  App,
-  type WorkspaceFileWriter,
-  type WorkspaceRefreshRequest,
-  type WorkspaceWriteRunner,
-} from "./App";
+import { App } from "./App";
+import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { useStartupNotices } from "./hooks/useStartupNotices";
+import type {
+  WorkspaceFileWriter,
+  WorkspaceWriteRunner,
+} from "./hooks/useExtensionWorkspaceControls";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 
 /** A replacement registry prepared for adoption and optionally already retiring. */
@@ -315,6 +316,7 @@ export function AppHost({
       // registry, broker snapshot, pending lifecycle, and React state all agree.
       // Quit therefore linearizes either wholly before or wholly after adoption.
       if (quitRequestedRef.current) {
+        restoreFileLanguageRegistrations(loaded.previousFileLanguages);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw reloadRefusedDuringShutdown();
       }
@@ -362,6 +364,7 @@ export function AppHost({
           throw error;
         }
       } catch (error) {
+        restoreFileLanguageRegistrations(loaded.previousFileLanguages);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw error;
       }

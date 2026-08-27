@@ -141,6 +141,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "joshedler/hunk-git-lite",
+    name: "hunk-git-lite",
+    summary:
+      "Adds a git status pane with stage/unstage commands, so you can act on a review without leaving it.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "mikeclarke/hunk-tutor",
     name: "hunk-tutor",
     summary: "An interactive tour of Hunk, taught inside a practice review.",

@@ -8,12 +8,9 @@ import {
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { ExtensionCommandExecutionOptions } from "../../extension-api/types";
-import {
-  matchesAnyKeyChord,
-  parseKeyChordOrUndefined,
-  synthesizeKeyEvent,
-} from "../../lib/commandKeys";
+import { matchesAnyKeyChord, parseKeyChordOrUndefined } from "../../lib/commandKeys";
 import { formatKeyChord, type CommandKeyDefaults } from "./keymap";
+import { synthesizeKeyEvent } from "./syntheticKeyEvent";
 
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 

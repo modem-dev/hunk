@@ -11,7 +11,7 @@ import { resolveCommentTarget } from "../../../src/core/liveComments";
 import { reviewGapId } from "../../../src/core/review/expansion";
 import type { DiffFile } from "../../../src/core/changeset/model";
 import { buildDiffSectionRowPlan } from "../../../src/ui/diff/diffSectionRowPlan";
-import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/renderRows";
+import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/plannedRowText";
 import type { DiffRow } from "../../../src/ui/diff/diffRows";
 import { buildSelectedHunkSummary } from "../../../src/ui/lib/reviewState";
 import { resolveTheme } from "../../../src/ui/themes";

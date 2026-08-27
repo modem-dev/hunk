@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import { act, useState } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
@@ -19,7 +19,8 @@ import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
-import { resolveTheme } from "./themes";
+import { App } from "./App";
+import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
 const { AppHost } = await import("./AppHost");
@@ -1070,6 +1071,94 @@ describe("App interactions", () => {
         nextFrame.includes("›  github-dark-default"),
       );
       expect(frame).toContain("active");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme events report only explicit acceptance, not previews or catalog projection", async () => {
+    const custom = {
+      id: "session-custom",
+      label: "Session custom",
+      base: "github-dark-default",
+      accent: "#8877cc",
+    };
+    const bootstrap = createSingleFileBootstrap();
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    const themeEvents: string[] = [];
+    extensions.registry.eventHandlers.theme_changed.push({
+      extensionId: "theme-probe",
+      handler: ({ themeId }) => {
+        themeEvents.push(themeId);
+      },
+    });
+    bootstrap.initialTheme = custom.id;
+    bootstrap.customThemes = [custom];
+    bootstrap.extensions = extensions;
+    let replaceCustomThemes!: (themes: AppBootstrap["customThemes"]) => void;
+
+    function ThemeEventProbe() {
+      const [currentBootstrap, setCurrentBootstrap] = useState(bootstrap);
+      replaceCustomThemes = (themes) =>
+        setCurrentBootstrap((current) => ({ ...current, customThemes: themes }));
+      return (
+        <App
+          bootstrap={currentBootstrap}
+          onRegisterWorkspaceRefreshRequest={() => () => {}}
+          onReloadSession={async () => {
+            throw new Error("Theme event test does not reload the session.");
+          }}
+          onWorkspaceWriteCompleted={() => {}}
+          runWorkspaceWrite={async (write) => {
+            await write();
+            return true;
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<ThemeEventProbe />, { width: 240, height: 24 });
+    try {
+      await flush(setup);
+      expect(themeEvents).toEqual([]);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (frame) => frame.includes("Theme selector"));
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(themeEvents).toEqual([]);
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await waitForFrame(setup, (frame) => !frame.includes("Theme selector"));
+      expect(themeEvents).toEqual([]);
+
+      await act(async () => replaceCustomThemes([]));
+      await flush(setup);
+      expect(themeEvents).toEqual([]);
+
+      await act(async () => replaceCustomThemes([custom]));
+      await flush(setup);
+      expect(themeEvents).toEqual([]);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (frame) => frame.includes("Theme selector"));
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      expect(themeEvents).toEqual([availableThemes([custom])[0]!.id]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

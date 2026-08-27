@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { matchesKeyChord, parseKeyChord, synthesizeKeyEvent, toKeyChordList } from "./commandKeys";
+import { KeyEvent } from "@opentui/core";
+import { matchesKeyChord, parseKeyChord, toKeyChordList } from "./commandKeys";
+import { synthesizeKeyEvent } from "../ui/lib/syntheticKeyEvent";
 
 /**
  * The internal-only pieces of chord handling.
@@ -22,6 +24,25 @@ describe("synthesizeKeyEvent", () => {
     for (const chord of ["y", "G", "ctrl+shift+m", "f10", "{", "alt+left", ".", "space"]) {
       expect(matchesKeyChord(parsed(chord), synthesizeKeyEvent(parsed(chord)))).toBe(true);
     }
+  });
+
+  test("returns a complete key event", () => {
+    const event = synthesizeKeyEvent(parsed("ctrl+r"));
+
+    expect(event).toBeInstanceOf(KeyEvent);
+    expect({ eventType: event.eventType, source: event.source }).toEqual({
+      eventType: "press",
+      source: "raw",
+    });
+    event.preventDefault();
+    event.stopPropagation();
+    expect({
+      defaultPrevented: event.defaultPrevented,
+      propagationStopped: event.propagationStopped,
+    }).toEqual({
+      defaultPrevented: true,
+      propagationStopped: true,
+    });
   });
 });
 

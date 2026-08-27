@@ -17,6 +17,7 @@ import { ReviewProducer } from "../app/review/producer";
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
+import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
 import type { CliInput } from "../core/run/commandInputs";
 
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -127,12 +128,15 @@ function useTempConfigHome(configToml?: string) {
 }
 
 /** Write an extension that appends every lifecycle event it sees to a log file. */
-function writeProbeExtension(path: string, logPath: string) {
+function writeProbeExtension(path: string, logPath: string, languageExtension?: string) {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(
     path,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
+      (languageExtension
+        ? `  hunk.registerFileLanguage(${JSON.stringify(languageExtension)}, "python");\n`
+        : "") +
       `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
       `  hunk.on("startup", () => {\n` +
       `    appendFileSync(${JSON.stringify(logPath)}, "startup\\n");\n` +
@@ -496,7 +500,7 @@ describe("reload keeps launch extension authority", () => {
     const repo = createTestRepo("hunk-apphost-broker-replacement-failure-");
     const logPath = join(repo, "probe.log");
     const extPath = join(repo, "ext.ts");
-    writeProbeExtension(extPath, logPath);
+    writeProbeExtension(extPath, logPath, "currenthunksyntax");
     useTempConfigHome();
 
     const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
@@ -505,6 +509,7 @@ describe("reload keeps launch extension authority", () => {
       cwd: join(repo, "sub"),
       cliExtensionPaths: [extPath],
     });
+    applyExtensionRegistrations(bootstrap.extensions, getBundledVcsCatalog());
     const broker = createTestBrokerClient({ replaceSessionError: new Error("broker exploded") });
     const producer = new ReviewProducer(
       {
@@ -514,6 +519,8 @@ describe("reload keeps launch extension authority", () => {
       { producerId: "broker-failure" },
     );
     const initialGeneration = producer.getPublication().generation;
+    expect(fileLanguageForPath("example.currenthunksyntax")).toBe("python");
+    writeProbeExtension(extPath, logPath, "replacementhunksyntax");
 
     await withAppHost(
       bootstrap,
@@ -540,6 +547,8 @@ describe("reload keeps launch extension authority", () => {
         expect(events.filter((line) => line === "factory")).toHaveLength(2);
         expect(events.filter((line) => line === "startup")).toHaveLength(1);
         expect(events.filter((line) => line === "shutdown")).toHaveLength(1);
+        expect(fileLanguageForPath("example.currenthunksyntax")).toBe("python");
+        expect(fileLanguageForPath("example.replacementhunksyntax")).toBe("text");
       },
       broker.client,
       { reviewProducer: producer },
@@ -1150,6 +1159,11 @@ describe("startup for extensions loaded mid-session", () => {
         setup,
         () => readProbeLog(logPath).includes("shutdown:false"),
         "retired shutdown controls to resolve without entering replacement UI",
+      );
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("ignored — the review session was reloaded"),
+        "the retired-control reload notice to render",
       );
 
       const frame = setup.captureCharFrame();

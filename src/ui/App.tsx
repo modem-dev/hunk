@@ -4,7 +4,6 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import { writeFile } from "node:fs/promises";
 import {
   Suspense,
   lazy,
@@ -15,19 +14,12 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  diffPersistedViewPreferences,
-  saveGlobalViewPreferences,
-  saveViewPreferencesPromptPreference,
-  type PersistedViewPreferences,
-} from "../core/run/config";
+import type { PersistedViewPreferences } from "../core/run/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
-import type { UserNoteLineTarget } from "../core/liveComments";
-import { canReloadInput } from "../core/run/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
   resolveExtensionCommands,
@@ -46,13 +38,8 @@ import { writeExtensionTrust } from "../extensions/trust";
 import type {
   ExtensionCommandContext,
   ExtensionEventContext,
-  ExtensionFileSide,
   ExtensionNotifyType,
-  ExtensionReviewNote,
   ExtensionPaneControls,
-  ExtensionWorkspace,
-  ExtensionWorkspaceWriteRequest,
-  ExtensionWorkspaceWriteResult,
   ExtensionLoadResult,
   RegisteredCommand,
   RegisteredPane,
@@ -73,18 +60,27 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
-import type { ActiveAddNoteAffordance } from "./diff/DiffSectionBody";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
+import {
+  useExtensionWorkspaceControls,
+  type WorkspaceFileWriter,
+  type WorkspaceWriteRunner,
+} from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
+import { useTimedNotice } from "./hooks/useTimedNotice";
+import { useUserNoteComposer, type UserNoteEventPublisher } from "./hooks/useUserNoteComposer";
 import {
   useTerminalReview,
   type AgentNoteGeometrySnapshot,
   type RevealedLineResult,
 } from "./hooks/useTerminalReview";
-import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
+import { useViewPreferenceQuitController } from "./hooks/useViewPreferenceQuitController";
+import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
   buildAppCommands,
@@ -129,25 +125,13 @@ import type { ExtensionPanePlacement } from "../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { extensionPaneSize } from "../extensions/panes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
-import {
-  normalizeWorkspaceWriteRequest,
-  resolveExtensionWorkspaceRead,
-  resolveExtensionWorkspaceWriteTarget,
-} from "./lib/extensionWorkspace";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
-import { verifyWorkspaceWriteTarget } from "./lib/workspaceWriteGuard";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme, withTransparentSurfaces } from "./themes";
+import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
 type FocusArea = "files" | "filter" | "note";
-type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
-type ThemeSelectorState = {
-  open: boolean;
-  selectedIndex: number;
-  previewThemeId: string | null;
-};
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -178,51 +162,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Preserve the active app view settings when rebuilding the current input. */
-function withCurrentViewOptions(
-  input: CliInput,
-  view: {
-    layoutMode: LayoutMode;
-    themeId: string;
-    showAgentNotes: boolean;
-    showHunkHeaders: boolean;
-    showLineNumbers: boolean;
-    showMenuBar: boolean;
-    wrapLines: boolean;
-  },
-): CliInput {
-  return {
-    ...input,
-    options: {
-      ...input.options,
-      mode: view.layoutMode,
-      theme: view.themeId,
-      agentNotes: view.showAgentNotes,
-      hunkHeaders: view.showHunkHeaders,
-      lineNumbers: view.showLineNumbers,
-      menuBar: view.showMenuBar,
-      wrapLines: view.wrapLines,
-    },
-  };
-}
-
-/** Current mounted review descriptor AppHost dereferences when reconciling a completed write. */
-export interface WorkspaceRefreshRequest {
-  nextInput: CliInput;
-  sourcePath?: string;
-}
-
-/** Filesystem write implementation used by the host-mediated extension workspace. */
-export type WorkspaceFileWriter = (absolutePath: string, text: string) => Promise<void>;
-
-/** Host-owned boundary that tracks irreversible writes through graceful shutdown. */
-export type WorkspaceWriteRunner = (write: () => Promise<void>) => Promise<boolean>;
-
-/** Write UTF-8 text through the production filesystem implementation. */
-const writeWorkspaceFile: WorkspaceFileWriter = async (absolutePath, text) => {
-  await writeFile(absolutePath, text, "utf8");
-};
-
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
@@ -235,7 +174,7 @@ export function App({
   reviewProducer,
   runWorkspaceWrite,
   watchRuntime,
-  workspaceFileWriter = writeWorkspaceFile,
+  workspaceFileWriter,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -296,18 +235,8 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
-  const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
+  const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () =>
-      resolveTheme(
-        bootstrap.initialTheme,
-        bootstrap.initialThemeMode ?? renderer.themeMode,
-        bootstrap.customThemes,
-      ).id,
-  );
-  // Soft reloads replace bootstrap without re-running startup terminal theme detection.
-  const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -319,20 +248,13 @@ export function App({
   }>({ id: 0, alignment: "center" });
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
-  const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
-    open: false,
-    selectedIndex: 0,
-    previewThemeId: null,
-  });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(
     () => !pagerMode && bootstrap.initialSidebar === true,
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
-  const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
   const [paneResize, setPaneResize] = useState<{
     key: string;
@@ -343,8 +265,7 @@ export function App({
     maxSize: number;
     minSize: number;
   } | null>(null);
-  const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
-  const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
   const [paneOpenState, setPaneOpenState] = useState(() => {
@@ -392,33 +313,26 @@ export function App({
   const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
   const extensionTrustPromptOpen = extensionTrustPromptRoot !== null;
 
-  const themeOptions = useMemo(
-    () => availableThemes(bootstrap.customThemes),
-    [bootstrap.customThemes],
-  );
-  const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
-  const baseTheme = useMemo(
-    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customThemes),
-    [effectiveThemeId, detectedThemeMode, bootstrap.customThemes],
-  );
-  const activeTheme = useMemo(
-    () =>
-      bootstrap.input.options.transparentBackground
-        ? withTransparentSurfaces(baseTheme)
-        : baseTheme,
-    [baseTheme, bootstrap.input.options.transparentBackground],
-  );
-
-  const themeSelectorItems = useMemo(
-    () =>
-      themeOptions.map((theme) => ({
-        id: theme.id,
-        label: theme.label,
-        description: theme.id === activeTheme.id ? "active" : "",
-        active: theme.id === activeTheme.id,
-      })),
-    [activeTheme.id, themeOptions],
-  );
+  const {
+    activeTheme,
+    baseTheme,
+    themeId,
+    themeSelectorItems,
+    themeSelectorOpen,
+    themeSelectorSelectedIndex,
+    acceptThemeSelector,
+    acceptThemeSelectorItem,
+    closeThemeSelector,
+    moveThemeSelector,
+    openThemeSelector,
+    previewThemeSelectorItem,
+  } = useThemeSelectorController({
+    customThemes: bootstrap.customThemes,
+    initialTheme: bootstrap.initialTheme,
+    initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
+    onTransientNotice: showTransientNotice,
+    transparentBackground: bootstrap.input.options.transparentBackground ?? false,
+  });
   const currentViewPreferences = useMemo<PersistedViewPreferences>(
     () => ({
       mode: layoutMode,
@@ -443,30 +357,6 @@ export function App({
       wrapLines,
     ],
   );
-  const initialViewPreferencesRef = useRef(currentViewPreferences);
-  const changedViewPreferences = useMemo(
-    () => diffPersistedViewPreferences(initialViewPreferencesRef.current, currentViewPreferences),
-    [currentViewPreferences],
-  );
-  // Render each change as the -/+ pair of TOML assignments the save would rewrite,
-  // with the key column aligned across all changed preferences.
-  const viewPreferenceDiffLines = useMemo(() => {
-    const keyWidth = changedViewPreferences.reduce(
-      (width, change) => Math.max(width, change.configKey.length),
-      0,
-    );
-    return changedViewPreferences.flatMap((change) => [
-      { removed: true, text: `- ${change.configKey.padEnd(keyWidth)} = ${change.previousValue}` },
-      { removed: false, text: `+ ${change.configKey.padEnd(keyWidth)} = ${change.nextValue}` },
-    ]);
-  }, [changedViewPreferences]);
-  const hasUnsavedViewPreferences = changedViewPreferences.length > 0;
-  const viewPreferencesConfigLabel = useMemo(() => {
-    const path = bootstrap.viewPreferencesConfigPath ?? "~/.config/hunk/config.toml";
-    return process.env.HOME && path.startsWith(process.env.HOME)
-      ? `~${path.slice(process.env.HOME.length)}`
-      : path;
-  }, [bootstrap.viewPreferencesConfigPath]);
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -524,19 +414,6 @@ export function App({
     getSelection: review.getSelection,
     getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
   };
-  // What `ctx.workspace` decides against, re-read on every render because a soft
-  // reload swaps the bootstrap under a mounted App: the input can change what is
-  // writable at all, and the changeset decides which ids exist and which source
-  // a read reaches. Unfiltered on purpose — a file hidden by the filter is still
-  // a reviewed file. These are internal `DiffFile`s, so each carries the
-  // `sourceFetcher` a read delegates to.
-  const extensionWorkspaceInputs = {
-    files: reviewFiles,
-    input: bootstrap.input,
-    root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
-  };
-  const extensionWorkspaceInputsRef = useRef(extensionWorkspaceInputs);
-  extensionWorkspaceInputsRef.current = extensionWorkspaceInputs;
   const getExtensionFileViews = useCallback(() => {
     const source = extensionSelectionInputsRef.current.filteredFiles;
     const cache = extensionViewsCacheRef.current;
@@ -643,17 +520,32 @@ export function App({
     review.setShowAgentNotes(true);
   }, [review.setShowAgentNotes]);
 
-  const showSessionNotice = useCallback((message: string) => {
-    setSessionNoticeText(message);
-    if (sessionNoticeTimeoutRef.current) {
-      clearTimeout(sessionNoticeTimeoutRef.current);
-    }
-
-    sessionNoticeTimeoutRef.current = setTimeout(() => {
-      setSessionNoticeText((current) => (current === message ? null : current));
-      sessionNoticeTimeoutRef.current = null;
-    }, 4000);
+  /** Close the modal keyboard help overlay. */
+  const closeHelp = useCallback(() => {
+    setShowHelp(false);
   }, []);
+  const {
+    changedViewPreferences,
+    saveConfigPromptOpen,
+    viewPreferenceDiffLines,
+    viewPreferencesConfigLabel,
+    requestQuit,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    neverAskToSaveViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
+  } = useViewPreferenceQuitController({
+    currentPreferences: currentViewPreferences,
+    configPath: bootstrap.viewPreferencesConfigPath,
+    pagerMode,
+    promptSaveViewPreferences: bootstrap.input.options.promptSaveViewPreferences !== false,
+    transientViewPreferences: extensionSessionOptions.transientViewPreferences,
+    onQuit,
+    showNotice: showSessionNotice,
+    showError: showSessionNotice,
+    closeHelp,
+    homeDirectory: process.env.HOME,
+  });
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
@@ -706,14 +598,6 @@ export function App({
     notify: notifyExtensionMode,
     reviewGeneration: bootstrap,
   });
-
-  useEffect(() => {
-    return () => {
-      if (sessionNoticeTimeoutRef.current) {
-        clearTimeout(sessionNoticeTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const setPaneOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
     setPaneOpenState((current) => {
@@ -838,131 +722,16 @@ export function App({
     [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
   );
 
-  /** Build host-mediated reviewed-document read and write controls for one extension command. */
-  const createWorkspaceControls = useCallback(
-    (extensionId: string): ExtensionWorkspace => {
-      const lease = createReviewCapabilityLease();
-      const expired = (): ExtensionWorkspaceWriteResult => ({
-        ok: false,
-        reason: "unavailable",
-        detail: "The review reloaded before this extension operation could finish.",
-      });
-      const resolveTarget = (fileId: string) =>
-        resolveExtensionWorkspaceWriteTarget({
-          fileId,
-          ...extensionWorkspaceInputsRef.current,
-        });
-
-      return {
-        async readDocument(fileId: string, side: ExtensionFileSide) {
-          if (!lease.isLive()) return null;
-          // Unlike a write, a read asks nothing of the user and nothing of the
-          // review kind: it hands back the document the review is already
-          // showing. Only a malformed side throws, from inside the policy.
-          const read = resolveExtensionWorkspaceRead({
-            fileId,
-            files: extensionWorkspaceInputsRef.current.files,
-            side,
-          });
-          // Every failure the fetcher can raise — a missing side, a read error,
-          // the host's source-size cap — is the same "no document" answer. Recheck
-          // after the fetch so a retired generation cannot publish stale text.
-          const document = read ? await read().catch(() => null) : null;
-          return lease.isLive() ? document : null;
-        },
-        canWriteDocument(fileId: string) {
-          // The probe answers for anything, including an id that is not even a
-          // string: an affordance question should not throw at a caller who is
-          // only deciding whether to offer the action.
-          return lease.isLive() && typeof fileId === "string" && resolveTarget(fileId).writable;
-        },
-        async writeDocument(
-          request: ExtensionWorkspaceWriteRequest,
-        ): Promise<ExtensionWorkspaceWriteResult> {
-          // Throws rather than resolving a reason: a malformed request is a bug
-          // in the extension, not an answer about this review.
-          const { fileId, text } = normalizeWorkspaceWriteRequest(request);
-          if (!lease.isLive()) return expired();
-          const target = resolveTarget(fileId);
-          if (!target.writable) {
-            return { ok: false, reason: "unavailable", detail: target.detail };
-          }
-
-          // The policy's confinement is lexical; only the filesystem can say
-          // whether the reviewed path is a link, or sits under one, and would
-          // land the write somewhere the prompt never named. Ask both before
-          // prompting and again after consent, since the filesystem can change
-          // while the user is deciding.
-          const root = extensionWorkspaceInputsRef.current.root;
-          const verifyTarget = () =>
-            verifyWorkspaceWriteTarget({
-              absolutePath: target.absolutePath,
-              path: target.path,
-              root,
-            });
-          const refusal = await verifyTarget();
-          if (!lease.isLive()) return expired();
-          if (refusal) {
-            return { ok: false, reason: "unavailable", detail: refusal };
-          }
-
-          // The same attributed, FIFO-queued modal `ctx.dialogs` uses, so a
-          // write prompt queues behind an extension's own questions and can
-          // never present itself as Hunk asking.
-          const confirmed = await createExtensionDialogs(extensionId).confirm({
-            title: `Write ${target.path}?`,
-            body: `Extension ${extensionId} will replace this file's contents on disk.`,
-            confirmLabel: "write",
-          });
-          if (!lease.isLive()) return expired();
-          if (!confirmed) {
-            return {
-              ok: false,
-              reason: "cancelled",
-              detail: `The write to ${target.path} was declined.`,
-            };
-          }
-
-          const changedTargetRefusal = await verifyTarget();
-          if (!lease.isLive()) return expired();
-          if (changedTargetRefusal) {
-            return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
-          }
-
-          // This is the final revocable boundary. Once the irreversible write
-          // starts, its real filesystem outcome wins even if the review changes.
-          if (!lease.isLive()) return expired();
-          try {
-            const started = await runWorkspaceWrite(() =>
-              workspaceFileWriter(target.absolutePath, text),
-            );
-            if (!started) return expired();
-          } catch (error) {
-            return {
-              ok: false,
-              reason: "failed",
-              detail: `Failed to write ${target.path} • ${
-                error instanceof Error ? error.message || error.name : String(error)
-              }`,
-            };
-          }
-
-          // AppHost dereferences the mounted review descriptor only when this
-          // reconciliation reaches the reload queue, so a retired App cannot
-          // restore the source or view options it started from.
-          onWorkspaceWriteCompleted();
-          return { ok: true };
-        },
-      };
-    },
-    [
-      createExtensionDialogs,
-      createReviewCapabilityLease,
-      onWorkspaceWriteCompleted,
-      runWorkspaceWrite,
-      workspaceFileWriter,
-    ],
-  );
+  const extensionWorkspaceController = useExtensionWorkspaceControls({
+    createExtensionDialogs,
+    createReviewCapabilityLease,
+    files: reviewFiles,
+    input: bootstrap.input,
+    onWorkspaceWriteCompleted,
+    root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
+    runWorkspaceWrite,
+    workspaceFileWriter,
+  });
 
   // Lifecycle and bus listeners receive the same pane, navigation, and dialog
   // controls as commands, so onboarding can stay entirely in the public API.
@@ -1019,7 +788,7 @@ export function App({
         // Bound to the requesting extension the same way, because a write is a
         // question first: the confirm it raises names this extension, and the
         // review it may reload is read live rather than captured here.
-        workspace: createWorkspaceControls(registered.extensionId),
+        workspace: extensionWorkspaceController.createWorkspaceControls(registered.extensionId),
         // Live, unlike `selection`: reads the visible files and delegates to
         // the same focus/jump callbacks a sidebar row click runs, so a handler
         // that awaits a dialog before navigating still acts on the current
@@ -1048,7 +817,7 @@ export function App({
       createLineHighlightControls,
       createPaneControls,
       extensionCommandControls,
-      createWorkspaceControls,
+      extensionWorkspaceController.createWorkspaceControls,
       extensions,
       getExtensionSelection,
     ],
@@ -1483,30 +1252,6 @@ export function App({
     setCopyDecorations((current) => !current);
   };
 
-  // Show a short-lived status-bar message. Used to surface clipboard-copy outcomes that would
-  // otherwise be invisible to the user (OSC52 unsupported, etc.).
-  // Track the timer so we can clear it on unmount and avoid React state updates after unmount.
-  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
-    if (transientTimerRef.current !== null) {
-      clearTimeout(transientTimerRef.current);
-    }
-    setTransientNoticeText(text);
-    transientTimerRef.current = setTimeout(() => {
-      transientTimerRef.current = null;
-      setTransientNoticeText((current) => (current === text ? null : current));
-    }, durationMs);
-  }, []);
-
-  // Clear any pending transient-notice timer on unmount to avoid state updates after unmount.
-  useEffect(() => {
-    return () => {
-      if (transientTimerRef.current !== null) {
-        clearTimeout(transientTimerRef.current);
-      }
-    };
-  }, []);
-
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
   const toggleLineWrap = () => {
     // Capture the pre-toggle viewport position synchronously so DiffPane can restore the same
@@ -1523,83 +1268,6 @@ export function App({
     }
     reportedThemeIdRef.current = themeId;
   }, [extensions, themeId]);
-
-  /** Switch the active theme. */
-  const selectTheme = useCallback(
-    (nextThemeId: string) => {
-      const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
-      setThemeId(nextThemeId);
-      showTransientNotice(`Theme: ${nextTheme?.label ?? nextThemeId}`);
-    },
-    [showTransientNotice, themeOptions],
-  );
-
-  /** Open the keyboard-driven theme selector with the current theme highlighted. */
-  const openThemeSelector = useCallback(() => {
-    const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
-    setThemeSelectorState({
-      open: true,
-      selectedIndex: Math.max(0, currentIndex),
-      previewThemeId: null,
-    });
-  }, [activeTheme.id, themeSelectorItems]);
-
-  const closeThemeSelector = useCallback(() => {
-    // Dropping the preview id reverts all previewed colors in the same state transition.
-    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-  }, []);
-
-  const moveThemeSelector = useCallback(
-    (delta: number) => {
-      setThemeSelectorState((current) => {
-        if (themeSelectorItems.length === 0) {
-          return { ...current, selectedIndex: 0, previewThemeId: null };
-        }
-
-        const nextIndex =
-          (current.selectedIndex + delta + themeSelectorItems.length) % themeSelectorItems.length;
-        const item = themeSelectorItems[nextIndex]!;
-        return { ...current, selectedIndex: nextIndex, previewThemeId: item.id };
-      });
-    },
-    [themeSelectorItems],
-  );
-
-  /** Preview the theme under the pointer without committing it. */
-  const previewThemeSelectorItem = useCallback(
-    (index: number) => {
-      const item = themeSelectorItems[index];
-      if (!item) {
-        return;
-      }
-
-      setThemeSelectorState((current) => ({
-        ...current,
-        selectedIndex: index,
-        previewThemeId: item.id,
-      }));
-    },
-    [themeSelectorItems],
-  );
-
-  /** Commit one theme and close the selector. */
-  const acceptThemeSelectorItem = useCallback(
-    (index: number) => {
-      const item = themeSelectorItems[index];
-      if (!item) {
-        return;
-      }
-
-      selectTheme(item.id);
-      // Close without a preview id; the committed theme id now supplies the same effective theme.
-      setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
-    },
-    [selectTheme, themeSelectorItems],
-  );
-
-  const acceptThemeSelector = useCallback(() => {
-    acceptThemeSelectorItem(themeSelectorState.selectedIndex);
-  }, [acceptThemeSelectorItem, themeSelectorState.selectedIndex]);
 
   /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleFilesPane = () => {
@@ -1631,13 +1299,15 @@ export function App({
     setShowMenuBar((current) => !current);
   };
 
-  const canRefreshCurrentInput = canReloadInput(bootstrap.input);
-  const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
-  const workspaceRefreshRequest = useMemo<WorkspaceRefreshRequest | null>(() => {
-    if (!canRefreshCurrentInput) return null;
-
-    return {
-      nextInput: withCurrentViewOptions(bootstrap.input, {
+  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
+    useCurrentReviewRefreshController({
+      input: bootstrap.input,
+      onRegisterWorkspaceRefreshRequest,
+      onReloadSession,
+      onWatchReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
+      reloadContext: bootstrap.reloadContext,
+      sourceLabel: bootstrap.changeset.sourceLabel,
+      view: {
         layoutMode,
         themeId,
         showAgentNotes,
@@ -1645,52 +1315,9 @@ export function App({
         showLineNumbers,
         showMenuBar,
         wrapLines,
-      }),
-      sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
-    };
-  }, [
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input,
-    canRefreshCurrentInput,
-    layoutMode,
-    showAgentNotes,
-    showHunkHeaders,
-    showLineNumbers,
-    showMenuBar,
-    themeId,
-    wrapLines,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!workspaceRefreshRequest) return;
-    return onRegisterWorkspaceRefreshRequest(workspaceRefreshRequest);
-  }, [onRegisterWorkspaceRefreshRequest, workspaceRefreshRequest]);
-
-  /** Rebuild the current diff source while preserving the active app view options. */
-  const refreshCurrentInput = useCallback(
-    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
-      if (!workspaceRefreshRequest) return;
-
-      await onReloadSession(workspaceRefreshRequest.nextInput, {
-        ...options,
-        resetApp: false,
-        sourcePath: workspaceRefreshRequest.sourcePath,
-      });
-    },
-    [onReloadSession, workspaceRefreshRequest],
-  );
-
-  const triggerRefreshCurrentInput = useCallback(() => {
-    void refreshCurrentInput({ reason: "manual" }).catch((error) => {
-      console.error("Failed to reload the current diff.", error);
+      },
+      watchRuntime,
     });
-  }, [refreshCurrentInput]);
-
-  /** Reload because the watcher saw the reviewed source change on disk. */
-  const refreshWatchedInput = useCallback(
-    () => refreshCurrentInput({ reason: "watch" }),
-    [refreshCurrentInput],
-  );
 
   /**
    * Open the trust prompt whenever a repo root needs an answer it has not been asked for.
@@ -1807,83 +1434,6 @@ export function App({
     triggerRefreshCurrentInput,
   ]);
 
-  useWatchedInput({
-    enabled: watchEnabled,
-    input: bootstrap.input,
-    onReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
-    refresh: refreshWatchedInput,
-    reloadContext: bootstrap.reloadContext,
-    runtime: watchRuntime,
-  });
-
-  /** Save current view preferences to user config and then leave the app. */
-  const saveViewPreferencesAndQuit = useCallback(() => {
-    try {
-      const configPath = saveGlobalViewPreferences(currentViewPreferences, {
-        configPath: bootstrap.viewPreferencesConfigPath,
-      });
-      initialViewPreferencesRef.current = currentViewPreferences;
-      showSessionNotice(`Saved view preferences to ${configPath}`);
-      setTimeout(onQuit, 120);
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to save view preferences.",
-      );
-    }
-  }, [bootstrap.viewPreferencesConfigPath, currentViewPreferences, onQuit, showSessionNotice]);
-
-  /** Leave the app without writing view preference changes. */
-  const discardViewPreferencesAndQuit = useCallback(() => {
-    setSaveConfigPromptOpen(false);
-    onQuit();
-  }, [onQuit]);
-
-  /** Persist the user's choice to stop prompting about view preference changes. */
-  const neverAskToSaveViewPreferencesAndQuit = useCallback(() => {
-    try {
-      const configPath = saveViewPreferencesPromptPreference(false, {
-        configPath: bootstrap.viewPreferencesConfigPath,
-      });
-      showSessionNotice(`Won't ask to save view preferences again (${configPath})`);
-      setTimeout(onQuit, 120);
-    } catch (error) {
-      showSessionNotice(
-        error instanceof Error ? error.message : "Failed to save prompt preference.",
-      );
-    }
-  }, [bootstrap.viewPreferencesConfigPath, onQuit, showSessionNotice]);
-
-  /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
-  const requestQuit = useCallback(() => {
-    if (
-      !pagerMode &&
-      !extensionSessionOptions.transientViewPreferences &&
-      bootstrap.input.options.promptSaveViewPreferences !== false &&
-      hasUnsavedViewPreferences
-    ) {
-      setShowHelp(false);
-      setSaveConfigPromptOpen(true);
-      return;
-    }
-
-    onQuit();
-  }, [
-    bootstrap.input.options.promptSaveViewPreferences,
-    extensionSessionOptions.transientViewPreferences,
-    hasUnsavedViewPreferences,
-    onQuit,
-    pagerMode,
-  ]);
-
-  const closeSaveConfigPrompt = useCallback(() => {
-    setSaveConfigPromptOpen(false);
-  }, []);
-
-  /** Close the modal keyboard help overlay. */
-  const closeHelp = useCallback(() => {
-    setShowHelp(false);
-  }, []);
-
   /** Close the agent skill setup overlay. */
   const closeAgentSkill = useCallback(() => {
     setShowAgentSkill(false);
@@ -1946,95 +1496,43 @@ export function App({
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
   }, []);
 
-  /** Start a user-authored inline note and move keyboard focus into it. */
-  const startUserNote = useCallback(
-    (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
-      const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget =
-        hoverTarget ??
-        (fileId === undefined && cursorLine !== "off" ? review.getLineCursor() : null);
-      const draft = review.startUserNote(
-        fileId ?? keyboardTarget?.fileId,
-        hunkIndex ?? keyboardTarget?.hunkIndex,
-        target ?? keyboardTarget?.target,
-        { preserveViewport: fileId !== undefined || keyboardTarget !== null },
-      );
-      if (draft) {
-        setActiveAddNoteTarget(null);
-        setFocusArea("note");
-      }
-    },
-    [activeAddNoteTarget, cursorLine, review.getLineCursor, review.startUserNote],
-  );
-
-  /** Mark the inline draft note textarea as the active keyboard input. */
-  const focusDraftNote = useCallback(() => {
-    setFocusArea("note");
-  }, []);
-
-  /** Return keyboard focus to review navigation when the draft textarea loses focus. */
-  const blurDraftNote = useCallback(() => {
-    setFocusArea((current) => (current === "note" ? "files" : current));
-  }, []);
-
-  /** Convert a draft or saved UI note into the stable public event view. */
-  const toExtensionReviewNote = useCallback(
-    (
-      note: {
-        id: string;
-        fileId: string;
-        filePath: string;
-        hunkIndex: number;
-        side: "old" | "new";
-        line: number;
-        body?: string;
-        summary?: string;
-      },
-      draft: boolean,
-    ): ExtensionReviewNote => ({
-      id: note.id,
-      fileId: note.fileId,
-      filePath: note.filePath,
-      hunkIndex: note.hunkIndex,
-      side: note.side,
-      line: note.line,
-      body: note.body ?? note.summary ?? "",
-      draft,
-    }),
+  /** Move keyboard ownership into the draft note editor. */
+  const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
+  /** Return keyboard ownership from note composition to review navigation. */
+  const focusReviewAfterDraft = useCallback(() => setFocusArea("files"), []);
+  /** Leave note focus only when the draft editor still owns it. */
+  const blurDraftNoteEditor = useCallback(
+    () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
-
-  /** Save the active draft note and return focus to review navigation. */
-  const saveDraftNote = useCallback(() => {
-    const draft = review.draftNote;
-    const saved = review.saveDraftNote();
-    if (saved && draft) {
-      emitExtensionEvent(extensions, "note_created", {
-        note: toExtensionReviewNote({ ...saved, fileId: draft.fileId }, false),
-      });
-    }
-    setFocusArea("files");
-  }, [extensions, review.draftNote, review.saveDraftNote, toExtensionReviewNote]);
-
-  /** Update a draft note and publish its current in-progress contents. */
-  const updateDraftNote = useCallback(
-    (body: string) => {
-      const draft = review.draftNote;
-      review.updateDraftNote(body);
-      if (draft) {
-        emitExtensionEvent(extensions, "note_edited", {
-          note: toExtensionReviewNote({ ...draft, body }, true),
-        });
-      }
-    },
-    [extensions, review.draftNote, review.updateDraftNote, toExtensionReviewNote],
+  /** Publish one user-note event through the current extension runtime. */
+  const publishUserNoteEvent: UserNoteEventPublisher = useCallback(
+    (event, payload) => emitExtensionEvent(extensions, event, payload),
+    [extensions],
   );
-
-  /** Cancel the active draft note and return focus to review navigation. */
-  const cancelDraftNote = useCallback(() => {
-    review.cancelDraftNote();
-    setFocusArea("files");
-  }, [review.cancelDraftNote]);
+  const {
+    blurDraftNote,
+    cancelDraftNote,
+    focusDraftNote,
+    onActiveAddNoteAffordanceChange,
+    saveDraftNote,
+    startUserNote,
+    updateDraftNote,
+  } = useUserNoteComposer({
+    draftNote: review.draftNote,
+    keyboardCursorEnabled: cursorLine !== "off",
+    getLineCursor: review.getLineCursor,
+    startDraft: review.startUserNote,
+    updateDraft: review.updateDraftNote,
+    saveDraft: review.saveDraftNote,
+    cancelDraft: review.cancelDraftNote,
+    focus: {
+      draft: focusDraftNoteEditor,
+      review: focusReviewAfterDraft,
+      blurDraft: blurDraftNoteEditor,
+    },
+    publishEvent: publishUserNoteEvent,
+  });
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -2164,7 +1662,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleFocusArea,
-    themeSelectorOpen: themeSelectorState.open,
+    themeSelectorOpen,
   });
 
   /** Start a mouse drag for one resizable pane. */
@@ -2416,7 +1914,7 @@ export function App({
             theme={activeTheme}
             width={diffPaneWidth}
             height={diffPaneHeight}
-            onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+            onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
             onStartUserNoteAtHunk={startUserNote}
@@ -2604,11 +2102,11 @@ export function App({
         </ConfirmDialog>
       ) : null}
 
-      {themeSelectorState.open ? (
+      {themeSelectorOpen ? (
         <Suspense fallback={null}>
           <LazyThemeSelectorDialog
             items={themeSelectorItems}
-            selectedIndex={themeSelectorState.selectedIndex}
+            selectedIndex={themeSelectorSelectedIndex}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}

@@ -15,7 +15,7 @@ import {
   type DiffRow,
 } from "./diffRows";
 import { resolveSplitPaneWidths } from "./codeColumns";
-import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./renderRows";
+import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./plannedRowText";
 import { stackCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { measureTextWidth } from "../lib/text";
@@ -713,7 +713,6 @@ describe("Pierre diff rows", () => {
       lineNumberDigits: 1,
       showHunkHeaders: true,
       showLineNumbers: true,
-      theme,
       width: 80,
       wrapLines: false,
     });
@@ -768,7 +767,6 @@ describe("Pierre diff rows", () => {
       lineNumberDigits: 1,
       showHunkHeaders: true,
       showLineNumbers: true,
-      theme,
       width,
       wrapLines: false,
     })[0];
@@ -808,7 +806,6 @@ describe("Pierre diff rows", () => {
       lineNumberDigits: 1,
       showHunkHeaders: true,
       showLineNumbers: true,
-      theme,
       width: 40,
       wrapLines: false,
     });
@@ -845,7 +842,6 @@ describe("Pierre diff rows", () => {
         lineNumberDigits: 1,
         showHunkHeaders: true,
         showLineNumbers: true,
-        theme,
         width: 80,
         wrapLines: false,
       }),
@@ -856,7 +852,6 @@ describe("Pierre diff rows", () => {
         lineNumberDigits: 1,
         showHunkHeaders: true,
         showLineNumbers: true,
-        theme,
         width: 80,
         wrapLines: false,
       }),

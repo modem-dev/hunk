@@ -109,13 +109,13 @@ whether a client needs more than that is Phase 5's first question.
   _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
   `ReviewFileV1` by `core/review/document.ts`; the browser consumes them in Phase 5.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
-  `renderRows.tsx` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
+  `plannedRowText.ts` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
   `staticDiffPager.ts` (extra cases). Same file can explain itself differently per client.
   Fix: `reviewEmptyDiffReason(file)` in core.
   _Repaid (Phase 1 PR 2)_: `reviewEmptyDiffReason` in `core/review/document.ts` with one canonical
   precedence — what the change _is_ outranks how it is stored (`rename-only` -> `binary` ->
   `too-large` -> `new-file` -> `deleted-file` -> `no-hunks`), the review stream's existing order.
-  `renderRows.tsx` and `staticDiffPager.ts` keep their own wording and share the reason; fixture
+  `plannedRowText.ts` and `staticDiffPager.ts` keep their own wording and share the reason; fixture
   `binary-rename-with-no-rows`. The static pager's own order put storage first, so a renamed
   binary or oversized rename now reports as a rename there too.
 - **A9. STML tag vocabulary — parse shared, tag semantics forked.** Terminal

@@ -27,7 +27,8 @@ import {
 } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
-import { isNestedRowMouseAction, type CursorHighlight } from "../../diff/renderRows";
+import type { CursorHighlight } from "../../diff/cursorHighlight";
+import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
@@ -980,10 +981,10 @@ export function DiffPane({
       headerStatsWidth,
       layout,
       pinnedHeaderFile,
+      reserveAddNoteColumn,
       sectionGeometry,
       showHunkHeaders,
       showLineNumbers,
-      theme,
       width: diffContentWidth,
       wrapLines,
     }),
@@ -997,10 +998,10 @@ export function DiffPane({
       headerStatsWidth,
       layout,
       pinnedHeaderFile,
+      reserveAddNoteColumn,
       sectionGeometry,
       showHunkHeaders,
       showLineNumbers,
-      theme,
       wrapLines,
     ],
   );

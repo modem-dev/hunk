@@ -92,8 +92,16 @@ describe("extension file languages", () => {
   test("registers extension mappings and skips built-in ones", () => {
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
-      { extensionId: "langs", extension: "zig", language: "zig" },
-      { extensionId: "langs", extension: "mts", language: "javascript" },
+      {
+        extensionId: "langs",
+        matcher: { kind: "extension", value: "zig" },
+        language: "zig",
+      },
+      {
+        extensionId: "langs",
+        matcher: { kind: "extension", value: "mts" },
+        language: "javascript",
+      },
     );
 
     const issues = applyExtensionFileLanguages(result.registry);
@@ -110,12 +118,71 @@ describe("extension file languages", () => {
     const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
-      { extensionId: "first", extension: "hunkfixture", language: "python" },
-      { extensionId: "second", extension: "hunkfixture", language: "ruby" },
+      {
+        extensionId: "first",
+        matcher: { kind: "extension", value: "hunkfixture" },
+        language: "python",
+      },
+      {
+        extensionId: "second",
+        matcher: { kind: "extension", value: "hunkfixture" },
+        language: "ruby",
+      },
     );
 
     expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
     expect(fileLanguageForPath("sample.hunkfixture")).toBe("ruby");
+  });
+
+  test("applies exact-filename and glob selectors through the extension registry", async () => {
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { result } = createTestLoadResult();
+    result.registry.fileLanguages.push(
+      {
+        extensionId: "named",
+        matcher: { kind: "filename", value: "HunkExtensionFile" },
+        language: "python",
+      },
+      {
+        extensionId: "generated",
+        matcher: { kind: "glob", value: "generated/**/*.hunk", target: "path" },
+        language: "ruby",
+      },
+    );
+
+    expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
+    expect(fileLanguageForPath("tools/HunkExtensionFile")).toBe("python");
+    expect(fileLanguageForPath("generated/nested/example.hunk")).toBe("ruby");
+    expect(fileLanguageForPath("source/example.hunk")).toBe("text");
+  });
+
+  test("atomically removes selectors that disappear from a reload", async () => {
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { result } = createTestLoadResult();
+    result.registry.fileLanguages.push({
+      extensionId: "temporary",
+      matcher: { kind: "filename", value: "TemporaryHunkfile" },
+      language: "python",
+    });
+
+    applyExtensionFileLanguages(result.registry);
+    expect(fileLanguageForPath("nested/TemporaryHunkfile")).toBe("python");
+
+    applyExtensionFileLanguages(createEmptyExtensionLoadResult("/repo").registry);
+    expect(fileLanguageForPath("nested/TemporaryHunkfile")).toBe("text");
+  });
+
+  test("keeps reserved extensions authoritative over broader selectors", async () => {
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { result } = createTestLoadResult();
+    result.registry.fileLanguages.push({
+      extensionId: "broad",
+      matcher: { kind: "glob", value: "*.mts", target: "basename" },
+      language: "javascript",
+    });
+
+    expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
+    expect(fileLanguageForPath("src/example.mts")).toBe("typescript");
   });
 });
 

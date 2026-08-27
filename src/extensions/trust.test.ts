@@ -184,7 +184,11 @@ describe("extension trust", () => {
 
     expect(result.loaded.map((entry) => entry.id)).toEqual(["repo-local"]);
     expect(result.registry.fileLanguages).toEqual([
-      { extensionId: "repo-local", extension: "repo", language: "typescript" },
+      {
+        extensionId: "repo-local",
+        matcher: { kind: "extension", value: "repo" },
+        language: "typescript",
+      },
     ]);
     expect(result.pendingTrustRepoRoot).toBeUndefined();
   });

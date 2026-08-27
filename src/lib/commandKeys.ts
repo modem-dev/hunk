@@ -21,39 +21,6 @@ export { matchesKeyChord, parseKeyChord } from "../extension-api/keys";
 export type { ParsedKeyChord } from "../extension-api/keys";
 
 /**
- * Build a synthetic key event that would satisfy the parsed chord.
- *
- * This exists for conflict detection: a command may match with a predicate
- * rather than chords, so the only way to ask "would this chord collide with an
- * existing binding?" is to synthesize the event the chord describes and run it
- * through every matcher.
- */
-export function synthesizeKeyEvent(parsed: ParsedKeyChord): KeyEvent {
-  // Chord bases are either one literal character or a validated named key, so
-  // length alone separates the two without re-consulting the named-key table.
-  const isNamed = parsed.base.length > 1;
-  const isLetter = /^[a-z]$/.test(parsed.base);
-  const sequence = isNamed
-    ? ""
-    : parsed.shift && isLetter
-      ? parsed.base.toUpperCase()
-      : parsed.base;
-
-  return {
-    name: isNamed || isLetter ? parsed.base : sequence,
-    sequence,
-    raw: sequence,
-    ctrl: parsed.ctrl,
-    meta: parsed.meta,
-    option: parsed.option,
-    shift: parsed.shift,
-    number: false,
-    preventDefault: () => {},
-    stopPropagation: () => {},
-  } as unknown as KeyEvent;
-}
-
-/**
  * Normalize one declared binding into the list of chords it names.
  *
  * A command may declare a single chord or several; every consumer works in

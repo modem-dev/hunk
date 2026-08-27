@@ -1,13 +1,9 @@
 import type { KeyEvent } from "@opentui/core";
 import type { RegisteredCommand } from "../../extensions/types";
-import {
-  matchesKeyChord,
-  parseKeyChordOrUndefined,
-  synthesizeKeyEvent,
-  toKeyChordList,
-} from "../../lib/commandKeys";
+import { matchesKeyChord, parseKeyChordOrUndefined, toKeyChordList } from "../../lib/commandKeys";
 import type { AppCommand, ResolvedCommandKeys } from "./appCommands";
 import { formatKeyChord } from "./keymap";
+import { synthesizeKeyEvent } from "./syntheticKeyEvent";
 
 /** One extension binding refused because its chord is already taken. */
 export interface ExtensionCommandConflict {

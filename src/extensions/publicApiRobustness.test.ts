@@ -6,6 +6,7 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import {
   applyExtensionChangesetTransforms,
+  applyExtensionFileLanguages,
   applyExtensionRegistrations,
   resolveDetectedVcsIdWithExtensions,
   resolveSessionVcsId,
@@ -171,7 +172,73 @@ describe("registerFileLanguage with junk", () => {
     );
 
     expect(issues).toEqual([]);
-    expect(registry.fileLanguages.map((entry) => entry.extension)).toEqual(["zig", "bzl"]);
+    expect(registry.fileLanguages.map((entry) => entry.matcher)).toEqual([
+      { kind: "extension", value: "zig" },
+      { kind: "extension", value: "bzl" },
+    ]);
+  });
+
+  test("preserves exact filename and glob values through matching", async () => {
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { registry, issues } = loadFactory(
+      (hunk: { registerFileLanguage: (matcher: unknown, language: string) => void }) => {
+        hunk.registerFileLanguage({ kind: "filename", value: " Tool\\Hunkfile " }, "python");
+        hunk.registerFileLanguage({ kind: "filename", value: " " }, "python");
+        hunk.registerFileLanguage({ kind: "glob", value: "*.hunk ", target: "basename" }, "ruby");
+        hunk.registerFileLanguage({ kind: "glob", value: "  ", target: "basename" }, "ruby");
+        hunk.registerFileLanguage({ kind: "glob", value: " *\\name ", target: "basename" }, "ruby");
+        hunk.registerFileLanguage({ kind: "glob", value: "foo?bar", target: "basename" }, "json");
+        hunk.registerFileLanguage(
+          { kind: "glob", value: "generated/**/*.ts", target: "path" },
+          "typescript",
+        );
+        hunk.registerFileLanguage({ kind: "extension", value: "  .HunkExact  " }, "typescript");
+      },
+    );
+
+    expect(issues).toEqual([]);
+    expect(registry.fileLanguages.map((entry) => entry.matcher)).toEqual([
+      { kind: "filename", value: " Tool\\Hunkfile " },
+      { kind: "filename", value: " " },
+      { kind: "glob", value: "*.hunk ", target: "basename" },
+      { kind: "glob", value: "  ", target: "basename" },
+      { kind: "glob", value: " *\\name ", target: "basename" },
+      { kind: "glob", value: "foo?bar", target: "basename" },
+      { kind: "glob", value: "generated/**/*.ts", target: "path" },
+      { kind: "extension", value: "hunkexact" },
+    ]);
+
+    expect(applyExtensionFileLanguages(registry)).toEqual([]);
+    expect(fileLanguageForPath("nested/ Tool\\Hunkfile ")).toBe("python");
+    expect(fileLanguageForPath("nested/ ")).toBe("python");
+    expect(fileLanguageForPath("nested/example.hunk ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/  ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/ x\\name ")).toBe("ruby");
+    expect(fileLanguageForPath("nested/foo\\bar")).toBe("json");
+    expect(fileLanguageForPath("nested/foo\0bar")).toBe("text");
+    expect(fileLanguageForPath("generated/nested/example.ts")).toBe("typescript");
+    expect(fileLanguageForPath("nested/example.hunkexact")).toBe("typescript");
+  });
+
+  test("refuses malformed matcher objects", () => {
+    for (const matcher of [
+      { kind: "filename", value: "" },
+      { kind: "filename", value: "path/Hunkfile" },
+      { kind: "glob", value: "*.ts" },
+      { kind: "glob", value: "*.ts", target: "somewhere" },
+      { kind: "glob", value: "*\0name", target: "basename" },
+      { kind: "regex", value: ".*" },
+      /.*\.ts/,
+    ]) {
+      const { registry, issues } = loadFactory(
+        (hunk: { registerFileLanguage: (matcher: unknown, language: string) => void }) => {
+          hunk.registerFileLanguage(matcher, "python");
+        },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(registry.fileLanguages).toEqual([]);
+    }
   });
 });
 

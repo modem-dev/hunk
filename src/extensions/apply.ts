@@ -1,6 +1,7 @@
 import {
   BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
-  registerFileLanguage,
+  replaceExtensionFileLanguages,
+  type FileLanguageRegistration,
 } from "../core/changeset/fileLanguage";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { Changeset } from "../core/changeset/model";
@@ -40,28 +41,29 @@ function describeError(error: unknown) {
 }
 
 /**
- * Register every extension-contributed file-extension → language mapping.
+ * Register every extension-contributed file selector and language.
  *
- * Pierre's mapping table is process-global, so this is applied once per load
- * pass. Within extensions the last registration wins, matching how a later
- * config layer overrides an earlier one; Hunk's own `.mts`/`.cts` mappings are
- * never overridden.
+ * Selectors are applied once per load pass. Within one selector category the last registration
+ * wins, matching how a later config layer overrides an earlier one; Hunk's own `.mts`/`.cts`
+ * extension mappings are never overridden.
  */
 export function applyExtensionFileLanguages(registry: ExtensionRegistry): ExtensionApplyIssue[] {
   const issues: ExtensionApplyIssue[] = [];
+  const registrations: FileLanguageRegistration[] = [];
 
-  for (const { extensionId, extension, language } of registry.fileLanguages) {
-    if (BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has(extension)) {
+  for (const { extensionId, matcher, language } of registry.fileLanguages) {
+    if (matcher.kind === "extension" && BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has(matcher.value)) {
       issues.push({
         extensionId,
-        message: `Skipped file language .${extension} from extension ${extensionId} • Hunk defines it`,
+        message: `Skipped file language .${matcher.value} from extension ${extensionId} • Hunk defines it`,
       });
       continue;
     }
 
-    registerFileLanguage(extension, language);
+    registrations.push({ matcher, language });
   }
 
+  replaceExtensionFileLanguages(registrations);
   return issues;
 }
 
@@ -352,6 +354,7 @@ export function applyExtensionRegistrations(
   baseCatalog: VcsCatalog,
 ): AppliedExtensionRegistrations {
   if (!result) {
+    replaceExtensionFileLanguages([]);
     return { vcsAdapters: [], vcsCatalog: baseCatalog, issues: [] };
   }
 

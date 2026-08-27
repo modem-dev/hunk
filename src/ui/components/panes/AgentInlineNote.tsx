@@ -9,7 +9,7 @@ import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
-import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
+import { annotationRangeLabel, inlineNoteTitle } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/text";
 
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
@@ -17,17 +17,6 @@ import { fitText, measureTextWidth, padText } from "../../lib/text";
 import { resolveStmlColor } from "../../lib/stml/colors";
 import { layoutStmlCached, type StmlLine, type StmlSpan } from "../../lib/stml/layout";
 import type { AppTheme } from "../../themes";
-
-export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
-  if (annotation.source === "user-draft") {
-    return "Draft note";
-  }
-
-  const source = reviewNoteSource(annotation);
-  const author = sanitizeTerminalLine(annotation.author?.trim() ?? "");
-  const label = source === "user" ? "Your note" : author ? `${author} note` : "Agent note";
-  return noteCount > 1 ? `${label} ${noteIndex + 1}/${noteCount}` : label;
-}
 
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";

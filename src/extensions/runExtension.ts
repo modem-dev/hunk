@@ -4,6 +4,7 @@ import {
   type ExtensionEventHandler,
   type ExtensionEventName,
   type ExtensionFactory,
+  type ExtensionFileLanguageMatcher,
   type ExtensionLoadIssue,
   type ExtensionCommand,
   type ExtensionCommandHandler,
@@ -46,14 +47,56 @@ export function describeError(error: unknown) {
   return String(error);
 }
 
-/** Normalize a registered file extension to Pierre's dotless, lowercased form. */
-function normalizeFileExtension(extension: string) {
-  const normalized = extension.trim().replace(/^\.+/, "").toLowerCase();
+/** Normalize a registered file extension to a dotless, lowercased selector. */
+function normalizeFileExtension(extension: unknown): string {
+  const value = assertNonEmptyString(
+    extension,
+    "registerFileLanguage requires a non-empty file extension.",
+  );
+  const normalized = value.trim().replace(/^\.+/, "").toLowerCase();
   if (normalized.length === 0) {
     throw new Error("registerFileLanguage requires a non-empty file extension.");
   }
 
   return normalized;
+}
+
+/** Validate and copy one public file-language matcher into its canonical shape. */
+function normalizeFileLanguageMatcher(matcher: unknown): ExtensionFileLanguageMatcher {
+  if (typeof matcher === "string") {
+    return { kind: "extension", value: normalizeFileExtension(matcher) };
+  }
+  if (!isPlainObject(matcher)) {
+    throw new Error("registerFileLanguage requires an extension string or matcher object.");
+  }
+
+  if (typeof matcher.value !== "string" || matcher.value.length === 0) {
+    throw new Error("registerFileLanguage matcher value must be a non-empty string.");
+  }
+  const value = matcher.value;
+
+  if (matcher.kind === "extension") {
+    return { kind: "extension", value: normalizeFileExtension(value) };
+  }
+  if (matcher.kind === "filename") {
+    if (value.includes("/")) {
+      throw new Error("registerFileLanguage filename matchers cannot contain `/`.");
+    }
+    return { kind: "filename", value };
+  }
+  if (matcher.kind === "glob") {
+    if (matcher.target !== "basename" && matcher.target !== "path") {
+      throw new Error('registerFileLanguage glob target must be "basename" or "path".');
+    }
+    if (value.includes("\0")) {
+      throw new Error("registerFileLanguage glob matchers cannot contain NUL.");
+    }
+    // Construct once during loading so any runtime rejection still rolls the factory back cleanly.
+    new Bun.Glob(value);
+    return { kind: "glob", value, target: matcher.target };
+  }
+
+  throw new Error('registerFileLanguage matcher kind must be "extension", "filename", or "glob".');
 }
 
 /** Reject registrations that would leave the registry holding unusable entries. */
@@ -352,12 +395,12 @@ export function createExtensionApi(
       assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");
       registry.themes.push({ extensionId: metadata.id, theme });
     },
-    registerFileLanguage(extension: string, language: string) {
+    registerFileLanguage(matcher: string | ExtensionFileLanguageMatcher, language: string) {
       assertOpen("registerFileLanguage");
       assertNonEmptyString(language, "registerFileLanguage requires a non-empty language.");
       registry.fileLanguages.push({
         extensionId: metadata.id,
-        extension: normalizeFileExtension(extension),
+        matcher: normalizeFileLanguageMatcher(matcher),
         language,
       });
     },
