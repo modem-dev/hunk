@@ -9,7 +9,7 @@ import type {
 } from "../../../extension-api/types";
 import type { AppTheme } from "../../themes";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
-import { plannedRowMatchesCursor, type CursorHighlight } from "../../diff/renderRows";
+import { plannedRowMatchesCursor, type CursorHighlight } from "../../diff/cursorHighlight";
 import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";

@@ -130,8 +130,11 @@ text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
 background with the word-diff minimum-contrast guarantee.
 `src/ui/diff/CodeRowView.tsx` applies the transform through the cell painter,
 which keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
-geometry measurement: a highlight change is a repaint, never a re-plan. The
-static pager never runs extension code, so highlights are interactive-only.
+geometry measurement: a highlight change is a repaint, never a re-plan.
+`src/ui/diff/DiffRowView.tsx` remains only the memoized dispatch facade; raw-row
+adaptation there supports the public OpenTUI and extension current-line surfaces, while
+`src/ui/diff/cursorHighlight.ts` owns stable-key cursor matching. The static pager never
+runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
 pipeline rather than growing a second one: `useTerminalReview.ts` validates

@@ -1,6 +1,5 @@
 /** Mounts split and stack code rows from the canonical code-row layout and paint plans. */
 import type { UserNoteLineTarget } from "../../core/liveComments";
-import type { CursorLine } from "../../core/run/commandInputs";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
 import { CODE_ROW_ADD_NOTE_BADGE_TEXT, CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
@@ -10,6 +9,7 @@ import {
   type PlannedDiffReviewRow,
 } from "./codeRowLayout";
 import { codeCellView, FULL_CODE_CELL_COL_RANGE, type CodeCellHighlight } from "./CodeCellView";
+import type { CursorHighlight } from "./cursorHighlight";
 import type { DiffRow } from "./diffRows";
 import type { LineHighlightPaintIndex } from "./lineHighlightPaint";
 import {
@@ -29,13 +29,6 @@ export type PlannedCodeReviewRow = Omit<PlannedDiffReviewRow, "row"> & {
   row: CodeDiffRow;
 };
 
-/** Cursor paint inputs consumed by mounted code rows. */
-export interface CodeRowCursorHighlight {
-  stableKey: string;
-  style: Exclude<CursorLine, "off">;
-  side: "old" | "new";
-}
-
 export interface CodeRowViewProps {
   plannedRow: PlannedCodeReviewRow;
   width: number;
@@ -47,7 +40,7 @@ export interface CodeRowViewProps {
   selected: boolean;
   copySelectedRowRange?: CopySelectedRowRange;
   copySelectedSide?: "left" | "right";
-  cursorHighlight?: CodeRowCursorHighlight;
+  cursorHighlight?: CursorHighlight;
   lineHighlights?: LineHighlightPaintIndex;
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;

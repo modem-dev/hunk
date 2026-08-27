@@ -4,7 +4,7 @@ import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../../core/liveComments";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { DiffSectionBody, type ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
-import type { CursorHighlight } from "../../diff/renderRows";
+import type { CursorHighlight } from "../../diff/cursorHighlight";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { DiffSectionRowPlan } from "../../diff/diffSectionRowPlan";
