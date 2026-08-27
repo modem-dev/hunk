@@ -20,7 +20,6 @@ import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
-import { canReloadInput } from "../core/run/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
   resolveExtensionCommands,
@@ -62,6 +61,7 @@ import {
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import {
@@ -79,7 +79,7 @@ import {
   type RevealedLineResult,
 } from "./hooks/useTerminalReview";
 import { useViewPreferenceQuitController } from "./hooks/useViewPreferenceQuitController";
-import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
+import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import {
   buildAppCommands,
@@ -128,6 +128,7 @@ import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
+import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
 type FocusArea = "files" | "filter" | "note";
 
@@ -158,40 +159,6 @@ const LazyThemeSelectorDialog = lazy(async () => ({
 /** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-/** Preserve the active app view settings when rebuilding the current input. */
-function withCurrentViewOptions(
-  input: CliInput,
-  view: {
-    layoutMode: LayoutMode;
-    themeId: string;
-    showAgentNotes: boolean;
-    showHunkHeaders: boolean;
-    showLineNumbers: boolean;
-    showMenuBar: boolean;
-    wrapLines: boolean;
-  },
-): CliInput {
-  return {
-    ...input,
-    options: {
-      ...input.options,
-      mode: view.layoutMode,
-      theme: view.themeId,
-      agentNotes: view.showAgentNotes,
-      hunkHeaders: view.showHunkHeaders,
-      lineNumbers: view.showLineNumbers,
-      menuBar: view.showMenuBar,
-      wrapLines: view.wrapLines,
-    },
-  };
-}
-
-/** Current mounted review descriptor AppHost dereferences when reconciling a completed write. */
-export interface WorkspaceRefreshRequest {
-  nextInput: CliInput;
-  sourcePath?: string;
 }
 
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
@@ -1370,13 +1337,15 @@ export function App({
     setShowMenuBar((current) => !current);
   };
 
-  const canRefreshCurrentInput = canReloadInput(bootstrap.input);
-  const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
-  const workspaceRefreshRequest = useMemo<WorkspaceRefreshRequest | null>(() => {
-    if (!canRefreshCurrentInput) return null;
-
-    return {
-      nextInput: withCurrentViewOptions(bootstrap.input, {
+  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
+    useCurrentReviewRefreshController({
+      input: bootstrap.input,
+      onRegisterWorkspaceRefreshRequest,
+      onReloadSession,
+      onWatchReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
+      reloadContext: bootstrap.reloadContext,
+      sourceLabel: bootstrap.changeset.sourceLabel,
+      view: {
         layoutMode,
         themeId,
         showAgentNotes,
@@ -1384,52 +1353,9 @@ export function App({
         showLineNumbers,
         showMenuBar,
         wrapLines,
-      }),
-      sourcePath: isVcsReviewInput(bootstrap.input) ? bootstrap.changeset.sourceLabel : undefined,
-    };
-  }, [
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input,
-    canRefreshCurrentInput,
-    layoutMode,
-    showAgentNotes,
-    showHunkHeaders,
-    showLineNumbers,
-    showMenuBar,
-    themeId,
-    wrapLines,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!workspaceRefreshRequest) return;
-    return onRegisterWorkspaceRefreshRequest(workspaceRefreshRequest);
-  }, [onRegisterWorkspaceRefreshRequest, workspaceRefreshRequest]);
-
-  /** Rebuild the current diff source while preserving the active app view options. */
-  const refreshCurrentInput = useCallback(
-    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
-      if (!workspaceRefreshRequest) return;
-
-      await onReloadSession(workspaceRefreshRequest.nextInput, {
-        ...options,
-        resetApp: false,
-        sourcePath: workspaceRefreshRequest.sourcePath,
-      });
-    },
-    [onReloadSession, workspaceRefreshRequest],
-  );
-
-  const triggerRefreshCurrentInput = useCallback(() => {
-    void refreshCurrentInput({ reason: "manual" }).catch((error) => {
-      console.error("Failed to reload the current diff.", error);
+      },
+      watchRuntime,
     });
-  }, [refreshCurrentInput]);
-
-  /** Reload because the watcher saw the reviewed source change on disk. */
-  const refreshWatchedInput = useCallback(
-    () => refreshCurrentInput({ reason: "watch" }),
-    [refreshCurrentInput],
-  );
 
   /**
    * Open the trust prompt whenever a repo root needs an answer it has not been asked for.
@@ -1545,15 +1471,6 @@ export function App({
     showSessionNotice,
     triggerRefreshCurrentInput,
   ]);
-
-  useWatchedInput({
-    enabled: watchEnabled,
-    input: bootstrap.input,
-    onReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
-    refresh: refreshWatchedInput,
-    reloadContext: bootstrap.reloadContext,
-    runtime: watchRuntime,
-  });
 
   /** Close the agent skill setup overlay. */
   const closeAgentSkill = useCallback(() => {

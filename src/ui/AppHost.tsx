@@ -27,7 +27,8 @@ import {
 } from "../app/session/reloadBounds";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadSessionOptions } from "../session/types";
-import { App, type WorkspaceRefreshRequest } from "./App";
+import { App } from "./App";
+import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { useStartupNotices } from "./hooks/useStartupNotices";
 import type {
   WorkspaceFileWriter,
