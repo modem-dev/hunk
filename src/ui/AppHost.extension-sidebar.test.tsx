@@ -859,6 +859,56 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("the files toggle closes a built-in fallback injected after availability failure", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-availability-failure-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-availability-failure-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "broken-files",\n` +
+        `    placement: "left",\n` +
+        `    replaces: "hunk:files",\n` +
+        `    available: () => { throw new Error("availability exploded"); },\n` +
+        `    component: () => createElement("text", { content: "BROKEN FILES" }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("availability failed"),
+        "the availability failure warning to appear",
+      );
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("M alpha.txt"),
+        "the built-in files fallback to appear",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
+        "the files toggle to close the injected fallback",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("M alpha.txt"),
+        "the files toggle to reopen the built-in files pane",
+      );
+    });
+  });
+
   test("reevaluates pane availability when filtering changes visible files", async () => {
     const repo = createTestRepo("hunk-ext-pane-availability-");
     const extPath = join(createTempDir("hunk-ext-pane-availability-ext-"), "ext.ts");

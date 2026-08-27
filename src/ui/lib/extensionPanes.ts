@@ -144,54 +144,73 @@ export interface ExtensionPaneLayoutPlan {
 
 export interface PlanExtensionPanesOptions {
   panes: readonly SessionPane[];
+  /** Pane keys accepted by logical state and commit-phase availability probing. */
   openKeys: readonly string[];
   sizes: Readonly<Record<string, number>>;
   bodyWidth: number;
   bodyHeight: number;
   minReviewWidth: number;
   minReviewHeight: number;
-  currentLine: ExtensionCurrentLinePaint | null;
-  /** Keep previously accepted current-line panes mounted while fresh paint is pending. */
-  retainCurrentLineKeys?: ReadonlySet<string>;
-  availabilityContext: Omit<ExtensionPaneAvailabilityContext, "placement" | "currentLine">;
-  quarantined?: WeakSet<RegisteredPane>;
-  onAvailabilityError?: (pane: SessionPane, error: unknown) => void;
 }
 
-/** Plan exact rectangles on all four edges while reserving minimum review bounds. */
+export interface PaneAvailabilityFailure {
+  pane: SessionPane;
+  error: unknown;
+}
+
+export interface PaneAvailabilityProbe {
+  available: ReadonlySet<RegisteredPane>;
+  failures: readonly PaneAvailabilityFailure[];
+}
+
+/** Probe extension availability without mutating host state or reporting failures. */
+export function probeExtensionPaneAvailability({
+  panes,
+  context,
+  currentLine,
+  retainCurrentLineRegistrations,
+}: {
+  panes: readonly SessionPane[];
+  context: Omit<ExtensionPaneAvailabilityContext, "placement" | "currentLine">;
+  currentLine: ExtensionCurrentLinePaint | null;
+  retainCurrentLineRegistrations?: ReadonlySet<RegisteredPane>;
+}): PaneAvailabilityProbe {
+  const available = new Set<RegisteredPane>();
+  const failures: PaneAvailabilityFailure[] = [];
+
+  for (const pane of panes) {
+    const registration = pane.registered.pane;
+    if (registration.currentLine && retainCurrentLineRegistrations?.has(pane.registered)) {
+      available.add(pane.registered);
+      continue;
+    }
+    if (!registration.available) {
+      available.add(pane.registered);
+      continue;
+    }
+    try {
+      const result = registration.available({
+        ...context,
+        placement: pane.placement,
+        currentLine: registration.currentLine ? currentLine : null,
+      });
+      if (typeof result !== "boolean") {
+        throw new Error("available() must return a boolean synchronously");
+      }
+      if (result) available.add(pane.registered);
+    } catch (error) {
+      failures.push({ pane, error });
+    }
+  }
+
+  return { available, failures };
+}
+
+/** Plan exact rectangles without invoking extension code or mutating host state. */
 export function planExtensionPanes(options: PlanExtensionPanesOptions): ExtensionPaneLayoutPlan {
   const open = new Set(options.openKeys);
   const omittedKeys: string[] = [];
-  const accepted: SessionPane[] = [];
-  for (const pane of options.panes) {
-    if (!open.has(pane.key) || options.quarantined?.has(pane.registered)) continue;
-    const registration = pane.registered.pane;
-    if (registration.currentLine && options.retainCurrentLineKeys?.has(pane.key)) {
-      accepted.push(pane);
-      continue;
-    }
-    if (registration.available) {
-      try {
-        const result = registration.available({
-          ...options.availabilityContext,
-          placement: pane.placement,
-          currentLine: registration.currentLine ? options.currentLine : null,
-        });
-        if (typeof result !== "boolean")
-          throw new Error("available() must return a boolean synchronously");
-        if (!result) {
-          omittedKeys.push(pane.key);
-          continue;
-        }
-      } catch (error) {
-        options.quarantined?.add(pane.registered);
-        options.onAvailabilityError?.(pane, error);
-        omittedKeys.push(pane.key);
-        continue;
-      }
-    }
-    accepted.push(pane);
-  }
+  const accepted = options.panes.filter((pane) => open.has(pane.key));
 
   let left = 0;
   let right = Math.max(0, options.bodyWidth);

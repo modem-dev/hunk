@@ -12,6 +12,7 @@ import {
   buildSessionPanes,
   initialPaneOpenState,
   planExtensionPanes,
+  probeExtensionPaneAvailability,
   reconcilePaneOpenState,
   resolvePaneKey,
   resolvePaneSlotKey,
@@ -171,8 +172,6 @@ describe("extension panes", () => {
       bodyHeight: 30,
       minReviewWidth: 40,
       minReviewHeight: 5,
-      currentLine: null,
-      availabilityContext: { files: [], selectedFileId: null, selectedHunkIndex: null },
     });
     expect(plan.reviewBounds).toEqual({ x: 20, y: 4, width: 65, height: 23 });
     expect(plan.panes.map((entry) => entry.pane.placement)).toEqual([
@@ -183,7 +182,7 @@ describe("extension panes", () => {
     ]);
   });
 
-  test("keeps logical open preferences while synchronous availability omits a pane", () => {
+  test("separates commit-phase availability from pure geometry planning", () => {
     let available = false;
     let availabilityCalls = 0;
     const registered = registeredPane("a", "detail", {
@@ -196,40 +195,64 @@ describe("extension panes", () => {
       },
     });
     const panes = buildSessionPanes(loadResultWith([registered]));
-    const state = { known: panes.map((pane) => pane.key), open: ["a:detail"] };
-    const options = {
+    const context = { files: [], selectedFileId: null, selectedHunkIndex: null } as const;
+    const geometry = {
       panes,
-      openKeys: state.open,
       sizes: {},
       bodyWidth: 100,
       bodyHeight: 20,
       minReviewWidth: 40,
       minReviewHeight: 5,
-      availabilityContext: { files: [], selectedFileId: null, selectedHunkIndex: null },
     } as const;
 
-    const unavailable = planExtensionPanes({ ...options, currentLine: null });
-    expect(unavailable.panes.some((entry) => entry.pane.key === "a:detail")).toBe(false);
-    expect(unavailable.omittedKeys).toContain("a:detail");
-    expect(state.open).toEqual(["a:detail"]);
+    const unavailable = probeExtensionPaneAvailability({ panes, context, currentLine: null });
+    expect(unavailable.available.has(registered)).toBeFalse();
+    expect(planExtensionPanes({ ...geometry, openKeys: [] }).panes).toEqual([]);
+    expect(availabilityCalls).toBe(1);
 
     available = true;
     const paint = { render: () => null };
-    const restored = planExtensionPanes({ ...options, currentLine: paint });
-    expect(restored.panes.some((entry) => entry.pane.key === "a:detail")).toBe(true);
+    const restored = probeExtensionPaneAvailability({ panes, context, currentLine: paint });
+    expect(restored.available.has(registered)).toBeTrue();
+    expect(planExtensionPanes({ ...geometry, openKeys: ["a:detail"] }).panes).toHaveLength(1);
 
     const callsBeforePending = availabilityCalls;
-    const pending = planExtensionPanes({
-      ...options,
+    const pending = probeExtensionPaneAvailability({
+      panes,
+      context,
       currentLine: null,
-      retainCurrentLineKeys: new Set(["a:detail"]),
+      retainCurrentLineRegistrations: new Set([registered]),
     });
-    expect(pending.panes.some((entry) => entry.pane.key === "a:detail")).toBe(true);
+    expect(pending.available.has(registered)).toBeTrue();
     expect(availabilityCalls).toBe(callsBeforePending);
-    expect(state.open).toEqual(["a:detail"]);
   });
 
-  test("quarantines an availability callback that throws or returns asynchronously", () => {
+  test("does not retain a same-key replacement by stale registration identity", () => {
+    const previous = registeredPane("a", "detail", {
+      currentLine: true,
+      available: () => true,
+    });
+    let replacementCalls = 0;
+    const replacement = registeredPane("a", "detail", {
+      currentLine: true,
+      available: () => {
+        replacementCalls += 1;
+        return false;
+      },
+    });
+    const panes = buildSessionPanes(loadResultWith([replacement]));
+    const probe = probeExtensionPaneAvailability({
+      panes,
+      context: { files: [], selectedFileId: null, selectedHunkIndex: null },
+      currentLine: null,
+      retainCurrentLineRegistrations: new Set([previous]),
+    });
+
+    expect(replacementCalls).toBe(1);
+    expect(probe.available.has(replacement)).toBeFalse();
+  });
+
+  test("returns availability failures without quarantining or notifying", () => {
     const throwing = registeredPane("a", "throwing", {
       available: () => {
         throw new Error("availability exploded");
@@ -239,31 +262,33 @@ describe("extension panes", () => {
       available: (() => Promise.resolve(true)) as never,
     });
     const panes = buildSessionPanes(loadResultWith([throwing, asyncPane]));
-    const quarantined = new WeakSet<RegisteredPane>();
-    const errors: string[] = [];
-    const plan = planExtensionPanes({
+    const probe = probeExtensionPaneAvailability({
       panes,
-      openKeys: ["a:throwing", "a:async"],
+      context: { files: [], selectedFileId: null, selectedHunkIndex: null },
+      currentLine: null,
+    });
+
+    expect(probe.available.size).toBe(1);
+    expect(probe.failures.map(({ error }) => (error as Error).message)).toEqual([
+      "availability exploded",
+      "available() must return a boolean synchronously",
+    ]);
+
+    let called = 0;
+    throwing.pane.available = () => {
+      called += 1;
+      return true;
+    };
+    planExtensionPanes({
+      panes,
+      openKeys: ["a:throwing"],
       sizes: {},
       bodyWidth: 100,
       bodyHeight: 20,
       minReviewWidth: 40,
       minReviewHeight: 5,
-      currentLine: null,
-      availabilityContext: { files: [], selectedFileId: null, selectedHunkIndex: null },
-      quarantined,
-      onAvailabilityError: (_pane, error) =>
-        errors.push(error instanceof Error ? error.message : String(error)),
     });
-
-    expect(plan.panes).toEqual([]);
-    expect(plan.omittedKeys).toEqual(["a:throwing", "a:async"]);
-    expect(quarantined.has(throwing)).toBe(true);
-    expect(quarantined.has(asyncPane)).toBe(true);
-    expect(errors).toEqual([
-      "availability exploded",
-      "available() must return a boolean synchronously",
-    ]);
+    expect(called).toBe(0);
   });
 
   test("uses explicit height overrides and reserves a divider only for resizable panes", () => {
@@ -280,8 +305,6 @@ describe("extension panes", () => {
       bodyHeight: 20,
       minReviewWidth: 40,
       minReviewHeight: 5,
-      currentLine: null,
-      availabilityContext: { files: [], selectedFileId: null, selectedHunkIndex: null },
     });
 
     const top = plan.panes.find((entry) => entry.pane.key === "a:top");
@@ -309,8 +332,6 @@ describe("extension panes", () => {
       bodyHeight: 30,
       minReviewWidth: 48,
       minReviewHeight: 5,
-      currentLine: null,
-      availabilityContext: { files: [], selectedFileId: null, selectedHunkIndex: null },
     });
     expect(plan.panes.map((entry) => entry.pane.key)).toEqual(["a:one", "a:two"]);
     expect(plan.omittedKeys).toContain("a:three");
