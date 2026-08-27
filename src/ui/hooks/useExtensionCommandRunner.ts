@@ -68,6 +68,7 @@ export function useExtensionCommandRunner({
 
       try {
         const panes = createPaneControls(registered.extensionId);
+        // Build the complete context before invoking the handler; selection is frozen here.
         const context: ExtensionCommandContext = {
           cwd: extensions?.context.cwd ?? process.cwd(),
           commands: commandControls,
@@ -85,6 +86,7 @@ export function useExtensionCommandRunner({
         };
 
         const returned = registered.handler(context);
+        // Route async rejections through the same warning as synchronous failures.
         if (returned && typeof (returned as PromiseLike<void>).then === "function") {
           Promise.resolve(returned).catch(report);
         }
