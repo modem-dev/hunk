@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AppTheme } from "../themes";
@@ -7,58 +8,35 @@ import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
 const SHARED_HIGHLIGHTED_DIFF_CACHE = createHighlightedDiffCache();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
+const highlightedContentFingerprints = new WeakMap<
+  DiffFile,
+  { fingerprint: string; metadata: DiffFile["metadata"]; patch: string }
+>();
 const sourceFetcherIds = new WeakMap<NonNullable<DiffFile["sourceFetcher"]>, number>();
 let nextSourceFetcherId = 1;
 
-/** Summarize rendered diff lines without serializing whole arrays into the cache key. */
-function lineSetFingerprint(lines: string[] | undefined) {
-  let totalChars = 0;
-  let hash = 2166136261;
-
-  for (const line of lines ?? []) {
-    totalChars += line.length;
-
-    for (let index = 0; index < line.length; index += 1) {
-      hash ^= line.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-
-    hash ^= 10;
-    hash = Math.imul(hash, 16777619);
+/** Hash every diff-content input that can change the rendered highlight result. */
+function highlightedContentFingerprint(file: DiffFile) {
+  const cached = highlightedContentFingerprints.get(file);
+  if (cached?.metadata === file.metadata && cached.patch === file.patch) {
+    return cached.fingerprint;
   }
 
-  return `${lines?.length ?? 0}:${totalChars}:${(hash >>> 0).toString(36)}`;
-}
-
-/** Build a fallback fingerprint from parsed metadata when raw patch text is unavailable. */
-function metadataFingerprint(file: DiffFile) {
-  const hunkSummary = file.metadata.hunks
-    .map(
-      (hunk) =>
-        `${hunk.hunkSpecs ?? ""}:${hunk.deletionStart}:${hunk.deletionCount}:${hunk.additionStart}:${hunk.additionCount}:${hunk.hunkContent.length}`,
-    )
-    .join("|");
-
-  return [
-    file.metadata.name,
-    file.metadata.prevName ?? "",
-    file.metadata.type,
-    lineSetFingerprint(file.metadata.deletionLines),
-    lineSetFingerprint(file.metadata.additionLines),
-    hunkSummary,
-  ].join(":");
-}
-
-/** Content fingerprint from the diff patch. Changes whenever the underlying diff
- *  changes, allowing per-file cache invalidation without a global flush. */
-function patchFingerprint(file: DiffFile) {
-  const { patch } = file;
-  if (patch.length === 0) {
-    return metadataFingerprint(file);
-  }
-
-  const mid = Math.floor(patch.length / 2);
-  return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
+  const metadata = JSON.stringify(file.metadata);
+  const fingerprint = createHash("sha256")
+    .update(`${file.patch.length}:`)
+    .update(file.patch)
+    .update(`${metadata.length}:`)
+    .update(metadata)
+    .digest("hex");
+  // Review reloads replace DiffFile snapshots rather than mutating them, so object identity safely
+  // avoids rehashing large patches during every render and viewport-prefetch pass.
+  highlightedContentFingerprints.set(file, {
+    fingerprint,
+    metadata: file.metadata,
+    patch: file.patch,
+  });
+  return fingerprint;
 }
 
 /** Identify the source snapshot provider used to recover grammar state for a partial diff. */
@@ -81,9 +59,9 @@ function sourceFetcherFingerprint(file: DiffFile) {
   return `source:${id}`;
 }
 
-/** Cache key that includes patch and source-provider identity so reloads cannot reuse stale grammar state. */
+/** Cache key that includes every content and source-provider input to highlighted rendering. */
 export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${file.language ?? "text"}:${highlightedContentFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
 /**
