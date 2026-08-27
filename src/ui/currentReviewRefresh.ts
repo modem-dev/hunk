@@ -1,6 +1,12 @@
 /**
- * Derives the reloadable descriptor for the review currently mounted in the UI.
- * It preserves live view options and only attaches a VCS working-directory source.
+ * Describes how the currently mounted review can be rebuilt from its original input.
+ *
+ * Manual refresh, watch mode, editor return, extension trust reloads, and completed workspace
+ * writes all reuse this descriptor. It reapplies live view options so a soft reload does not
+ * fall back to launch-time settings, and it supplies a source path only for VCS-backed reviews.
+ *
+ * Stdin-backed inputs remain non-reloadable because refreshing must not attempt to reread
+ * already-consumed stdin.
  */
 
 import type { SessionReloadReason } from "../extension-api/types";

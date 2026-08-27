@@ -1,6 +1,14 @@
 /**
- * Coordinates refreshes for the review currently mounted in App.
- * AppHost retains reload and remount authority; every refresh requested here is in-session.
+ * Coordinates every in-session refresh of the currently mounted review.
+ *
+ * Watch changes, manual commands, editor return, extension trust grants, and completed workspace
+ * writes converge on the same reloadable review descriptor. This hook derives and registers that
+ * descriptor, connects watch notifications to refreshes, and exposes stable refresh callbacks to
+ * App.
+ *
+ * AppHost retains authority over reload serialization, input loading, extension replacement, and
+ * bootstrap updates. Requests from this controller use `resetApp: false` so refreshing content
+ * preserves mounted UI state such as selection, filters, and pane geometry.
  */
 
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
