@@ -1,34 +1,14 @@
+/** Adapts and dispatches diff rows to their focused mounted row views. */
 import { memo } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
-import type { CursorLine } from "../../core/run/commandInputs";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
 import { CodeRowView, type PlannedCodeReviewRow } from "./CodeRowView";
 import { legacyPlannedDiffRow, type PlannedDiffReviewRow } from "./codeRowLayout";
+import type { CursorHighlight } from "./cursorHighlight";
 import { DiffMetaRowView, type PlannedDiffMetaReviewRow } from "./DiffMetaRowView";
 import type { DiffRow } from "./diffRows";
 import type { LineHighlightPaintIndex } from "./lineHighlightPaint";
-
-export { isNestedRowMouseAction, markNestedRowMouseAction } from "./rowMouseActions";
-
-export interface CursorHighlight {
-  /** The render plan anchor of the row the cursor rests on, shared with reveal lookups. */
-  stableKey: string;
-  style: Exclude<CursorLine, "off">;
-  /** Which half of a split row the cursor sits on, and where a note would anchor. */
-  side: "old" | "new";
-}
-
-/** Report whether one planned row carries the anchor the cursor rests on. */
-export function plannedRowMatchesCursor(
-  row: { stableKey: string; stableAliasKeys?: readonly string[] },
-  cursor: CursorHighlight | undefined,
-) {
-  return (
-    cursor !== undefined &&
-    (row.stableKey === cursor.stableKey || row.stableAliasKeys?.includes(cursor.stableKey) === true)
-  );
-}
 
 /** Dispatch one planned diff row to its focused metadata or code view. */
 function renderRow(
@@ -95,7 +75,8 @@ function renderRow(
   );
 }
 
-interface DiffRowViewProps {
+/** Inputs accepted by the memoized diff-row facade. */
+export interface DiffRowViewProps {
   /** Complete review-stream row; preferred when the caller owns the shared render plan. */
   plannedRow?: PlannedDiffReviewRow;
   /** Raw row fallback for renderer-only surfaces outside the shared review stream. */

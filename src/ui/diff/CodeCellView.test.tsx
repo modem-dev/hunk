@@ -11,7 +11,7 @@ import {
 import { legacyPlannedDiffRow, planCodeRowLayout } from "./codeRowLayout";
 import type { DiffRow } from "./diffRows";
 import { lineHighlightPaintKey, type LineHighlightPaintIndex } from "./lineHighlightPaint";
-import { DiffRowView } from "./renderRows";
+import { DiffRowView } from "./DiffRowView";
 import { resolveTheme, withTransparentSurfaces } from "../themes";
 
 /** Capture one code-row component and always release its OpenTUI renderer. */

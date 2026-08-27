@@ -36,7 +36,7 @@ const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
   await import("../diff/codeRowLayout");
-const { DiffRowView } = await import("../diff/renderRows");
+const { DiffRowView } = await import("../diff/DiffRowView");
 
 function createTestDiffFile(
   id: string,

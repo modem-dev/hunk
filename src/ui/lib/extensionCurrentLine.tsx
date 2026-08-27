@@ -1,6 +1,6 @@
 import type { ExtensionCurrentLinePaint } from "../../extension-api/types";
 import type { DiffRow, SplitLineCell, StackLineCell } from "../diff/diffRows";
-import { DiffRowView } from "../diff/renderRows";
+import { DiffRowView } from "../diff/DiffRowView";
 import type { DiffSectionRowPlan } from "../diff/diffSectionRowPlan";
 import type { LineCursor } from "./lineCursors";
 import type { AppTheme } from "../themes";

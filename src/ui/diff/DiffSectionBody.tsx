@@ -24,7 +24,8 @@ import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, fitText } from "./plannedRowText";
-import { DiffRowView, plannedRowMatchesCursor, type CursorHighlight } from "./renderRows";
+import { DiffRowView } from "./DiffRowView";
+import { plannedRowMatchesCursor, type CursorHighlight } from "./cursorHighlight";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
