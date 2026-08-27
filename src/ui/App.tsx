@@ -28,11 +28,7 @@ import {
   resolveExtensionLineHighlighters,
   resolveExtensionSessionOptions,
 } from "../extensions/apply";
-import {
-  emitExtensionCustomEvent,
-  emitExtensionEvent,
-  toReadOnlyFileViews,
-} from "../extensions/events";
+import { emitExtensionCustomEvent, toReadOnlyFileViews } from "../extensions/events";
 import { buildExtensionReviewSnapshot } from "../extensions/reviewSnapshot";
 import type {
   ExtensionCommandContext,
@@ -63,6 +59,7 @@ import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
+import { useExtensionReviewEvents } from "./hooks/useExtensionReviewEvents";
 import { useExtensionTrustController } from "./hooks/useExtensionTrustController";
 import {
   useExtensionWorkspaceControls,
@@ -73,7 +70,7 @@ import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
-import { useUserNoteComposer, type UserNoteEventPublisher } from "./hooks/useUserNoteComposer";
+import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
 import {
   useTerminalReview,
   type AgentNoteGeometrySnapshot,
@@ -133,15 +130,6 @@ import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 type FocusArea = "files" | "filter" | "note";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
-
-/**
- * Trailing debounce before one `selection_changed` event is emitted.
- *
- * Holding `[`/`]` or scrolling the review stream retargets the selection many
- * times a second; extension handlers only care where the user came to rest, so
- * intermediate selections are collapsed instead of dispatched.
- */
-const SELECTION_CHANGED_DEBOUNCE_MS = 150;
 
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
@@ -902,32 +890,6 @@ export function App({
     );
   }, [keymap, showSessionNotice]);
 
-  // The initial selected file is a view too, so extensions can populate a
-  // file-scoped pane without waiting for the user to navigate first. Track the
-  // file object, not only its id: a soft reload replaces its contents while
-  // preserving stable navigation ids.
-  const lastViewedFileRef = useRef<typeof selectedFile>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const hunkIndex = selectedFileId === null ? null : selectedHunkIndex;
-      emitExtensionEvent(extensions, "selection_changed", { fileId: selectedFileId, hunkIndex });
-      if (selectedFile && selectedFile !== lastViewedFileRef.current) {
-        lastViewedFileRef.current = selectedFile;
-        emitExtensionEvent(extensions, "file_viewed", { file: selectedFile, hunkIndex });
-      }
-    }, SELECTION_CHANGED_DEBOUNCE_MS);
-
-    return () => clearTimeout(timer);
-  }, [extensions, selectedFile, selectedFileId, selectedHunkIndex]);
-
-  const reportedFilterRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (reportedFilterRef.current !== undefined && reportedFilterRef.current !== review.filter) {
-      emitExtensionEvent(extensions, "filter_changed", { filter: review.filter });
-    }
-    reportedFilterRef.current = review.filter;
-  }, [extensions, review.filter]);
-
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
@@ -936,17 +898,17 @@ export function App({
   const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const resolvedLayout = responsiveLayout.layout;
-  const reportedLayoutRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const signature = `${layoutMode}:${resolvedLayout}`;
-    if (reportedLayoutRef.current !== undefined && reportedLayoutRef.current !== signature) {
-      emitExtensionEvent(extensions, "layout_changed", {
-        mode: layoutMode,
-        layout: resolvedLayout,
-      });
-    }
-    reportedLayoutRef.current = signature;
-  }, [extensions, layoutMode, resolvedLayout]);
+  const { publishCommandExecuted, publishNoteEvent, publishWatchReloadPending } =
+    useExtensionReviewEvents({
+      extensions,
+      filter: review.filter,
+      layoutMode,
+      resolvedLayout,
+      selectedFile,
+      selectedFileId,
+      selectedHunkIndex,
+      themeId,
+    });
   const statusBarVisible =
     focusArea === "filter" ||
     Boolean(review.filter) ||
@@ -1254,14 +1216,6 @@ export function App({
     setWrapLines((current) => !current);
   };
 
-  const reportedThemeIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (reportedThemeIdRef.current !== undefined && reportedThemeIdRef.current !== themeId) {
-      emitExtensionEvent(extensions, "theme_changed", { themeId });
-    }
-    reportedThemeIdRef.current = themeId;
-  }, [extensions, themeId]);
-
   /** Toggle only the active files pane without changing extension pane visibility. */
   const toggleFilesPane = () => {
     const filesPaneKey = resolvePaneSlotKey({
@@ -1297,7 +1251,7 @@ export function App({
       input: bootstrap.input,
       onRegisterWorkspaceRefreshRequest,
       onReloadSession,
-      onWatchReloadPending: () => emitExtensionEvent(extensions, "watch_reload_pending", {}),
+      onWatchReloadPending: publishWatchReloadPending,
       reloadContext: bootstrap.reloadContext,
       sourceLabel: bootstrap.changeset.sourceLabel,
       view: {
@@ -1429,11 +1383,6 @@ export function App({
     () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
-  /** Publish one user-note event through the current extension runtime. */
-  const publishUserNoteEvent: UserNoteEventPublisher = useCallback(
-    (event, payload) => emitExtensionEvent(extensions, event, payload),
-    [extensions],
-  );
   const {
     blurDraftNote,
     cancelDraftNote,
@@ -1455,7 +1404,7 @@ export function App({
       review: focusReviewAfterDraft,
       blurDraft: blurDraftNoteEditor,
     },
-    publishEvent: publishUserNoteEvent,
+    publishEvent: publishNoteEvent,
   });
 
   // One dispatch table for every app-level shortcut: the built-in commands
@@ -1496,7 +1445,7 @@ export function App({
       }),
       ...extensionAppCommands.commands,
     ],
-    (commandId) => emitExtensionEvent(extensions, "command_executed", { commandId }),
+    publishCommandExecuted,
   );
   extensionHostCommandsRef.current = appCommands;
 
