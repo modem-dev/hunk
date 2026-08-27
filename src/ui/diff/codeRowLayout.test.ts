@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { resolveTheme } from "../themes";
+import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
 import type { DiffRow, SplitLineCell, StackLineCell } from "./diffRows";
 import {
   measurePlannedRenderedRowHeight,
   planCodeRowLayout,
-  renderDecoratedPlannedRowText,
   type CodeRowLayoutOptions,
-} from "./renderRows";
+} from "./codeRowLayout";
+import { renderDecoratedPlannedRowText } from "./renderRows";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 
 const theme = resolveTheme("github-dark-default", null);
@@ -189,7 +190,9 @@ describe("planned code-row layout", () => {
               }
 
               const expectedBadgeWidth =
-                showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? 3 : 0;
+                showAddNoteBadge || (wrapLines && reserveAddNoteColumn)
+                  ? CODE_ROW_ADD_NOTE_BADGE_WIDTH
+                  : 0;
               expect(plan.addNoteBadgeWidth).toBe(expectedBadgeWidth);
               expect(plan.trailingGuideWidth).toBe(noteGuideSide === "new" ? 1 : 0);
 

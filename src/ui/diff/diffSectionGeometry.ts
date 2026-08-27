@@ -15,7 +15,7 @@ import {
 } from "./reviewRowGeometry";
 import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
-import { measurePlannedRenderedRowHeight } from "./renderRows";
+import { measurePlannedRenderedRowHeight } from "./codeRowLayout";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];

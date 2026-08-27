@@ -34,8 +34,9 @@ const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
-const { DiffRowView, measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
-  await import("../diff/renderRows");
+const { measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
+  await import("../diff/codeRowLayout");
+const { DiffRowView } = await import("../diff/renderRows");
 
 function createTestDiffFile(
   id: string,

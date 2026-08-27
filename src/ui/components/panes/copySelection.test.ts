@@ -3,7 +3,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
 import { measureDiffSectionGeometry } from "../../diff/diffSectionGeometry";
-import { planCodeRowLayout } from "../../diff/renderRows";
+import { planCodeRowLayout } from "../../diff/codeRowLayout";
 import { buildFileSectionLayouts } from "../../lib/fileSectionLayout";
 import {
   buildCopySelectedRowKeys,

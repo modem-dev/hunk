@@ -1,11 +1,8 @@
 import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import { resolveSplitPaneWidths } from "../../diff/codeColumns";
-import {
-  planCodeRowLayout,
-  renderCodeOnlyPlannedRowText,
-  renderDecoratedPlannedRowText,
-} from "../../diff/renderRows";
+import { planCodeRowLayout } from "../../diff/codeRowLayout";
+import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "../../diff/renderRows";
 import {
   type DiffSectionGeometry,
   type DiffSectionRowBounds,
