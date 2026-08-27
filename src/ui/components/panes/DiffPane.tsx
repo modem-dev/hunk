@@ -984,7 +984,6 @@ export function DiffPane({
       sectionGeometry,
       showHunkHeaders,
       showLineNumbers,
-      theme,
       width: diffContentWidth,
       wrapLines,
     }),
@@ -1002,7 +1001,6 @@ export function DiffPane({
       sectionGeometry,
       showHunkHeaders,
       showLineNumbers,
-      theme,
       wrapLines,
     ],
   );

@@ -205,7 +205,6 @@ function buildMultiFileTestContext({
     sectionGeometry,
     showHunkHeaders: true,
     showLineNumbers: true,
-    theme,
     width,
     wrapLines,
   };
@@ -278,7 +277,6 @@ function buildWrappedBoundaryContext(layout: "stack" | "split", reserveAddNoteCo
     sectionGeometry,
     showHunkHeaders: true,
     showLineNumbers: false,
-    theme,
     width,
     wrapLines: true,
   };

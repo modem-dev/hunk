@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { resolveTheme } from "../themes";
 import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
 import type { DiffRow, SplitLineCell, StackLineCell } from "./diffRows";
 import {
@@ -7,10 +6,9 @@ import {
   planCodeRowLayout,
   type CodeRowLayoutOptions,
 } from "./codeRowLayout";
-import { renderDecoratedPlannedRowText } from "./renderRows";
+import { renderDecoratedPlannedRowText } from "./plannedRowText";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 
-const theme = resolveTheme("github-dark-default", null);
 const boundaryText = "1234567";
 type PlannedDiffRow = Extract<PlannedReviewRow, { kind: "diff-row" }>;
 
@@ -74,7 +72,6 @@ function decoratedLines(row: PlannedReviewRow, options: CodeRowLayoutOptions) {
     ...options,
     codeHorizontalOffset: 0,
     showHunkHeaders: true,
-    theme,
   });
 }
 

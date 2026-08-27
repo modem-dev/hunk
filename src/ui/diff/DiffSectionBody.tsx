@@ -23,13 +23,8 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./diffRows";
 import { plannedReviewRowVisible } from "./reviewRowGeometry";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import {
-  diffMessage,
-  DiffRowView,
-  fitText,
-  plannedRowMatchesCursor,
-  type CursorHighlight,
-} from "./renderRows";
+import { diffMessage, fitText } from "./plannedRowText";
+import { DiffRowView, plannedRowMatchesCursor, type CursorHighlight } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 

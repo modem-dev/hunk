@@ -2,7 +2,10 @@ import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import { planCodeRowLayout } from "../../diff/codeRowLayout";
-import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "../../diff/renderRows";
+import {
+  renderCodeOnlyPlannedRowText,
+  renderDecoratedPlannedRowText,
+} from "../../diff/plannedRowText";
 import {
   type DiffSectionGeometry,
   type DiffSectionRowBounds,
@@ -11,7 +14,6 @@ import type { CopySelectedRowRange } from "../../lib/diffSpatial";
 import type { FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth } from "../../lib/text";
-import type { AppTheme } from "../../themes";
 import type { LineCursor } from "../../lib/lineCursors";
 import { contextLineStableKeySides, type PlannedReviewRow } from "../../diff/reviewRenderPlan";
 
@@ -53,7 +55,6 @@ export interface CopySelectionContext {
   sectionGeometry: DiffSectionGeometry[];
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
-  theme: AppTheme;
   width: number;
   wrapLines: boolean;
 }
@@ -420,7 +421,6 @@ export function renderCopySelectionText({
     sectionGeometry,
     showHunkHeaders,
     showLineNumbers,
-    theme,
     width,
     wrapLines,
   } = context;
@@ -522,7 +522,6 @@ export function renderCopySelectionText({
         showHunkHeaders,
         showLineNumbers,
         side: copySide,
-        theme,
         width,
         wrapLines,
       };
@@ -630,7 +629,6 @@ export function expandSelectionPoint(
       showHunkHeaders: context.showHunkHeaders,
       showLineNumbers,
       side,
-      theme: context.theme,
       width,
       wrapLines: context.wrapLines,
     };
