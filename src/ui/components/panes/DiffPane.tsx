@@ -27,7 +27,8 @@ import {
 } from "../../../core/review/state";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
-import { isNestedRowMouseAction, type CursorHighlight } from "../../diff/renderRows";
+import type { CursorHighlight } from "../../diff/renderRows";
+import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,

@@ -128,8 +128,8 @@ clusters, with context and gap lines sharing one range list under both side
 keys — and the one span transform that repaints backgrounds without changing
 text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
 background with the word-diff minimum-contrast guarantee.
-`src/ui/diff/renderRows.tsx` applies the transform per rendered cell, which
-keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
+`src/ui/diff/CodeRowView.tsx` applies the transform through the cell painter,
+which keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
 geometry measurement: a highlight change is a repaint, never a re-plan. The
 static pager never runs extension code, so highlights are interactive-only.
 
