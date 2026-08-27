@@ -49,8 +49,10 @@ export function useExtensionEventContextProvider({
       };
     };
 
+    // Install after commit so lifecycle events cannot capture controls from abandoned renders.
     extensions.eventContextProvider = provider;
     return () => {
+      // Preserve a newer provider installed by a successor App instance.
       if (extensions.eventContextProvider === provider) {
         delete extensions.eventContextProvider;
       }

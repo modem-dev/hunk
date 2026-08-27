@@ -112,7 +112,7 @@ export function useExtensionRuntimeBridge({
     views: ReturnType<typeof toReadOnlyFileViews>;
   } | null>(null);
 
-  /** Reuse one immutable public projection while its internal file list identity is current. */
+  // Cache public file objects until the underlying visible-file list changes.
   const projectFileViews = useCallback((source: readonly DiffFile[]) => {
     const cache = fileViewsCacheRef.current;
     if (cache?.source === source) return cache.views;
@@ -122,6 +122,7 @@ export function useExtensionRuntimeBridge({
     return views;
   }, []);
 
+  // Commit liveness and review facts before AppHost publishes lifecycle events.
   useLayoutEffect(() => {
     // Child layout effects commit before AppHost publishes startup/reload lifecycle events.
     appAliveRef.current = true;
@@ -141,6 +142,7 @@ export function useExtensionRuntimeBridge({
   );
   const getRenderFileViews = useCallback(() => projectFileViews(files), [files, projectFileViews]);
 
+  // Command controls survive content reloads but expire with the App or registry.
   const commandControls = useMemo(() => {
     const lease = createExtensionCapabilityLease({
       owningRegistry: extensions?.registry,
@@ -153,6 +155,7 @@ export function useExtensionRuntimeBridge({
     });
   }, [extensions?.registry]);
 
+  // Review controls also expire when the mounted review generation changes.
   const createReviewCapabilityLease = useCallback(
     () =>
       createExtensionCapabilityLease({
@@ -164,6 +167,7 @@ export function useExtensionRuntimeBridge({
     [extensions?.registry, reviewGeneration],
   );
 
+  // Freeze public selection from the latest committed review when a command starts.
   const getPublicSelection = useCallback(() => {
     const current = committedSelectionRef.current;
     const { fileId, hunkIndex } = current.getSelection();
@@ -190,6 +194,7 @@ export function useExtensionRuntimeBridge({
     [],
   );
 
+  // Resolve navigation targets and callbacks at call time, including after awaits.
   const createNavigation = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
@@ -207,6 +212,7 @@ export function useExtensionRuntimeBridge({
     [createReviewCapabilityLease, extensions],
   );
 
+  // Read snapshots only while the captured review generation is still current.
   const createReviewControls = useCallback(() => {
     const lease = createReviewCapabilityLease();
     return Object.freeze({
@@ -219,6 +225,7 @@ export function useExtensionRuntimeBridge({
     });
   }, [createReviewCapabilityLease, reviewProducer]);
 
+  // Publish App-owned commands and navigation only after their render commits.
   const commitBindings = useCallback(
     (commands: readonly AppCommand[], navigation: ExtensionRuntimeNavigationBindings) => {
       commandsRef.current = commands;
