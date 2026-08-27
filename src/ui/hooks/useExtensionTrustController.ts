@@ -29,7 +29,7 @@ function trustFailureMessage(error: unknown) {
   return error instanceof Error ? error.message : "Failed to record the trust decision.";
 }
 
-/** Own prompt reconciliation and trust-decision side effects for repo-local extensions. */
+/** Show each repository prompt once and apply the user's decision. */
 export function useExtensionTrustController({
   canRefreshCurrentInput,
   pagerMode,
@@ -74,6 +74,7 @@ export function useExtensionTrustController({
   const visiblePromptRoot =
     !pagerMode && extensionTrustPromptRoot === pendingRepoRoot ? extensionTrustPromptRoot : null;
 
+  // Dismiss this prompt for the session without recording a decision.
   const closeExtensionTrustPrompt = useCallback(() => {
     setExtensionTrustPromptRoot(null);
   }, []);
