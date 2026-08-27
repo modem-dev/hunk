@@ -72,6 +72,7 @@ import {
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
+import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer, type UserNoteEventPublisher } from "./hooks/useUserNoteComposer";
 import {
   useTerminalReview,
@@ -267,26 +268,7 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
-  const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
-  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Show a short-lived status-bar notice and replace any pending notice timer. */
-  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
-    if (transientTimerRef.current !== null) {
-      clearTimeout(transientTimerRef.current);
-    }
-    setTransientNoticeText(text);
-    transientTimerRef.current = setTimeout(() => {
-      transientTimerRef.current = null;
-      setTransientNoticeText((current) => (current === text ? null : current));
-    }, durationMs);
-  }, []);
-  useEffect(() => {
-    return () => {
-      if (transientTimerRef.current !== null) {
-        clearTimeout(transientTimerRef.current);
-      }
-    };
-  }, []);
+  const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -316,8 +298,7 @@ export function App({
     maxSize: number;
     minSize: number;
   } | null>(null);
-  const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
-  const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
   const [paneOpenState, setPaneOpenState] = useState(() => {
@@ -572,17 +553,6 @@ export function App({
     review.setShowAgentNotes(true);
   }, [review.setShowAgentNotes]);
 
-  const showSessionNotice = useCallback((message: string) => {
-    setSessionNoticeText(message);
-    if (sessionNoticeTimeoutRef.current) {
-      clearTimeout(sessionNoticeTimeoutRef.current);
-    }
-
-    sessionNoticeTimeoutRef.current = setTimeout(() => {
-      setSessionNoticeText((current) => (current === message ? null : current));
-      sessionNoticeTimeoutRef.current = null;
-    }, 4000);
-  }, []);
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
     setShowHelp(false);
@@ -661,14 +631,6 @@ export function App({
     notify: notifyExtensionMode,
     reviewGeneration: bootstrap,
   });
-
-  useEffect(() => {
-    return () => {
-      if (sessionNoticeTimeoutRef.current) {
-        clearTimeout(sessionNoticeTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const setPaneOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
     setPaneOpenState((current) => {
