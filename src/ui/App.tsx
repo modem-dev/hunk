@@ -20,7 +20,6 @@ import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
-import type { UserNoteLineTarget } from "../core/liveComments";
 import { canReloadInput } from "../core/run/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
@@ -41,7 +40,6 @@ import type {
   ExtensionCommandContext,
   ExtensionEventContext,
   ExtensionNotifyType,
-  ExtensionReviewNote,
   ExtensionPaneControls,
   ExtensionLoadResult,
   RegisteredCommand,
@@ -63,7 +61,6 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
-import type { ActiveAddNoteAffordance } from "./diff/DiffSectionBody";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
@@ -75,6 +72,7 @@ import {
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
+import { useUserNoteComposer, type UserNoteEventPublisher } from "./hooks/useUserNoteComposer";
 import {
   useTerminalReview,
   type AgentNoteGeometrySnapshot,
@@ -132,7 +130,6 @@ import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 
 type FocusArea = "files" | "filter" | "note";
-type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -309,7 +306,6 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
-  const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
   const [paneResize, setPaneResize] = useState<{
     key: string;
@@ -1621,95 +1617,43 @@ export function App({
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
   }, []);
 
-  /** Start a user-authored inline note and move keyboard focus into it. */
-  const startUserNote = useCallback(
-    (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
-      const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget =
-        hoverTarget ??
-        (fileId === undefined && cursorLine !== "off" ? review.getLineCursor() : null);
-      const draft = review.startUserNote(
-        fileId ?? keyboardTarget?.fileId,
-        hunkIndex ?? keyboardTarget?.hunkIndex,
-        target ?? keyboardTarget?.target,
-        { preserveViewport: fileId !== undefined || keyboardTarget !== null },
-      );
-      if (draft) {
-        setActiveAddNoteTarget(null);
-        setFocusArea("note");
-      }
-    },
-    [activeAddNoteTarget, cursorLine, review.getLineCursor, review.startUserNote],
-  );
-
-  /** Mark the inline draft note textarea as the active keyboard input. */
-  const focusDraftNote = useCallback(() => {
-    setFocusArea("note");
-  }, []);
-
-  /** Return keyboard focus to review navigation when the draft textarea loses focus. */
-  const blurDraftNote = useCallback(() => {
-    setFocusArea((current) => (current === "note" ? "files" : current));
-  }, []);
-
-  /** Convert a draft or saved UI note into the stable public event view. */
-  const toExtensionReviewNote = useCallback(
-    (
-      note: {
-        id: string;
-        fileId: string;
-        filePath: string;
-        hunkIndex: number;
-        side: "old" | "new";
-        line: number;
-        body?: string;
-        summary?: string;
-      },
-      draft: boolean,
-    ): ExtensionReviewNote => ({
-      id: note.id,
-      fileId: note.fileId,
-      filePath: note.filePath,
-      hunkIndex: note.hunkIndex,
-      side: note.side,
-      line: note.line,
-      body: note.body ?? note.summary ?? "",
-      draft,
-    }),
+  /** Move keyboard ownership into the draft note editor. */
+  const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
+  /** Return keyboard ownership from note composition to review navigation. */
+  const focusReviewAfterDraft = useCallback(() => setFocusArea("files"), []);
+  /** Leave note focus only when the draft editor still owns it. */
+  const blurDraftNoteEditor = useCallback(
+    () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
-
-  /** Save the active draft note and return focus to review navigation. */
-  const saveDraftNote = useCallback(() => {
-    const draft = review.draftNote;
-    const saved = review.saveDraftNote();
-    if (saved && draft) {
-      emitExtensionEvent(extensions, "note_created", {
-        note: toExtensionReviewNote({ ...saved, fileId: draft.fileId }, false),
-      });
-    }
-    setFocusArea("files");
-  }, [extensions, review.draftNote, review.saveDraftNote, toExtensionReviewNote]);
-
-  /** Update a draft note and publish its current in-progress contents. */
-  const updateDraftNote = useCallback(
-    (body: string) => {
-      const draft = review.draftNote;
-      review.updateDraftNote(body);
-      if (draft) {
-        emitExtensionEvent(extensions, "note_edited", {
-          note: toExtensionReviewNote({ ...draft, body }, true),
-        });
-      }
-    },
-    [extensions, review.draftNote, review.updateDraftNote, toExtensionReviewNote],
+  /** Publish one user-note event through the current extension runtime. */
+  const publishUserNoteEvent: UserNoteEventPublisher = useCallback(
+    (event, payload) => emitExtensionEvent(extensions, event, payload),
+    [extensions],
   );
-
-  /** Cancel the active draft note and return focus to review navigation. */
-  const cancelDraftNote = useCallback(() => {
-    review.cancelDraftNote();
-    setFocusArea("files");
-  }, [review.cancelDraftNote]);
+  const {
+    blurDraftNote,
+    cancelDraftNote,
+    focusDraftNote,
+    onActiveAddNoteAffordanceChange,
+    saveDraftNote,
+    startUserNote,
+    updateDraftNote,
+  } = useUserNoteComposer({
+    draftNote: review.draftNote,
+    keyboardCursorEnabled: cursorLine !== "off",
+    getLineCursor: review.getLineCursor,
+    startDraft: review.startUserNote,
+    updateDraft: review.updateDraftNote,
+    saveDraft: review.saveDraftNote,
+    cancelDraft: review.cancelDraftNote,
+    focus: {
+      draft: focusDraftNoteEditor,
+      review: focusReviewAfterDraft,
+      blurDraft: blurDraftNoteEditor,
+    },
+    publishEvent: publishUserNoteEvent,
+  });
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -2091,7 +2035,7 @@ export function App({
             theme={activeTheme}
             width={diffPaneWidth}
             height={diffPaneHeight}
-            onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+            onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
             onStartUserNoteAtHunk={startUserNote}
