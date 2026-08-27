@@ -5,6 +5,7 @@ import { resolveConfiguredCliInput } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
 import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
+import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
   openControllingTerminal,
@@ -15,6 +16,7 @@ import {
 import type { AppBootstrap } from "./types";
 import type {
   CliInput,
+  ExtensionCliInvocationInput,
   ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
@@ -86,6 +88,10 @@ export type StartupPlan =
       input: SelfUpdateCommandInput;
     }
   | {
+      kind: "extension-cli-exit";
+      exitCode: number;
+    }
+  | {
       kind: "app";
       bootstrap: AppBootstrap;
       cliInput: CliInput;
@@ -115,8 +121,30 @@ export interface StartupDeps {
   stdinIsTTY?: boolean;
   stdoutIsTTY?: boolean;
   stdout?: NodeJS.WriteStream;
+  stderr?: NodeJS.WriteStream;
+  extensionCliStdin?: AsyncIterable<string | Uint8Array>;
+  extensionCliSignals?: import("../extensions/cliCommandRuntime").ExtensionCliSignalSource;
+  resolveExtensionCliBootstrapImpl?: typeof import("./extensionCliBootstrap").resolveExtensionCliBootstrap;
+  runExtensionCliCommandImpl?: typeof import("../extensions/cliCommandRuntime").runExtensionCliCommand;
   env?: NodeJS.ProcessEnv;
   bunVersion?: string;
+}
+
+/** Carry the invocation's authoritative extension paths into a delegated review input. */
+function applyDelegatedExtensionFlags(
+  input: ParsedCliInput,
+  invocation: ExtensionCliInvocationInput,
+): ParsedCliInput {
+  if (!("options" in input)) return input;
+  return {
+    ...input,
+    options: {
+      ...input.options,
+      extensions: invocation.extensionsEnabled,
+      extensionPaths:
+        invocation.extensionPaths.length > 0 ? [...invocation.extensionPaths] : undefined,
+    },
+  } as ParsedCliInput;
 }
 
 /** Normalize startup work so help, pager, and app-bootstrap paths can be tested directly. */
@@ -137,24 +165,152 @@ export async function prepareStartupPlan(
   const stdinIsTTY = deps.stdinIsTTY ?? Boolean(process.stdin.isTTY);
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
+  const stderr = deps.stderr ?? process.stderr;
   const env = deps.env ?? process.env;
   const bunVersion = deps.bunVersion ?? Bun.version;
   const loadBaseVcsCatalog = createBundledVcsCatalogLoader();
+  const startupCwd = process.cwd();
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
+  let preloadedExtensions: import("../extensions/types").ExtensionLoadResult | undefined;
+  let delegatedDiscoveryCatalog: VcsCatalog | undefined;
+
+  /** Retire startup-owned extension state before returning a non-app plan. */
+  const retirePreloadedExtensions = async () => {
+    if (!preloadedExtensions) return;
+    await (await import("../extensions/events")).retireExtensionLoadResult(preloadedExtensions);
+    preloadedExtensions = undefined;
+  };
+  const finishHeadlessPlan = async <Plan extends StartupPlan>(plan: Plan): Promise<Plan> => {
+    await retirePreloadedExtensions();
+    return plan;
+  };
+  async function whileStartupOwnsExtensions<Value>(
+    operation: () => Value | Promise<Value>,
+  ): Promise<Value> {
+    try {
+      return await operation();
+    } catch (error) {
+      await retirePreloadedExtensions();
+      throw error;
+    }
+  }
+
+  if (parsedCliInput.kind === "extension-cli") {
+    const invocation = parsedCliInput;
+    if (!invocation.extensionsEnabled) {
+      throw new Error(`Unknown command: ${invocation.commandName}`);
+    }
+    const baseVcsCatalog = await loadBaseVcsCatalog();
+    const resolveExtensionCliBootstrapImpl =
+      deps.resolveExtensionCliBootstrapImpl ??
+      (await import("./extensionCliBootstrap")).resolveExtensionCliBootstrap;
+    const runExtensionCliCommandImpl =
+      deps.runExtensionCliCommandImpl ??
+      (await import("../extensions/cliCommandRuntime")).runExtensionCliCommand;
+    const resolved = await resolveExtensionCliBootstrapImpl({
+      input: invocation,
+      cwd: startupCwd,
+      env,
+      baseVcsCatalog,
+    });
+    preloadedExtensions = resolved.extensions;
+
+    try {
+      const registered = resolved.commands.commands.get(invocation.commandName);
+      if (!registered) {
+        const suggestions: string[] = [];
+        if (resolved.extensions.pendingTrustRepoRoot) {
+          suggestions.push(
+            `Open a normal review in ${resolved.extensions.pendingTrustRepoRoot} to decide whether to trust its extensions, then retry.`,
+          );
+        }
+        if (resolved.extensions.issues.length > 0) {
+          suggestions.push(
+            "One or more extensions failed to load; rerun with HUNK_DEBUG=1 or open a review to inspect startup notices.",
+          );
+        }
+        if (suggestions.length > 0) {
+          throw new HunkUserError(`Unknown command: ${invocation.commandName}`, suggestions);
+        }
+        throw new Error(`Unknown command: ${invocation.commandName}`);
+      }
+
+      const warningMessages = [
+        ...(resolved.configured.startupNotices ?? []).map((notice) => notice.message),
+        ...resolved.collisionIssues.map(
+          (issue) =>
+            sanitizeTerminalText(issue.message).split("\n")[0] ?? "Extension CLI command collision",
+        ),
+      ];
+      for (const message of warningMessages) {
+        await new Promise<void>((resolveWrite, rejectWrite) => {
+          stderr.write(`hunk: warning: ${message}\n`, (error) => {
+            if (error) rejectWrite(error);
+            else resolveWrite();
+          });
+        });
+      }
+      (await import("../extensions/events")).bindExtensionEventBus(resolved.extensions);
+      const execution = await runExtensionCliCommandImpl({
+        extensionId: registered.extensionId,
+        commandName: invocation.commandName,
+        args: invocation.args,
+        handler: registered.handler,
+        cwd: startupCwd,
+        stdin: deps.extensionCliStdin,
+        stdout,
+        stderr,
+        signals: deps.extensionCliSignals,
+      });
+      if (execution.result.kind === "exit") {
+        const exitCode = execution.result.code ?? 0;
+        await retirePreloadedExtensions();
+        return { kind: "extension-cli-exit", exitCode };
+      }
+
+      if (execution.stdinReadStarted) {
+        throw new HunkUserError(
+          "The extension read stdin before delegating to a built-in Hunk command.",
+          [
+            "Delegating handlers must leave ctx.stdin untouched; return an exit result after reading it.",
+          ],
+        );
+      }
+      const delegated = await parseCliImpl([
+        argv[0] ?? "hunk-runtime",
+        argv[1] ?? "hunk",
+        ...execution.result.argv,
+      ]);
+      if (delegated.kind === "extension-cli") {
+        throw new HunkUserError(
+          "Extension CLI commands may delegate only to built-in Hunk commands.",
+        );
+      }
+      parsedCliInput = applyDelegatedExtensionFlags(delegated, invocation);
+      delegatedDiscoveryCatalog = resolved.discoveryCatalog;
+    } catch (error) {
+      await retirePreloadedExtensions();
+      throw error;
+    }
+  }
+
+  if (parsedCliInput.kind === "extension-cli") {
+    throw new Error("Unreachable extension CLI delegation state.");
+  }
 
   if (parsedCliInput.kind === "help") {
-    return {
+    return await finishHeadlessPlan({
       kind: "help",
       text: parsedCliInput.text,
-    };
+    });
   }
 
   if (parsedCliInput.kind === "daemon-serve") {
-    return {
+    return await finishHeadlessPlan({
       kind: "daemon-serve",
-    };
+    });
   }
 
   if (parsedCliInput.kind === "session") {
@@ -168,41 +324,41 @@ export async function prepareStartupPlan(
             ),
           }
         : parsedCliInput;
-    return {
+    return await finishHeadlessPlan({
       kind: "session-command",
       input: sessionInput,
-    };
+    });
   }
 
   if (parsedCliInput.kind === "markup-render") {
-    return {
+    return await finishHeadlessPlan({
       kind: "markup-render",
       input: parsedCliInput,
-    };
+    });
   }
 
   if (parsedCliInput.kind === "markup-guide") {
-    return {
+    return await finishHeadlessPlan({
       kind: "markup-guide",
-    };
+    });
   }
 
   if (parsedCliInput.kind === "extension-manage") {
-    return {
+    return await finishHeadlessPlan({
       kind: "extension-manage",
       input: parsedCliInput,
-    };
+    });
   }
 
   if (parsedCliInput.kind === "update") {
-    return {
+    return await finishHeadlessPlan({
       kind: "self-update",
       input: parsedCliInput,
-    };
+    });
   }
 
   if (parsedCliInput.kind === "pager") {
-    const stdinText = await readStdinText();
+    const stdinText = await whileStartupOwnsExtensions(readStdinText);
     const pagerOptions = parsedCliInput.options;
     const capturedPagerHost = isCapturedPagerHost(env);
     const staticPagerPlan = async () => {
@@ -244,32 +400,32 @@ export async function prepareStartupPlan(
     if (!looksLikePatchInputImpl(stdinText)) {
       // Dumb-terminal and captured pager hosts cannot safely own an interactive text pager.
       if (env.TERM === "dumb") {
-        return passthroughPlan;
+        return await finishHeadlessPlan(passthroughPlan);
       }
 
-      return {
+      return await finishHeadlessPlan({
         kind: "plain-text-pager",
         text: stdinText,
-      };
+      });
     }
 
     if (!stdoutIsTTY) {
-      return passthroughPlan;
+      return await finishHeadlessPlan(passthroughPlan);
     }
 
     if (env.TERM === "dumb" && !capturedPagerHost) {
-      return passthroughPlan;
+      return await finishHeadlessPlan(passthroughPlan);
     }
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
     if (capturedPagerHost) {
-      return staticPagerPlan();
+      return await finishHeadlessPlan(await staticPagerPlan());
     }
 
     controllingTerminal = openControllingTerminalImpl();
     if (!controllingTerminal) {
-      return staticPagerPlan();
+      return await finishHeadlessPlan(await staticPagerPlan());
     }
 
     parsedCliInput = {
@@ -283,29 +439,34 @@ export async function prepareStartupPlan(
     };
   }
 
-  const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
-  const startupCwd = process.cwd();
+  const runtimeCliInput = await whileStartupOwnsExtensions(() =>
+    resolveRuntimeCliInputImpl(parsedCliInput),
+  );
   // Past this point the plan always builds a changeset, so the catalog and the loading pipeline
   // are needed for certain; resolve them together rather than at each use.
   const baseVcsCatalog = await loadBaseVcsCatalog();
-  let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
-    cwd: startupCwd,
-    env,
-    vcsCatalog: baseVcsCatalog,
-  });
+  let configured = await whileStartupOwnsExtensions(() =>
+    resolveConfiguredCliInputImpl(runtimeCliInput, {
+      cwd: startupCwd,
+      env,
+      vcsCatalog: delegatedDiscoveryCatalog ?? baseVcsCatalog,
+    }),
+  );
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
 
   if (cliInput.options.watch) {
-    assertReliableWatchRuntime(bunVersion);
-    if (!canReloadInput(cliInput)) {
-      throw new HunkUserError(
-        "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
-        [
-          "Use a patch file path instead of stdin, and avoid `--agent-context -` for watched sessions.",
-        ],
-      );
-    }
+    await whileStartupOwnsExtensions(() => {
+      assertReliableWatchRuntime(bunVersion);
+      if (!canReloadInput(cliInput)) {
+        throw new HunkUserError(
+          "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
+          [
+            "Use a patch file path instead of stdin, and avoid `--agent-context -` for watched sessions.",
+          ],
+        );
+      }
+    });
   }
 
   // Any app session launched with piped stdin still needs a real terminal input stream for
@@ -320,8 +481,12 @@ export async function prepareStartupPlan(
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =
-        (await detectTerminalThemeModeFromBackgroundImpl({ input: themeInput, output: stdout })) ??
-        undefined;
+        (await whileStartupOwnsExtensions(() =>
+          detectTerminalThemeModeFromBackgroundImpl({
+            input: themeInput,
+            output: stdout,
+          }),
+        )) ?? undefined;
     }
   }
 
@@ -330,13 +495,16 @@ export async function prepareStartupPlan(
   // bundled catalog could not; the shared resolver then appends newly discovered repo
   // candidates without executing the provisional factory prefix twice.
   const [{ resolveConfiguredExtensions }, { loadConfiguredSessionBootstrap }, startupExtensions] =
-    await Promise.all([
-      import("./extensionBootstrap"),
-      import("./sessionBootstrap"),
-      import("../extensions/startup"),
-    ]);
+    await whileStartupOwnsExtensions(() =>
+      Promise.all([
+        import("./extensionBootstrap"),
+        import("./sessionBootstrap"),
+        import("../extensions/startup"),
+      ]),
+    );
   const loadAppBootstrapImpl =
-    deps.loadAppBootstrapImpl ?? (await import("../core/changeset/loaders")).loadAppBootstrap;
+    deps.loadAppBootstrapImpl ??
+    (await whileStartupOwnsExtensions(() => import("../core/changeset/loaders"))).loadAppBootstrap;
   const loadStartupExtensionsImpl =
     deps.loadStartupExtensionsImpl ?? startupExtensions.loadStartupExtensions;
 
@@ -347,12 +515,15 @@ export async function prepareStartupPlan(
       cwd: startupCwd,
       env,
       baseVcsCatalog,
+      discoveryCatalog: delegatedDiscoveryCatalog,
+      previousLoad: preloadedExtensions,
     },
     { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
   );
   configured = resolvedExtensions.configured;
   cliInput = configured.input;
   const extensionResult = resolvedExtensions.extensions;
+  preloadedExtensions = extensionResult;
 
   let preparedSession: SessionBootstrapResult;
   try {
@@ -366,6 +537,7 @@ export async function prepareStartupPlan(
     });
   } catch (error) {
     controllingTerminal?.close();
+    await retirePreloadedExtensions();
     throw error;
   }
   const { applied, bootstrap, input: resolvedInput, sessionThemes, sessionVcs } = preparedSession;
@@ -403,6 +575,8 @@ export async function prepareStartupPlan(
   );
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 
+  // The mounted app now owns the registry and performs its one eventual shutdown.
+  preloadedExtensions = undefined;
   return {
     kind: "app",
     bootstrap,

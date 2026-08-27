@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 9;
+export const HUNK_EXTENSION_API_VERSION = 10;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1195,6 +1195,52 @@ export interface ExtensionSidebarView {
 /* Commands                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** One top-level CLI command subtree contributed by an extension. */
+export interface ExtensionCliCommand {
+  /** Globally claimed lowercase-kebab token, such as `greptile` or `pr`. */
+  name: string;
+  /** Human-readable description for command discovery surfaces. */
+  summary: string;
+  /** Optional usage suffix, excluding `hunk <name>`. */
+  usage?: string;
+}
+
+/** A leased, backpressure-aware CLI output capability. */
+export interface ExtensionCliWriter {
+  /** Write one chunk; rejects after the command handler settles. */
+  write(chunk: string | Uint8Array): Promise<void>;
+}
+
+/** Headless host capabilities granted to the active CLI command handler. */
+export interface ExtensionCliCommandContext {
+  readonly cwd: string;
+  readonly signal: AbortSignal;
+  readonly stdin: AsyncIterable<Uint8Array>;
+  readonly stdout: ExtensionCliWriter;
+  readonly stderr: ExtensionCliWriter;
+}
+
+/** Finish the Hunk process with a validated exit status. */
+export interface ExtensionCliExitResult {
+  readonly kind: "exit";
+  /** Defaults to zero; must be a safe integer from 0 through 255. */
+  readonly code?: number;
+}
+
+/** Hand terminal ownership to one built-in Hunk command. */
+export interface ExtensionCliDelegateResult {
+  readonly kind: "delegate";
+  /** Tokens after the `hunk` executable. Extension commands cannot be targets. */
+  readonly argv: readonly string[];
+}
+
+export type ExtensionCliCommandResult = ExtensionCliExitResult | ExtensionCliDelegateResult;
+
+export type ExtensionCliCommandHandler = (
+  args: readonly string[],
+  ctx: ExtensionCliCommandContext,
+) => ExtensionCliCommandResult | Promise<ExtensionCliCommandResult>;
+
 /**
  * One named keyboard command contributed by an extension.
  *
@@ -1904,6 +1950,8 @@ export interface HunkExtensionAPI {
    * through `ctx.keyboardModes.enterMode()`.
    */
   registerKeyboardMode(mode: ExtensionKeyboardMode): void;
+  /** Register one generic top-level CLI command subtree. */
+  registerCliCommand(command: ExtensionCliCommand, handler: ExtensionCliCommandHandler): void;
   /**
    * Register one named command, optionally bound to a key,
    *

@@ -1,13 +1,57 @@
 ---
 title: Extension API
-description: Register themes, file previews, keyboard modes, transforms, commands, dialogs, and events through the extension API object.
+description: Register CLI commands, themes, file previews, keyboard modes, transforms, dialogs, and events through the extension API object.
 ---
 
 The extension factory receives one API object. Registration calls are only valid while the factory is running; Hunk seals the object afterwards so a deferred callback cannot mutate the registry mid-session. This page indexes the whole object; larger registration calls are documented in depth on their own pages and summarized in place below.
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `9`). Branch on it if you want one file to support several Hunk versions. Version 9 adds exact-filename and glob selectors to `registerFileLanguage`; version 8 added authoritative review snapshots to command handlers; version 7 added the current source line to command selection snapshots. Version 6 added session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `10`). Branch on it if you want one file to support several Hunk versions. Version 10 adds generic top-level CLI commands; version 9 added exact-filename and glob selectors to `registerFileLanguage`; version 8 added authoritative review snapshots to command handlers; version 7 added the current source line to command selection snapshots. Version 6 added session behavior, terminal-command observation, and live navigation/dialogs in lifecycle and bus handlers; version 5 added line highlighters and line-granular navigation (`revealLine`); version 4 added keyboard modes and docked panes, with API-v3 sidebar names remaining as deprecated aliases.
+
+## `hunk.registerCliCommand(command, handler)`
+
+Register a generic top-level command tree. The extension owns every raw token
+below its lowercase-kebab top-level name:
+
+```ts
+hunk.registerCliCommand(
+  { name: "greptile", summary: "Work with Greptile", usage: "<sync|review>" },
+  async (args, ctx) => {
+    if (args[0] === "sync") {
+      await ctx.stdout.write("Synced.\n");
+      return { kind: "exit" };
+    }
+    await ctx.stderr.write("Preparing review…\n");
+    return { kind: "delegate", argv: ["diff"] };
+  },
+);
+```
+
+Handlers receive `ctx.cwd`, cooperative `ctx.signal`, streaming `ctx.stdin`,
+and leased, backpressure-aware stdout/stderr writers. They may access networks,
+services, processes, and files. Return a validated exit status or delegate once
+to a built-in Hunk command. Delegation cannot follow stdout output or any stdin
+read, target another extension command, or change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension claim in
+discovery order wins.
+
+Use a leading explicit path while developing:
+
+```bash
+hunk --extension ./greptile.ts greptile sync
+```
+
+Bare help remains static; `hunk greptile --help` passes `--help` to the handler.
+
+For a complete implementation, see the dependency-free
+[`github-pr` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr).
+It fetches GitHub PR diffs directly, delegates a temporary patch with
+restrictive POSIX modes (and inherited temporary-directory ACLs on Windows)
+into Hunk, and cleans the patch up on shutdown:
+
+```bash
+hunk --extension ./examples/extensions/github-pr gh 123
+```
 
 ## `hunk.configureSession(options)`
 
@@ -357,4 +401,4 @@ Record a diagnostic line. Logs are collected per extension rather than written t
 
 ## Not contributable yet
 
-Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, session commands, and CLI subcommands. See [`docs/extension-system-exploration.md`](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) for the design and phasing.
+Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See [`docs/extension-system-exploration.md`](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) for the design and phasing.

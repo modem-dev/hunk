@@ -131,9 +131,12 @@ seams in very different states of readiness:
   re-enumerated as callback props there, in `buildAppMenus`, and in a
   hardcoded `HelpDialog` sections array. Extensions can't contribute a command
   or a keybinding because _core_ has no named-command concept to contribute to.
-- **CLI dispatch is a closed switch.** `parseCli` ends in a hardcoded
-  `switch (commandName)` and help text is a hand-maintained string array, so
-  extension CLI subcommands need a command-table refactor first.
+- **Generic CLI dispatch now has an extension fallback.** Built-ins still win
+  through `parseCli`'s closed fast path, while an unknown top-level token loads
+  enabled/trusted extensions and resolves `registerCliCommand` registrations.
+  Handlers own raw nested args and leased I/O, and may exit or delegate once to
+  a built-in plan without rerunning an unchanged factory prefix. Bare help stays
+  static; unloaded command discovery remains a future manifest/listing problem.
 - **Session actions take five files in lockstep** (`protocol.ts` union +
   version bump, `brokerServer.ts` switch + supported-actions list, `bridge.ts`,
   session `cli.ts`, `core/cli.ts` parser). A registry keyed by action name

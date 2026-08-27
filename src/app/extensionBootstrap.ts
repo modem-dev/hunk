@@ -19,6 +19,8 @@ export interface ResolveConfiguredExtensionsOptions {
   /** Adapters already known before this load, such as the current live-session catalog. */
   discoveryCatalog?: VcsCatalog;
   notifications?: ExtensionNotificationHub;
+  /** Registry already loaded by an extension CLI command before built-in delegation. */
+  previousLoad?: ExtensionLoadResult;
   /** Publish provisional ownership before imports or asynchronous factories can suspend. */
   onProvisionalLoad?: (result: ExtensionLoadResult) => void;
   /** Throw when the caller's lifetime ended so no later staged registry can be created. */
@@ -73,7 +75,8 @@ export async function resolveConfiguredExtensions(
       cliExtensionPaths: configured.input.options.extensionPaths,
       projectRoot: configured.projectRoot,
       reservedExtensionIds: options.baseVcsCatalog.reservedIds,
-      notifications: options.notifications,
+      notifications: options.notifications ?? options.previousLoad?.notifications,
+      previousLoad: options.previousLoad,
       deferEventBusBinding: true,
       onProvisionalLoad: ownProvisionalLoad,
     });
@@ -117,6 +120,12 @@ export async function resolveConfiguredExtensions(
     await retireExtensionLoadResult(provisionalExtensions);
     if (extensions?.registry !== provisionalExtensions?.registry) {
       await retireExtensionLoadResult(extensions);
+    }
+    if (
+      options.previousLoad?.registry !== provisionalExtensions?.registry &&
+      options.previousLoad?.registry !== extensions?.registry
+    ) {
+      await retireExtensionLoadResult(options.previousLoad);
     }
     throw error;
   }

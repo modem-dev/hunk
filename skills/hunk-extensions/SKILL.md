@@ -103,16 +103,42 @@ bad or duplicate id is skipped with a startup notice.
 | Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
 | Mark character ranges inside diff lines                  | `hunk.registerLineHighlighter(highlighter)`  |
 | Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`            |
+| Add a generic top-level CLI command tree                 | `hunk.registerCliCommand(command, handler)`  |
 | Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`     |
 | Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
 | React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `9`)             | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `10`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
+
+### Generic CLI handlers
+
+Register one lowercase-kebab top-level token; the handler owns every raw token
+below it. Built-ins and aliases cannot be shadowed, and discovery order makes
+the first extension claim win. During development, place the explicit path
+before the extension command:
+
+```bash
+hunk --extension ./my-ext.ts my-command sync --help
+```
+
+The handler receives frozen args plus `ctx.cwd`, `ctx.signal`, streaming
+`ctx.stdin`, and leased `ctx.stdout`/`ctx.stderr` writers. Return `{ kind:
+"exit", code? }` or `{ kind: "delegate", argv: ["diff", ...] }`. Delegation is
+built-in-only and one-time: do not write stdout or read stdin before delegating;
+use stderr for progress. Reading stdin is an exit-only workflow. Respect cancellation promptly.
+Repo-local providers remain trust-gated; `--no-extensions` performs no discovery
+or import, while a leading explicit `--extension` path is immediate consent.
+
+Use `examples/extensions/github-pr/` as the reference for a complete CLI
+preprocessor: direct authenticated HTTP with cancellation, temporary artifacts
+with platform-accurate permission claims retained through delegated startup,
+cleanup on `shutdown`, and a
+one-time handoff to built-in `patch` without touching stdin or stdout.
 
 ## What handlers receive
 

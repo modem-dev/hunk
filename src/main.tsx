@@ -15,6 +15,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "extension-cli-exit") {
+    process.exitCode = startupPlan.exitCode;
+    return;
+  }
+
   if (startupPlan.kind === "daemon-serve") {
     const server = serveSessionBrokerDaemon();
     await server.stopped;
@@ -113,8 +118,16 @@ async function main() {
   // native library. The highlighting client starts the compiled worker only when an opted-in,
   // eligible diff needs it, so normal sessions do not pay its startup cost. The interactive
   // app owns that worker's disposal: this call returns once the app is mounted, not once it exits.
-  const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  await runInteractiveApp(startupPlan);
+  try {
+    const { runInteractiveApp } = await import("./ui/runInteractiveApp");
+    await runInteractiveApp(startupPlan);
+  } catch (error) {
+    startupPlan.controllingTerminal?.close();
+    await (
+      await import("./extensions/events")
+    ).retireExtensionLoadResult(startupPlan.bootstrap.extensions);
+    throw error;
+  }
 }
 
 await main().catch((error) => {

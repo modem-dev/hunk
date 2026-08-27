@@ -29,9 +29,11 @@ import type {
 import { SessionBrokerClient } from "../session/broker/brokerClient";
 import { AppHost } from "./AppHost";
 import { disposeHighlightWorker } from "./diff/worker";
+import { retireExtensionLoadResult } from "../extensions/events";
+import type { ExtensionLoadResult } from "../extensions/types";
 
 export interface InteractiveAppInput {
-  bootstrap: AppBootstrap;
+  bootstrap: AppBootstrap<ExtensionLoadResult>;
   controllingTerminal: ControllingTerminal | null;
 }
 
@@ -67,22 +69,39 @@ export async function runInteractiveApp({
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
   const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
-  const renderer = await createCliRenderer({
-    stdin: rendererStdin,
-    stdout: process.stdout,
-    useMouse: shouldUseMouseForApp({
-      hasControllingTerminal: Boolean(controllingTerminal),
-    }),
-    screenMode: "alternate-screen",
-    exitOnCtrlC: false,
-    // OpenTUI's destroy-only handlers can strand sessions with active broker handles.
-    exitSignals: [],
-    openConsoleOnError: true,
-    onDestroy: () => controllingTerminal?.close(),
-  });
+  let renderer: Awaited<ReturnType<typeof createCliRenderer>>;
+  try {
+    renderer = await createCliRenderer({
+      stdin: rendererStdin,
+      stdout: process.stdout,
+      useMouse: shouldUseMouseForApp({
+        hasControllingTerminal: Boolean(controllingTerminal),
+      }),
+      screenMode: "alternate-screen",
+      exitOnCtrlC: false,
+      // OpenTUI's destroy-only handlers can strand sessions with active broker handles.
+      exitSignals: [],
+      openConsoleOnError: true,
+      onDestroy: () => controllingTerminal?.close(),
+    });
+  } catch (error) {
+    hostClient.stop();
+    controllingTerminal?.close();
+    await retireExtensionLoadResult(bootstrap.extensions);
+    throw error;
+  }
 
   const appRenderer = renderer;
-  const root = createRoot(appRenderer);
+  let root: ReturnType<typeof createRoot>;
+  try {
+    root = createRoot(appRenderer);
+  } catch (error) {
+    hostClient.stop();
+    appRenderer.destroy();
+    controllingTerminal?.close();
+    await retireExtensionLoadResult(bootstrap.extensions);
+    throw error;
+  }
   const externalQuitController = new AbortController();
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
@@ -95,7 +114,7 @@ export async function runInteractiveApp({
   }
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
-  function shutdown() {
+  function shutdown(exitProcess = true) {
     if (shuttingDown) {
       return;
     }
@@ -112,26 +131,36 @@ export async function runInteractiveApp({
     // returns once the app is mounted, so an entrypoint-side dispose would fire before the first
     // eligible diff ever asked for the worker.
     disposeHighlightWorker();
-    shutdownSession({ root, renderer: appRenderer });
+    shutdownSession({
+      root,
+      renderer: appRenderer,
+      ...(exitProcess ? {} : { exit: () => undefined }),
+    });
   }
 
-  for (const signal of APP_SHUTDOWN_SIGNALS) {
-    process.once(signal, requestQuit);
-  }
-  // Install after the renderer so a disconnect closes the live session instead of racing startup.
-  terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, requestQuit);
-  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, requestQuit);
-  jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
+  try {
+    for (const signal of APP_SHUTDOWN_SIGNALS) {
+      process.once(signal, requestQuit);
+    }
+    // Install after the renderer so a disconnect closes the live session instead of racing startup.
+    terminalDisconnectSupport = installTerminalDisconnectSupport(rendererStdin, requestQuit);
+    jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, requestQuit);
+    jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
-  // The app owns the full alternate screen session from this point on.
-  root.render(
-    <AppHost
-      bootstrap={bootstrap}
-      externalQuitSignal={externalQuitController.signal}
-      hostClient={hostClient}
-      onQuit={shutdown}
-      reviewProducer={reviewProducer}
-      startupNoticeResolver={resolveStartupUpdateNotice}
-    />,
-  );
+    // The app owns the full alternate screen session from this point on.
+    root.render(
+      <AppHost
+        bootstrap={bootstrap}
+        externalQuitSignal={externalQuitController.signal}
+        hostClient={hostClient}
+        onQuit={shutdown}
+        reviewProducer={reviewProducer}
+        startupNoticeResolver={resolveStartupUpdateNotice}
+      />,
+    );
+  } catch (error) {
+    shutdown(false);
+    await retireExtensionLoadResult(bootstrap.extensions);
+    throw error;
+  }
 }

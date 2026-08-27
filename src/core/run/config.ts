@@ -122,6 +122,19 @@ export interface ConfigResolutionOptions {
   vcsCatalog?: VcsCatalog;
 }
 
+export interface ExtensionBootstrapConfigResolution {
+  extensions: ExtensionsConfig;
+  projectRoot?: string;
+  globalConfigPath?: string;
+  repoConfigPath?: string;
+  startupNotices?: readonly StartupNotice[];
+}
+
+export interface ExtensionBootstrapConfigOptions extends ConfigResolutionOptions {
+  /** False when a leading host `--no-extensions` flag hard-disables loading. */
+  extensionsEnabled?: boolean;
+}
+
 const CONFIG_FALLBACK_VCS_ID = "git";
 const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
@@ -920,6 +933,20 @@ function mergeExtensionConfigs(
   return merged;
 }
 
+/** Merge user and repo extension layers while honoring the invocation hard-off switch. */
+function resolveExtensionsConfig(
+  userLayer: ExtensionsLayer,
+  repoLayer: ExtensionsLayer,
+  extensionsEnabled: boolean | undefined,
+): ExtensionsConfig {
+  return {
+    enabled: extensionsEnabled === false ? false : (repoLayer.enabled ?? userLayer.enabled ?? true),
+    paths: userLayer.paths,
+    repoPaths: repoLayer.paths,
+    extensionConfigs: mergeExtensionConfigs(userLayer.extensionConfigs, repoLayer.extensionConfigs),
+  };
+}
+
 /** Normalize one cataloged config value according to its runtime property. */
 function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
   switch (property) {
@@ -1144,6 +1171,57 @@ export function saveViewPreferencesPromptPreference(
   return configPath;
 }
 
+interface ConfigSources {
+  projectRoot?: string;
+  globalConfigPath?: string;
+  repoConfigPath?: string;
+  userConfig?: Record<string, unknown>;
+  repoConfig?: Record<string, unknown>;
+}
+
+/** Read the user and selected-project config sources once for one resolution pass. */
+function readConfigSources(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  vcsCatalog: VcsCatalog,
+): ConfigSources {
+  const projectRoot = findProjectRootCandidate(cwd, vcsCatalog);
+  const repoConfigPath = projectRoot ? join(projectRoot, ".hunk", "config.toml") : undefined;
+  const globalConfigPath = resolveGlobalConfigPath(env);
+  return {
+    projectRoot,
+    globalConfigPath,
+    repoConfigPath,
+    userConfig: globalConfigPath ? readTomlRecord(globalConfigPath) : undefined,
+    repoConfig: repoConfigPath ? readTomlRecord(repoConfigPath) : undefined,
+  };
+}
+
+/** Resolve only the config needed to discover an unknown extension CLI command. */
+export function resolveExtensionBootstrapConfig({
+  cwd = process.cwd(),
+  env = process.env,
+  vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
+  extensionsEnabled,
+}: ExtensionBootstrapConfigOptions = {}): ExtensionBootstrapConfigResolution {
+  const sources = readConfigSources(cwd, env, vcsCatalog);
+  const userLayer = sources.userConfig
+    ? readExtensionsLayer(sources.userConfig)
+    : { paths: [], extensionConfigs: {} };
+  const repoLayer = sources.repoConfig
+    ? readExtensionsLayer(sources.repoConfig)
+    : { paths: [], extensionConfigs: {} };
+  const repoNotice = createRepoExtensionConfigNotice(repoLayer.extensionConfigs);
+
+  return {
+    extensions: resolveExtensionsConfig(userLayer, repoLayer, extensionsEnabled),
+    projectRoot: sources.projectRoot,
+    globalConfigPath: sources.globalConfigPath,
+    repoConfigPath: sources.repoConfigPath,
+    startupNotices: repoNotice ? [repoNotice] : undefined,
+  };
+}
+
 /** Resolve CLI input against global and repo-local config files. */
 export function resolveConfiguredCliInput(
   input: CliInput,
@@ -1153,9 +1231,10 @@ export function resolveConfiguredCliInput(
     vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
   }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
-  const repoRoot = findProjectRootCandidate(cwd, vcsCatalog);
-  const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
-  const userConfigPath = resolveGlobalConfigPath(env);
+  const sources = readConfigSources(cwd, env, vcsCatalog);
+  const repoRoot = sources.projectRoot;
+  const repoConfigPath = sources.repoConfigPath;
+  const userConfigPath = sources.globalConfigPath;
   let resolvedCustomThemes: NamedCustomThemeConfig[] = [];
   let usesLegacyCustomSyntax = false;
   const themeNotices = new Map<string, StartupNotice>();
@@ -1185,8 +1264,8 @@ export function resolveConfiguredCliInput(
   // that names one explicitly, in the same last-layer-wins order options merge.
   let explicitVcsId: string | undefined;
 
-  if (userConfigPath) {
-    const userConfig = readTomlRecord(userConfigPath);
+  if (userConfigPath && sources.userConfig) {
+    const userConfig = sources.userConfig;
     const userLayer = resolveConfigLayer(userConfig, input);
     explicitVcsId = userLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
@@ -1195,8 +1274,8 @@ export function resolveConfiguredCliInput(
     keybindingsLayer = readKeybindingsLayer(userConfig);
   }
 
-  if (repoConfigPath) {
-    const repoConfig = readTomlRecord(repoConfigPath);
+  if (repoConfigPath && sources.repoConfig) {
+    const repoConfig = sources.repoConfig;
     const repoLayer = resolveConfigLayer(repoConfig, input);
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
@@ -1241,20 +1320,11 @@ export function resolveConfiguredCliInput(
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
   }
 
-  const extensions: ExtensionsConfig = {
-    // `--no-extensions` is a hard off switch; otherwise repo config overrides user config
-    // exactly like every other layered option.
-    enabled:
-      input.options.extensions === false
-        ? false
-        : (repoExtensionsLayer.enabled ?? userExtensionsLayer.enabled ?? true),
-    paths: userExtensionsLayer.paths,
-    repoPaths: repoExtensionsLayer.paths,
-    extensionConfigs: mergeExtensionConfigs(
-      userExtensionsLayer.extensionConfigs,
-      repoExtensionsLayer.extensionConfigs,
-    ),
-  };
+  const extensions = resolveExtensionsConfig(
+    userExtensionsLayer,
+    repoExtensionsLayer,
+    input.options.extensions,
+  );
   const repoExtensionConfigNotice = createRepoExtensionConfigNotice(
     repoExtensionsLayer.extensionConfigs,
   );

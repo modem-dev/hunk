@@ -16,7 +16,7 @@ import type { VcsCatalog } from "../../core/vcs/types";
  * | `hunk diff fileA fileB` outside a repo | None | All session reloads. |
  * | `hunk difftool fileA fileB` outside a repo | None | All session reloads. |
  * | `hunk patch patchfile` inside a repo | The repo root | Anything outside that repo root. |
- * | `hunk patch patchfile` outside a repo | None | All session reloads. |
+ * | `hunk patch patchfile` outside a repo | Exact initial patch file | Other files and every repository-backed reload. |
  * | stdin-backed patch startup | None | All session reloads. |
  * | Any session with `--agent-context path` | Same roots as the session | Agent context sidecars outside those roots, symlink escapes, and `--agent-context -`. |
  *
@@ -31,6 +31,8 @@ import type { VcsCatalog } from "../../core/vcs/types";
 
 export interface SessionReloadBounds {
   roots: string[];
+  /** Exact initial resources allowed when startup had no safe directory root. */
+  exactFiles: string[];
   defaultCwd: string;
 }
 
@@ -81,6 +83,7 @@ export function createSessionReloadBounds(
 ): SessionReloadBounds {
   const initialCwd = resolveCanonicalPath(cwd);
   let roots: string[] = [];
+  let exactFiles: string[] = [];
 
   switch (bootstrap.input.kind) {
     case "vcs":
@@ -97,26 +100,29 @@ export function createSessionReloadBounds(
       );
       break;
     case "patch":
-      roots =
-        bootstrap.input.file && bootstrap.input.file !== "-"
-          ? resolveRepoReloadRoots(
-              initialCwd,
-              [bootstrap.input.file],
-              bootstrap.reloadContext.vcsCatalog,
-            )
-          : [];
+      if (bootstrap.input.file && bootstrap.input.file !== "-") {
+        roots = resolveRepoReloadRoots(
+          initialCwd,
+          [bootstrap.input.file],
+          bootstrap.reloadContext.vcsCatalog,
+        );
+        if (roots.length === 0) {
+          exactFiles = [resolveCanonicalPath(resolve(initialCwd, bootstrap.input.file))];
+        }
+      }
       break;
   }
 
   return {
     roots: normalizeRoots(roots),
+    exactFiles: [...new Set(exactFiles.map(resolveCanonicalPath))],
     defaultCwd: initialCwd,
   };
 }
 
 /** Reject session reloads for startup inputs that did not establish a repository root. */
 function assertReloadableBounds(bounds: SessionReloadBounds) {
-  if (bounds.roots.length === 0) {
+  if (bounds.roots.length === 0 && bounds.exactFiles.length === 0) {
     throw new Error(
       "Session reload requires the initial Hunk session to be rooted in a repository.",
     );
@@ -129,9 +135,12 @@ function assertReloadFileWithinBounds(
   cwd: string,
   path: string,
   description: string,
+  allowExactFile = false,
 ) {
   const candidate = resolveCanonicalPath(resolve(cwd, path));
-  if (!bounds.roots.some((root) => isWithinRoot(root, candidate))) {
+  const withinRoot = bounds.roots.some((root) => isWithinRoot(root, candidate));
+  const exactMatch = allowExactFile && bounds.exactFiles.includes(candidate);
+  if (!withinRoot && !exactMatch) {
     throw new Error(
       `Session reload refused ${description} outside the initial Hunk root: ${candidate}`,
     );
@@ -202,7 +211,7 @@ export function validateSessionReloadWithinBounds(
       break;
     case "patch":
       if (nextInput.file && nextInput.file !== "-") {
-        assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.file, "patch file");
+        assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.file, "patch file", true);
         break;
       }
 
@@ -211,12 +220,22 @@ export function validateSessionReloadWithinBounds(
       }
       break;
     case "vcs":
+      if (bounds.roots.length === 0) {
+        throw new Error(
+          "Session reload requires repository-backed input to stay inside the initial Hunk root.",
+        );
+      }
       if (nextInput.range) {
         assertReloadRevisionNotOptionLike("diff range", nextInput.range);
       }
       break;
     case "show":
     case "stash-show":
+      if (bounds.roots.length === 0) {
+        throw new Error(
+          "Session reload requires repository-backed input to stay inside the initial Hunk root.",
+        );
+      }
       if (nextInput.ref) {
         assertReloadRevisionNotOptionLike(`${nextInput.kind} ref`, nextInput.ref);
       }

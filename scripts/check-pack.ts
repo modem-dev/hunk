@@ -59,6 +59,17 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.log(noSelection.file === null ? "nothing selected" : noSelection.file.path);
   hunk.log(noSelection.currentLine?.side ?? "no current line");
+  hunk.registerCliCommand(
+    { name: "review-tools", summary: "Prepare or inspect a review", usage: "<action>" },
+    async (args, ctx) => {
+      if (args[0] === "review") {
+        await ctx.stderr.write("Preparing review…\\n");
+        return { kind: "delegate", argv: ["diff"] };
+      }
+      await ctx.stdout.write(new TextEncoder().encode(ctx.cwd + "\\n"));
+      return { kind: "exit", code: ctx.signal.aborted ? 1 : 0 };
+    },
+  );
 
   const theme: NamedCustomThemeConfig = {
     id: "midnight-review",

@@ -44,8 +44,8 @@ load issue and costs only that extension. The rules themselves are stated in
 ## One registry, one apply path
 
 Registrations (session behavior, themes, file languages, VCS adapters,
-changeset transforms, panes, commands, lifecycle/UI events, and inter-extension
-bus listeners) collect into one
+changeset transforms, panes, interactive commands, top-level CLI commands,
+lifecycle/UI events, and inter-extension bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
@@ -58,6 +58,17 @@ receives bounded `shutdown` before being rebuilt. Live registry replacement uses
 the same shutdown/startup lifecycle. A factory that throws is rolled back to its
 pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
 session.
+
+Generic CLI commands deliberately remain separate from the interactive named-command
+table. `parseCli` resolves known built-ins first, preserving static help/version and
+headless fast paths. Only an unknown top-level token produces an `extension-cli`
+envelope and enters extension-only config/discovery. The winning registration owns
+the raw subtree and runs through leased process I/O. An exit result retires the
+registry before returning an exit plan; a one-time built-in delegation reparses
+through the ordinary planner. Delegated reviews reconcile the already loaded
+candidate/config prefix and hand the same registry to `AppBootstrap`, so factories
+are not rerun merely for the handoff. Headless delegation retires before executing
+the built-in plan. Terminal probing occurs only after the handler releases I/O.
 
 ## Host-served runtime modules
 

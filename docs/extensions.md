@@ -280,15 +280,67 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `9`). Branch on it if you want
-one file to support several Hunk versions. Version 9 adds exact-filename and glob selectors to
-`registerFileLanguage`; version 8 added authoritative review snapshots to command handlers;
+The API generation this Hunk speaks (currently `10`). Branch on it if you want
+one file to support several Hunk versions. Version 10 adds generic top-level CLI commands;
+version 9 added exact-filename and glob selectors to `registerFileLanguage`; version 8 added authoritative review snapshots to command handlers;
 version 7 added the current source line to
 command selection snapshots. Version 6 added session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
 version 4 added keyboard modes and docked panes, with API-v3 sidebar names
 remaining as deprecated aliases.
+
+### `hunk.registerCliCommand(command, handler)`
+
+Register a generic top-level command tree. The name must use lowercase kebab
+case, cannot replace a built-in command or alias, and is global across loaded
+extensions. Discovery order decides collisions: explicit flag, user-config path,
+global/managed, then trusted repo extensions; the first claim wins.
+
+```ts
+hunk.registerCliCommand(
+  { name: "greptile", summary: "Work with Greptile", usage: "<sync|review>" },
+  async (args, ctx) => {
+    if (args[0] === "sync") {
+      await ctx.stdout.write("Synced.\n");
+      return { kind: "exit", code: 0 };
+    }
+
+    await ctx.stderr.write("Preparing review…\n");
+    return { kind: "delegate", argv: ["diff", "--agent-context", "notes.json"] };
+  },
+);
+```
+
+The handler receives the frozen raw tokens below its top-level name plus
+`ctx.cwd`, cooperative `ctx.signal`, byte-streaming `ctx.stdin`, and leased,
+backpressure-aware `ctx.stdout`/`ctx.stderr`. It may use ordinary JavaScript APIs
+to access networks, processes, services, and files. Return `{ kind: "exit",
+code? }` with a status from 0 through 255, or delegate exactly once to a
+built-in Hunk command.
+
+Delegation cannot target another extension command or change extension bootstrap
+flags. Do not write stdout or read stdin before delegating; use stderr for
+progress. Reading stdin is an exit-only workflow because even a pending read can
+steal terminal input from the delegated command. Writers and stdin iterators
+reject after the handler settles. SIGINT and SIGTERM abort
+`ctx.signal`; handlers should stop promptly. Extensions are not sandboxed, so
+direct process stream access cannot be enforced by these capabilities and must
+be avoided.
+
+Bare `hunk --help` remains static and does not load extensions. The extension
+owns `hunk <name> --help` and receives `--help` unchanged.
+
+The dependency-free [`github-pr` example](../examples/extensions/github-pr/)
+is a complete network workflow built on this contract. It fetches a GitHub PR
+diff without the `gh` CLI, writes a temporary patch with restrictive POSIX
+modes (and inherited temporary-directory ACLs on Windows), delegates to the
+built-in `patch` command, and removes the patch on extension shutdown. Run it
+from this checkout with:
+
+```bash
+bun run src/main.tsx --extension ./examples/extensions/github-pr gh 123
+```
 
 ### `hunk.configureSession(options)`
 
@@ -1900,9 +1952,11 @@ hunk diff --extension ./collapse-generated.ts
 ## CLI flags and config reference
 
 ```bash
-hunk diff --extension ./path/to/entry.ts   # load one entry file (repeatable)
+hunk diff --extension ./path/to/entry.ts   # load one entry file for a review (repeatable)
 hunk diff --extension ./my-ext             # a folder extension: loads ./my-ext/index.ts
-hunk diff --no-extensions                  # disable user extensions for this run
+hunk --extension ./my-ext cli-tools status # load then run its top-level CLI command
+hunk --no-extensions cli-tools status      # no discovery or import; command is unavailable
+hunk diff --no-extensions                  # disable user extensions for this review
 ```
 
 ```toml
@@ -1926,9 +1980,8 @@ repo-controlled either way.
 
 Menu entries, standalone keybindings (a chord contributed without a command —
 commands registered through `registerCommand` **are** already user-remappable
-via `[keybindings]`), custom note renderers, session commands, and CLI
-subcommands are not contributable yet. Commands and their default key bindings
-landed with `registerCommand` — the named-command registry the rest build on;
-see
+via `[keybindings]`), custom note renderers, and session commands are not
+contributable yet. Generic top-level CLI trees use `registerCliCommand`; TUI
+commands and their default key bindings use `registerCommand`. See
 [docs/extension-system-exploration.md](extension-system-exploration.md) for the
 design and phasing.

@@ -20,6 +20,8 @@ Each folder tells a small review story and includes the exact command to run fro
 
 ## Installable extension examples
 
+- [`extensions/github-pr/`](extensions/github-pr/) adds a dependency-free `hunk gh 123` command that fetches GitHub PR diffs directly and delegates them into Hunk.
+- [`extensions/cli-tools/`](extensions/cli-tools/) demonstrates the minimal generic CLI exit and delegation contracts.
 - [`extensions/review-triage/`](extensions/review-triage/) adds a session-local hunk triage sidebar.
 - [`extensions/review-note-navigator/`](extensions/review-note-navigator/) inventories every saved ReviewStore note and navigates to visible authoritative anchors.
 - [`extensions/review-snapshot-export/`](extensions/review-snapshot-export/) exports stable file identities and every saved ReviewStore note with a stale-work guard.

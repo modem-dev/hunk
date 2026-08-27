@@ -2,6 +2,8 @@ import { basename, dirname, extname } from "node:path";
 import type { VcsAdapter } from "../core/vcs/types";
 import type {
   ChangesetTransform,
+  ExtensionCliCommand,
+  ExtensionCliCommandHandler,
   ExtensionCommand,
   ExtensionCommandHandler,
   ExtensionContext,
@@ -29,6 +31,13 @@ export { HUNK_EXTENSION_API_VERSION } from "../extension-api/types";
 export type {
   ChangesetTransform,
   ExtensionChangeset,
+  ExtensionCliCommand,
+  ExtensionCliCommandContext,
+  ExtensionCliCommandHandler,
+  ExtensionCliCommandResult,
+  ExtensionCliDelegateResult,
+  ExtensionCliExitResult,
+  ExtensionCliWriter,
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionCommandHandler,
@@ -147,6 +156,12 @@ export interface RegisteredKeyboardMode {
   mode: ExtensionKeyboardMode;
 }
 
+export interface RegisteredCliCommand {
+  extensionId: string;
+  command: ExtensionCliCommand;
+  handler: ExtensionCliCommandHandler;
+}
+
 export interface RegisteredCommand {
   extensionId: string;
   command: ExtensionCommand;
@@ -199,6 +214,7 @@ export interface ExtensionRegistry {
   fileViews: RegisteredFileView[];
   lineHighlighters: RegisteredLineHighlighter[];
   keyboardModes: RegisteredKeyboardMode[];
+  cliCommands: RegisteredCliCommand[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   customEventHandlers: RegisteredCustomEventHandler[];
@@ -287,6 +303,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     fileViews: [],
     lineHighlighters: [],
     keyboardModes: [],
+    cliCommands: [],
     commands: [],
     eventHandlers: {
       startup: [],

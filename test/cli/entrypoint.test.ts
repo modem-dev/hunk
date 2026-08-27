@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -312,6 +321,399 @@ describe("CLI entrypoint contracts", () => {
       expect(stderr).not.toContain("Bun v");
     } finally {
       rmSync(nonRepoDir, { recursive: true, force: true });
+    }
+  });
+
+  test("runs an explicit generic extension CLI command with raw args and stdin", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-cli-"));
+    const extensionPath = join(root, "tools.ts");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `export default function (hunk) {
+  hunk.registerCliCommand({ name: "tools", summary: "Test tools" }, async (args, ctx) => {
+    let input = "";
+    for await (const chunk of ctx.stdin) input += new TextDecoder().decode(chunk);
+    await ctx.stdout.write(JSON.stringify({ args, input, cwd: ctx.cwd }) + "\\n");
+    return { kind: "exit", code: 9 };
+  });
+}\n`,
+      );
+
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "tools", "sync", "--help"],
+        {
+          cwd: root,
+          stdin: Buffer.from("payload"),
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(9);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+      expect(JSON.parse(Buffer.from(proc.stdout).toString("utf8"))).toEqual({
+        args: ["sync", "--help"],
+        input: "payload",
+        cwd: root,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("runs the self-contained GitHub PR extension help through generic CLI discovery", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-help-"));
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
+
+    try {
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "gh", "--help"],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("Usage: hunk gh");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("discovers the installed-shape GitHub extension for literal hunk gh", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-global-"));
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
+    const installedPath = join(root, "config", "hunk", "extensions", "github-pr");
+
+    try {
+      mkdirSync(join(root, "config", "hunk", "extensions"), { recursive: true });
+      cpSync(extensionPath, installedPath, { recursive: true });
+      const proc = Bun.spawnSync(["bun", "run", sourceEntrypoint, "gh", "--help"], {
+        cwd: root,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+      });
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("Usage: hunk gh");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("warns before repo config steers an extension CLI provider", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-cli-config-"));
+    const extensionPath = join(root, "tools.ts");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      mkdirSync(join(root, ".git"), { recursive: true });
+      mkdirSync(join(root, ".hunk"), { recursive: true });
+      writeFileSync(join(root, ".hunk", "config.toml"), '[extension.tools]\ntoken = "repo"\n');
+      writeFileSync(
+        extensionPath,
+        `export default function (hunk) {
+  hunk.registerCliCommand({ name: "config-probe", summary: "Probe config" }, async (_args, ctx) => {
+    await ctx.stdout.write(String(hunk.config.token) + "\\n");
+    return { kind: "exit" };
+  });
+}\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "config-probe"],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stdout).toString("utf8")).toBe("repo\n");
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain(
+        "Repo config overrides settings for extension(s): tools",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("allows stderr progress before delegating to a built-in command", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-delegate-"));
+    const extensionPath = join(root, "delegate.ts");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `export default function (hunk) {
+  hunk.registerCliCommand({ name: "handoff", summary: "Delegate" }, async (_args, ctx) => {
+    await ctx.stderr.write("preparing\\n");
+    return { kind: "delegate", argv: ["--version"] };
+  });
+}\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "handoff"],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stdout).toString("utf8")).toMatch(/^\d+\.\d+\.\d+\n$/);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("preparing\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("cancels a pending stdin read when an extension command exits", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-pending-stdin-"));
+    const extensionPath = join(root, "stdin.ts");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `export default function (hunk) {
+  hunk.registerCliCommand({ name: "pending-stdin", summary: "Read once" }, (_args, ctx) => {
+    void ctx.stdin[Symbol.asyncIterator]().next();
+    return { kind: "exit" };
+  });
+}\n`,
+      );
+      const proc = Bun.spawn(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "pending-stdin"],
+        {
+          cwd: root,
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+      const exitCode = await Promise.race([
+        proc.exited,
+        Bun.sleep(2_000).then(() => "timeout" as const),
+      ]);
+      if (exitCode === "timeout") proc.kill();
+
+      expect(exitCode).toBe(0);
+      expect(await new Response(proc.stderr).text()).toBe("");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects delegation when both the extension and built-in need stdin", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-stdin-delegate-"));
+    const extensionPath = join(root, "stdin.ts");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `export default function (hunk) {
+  hunk.registerCliCommand({ name: "stdin-delegate", summary: "Delegate" }, async (_args, ctx) => {
+    for await (const _chunk of ctx.stdin) {}
+    return { kind: "delegate", argv: ["diff", "--agent-context", "-"] };
+  });
+}\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "stdin-delegate"],
+        {
+          cwd: root,
+          stdin: Buffer.from("context"),
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(1);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain(
+        "extension read stdin before delegating",
+      );
+      expect(Buffer.from(proc.stderr).toString("utf8")).not.toContain(
+        "ReadableStream has already been used",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("reuses an explicit extension factory across built-in review delegation", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-review-delegate-"));
+    const extensionPath = join(root, "delegate.ts");
+    const countPath = join(root, "factory-count");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `import { existsSync, readFileSync, writeFileSync } from "node:fs";
+const countPath = ${JSON.stringify(countPath)};
+const count = existsSync(countPath) ? Number(readFileSync(countPath, "utf8")) : 0;
+writeFileSync(countPath, String(count + 1));
+export default function (hunk) {
+  hunk.registerCliCommand({ name: "review-delegate", summary: "Delegate" }, () => ({
+    kind: "delegate",
+    argv: ["diff"],
+  }));
+}\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "review-delegate"],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(1);
+      expect(readFileSync(countPath, "utf8")).toBe("1");
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain(
+        "must be run inside a Git repository",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects impossible extension command names before importing providers", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-invalid-command-"));
+    const extensionPath = join(root, "provider.ts");
+    const markerPath = join(root, "imported");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `await Bun.write(${JSON.stringify(markerPath)}, "yes");\nexport default function () {}\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "--bogus"],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(1);
+      expect(existsSync(markerPath)).toBe(false);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain("Unknown command: --bogus");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("does not let --extension consume the hard-disable flag or import a later provider", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-missing-path-"));
+    const extensionPath = join(root, "provider.ts");
+    const markerPath = join(root, "imported");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `await Bun.write(${JSON.stringify(markerPath)}, "yes");\nexport default function () {}\n`,
+      );
+      const proc = Bun.spawnSync(
+        [
+          "bun",
+          "run",
+          sourceEntrypoint,
+          "--extension",
+          "--no-extensions",
+          "--extension",
+          extensionPath,
+          "provider",
+        ],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(1);
+      expect(existsSync(markerPath)).toBe(false);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain(
+        "`--extension` requires an extension entry path",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("does not import an explicit command provider when extensions are disabled", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-extension-disabled-"));
+    const extensionPath = join(root, "disabled.ts");
+    const markerPath = join(root, "imported");
+    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+
+    try {
+      writeFileSync(
+        extensionPath,
+        `await Bun.write(${JSON.stringify(markerPath)}, "yes");
+export default function (hunk) {
+  hunk.registerCliCommand({ name: "disabled", summary: "Disabled" }, () => ({ kind: "exit" }));
+}\n`,
+      );
+      const proc = Bun.spawnSync(
+        [
+          "bun",
+          "run",
+          sourceEntrypoint,
+          "--no-extensions",
+          "--extension",
+          extensionPath,
+          "disabled",
+        ],
+        {
+          cwd: root,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        },
+      );
+
+      expect(proc.exitCode).toBe(1);
+      expect(existsSync(markerPath)).toBe(false);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain("Unknown command: disabled");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

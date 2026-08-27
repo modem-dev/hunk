@@ -15,6 +15,10 @@ import type {
   SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
 import {
+  isBuiltInCliCommandName,
+  isValidExtensionCliCommandName,
+} from "../core/run/cliCommandNames";
+import {
   parseUpdateMethod,
   parseUpdateVersion,
   UPDATE_METHOD_VALUES,
@@ -933,6 +937,7 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "markup-render" ||
     input.kind === "markup-guide" ||
     input.kind === "extension-manage" ||
+    input.kind === "extension-cli" ||
     input.kind === "update"
   ) {
     throw new Error(
@@ -1885,7 +1890,11 @@ async function parseDaemonCommand(tokens: string[]): Promise<ParsedCliInput> {
 }
 
 /** Parse `hunk stash show` as a full-UI stash review command. */
-async function parseStashCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+async function parseStashCommand(
+  tokens: string[],
+  argv: string[],
+  leadingOptionTokens: readonly string[] = [],
+): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
@@ -1917,11 +1926,12 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
     parsedOptions = options;
   });
 
-  if (rest.includes("--help") || rest.includes("-h")) {
+  const commandTokens = [...leadingOptionTokens, ...rest];
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
     return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
   }
 
-  await parseStandaloneCommand(command, rest);
+  await parseStandaloneCommand(command, commandTokens);
 
   return {
     kind: "stash-show",
@@ -1931,43 +1941,93 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
 }
 
 const REVIEW_COMMAND_NAMES = new Set(["diff", "show", "patch", "pager", "difftool", "stash"]);
-const TOP_LEVEL_COMMAND_NAMES = new Set([
-  ...REVIEW_COMMAND_NAMES,
-  "session",
-  "markup",
-  "skill",
-  "extension",
-  "ext",
-  "update",
-  "daemon",
-  "mcp",
-]);
 
-/** Return whether one review flag appears in the leading global-style flag run. */
-function hasPrefixedReviewFlag(argv: string[], flag: string) {
-  for (const arg of argv.slice(2)) {
-    if (arg !== "--fast" && arg !== AUXILIARY_AGENT_OPTIONS.experimental.flag) {
-      return false;
+interface LeadingCliFlags {
+  args: string[];
+  extensionPaths: string[];
+  extensionsEnabled: boolean;
+  extensionFlagTokens: string[];
+  prefixedReviewFlags: string[];
+}
+
+/** Return whether a token is another host flag rather than an extension path value. */
+function isLeadingHostFlag(token: string) {
+  return (
+    token === "--fast" ||
+    token === AUXILIARY_AGENT_OPTIONS.experimental.flag ||
+    token === "--no-extensions" ||
+    token === "--extension" ||
+    token.startsWith("--extension=")
+  );
+}
+
+/** Split host-owned leading flags from the command token without touching its subtree. */
+function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
+  const extensionPaths: string[] = [];
+  const extensionFlagTokens: string[] = [];
+  const prefixedReviewFlags: string[] = [];
+  let extensionsEnabled = true;
+  let index = 0;
+
+  while (index < rawArgs.length) {
+    const token = rawArgs[index];
+    if (token === "--fast" || token === AUXILIARY_AGENT_OPTIONS.experimental.flag) {
+      prefixedReviewFlags.push(token);
+      index += 1;
+      continue;
     }
-    if (arg === flag) {
-      return true;
+    if (token === "--no-extensions") {
+      extensionsEnabled = false;
+      extensionFlagTokens.push(token);
+      index += 1;
+      continue;
     }
+    if (token === "--extension") {
+      const path = rawArgs[index + 1];
+      if (path === undefined || isLeadingHostFlag(path)) {
+        throw new Error(
+          "`--extension` requires an extension entry path; use `--extension=<path>` for a path beginning with `-`.",
+        );
+      }
+      extensionPaths.push(path);
+      extensionFlagTokens.push(token, path);
+      index += 2;
+      continue;
+    }
+    if (token?.startsWith("--extension=")) {
+      const path = token.slice("--extension=".length);
+      if (path.length === 0) {
+        throw new Error("`--extension` requires an extension entry path.");
+      }
+      extensionPaths.push(path);
+      extensionFlagTokens.push("--extension", path);
+      index += 1;
+      continue;
+    }
+    break;
   }
-  return false;
+
+  return {
+    args: rawArgs.slice(index),
+    extensionPaths,
+    extensionsEnabled,
+    extensionFlagTokens,
+    prefixedReviewFlags,
+  };
+}
+
+/** Return whether one review flag appears among the parsed leading host flags. */
+function hasPrefixedReviewFlag(argv: string[], flag: string) {
+  return parseLeadingCliFlags(argv.slice(2)).prefixedReviewFlags.includes(flag);
 }
 
 /** Parse CLI arguments into one normalized input shape for the app loader layer. */
 export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   const rawArgs = argv.slice(2);
-  const prefixedReviewFlags: string[] = [];
-  while (
-    rawArgs[prefixedReviewFlags.length] === "--fast" ||
-    rawArgs[prefixedReviewFlags.length] === AUXILIARY_AGENT_OPTIONS.experimental.flag
-  ) {
-    prefixedReviewFlags.push(rawArgs[prefixedReviewFlags.length]!);
-  }
+  const leading = parseLeadingCliFlags(rawArgs);
+  const { args, extensionPaths, extensionsEnabled, extensionFlagTokens, prefixedReviewFlags } =
+    leading;
   const prefixedFast = prefixedReviewFlags.includes("--fast");
-  const args = rawArgs.slice(prefixedReviewFlags.length);
   const [explicitCommandName, ...rest] = args;
   const commandName = explicitCommandName ?? (prefixedFast ? "diff" : undefined);
 
@@ -1981,27 +2041,30 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   // `hunk --fast` is shorthand for `hunk diff --fast`, so options and targets following the
   // launch flag belong to the diff parser unless they explicitly name another Hunk command.
-  if (prefixedFast && explicitCommandName && !TOP_LEVEL_COMMAND_NAMES.has(explicitCommandName)) {
-    return parseDiffCommand(args, argv);
+  if (prefixedFast && explicitCommandName && !isBuiltInCliCommandName(explicitCommandName)) {
+    return parseDiffCommand([...extensionFlagTokens, ...args], argv);
   }
 
   if (prefixedReviewFlags.length > 0 && !REVIEW_COMMAND_NAMES.has(commandName)) {
     throw new Error(`\`${prefixedReviewFlags[0]}\` must be used with a Hunk review command.`);
   }
 
+  // Host bootstrap options must stay before a review command's `--` pathspec separator.
+  const reviewRest = [...extensionFlagTokens, ...rest];
   switch (commandName) {
     case "diff":
-      return parseDiffCommand(rest, argv);
+      return parseDiffCommand(reviewRest, argv);
     case "show":
-      return parseShowCommand(rest, argv);
+      return parseShowCommand(reviewRest, argv);
     case "patch":
-      return parsePatchCommand(rest, argv);
+      return parsePatchCommand(reviewRest, argv);
     case "pager":
-      return parsePagerCommand(rest, argv);
+      return parsePagerCommand(reviewRest, argv);
     case "difftool":
-      return parseDifftoolCommand(rest, argv);
+      return parseDifftoolCommand(reviewRest, argv);
     case "stash":
-      return parseStashCommand(rest, argv);
+      // `show` is Hunk's stash subcommand, so keep it ahead of reconstructed host options.
+      return parseStashCommand(rest, argv, extensionFlagTokens);
     case "session":
       return parseSessionCommand(rest);
     case "markup":
@@ -2017,6 +2080,15 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     case "mcp":
       return parseDaemonCommand(rest);
     default:
-      throw new Error(`Unknown command: ${commandName}`);
+      if (!isValidExtensionCliCommandName(commandName)) {
+        throw new Error(`Unknown command: ${commandName}`);
+      }
+      return {
+        kind: "extension-cli",
+        commandName,
+        args: rest,
+        extensionPaths,
+        extensionsEnabled,
+      };
   }
 }

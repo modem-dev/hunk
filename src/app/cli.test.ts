@@ -251,6 +251,27 @@ describe("parseCli", () => {
     }
   });
 
+  test("preserves leading review flags interleaved with extension bootstrap flags", async () => {
+    for (const flags of [
+      ["--extension", "./review.ts", "--fast", "--experimental"],
+      ["--fast", "--extension", "./review.ts", "--experimental"],
+      ["--experimental", "--no-extensions", "--fast"],
+    ]) {
+      const parsed = await parseCli(["bun", "hunk", ...flags, "show"]);
+      expect(parsed).toMatchObject({
+        kind: "show",
+        options: { experimental: true, fast: true },
+      });
+      if (parsed.kind !== "show") {
+        throw new Error("Expected show command input.");
+      }
+      expect(parsed.options.extensions).toBe(flags.includes("--no-extensions") ? false : undefined);
+      expect(parsed.options.extensionPaths).toEqual(
+        flags.includes("--extension") ? ["./review.ts"] : undefined,
+      );
+    }
+  });
+
   test("keeps fast disabled by default and treats it as a pathspec after --", async () => {
     const normal = await parseCli(["bun", "hunk", "diff"]);
     const pathspec = await parseCli(["bun", "hunk", "diff", "--", "--fast"]);
@@ -1365,8 +1386,89 @@ describe("parseCli", () => {
     });
   });
 
-  test("rejects removed legacy git alias", async () => {
-    await expect(parseCli(["bun", "hunk", "git"])).rejects.toThrow("Unknown command: git");
+  test("preserves removed legacy aliases for extension lookup", async () => {
+    expect(await parseCli(["bun", "hunk", "git"])).toEqual({
+      kind: "extension-cli",
+      commandName: "git",
+      args: [],
+      extensionPaths: [],
+      extensionsEnabled: true,
+    });
+  });
+
+  test("parses leading extension bootstrap flags without consuming command arguments", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "--extension",
+        "./first.ts",
+        "--extension=./second.ts",
+        "greptile",
+        "sync",
+        "--extension",
+        "nested.ts",
+        "--help",
+      ]),
+    ).toEqual({
+      kind: "extension-cli",
+      commandName: "greptile",
+      args: ["sync", "--extension", "nested.ts", "--help"],
+      extensionPaths: ["./first.ts", "./second.ts"],
+      extensionsEnabled: true,
+    });
+  });
+
+  test("does not consume another leading host flag as an extension path", async () => {
+    for (const flag of ["--no-extensions", "--fast", "--experimental", "--extension"]) {
+      await expect(parseCli(["bun", "hunk", "--extension", flag, "greptile"])).rejects.toThrow(
+        "requires an extension entry path",
+      );
+    }
+  });
+
+  test("hard-disables unknown extension command lookup with a leading flag", async () => {
+    expect(await parseCli(["bun", "hunk", "--no-extensions", "greptile", "sync"])).toEqual({
+      kind: "extension-cli",
+      commandName: "greptile",
+      args: ["sync"],
+      extensionPaths: [],
+      extensionsEnabled: false,
+    });
+  });
+
+  test("keeps leading extension bootstrap flags ahead of review pathspec separators", async () => {
+    const diff = await parseCli([
+      "bun",
+      "hunk",
+      "--extension",
+      "./review.ts",
+      "diff",
+      "--",
+      "src/a.ts",
+    ]);
+    expect(diff).toMatchObject({
+      kind: "vcs",
+      pathspecs: ["src/a.ts"],
+      options: { extensionPaths: ["./review.ts"] },
+    });
+
+    const show = await parseCli(["bun", "hunk", "--no-extensions", "show", "--", "src/b.ts"]);
+    expect(show).toMatchObject({
+      kind: "show",
+      pathspecs: ["src/b.ts"],
+      options: { extensions: false },
+    });
+  });
+
+  test("keeps the stash subcommand ahead of leading extension bootstrap flags", async () => {
+    expect(
+      await parseCli(["bun", "hunk", "--extension", "./review.ts", "stash", "show", "stash@{1}"]),
+    ).toMatchObject({
+      kind: "stash-show",
+      ref: "stash@{1}",
+      options: { extensionPaths: ["./review.ts"] },
+    });
   });
 
   test("parses patch mode from a file", async () => {
@@ -1624,7 +1726,15 @@ describe("parseCli argument validation", () => {
     );
   });
 
-  test("rejects unknown top-level, skill, daemon, stash, and comment subcommands", async () => {
+  test("rejects top-level tokens no extension can register", async () => {
+    for (const command of ["--bogus", "-x", "UPPER", "under_score"]) {
+      await expect(parseCli(["bun", "hunk", command])).rejects.toThrow(
+        `Unknown command: ${command}`,
+      );
+    }
+  });
+
+  test("rejects unknown skill, daemon, stash, and comment subcommands", async () => {
     await expect(parseCli(["bun", "hunk", "skill", "bogus"])).rejects.toThrow(
       "Only `hunk skill path` is supported.",
     );

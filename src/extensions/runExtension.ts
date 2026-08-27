@@ -1,6 +1,8 @@
 import {
   HUNK_EXTENSION_API_VERSION,
   type ChangesetTransform,
+  type ExtensionCliCommand,
+  type ExtensionCliCommandHandler,
   type ExtensionEventHandler,
   type ExtensionEventName,
   type ExtensionFactory,
@@ -28,6 +30,11 @@ import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
 import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
 import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
+import {
+  isReservedExtensionCliCommandName,
+  isValidExtensionCliCommandName,
+} from "../core/run/cliCommandNames";
+import { copyExtensionCliCommand } from "./cliCommands";
 
 /**
  * Running one extension factory into the shared registry.
@@ -269,6 +276,7 @@ interface RegistrySnapshot {
   fileViews: number;
   lineHighlighters: number;
   keyboardModes: number;
+  cliCommands: number;
   commands: number;
   eventHandlers: Record<string, number>;
   customEventHandlers: number;
@@ -292,6 +300,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     fileViews: registry.fileViews.length,
     lineHighlighters: registry.lineHighlighters.length,
     keyboardModes: registry.keyboardModes.length,
+    cliCommands: registry.cliCommands.length,
     commands: registry.commands.length,
     eventHandlers,
     customEventHandlers: registry.customEventHandlers.length,
@@ -315,6 +324,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.fileViews.length = snapshot.fileViews;
   registry.lineHighlighters.length = snapshot.lineHighlighters;
   registry.keyboardModes.length = snapshot.keyboardModes;
+  registry.cliCommands.length = snapshot.cliCommands;
   registry.commands.length = snapshot.commands;
   registry.customEventHandlers.length = snapshot.customEventHandlers;
   registry.pendingCustomEvents.length = snapshot.pendingCustomEvents;
@@ -543,6 +553,43 @@ export function createExtensionApi(
       }
 
       registry.keyboardModes.push({ extensionId: metadata.id, mode });
+    },
+    registerCliCommand(command: ExtensionCliCommand, handler: ExtensionCliCommandHandler) {
+      assertOpen("registerCliCommand");
+      if (!isPlainObject(command)) {
+        throw new Error("registerCliCommand requires a command metadata object.");
+      }
+      assertNonEmptyString(
+        command.name,
+        "registerCliCommand requires a command with a non-empty name.",
+      );
+      if (!isValidExtensionCliCommandName(command.name)) {
+        throw new Error(
+          "registerCliCommand name must use lowercase kebab case and start with a letter.",
+        );
+      }
+      if (isReservedExtensionCliCommandName(command.name)) {
+        throw new Error(`registerCliCommand cannot replace built-in command "${command.name}".`);
+      }
+      assertNonEmptyString(
+        command.summary,
+        "registerCliCommand requires a command with a non-empty summary.",
+      );
+      if (command.usage !== undefined) {
+        assertNonEmptyString(
+          command.usage,
+          "registerCliCommand usage must be a non-empty string when provided.",
+        );
+      }
+      if (typeof handler !== "function") {
+        throw new Error("registerCliCommand requires a handler function.");
+      }
+
+      registry.cliCommands.push({
+        extensionId: metadata.id,
+        command: copyExtensionCliCommand(command),
+        handler,
+      });
     },
     registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler) {
       assertOpen("registerCommand");

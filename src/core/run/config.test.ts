@@ -7,6 +7,7 @@ import type { CliInput } from "./commandInputs";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
+  resolveExtensionBootstrapConfig,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
@@ -1396,6 +1397,66 @@ describe("extension configuration", () => {
     expect(resolved.startupNotices?.map((notice) => notice.message)).toEqual([
       "Repo config overrides settings for extension(s): alpha, zebra",
     ]);
+  });
+
+  test("resolves extension bootstrap config without review-only theme validation", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        'theme = "custom"',
+        "",
+        "[extensions]",
+        'paths = ["/user/tools.ts"]',
+        "",
+        "[extension.tools]",
+        'token = "user"',
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      [
+        "[extensions]",
+        "enabled = true",
+        'paths = ["./repo-tools.ts"]',
+        "",
+        "[extension.tools]",
+        'token = "repo"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveExtensionBootstrapConfig({
+      cwd: repo,
+      env: { HOME: home },
+      vcsCatalog: getBundledVcsCatalog(),
+    });
+
+    expect(resolved.extensions).toEqual({
+      enabled: true,
+      paths: ["/user/tools.ts"],
+      repoPaths: ["./repo-tools.ts"],
+      extensionConfigs: { tools: { token: "repo" } },
+    });
+    expect(resolved.projectRoot).toBe(repo);
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: repo,
+        env: { HOME: home },
+        vcsCatalog: getBundledVcsCatalog(),
+      }),
+    ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
+    expect(
+      resolveExtensionBootstrapConfig({
+        cwd: repo,
+        env: { HOME: home },
+        vcsCatalog: getBundledVcsCatalog(),
+        extensionsEnabled: false,
+      }).extensions.enabled,
+    ).toBe(false);
   });
 
   test("rejects malformed extension sections", () => {

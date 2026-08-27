@@ -1,0 +1,10 @@
+{
+  "name": "hunk-cli-tools-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "apiVersion": 10
+  }
+}

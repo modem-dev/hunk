@@ -319,6 +319,18 @@ export interface ExtensionRemoveCommandInput {
   name: string;
 }
 
+export interface ExtensionCliInvocationInput {
+  kind: "extension-cli";
+  /** Unknown top-level token claimed by a loaded extension at startup. */
+  commandName: string;
+  /** Tokens below the extension-owned top-level command, preserved in order. */
+  args: string[];
+  /** Entry paths from leading repeated `--extension` bootstrap flags. */
+  extensionPaths: string[];
+  /** False only when a leading `--no-extensions` hard-disables lookup. */
+  extensionsEnabled: boolean;
+}
+
 export interface SelfUpdateCommandInput {
   kind: "update";
   /** Version to install; the install channel's newest release when omitted. */
@@ -345,4 +357,5 @@ export type ParsedCliInput =
   | MarkupRenderCommandInput
   | MarkupGuideCommandInput
   | ExtensionManageCommandInput
+  | ExtensionCliInvocationInput
   | SelfUpdateCommandInput;

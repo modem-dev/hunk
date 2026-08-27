@@ -822,6 +822,54 @@ describe("toInternalVcsAdapter detection ids", () => {
     }
   });
 
+  test("registers generic CLI commands through API v10", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const handler = () => ({ kind: "exit" as const });
+
+    runExtensionFactory({
+      metadata: bundledMetadata("tools"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        expect(hunk.apiVersion).toBe(10);
+        hunk.registerCliCommand(
+          { name: "greptile", summary: "Work with Greptile", usage: "<action>" },
+          handler,
+        );
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.cliCommands).toEqual([
+      {
+        extensionId: "tools",
+        command: { name: "greptile", summary: "Work with Greptile", usage: "<action>" },
+        handler,
+      },
+    ]);
+  });
+
+  test("rejects reserved CLI names and rolls back earlier registrations", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-cli"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerCliCommand({ name: "tools", summary: "Tools" }, () => ({ kind: "exit" }));
+        hunk.registerCliCommand({ name: "diff", summary: "Shadow diff" }, () => ({
+          kind: "exit",
+        }));
+      },
+    });
+
+    expect(registry.cliCommands).toEqual([]);
+    expect(issues[0]?.message).toContain('cannot replace built-in command "diff"');
+  });
+
   test("treats a non-detection return value as no detection", () => {
     const adapter = toInternalVcsAdapter({
       id: "hg",

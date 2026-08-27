@@ -343,10 +343,12 @@ describe("session reload filesystem bounds", () => {
     }
   });
 
-  test("rejects patch-file reloads launched outside a repo", () => {
+  test("allows only the exact initial patch file outside a repo", () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-patch-file-"));
     const patch = join(dir, "changes.patch");
+    const otherPatch = join(dir, "other.patch");
     writeFileSync(patch, "diff --git a/a b/a\n");
+    writeFileSync(otherPatch, "diff --git a/b b/b\n");
 
     try {
       const bounds = createSessionReloadBounds(
@@ -354,13 +356,29 @@ describe("session reload filesystem bounds", () => {
         { cwd: dir },
       );
 
+      expect(bounds.roots).toEqual([]);
+      expect(bounds.exactFiles).toEqual([patch]);
       expect(() =>
         validateSessionReloadWithinBounds(bounds, {
           kind: "patch",
           file: patch,
           options: {},
         }),
-      ).toThrow("rooted in a repository");
+      ).not.toThrow();
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "patch",
+          file: otherPatch,
+          options: {},
+        }),
+      ).toThrow("patch file outside the initial Hunk root");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          staged: false,
+          options: {},
+        }),
+      ).toThrow("repository-backed input");
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

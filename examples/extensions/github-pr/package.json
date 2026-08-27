@@ -1,0 +1,12 @@
+{
+  "name": "hunk-github-pr-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Review GitHub pull requests in Hunk without the gh CLI",
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "apiVersion": 10
+  }
+}

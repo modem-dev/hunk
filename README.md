@@ -234,11 +234,11 @@ repository's `.hunk/extensions/` (after you explicitly trust that repository),
 and from `--extension <path>` for development. `--no-extensions` turns those off
 for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded.
 
-A Phase 1 extension can contribute themes and file-extension → language
-mappings, add a VCS backend, rewrite the changeset before review (collapse
-lockfiles, reorder files by review priority), replace the file-navigation
-sidebar with its own React component, react to lifecycle events, and show
-transient messages:
+An extension can add generic top-level CLI workflows, contribute themes and
+file-extension → language mappings, add a VCS backend, rewrite the changeset
+before review (collapse lockfiles, reorder files by review priority), replace
+the file-navigation sidebar with its own React component, react to lifecycle
+events, and show transient messages:
 
 ```ts
 // ~/.config/hunk/extensions/collapse-lockfiles.ts
@@ -268,7 +268,9 @@ topic.
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
 publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
-Installable examples include [review triage](examples/extensions/review-triage/),
+Installable examples include a dependency-free
+[`hunk gh 123` GitHub PR workflow](examples/extensions/github-pr/),
+[review triage](examples/extensions/review-triage/),
 [authoritative review snapshot export](examples/extensions/review-snapshot-export/), an optional
 [rendered Markdown file view](examples/extensions/rendered-markdown/), and a
 [Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
