@@ -96,13 +96,15 @@ function collectLineMoveKinds(patchText: string): DiffLineMoveKinds[] {
       continue;
     }
 
-    if (plainLine.startsWith("+") && !plainLine.startsWith("+++")) {
+    // Every hunk-body `+`/`-` line is content — a line whose content starts with `++`
+    // reads `+++…` just like a file header, but headers never appear inside a hunk.
+    if (plainLine.startsWith("+")) {
       activeMoveKinds.additionLines[additionLineIndex] = movedLineKindFromAnsi(rawLine, "addition");
       additionLineIndex += 1;
       continue;
     }
 
-    if (plainLine.startsWith("-") && !plainLine.startsWith("---")) {
+    if (plainLine.startsWith("-")) {
       activeMoveKinds.deletionLines[deletionLineIndex] = movedLineKindFromAnsi(rawLine, "deletion");
       deletionLineIndex += 1;
       continue;
