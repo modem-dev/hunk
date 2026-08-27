@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -18,6 +18,10 @@ import {
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
+
+// Hosted Windows runners can spend several seconds starting each real Git process.
+// Keep this integration-like command suite bounded without using Bun's five-second default.
+setDefaultTimeout(30_000);
 
 function git(cwd: string, ...cmd: string[]) {
   const proc = Bun.spawnSync(["git", ...cmd], {

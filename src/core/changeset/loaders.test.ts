@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
   mkdirSync,
@@ -22,6 +22,10 @@ import type { VcsAdapter } from "../vcs/types";
 import { computeWatchSignature } from "../watch/signature";
 
 const tempDirs: string[] = [];
+
+// This integration-like suite starts many real VCS processes. Hosted Windows runners can spend
+// more than Bun's default five seconds on one test while the suite remains bounded overall.
+setDefaultTimeout(30_000);
 
 /** Load through the same bundled catalog the app composes in production. */
 function loadAppBootstrap(input: CliInput, options: LoadAppBootstrapOptions = {}) {
