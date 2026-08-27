@@ -14,6 +14,21 @@ const HIDE_DELAY_MS = 2000;
 const SCROLLBAR_WIDTH = 1;
 const MIN_THUMB_HEIGHT = 2;
 
+export interface VerticalScrollbarScheduler {
+  setTimeout(callback: () => void, delayMs: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const defaultScheduler: VerticalScrollbarScheduler = {
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+type ScheduledHide = {
+  handle: unknown;
+  scheduler: VerticalScrollbarScheduler;
+};
+
 export interface VerticalScrollbarHandle {
   show: () => void;
 }
@@ -29,11 +44,20 @@ interface VerticalScrollbarProps {
   height: number;
   onActivity?: () => void;
   hideDelayMs?: number;
+  scheduler?: VerticalScrollbarScheduler;
 }
 
 export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScrollbarProps>(
   function VerticalScrollbar(
-    { scrollRef, contentHeight, theme, height, onActivity, hideDelayMs = HIDE_DELAY_MS },
+    {
+      scrollRef,
+      contentHeight,
+      theme,
+      height,
+      onActivity,
+      hideDelayMs = HIDE_DELAY_MS,
+      scheduler = defaultScheduler,
+    },
     ref,
   ) {
     const [isVisible, setIsVisible] = useState(false);
@@ -41,28 +65,45 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
     const isDraggingRef = useRef(false);
     const dragStartYRef = useRef(0);
     const dragStartScrollRef = useRef(0);
-    const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hideTimerRef = useRef<ScheduledHide | null>(null);
+    const hideGenerationRef = useRef(0);
+    const optionsRef = useRef({ hideDelayMs, onActivity, scheduler });
+    optionsRef.current = { hideDelayMs, onActivity, scheduler };
 
-    const show = useCallback(() => {
-      setIsVisible(true);
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-      hideTimeoutRef.current = setTimeout(() => {
+    /** Schedules a full auto-hide window and supersedes any earlier callback. */
+    const scheduleHide = useCallback(() => {
+      const generation = hideGenerationRef.current + 1;
+      hideGenerationRef.current = generation;
+
+      const pending = hideTimerRef.current;
+      hideTimerRef.current = null;
+      pending?.scheduler.clearTimeout(pending.handle);
+
+      const options = optionsRef.current;
+      const handle = options.scheduler.setTimeout(() => {
+        if (hideGenerationRef.current !== generation) return;
+        hideTimerRef.current = null;
         if (!isDraggingRef.current) {
           setIsVisible(false);
         }
-      }, hideDelayMs);
-      onActivity?.();
-    }, [hideDelayMs, onActivity]);
+      }, options.hideDelayMs);
+      hideTimerRef.current = { handle, scheduler: options.scheduler };
+    }, []);
+
+    const show = useCallback(() => {
+      setIsVisible(true);
+      scheduleHide();
+      optionsRef.current.onActivity?.();
+    }, [scheduleHide]);
 
     useImperativeHandle(ref, () => ({ show }), [show]);
 
     useEffect(() => {
       return () => {
-        if (hideTimeoutRef.current) {
-          clearTimeout(hideTimeoutRef.current);
-        }
+        hideGenerationRef.current += 1;
+        const pending = hideTimerRef.current;
+        hideTimerRef.current = null;
+        pending?.scheduler.clearTimeout(pending.handle);
       };
     }, []);
 
@@ -141,13 +182,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
       if (!isDraggingRef.current) return;
       isDraggingRef.current = false;
       setIsDraggingState(false);
-      // Restart hide timer
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-      hideTimeoutRef.current = setTimeout(() => {
-        setIsVisible(false);
-      }, hideDelayMs);
+      scheduleHide();
       event?.preventDefault();
       event?.stopPropagation();
     };

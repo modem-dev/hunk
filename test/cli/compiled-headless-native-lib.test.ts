@@ -28,7 +28,8 @@ const highlightWorkerControlExecutable = positiveControlBuildRoot
 
 let rootsToClean: string[] = [];
 
-beforeAll(() => {
+/** Builds the compiled controls that calibrate native-library assertions. */
+function buildCompiledControls() {
   if (!positiveControlExecutable || !highlightWorkerControlExecutable) {
     return;
   }
@@ -75,7 +76,10 @@ beforeAll(() => {
       );
     }
   }
-});
+}
+
+// Two cold Bun compilations can exceed the default 5s hook deadline on hosted Windows runners.
+beforeAll(buildCompiledControls, { timeout: 15_000 });
 
 afterAll(() => {
   if (positiveControlBuildRoot) {

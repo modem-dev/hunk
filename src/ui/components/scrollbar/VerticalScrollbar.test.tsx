@@ -6,7 +6,11 @@ import { capturedTestColorToHex } from "../../../../test/helpers/test-color-help
 import type { AppBootstrap } from "../../../core/bootstrap";
 import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
-import { VerticalScrollbar, type VerticalScrollbarHandle } from "./VerticalScrollbar";
+import {
+  VerticalScrollbar,
+  type VerticalScrollbarHandle,
+  type VerticalScrollbarScheduler,
+} from "./VerticalScrollbar";
 
 const { AppHost } = await import("../../AppHost");
 
@@ -129,6 +133,56 @@ function createTestScrollRef(scrollTop = 0, height = 10) {
   return { positions, scrollRef };
 }
 
+type ScheduledTask = {
+  callback: () => void;
+  canceled: boolean;
+  delayMs: number;
+  dueAt: number;
+};
+
+/** Provides deterministic scrollbar timer control without replacing renderer timers. */
+class TestScrollbarScheduler implements VerticalScrollbarScheduler {
+  readonly cleared: number[] = [];
+  readonly tasks = new Map<number, ScheduledTask>();
+  private nextId = 1;
+  private now = 0;
+
+  setTimeout(callback: () => void, delayMs: number) {
+    const id = this.nextId++;
+    this.tasks.set(id, {
+      callback,
+      canceled: false,
+      delayMs,
+      dueAt: this.now + delayMs,
+    });
+    return id;
+  }
+
+  clearTimeout(handle: unknown) {
+    const id = handle as number;
+    this.cleared.push(id);
+    const task = this.tasks.get(id);
+    if (task) task.canceled = true;
+  }
+
+  /** Runs active callbacks due within the requested time window. */
+  advance(durationMs: number) {
+    this.now += durationMs;
+    const due = [...this.tasks.entries()]
+      .filter(([, task]) => task.dueAt <= this.now)
+      .sort(([leftId, left], [rightId, right]) => left.dueAt - right.dueAt || leftId - rightId);
+    for (const [id, task] of due) {
+      this.tasks.delete(id);
+      if (!task.canceled) task.callback();
+    }
+  }
+
+  /** Delivers a callback even when cancellation already marked it stale. */
+  forceFire(id: number) {
+    this.tasks.get(id)?.callback();
+  }
+}
+
 /** Wait until input produces a new rendered review frame. */
 async function waitForFrameChange(
   setup: Awaited<ReturnType<typeof testRender>>,
@@ -185,12 +239,8 @@ describe("Vertical scrollbar", () => {
   test("hides scrollbar after scroll activity stops", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const handle = createRef<VerticalScrollbarHandle>();
-    const scrollRef = createRef<{
-      scrollTop: number;
-      scrollTo: (y: number) => void;
-      viewport: { height: number };
-    }>();
-    scrollRef.current = { scrollTop: 0, scrollTo: () => {}, viewport: { height: 10 } };
+    const scheduler = new TestScrollbarScheduler();
+    const { scrollRef } = createTestScrollRef();
     const setup = await testRender(
       <VerticalScrollbar
         ref={handle}
@@ -199,6 +249,7 @@ describe("Vertical scrollbar", () => {
         theme={theme}
         height={10}
         hideDelayMs={120}
+        scheduler={scheduler}
       />,
       { width: 2, height: 10 },
     );
@@ -211,12 +262,14 @@ describe("Vertical scrollbar", () => {
         handle.current?.show();
       });
       await flush(setup);
+      expect(scheduler.tasks.get(1)?.delayMs).toBe(120);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
-      // Keep a wide margin beyond the deadline for Windows CI timer granularity.
-      await act(async () => {
-        await Bun.sleep(180);
-      });
+      await act(async () => scheduler.advance(119));
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
+
+      await act(async () => scheduler.advance(1));
       await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
@@ -256,6 +309,7 @@ describe("Vertical scrollbar", () => {
   test("repeated activity restarts the auto-hide deadline", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const handle = createRef<VerticalScrollbarHandle>();
+    const scheduler = new TestScrollbarScheduler();
     const { scrollRef } = createTestScrollRef();
     const setup = await testRender(
       <VerticalScrollbar
@@ -265,28 +319,28 @@ describe("Vertical scrollbar", () => {
         theme={theme}
         height={10}
         hideDelayMs={120}
+        scheduler={scheduler}
       />,
       { width: 2, height: 10 },
     );
 
     try {
       await flush(setup);
-      // Real timers, so keep wide margins on both sides of the deadline:
-      // Windows CI timer granularity oversleeps enough to flip tight ones.
-      await act(async () => {
-        handle.current?.show();
-        await Bun.sleep(100);
-        handle.current?.show();
-        await Bun.sleep(60);
-      });
+      await act(async () => handle.current?.show());
+      await act(async () => scheduler.advance(100));
+      await act(async () => handle.current?.show());
       await flush(setup);
-      // 160ms since the first show() but only 60ms since the second: still
-      // visible only because the second show() restarted the deadline.
+
+      expect(scheduler.cleared).toEqual([1]);
+      await act(async () => scheduler.forceFire(1));
+      await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
 
-      await act(async () => {
-        await Bun.sleep(180);
-      });
+      await act(async () => scheduler.advance(119));
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
+
+      await act(async () => scheduler.advance(1));
       await flush(setup);
       expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
@@ -326,9 +380,10 @@ describe("Vertical scrollbar", () => {
     }
   });
 
-  test("thumb drag scrolls content", async () => {
+  test("thumb drag scrolls content and restarts auto-hide after release", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const handle = createRef<VerticalScrollbarHandle>();
+    const scheduler = new TestScrollbarScheduler();
     const { positions, scrollRef } = createTestScrollRef();
     const setup = await testRender(
       <VerticalScrollbar
@@ -337,6 +392,8 @@ describe("Vertical scrollbar", () => {
         contentHeight={100}
         theme={theme}
         height={10}
+        hideDelayMs={120}
+        scheduler={scheduler}
       />,
       { width: 2, height: 10 },
     );
@@ -354,6 +411,15 @@ describe("Vertical scrollbar", () => {
       await flush(setup);
 
       expect(positions.at(-1)).toBeCloseTo(45, 0);
+      expect([...scheduler.tasks.values()].filter((task) => !task.canceled)).toHaveLength(1);
+
+      await act(async () => scheduler.advance(119));
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(true);
+
+      await act(async () => scheduler.advance(1));
+      await flush(setup);
+      expect(frameHasBackground(setup, theme.accentMuted)).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
