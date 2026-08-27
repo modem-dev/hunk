@@ -183,11 +183,13 @@ export function useExtensionPaneController({
     available: ReadonlySet<RegisteredPane>;
   } | null>(null);
 
+  // Reconcile registrations before committed controls can observe the new pane set.
   const committedPaneOpenState = useMemo(
     () => reconcilePaneOpenState(sessionPanes, paneOpenState),
     [paneOpenState, sessionPanes],
   );
 
+  // Publish pane and responsive facts only after the matching render commits.
   useLayoutEffect(() => {
     sessionPanesRef.current = sessionPanes;
     paneOpenStateRef.current = committedPaneOpenState;
@@ -218,6 +220,7 @@ export function useExtensionPaneController({
     setCurrentLinePaintState((current) => applyExtensionCurrentLinePaintUpdate(current, update));
   }, []);
 
+  // Opening a side pane reveals its terminal area when responsive layout allows it.
   const revealSidebarArea = useCallback(() => {
     setSidebarVisible(true);
     const responsive = responsiveRef.current;
@@ -233,6 +236,7 @@ export function useExtensionPaneController({
     setPaneResize(null);
   }, []);
 
+  // Update logical open state and cancel any drag owned by a pane being closed.
   const setPaneOpen = useCallback(
     (key: string, nextOpen: boolean | "toggle") => {
       const committedOpen = paneOpenStateRef.current.open.includes(key);
@@ -254,6 +258,7 @@ export function useExtensionPaneController({
     [cancelResize],
   );
 
+  // Give each extension controls scoped to its own panes and current review lease.
   const createPaneControls = useCallback(
     (extensionId: string): ExtensionPaneControls => {
       const lease = createReviewCapabilityLease();
@@ -353,6 +358,7 @@ export function useExtensionPaneController({
     ],
   );
 
+  // Probe availability after commit and quarantine callbacks that throw.
   useLayoutEffect(() => {
     let available: ReadonlySet<RegisteredPane>;
     const cached = lastAvailabilityProbeRef.current;
@@ -377,6 +383,7 @@ export function useExtensionPaneController({
     );
   }, [availabilityRequest, notifyWarning]);
 
+  // Keep accepted current-line panes mounted while fresh paint is being prepared.
   const acceptedOpenPaneKeys = effectiveOpenPaneKeys.filter((key) => {
     const pane = sessionPanes.find((entry) => entry.key === key);
     if (!pane || quarantinedRef.current.has(pane.registered)) return false;
@@ -393,6 +400,7 @@ export function useExtensionPaneController({
     );
   });
 
+  // Compute geometry from accepted panes only; extension callbacks never run here.
   const paneLayout = useMemo(
     () =>
       planExtensionPanes({
@@ -430,6 +438,7 @@ export function useExtensionPaneController({
     );
   }, [currentLinePaintPending, paneLayout]);
 
+  // Toggle the active files slot, including the built-in fallback for a failed replacement.
   const toggleFilesPane = useCallback(() => {
     const panes = sessionPanesRef.current;
     const logicalOpenKeys = paneOpenStateRef.current.open;
@@ -477,6 +486,7 @@ export function useExtensionPaneController({
     setPaneOpen(filesPaneKey, "toggle");
   }, [forceSidebarOpen, revealSidebarArea, setPaneOpen, sidebarVisible]);
 
+  // Quarantine a pane that failed to render and restore the built-in files pane if needed.
   const reportPaneRenderFailure = useCallback(
     (pane: SessionPane) => {
       quarantinedRef.current.add(pane.registered);
@@ -491,6 +501,7 @@ export function useExtensionPaneController({
     [cancelResize, revealSidebarArea, setPaneOpen],
   );
 
+  // Start a drag only for the divider still owned by this exact pane registration.
   const beginPaneResize = useCallback(
     (planned: PlannedPane, event: TuiMouseEvent): boolean => {
       if (event.button !== MouseButton.LEFT || !planned.divider) return false;
@@ -533,6 +544,7 @@ export function useExtensionPaneController({
     [minReviewHeight, minReviewWidth],
   );
 
+  // Resize along the pane's axis while preserving the review's minimum bounds.
   const updatePaneResize = useCallback(
     (event: TuiMouseEvent) => {
       const resize = paneResizeRef.current;
@@ -579,6 +591,7 @@ export function useExtensionPaneController({
     [cancelResize, minReviewHeight, minReviewWidth],
   );
 
+  // End the active drag and release mouse event ownership.
   const endPaneResize = useCallback((event?: TuiMouseEvent) => {
     if (!paneResizeRef.current) return;
     paneResizeRef.current = null;
