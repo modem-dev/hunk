@@ -14,6 +14,17 @@ function createLargeHighlightTestFile(id: string) {
   return createTestDiffFile({ after: `${lines}\n`, before: "", id });
 }
 
+/** Build equal-length patches whose only difference sits outside the former sampled regions. */
+function createAdversarialPatch(marker: string) {
+  return `${"x".repeat(96)}${marker}${"x".repeat(415)}`;
+}
+
+/** Reproduce the former sampled patch identity to prove the regression fixture collides there. */
+function sampledPatchFingerprintForTest(patch: string) {
+  const mid = Math.floor(patch.length / 2);
+  return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
+}
+
 /** Register a worker double that fails every request and reports how often a retry reaches it. */
 function registerFailingHighlightWorkerForTest() {
   const state = { calls: 0 };
@@ -34,6 +45,47 @@ function registerFailingHighlightWorkerForTest() {
 }
 
 describe("highlighted diff cache", () => {
+  test("does not reuse stale highlighted text for patches that collide under sampling", async () => {
+    const firstPatch = createAdversarialPatch("a");
+    const secondPatch = createAdversarialPatch("b");
+    const first = {
+      ...createTestDiffFile({
+        after: 'const marker = "one";\n',
+        before: 'const marker = "base";\n',
+        id: "adversarial-patch-cache",
+        path: "adversarial.ts",
+      }),
+      patch: firstPatch,
+    };
+    const second = {
+      ...createTestDiffFile({
+        after: 'const marker = "two";\n',
+        before: 'const marker = "base";\n',
+        id: "adversarial-patch-cache",
+        path: "adversarial.ts",
+      }),
+      patch: secondPatch,
+    };
+    const patchOnlyChange = { ...first, patch: secondPatch };
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(sampledPatchFingerprintForTest(firstPatch)).toBe(
+      sampledPatchFingerprintForTest(secondPatch),
+    );
+    // Keep metadata identical here so only the formerly unsampled patch content can change the key.
+    expect(highlightedDiffCacheKey(theme, first)).not.toBe(
+      highlightedDiffCacheKey(theme, patchOnlyChange),
+    );
+    expect(highlightedDiffCacheKey(theme, first)).not.toBe(highlightedDiffCacheKey(theme, second));
+
+    const firstHighlight = await prefetchHighlightedDiff({ file: first, theme });
+    const secondHighlight = await prefetchHighlightedDiff({ file: second, theme });
+    expect(secondHighlight).not.toBe(firstHighlight);
+    expect(JSON.stringify(firstHighlight.additionLines)).toContain("one");
+    expect(JSON.stringify(secondHighlight.additionLines)).toContain("two");
+    expect(JSON.stringify(secondHighlight.additionLines)).not.toContain("one");
+  });
+
   test("invalidates source-backed partial highlights when an unversioned provider changes", () => {
     const base = createTestDiffFile({ id: "cache", path: "cache.ts" });
     const firstFetcher = createTestSourceFetcher(() => "first source\n");
