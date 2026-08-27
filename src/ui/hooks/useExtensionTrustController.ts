@@ -1,13 +1,12 @@
 /**
- * Coordinates repository-extension trust prompts and decisions for the mounted review.
+ * Decides whether Hunk may load and execute extensions from the current repository.
  *
- * Initial extension discovery and soft reloads can both surface a repository that needs a trust
- * decision. This hook remembers which roots the session already offered, persists trust or denial,
- * and asks the current-review controller to reload newly trusted extensions when possible.
+ * Trusting records permission for future sessions and reloads the current review so the extensions
+ * can take effect. Denying records that they must remain disabled. Dismissing the prompt records
+ * nothing and keeps it closed for the rest of the session.
  *
- * App retains dialog rendering and keyboard precedence, while AppHost retains reload authority.
- * Pager sessions never expose the prompt, dismissed roots stay dismissed for the session, and
- * stdin-backed reviews apply a recorded trust grant on the next launch instead of re-reading stdin.
+ * Pager sessions do not ask. When the current input cannot be reopened, such as stdin, a trust
+ * decision takes effect the next time Hunk starts.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,9 +45,11 @@ export function useExtensionTrustController({
   showNotice: (message: string) => void;
   writeTrust?: ExtensionTrustWriter;
 }): ExtensionTrustController {
+  // Ask about each repository at most once during this Hunk session.
   const [extensionTrustPromptRoot, setExtensionTrustPromptRoot] = useState<string | null>(null);
   const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
 
+  // Follow repository changes without reviving a dismissed prompt for an earlier root.
   useEffect(() => {
     const nextRoot = nextExtensionTrustPromptRoot({
       enabled: !pagerMode,
@@ -77,6 +78,7 @@ export function useExtensionTrustController({
     setExtensionTrustPromptRoot(null);
   }, []);
 
+  // Persist permission before reloading the review with repo-local extensions enabled.
   const trustRepoExtensions = useCallback(() => {
     const repoRoot = visiblePromptRoot;
     setExtensionTrustPromptRoot(null);
@@ -99,6 +101,7 @@ export function useExtensionTrustController({
     });
   }, [canRefreshCurrentInput, refreshCurrentInput, visiblePromptRoot, showNotice, writeTrust]);
 
+  // Persist denial so later sessions do not offer or run this repository's extensions.
   const denyRepoExtensions = useCallback(() => {
     const repoRoot = visiblePromptRoot;
     setExtensionTrustPromptRoot(null);
