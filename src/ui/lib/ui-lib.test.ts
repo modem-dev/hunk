@@ -14,9 +14,6 @@ import { createVisibleAgentNote } from "./agentAnnotations";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
-  BoundedClusterWidthCache,
-  CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
-  CLUSTER_WIDTH_CACHE_MAX_KEY_CODE_UNITS,
   cellRangeToCharRange,
   fitText,
   measureClusterWidth,

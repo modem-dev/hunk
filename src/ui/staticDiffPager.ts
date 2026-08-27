@@ -15,11 +15,11 @@
  * text so pager pipelines keep working.
  */
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
+import { changesetFromPatch } from "../core/changeset/fromPatch";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
-import { normalizePatchChangeset } from "../core/patch/changeset";
 import type { StaticDiffOptions } from "../static/types.js";
 import {
   buildSplitRows,
@@ -429,7 +429,7 @@ async function renderStaticFiles(
 
 /** Render a unified patch as ANSI text without starting Hunk's interactive application. */
 export async function renderStaticDiff(text: string, options: StaticDiffOptions = {}) {
-  const changeset = normalizePatchChangeset(text, "Static diff", "static", null);
+  const changeset = changesetFromPatch(text, "Static diff", "static", null);
   const commonOptions: CommonOptions = {
     hunkHeaders: options.hunkHeaders,
     lineNumbers: options.lineNumbers,
