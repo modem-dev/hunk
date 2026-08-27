@@ -24,15 +24,7 @@ import {
   resolveExtensionLineHighlighters,
   resolveExtensionSessionOptions,
 } from "../extensions/apply";
-import { emitExtensionCustomEvent, toReadOnlyFileViews } from "../extensions/events";
-import { buildExtensionReviewSnapshot } from "../extensions/reviewSnapshot";
-import type {
-  ExtensionCommandContext,
-  ExtensionEventContext,
-  ExtensionNotifyType,
-  ExtensionLoadResult,
-  RegisteredCommand,
-} from "../extensions/types";
+import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
@@ -51,10 +43,16 @@ import {
 } from "./diff/codeColumns";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
+import { useExtensionCommandRunner } from "./hooks/useExtensionCommandRunner";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
+import { useExtensionEventContextProvider } from "./hooks/useExtensionEventContextProvider";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useExtensionPaneController } from "./hooks/useExtensionPaneController";
 import { useExtensionReviewEvents } from "./hooks/useExtensionReviewEvents";
+import {
+  useExtensionRuntimeBindings,
+  useExtensionRuntimeBridge,
+} from "./hooks/useExtensionRuntimeBridge";
 import { useExtensionTrustController } from "./hooks/useExtensionTrustController";
 import {
   useExtensionWorkspaceControls,
@@ -66,11 +64,7 @@ import { useMenuController } from "./hooks/useMenuController";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
-import {
-  useTerminalReview,
-  type AgentNoteGeometrySnapshot,
-  type RevealedLineResult,
-} from "./hooks/useTerminalReview";
+import { useTerminalReview, type AgentNoteGeometrySnapshot } from "./hooks/useTerminalReview";
 import { useViewPreferenceQuitController } from "./hooks/useViewPreferenceQuitController";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
@@ -79,16 +73,11 @@ import {
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
   observeAppCommandDispatch,
-  type AppCommand,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { createExtensionCapabilityLease } from "./lib/extensionCapabilityLease";
-import { createExtensionCommandControls } from "./lib/extensionCommandControls";
-import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
-import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
 import { mergeLineHighlightMaps } from "./highlights/merge";
@@ -295,122 +284,29 @@ export function App({
         : { transientViewPreferences: false },
     [extensions],
   );
-  // The one conversion of the visible review files into the frozen views every
-  // extension surface sees: sidebar props and command-handler selection both
-  // read from this list, so they can never describe the review differently.
-  // Computed on demand and cached per visible-files identity rather than
-  // eagerly memoized: `visibleFiles` gets a fresh identity on every selection
-  // change, so an eager memo would reconvert the whole list on each navigation
-  // keypress even in sessions where no pane is showing and no command fires.
-  const extensionViewsCacheRef = useRef<{
-    source: typeof filteredFiles;
-    views: ReturnType<typeof toReadOnlyFileViews>;
-  } | null>(null);
-  const extensionSelectionInputsRef = useRef({
-    filteredFiles,
-    getSelection: review.getSelection,
-    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
-  });
-  extensionSelectionInputsRef.current = {
-    filteredFiles,
-    getSelection: review.getSelection,
-    getActiveLineCursor: () => (cursorLine === "off" ? null : review.getLineCursor()),
-  };
-  const getExtensionFileViews = useCallback(() => {
-    const source = extensionSelectionInputsRef.current.filteredFiles;
-    const cache = extensionViewsCacheRef.current;
-    if (cache && cache.source === source) {
-      return cache.views;
-    }
-
-    const views = toReadOnlyFileViews(source);
-    extensionViewsCacheRef.current = { source, views };
-    return views;
-  }, []);
-  // Navigation callbacks for extension command handlers. The focus and jump
-  // helpers they delegate to are defined further down the component, so the
-  // callbacks are assigned there each render and only ever read at command
-  // invocation, keeping the dispatch table free of their identities.
-  const extensionCommandNavigationRef = useRef({
-    onSelectFile: (_fileId: string) => {},
-    onSelectHunk: (_fileId: string, _hunkIndex: number) => {},
-    onRevealLine: (_fileId: string, _side: "old" | "new", _line: number): RevealedLineResult =>
-      "none",
-  });
-  // A hard session reload (`resetApp`) remounts App under an in-flight async
-  // command handler, whose `ctx.navigation` closes over *this* instance's
-  // refs. Flipping this on unmount lets those closures refuse with an accurate
-  // warning instead of validating against the dead instance's file list or
-  // driving a controller whose state updates no longer render.
-  const appAliveForNavigationRef = useRef(true);
-  const extensionHostCommandsRef = useRef<readonly AppCommand[]>([]);
-  // A soft extension reload keeps App mounted but replaces the authority that
-  // created each handler. Retain the current registry separately so controls
-  // captured by a retired async handler cannot drive the replacement registry.
-  const activeExtensionRegistryRef = useRef(extensions?.registry);
-  const activeReviewGenerationRef = useRef(bootstrap);
-  useLayoutEffect(() => {
-    activeExtensionRegistryRef.current = extensions?.registry;
-    activeReviewGenerationRef.current = bootstrap;
-  }, [bootstrap, extensions?.registry]);
-  const extensionCommandControls = useMemo(() => {
-    const lease = createExtensionCapabilityLease({
-      owningRegistry: extensions?.registry,
-      getActiveRegistry: () => activeExtensionRegistryRef.current,
-      isAppAlive: () => appAliveForNavigationRef.current,
-    });
-    return createExtensionCommandControls({
-      getCommands: () => extensionHostCommandsRef.current,
-      isLive: lease.isLive,
-    });
-  }, [extensions?.registry]);
-  /** Mint controls that expire with their runtime, App instance, or review generation. */
-  const createReviewCapabilityLease = useCallback(
-    () =>
-      createExtensionCapabilityLease({
-        owningRegistry: extensions?.registry,
-        getActiveRegistry: () => activeExtensionRegistryRef.current,
-        isAppAlive: () => appAliveForNavigationRef.current,
-        isReviewCurrent: () => activeReviewGenerationRef.current === bootstrap,
-      }),
-    [bootstrap, extensions?.registry],
+  const getActiveExtensionLineCursor = useCallback(
+    () => (cursorLine === "off" ? null : review.getLineCursor()),
+    [cursorLine, review.getLineCursor],
   );
-  useEffect(() => {
-    // StrictMode replays setup/cleanup/setup while the same App remains mounted.
-    appAliveForNavigationRef.current = true;
-    return () => {
-      appAliveForNavigationRef.current = false;
-    };
-  }, []);
-
-  /** Build the selection snapshot a command handler receives, at invocation. */
-  const getExtensionSelection = useCallback(() => {
-    const { getSelection, getActiveLineCursor } = extensionSelectionInputsRef.current;
-    const { fileId, hunkIndex } = getSelection();
-    return buildExtensionReviewSelection({
-      files: getExtensionFileViews(),
-      selectedFileId: fileId,
-      selectedHunkIndex: hunkIndex,
-      lineCursor: getActiveLineCursor(),
-    });
-  }, [getExtensionFileViews]);
-  /** Mint authoritative review snapshot controls for one extension command invocation. */
-  const createExtensionReviewControls = useCallback(() => {
-    const lease = createReviewCapabilityLease();
-    return {
-      snapshot() {
-        if (!lease.isLive()) return null;
-        const positioned = reviewProducer?.getPositionedReviewState();
-        if (!positioned) return null;
-        return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
-      },
-    };
-  }, [createReviewCapabilityLease, reviewProducer]);
-  /** Read the live internal selection id independently from the frozen public selection. */
-  const getSelectedFileId = useCallback(
-    () => extensionSelectionInputsRef.current.getSelection().fileId,
-    [],
-  );
+  const extensionRuntime = useExtensionRuntimeBridge({
+    extensions,
+    files: filteredFiles,
+    getActiveLineCursor: getActiveExtensionLineCursor,
+    getSelection: review.getSelection,
+    reviewGeneration: bootstrap,
+    reviewProducer,
+  });
+  const {
+    commandControls: extensionCommandControls,
+    createNavigation: createExtensionNavigation,
+    createReviewCapabilityLease,
+    createReviewControls: createExtensionReviewControls,
+    getCommittedFileViews: getExtensionFileViews,
+    getRenderFileViews: getRenderExtensionFileViews,
+    getRenderSelection: getRenderExtensionSelection,
+    getSelectedFileId,
+    getSelection: getExtensionSelection,
+  } = extensionRuntime;
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
       review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
@@ -541,7 +437,7 @@ export function App({
     updatePaneResize,
   } = useExtensionPaneController({
     availabilityContext: {
-      files: getExtensionFileViews(),
+      files: getRenderExtensionFileViews(),
       selectedFileId,
       selectedHunkIndex,
     },
@@ -558,25 +454,6 @@ export function App({
     pagerMode,
     responsiveShowsSidebar: responsiveLayout.showSidebar,
   });
-
-  /** Build live, guarded review navigation for one extension-owned handler. */
-  const createExtensionNavigation = useCallback(
-    (extensionId: string) => {
-      const lease = createReviewCapabilityLease();
-      return createGuardedReviewNavigation({
-        extensionId,
-        getFiles: () => extensionSelectionInputsRef.current.filteredFiles,
-        isLive: lease.isLive,
-        notify: (message, type) => extensions?.context.notify(message, type),
-        onSelectFile: (fileId) => extensionCommandNavigationRef.current.onSelectFile(fileId),
-        onSelectHunk: (fileId, hunkIndex) =>
-          extensionCommandNavigationRef.current.onSelectHunk(fileId, hunkIndex),
-        onRevealLine: (fileId, side, line) =>
-          extensionCommandNavigationRef.current.onRevealLine(fileId, side, line),
-      });
-    },
-    [createReviewCapabilityLease, extensions],
-  );
 
   const {
     accept: acceptExtensionDialog,
@@ -616,95 +493,26 @@ export function App({
     workspaceFileWriter,
   });
 
-  // Lifecycle and bus listeners receive the same pane, navigation, and dialog
-  // controls as commands, so onboarding can stay entirely in the public API.
-  if (extensions) {
-    extensions.eventContextProvider = (extensionId): ExtensionEventContext => {
-      const panes = createPaneControls(extensionId);
-      return {
-        cwd: extensions.context.cwd,
-        notify: (message, type) => extensions.context.notify(message, type),
-        panes,
-        sidebars: panes,
-        navigation: createExtensionNavigation(extensionId),
-        dialogs: createExtensionDialogs(extensionId),
-        events: {
-          emit(event, payload) {
-            emitExtensionCustomEvent(extensions, event, payload);
-          },
-        },
-      };
-    };
-  }
+  useExtensionEventContextProvider({
+    createDialogs: createExtensionDialogs,
+    createNavigation: createExtensionNavigation,
+    createPaneControls,
+    extensions,
+  });
 
-  /** Invoke one extension command with its context, containing any failure. */
-  const runExtensionCommand = useCallback(
-    (registered: RegisteredCommand) => {
-      const report = (error: unknown) => {
-        extensions?.context.notify(
-          `Extension ${registered.extensionId} failed command "${registered.command.id}" • ` +
-            `${error instanceof Error ? error.message || error.name : String(error)}`,
-          "warning",
-        );
-      };
-      const panes = createPaneControls(registered.extensionId);
-      const ctx: ExtensionCommandContext = {
-        cwd: extensions?.context.cwd ?? process.cwd(),
-        commands: extensionCommandControls,
-        keyboardModes: createKeyboardModeControls(registered.extensionId, extensions?.registry),
-        notify: (message, type) => extensions?.context.notify(message, type),
-        panes,
-        sidebars: panes,
-        fileViews: createFileViewControls(registered.extensionId),
-        highlights: createLineHighlightControls(registered.extensionId),
-        // Reads the shared store directly, returning copied immutable state while this
-        // command still owns the current review generation.
-        review: createExtensionReviewControls(),
-        // Snapshot semantics: built when the key fires, so the handler sees
-        // where the review was at that moment, even if it awaits and the user
-        // navigates on.
-        selection: getExtensionSelection(),
-        // Bound to the requesting extension for attribution, and valid for the
-        // whole life of the handler's promise — a handler may ask several
-        // questions in sequence with work between them.
-        dialogs: createExtensionDialogs(registered.extensionId),
-        // Bound to the requesting extension the same way, because a write is a
-        // question first: the confirm it raises names this extension, and the
-        // review it may reload is read live rather than captured here.
-        workspace: extensionWorkspaceController.createWorkspaceControls(registered.extensionId),
-        // Live, unlike `selection`: reads the visible files and delegates to
-        // the same focus/jump callbacks a sidebar row click runs, so a handler
-        // that awaits a dialog before navigating still acts on the current
-        // review — validated, clamped, and warned exactly like sidebar actions.
-        navigation: createExtensionNavigation(registered.extensionId),
-      };
-
-      try {
-        const returned = registered.handler(ctx);
-        if (returned && typeof (returned as PromiseLike<void>).then === "function") {
-          Promise.resolve(returned).catch(report);
-        }
-      } catch (error) {
-        report(error);
-      }
-    },
-    // `getExtensionSelection` is identity-stable (it reads refs), so the
-    // dispatch table, keymap, and Extensions menu derived from this callback
-    // do not rebuild on every `[`/`]` press.
-    [
-      createExtensionDialogs,
-      createExtensionNavigation,
-      createExtensionReviewControls,
-      createFileViewControls,
-      createKeyboardModeControls,
-      createLineHighlightControls,
-      createPaneControls,
-      extensionCommandControls,
-      extensionWorkspaceController.createWorkspaceControls,
-      extensions,
-      getExtensionSelection,
-    ],
-  );
+  const runExtensionCommand = useExtensionCommandRunner({
+    commandControls: extensionCommandControls,
+    createDialogs: createExtensionDialogs,
+    createFileViewControls,
+    createKeyboardModeControls,
+    createLineHighlightControls,
+    createNavigation: createExtensionNavigation,
+    createPaneControls,
+    createReviewControls: createExtensionReviewControls,
+    createWorkspaceControls: extensionWorkspaceController.createWorkspaceControls,
+    extensions,
+    getSelection: getExtensionSelection,
+  });
 
   const registeredExtensionCommands = useMemo(
     () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
@@ -1106,25 +914,23 @@ export function App({
     setFocusArea("filter");
   }, []);
 
-  // Command-handler navigation lands here each render: the same focus and jump
-  // semantics the sidebar's onSelect handlers use, so a command's navigation is
-  // indistinguishable from a sidebar row click. Read through a ref because the
-  // command dispatch table is built above these helpers and must stay
-  // identity-stable while the review moves.
-  extensionCommandNavigationRef.current = {
-    onSelectFile: (fileId) => {
-      focusFiles();
-      jumpToFile(fileId, { alignFileHeaderTop: true });
-    },
-    onSelectHunk: (fileId, hunkIndex) => {
-      focusFiles();
-      review.selectHunk(fileId, hunkIndex);
-    },
-    onRevealLine: (fileId, side, line) => {
-      focusFiles();
-      return review.revealLine(fileId, side, line);
-    },
-  };
+  const extensionNavigationBindings = useMemo(
+    () => ({
+      onSelectFile: (fileId: string) => {
+        focusFiles();
+        jumpToFile(fileId, { alignFileHeaderTop: true });
+      },
+      onSelectHunk: (fileId: string, hunkIndex: number) => {
+        focusFiles();
+        review.selectHunk(fileId, hunkIndex);
+      },
+      onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
+        focusFiles();
+        return review.revealLine(fileId, side, line);
+      },
+    }),
+    [focusFiles, jumpToFile, review.revealLine, review.selectHunk],
+  );
 
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
@@ -1204,7 +1010,11 @@ export function App({
     ],
     publishCommandExecuted,
   );
-  extensionHostCommandsRef.current = appCommands;
+  useExtensionRuntimeBindings({
+    commands: appCommands,
+    navigation: extensionNavigationBindings,
+    runtime: extensionRuntime,
+  });
 
   // Menus name commands rather than repeating them: every item's key hint and
   // action come from the table above, so a remapped shortcut shows its new key
@@ -1313,7 +1123,7 @@ export function App({
 
   /** Render one pane from the exact accepted host rectangle. */
   const renderPane = (planned: PlannedPane) => {
-    const selection = getExtensionSelection();
+    const selection = getRenderExtensionSelection();
     const { bounds, pane } = planned;
     return (
       <box
@@ -1329,7 +1139,7 @@ export function App({
         <ExtensionPaneHost
           registered={pane.registered}
           files={filteredFiles}
-          fileViews={getExtensionFileViews()}
+          fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}
           selectedHunkIndex={selection.hunkIndex}
           placement={pane.placement}
