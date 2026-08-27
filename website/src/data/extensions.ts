@@ -117,7 +117,7 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   },
   {
     repo: "evantravers/hunk-mark-as-reviewed",
-    name: "mark-as-reviewed",
+    name: "hunk-mark-as-reviewed",
     summary:
       "Marks hunks and files as reviewed, tracks progress in a review pane, and can hide what you've finished.",
     categories: ["Pane", "Command", "Line highlighter", "Changeset transform"],
