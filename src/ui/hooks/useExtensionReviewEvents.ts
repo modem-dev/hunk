@@ -44,7 +44,7 @@ export interface ExtensionReviewEventPublishers {
   publishWatchReloadPending: () => void;
 }
 
-/** Coordinate declarative review events and return stable publishers for imperative events. */
+/** Publish state-driven review events and return callbacks for action-driven events. */
 export function useExtensionReviewEvents({
   extensions,
   filter,
@@ -66,7 +66,7 @@ export function useExtensionReviewEvents({
   selectedHunkIndex: number;
   themeId: string;
 }): ExtensionReviewEventPublishers {
-  // Imperative publishers always target the runtime that completed its layout commit.
+  // Commands, notes, and watch callbacks publish to the runtime that last committed.
   const activeExtensionsRef = useRef(extensions);
   useLayoutEffect(() => {
     activeExtensionsRef.current = extensions;
