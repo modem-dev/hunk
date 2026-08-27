@@ -1,14 +1,8 @@
 /**
- * Publishes extension-facing events as users move through and operate on the mounted review.
+ * Publishes review events to the current extension runtime.
  *
- * Selection settling, file viewing, filtering, layout changes, and committed theme changes all
- * converge here so debounce and initial-suppression behavior follows the active extension runtime.
- * App keeps ownership of user actions and command composition, while this hook exposes narrow
- * publishers for watch, note, and command events triggered by those workflows.
- *
- * Replacing or unmounting an extension runtime retires its delayed selection work. Each replacement
- * establishes silent filter, layout, and theme baselines, then receives the current selection and
- * file view even when a soft reload preserves the file's stable id.
+ * It debounces selection changes, avoids reporting initial filter, layout, and theme values as
+ * changes, and exposes stable publishers for command, note, and watch events.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
@@ -72,6 +66,7 @@ export function useExtensionReviewEvents({
   selectedHunkIndex: number;
   themeId: string;
 }): ExtensionReviewEventPublishers {
+  // Imperative publishers always target the runtime that completed its layout commit.
   const activeExtensionsRef = useRef(extensions);
   useLayoutEffect(() => {
     activeExtensionsRef.current = extensions;
@@ -82,6 +77,7 @@ export function useExtensionReviewEvents({
     };
   }, [extensions]);
 
+  // Debounce selection changes and treat a replacement file object as a fresh view.
   const selectionGenerationRef = useRef(0);
   const lastViewedFileRef = useRef<{
     extensions: ExtensionLoadResult | undefined;
@@ -91,8 +87,7 @@ export function useExtensionReviewEvents({
     const generation = ++selectionGenerationRef.current;
     const targetExtensions = extensions;
     const timer = scheduler.setTimeout(() => {
-      // Layout cleanup retires a registry before passive effect cleanup cancels this timer.
-      // Checking both guards closes that commit-to-cleanup window without changing debounce.
+      // Reject callbacks retired by either a newer selection or registry layout cleanup.
       if (
         selectionGenerationRef.current !== generation ||
         activeExtensionsRef.current !== targetExtensions
@@ -123,6 +118,7 @@ export function useExtensionReviewEvents({
     };
   }, [extensions, scheduler, selectedFile, selectedFileId, selectedHunkIndex]);
 
+  // Seed each runtime's initial filter without reporting it as a change.
   const reportedFilterRef = useRef<RegistryProjectionBaseline<string> | undefined>(undefined);
   useEffect(() => {
     const reported = reportedFilterRef.current;
@@ -132,6 +128,7 @@ export function useExtensionReviewEvents({
     reportedFilterRef.current = { extensions, value: filter };
   }, [extensions, filter]);
 
+  // Report layout changes only after establishing the runtime's initial layout.
   const layoutSignature = `${layoutMode}:${resolvedLayout}`;
   const reportedLayoutRef = useRef<RegistryProjectionBaseline<string> | undefined>(undefined);
   useEffect(() => {
@@ -145,6 +142,7 @@ export function useExtensionReviewEvents({
     reportedLayoutRef.current = { extensions, value: layoutSignature };
   }, [extensions, layoutMode, layoutSignature, resolvedLayout]);
 
+  // Theme previews stay silent because only the committed theme id reaches this hook.
   const reportedThemeIdRef = useRef<RegistryProjectionBaseline<string> | undefined>(undefined);
   useEffect(() => {
     const reported = reportedThemeIdRef.current;
@@ -154,6 +152,7 @@ export function useExtensionReviewEvents({
     reportedThemeIdRef.current = { extensions, value: themeId };
   }, [extensions, themeId]);
 
+  // Keep action publishers stable while resolving the current runtime at call time.
   const publishCommandExecuted = useCallback((commandId: string) => {
     emitExtensionEvent(activeExtensionsRef.current, "command_executed", { commandId });
   }, []);
