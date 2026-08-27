@@ -141,7 +141,6 @@
   margin-left: 5px;
   color: var(--hunk-muted);
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
 }
 
 .marketing .xfacet:hover {
