@@ -14,6 +14,40 @@ export interface ThemeSelectorItem {
 
 const THEME_HOVER_PREVIEW_DELAY_MS = 200;
 
+interface ThemeSelectorWindowState {
+  itemCount: number;
+  selectedIndex: number;
+  visibleRows: number;
+  windowStart: number;
+}
+
+/** Keep the selected theme visible when selector geometry or selection changes. */
+function synchronizeThemeSelectorWindow(
+  current: ThemeSelectorWindowState,
+  selectedIndex: number,
+  itemCount: number,
+  visibleRows: number,
+): ThemeSelectorWindowState {
+  if (
+    current.selectedIndex === selectedIndex &&
+    current.itemCount === itemCount &&
+    current.visibleRows === visibleRows
+  ) {
+    return current;
+  }
+
+  const maxWindowStart = Math.max(0, itemCount - visibleRows);
+  const clamped = Math.min(Math.max(current.windowStart, 0), maxWindowStart);
+  const windowStart =
+    selectedIndex < clamped
+      ? Math.max(0, selectedIndex)
+      : selectedIndex >= clamped + visibleRows
+        ? Math.min(maxWindowStart, selectedIndex - visibleRows + 1)
+        : clamped;
+
+  return { itemCount, selectedIndex, visibleRows, windowStart };
+}
+
 /** Render an opencode-style selector for Hunk themes. */
 export function ThemeSelectorDialog({
   items,
@@ -39,11 +73,27 @@ export function ThemeSelectorDialog({
   const bodyWidth = Math.max(1, width - 4);
   // ModalFrame contributes border/title/padding; reserve help/footer rows inside the body.
   const visibleRows = Math.max(4, modalHeight - 7);
-  const [windowStart, setWindowStart] = useState(() =>
-    listWindowStart(selectedIndex, items.length, visibleRows),
-  );
+  const [windowState, setWindowState] = useState<ThemeSelectorWindowState>(() => ({
+    itemCount: items.length,
+    selectedIndex,
+    visibleRows,
+    windowStart: listWindowStart(selectedIndex, items.length, visibleRows),
+  }));
   const previewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxWindowStart = Math.max(0, items.length - visibleRows);
+  const synchronizedWindowState = synchronizeThemeSelectorWindow(
+    windowState,
+    selectedIndex,
+    items.length,
+    visibleRows,
+  );
+
+  // Adjust during render so the selected row cannot paint outside a stale window. React restarts
+  // this component immediately, avoiding the passive-effect update loop that rapid key repeat hit.
+  if (synchronizedWindowState !== windowState) {
+    setWindowState(synchronizedWindowState);
+  }
+  const windowStart = synchronizedWindowState.windowStart;
 
   /** Cancel a hover preview that has not reached its dwell threshold. */
   const cancelPendingPreview = () => {
@@ -62,21 +112,8 @@ export function ThemeSelectorDialog({
     }, THEME_HOVER_PREVIEW_DELAY_MS);
   };
 
-  // Keyboard selection changes keep their row visible and supersede pending pointer previews,
-  // while mouse-wheel scrolling can move the window without changing the current preview.
-  useEffect(() => {
-    cancelPendingPreview();
-    setWindowStart((current) => {
-      const clamped = Math.min(Math.max(current, 0), maxWindowStart);
-      if (selectedIndex < clamped) {
-        return Math.max(0, selectedIndex);
-      }
-      if (selectedIndex >= clamped + visibleRows) {
-        return Math.min(maxWindowStart, selectedIndex - visibleRows + 1);
-      }
-      return clamped;
-    });
-  }, [maxWindowStart, selectedIndex, visibleRows]);
+  // Selection, catalog, or geometry changes supersede a pointer dwell without another render.
+  useEffect(cancelPendingPreview, [items, selectedIndex, visibleRows]);
 
   useEffect(
     () => () => {
@@ -103,9 +140,31 @@ export function ThemeSelectorDialog({
         cancelPendingPreview();
         const direction = event.scroll?.direction;
         if (direction === "up") {
-          setWindowStart((current) => Math.max(0, current - 1));
+          setWindowState((current) => {
+            const synchronized = synchronizeThemeSelectorWindow(
+              current,
+              selectedIndex,
+              items.length,
+              visibleRows,
+            );
+            const windowStart = Math.max(0, synchronized.windowStart - 1);
+            return windowStart === synchronized.windowStart
+              ? synchronized
+              : { ...synchronized, windowStart };
+          });
         } else if (direction === "down") {
-          setWindowStart((current) => Math.min(maxWindowStart, current + 1));
+          setWindowState((current) => {
+            const synchronized = synchronizeThemeSelectorWindow(
+              current,
+              selectedIndex,
+              items.length,
+              visibleRows,
+            );
+            const windowStart = Math.min(maxWindowStart, synchronized.windowStart + 1);
+            return windowStart === synchronized.windowStart
+              ? synchronized
+              : { ...synchronized, windowStart };
+          });
         }
       }}
     >

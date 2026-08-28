@@ -741,6 +741,17 @@ end
     ]);
   }
 
+  /** Build enough syntax-highlighted changes to exercise rapid whole-review theme previews. */
+  function createRapidThemePreviewTestRepoFixture() {
+    return createGitRepoFixture(
+      Array.from({ length: 8 }, (_, fileIndex) => ({
+        path: `theme-preview-${fileIndex}.ts`,
+        before: `${createNumberedExportLines(1, 150, fileIndex * 1_000)}\n`,
+        after: `${createNumberedExportLines(1, 150, (fileIndex + 8) * 1_000)}\n`,
+      })),
+    );
+  }
+
   function createCollapsedTopRepoFixture() {
     const longBefore =
       Array.from(
@@ -1083,6 +1094,7 @@ end
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
+    createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
