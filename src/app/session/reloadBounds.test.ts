@@ -357,7 +357,7 @@ describe("session reload filesystem bounds", () => {
       );
 
       expect(bounds.roots).toEqual([]);
-      expect(bounds.exactFiles).toEqual([patch]);
+      expect(bounds.exactFiles).toEqual([realPath(patch)]);
       expect(() =>
         validateSessionReloadWithinBounds(bounds, {
           kind: "patch",

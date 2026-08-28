@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -122,6 +122,25 @@ describe("registerHostRuntimeModules", () => {
   test("serves hunkdiff/extension runtime values", async () => {
     const path = writeTempExtension(
       "ext.ts",
+      `import { HunkExtensionUserError } from "hunkdiff/extension";\n` +
+        `export default { HunkExtensionUserError };\n`,
+    );
+
+    const mod = await importTempExtension(path);
+
+    expect(mod.default.HunkExtensionUserError).toBe(HunkExtensionUserError);
+  });
+
+  test("serves host modules when the extension root uses an aliased path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-alias-"));
+    tempDirs.push(root);
+    const actualDirectory = join(root, "actual");
+    const aliasDirectory = join(root, "alias");
+    mkdirSync(actualDirectory);
+    symlinkSync(actualDirectory, aliasDirectory, process.platform === "win32" ? "junction" : "dir");
+    const path = join(aliasDirectory, "ext.ts");
+    writeFileSync(
+      join(actualDirectory, "ext.ts"),
       `import { HunkExtensionUserError } from "hunkdiff/extension";\n` +
         `export default { HunkExtensionUserError };\n`,
     );
