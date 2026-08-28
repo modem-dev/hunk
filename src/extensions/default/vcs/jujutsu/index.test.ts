@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { JjVcsAdapter } from ".";
@@ -108,6 +108,19 @@ describe("JjVcsAdapter", () => {
       expect(diffResult.title).toContain("working copy");
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
+      expect(diffResult.sourceCacheKey).toContain("jj-source-v1");
+      const reviewedFile = {
+        path: "file.txt",
+        changeType: "change",
+        isUntracked: false,
+      } as const;
+      expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
+      expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
+      const equivalentDiffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(
+        diffInput,
+        { cwd: repo },
+      );
+      expect(equivalentDiffResult.sourceCacheKey).toBe(diffResult.sourceCacheKey);
 
       const showInput = {
         kind: "show",
@@ -120,12 +133,256 @@ describe("JjVcsAdapter", () => {
 
       expect(showResult.title).toContain("show @");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+      expect(showResult.sourceCacheKey).toContain("jj-source-v1");
+      expect(await showResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
+      expect(await showResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
+
+      // Lazy source reads stay attached to the revision that produced the patch,
+      // even after `@` is resnapshotted with different working-copy contents.
+      writeFileSync(join(repo, "file.txt"), "three\n");
+      jj(repo, "status");
+      expect(await showResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
+      const changedDiffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(
+        diffInput,
+        {
+          cwd: repo,
+        },
+      );
+      expect(changedDiffResult.sourceCacheKey).not.toBe(diffResult.sourceCacheKey);
+
       expect(
         JjVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, { cwd: repo }),
-      ).toContain("+two");
+      ).toContain("+three");
       expect(
         JjVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: repo }),
       ).toContain("diff --git");
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "preserves nested cwd filesets across loaded patches and watch signatures",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-nested-cwd-");
+      const nested = join(repo, "sub");
+      mkdirSync(nested);
+      writeFileSync(join(repo, "file.txt"), "root old\n");
+      writeFileSync(join(nested, "file.txt"), "nested old\n");
+      jj(repo, "commit", "-m", "initial");
+      writeFileSync(join(repo, "file.txt"), "root new\n");
+      writeFileSync(join(nested, "file.txt"), "nested new\n");
+
+      const diffInput = {
+        kind: "vcs",
+        staged: false,
+        pathspecs: ["file.txt"],
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
+      const showInput = {
+        kind: "show",
+        ref: "@",
+        pathspecs: ["file.txt"],
+        options: {},
+      } satisfies ExtensionVcsShowInput;
+      const diffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(diffInput, {
+        cwd: nested,
+      });
+      const showResult = await JjVcsAdapter.operations["revision-show"]!.load(showInput, {
+        cwd: nested,
+      });
+      const patchTexts = [
+        diffResult.patchText,
+        JjVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, { cwd: nested }),
+        showResult.patchText,
+        JjVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: nested }),
+      ];
+
+      for (const patchText of patchTexts) {
+        expect(patchText).toContain("sub/file.txt");
+        expect(patchText).toContain("+nested new");
+        expect(patchText).not.toContain("+root new");
+      }
+
+      const reviewedFile = {
+        path: "sub/file.txt",
+        changeType: "change",
+        isUntracked: false,
+      } as const;
+      expect(await showResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe(
+        "nested old\n",
+      );
+      expect(await showResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe(
+        "nested new\n",
+      );
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "ignores a shadowing parents alias when loading the old source",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-parent-alias-");
+      writeFileSync(join(repo, "file.txt"), "grandparent version\ncontext\n");
+      jj(repo, "commit", "-m", "grandparent");
+      writeFileSync(join(repo, "file.txt"), "parent version\ncontext\n");
+      jj(repo, "commit", "-m", "parent");
+      writeFileSync(join(repo, "file.txt"), "child version\ncontext\n");
+      jj(repo, "config", "set", "--repo", 'revset-aliases."parents(x)"', "x--");
+
+      const result = await JjVcsAdapter.operations["revision-show"]!.load(
+        { kind: "show", ref: "@", options: {} },
+        { cwd: repo },
+      );
+      const reviewedFile = {
+        path: "file.txt",
+        changeType: "change",
+        isUntracked: false,
+      } as const;
+
+      expect(result.patchText).toContain("-parent version");
+      expect(result.patchText).not.toContain("-grandparent version");
+      expect(await result.readFileSource?.({ ...reviewedFile, side: "old" })).toBe(
+        "parent version\ncontext\n",
+      );
+      expect(await result.readFileSource?.({ ...reviewedFile, side: "new" })).toBe(
+        "child version\ncontext\n",
+      );
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "reads rename, addition, and deletion sides from their exact paths",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-source-kinds-");
+      writeFileSync(join(repo, "old-name.txt"), "old name\n");
+      writeFileSync(join(repo, "deleted.txt"), "deleted source\n");
+      jj(repo, "commit", "-m", "initial");
+
+      renameSync(join(repo, "old-name.txt"), join(repo, "new-name.txt"));
+      writeFileSync(join(repo, "new-name.txt"), "renamed source\n");
+      writeFileSync(join(repo, "added.txt"), "added source\n");
+      rmSync(join(repo, "deleted.txt"));
+
+      const result = await JjVcsAdapter.operations["revision-show"]!.load(
+        { kind: "show", ref: "@", options: {} },
+        { cwd: repo },
+      );
+      const readSource = result.readFileSource!;
+
+      expect(
+        await readSource({
+          path: "new-name.txt",
+          previousPath: "old-name.txt",
+          changeType: "rename-changed",
+          isUntracked: false,
+          side: "old",
+        }),
+      ).toBe("old name\n");
+      expect(
+        await readSource({
+          path: "new-name.txt",
+          previousPath: "old-name.txt",
+          changeType: "rename-changed",
+          isUntracked: false,
+          side: "new",
+        }),
+      ).toBe("renamed source\n");
+      expect(
+        await readSource({
+          path: "added.txt",
+          changeType: "new",
+          isUntracked: false,
+          side: "old",
+        }),
+      ).toBeNull();
+      expect(
+        await readSource({
+          path: "added.txt",
+          changeType: "new",
+          isUntracked: false,
+          side: "new",
+        }),
+      ).toBe("added source\n");
+      expect(
+        await readSource({
+          path: "deleted.txt",
+          changeType: "deleted",
+          isUntracked: false,
+          side: "old",
+        }),
+      ).toBe("deleted source\n");
+      expect(
+        await readSource({
+          path: "deleted.txt",
+          changeType: "deleted",
+          isUntracked: false,
+          side: "new",
+        }),
+      ).toBeNull();
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "preserves multi-revision patches without attaching guessed sources",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-multi-");
+      writeFileSync(join(repo, "file.txt"), "one\n");
+      jj(repo, "commit", "-m", "first");
+      writeFileSync(join(repo, "file.txt"), "two\n");
+      jj(repo, "commit", "-m", "second");
+      const revset = "@- | @--";
+
+      const diffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(
+        { kind: "vcs", staged: false, range: revset, options: {} },
+        { cwd: repo },
+      );
+      const showResult = await JjVcsAdapter.operations["revision-show"]!.load(
+        { kind: "show", ref: revset, options: {} },
+        { cwd: repo },
+      );
+
+      expect(diffResult.patchText).toContain("diff --git");
+      expect(showResult.patchText).toBe(diffResult.patchText);
+      expect(diffResult.readFileSource).toBeUndefined();
+      expect(diffResult.sourceCacheKey).toBeUndefined();
+      expect(showResult.readFileSource).toBeUndefined();
+      expect(showResult.sourceCacheKey).toBeUndefined();
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "expands a merge from its exact new side without guessing the merged-parent source",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-merge-");
+      writeFileSync(join(repo, "file.txt"), "base\n");
+      jj(repo, "commit", "-m", "base");
+      const baseCommitId = jj(repo, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+      writeFileSync(join(repo, "left.txt"), "left\n");
+      jj(repo, "commit", "-m", "left");
+      const leftCommitId = jj(repo, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+      jj(repo, "new", baseCommitId);
+      writeFileSync(join(repo, "right.txt"), "right\n");
+      jj(repo, "commit", "-m", "right");
+      const rightCommitId = jj(repo, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+      jj(repo, "new", leftCommitId, rightCommitId);
+      writeFileSync(join(repo, "file.txt"), "merge result\n");
+      const result = await JjVcsAdapter.operations["revision-show"]!.load(
+        { kind: "show", ref: "@", options: {} },
+        { cwd: repo },
+      );
+      const file = { path: "file.txt", changeType: "change", isUntracked: false } as const;
+
+      expect(result.sourceCacheKey).toContain(
+        `merged-parents:${[leftCommitId, rightCommitId].sort().join(",")}`,
+      );
+      expect(await result.readFileSource?.({ ...file, side: "old" })).toBeNull();
+      expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("merge result\n");
     },
     JjAdapterIntegrationTestTimeoutMs,
   );

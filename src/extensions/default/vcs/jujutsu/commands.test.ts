@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildJjDiffArgs, runJjText } from "./commands";
+import { buildJjDiffArgs, buildJjShowArgs, resolveJjDiffEndpoints, runJjText } from "./commands";
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
@@ -92,6 +92,23 @@ afterEach(() => {
 const jjTest = Bun.which("jj") ? test : test.skip;
 
 describe("jj command helpers", () => {
+  test("uses an immutable revision override without changing fileset arguments", () => {
+    expect(buildJjDiffArgs(diffInput({ pathspecs: ["src/a b.ts"] }), "abc123")).toEqual([
+      "diff",
+      "--git",
+      "-r",
+      "abc123",
+      "--",
+      "src/a b.ts",
+    ]);
+    expect(
+      buildJjShowArgs(
+        { kind: "show", ref: "moving", pathspecs: ["-odd.ts"], options: {} },
+        "abc123",
+      ),
+    ).toEqual(["diff", "--git", "-r", "abc123", "--", "-odd.ts"]);
+  });
+
   test("reports a friendly error when jj is not installed or not on PATH", () => {
     expect(() =>
       runJjText({
@@ -127,6 +144,76 @@ describe("jj command helpers", () => {
         cwd: dir,
       }),
     ).toThrow("`hunk diff missing_revision` could not resolve Jujutsu revset `missing_revision`.");
+  });
+
+  jjTest("resolves a single revision to immutable commit and parent endpoints", () => {
+    const dir = createTempJjRepo("hunk-jj-endpoints-");
+    writeFileSync(join(dir, "file.txt"), "one\n");
+    jj(dir, "commit", "-m", "first");
+    const firstCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+    writeFileSync(join(dir, "file.txt"), "two\n");
+    const secondCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "commit_id");
+
+    expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
+      newCommitId: secondCommitId,
+      parentCommitIds: [firstCommitId],
+    });
+  });
+
+  jjTest("ignores template aliases when resolving immutable endpoints", () => {
+    const dir = createTempJjRepo("hunk-jj-endpoints-template-alias-");
+    writeFileSync(join(dir, "file.txt"), "one\n");
+    jj(dir, "commit", "-m", "first");
+    const firstCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
+
+    writeFileSync(join(dir, "file.txt"), "two\n");
+    jj(dir, "commit", "-m", "second");
+    const secondCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
+
+    writeFileSync(join(dir, "file.txt"), "three\n");
+    const thirdCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "self.commit_id()");
+    jj(dir, "config", "set", "--repo", "template-aliases.commit_id", `'"${firstCommitId}"'`);
+
+    expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
+      newCommitId: thirdCommitId,
+      parentCommitIds: [secondCommitId],
+    });
+  });
+
+  jjTest("omits endpoints when a revset resolves to multiple revisions", () => {
+    const dir = createTempJjRepo("hunk-jj-endpoints-multi-");
+    writeFileSync(join(dir, "file.txt"), "one\n");
+    jj(dir, "commit", "-m", "first");
+    writeFileSync(join(dir, "file.txt"), "two\n");
+    jj(dir, "commit", "-m", "second");
+
+    expect(resolveJjDiffEndpoints(diffInput(), "@- | @--", { cwd: dir })).toBeUndefined();
+  });
+
+  jjTest("marks a merge base as synthesized instead of choosing one parent", () => {
+    const dir = createTempJjRepo("hunk-jj-endpoints-merge-");
+    writeFileSync(join(dir, "base.txt"), "base\n");
+    jj(dir, "commit", "-m", "base");
+    const baseCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+    writeFileSync(join(dir, "left.txt"), "left\n");
+    jj(dir, "commit", "-m", "left");
+    const leftCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+    jj(dir, "new", baseCommitId);
+    writeFileSync(join(dir, "right.txt"), "right\n");
+    jj(dir, "commit", "-m", "right");
+    const rightCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+    jj(dir, "new", leftCommitId, rightCommitId);
+    writeFileSync(join(dir, "merge.txt"), "merge\n");
+    const mergeCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "commit_id");
+    const endpoints = resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir });
+
+    expect(endpoints).toEqual({
+      newCommitId: mergeCommitId,
+      parentCommitIds: [leftCommitId, rightCommitId].sort(),
+    });
   });
 
   jjTest(

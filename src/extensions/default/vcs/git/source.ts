@@ -8,6 +8,7 @@ import {
   logSourceDiagnostic,
   readFileTextWithLimit,
   readStreamTextWithLimit,
+  terminateSourceSubprocess,
 } from "../../../../lib/sourceText";
 import type { GitDiffEndpoint } from "./commands";
 
@@ -105,9 +106,8 @@ async function readGitObjectSpec(
       ),
     ]);
   } catch (error) {
+    await terminateSourceSubprocess(proc);
     if (error instanceof GitSourceTooLargeError) {
-      proc.kill();
-      await proc.exited.catch(() => undefined);
       return tooLarge(error.maxBytes);
     }
 

@@ -14,6 +14,23 @@ export interface RunJjTextOptions {
   jjExecutable?: string;
 }
 
+/** Identifies the reviewed commit and every parent JJ used to build the old side. */
+export interface JjDiffEndpoints {
+  newCommitId: string;
+  parentCommitIds: string[];
+}
+
+/** Bypass user template aliases while rendering full commit IDs. */
+const JjCommitIdTemplate = 'self.commit_id() ++ "\\n"';
+
+/** Parse newline-delimited full commit IDs emitted by a Jujutsu template. */
+function parseJjCommitIds(output: string) {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[0-9a-f]+$/i.test(line));
+}
+
 /** Append Jujutsu filesets only when the caller requested path filtering. */
 function appendJjFilesets(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
@@ -24,11 +41,11 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
 }
 
 /** Build the `jj diff --git` arguments for working-copy and revset reviews. */
-export function buildJjDiffArgs(input: ExtensionVcsDiffInput) {
+export function buildJjDiffArgs(input: ExtensionVcsDiffInput, pinnedRevision?: string) {
   const args = ["diff", "--git"];
 
-  if (input.range) {
-    args.push("-r", input.range);
+  if (pinnedRevision || input.range) {
+    args.push("-r", pinnedRevision ?? input.range!);
   }
 
   appendJjFilesets(args, input.pathspecs);
@@ -36,8 +53,8 @@ export function buildJjDiffArgs(input: ExtensionVcsDiffInput) {
 }
 
 /** Build the `jj diff --git -r` arguments used for `hunk show` in Jujutsu mode. */
-export function buildJjShowArgs(input: ExtensionVcsShowInput) {
-  const args = ["diff", "--git", "-r", input.ref ?? "@"];
+export function buildJjShowArgs(input: ExtensionVcsShowInput, pinnedRevision?: string) {
+  const args = ["diff", "--git", "-r", pinnedRevision ?? input.ref ?? "@"];
 
   appendJjFilesets(args, input.pathspecs);
   return args;
@@ -184,6 +201,63 @@ function runJjCommand({ input, args, cwd = process.cwd(), jjExecutable = "jj" }:
 /** Run a Jujutsu command and translate common failures into user-facing Hunk errors. */
 export function runJjText(options: RunJjTextOptions) {
   return runJjCommand(options).stdout;
+}
+
+/**
+ * Resolve a JJ revset once so the patch and later source reads use the same commit.
+ *
+ * A patch contains only changed lines and a small amount of surrounding context. Hunk
+ * therefore waits until a user expands a gap before loading the complete file. Names
+ * such as `@` and bookmarks can move between those two moments, so this lookup returns
+ * full commit IDs that callers reuse for both patch generation and `jj file show`.
+ * The first lookup intentionally allows JJ to snapshot the working copy so `@` includes
+ * current filesystem changes; commands that use the returned IDs can then pass
+ * `--ignore-working-copy` because the commit has already been fixed.
+ *
+ * A revset that selects several commits produces a valid aggregate patch, but it does
+ * not identify one old/new pair from which to load complete files. In that case this
+ * function returns `undefined`, and Hunk shows the patch without expandable gaps. For
+ * a merge commit, JJ builds the old side by merging all parent trees. We retain every
+ * parent ID to identify that virtual old side, but callers must not substitute one
+ * parent and present its contents as the merge baseline.
+ */
+export function resolveJjDiffEndpoints(
+  input: JjBackedInput,
+  revset: string,
+  options: Omit<RunJjTextOptions, "input" | "args"> = {},
+): JjDiffEndpoints | undefined {
+  const commitIds = parseJjCommitIds(
+    runJjText({
+      input,
+      args: ["log", "--no-graph", "-r", revset, "-T", JjCommitIdTemplate],
+      ...options,
+    }),
+  );
+  if (commitIds.length !== 1) {
+    return undefined;
+  }
+
+  const commitId = commitIds[0]!;
+  const parentCommitIds = parseJjCommitIds(
+    runJjText({
+      input,
+      args: [
+        "log",
+        "--no-graph",
+        "--ignore-working-copy",
+        "-r",
+        `${commitId}-`,
+        "-T",
+        JjCommitIdTemplate,
+      ],
+      ...options,
+    }),
+  );
+
+  return {
+    newCommitId: commitId,
+    parentCommitIds: parentCommitIds.sort(),
+  };
 }
 
 export function resolveJjRepoRoot(

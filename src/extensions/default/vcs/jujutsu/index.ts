@@ -4,12 +4,16 @@ import {
   buildJjDiffArgs,
   buildJjShowArgs,
   createJjStagedError,
+  resolveJjDiffEndpoints,
   resolveJjRepoRoot,
   runJjText,
+  type JjDiffEndpoints,
 } from "./commands";
+import { readJjFileSource } from "./source";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
+  type ExtensionVcsFileSourceReader,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
 
@@ -42,51 +46,156 @@ function detectJjRepo(cwd: string) {
   }
 }
 
-/** VCS adapter translating neutral review operations to Jujutsu commands. */
-export const JjVcsAdapter = {
-  id: "jj",
-  name: "Jujutsu",
-  detect: detectJjRepo,
-  // Above Git: a colocated jj repository carries a `.git` directory too, and
-  // reviewing it as plain Git would show the wrong working copy.
-  detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 200,
-  operations: {
-    "working-tree-diff": {
-      async load(input, { cwd }) {
-        if (input.staged) {
-          throw createJjStagedError(input);
+/* -------------------------------------------------------------------------- */
+/* Exact file sources                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** Lets Hunk load complete files later and recognize when cached source is still current. */
+interface JjSourceCapability {
+  readFileSource: ExtensionVcsFileSourceReader;
+  sourceCacheKey: string;
+}
+
+/** Include every resolved parent in the identity Hunk uses to retain cached source text. */
+function jjParentCacheKey(parentCommitIds: string[]) {
+  return parentCommitIds.length === 1
+    ? `commit:${parentCommitIds[0]}`
+    : `merged-parents:${parentCommitIds.join(",")}`;
+}
+
+/**
+ * Let Hunk load complete file text when a user expands context omitted from the patch.
+ *
+ * `jj diff` includes changed lines and only a few unchanged lines around them. When the
+ * user expands a collapsed gap, Hunk calls `readFileSource` for the rest of the file.
+ * This reader uses commit IDs resolved before the patch was generated, so the returned
+ * text still matches the review even if `@` or a bookmark has moved. The cache key names
+ * both sides of that resolved diff so Hunk never carries source text across a change to
+ * either side.
+ *
+ * With exactly one parent, the old text comes from that commit and the new text comes
+ * from the reviewed commit. The old side of a rename uses `previousPath`; added files
+ * and root commits have no old text, while deleted files have no new text. A merge is
+ * different: JJ compares it with a virtual tree made by merging all parents, but
+ * `jj file show` cannot read that virtual tree. The new side is still exact and can
+ * expand gaps, while old-side reads return `null` rather than showing content from an
+ * arbitrary parent.
+ */
+function createJjSourceCapability(
+  repoRoot: string,
+  endpoints: JjDiffEndpoints,
+  jjExecutable: string,
+): JjSourceCapability {
+  const oldCommitId =
+    endpoints.parentCommitIds.length === 1 ? endpoints.parentCommitIds[0] : undefined;
+
+  return {
+    sourceCacheKey: [
+      "jj-source-v1",
+      jjParentCacheKey(endpoints.parentCommitIds),
+      `commit:${endpoints.newCommitId}`,
+    ].join(":"),
+    readFileSource: ({ path, previousPath, changeType, side }) => {
+      if (side === "old") {
+        if (changeType === "new" || oldCommitId === undefined) {
+          return Promise.resolve(null);
         }
-        const repoRoot = resolveJjRepoRoot(input, { cwd });
-        const repoName = basename(repoRoot);
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
-          patchText: runJjText({ input, args: buildJjDiffArgs(input), cwd }),
-        };
+        return readJjFileSource(
+          { repoRoot, commitId: oldCommitId, path: previousPath ?? path },
+          { jjExecutable },
+        );
+      }
+
+      return changeType === "deleted"
+        ? Promise.resolve(null)
+        : readJjFileSource({ repoRoot, commitId: endpoints.newCommitId, path }, { jjExecutable });
+    },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The adapter                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface JjVcsAdapterOptions {
+  jjExecutable?: string;
+}
+
+/** Create a Jujutsu adapter, optionally using a caller-supplied `jj` executable. */
+export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapterOptions> = {}) {
+  return {
+    id: "jj",
+    name: "Jujutsu",
+    detect: detectJjRepo,
+    // Above Git: a colocated jj repository carries a `.git` directory too, and
+    // reviewing it as plain Git would show the wrong working copy.
+    detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 200,
+    operations: {
+      "working-tree-diff": {
+        async load(input, { cwd }) {
+          if (input.staged) {
+            throw createJjStagedError(input);
+          }
+          const repoRoot = resolveJjRepoRoot(input, { cwd, jjExecutable });
+          const repoName = basename(repoRoot);
+          const sourceEndpoints = resolveJjDiffEndpoints(input, input.range ?? "@", {
+            cwd,
+            jjExecutable,
+          });
+          const sourceCapability = sourceEndpoints
+            ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
+            : undefined;
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
+            patchText: runJjText({
+              input,
+              args: buildJjDiffArgs(input, sourceEndpoints?.newCommitId),
+              cwd,
+              jjExecutable,
+            }),
+            ...sourceCapability,
+          };
+        },
+        watchSignature(input, { cwd }) {
+          return runJjText({ input, args: buildJjDiffArgs(input), cwd, jjExecutable });
+        },
       },
-      watchSignature(input, { cwd }) {
-        return runJjText({ input, args: buildJjDiffArgs(input), cwd });
+      "revision-show": {
+        async load(input, { cwd }) {
+          const repoRoot = resolveJjRepoRoot(input, { cwd, jjExecutable });
+          const repoName = basename(repoRoot);
+          const revset = input.ref ?? "@";
+          const sourceEndpoints = resolveJjDiffEndpoints(input, revset, {
+            cwd,
+            jjExecutable,
+          });
+          const sourceCapability = sourceEndpoints
+            ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
+            : undefined;
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: `${repoName} show ${revset}`,
+            patchText: runJjText({
+              input,
+              args: buildJjShowArgs(input, sourceEndpoints?.newCommitId),
+              cwd,
+              jjExecutable,
+            }),
+            ...sourceCapability,
+          };
+        },
+        watchSignature(input, { cwd }) {
+          return runJjText({ input, args: buildJjShowArgs(input), cwd, jjExecutable });
+        },
       },
     },
-    "revision-show": {
-      async load(input, { cwd }) {
-        const repoRoot = resolveJjRepoRoot(input, { cwd });
-        const repoName = basename(repoRoot);
-        const revset = input.ref ?? "@";
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: `${repoName} show ${revset}`,
-          patchText: runJjText({ input, args: buildJjShowArgs(input), cwd }),
-        };
-      },
-      watchSignature(input, { cwd }) {
-        return runJjText({ input, args: buildJjShowArgs(input), cwd });
-      },
-    },
-  },
-} satisfies ExtensionVcsAdapter;
+  } satisfies ExtensionVcsAdapter;
+}
+
+export const JjVcsAdapter = createJjVcsAdapter();
 
 export default function (hunk: HunkExtensionAPI) {
   hunk.registerVcsAdapter(JjVcsAdapter);

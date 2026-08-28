@@ -41,6 +41,49 @@ export async function readFileTextWithLimit(
   }
 }
 
+const SOURCE_SUBPROCESS_GRACE_MS = 100;
+const SOURCE_SUBPROCESS_FORCE_WAIT_MS = 250;
+
+/** Wait a bounded interval for a source-reader subprocess to exit. */
+function waitForSourceSubprocessExit(proc: Bun.ReadableSubprocess, timeoutMs: number) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (exited: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(exited);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    void proc.exited.then(
+      () => finish(true),
+      () => finish(true),
+    );
+  });
+}
+
+/** Terminate a source-reader subprocess without letting cleanup block indefinitely. */
+export async function terminateSourceSubprocess(proc: Bun.ReadableSubprocess) {
+  try {
+    proc.kill("SIGTERM");
+  } catch {
+    // The process may have exited between the stream failure and cleanup.
+  }
+  if (await waitForSourceSubprocessExit(proc, SOURCE_SUBPROCESS_GRACE_MS)) {
+    return;
+  }
+
+  try {
+    proc.kill("SIGKILL");
+  } catch {
+    // A concurrent exit needs no further signal.
+  }
+  await waitForSourceSubprocessExit(proc, SOURCE_SUBPROCESS_FORCE_WAIT_MS);
+}
+
 /** Read a byte stream as text while enforcing a caller-defined resource limit. */
 export async function readStreamTextWithLimit(
   stream: ReadableStream<Uint8Array> | null,

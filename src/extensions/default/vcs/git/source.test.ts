@@ -135,23 +135,31 @@ describe("Git source reading", () => {
     ).resolves.toEqual({ kind: "too-large", maxBytes: 5 });
   });
 
-  test("treats oversized git stderr as a generic source failure", async () => {
+  test("force-terminates Git after oversized stderr fails source collection", async () => {
     const originalSpawn = Bun.spawn;
     const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+    let spawnedProcess: Bun.ReadableSubprocess | undefined;
+    let childExited = false;
 
-    mutableBun.spawn = (() =>
-      originalSpawn(
+    mutableBun.spawn = (() => {
+      const proc = originalSpawn(
         [
           process.execPath,
           "--eval",
-          "process.stdout.write('small source\\n'); process.stderr.write('x'.repeat(70000));",
+          "process.on('SIGTERM', () => {}); process.stdout.write('small source\\n'); process.stderr.write('x'.repeat(70000)); setInterval(() => {}, 1000);",
         ],
         {
           stdin: "ignore",
           stdout: "pipe",
           stderr: "pipe",
         },
-      )) as typeof Bun.spawn;
+      );
+      spawnedProcess = proc;
+      void proc.exited.then(() => {
+        childExited = true;
+      });
+      return proc;
+    }) as typeof Bun.spawn;
 
     try {
       const loggedErrors = await captureConsoleErrors(async () => {
@@ -165,10 +173,16 @@ describe("Git source reading", () => {
         ).resolves.toBeNull();
       });
 
+      expect(spawnedProcess).toBeDefined();
+      expect(childExited).toBe(true);
       expect(String(loggedErrors[0]?.[0])).toContain("failed to collect Git source");
       expect(String(loggedErrors[0]?.[1])).toContain("diagnostics exceeded");
     } finally {
       mutableBun.spawn = originalSpawn;
+      if (spawnedProcess) {
+        spawnedProcess.kill("SIGKILL");
+        await Promise.race([spawnedProcess.exited.catch(() => undefined), Bun.sleep(2_000)]);
+      }
     }
   });
 
