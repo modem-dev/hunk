@@ -68,10 +68,13 @@ async function renderRuntime(initialFacts: RuntimeFacts, strict = false) {
     useExtensionRuntimeBindings({
       commands,
       navigation: {
-        onSelectFile: (fileId) => navigationCalls.push(`file:${fileId}`),
-        onSelectHunk: (fileId, hunkIndex) => navigationCalls.push(`hunk:${fileId}:${hunkIndex}`),
+        // Mark calls with this render's selection so tests distinguish committed callback updates.
+        onSelectFile: (fileId) =>
+          navigationCalls.push(`selection:${facts.selectedFileId}:file:${fileId}`),
+        onSelectHunk: (fileId, hunkIndex) =>
+          navigationCalls.push(`selection:${facts.selectedFileId}:hunk:${fileId}:${hunkIndex}`),
         onRevealLine: (fileId, side, line) => {
-          navigationCalls.push(`line:${fileId}:${side}:${line}`);
+          navigationCalls.push(`selection:${facts.selectedFileId}:line:${fileId}:${side}:${line}`);
           return "line";
         },
       },
@@ -244,7 +247,7 @@ describe("useExtensionRuntimeBridge", () => {
       expect(successorLease.isLive()).toBe(true);
       expect(successorReview.snapshot()?.generation).toBe(second.changeset.id);
       successorNavigation.selectFile("alpha");
-      expect(harness.navigationCalls).toEqual(["file:alpha"]);
+      expect(harness.navigationCalls).toEqual(["selection:alpha:file:alpha"]);
     } finally {
       await destroy(harness.setup);
     }
@@ -304,7 +307,7 @@ describe("useExtensionRuntimeBridge", () => {
       expect(Object.isFrozen(selection)).toBe(true);
       expect(Object.isFrozen(selection.file)).toBe(true);
       navigation.selectFile("beta");
-      expect(harness.navigationCalls).toEqual(["file:beta"]);
+      expect(harness.navigationCalls).toEqual(["selection:beta:file:beta"]);
     } finally {
       await destroy(harness.setup);
     }
