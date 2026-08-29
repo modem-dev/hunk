@@ -2049,6 +2049,20 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     throw new Error(`\`${prefixedReviewFlags[0]}\` must be used with a Hunk review command.`);
   }
 
+  // Only review commands and extension CLI commands consume the leading bootstrap flags. The
+  // remaining built-ins never load extensions, so accepting the flags there would silently
+  // discard them; refuse the invocation the way a misplaced `--fast` is refused.
+  if (
+    extensionFlagTokens.length > 0 &&
+    isBuiltInCliCommandName(commandName) &&
+    !REVIEW_COMMAND_NAMES.has(commandName)
+  ) {
+    throw new Error(
+      `\`${extensionFlagTokens[0]}\` must be used with a Hunk review command or an ` +
+        `extension CLI command, not \`${commandName}\`.`,
+    );
+  }
+
   // Host bootstrap options must stay before a review command's `--` pathspec separator.
   const reviewRest = [...extensionFlagTokens, ...rest];
   switch (commandName) {

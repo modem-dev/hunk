@@ -1461,6 +1461,28 @@ describe("parseCli", () => {
     });
   });
 
+  test("refuses leading extension bootstrap flags on built-ins that never load extensions", async () => {
+    for (const command of [
+      "session",
+      "markup",
+      "skill",
+      "extension",
+      "ext",
+      "update",
+      "daemon",
+      "mcp",
+    ]) {
+      await expect(
+        parseCli(["bun", "hunk", "--extension", "./review.ts", command, "list"]),
+      ).rejects.toThrow(
+        "`--extension` must be used with a Hunk review command or an extension CLI command",
+      );
+      await expect(parseCli(["bun", "hunk", "--no-extensions", command, "list"])).rejects.toThrow(
+        "`--no-extensions` must be used with a Hunk review command or an extension CLI command",
+      );
+    }
+  });
+
   test("keeps the stash subcommand ahead of leading extension bootstrap flags", async () => {
     expect(
       await parseCli(["bun", "hunk", "--extension", "./review.ts", "stash", "show", "stash@{1}"]),
