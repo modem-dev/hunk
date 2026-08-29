@@ -266,10 +266,13 @@ function resolveNavigateCommandInput(
     );
   }
 
+  // Exact coordinates take precedence so callers reveal the row rather than only its hunk.
+  const hasExactLineTarget = input.side !== undefined && input.line !== undefined;
   return {
     ...input.selector,
     filePath: input.filePath,
-    hunkIndex: input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined,
+    hunkIndex:
+      input.hunkNumber !== undefined && !hasExactLineTarget ? input.hunkNumber - 1 : undefined,
     side: input.side,
     line: input.line,
     commentDirection: input.commentDirection,

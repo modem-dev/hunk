@@ -258,6 +258,33 @@ describe("handleSessionApiRequest", () => {
     expect(dispatchInput.hunkIndex).toBe(1);
   });
 
+  test("prefers exact line coordinates over a co-supplied hunk number", async () => {
+    const { state, calls } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        filePath: "src/example.ts",
+        hunkNumber: 3,
+        side: "new",
+        line: 17,
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(200);
+    const dispatch = calls.find((call) => call.method === "dispatchCommand");
+    expect(dispatch).toBeDefined();
+    expect((dispatch!.args[0] as { input: unknown }).input).toEqual({
+      sessionId: "s-1",
+      filePath: "src/example.ts",
+      hunkIndex: undefined,
+      side: "new",
+      line: 17,
+      commentDirection: undefined,
+    });
+  });
+
   test("resolves a comment id before dispatching a navigate command", async () => {
     const { state, calls } = createFakeState({
       listComments: () => [
