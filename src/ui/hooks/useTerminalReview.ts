@@ -199,6 +199,21 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
   };
 }
 
+/** Check whether two cursor snapshots name the same rendered review line. */
+function sameLineCursor(current: LineCursor | null, next: LineCursor | null) {
+  return (
+    current === next ||
+    (current !== null &&
+      next !== null &&
+      current.fileId === next.fileId &&
+      current.hunkIndex === next.hunkIndex &&
+      current.stableKey === next.stableKey &&
+      current.target.side === next.target.side &&
+      current.target.line === next.target.line &&
+      current.expandedGapKey === next.expandedGapKey)
+  );
+}
+
 export interface TerminalReview {
   allFiles: DiffFile[];
   /**
@@ -585,9 +600,14 @@ export function useTerminalReview({
    * Keep the current line on a row the review stream still renders.
    *
    * Seeding from the selected hunk makes the marker visible from launch, not just after the
-   * first keypress.
+   * first keypress. Palette changes can remeasure rows without changing their semantic cursor;
+   * retaining that cursor avoids a passive state-update loop during rapid theme previews.
    */
   const applyLineCursor = useCallback((next: LineCursor | null) => {
+    if (sameLineCursor(lineCursorRef.current, next)) {
+      return;
+    }
+
     lineCursorRef.current = next;
     setLineCursor(next);
   }, []);

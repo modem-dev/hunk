@@ -1635,6 +1635,53 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("retains a current line when remeasurement publishes the same semantic cursor", async () => {
+    const file = createAlphaFile();
+    const measuredCursors = buildLineCursors(
+      [file],
+      [
+        measureDiffSectionGeometry(
+          file,
+          "stack",
+          true,
+          resolveTheme("github-dark-default", null),
+          [],
+          0,
+          true,
+          false,
+        ),
+      ],
+    );
+    const { controllerRef, setup } = await renderTerminalReview([file]);
+
+    try {
+      await flush(setup);
+      const initial = expectValue(expectValue(controllerRef.current).lineCursor);
+      const equivalent = { ...initial, target: { ...initial.target } };
+
+      await act(async () => {
+        expectValue(controllerRef.current).anchorLineCursor(equivalent);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toBe(initial);
+
+      const next = expectValue(
+        measuredCursors.find((cursor) => cursor.stableKey !== initial.stableKey),
+      );
+      await act(async () => {
+        expectValue(controllerRef.current).anchorLineCursor(next);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toBe(next);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("moves the current line one row at a time and clamps at the top of the stream", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
