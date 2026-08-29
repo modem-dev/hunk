@@ -1,7 +1,9 @@
 # Browser review rebuild plan
 
 The synchronized browser-review feature (originally prototyped in one large branch) lands as a
-stack of small, independently reviewable PRs. Each phase has a hard gate and stands on the
+stack of small, independently reviewable PRs. Its Hunk-owned capability, resource, and semantic
+protocol remains separate from the generic per-application daemon contract in
+[`session-broker-sdk.md`](session-broker-sdk.md). Each phase has a hard gate and stands on the
 previous one. The seam contract — shared primitives stay renderer-free and platform-neutral —
 is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only shrink.
 

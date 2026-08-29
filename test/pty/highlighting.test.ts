@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPtyHarness, sleep } from "./harness";
+import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -27,6 +27,11 @@ function createLargeHighlightTestFiles() {
   return { after, before, dir };
 }
 
+/** Return generated worker-line indexes visible in one PTY snapshot. */
+function visibleWorkerLineIndexes(snapshot: string) {
+  return Array.from(snapshot.matchAll(/workerLine(\d+)/g), (match) => Number(match[1]));
+}
+
 describe("PTY syntax highlighting", () => {
   test("keeps key input responsive while a large added file highlights", async () => {
     const fixture = createLargeHighlightTestFiles();
@@ -39,12 +44,22 @@ describe("PTY syntax highlighting", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      // Effects schedule highlighting after the first plain-text paint. Give that queue a turn,
-      // then assert the PTY can still deliver navigation while the worker is busy.
-      await sleep(25);
-      const started = performance.now();
-      await session.press("down");
-      expect(performance.now() - started).toBeLessThan(500);
+      const initial = await session.waitForText(/export const workerLine\d+ = \d+;/, {
+        timeout: 15_000,
+      });
+      const lastInitialLineIndex = Math.max(...visibleWorkerLineIndexes(initial));
+      expect(lastInitialLineIndex).toBeGreaterThanOrEqual(0);
+
+      // Effects schedule highlighting after the first plain-text paint. Inject input as soon as
+      // source rows make that paint observable, then require Hunk to process the navigation.
+      // Tuistory's press() waits up to 500ms for idleness, so observe the viewport instead.
+      session.sendKey("pagedown");
+      await harness.waitForSnapshot(
+        session,
+        (snapshot) =>
+          visibleWorkerLineIndexes(snapshot).some((index) => index > lastInitialLineIndex),
+        1_000,
+      );
 
       let colored = "";
       for (let iteration = 0; iteration < 200; iteration += 1) {

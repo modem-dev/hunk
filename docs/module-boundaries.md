@@ -24,7 +24,8 @@ src/extension-api      published contract; imports nothing
 src/lib                dependency-free helpers; may import extension-api only
 src/core               domain model (changesets, review, vcs catalog, config)
 packages/*             standalone publishable units (session broker, term-video);
-                       never import src/
+                       never import src/; the per-app broker contract is in
+                       docs/session-broker-sdk.md
 src/extensions         extension host + bundled extensions; consume core, never surfaces
 src/session            daemon/broker transport + protocol; consumes core and packages
 src/app                startup composition: CLI parsing plus the wiring of core,
