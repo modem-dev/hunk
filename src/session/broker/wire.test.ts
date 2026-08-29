@@ -16,7 +16,12 @@ function createRegistration(files: unknown[]) {
     pid: 123,
     cwd: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
-    info: { inputKind: "vcs", title: "repo working tree", sourceLabel: "/repo", files },
+    info: {
+      inputKind: "vcs",
+      title: "repo working tree",
+      sourceLabel: "/repo",
+      files,
+    },
   };
 }
 
@@ -45,7 +50,7 @@ function createValidComment(overrides: Record<string, unknown> = {}) {
 }
 
 describe("hunk session wire parsing", () => {
-  test("snapshot comment counts only include validated comment summaries", () => {
+  test("snapshot rejects malformed comment summaries instead of partially filtering them", () => {
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",
       state: {
@@ -64,12 +69,10 @@ describe("hunk session wire parsing", () => {
       },
     });
 
-    expect(snapshot).not.toBeNull();
-    expect(snapshot?.state.liveComments).toHaveLength(1);
-    expect(snapshot?.state.liveCommentCount).toBe(1);
+    expect(snapshot).toBeNull();
   });
 
-  test("snapshot carries the live note markup width and drops invalid values", () => {
+  test("snapshot carries the live note markup width and rejects invalid values", () => {
     const parse = (noteMarkupWidth: unknown) =>
       parseSessionSnapshot({
         updatedAt: "2026-03-22T00:00:00.000Z",
@@ -82,7 +85,7 @@ describe("hunk session wire parsing", () => {
       });
 
     expect(parse(112)?.state.noteMarkupWidth).toBe(112);
-    expect(parse("wide")?.state.noteMarkupWidth).toBeUndefined();
+    expect(parse("wide")).toBeNull();
     expect(parse(undefined)?.state.noteMarkupWidth).toBeUndefined();
   });
 
@@ -110,7 +113,7 @@ describe("hunk session wire parsing", () => {
     });
   });
 
-  test("registration preserves only recognized experimental feature ids", () => {
+  test("registration rejects malformed or unknown experimental feature ids", () => {
     const registration = parseSessionRegistration({
       registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
       sessionId: "session-1",
@@ -126,7 +129,7 @@ describe("hunk session wire parsing", () => {
       },
     });
 
-    expect(registration?.info.experimentalFeatures).toEqual(["stml"]);
+    expect(registration).toBeNull();
   });
 
   test("rejects registrations with more files than the cap", () => {
@@ -146,10 +149,71 @@ describe("hunk session wire parsing", () => {
     expect(parseSessionRegistration(createRegistration([createFile({ hunks })]))).toBeNull();
   });
 
-  test("rejects files whose patch exceeds the byte cap", () => {
+  test("accepts legacy embedded patches beyond the generic string ceiling through the exact cap", () => {
+    for (const size of [4_097, MAX_REGISTRATION_PATCH_BYTES]) {
+      const patch = "x".repeat(size);
+      expect(
+        parseSessionRegistration(createRegistration([createFile({ patch })]))?.info.files[0]?.patch,
+      ).toHaveLength(size);
+    }
+  });
+
+  test("rejects a legacy embedded patch one byte beyond its cap", () => {
     const patch = "x".repeat(MAX_REGISTRATION_PATCH_BYTES + 1);
 
     expect(parseSessionRegistration(createRegistration([createFile({ patch })]))).toBeNull();
+  });
+
+  test("accepts zero-based pure-add, pure-delete, and new-file hunk ranges", () => {
+    const ranges: Array<{
+      oldRange: [number, number];
+      newRange: [number, number];
+    }> = [
+      { oldRange: [0, 0], newRange: [1, 3] },
+      { oldRange: [4, 2], newRange: [0, 0] },
+      { oldRange: [0, 0], newRange: [0, 4] },
+    ];
+    const files = ranges.map((range, index) =>
+      createFile({
+        id: `file-${index}`,
+        path: `src/file-${index}.ts`,
+        hunks: [{ index: 0, header: "@@", ...range }],
+      }),
+    );
+
+    expect(
+      parseSessionRegistration(createRegistration(files))?.info.files.map((file) => file.hunks[0]),
+    ).toEqual(ranges.map((range) => ({ index: 0, header: "@@", ...range })));
+  });
+
+  test("accepts zero-based selected ranges and review-note ranges in snapshots", () => {
+    const snapshot = parseSessionSnapshot({
+      updatedAt: "2026-03-22T00:00:00.000Z",
+      state: {
+        selectedHunkIndex: 0,
+        selectedHunkOldRange: [0, 0],
+        selectedHunkNewRange: [0, 3],
+        showAgentNotes: true,
+        liveComments: [],
+        reviewNotes: [
+          {
+            noteId: "note-1",
+            source: "user",
+            filePath: "new-file.ts",
+            oldRange: [0, 0],
+            newRange: [0, 3],
+            body: "New file",
+            createdAt: "2026-03-22T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    expect(snapshot?.state).toMatchObject({
+      selectedHunkOldRange: [0, 0],
+      selectedHunkNewRange: [0, 3],
+      reviewNotes: [{ oldRange: [0, 0], newRange: [0, 3] }],
+    });
   });
 
   test("rejects snapshots with more live comments than the cap", () => {
@@ -176,7 +240,12 @@ describe("hunk session wire parsing", () => {
 
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",
-      state: { selectedHunkIndex: 0, showAgentNotes: true, liveComments: [], reviewNotes },
+      state: {
+        selectedHunkIndex: 0,
+        showAgentNotes: true,
+        liveComments: [],
+        reviewNotes,
+      },
     });
 
     expect(snapshot).toBeNull();

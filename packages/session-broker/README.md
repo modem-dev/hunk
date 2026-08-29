@@ -61,6 +61,7 @@ internal workspace usage only.
 import {
   SessionBroker,
   brokerWireParsers,
+  createSessionBrokerProtocolParsers,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
 } from "@hunk/session-broker";
@@ -93,10 +94,22 @@ function parseState(value: unknown): SessionState | null {
   return selectedIndex === null ? null : { selectedIndex };
 }
 
-const broker = new SessionBroker({
+const protocolParsers = createSessionBrokerProtocolParsers({
+  appRevision: 1,
+  features: [],
   parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
   parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: [
+    {
+      command: "select",
+      version: 1,
+      parseInput: (value) => (brokerWireParsers.parseNonNegativeInt(value) === null ? null : value),
+      parseResult: (value) => (value === true ? true : null),
+    },
+  ],
 });
+
+const broker = new SessionBroker({ protocolParsers });
 ```
 
 ### 2. Create a daemon engine
@@ -165,9 +178,12 @@ const connection = createSessionBrokerConnection({
   createSocket: (url) => new WebSocket(url),
   registration,
   snapshot,
+  protocolParsers,
   bridge: {
     dispatchCommand: async (message) => {
-      return handleCommand(message);
+      if (message.command !== "select") throw new Error("Unsupported command.");
+      selectFile(message.input);
+      return true;
     },
   },
 });

@@ -35,6 +35,7 @@ import type {
   SessionReview,
   SessionReviewFile,
 } from "../types";
+import { hunkSessionProtocolParsers } from "./protocolParsers";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
 import {
   ReviewMirror,
@@ -75,10 +76,16 @@ const hunkSessionBrokerView: SessionBrokerViewAdapter<
   ListedSession,
   SelectedSessionContext,
   SessionReview,
-  SessionLiveCommentSummary
+  SessionLiveCommentSummary,
+  HunkSessionServerMessage,
+  HunkSessionCommandResult
 > = {
   parseRegistration: parseSessionRegistration,
   parseSnapshot: parseSessionSnapshot,
+  parseCommandInput: (command, version, value) =>
+    hunkSessionProtocolParsers.parseCommandInput(command, version, value),
+  parseCommandResult: (command, version, value) =>
+    hunkSessionProtocolParsers.parseCommandResult(command, version, value),
   buildListedSession: buildListedHunkSession,
   buildSelectedContext: buildSelectedHunkSessionContext,
   buildSessionReview: buildHunkSessionReview,

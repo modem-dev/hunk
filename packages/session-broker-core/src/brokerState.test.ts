@@ -102,10 +102,15 @@ const testBrokerView: SessionBrokerViewAdapter<
   TestListedSession,
   TestSelectedContext,
   TestSessionReview,
-  TestCommentSummary
+  TestCommentSummary,
+  TestServerMessage,
+  TestCommandResult
 > = {
   parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseTestInfo),
   parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseTestState),
+  parseCommandInput: (_command, _version, value) => value,
+  parseCommandResult: (_command, _version, value) =>
+    value && typeof value === "object" ? (value as TestCommandResult) : null,
   buildListedSession: (entry) => ({
     sessionId: entry.registration.sessionId,
     pid: entry.registration.pid,
@@ -315,6 +320,9 @@ describe("session broker state", () => {
       send() {},
     };
 
+    expect(state.registerSession(socket, createRegistration(), createSnapshot())).toBe(
+      "registered",
+    );
     const accepted = state.registerSession(
       socket,
       {
@@ -325,7 +333,8 @@ describe("session broker state", () => {
     );
 
     expect(accepted).toBe("invalid");
-    expect(state.listSessions()).toEqual([]);
+    expect(state.listSessions()).toHaveLength(1);
+    expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
   });
 
   test("reports invalid snapshot updates without replacing the last valid selection", () => {

@@ -4,6 +4,11 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  parseBrokerSafeInteger,
+  parseBrokerString,
+  parseExactBrokerRecord,
+} from "@hunk/session-broker-core";
 import { resolveSessionBrokerConfig, type ResolvedSessionBrokerConfig } from "./brokerConfig";
 
 const SCRIPT_ENTRYPOINT_PATTERN = /[\\/]|\.(?:[cm]?js|tsx?)$/;
@@ -317,6 +322,60 @@ export interface SessionBrokerHealth {
   staleSessionTtlMs?: number;
 }
 
+/** Parse the minimal or legacy-rich health response without trusting cross-process JSON. */
+export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | null {
+  try {
+    const record = parseExactBrokerRecord(
+      value,
+      ["ok"] as const,
+      [
+        "pid",
+        "sessions",
+        "pendingCommands",
+        "startedAt",
+        "uptimeMs",
+        "sessionApi",
+        "sessionCapabilities",
+        "sessionSocket",
+        "staleSessionTtlMs",
+        "paths",
+      ] as const,
+    );
+    if (record.ok !== true) return null;
+    const parsed: SessionBrokerHealth = { ok: true };
+    for (const key of [
+      "pid",
+      "sessions",
+      "pendingCommands",
+      "uptimeMs",
+      "staleSessionTtlMs",
+    ] as const) {
+      if (record[key] !== undefined) parsed[key] = parseBrokerSafeInteger(record[key]);
+    }
+    for (const key of [
+      "startedAt",
+      "sessionApi",
+      "sessionCapabilities",
+      "sessionSocket",
+    ] as const) {
+      if (record[key] !== undefined) parsed[key] = parseBrokerString(record[key]);
+    }
+    // Generic rich health used to carry a paths object. It is accepted only as one exact bounded
+    // compatibility shape and intentionally not projected into caller authority.
+    if (record.paths !== undefined) {
+      const paths = parseExactBrokerRecord(
+        record.paths,
+        ["health", "socket"] as const,
+        ["api", "capabilities"] as const,
+      );
+      for (const path of Object.values(paths)) parseBrokerString(path);
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 /** Read the daemon's health payload when one is reachable on the configured loopback port. */
 export async function readSessionBrokerHealth(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
@@ -334,7 +393,7 @@ export async function readSessionBrokerHealth(
       return null;
     }
 
-    return (await response.json()) as SessionBrokerHealth;
+    return parseSessionBrokerHealth(await response.json());
   } catch {
     return null;
   } finally {

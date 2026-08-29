@@ -8,7 +8,11 @@ import {
   type SessionRegistration,
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
-import { SessionBroker, createSessionBrokerDaemon } from "@hunk/session-broker";
+import {
+  SessionBroker,
+  createSessionBrokerDaemon,
+  createSessionBrokerProtocolParsers,
+} from "@hunk/session-broker";
 import { serveSessionBrokerDaemon } from "./serve";
 
 interface TestSessionInfo {
@@ -53,7 +57,9 @@ function createRegistration(overrides: Partial<SessionRegistration<TestSessionIn
 }
 
 function createSnapshot(
-  overrides: Partial<SessionSnapshot<TestSessionState>["state"]> & { updatedAt?: string } = {},
+  overrides: Partial<SessionSnapshot<TestSessionState>["state"]> & {
+    updatedAt?: string;
+  } = {},
 ) {
   const { updatedAt = "2026-04-15T00:00:00.000Z", ...stateOverrides } = overrides;
   return {
@@ -64,6 +70,14 @@ function createSnapshot(
     },
   } satisfies SessionSnapshot<TestSessionState>;
 }
+
+const protocolParsers = createSessionBrokerProtocolParsers({
+  appRevision: 1,
+  features: [],
+  parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+  parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: [],
+});
 
 async function reserveLoopbackPort() {
   const listener = createServer(() => undefined);
@@ -137,10 +151,7 @@ afterEach(() => {
 
 describe("session broker bun adapter", () => {
   test("serves the generic daemon API and websocket path through Bun", async () => {
-    const broker = new SessionBroker({
-      parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
-      parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
-    });
+    const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
       broker,
       capabilities: { version: 1 },
@@ -221,7 +232,10 @@ describe("session broker bun adapter", () => {
       const response = await fetch(`http://127.0.0.1:${port}/broker`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
+        body: JSON.stringify({
+          action: "get",
+          selector: { sessionId: "session-1" },
+        }),
       });
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
@@ -241,11 +255,11 @@ describe("session broker bun adapter", () => {
   });
 
   test("lets custom request handlers override generic routes", async () => {
-    const broker = new SessionBroker({
-      parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
-      parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      capabilities: { version: 1 },
     });
-    const daemon = createSessionBrokerDaemon({ broker, capabilities: { version: 1 } });
     const port = await reserveLoopbackPort();
     const server = serveSessionBrokerDaemon({
       daemon,
@@ -263,7 +277,10 @@ describe("session broker bun adapter", () => {
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
-      await expect(response.json()).resolves.toEqual({ ok: true, overridden: true });
+      await expect(response.json()).resolves.toEqual({
+        ok: true,
+        overridden: true,
+      });
     } finally {
       server.stop(true);
       await server.stopped;

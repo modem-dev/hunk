@@ -145,17 +145,20 @@ export type SessionDaemonRequest =
       filePath?: string;
     };
 
-export type SessionDaemonResponse =
-  | { sessions: ListedSession[] }
-  | { session: ListedSession }
-  | { context: SelectedSessionContext }
-  | { review: SessionReview }
-  | { result: NavigatedSelectionResult }
-  | { result: ReloadedSessionResult }
-  | { result: AppliedCommentResult }
-  | { result: AppliedCommentBatchResult }
-  | { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }
-  | { result: RemovedCommentResult }
-  | { result: ClearedCommentsResult }
-  | { result: AppliedHighlightResult }
-  | { result: ClearedHighlightsResult };
+export interface SessionDaemonResponses {
+  list: { sessions: ListedSession[] };
+  get: { session: ListedSession };
+  context: { context: SelectedSessionContext };
+  review: { review: SessionReview };
+  navigate: { result: NavigatedSelectionResult };
+  reload: { result: ReloadedSessionResult };
+  "comment-add": { result: AppliedCommentResult };
+  "comment-apply": { result: AppliedCommentBatchResult };
+  "comment-list": { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> };
+  "comment-rm": { result: RemovedCommentResult };
+  "comment-clear": { result: ClearedCommentsResult };
+  "highlight-add": { result: AppliedHighlightResult };
+  "highlight-clear": { result: ClearedHighlightsResult };
+}
+
+export type SessionDaemonResponse = SessionDaemonResponses[SessionDaemonAction];

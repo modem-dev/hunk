@@ -45,6 +45,8 @@ export type SessionBrokerDaemonRequest<
       input: CommandInput;
       timeoutMs?: number;
       timeoutMessage?: string;
+      deadline?: number;
+      idempotencyKey?: string;
     };
 
 export type SessionBrokerDaemonResponse<SessionView = unknown, CommandResult = unknown> =
@@ -93,7 +95,7 @@ export interface SessionBrokerSocketMessageEvent {
 export interface SessionBrokerSocketLike {
   readonly readyState: number;
   send(data: string): void;
-  close(): void;
+  close(code?: number, reason?: string): void;
   onopen: (() => void) | null;
   onmessage: ((event: SessionBrokerSocketMessageEvent) => void) | null;
   onclose: ((event: SessionBrokerSocketCloseEvent) => void) | null;

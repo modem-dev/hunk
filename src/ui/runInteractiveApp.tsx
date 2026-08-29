@@ -20,12 +20,6 @@ import {
   createInitialSessionSnapshot,
   createSessionRegistration,
 } from "../app/session/registration";
-import type {
-  HunkSessionCommandResult,
-  HunkSessionInfo,
-  HunkSessionServerMessage,
-  HunkSessionState,
-} from "../session/types";
 import { SessionBrokerClient } from "../session/broker/brokerClient";
 import { AppHost } from "./AppHost";
 import { disposeHighlightWorker } from "./diff/worker";
@@ -56,12 +50,7 @@ export async function runInteractiveApp({
     sourceLabel: bootstrap.changeset.sourceLabel,
   });
   const publication = reviewProducer.getPublication();
-  const hostClient = new SessionBrokerClient<
-    HunkSessionInfo,
-    HunkSessionState,
-    HunkSessionServerMessage,
-    HunkSessionCommandResult
-  >(
+  const hostClient = new SessionBrokerClient(
     createSessionRegistration(bootstrap, publication),
     createInitialSessionSnapshot(bootstrap, publication),
   );

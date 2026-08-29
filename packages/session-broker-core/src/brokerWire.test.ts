@@ -22,6 +22,37 @@ describe("session broker wire parsing", () => {
     ).toBeNull();
   });
 
+  test("rejects arrays, unknown keys, malformed optionals, and throwing app parsers", () => {
+    const valid = {
+      registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
+      sessionId: "session-1",
+      pid: 123,
+      cwd: "/repo",
+      launchedAt: "2026-03-22T00:00:00.000Z",
+      info: { ok: true },
+    };
+    const parseInfo = (value: unknown) => (value && typeof value === "object" ? value : null);
+    for (const value of [
+      null,
+      [],
+      { ...valid, extra: true },
+      { ...valid, repoRoot: null },
+      { ...valid, terminal: { locations: [], extra: true } },
+      { ...valid, pid: Number.MAX_SAFE_INTEGER + 1 },
+      { ...valid, sessionId: "bad id!" },
+    ]) {
+      expect(parseSessionRegistrationEnvelope(value, parseInfo)).toBeNull();
+    }
+    expect(
+      parseSessionRegistrationEnvelope(valid, () => {
+        throw new Error("parser internals");
+      }),
+    ).toBeNull();
+    expect(
+      parseSessionSnapshotEnvelope({ updatedAt: "now", state: {}, extra: true }, parseInfo),
+    ).toBeNull();
+  });
+
   test("snapshot parsing delegates opaque app state validation", () => {
     const snapshot = parseSessionSnapshotEnvelope(
       {

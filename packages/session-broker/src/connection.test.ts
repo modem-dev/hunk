@@ -6,6 +6,7 @@ import type {
 } from "@hunk/session-broker-core";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { createSessionBrokerConnection } from "./connection";
+import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type { SessionBrokerSocketLike } from "./types";
 
 interface TestSessionInfo {
@@ -22,6 +23,7 @@ class TestSocket implements SessionBrokerSocketLike {
   readyState = 0;
   sent: string[] = [];
   throwOnSend = false;
+  lastClose: { code?: number; reason?: string } | null = null;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
@@ -32,8 +34,9 @@ class TestSocket implements SessionBrokerSocketLike {
     this.sent.push(data);
   }
 
-  close() {
-    this.emitClose();
+  close(code?: number, reason?: string) {
+    this.lastClose = { code, reason };
+    this.emitClose(code, reason);
   }
 
   emitOpen() {
@@ -69,6 +72,38 @@ function createSnapshot(): SessionSnapshot<TestSessionState> {
   };
 }
 
+const protocolParsers = createSessionBrokerProtocolParsers<
+  TestSessionInfo,
+  TestSessionState,
+  TestServerMessage,
+  { ok: true }
+>({
+  appRevision: 1,
+  features: [],
+  parseRegistration: (value) =>
+    value && typeof value === "object" ? (value as SessionRegistration<TestSessionInfo>) : null,
+  parseSnapshot: (value) =>
+    value && typeof value === "object" ? (value as SessionSnapshot<TestSessionState>) : null,
+  commands: [
+    {
+      command: "annotate",
+      version: 1,
+      parseInput: (value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        const record = value as Record<string, unknown>;
+        return Object.keys(record).length === 1 && typeof record.summary === "string"
+          ? { summary: record.summary }
+          : null;
+      },
+      parseResult: (value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        const record = value as Record<string, unknown>;
+        return Object.keys(record).length === 1 && record.ok === true ? { ok: true } : null;
+      },
+    },
+  ],
+});
+
 describe("session broker connection", () => {
   test("registers on open and sends later snapshot updates", () => {
     const sockets: TestSocket[] = [];
@@ -87,12 +122,15 @@ describe("session broker connection", () => {
       },
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
     });
 
     connection.start();
     sockets[0]?.emitOpen();
 
-    const registerMessage = JSON.parse(sockets[0]!.sent[0]!) as { type: string };
+    const registerMessage = JSON.parse(sockets[0]!.sent[0]!) as {
+      type: string;
+    };
     expect(registerMessage.type).toBe("register");
 
     connection.updateSnapshot({
@@ -100,7 +138,10 @@ describe("session broker connection", () => {
       state: { selectedIndex: 1 },
     });
 
-    const snapshotMessage = JSON.parse(sockets[0]!.sent[1]!) as { type: string; snapshot: unknown };
+    const snapshotMessage = JSON.parse(sockets[0]!.sent[1]!) as {
+      type: string;
+      snapshot: unknown;
+    };
     expect(snapshotMessage.type).toBe("snapshot");
     expect(snapshotMessage.snapshot).toEqual({
       updatedAt: "2026-04-15T00:00:01.000Z",
@@ -122,6 +163,7 @@ describe("session broker connection", () => {
       createSocket: () => socket,
       registration,
       snapshot: createSnapshot(),
+      protocolParsers,
     });
     connection.start();
     socket.emitOpen();
@@ -150,6 +192,7 @@ describe("session broker connection", () => {
       createSocket: () => socket,
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
     });
 
     connection.start();
@@ -175,6 +218,131 @@ describe("session broker connection", () => {
     expect(resultMessage).toMatchObject({ type: "command-result", ok: true });
   });
 
+  test("parses and transforms each server command once before bridge dispatch", async () => {
+    let inputCalls = 0;
+    let resultCalls = 0;
+    const transformingParsers = createSessionBrokerProtocolParsers<
+      TestSessionInfo,
+      TestSessionState,
+      TestServerMessage,
+      { ok: true }
+    >({
+      appRevision: 1,
+      features: [],
+      parseRegistration: protocolParsers.parseRegistration.bind(protocolParsers),
+      parseSnapshot: protocolParsers.parseSnapshot.bind(protocolParsers),
+      commands: [
+        {
+          command: "annotate",
+          version: 1,
+          parseInput: (value) => {
+            inputCalls += 1;
+            const summary = (value as { summary?: unknown })?.summary;
+            return typeof summary === "string" ? { summary: summary.toUpperCase() } : null;
+          },
+          parseResult: (value) => {
+            resultCalls += 1;
+            return (value as { ok?: unknown })?.ok === true ? { ok: true } : null;
+          },
+        },
+      ],
+    });
+    const socket = new TestSocket();
+    let bridgedInput: unknown;
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers: transformingParsers,
+      bridge: {
+        dispatchCommand: async (message) => {
+          bridgedInput = message.input;
+          return { ok: true };
+        },
+      },
+    });
+
+    connection.start();
+    socket.emitOpen();
+    socket.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-1",
+        command: "annotate",
+        input: { summary: "review note" },
+      }),
+    );
+    await Bun.sleep(0);
+
+    expect(bridgedInput).toEqual({ summary: "REVIEW NOTE" });
+    expect({ inputCalls, resultCalls }).toEqual({
+      inputCalls: 1,
+      resultCalls: 1,
+    });
+    connection.stop();
+  });
+
+  test("closes malformed and mismatched commands without invoking the bridge", async () => {
+    const socket = new TestSocket();
+    let dispatched = 0;
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: {
+        dispatchCommand: async () => {
+          dispatched += 1;
+          return { ok: true };
+        },
+      },
+      reconnectDelayMs: 1_000,
+    });
+    connection.start();
+    socket.emitOpen();
+
+    for (const message of [
+      null,
+      [],
+      {
+        type: "command",
+        requestId: "request-1",
+        command: "unknown",
+        input: {},
+      },
+      {
+        type: "command",
+        requestId: "request-1",
+        command: "annotate",
+        input: { summary: "note", extra: true },
+      },
+    ]) {
+      socket.readyState = 1;
+      socket.emitMessage(JSON.stringify(message));
+      expect(socket.lastClose).toEqual({
+        code: 1008,
+        reason: "Malformed session broker command.",
+      });
+    }
+    await Bun.sleep(0);
+    expect(dispatched).toBe(0);
+    connection.stop();
+  });
+
   test("does not migrate a late command result onto a replacement socket", async () => {
     const sockets: TestSocket[] = [];
     let resolveCommand!: (result: { ok: true }) => void;
@@ -196,6 +364,7 @@ describe("session broker connection", () => {
       },
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
       bridge: { dispatchCommand: () => commandResult },
       reconnectDelayMs: 1,
     });
@@ -240,6 +409,7 @@ describe("session broker connection", () => {
       },
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
       reconnectDelayMs: 1,
     });
 
@@ -288,6 +458,7 @@ describe("session broker connection", () => {
       createSocket: () => socket,
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
       reconnectDelayMs: 1_000,
     });
 
@@ -339,6 +510,7 @@ describe("session broker connection", () => {
       },
       registration: createRegistration(),
       snapshot: createSnapshot(),
+      protocolParsers,
       reconnectDelayMs: 5,
       resolveClose: (event) =>
         event.reason === "stop"

@@ -528,13 +528,17 @@ describe("session broker signed authentication", () => {
     const values = await setup();
     const valid = challengeRequest();
     for (const malformed of [
+      null,
+      [],
+      { ...valid, extra: true },
       { ...valid, initiatorNonce: "bad nonce" },
       { ...valid, endpoint: "http://user@127.0.0.1/broker" },
       { ...valid, proposal: { ...valid.proposal, appRevision: 2 } },
       { ...valid, proposal: { ...valid.proposal, features: ["unexpected.feature"] } },
+      { ...valid, proposal: { ...valid.proposal, extra: true } },
     ]) {
       await expect(
-        values.authenticator.issueChallenge(malformed, malformed.endpoint),
+        values.authenticator.issueChallenge(malformed, valid.endpoint),
       ).rejects.toMatchObject({
         code: "invalid-credential",
       });

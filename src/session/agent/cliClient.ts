@@ -8,9 +8,12 @@ import {
 } from "../client/daemonHttp";
 import {
   HUNK_SESSION_API_PATH,
+  type SessionDaemonAction,
   type SessionDaemonCapabilities,
   type SessionDaemonRequest,
+  type SessionDaemonResponses,
 } from "../protocol";
+import { parseSessionDaemonResponse } from "../protocolSchemas";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -78,7 +81,9 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   constructor(private readonly timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS) {}
 
-  private async request<ResultType>(input: SessionDaemonRequest) {
+  private async request<Action extends SessionDaemonAction>(
+    input: Extract<SessionDaemonRequest, { action: Action }>,
+  ): Promise<SessionDaemonResponses[Action]> {
     return requestSessionDaemonHttp({
       config: this.config,
       path: HUNK_SESSION_API_PATH,
@@ -96,7 +101,13 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
           throw new Error(await extractResponseError(response));
         }
 
-        return (await response.json()) as ResultType;
+        let value: unknown;
+        try {
+          value = await response.json();
+        } catch {
+          throw new Error(`Invalid Hunk session daemon response for ${input.action}.`);
+        }
+        return parseSessionDaemonResponse(input.action, value);
       },
     });
   }
@@ -106,22 +117,20 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
   }
 
   async listSessions() {
-    return (await this.request<{ sessions: ListedSession[] }>({ action: "list" })).sessions;
+    return (await this.request({ action: "list" })).sessions;
   }
 
   async getSession(selector: SessionSelectorInput) {
-    return (await this.request<{ session: ListedSession }>({ action: "get", selector })).session;
+    return (await this.request({ action: "get", selector })).session;
   }
 
   async getSelectedContext(selector: SessionSelectorInput) {
-    return (
-      await this.request<{ context: SelectedSessionContext }>({ action: "context", selector })
-    ).context;
+    return (await this.request({ action: "context", selector })).context;
   }
 
   async getSessionReview(input: SessionReviewCommandInput) {
     return (
-      await this.request<{ review: SessionReview }>({
+      await this.request({
         action: "review",
         selector: input.selector,
         includePatch: input.includePatch,
@@ -132,7 +141,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async navigateToHunk(input: SessionNavigateCommandInput) {
     return (
-      await this.request<{ result: NavigatedSelectionResult }>({
+      await this.request({
         action: "navigate",
         selector: input.selector,
         filePath: input.filePath,
@@ -147,7 +156,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async reloadSession(input: SessionReloadCommandInput) {
     return (
-      await this.request<{ result: ReloadedSessionResult }>({
+      await this.request({
         action: "reload",
         selector: input.selector,
         nextInput: input.nextInput,
@@ -158,7 +167,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async addComment(input: SessionCommentAddCommandInput) {
     return (
-      await this.request<{ result: AppliedCommentResult }>({
+      await this.request({
         action: "comment-add",
         selector: input.selector,
         filePath: input.filePath,
@@ -175,7 +184,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async applyComments(input: SessionCommentApplyCommandInput) {
     return (
-      await this.request<{ result: AppliedCommentBatchResult }>({
+      await this.request({
         action: "comment-apply",
         selector: input.selector,
         comments: input.comments,
@@ -186,20 +195,18 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async listComments(input: SessionCommentListCommandInput) {
     return (
-      await this.request<{ comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }>(
-        {
-          action: "comment-list",
-          selector: input.selector,
-          filePath: input.filePath,
-          type: input.type,
-        },
-      )
+      await this.request({
+        action: "comment-list",
+        selector: input.selector,
+        filePath: input.filePath,
+        type: input.type,
+      })
     ).comments;
   }
 
   async removeComment(input: SessionCommentRemoveCommandInput) {
     return (
-      await this.request<{ result: RemovedCommentResult }>({
+      await this.request({
         action: "comment-rm",
         selector: input.selector,
         commentId: input.commentId,
@@ -209,7 +216,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async clearComments(input: SessionCommentClearCommandInput) {
     return (
-      await this.request<{ result: ClearedCommentsResult }>({
+      await this.request({
         action: "comment-clear",
         selector: input.selector,
         filePath: input.filePath,
@@ -220,7 +227,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async addHighlight(input: SessionHighlightAddCommandInput) {
     return (
-      await this.request<{ result: AppliedHighlightResult }>({
+      await this.request({
         action: "highlight-add",
         selector: input.selector,
         filePath: input.filePath,
@@ -236,7 +243,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async clearHighlights(input: SessionHighlightClearCommandInput) {
     return (
-      await this.request<{ result: ClearedHighlightsResult }>({
+      await this.request({
         action: "highlight-clear",
         selector: input.selector,
         filePath: input.filePath,
