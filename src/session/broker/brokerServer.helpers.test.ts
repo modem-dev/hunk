@@ -284,14 +284,12 @@ describe("handleSessionApiRequest", () => {
     expect(response.status).toBe(200);
     const dispatch = calls.find((call) => call.method === "dispatchCommand");
     expect(dispatch).toBeDefined();
-    expect((dispatch!.args[0] as { input: unknown }).input).toMatchObject({
+    expect((dispatch!.args[0] as { input: unknown }).input).toEqual({
       sessionId: "s-1",
       filePath: "src/example.ts",
-      hunkIndex: 2,
       side: "old",
       line: 17,
     });
-    expect((dispatch!.args[0] as { input: unknown }).input).not.toHaveProperty("commentId");
   });
 
   test("rejects navigation to an unknown comment id", async () => {

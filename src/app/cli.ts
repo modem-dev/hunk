@@ -1167,7 +1167,7 @@ async function parseSessionNavigateCommand(tokens: string[]): Promise<ParsedCliI
 
   if (!parsedOptions.file) {
     throw new Error(
-      "Specify --file <path> with a navigation target, or use --next-comment / --prev-comment.",
+      "Specify --comment <id>, --next-comment / --prev-comment, or --file <path> with a navigation target.",
     );
   }
 

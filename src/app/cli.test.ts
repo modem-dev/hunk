@@ -1326,10 +1326,10 @@ describe("parseCli", () => {
     ).rejects.toThrow("Specify either --next-comment or --prev-comment, not both.");
   });
 
-  test("rejects session navigate without --file when not using comment direction", async () => {
+  test("rejects session navigate without a complete selector mode", async () => {
     await expect(
       parseCli(["bun", "hunk", "session", "navigate", "session-1", "--hunk", "1"]),
-    ).rejects.toThrow("Specify --file");
+    ).rejects.toThrow("Specify --comment <id>, --next-comment / --prev-comment, or --file <path>");
   });
 
   test("rejects session navigation with multiple target selectors", async () => {

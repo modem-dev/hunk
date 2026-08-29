@@ -97,15 +97,8 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
 
           return result;
         }
-        case "navigate_to_hunk": {
-          // Exact line coordinates are more specific than a hunk index. Comment-id navigation
-          // resolves to both, so drop the hunk hint and let the terminal reveal the annotated row.
-          const input =
-            message.input.side && message.input.line !== undefined
-              ? { ...message.input, hunkIndex: undefined }
-              : message.input;
-          return handlers.navigateToLocation(input);
-        }
+        case "navigate_to_hunk":
+          return handlers.navigateToLocation(message.input);
         case "highlight":
           return handlers.addAgentLineHighlight(message.input);
         case "clear_highlights":

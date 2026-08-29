@@ -20,6 +20,7 @@ import type {
   ClearedHighlightsResult,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
+  NavigateToHunkToolInput,
   NavigatedSelectionResult,
   ReloadedSessionResult,
   RemovedCommentResult,
@@ -37,6 +38,7 @@ import {
   HUNK_SESSION_DAEMON_VERSION,
   type SessionDaemonAction,
   type SessionDaemonCapabilities,
+  type SessionDaemonRequest,
   type SessionDaemonResponse,
 } from "../protocol";
 import { parseSessionDaemonRequest } from "../protocolSchemas";
@@ -220,6 +222,60 @@ async function parseJsonRequest(request: Request) {
   return parseSessionDaemonRequest(raw);
 }
 
+/** Resolve one daemon navigation request into the canonical target sent to the live session. */
+function resolveNavigateCommandInput(
+  state: HunkSessionBrokerState,
+  input: Extract<SessionDaemonRequest, { action: "navigate" }>,
+): NavigateToHunkToolInput {
+  if (input.commentId !== undefined) {
+    const hasConflictingTarget =
+      input.commentDirection !== undefined ||
+      input.filePath !== undefined ||
+      input.hunkNumber !== undefined ||
+      input.side !== undefined ||
+      input.line !== undefined;
+    if (hasConflictingTarget) {
+      throw new Error("navigate commentId cannot be combined with another navigation target.");
+    }
+
+    const comment = state
+      .listComments(input.selector)
+      .find((candidate) => candidate.commentId === input.commentId);
+    if (!comment) {
+      throw new Error(
+        `No live comment with id "${input.commentId}" exists in the selected session.`,
+      );
+    }
+
+    // Exact coordinates let the session reveal the annotated row and derive its containing hunk.
+    return {
+      ...input.selector,
+      filePath: comment.filePath,
+      side: comment.side,
+      line: comment.line,
+    };
+  }
+
+  if (
+    !input.commentDirection &&
+    input.hunkNumber === undefined &&
+    (input.side === undefined || input.line === undefined)
+  ) {
+    throw new Error(
+      "navigate requires commentId, commentDirection, hunkNumber, or both side and line.",
+    );
+  }
+
+  return {
+    ...input.selector,
+    filePath: input.filePath,
+    hunkIndex: input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined,
+    side: input.side,
+    line: input.line,
+    commentDirection: input.commentDirection,
+  };
+}
+
 export async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
@@ -255,51 +311,12 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
         break;
       }
       case "navigate": {
-        const commentHasConflictingTarget =
-          input.commentId !== undefined &&
-          (input.commentDirection !== undefined ||
-            input.filePath !== undefined ||
-            input.hunkNumber !== undefined ||
-            input.side !== undefined ||
-            input.line !== undefined);
-        if (commentHasConflictingTarget) {
-          throw new Error("navigate commentId cannot be combined with another navigation target.");
-        }
-
-        const comment =
-          input.commentId === undefined
-            ? undefined
-            : state
-                .listComments(input.selector)
-                .find((candidate) => candidate.commentId === input.commentId);
-        if (input.commentId !== undefined && !comment) {
-          throw new Error(
-            `No live comment with id "${input.commentId}" exists in the selected session.`,
-          );
-        }
-        if (
-          input.commentId === undefined &&
-          !input.commentDirection &&
-          input.hunkNumber === undefined &&
-          (input.side === undefined || input.line === undefined)
-        ) {
-          throw new Error("navigate requires either hunkNumber or both side and line.");
-        }
-
+        const commandInput = resolveNavigateCommandInput(state, input);
         response = {
           result: await state.dispatchCommand<NavigatedSelectionResult, "navigate_to_hunk">({
             selector: input.selector,
             command: "navigate_to_hunk",
-            input: {
-              ...input.selector,
-              filePath: comment?.filePath ?? input.filePath,
-              hunkIndex:
-                comment?.hunkIndex ??
-                (input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined),
-              side: comment?.side ?? input.side,
-              line: comment?.line ?? input.line,
-              commentDirection: comment ? undefined : input.commentDirection,
-            },
+            input: commandInput,
             timeoutMessage: "Timed out waiting for the session to navigate to the requested hunk.",
           }),
         };
