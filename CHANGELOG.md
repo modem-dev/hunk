@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.2
+
+### Patch Changes
+
+- [`bb01225`](https://github.com/modem-dev/hunk/commit/bb0122543f5484a210a9472ceb1234c6ccc839b8) - Reject session reload inputs whose VCS `range` or `ref` values look like command options. A caller reaching the session broker could otherwise inject `git` flags such as `--output=<path>` through a `/session-api` reload request and make Hunk write diff output to an arbitrary path.
+
 ## 0.19.1
 
 ### Patch Changes
