@@ -50,12 +50,23 @@ import {
 } from "../session/agent/errors";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/run/tabWidth";
 import { resolveCliVersion } from "../core/run/version";
+import {
+  DEFAULT_WHEEL_SCROLL_LINES,
+  parseWheelScrollLines,
+  type WheelScrollLines,
+} from "../core/run/wheelScrollLines";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {
   readonly flag: string;
   readonly description: string;
-  readonly parse?: "layout" | "cursorLine" | "positiveInt" | "tabWidth" | "collect";
+  readonly parse?:
+    | "layout"
+    | "cursorLine"
+    | "positiveInt"
+    | "tabWidth"
+    | "wheelScrollLines"
+    | "collect";
   readonly defaultValue?: string;
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
@@ -96,6 +107,12 @@ export const COMMON_REVIEW_OPTIONS = [
     description: "tab stop width: 1-16",
     parse: "tabWidth",
     defaultValue: String(DEFAULT_TAB_WIDTH),
+  },
+  {
+    flag: "--wheel-scroll-lines <lines>",
+    description: "rows per wheel event: auto or 1-10",
+    parse: "wheelScrollLines",
+    defaultValue: DEFAULT_WHEEL_SCROLL_LINES,
   },
   { flag: "--wrap", description: "wrap long diff lines" },
   { flag: "--no-wrap", description: "truncate long diff lines to one row" },
@@ -351,6 +368,7 @@ function buildCommonOptions(
     fast?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
+    wheelScrollLines?: WheelScrollLines;
     extension?: string[];
   },
   argv: string[],
@@ -374,6 +392,7 @@ function buildCommonOptions(
     ),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     tabWidth: options.tabWidth,
+    wheelScrollLines: options.wheelScrollLines,
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
@@ -398,6 +417,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
     commanderOption.argParser(parsePositiveInt);
   } else if (option.parse === "tabWidth") {
     commanderOption.argParser(parseTabWidth);
+  } else if (option.parse === "wheelScrollLines") {
+    commanderOption.argParser(parseWheelScrollLines);
   } else if (option.parse === "collect") {
     commanderOption.argParser(collectRepeatedValue);
   }

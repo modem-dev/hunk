@@ -250,7 +250,8 @@ export function renderConfigReference() {
       option.runtimeDefault !== undefined
         ? `\`${String(option.runtimeDefault)}\``
         : (option.defaultValue ?? "—");
-    return `**\`${option.key}\`**\n\n${option.description}\n\n- **Type:** ${option.type}\n- **Accepted:** ${option.accepted}\n- **Built-in default:** ${defaultValue}${aliasDetails}`;
+    const scopeDetails = option.userOnly ? "\n- **Scope:** user config only" : "";
+    return `**\`${option.key}\`**\n\n${option.description}\n\n- **Type:** ${option.type}\n- **Accepted:** ${option.accepted}\n- **Built-in default:** ${defaultValue}${scopeDetails}${aliasDetails}`;
   });
   const sectionRows = Object.entries(CONFIG_COMMAND_SECTIONS).map(
     ([section, description]) => `| \`[${section}]\` | ${description} |`,

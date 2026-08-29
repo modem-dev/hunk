@@ -15,6 +15,10 @@ import {
   type RefObject,
 } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
+import {
+  DEFAULT_WHEEL_SCROLL_LINES,
+  type WheelScrollLines,
+} from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../../core/liveComments";
@@ -290,6 +294,7 @@ export function DiffPane({
   showHunkHeaders,
   sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
   tabWidth = DEFAULT_TAB_WIDTH,
+  wheelScrollLines = DEFAULT_WHEEL_SCROLL_LINES,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -353,6 +358,7 @@ export function DiffPane({
   showHunkHeaders: boolean;
   sourceStatusByFileId?: Record<string, FileSourceStatus>;
   tabWidth?: number;
+  wheelScrollLines?: WheelScrollLines;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -388,8 +394,8 @@ export function DiffPane({
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
-    () => createReviewMouseWheelScrollAcceleration(),
-    [],
+    () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
+    [wheelScrollLines],
   );
   const [currentLineRowPlan, setCurrentLineRowPlan] = useState<{
     source: { file: DiffFile; theme: AppTheme; tabWidth: number };

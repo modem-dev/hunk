@@ -1282,6 +1282,7 @@ export function App({
             showHunkHeaders={showHunkHeaders}
             sourceStatusByFileId={review.sourceStatusByFileId}
             tabWidth={tabWidth}
+            wheelScrollLines={bootstrap.initialWheelScrollLines}
             wrapLines={wrapLines}
             wrapToggleScrollTop={wrapToggleScrollTopRef.current}
             layoutToggleScrollTop={layoutToggleScrollTopRef.current}

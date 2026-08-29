@@ -90,6 +90,35 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   return anchorRow - movedTo;
 }
 
+/** Count how many rows one mouse-wheel event moves the review stream. */
+export async function measureMouseWheelScroll(
+  session: Session,
+  direction: "down" | "up",
+  anchorRow: number,
+) {
+  const before = (await session.text({ immediate: true })).split("\n");
+  const anchor = before[anchorRow]?.trim() ?? "";
+  if (anchor.length === 0) {
+    throw new Error(`measureMouseWheelScroll: anchor row ${anchorRow} is empty.`);
+  }
+
+  if (direction === "down") {
+    await session.scrollDown(1);
+  } else {
+    await session.scrollUp(1);
+  }
+
+  const after = (await session.text({ immediate: true })).split("\n");
+  const movedTo = after.findIndex((line) => line.trim() === anchor);
+  if (movedTo < 0) {
+    throw new Error(
+      `measureMouseWheelScroll: anchor ${JSON.stringify(anchor)} left the screen after scrolling ${direction}.`,
+    );
+  }
+
+  return anchorRow - movedTo;
+}
+
 /** Send an SGR mouse motion event at zero-based terminal coordinates. */
 export async function moveMouse(session: Session, x: number, y: number) {
   session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);

@@ -100,6 +100,17 @@ Set terminal-cell tab stops used for display and wrapping.
 
 ---
 
+**`wheel_scroll_lines`**
+
+Set review rows per vertical wheel event. `auto` keeps cadence-based acceleration from one to three rows.
+
+- **Type:** string or integer
+- **Accepted:** `auto` or 1 through 10
+- **Built-in default:** `auto`
+- **Scope:** user config only
+
+---
+
 **`wrap_lines`**
 
 Wrap long diff lines instead of keeping one visual row.
