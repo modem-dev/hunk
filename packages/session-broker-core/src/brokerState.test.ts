@@ -324,7 +324,7 @@ describe("session broker state", () => {
       createSnapshot(),
     );
 
-    expect(accepted).toBe(false);
+    expect(accepted).toBe("invalid");
     expect(state.listSessions()).toEqual([]);
   });
 
@@ -336,7 +336,7 @@ describe("session broker state", () => {
 
     state.registerSession(socket, createRegistration(), createSnapshot());
 
-    const result = state.updateSnapshot("session-1", {
+    const result = state.updateSnapshot(socket, "session-1", {
       selectedIndex: "oops",
     });
 
@@ -344,14 +344,12 @@ describe("session broker state", () => {
     expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
   });
 
-  test("reports missing sessions separately from invalid snapshot payloads", () => {
+  test("rejects snapshot and heartbeat assertions from an unregistered peer", () => {
     const state = createState();
+    const socket = { send() {} };
 
-    expect(
-      state.updateSnapshot("missing-session", {
-        selectedIndex: 0,
-      }),
-    ).toBe("not-found");
+    expect(state.updateSnapshot(socket, "missing-session", createSnapshot())).toBe("not-owner");
+    expect(state.markSessionSeen(socket, "missing-session")).toBe("not-owner");
   });
 
   test("routes one opaque broker command to the live session and resolves the async result", async () => {
@@ -397,13 +395,67 @@ describe("session broker state", () => {
       annotationId: "annotation-1",
     };
 
-    state.handleCommandResult({
+    state.handleCommandResult(socket, {
       requestId: outgoing.requestId,
       ok: true,
       result,
     });
 
     await expect(pending).resolves.toEqual(result);
+  });
+
+  test("rejects cross-peer mutation and leaves the owner's command pending", async () => {
+    const state = createState();
+    const ownerSent: string[] = [];
+    const owner = {
+      send(data: string) {
+        ownerSent.push(data);
+      },
+    };
+    const other = { send() {} };
+
+    state.registerSession(owner, createRegistration(), createSnapshot());
+    state.registerSession(
+      other,
+      createRegistration({ sessionId: "session-2", cwd: "/other", repoRoot: "/other" }),
+      createSnapshot(),
+    );
+
+    expect(
+      state.updateSnapshot(
+        other,
+        "session-1",
+        createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z", selectedIndex: 1 }),
+      ),
+    ).toBe("not-owner");
+    expect(state.markSessionSeen(other, "session-1")).toBe("not-owner");
+    expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
+
+    const pending = state.dispatchCommand<{ kind: "annotated"; annotationId: string }, "annotate">({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "src/example.ts", summary: "Review note" },
+      timeoutMessage: "Timed out waiting for the session to apply the note.",
+    });
+    const outgoing = JSON.parse(ownerSent[0]!) as { requestId: string };
+
+    expect(
+      state.handleCommandResult(other, {
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { kind: "annotated", annotationId: "forged" },
+      }),
+    ).toBe("not-owner");
+    expect(state.getPendingCommandCount()).toBe(1);
+
+    expect(
+      state.handleCommandResult(owner, {
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { kind: "annotated", annotationId: "owned" },
+      }),
+    ).toBe("handled");
+    await expect(pending).resolves.toEqual({ kind: "annotated", annotationId: "owned" });
   });
 
   test("rejects in-flight commands when the session disconnects", async () => {
@@ -430,35 +482,38 @@ describe("session broker state", () => {
     await expect(pending).rejects.toThrow("disconnected");
   });
 
-  test("rejects in-flight commands when a session reconnects on a new socket", async () => {
+  test("rejects a second live peer and allows reconnect only after the owner closes", () => {
     const state = createState();
-    const originalSocket = {
-      send() {},
-    };
-    const replacementSocket = {
-      send() {},
-    };
+    const originalSocket = { send() {} };
+    const replacementSocket = { send() {} };
 
-    state.registerSession(originalSocket, createRegistration(), createSnapshot());
-    const pending = state.dispatchCommand<{ kind: "annotated"; annotationId: string }, "annotate">({
-      selector: {
-        sessionId: "session-1",
-      },
-      command: "annotate",
-      input: {
-        filePath: "src/example.ts",
-        summary: "Review note",
-      },
-      timeoutMessage: "Timed out waiting for the session to apply the note.",
-    });
-
-    state.registerSession(
-      replacementSocket,
-      createRegistration(),
-      createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+    expect(state.registerSession(originalSocket, createRegistration(), createSnapshot())).toBe(
+      "registered",
     );
+    expect(
+      state.registerSession(
+        replacementSocket,
+        createRegistration(),
+        createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+      ),
+    ).toBe("already-connected");
+    expect(state.listSessions()[0]?.snapshot.updatedAt).toBe("2026-03-22T00:00:00.000Z");
 
-    await expect(pending).rejects.toThrow("reconnected before the command completed");
+    state.unregisterSocket(originalSocket);
+
+    expect(
+      state.registerSession(
+        replacementSocket,
+        createRegistration(),
+        createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+      ),
+    ).toBe("registered");
+    expect(state.listSessions()[0]?.snapshot.updatedAt).toBe("2026-03-22T00:00:01.000Z");
+    expect(state.updateSnapshot(originalSocket, "session-1", createSnapshot())).toBe("not-owner");
+    expect(state.markSessionSeen(originalSocket, "session-1")).toBe("not-owner");
+
+    // A delayed close callback from the retired transport cannot unregister its replacement.
+    state.unregisterSocket(originalSocket);
     expect(state.listSessions()).toHaveLength(1);
   });
 
@@ -537,7 +592,7 @@ describe("session broker state", () => {
       }),
     ).toBe(0);
 
-    state.markSessionSeen("session-1");
+    expect(state.markSessionSeen(socket, "session-1")).toBe("seen");
 
     expect(
       state.pruneStaleSessions({

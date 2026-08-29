@@ -194,10 +194,20 @@ export class SessionBrokerDaemon<
 
     switch (parsed.type) {
       case "register": {
-        if (!this.broker.registerSession(connection, parsed.registration, parsed.snapshot)) {
+        const registrationResult = this.broker.registerSession(
+          connection,
+          parsed.registration,
+          parsed.snapshot,
+        );
+        if (registrationResult === "invalid") {
           // Close immediately when the registration payload is incompatible so the session does not
           // stay connected under stale assumptions after an upgrade.
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Incompatible session registration.");
+          return;
+        }
+
+        if (registrationResult === "already-connected") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session registration rejected.");
           return;
         }
 
@@ -211,12 +221,13 @@ export class SessionBrokerDaemon<
 
         // Snapshot updates are only valid after registration. Closing missing or invalid sessions
         // keeps the broker state single-sourced instead of guessing how to recover.
-        const updateResult = this.broker.updateSnapshot(parsed.sessionId, parsed.snapshot);
-        if (updateResult === "not-found") {
-          connection.close?.(
-            INCOMPATIBLE_PAYLOAD_CLOSE_CODE,
-            "Session not registered with broker.",
-          );
+        const updateResult = this.broker.updateSnapshot(
+          connection,
+          parsed.sessionId,
+          parsed.snapshot,
+        );
+        if (updateResult === "not-owner") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session ownership rejected.");
           return;
         }
 
@@ -233,7 +244,12 @@ export class SessionBrokerDaemon<
           return;
         }
 
-        this.broker.markSessionSeen(parsed.sessionId);
+        const seenResult = this.broker.markSessionSeen(connection, parsed.sessionId);
+        if (seenResult === "not-owner") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session ownership rejected.");
+          return;
+        }
+
         this.noteActivity();
         break;
       }
@@ -242,13 +258,20 @@ export class SessionBrokerDaemon<
           return;
         }
 
-        this.broker.handleCommandResult({
+        const result = this.broker.handleCommandResult(connection, {
           requestId: parsed.requestId,
           ok: parsed.ok,
           result: parsed.result as CommandResult | undefined,
           error: typeof parsed.error === "string" ? parsed.error : undefined,
         });
-        this.noteActivity();
+        if (result === "not-owner") {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Command ownership rejected.");
+          return;
+        }
+
+        if (result === "handled") {
+          this.noteActivity();
+        }
         break;
       }
     }

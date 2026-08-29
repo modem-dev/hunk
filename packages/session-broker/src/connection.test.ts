@@ -175,6 +175,152 @@ describe("session broker connection", () => {
     expect(resultMessage).toMatchObject({ type: "command-result", ok: true });
   });
 
+  test("does not migrate a late command result onto a replacement socket", async () => {
+    const sockets: TestSocket[] = [];
+    let resolveCommand!: (result: { ok: true }) => void;
+    const commandResult = new Promise<{ ok: true }>((resolve) => {
+      resolveCommand = resolve;
+    });
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      bridge: { dispatchCommand: () => commandResult },
+      reconnectDelayMs: 1,
+    });
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    sockets[0]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-1",
+        command: "annotate",
+        input: { summary: "Review note" },
+      }),
+    );
+    sockets[0]!.emitClose();
+    await Bun.sleep(5);
+    sockets[1]!.emitOpen();
+
+    resolveCommand({ ok: true });
+    await Bun.sleep(0);
+
+    expect(sockets[0]!.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+    expect(sockets[1]!.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+    connection.stop();
+  });
+
+  test("discards queued commands when their source socket disconnects", async () => {
+    const sockets: TestSocket[] = [];
+    const dispatched: string[] = [];
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      reconnectDelayMs: 1,
+    });
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    sockets[0]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-old",
+        command: "annotate",
+        input: { summary: "Old review note" },
+      }),
+    );
+    sockets[0]!.emitClose();
+    await Bun.sleep(5);
+    sockets[1]!.emitOpen();
+
+    connection.setBridge({
+      dispatchCommand: async (message) => {
+        dispatched.push(message.requestId);
+        return { ok: true };
+      },
+    });
+    await Bun.sleep(0);
+
+    expect(dispatched).toEqual([]);
+    expect(sockets[1]!.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+    connection.stop();
+  });
+
+  test("stops replaying a queued batch when its source socket disconnects", async () => {
+    const socket = new TestSocket();
+    const dispatched: string[] = [];
+    let resolveFirst!: (result: { ok: true }) => void;
+    const firstResult = new Promise<{ ok: true }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      reconnectDelayMs: 1_000,
+    });
+
+    connection.start();
+    socket.emitOpen();
+    for (const requestId of ["request-1", "request-2"]) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId,
+          command: "annotate",
+          input: { summary: "Review note" },
+        }),
+      );
+    }
+
+    connection.setBridge({
+      dispatchCommand: (message) => {
+        dispatched.push(message.requestId);
+        return message.requestId === "request-1"
+          ? firstResult
+          : Promise.resolve({ ok: true as const });
+      },
+    });
+    await Bun.sleep(0);
+    socket.emitClose();
+    resolveFirst({ ok: true });
+    await Bun.sleep(0);
+
+    expect(dispatched).toEqual(["request-1"]);
+    connection.stop();
+  });
+
   test("reconnects after socket close unless a close directive disables it", async () => {
     const sockets: TestSocket[] = [];
     const warnings: string[] = [];

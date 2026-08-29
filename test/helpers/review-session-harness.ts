@@ -137,7 +137,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
                 },
               }
             : result;
-        state.handleCommandResult({
+        state.handleCommandResult(socket, {
           requestId: message.requestId,
           ok: true,
           result: delivered as typeof result,
@@ -166,6 +166,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     const publication = producer.getPublication();
     const snapshot = createInitialSessionSnapshot(bootstrap, publication);
     state.updateSnapshot(
+      socket,
       sessionId,
       JSON.parse(
         JSON.stringify({

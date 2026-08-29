@@ -466,15 +466,16 @@ function createHunkBrokerController(
     getPendingCommandCount: () => state.getPendingCommandCount(),
     registerSession: (connection, registrationInput, snapshotInput) =>
       state.registerSession(connection, registrationInput, snapshotInput),
-    updateSnapshot: (sessionId, snapshotInput) => state.updateSnapshot(sessionId, snapshotInput),
-    markSessionSeen: (sessionId) => state.markSessionSeen(sessionId),
+    updateSnapshot: (connection, sessionId, snapshotInput) =>
+      state.updateSnapshot(connection, sessionId, snapshotInput),
+    markSessionSeen: (connection, sessionId) => state.markSessionSeen(connection, sessionId),
     unregisterConnection: (connection) => state.unregisterSocket(connection),
     pruneStaleSessions: (options) => state.pruneStaleSessions(options),
     dispatchCommand: (options) =>
       state.dispatchCommand<HunkSessionCommandResult, HunkSessionServerMessage["command"]>(
         options as Parameters<HunkSessionBrokerState["dispatchCommand"]>[0],
       ),
-    handleCommandResult: (message) => state.handleCommandResult(message),
+    handleCommandResult: (connection, message) => state.handleCommandResult(connection, message),
     shutdown: (error) => state.shutdown(error),
   };
 }

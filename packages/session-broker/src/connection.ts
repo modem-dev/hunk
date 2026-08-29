@@ -53,7 +53,7 @@ export class SessionBrokerConnection<
 > {
   private socket: Socket | null = null;
   private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
-  private queuedMessages: ServerMessage[] = [];
+  private queuedMessages: Array<{ socket: Socket; message: ServerMessage }> = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
@@ -135,14 +135,13 @@ export class SessionBrokerConnection<
 
     socket.onopen = () => {
       this.startHeartbeat();
-      // Always register again on a fresh socket so the broker can replace any stale connection for
-      // the same session id before later snapshots or commands arrive.
-      this.send({
+      // Register on every fresh socket after the prior close retired its broker-side ownership.
+      this.sendToSocket(socket, {
         type: "register",
         registration: this.registration,
         snapshot: this.snapshot,
       });
-      void this.flushQueuedMessages();
+      void this.flushQueuedMessages(socket);
     };
 
     socket.onmessage = (event) => {
@@ -157,15 +156,16 @@ export class SessionBrokerConnection<
         return;
       }
 
-      void this.handleServerMessage(parsed);
+      void this.handleServerMessage(socket, parsed);
     };
 
     socket.onclose = (event) => {
       if (this.socket === socket) {
         this.socket = null;
+        this.stopHeartbeat();
       }
 
-      this.stopHeartbeat();
+      this.queuedMessages = this.queuedMessages.filter((queued) => queued.socket !== socket);
       if (this.stopped) {
         return;
       }
@@ -225,34 +225,43 @@ export class SessionBrokerConnection<
   }
 
   private send(message: SessionClientMessage<Info, State, Result>) {
+    if (!this.socket) {
+      return;
+    }
+
+    this.sendToSocket(this.socket, message);
+  }
+
+  /** Send a response only through the still-active socket that received its command. */
+  private sendToSocket(socket: Socket, message: SessionClientMessage<Info, State, Result>) {
     if (
-      !this.socket ||
-      this.socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
+      this.socket !== socket ||
+      socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
     ) {
       return;
     }
 
-    this.socket.send(JSON.stringify(message));
+    socket.send(JSON.stringify(message));
   }
 
-  private async handleServerMessage(message: ServerMessage) {
+  private async handleServerMessage(socket: Socket, message: ServerMessage) {
     if (!this.bridge) {
-      // Sessions may connect before the host app has finished wiring its command bridge. Queue
-      // broker commands so startup races do not drop user-triggered actions.
-      this.queuedMessages.push(message);
+      // Sessions may connect before the host app has finished wiring its command bridge. Bind each
+      // queued command to its source so a reconnect cannot inherit work from a disconnected socket.
+      this.queuedMessages.push({ socket, message });
       return;
     }
 
     try {
       const result = await this.bridge.dispatchCommand(message);
-      this.send({
+      this.sendToSocket(socket, {
         type: "command-result",
         requestId: message.requestId,
         ok: true,
         result,
       });
     } catch (error) {
-      this.send({
+      this.sendToSocket(socket, {
         type: "command-result",
         requestId: message.requestId,
         ok: false,
@@ -261,18 +270,25 @@ export class SessionBrokerConnection<
     }
   }
 
-  private async flushQueuedMessages() {
-    if (!this.bridge || this.queuedMessages.length === 0) {
+  private async flushQueuedMessages(socket = this.socket) {
+    if (!this.bridge || !socket || this.queuedMessages.length === 0) {
       return;
     }
 
-    // Snapshot the queue up front so commands dispatched while we replay are handled in a later
-    // pass and the original broker ordering stays intact.
-    const queued = [...this.queuedMessages];
-    this.queuedMessages = [];
+    // Snapshot only this transport's queue so commands cannot cross a disconnect. Commands received
+    // while replay runs stay in the queue for a later pass and preserve their original ordering.
+    const queued = this.queuedMessages.filter((entry) => entry.socket === socket);
+    this.queuedMessages = this.queuedMessages.filter((entry) => entry.socket !== socket);
 
-    for (const message of queued) {
-      await this.handleServerMessage(message);
+    for (const entry of queued) {
+      if (
+        this.socket !== entry.socket ||
+        entry.socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
+      ) {
+        break;
+      }
+
+      await this.handleServerMessage(entry.socket, entry.message);
     }
   }
 }

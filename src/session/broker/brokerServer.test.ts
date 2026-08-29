@@ -425,7 +425,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("closes snapshots for missing sessions with a specific not-registered reason", async () => {
+  test("closes snapshot assertions from peers that do not own the session", async () => {
     // Bun's Windows WebSocket client does not reliably surface this immediate server close.
     // The daemon-core test covers the close code/reason without the flaky transport layer.
     if (platform() === "win32") {
@@ -455,7 +455,7 @@ describe("Hunk session daemon server", () => {
 
       await expect(closed).resolves.toEqual({
         code: 1008,
-        reason: "Session not registered with broker.",
+        reason: "Session ownership rejected.",
       });
     } finally {
       socket.close();

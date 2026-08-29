@@ -9,6 +9,7 @@ import type {
 
 interface PendingCommand<Result> {
   sessionId: string;
+  socket: DaemonSessionSocket;
   resolve: (result: Result) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -58,7 +59,10 @@ export interface SessionBrokerViewAdapter<
   listComments: (session: ListedSession, filter: { filePath?: string }) => SessionCommentSummary[];
 }
 
-export type UpdateSnapshotResult = "updated" | "invalid" | "not-found";
+export type RegisterSessionResult = "registered" | "invalid" | "already-connected";
+export type UpdateSnapshotResult = "updated" | "invalid" | "not-owner";
+export type MarkSessionSeenResult = "seen" | "not-owner";
+export type HandleCommandResult = "handled" | "not-found" | "not-owner";
 
 export type SessionTargetSelector = SessionTargetInput;
 
@@ -203,7 +207,11 @@ export class SessionBrokerState<
     return this.pendingCommands.size;
   }
 
-  registerSession(socket: DaemonSessionSocket, registrationInput: unknown, snapshotInput: unknown) {
+  registerSession(
+    socket: DaemonSessionSocket,
+    registrationInput: unknown,
+    snapshotInput: unknown,
+  ): RegisterSessionResult {
     const registration = this.view.parseRegistration(registrationInput);
     const snapshot = this.view.parseSnapshot(snapshotInput);
     if (!registration || !snapshot) {
@@ -217,23 +225,19 @@ export class SessionBrokerState<
         );
       }
 
-      return false;
+      return "invalid";
+    }
+
+    const existing = this.sessions.get(registration.sessionId);
+    if (existing && existing.socket !== socket) {
+      // Reconnect proof is not available yet, so an unauthenticated peer cannot supersede a live
+      // owner. Once the owner closes, normal unregister cleanup makes this ID available again.
+      return "already-connected";
     }
 
     const previousSessionId = this.sessionIdsBySocket.get(socket);
     if (previousSessionId && previousSessionId !== registration.sessionId) {
       this.unregisterSocket(socket);
-    }
-
-    const existing = this.sessions.get(registration.sessionId);
-    if (existing && existing.socket !== socket) {
-      this.sessionIdsBySocket.delete(existing.socket);
-      // A reconnect on a new socket supersedes the old transport immediately. Reject in-flight
-      // commands so callers do not wait on a connection that can never answer.
-      this.rejectPendingCommandsForSession(
-        registration.sessionId,
-        new Error("Session reconnected before the command completed."),
-      );
     }
 
     const now = new Date().toISOString();
@@ -245,13 +249,22 @@ export class SessionBrokerState<
       lastSeenAt: now,
     });
     this.sessionIdsBySocket.set(socket, registration.sessionId);
-    return true;
+    return "registered";
   }
 
-  updateSnapshot(sessionId: string, snapshotInput: unknown): UpdateSnapshotResult {
-    const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      return "not-found";
+  updateSnapshot(
+    socket: DaemonSessionSocket,
+    sessionIdAssertion: string,
+    snapshotInput: unknown,
+  ): UpdateSnapshotResult {
+    const ownedSessionId = this.sessionIdsBySocket.get(socket);
+    if (!ownedSessionId || ownedSessionId !== sessionIdAssertion) {
+      return "not-owner";
+    }
+
+    const entry = this.sessions.get(ownedSessionId);
+    if (!entry || entry.socket !== socket) {
+      return "not-owner";
     }
 
     const snapshot = this.view.parseSnapshot(snapshotInput);
@@ -259,7 +272,7 @@ export class SessionBrokerState<
       return "invalid";
     }
 
-    this.sessions.set(sessionId, {
+    this.sessions.set(ownedSessionId, {
       ...entry,
       snapshot,
       lastSeenAt: new Date().toISOString(),
@@ -267,16 +280,22 @@ export class SessionBrokerState<
     return "updated";
   }
 
-  markSessionSeen(sessionId: string) {
-    const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      return;
+  markSessionSeen(socket: DaemonSessionSocket, sessionIdAssertion: string): MarkSessionSeenResult {
+    const ownedSessionId = this.sessionIdsBySocket.get(socket);
+    if (!ownedSessionId || ownedSessionId !== sessionIdAssertion) {
+      return "not-owner";
     }
 
-    this.sessions.set(sessionId, {
+    const entry = this.sessions.get(ownedSessionId);
+    if (!entry || entry.socket !== socket) {
+      return "not-owner";
+    }
+
+    this.sessions.set(ownedSessionId, {
       ...entry,
       lastSeenAt: new Date().toISOString(),
     });
+    return "seen";
   }
 
   unregisterSocket(socket: DaemonSessionSocket) {
@@ -346,20 +365,20 @@ export class SessionBrokerState<
       // Record the pending request before sending so synchronous transport failures and later close
       // events can both resolve the same command bookkeeping path.
 
+      const entry = this.sessions.get(session.sessionId);
+      if (!entry) {
+        clearTimeout(timeout);
+        reject(new Error("The targeted session is no longer connected."));
+        return;
+      }
+
       this.pendingCommands.set(requestId, {
         sessionId: session.sessionId,
+        socket: entry.socket,
         resolve: (result) => resolve(result as ResultType),
         reject,
         timeout,
       });
-
-      const entry = this.sessions.get(session.sessionId);
-      if (!entry) {
-        clearTimeout(timeout);
-        this.pendingCommands.delete(requestId);
-        reject(new Error("The targeted session is no longer connected."));
-        return;
-      }
 
       try {
         const message = {
@@ -382,15 +401,22 @@ export class SessionBrokerState<
     });
   }
 
-  handleCommandResult(message: {
-    requestId: string;
-    ok: boolean;
-    result?: CommandResult;
-    error?: string;
-  }) {
+  handleCommandResult(
+    socket: DaemonSessionSocket,
+    message: {
+      requestId: string;
+      ok: boolean;
+      result?: CommandResult;
+      error?: string;
+    },
+  ): HandleCommandResult {
     const pending = this.pendingCommands.get(message.requestId);
     if (!pending) {
-      return;
+      return "not-found";
+    }
+
+    if (pending.socket !== socket) {
+      return "not-owner";
     }
 
     clearTimeout(pending.timeout);
@@ -398,10 +424,11 @@ export class SessionBrokerState<
 
     if (message.ok) {
       pending.resolve(message.result as CommandResult);
-      return;
+      return "handled";
     }
 
     pending.reject(new Error(message.error ?? "The session failed to handle the command."));
+    return "handled";
   }
 
   shutdown(error = new Error("The session broker daemon shut down.")) {

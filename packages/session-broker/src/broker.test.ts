@@ -103,7 +103,9 @@ describe("session broker wrapper", () => {
     const broker = createBroker();
     const connection = { send() {} };
 
-    expect(broker.registerSession(connection, createRegistration(), createSnapshot())).toBe(true);
+    expect(broker.registerSession(connection, createRegistration(), createSnapshot())).toBe(
+      "registered",
+    );
 
     expect(broker.listSessions()).toEqual([
       {
@@ -132,7 +134,7 @@ describe("session broker wrapper", () => {
         },
         createSnapshot(),
       ),
-    ).toBe(false);
+    ).toBe("invalid");
     expect(broker.listSessions()).toEqual([]);
   });
 
@@ -157,7 +159,7 @@ describe("session broker wrapper", () => {
     const outgoing = JSON.parse(sent[0]!) as { requestId: string; command: string };
     expect(outgoing.command).toBe("annotate");
 
-    broker.handleCommandResult({
+    broker.handleCommandResult(connection, {
       requestId: outgoing.requestId,
       ok: true,
       result: { ok: true },

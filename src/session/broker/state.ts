@@ -202,7 +202,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   ) {
     const registered = super.registerSession(socket, registrationInput, snapshotInput);
     this.reconcileMirroredSessions();
-    if (!registered) {
+    if (registered !== "registered") {
       return registered;
     }
 
@@ -223,8 +223,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return registered;
   }
 
-  override updateSnapshot(sessionId: string, snapshotInput: unknown) {
-    const result = super.updateSnapshot(sessionId, snapshotInput);
+  override updateSnapshot(socket: HunkBrokerConnection, sessionId: string, snapshotInput: unknown) {
+    const result = super.updateSnapshot(socket, sessionId, snapshotInput);
     if (result === "updated") {
       // A snapshot carries no catalog, so only a further revision of the generation
       // already mirrored can be adopted from one; a generation change waits for the

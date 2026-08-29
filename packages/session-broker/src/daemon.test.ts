@@ -271,7 +271,7 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
-  test("closes incompatible snapshot updates with a specific reason", () => {
+  test("closes snapshot assertions from unregistered peers", () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
@@ -290,8 +290,120 @@ describe("session broker daemon", () => {
 
     expect(session.closed).toEqual({
       code: 1008,
-      reason: "Session not registered with broker.",
+      reason: "Session ownership rejected.",
     });
+    daemon.shutdown();
+  });
+
+  test("rejects duplicate live registration without retiring the owner", () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+    const owner = createConnection();
+    const duplicate = createConnection();
+    const register = JSON.stringify({
+      type: "register",
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+    });
+
+    daemon.handleConnectionMessage(owner.connection, register);
+    daemon.handleConnectionMessage(duplicate.connection, register);
+
+    expect(duplicate.closed).toEqual({ code: 1008, reason: "Session registration rejected." });
+    daemon.handleConnectionClose(duplicate.connection);
+    expect(daemon.listSessions()).toHaveLength(1);
+    expect(daemon.listSessions()[0]).toMatchObject({ sessionId: "session-1" });
+    daemon.shutdown();
+  });
+
+  test("rejects cross-peer snapshot, heartbeat, and result authority", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+    });
+    const owner = createConnection();
+    const snapshotPeer = createConnection();
+    const heartbeatPeer = createConnection();
+    const resultPeer = createConnection();
+
+    for (const [session, sessionId] of [
+      [owner, "session-1"],
+      [snapshotPeer, "session-2"],
+      [heartbeatPeer, "session-3"],
+      [resultPeer, "session-4"],
+    ] as const) {
+      daemon.handleConnectionMessage(
+        session.connection,
+        JSON.stringify({
+          type: "register",
+          registration: createRegistration({ sessionId, cwd: `/${sessionId}` }),
+          snapshot: createSnapshot(),
+        }),
+      );
+    }
+
+    daemon.handleConnectionMessage(
+      snapshotPeer.connection,
+      JSON.stringify({
+        type: "snapshot",
+        sessionId: "session-1",
+        snapshot: createSnapshot({ updatedAt: "2026-04-15T00:00:01.000Z", selectedIndex: 1 }),
+      }),
+    );
+    expect(snapshotPeer.closed).toEqual({ code: 1008, reason: "Session ownership rejected." });
+    expect(daemon.getSession({ sessionId: "session-1" })).toMatchObject({
+      snapshot: { state: { selectedIndex: 0 } },
+    });
+
+    const ownerSeenAt = daemon.getSession({ sessionId: "session-1" }).lastSeenAt;
+    daemon.handleConnectionMessage(
+      heartbeatPeer.connection,
+      JSON.stringify({ type: "heartbeat", sessionId: "session-1" }),
+    );
+    expect(heartbeatPeer.closed).toEqual({ code: 1008, reason: "Session ownership rejected." });
+    expect(daemon.getSession({ sessionId: "session-1" }).lastSeenAt).toBe(ownerSeenAt);
+
+    const pendingResponse = daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "dispatch",
+          selector: { sessionId: "session-1" },
+          command: "annotate",
+          input: { summary: "Review note" },
+        }),
+      }),
+    );
+    await Bun.sleep(0);
+    const outgoing = JSON.parse(owner.sent.at(-1)!) as { requestId: string };
+
+    daemon.handleConnectionMessage(
+      resultPeer.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { applied: "forged" },
+      }),
+    );
+    expect(resultPeer.closed).toEqual({ code: 1008, reason: "Command ownership rejected." });
+    expect(daemon.getHealth().pendingCommands).toBe(1);
+
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { applied: true },
+      }),
+    );
+    const response = await pendingResponse;
+    await expect(response?.json()).resolves.toEqual({ result: { applied: true } });
     daemon.shutdown();
   });
 
