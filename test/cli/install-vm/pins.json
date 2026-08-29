@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "controllerImage": "ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+  "verdaccioVersion": "6.10.1",
+  "firecracker": {
+    "version": "1.16.1",
+    "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz",
+    "sha256": "382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6"
+  },
+  "kernel": {
+    "version": "6.18.44",
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20260826-761f88fbb951-0/x86_64/vmlinux-6.18.44",
+    "sha256": "435466ec838656f59e464ce941e7fe9f3697d5da6a73c5e5dad60dae5ad93ceb"
+  },
+  "rootfs": {
+    "version": "ubuntu-24.04",
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20260826-761f88fbb951-0/x86_64/ubuntu-24.04.squashfs",
+    "sha256": "1e424bde9bfaaca5c74fcc2b1c78be6285ae515528ef4acc9e64ff78b4225b48"
+  },
+  "node": {
+    "version": "24.14.1",
+    "url": "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-x64.tar.xz",
+    "sha256": "84d38715d449447117d05c3e71acd78daa49d5b1bfa8aacf610303920c3322be"
+  },
+  "pnpmVersion": "11.23.0",
+  "historical": {
+    "hunkdiffVersion": "0.19.0",
+    "bunVersion": "1.4.0"
+  }
+}

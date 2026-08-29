@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!controller.sh
+!pins.json
+!scenarios.json
+!controller-deps/**
+!guest/**
+!scenarios/**

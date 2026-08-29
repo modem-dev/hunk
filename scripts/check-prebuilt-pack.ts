@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import {
+  assertNoMandatoryBunDependency,
   assertOptionalPeerDependencyContract,
   releaseNpmDir,
   type PackageDependencyManifest,
@@ -74,11 +75,10 @@ if (!existsSync(metaDir)) {
   throw new Error(`Missing staged top-level package at ${metaDir}`);
 }
 
-assertOptionalPeerDependencyContract(
-  readPackageManifest(repoRoot),
-  readPackageManifest(metaDir),
-  "@pierre/diffs",
-);
+const rootManifest = readPackageManifest(repoRoot);
+const stagedManifest = readPackageManifest(metaDir);
+assertOptionalPeerDependencyContract(rootManifest, stagedManifest, "@pierre/diffs");
+assertNoMandatoryBunDependency(stagedManifest);
 
 const metaPack = runPackDryRun(metaDir);
 assertPaths(metaPack, [

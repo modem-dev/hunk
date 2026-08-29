@@ -21,6 +21,21 @@ export interface PackageDependencyManifest {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
 }
 
+/** Remove Bun from dependencies shipped beside standalone prebuilt executables. */
+export function buildPrebuiltRuntimeDependencies(dependencies?: Record<string, string>) {
+  if (!dependencies) return undefined;
+
+  const { bun: _bundledRuntime, ...runtimeDependencies } = dependencies;
+  return runtimeDependencies;
+}
+
+/** Assert a staged prebuilt package cannot install Bun as a mandatory dependency. */
+export function assertNoMandatoryBunDependency(manifest: PackageDependencyManifest) {
+  if (manifest.dependencies?.bun !== undefined) {
+    throw new Error("Expected the staged prebuilt package to omit the mandatory bun dependency.");
+  }
+}
+
 const PLATFORM_NAME_MAP: Partial<Record<NodeJS.Platform, SupportedPlatform>> = {
   darwin: "darwin",
   linux: "linux",

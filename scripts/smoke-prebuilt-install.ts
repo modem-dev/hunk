@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -18,6 +19,27 @@ import {
   releaseNpmDir,
 } from "./prebuilt-package-helpers";
 import { envWithPath, npmCommand } from "./script-helpers";
+
+/** Return whether an installed dependency tree contains Bun's npm packages. */
+function containsBunPackage(root: string) {
+  if (!existsSync(root)) return false;
+
+  const pending = [root];
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "bun" && path.basename(directory) === "node_modules") return true;
+        if (entry.name.startsWith("bun-") && path.basename(directory) === "@oven") return true;
+        pending.push(entryPath);
+      }
+    }
+  }
+
+  return false;
+}
 
 function run(command: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   const proc = Bun.spawnSync(command, {
@@ -148,6 +170,10 @@ try {
 
   if (pierreInstallCandidates.some((candidate) => existsSync(candidate))) {
     throw new Error("Expected a CLI-only Hunk install to omit the optional @pierre/diffs peer.");
+  }
+
+  if (containsBunPackage(installDir)) {
+    throw new Error("Expected a prebuilt Hunk install to omit bun and @oven/bun-* packages.");
   }
 
   if (process.platform !== "win32") {

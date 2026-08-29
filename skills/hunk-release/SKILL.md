@@ -76,6 +76,22 @@ bun run check:prebuilt-pack
 bun run smoke:prebuilt-install
 ```
 
+Run the full Firecracker install compatibility suite once from the reviewed release tip on a Linux
+x64 host with working KVM, either locally or through the manually dispatched
+`install-vm.yml` workflow:
+
+```sh
+bun run test:install-vm
+result=$(find tmp/install-vm/runs -mindepth 2 -maxdepth 2 -name result.json -printf '%T@ %p\n' \
+  | sort -nr | head -1 | cut -d' ' -f2-)
+jq -e '.run.status == "passed" and (.scenarios | length > 0) and all(.scenarios[]; .status == "passed")' "$result"
+```
+
+A skipped result does not satisfy release validation. When using the manual workflow, inspect its
+uploaded `result.json`; a green job alone is insufficient because unsupported runners may use the
+intentional skip path. Firecracker validates Linux x64 packaging behavior, while the existing native
+release jobs remain responsible for macOS, Windows, and other architectures.
+
 Commit the generated metadata and `benchmarks/release/bench-X.Y.Z.json`, follow normal review policy, and wait for required CI.
 
 ## 3. Tag and publish

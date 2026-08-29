@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "npm-prebuilt-no-bun",
+      "description": "Install the current prebuilt package with npm and no Bun runtime.",
+      "profile": "node",
+      "script": "npm-prebuilt-no-bun.sh",
+      "network": "local"
+    },
+    {
+      "id": "pnpm-prebuilt-no-bun",
+      "description": "Install the current prebuilt package with pnpm and no Bun runtime.",
+      "profile": "node",
+      "script": "pnpm-prebuilt-no-bun.sh",
+      "network": "local"
+    },
+    {
+      "id": "pnpm-global-upgrade",
+      "description": "Upgrade between two registry versions without pruning pnpm's shared store.",
+      "profile": "node",
+      "script": "pnpm-global-upgrade.sh",
+      "network": "local"
+    },
+    {
+      "id": "system-bun-path",
+      "description": "Keep old and current standalone PATH Bun commands behind the platform binary.",
+      "profile": "node",
+      "script": "system-bun-path.sh",
+      "network": "local"
+    },
+    {
+      "id": "missing-platform-no-bun",
+      "description": "Explain how to repair an install with neither a platform package nor Bun.",
+      "profile": "node",
+      "script": "missing-platform-no-bun.sh",
+      "network": "local"
+    },
+    {
+      "id": "missing-platform-system-bun",
+      "description": "Do not mistake a standalone PATH Bun command for the npm Bun fallback.",
+      "profile": "node",
+      "script": "missing-platform-system-bun.sh",
+      "network": "local"
+    },
+    {
+      "id": "missing-platform-npm-bun",
+      "description": "Use the best-effort Node-resolvable npm Bun fallback when the platform package is absent.",
+      "profile": "node",
+      "script": "missing-platform-npm-bun.sh",
+      "network": "live"
+    },
+    {
+      "id": "old-npm-bun-fallback",
+      "description": "Exercise the legacy fallback with an older pinned npm Bun package without declaring a support boundary.",
+      "profile": "node",
+      "script": "old-npm-bun-fallback.sh",
+      "network": "live"
+    },
+    {
+      "id": "offline-after-install",
+      "description": "Run the installed prebuilt executable after removing the guest default route.",
+      "profile": "node",
+      "script": "offline-after-install.sh",
+      "network": "live"
+    },
+    {
+      "id": "curl-clean-machine",
+      "description": "Install the standalone release archive without Node or Bun.",
+      "profile": "minimal",
+      "script": "curl-clean-machine.sh",
+      "network": "local"
+    },
+    {
+      "id": "curl-failure-preservation",
+      "description": "Preserve an existing curl install after checksum, truncation, and unavailable-asset failures.",
+      "profile": "minimal",
+      "script": "curl-failure-preservation.sh",
+      "network": "local"
+    },
+    {
+      "id": "historical-pnpm-bun-corruption",
+      "description": "Reproduce the pinned issue #866 projection mutation and report Linux recovery separately.",
+      "profile": "node",
+      "script": "historical-pnpm-bun-corruption.sh",
+      "network": "live"
+    }
+  ]
+}

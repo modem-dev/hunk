@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   PLATFORM_PACKAGE_MATRIX,
+  assertNoMandatoryBunDependency,
   assertOptionalPeerDependencyContract,
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
   buildPlatformPackageManifest,
+  buildPrebuiltRuntimeDependencies,
   getHostPlatformPackageSpec,
   getPlatformPackageSpecByName,
   getPlatformPackageSpecForHost,
@@ -34,6 +36,23 @@ function createOptionalPeerContract(): {
 }
 
 describe("prebuilt package helpers", () => {
+  test("prebuilt runtime dependencies exclude Bun without mutating the source manifest", () => {
+    const dependencies = { bun: "^1.3.14", commander: "^14.0.3" };
+
+    expect(buildPrebuiltRuntimeDependencies(dependencies)).toEqual({ commander: "^14.0.3" });
+    expect(dependencies).toEqual({ bun: "^1.3.14", commander: "^14.0.3" });
+    expect(buildPrebuiltRuntimeDependencies()).toBeUndefined();
+  });
+
+  test("assertNoMandatoryBunDependency rejects a staged Bun runtime", () => {
+    expect(() =>
+      assertNoMandatoryBunDependency({ dependencies: { commander: "1.0.0" } }),
+    ).not.toThrow();
+    expect(() => assertNoMandatoryBunDependency({ dependencies: { bun: "1.4.0" } })).toThrow(
+      "omit the mandatory bun dependency",
+    );
+  });
+
   test("buildOptionalDependencyMap includes every supported platform package at one version", () => {
     const version = "9.9.9";
     const dependencies = buildOptionalDependencyMap(version);
