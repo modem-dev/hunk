@@ -21,16 +21,18 @@ Use this package when you want to:
 - expose broker health and optional raw list/get/dispatch APIs
 - manage session-side websocket connection state
 
-## Package roles
+## Current workspace roles
 
-This workspace is split into layers:
+The source tree is currently split into four private workspaces:
 
 - `@hunk/session-broker-core` — low-level shared primitives and envelope parsing
 - `@hunk/session-broker` — **main runtime-neutral broker API**
 - `@hunk/session-broker-bun` — Bun HTTP/websocket adapter
 - `@hunk/session-broker-node` — Node HTTP/websocket adapter
 
-If you are choosing one package to build against, start here.
+The public SDK contract consolidates these into one `@hunk/session-broker` package whose root
+selects Node or Bun automatically. Until that migration lands, these names and examples describe
+internal workspace usage only.
 
 ## What this package owns
 

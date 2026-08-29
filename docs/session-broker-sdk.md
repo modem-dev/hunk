@@ -28,14 +28,19 @@ A daemon is configured for exactly one immutable `appId`. It must not become a u
 The first public release supports:
 
 - ESM-only built JavaScript and `.d.ts` declarations;
-- Node.js 22 or newer for core, main, Node adapter, and host packages;
-- Bun 1.3.14 or newer for core, main, Bun adapter, and host packages;
+- Node.js 22 or newer through the package's Node conditional export;
+- Bun 1.3.14 or newer through the package's Bun conditional export;
 - macOS, Linux, and Windows for non-PTY behavior;
 - server processes with WHATWG `Request`, `Response`, streams, and browser-like WebSocket clients.
 
 “Runtime-neutral” means server-capable Node and Bun. It does not mean browser, edge-worker, Deno, or service-worker compatible. Package builds target the declared minimum runtimes and must not expose TypeScript source as the runtime entry point.
 
-The Node adapter declares only Node support. The Bun adapter declares only Bun support. Core, main, and host packages may declare both after clean consumers pass on both runtimes.
+The one package declares both runtimes after clean consumers pass on both. Its export map selects
+the Bun implementation before the Node implementation because Bun may expose Node-compatible
+conditions too. The `default` entry applies only when neither `bun` nor `node` is asserted and
+throws a clear unsupported-runtime error. Each selected runtime entry separately validates its
+minimum runtime version at startup; conditional exports alone do not enforce version floors or
+prove runtime identity.
 
 ### Non-goals
 
@@ -52,59 +57,94 @@ The first public contract does not include:
 
 ## Ownership and package topology
 
-Keep the four existing package boundaries and add one Node-capable host package. Do not consolidate the Node and Bun adapters into subpath exports: their globals, dependencies, and lifecycle implementations are intentionally isolated.
+Publish one package: `@hunk/session-broker`. Keep the existing core, daemon, host, and runtime
+adapter boundaries as internal modules, not independently versioned npm products.
 
-The selected public names are:
+The package root is the normal and only first-release entry point. It exports low-level protocol and
+state primitives, the broker/connection APIs, process supervision, the managed producer session,
+and one `serveSessionBrokerDaemon` API whose implementation resolves automatically for the current
+runtime. Consumers do not install or import a Node- or Bun-specific package or subpath.
 
-- `@hunk/session-broker-core` — low-level identity, wire vocabulary, runtime parsers, limits, selector contracts, and state primitives;
-- `@hunk/session-broker` — primary broker, daemon engine, producer connection, authentication/authorization hooks, and managed in-process APIs;
-- `@hunk/session-broker-node` — Node HTTP and `ws` listener adapter;
-- `@hunk/session-broker-bun` — Bun HTTP and WebSocket listener adapter;
-- `@hunk/session-broker-host` — endpoint discovery, launch supervision, credentials, compatibility policy composition, and high-level managed producer sessions.
+The `@hunk` scope is the selected naming contract, but publication is blocked until a repository
+owner verifies npm scope control and trusted-publisher configuration. If the scope is unavailable,
+the replacement must be approved before the first publication. Renaming the package must never
+alter `appId`, wire identity, or runtime namespaces.
 
-`@hunk/session-broker` remains the normal low-level entry point. Application processes that want automatic daemon management start with `@hunk/session-broker-host` and add the adapter used by their daemon executable. `core` is an advanced foundation and dependency, not the recommended application API.
-
-The `@hunk` scope is the selected naming contract, but publication is blocked until a repository owner verifies npm scope control and trusted-publisher configuration for every package. If the scope is unavailable, the replacement must be approved before the first publication. Renaming packages must never alter `appId`, wire identity, or runtime namespaces.
-
-### Dependency diagram
+### Package and internal dependency diagram
 
 ```text
-                   @hunk/session-broker-core
-                  identity, wire, parsers, state
-                              ^
-                              |
-                     @hunk/session-broker
-                broker + daemon + connection APIs
-                    ^         ^          ^
-                    |         |          |
-        +-----------+         |          +------------+
-        |                     |                       |
-@hunk/session-broker-node     |       @hunk/session-broker-bun
- Node listener + ws only      |        Bun listener only
-                              |
-                 @hunk/session-broker-host
-            supervision + managed producer session
+@hunk/session-broker
+  public conditional root
+        |
+        +-- shared protocol, parsers, selectors, limits, state
+        +-- broker daemon + producer/caller connections
+        +-- endpoint supervision + managed producer session
+        +-- serveSessionBrokerDaemon
+              |
+              +-- "bun" condition  -> Bun.serve adapter
+              +-- "node" condition -> node:http + ws adapter
+              +-- default           -> unsupported-runtime error
 
-Hunk src/session and src/app compose these packages.
-packages/* never import src/*.
+Hunk src/session and src/app compose the package.
+The package never imports src/*.
 ```
 
-The host package may use portable Node built-ins that Bun implements, but must not use `Bun.*`. Runtime adapters consume `@hunk/session-broker`; they must not be imported eagerly by core, main, or host. Bun consumers must not install `ws` unless they choose the Node adapter.
+The export map orders `types`, `bun`, `node`, then `default`. Bun and Node runtime entry files
+re-export the same shared public surface. Runtime choice does not change application source or
+declarations. The common server contract is deliberately narrower than either native server:
 
-Process discovery and launch policy must not enter core or the runtime-neutral daemon engine. App-specific launch commands, environment variables, compatibility copy, and approval policy are injected into the host package.
+```ts
+interface SessionBrokerDaemonAddress {
+  hostname: string;
+  port: number;
+}
+
+interface RunningSessionBrokerDaemon {
+  readonly stopped: Promise<void>;
+  address(): SessionBrokerDaemonAddress;
+  stop(options?: { force?: boolean; drainTimeoutMs?: number }): Promise<void>;
+}
+
+interface ServeSessionBrokerDaemonOptions<Daemon> {
+  daemon: Daemon;
+  hostname: string;
+  port: number;
+  handleRequest?: (request: Request) => Response | Promise<Response | undefined> | undefined;
+  notFound?: (request: Request) => Response | Promise<Response>;
+  formatServeError?: (error: unknown, address: SessionBrokerDaemonAddress) => Error;
+}
+
+declare function serveSessionBrokerDaemon<Daemon>(
+  options: ServeSessionBrokerDaemonOptions<Daemon>,
+): Promise<RunningSessionBrokerDaemon>;
+```
+
+Both implementations are async at the public boundary, resolve only after binding, return a
+non-null portable address, and hide Bun/Node native handles. Custom request hooks receive only a
+WHATWG `Request`; runtime-specific server objects are not public. `stop()` is idempotent and shares
+one completion across concurrent calls. The same clean consumer source must typecheck and complete
+the lifecycle suite unchanged against both conditional entries. Resolution uses package
+conditions, not `typeof Bun` branches after loading incompatible modules. The Node entry may load
+`ws`; accepting a small unused dependency in Bun installations is the explicit convenience
+tradeoff of one automatically resolving package, but the Bun runtime must never import or execute
+it.
+
+Process discovery and launch policy remains internally separate from protocol/state and the daemon
+engine. Application-specific launch commands, environment variables, compatibility copy, and
+approval policy are injected into the supervisor/managed-host module.
 
 ### Build and release model
 
 Today the four existing workspaces are private `0.0.0` packages, export TypeScript from `src/`, use
-`workspace:*` dependency ranges, and claim unverified Node 18/Bun 1.0 engine floors. The host
-package does not exist yet. Those are internal implementation facts, not the public support
-contract.
+`workspace:*` dependency ranges, and claim unverified Node 18/Bun 1.0 engine floors. The managed
+host module does not exist yet. Those are internal implementation facts, not the public support
+contract. Extraction consolidates those workspaces into one publishable package while preserving
+their useful module boundaries in source.
 
-The public packages ship ESM in `dist/` with declarations, explicit export maps, README, license,
-source maps when enabled consistently, and no workspace-only imports. Packed manifests contain
-publishable dependency ranges rather than `workspace:*`.
-
-All five packages' first public version will be `0.1.0`, and they form one fixed Changesets version group until after `1.0.0`. A fixed group trades extra adapter releases for an attested compatibility matrix. The packages may reach `1.0.0` only after the release gates in this document pass and the API has been exercised by Hunk plus at least one clean external reference consumer.
+The public package ships ESM in `dist/` with declarations, a conditional export map, README,
+license, source maps when enabled consistently, and no workspace-only imports. Its first public
+version will be `0.1.0`; it may reach `1.0.0` only after the release gates in this document pass and
+the API has been exercised by Hunk plus at least one clean external reference consumer.
 
 Package semver and wire versions are independent:
 
@@ -637,8 +677,8 @@ different digest is rejected as `idempotency-conflict`. Only the originating pri
 administrative capability may cancel joined work.
 
 `@hunk/session-broker` owns the daemon-wide bounded TTL in-memory ledger described above so all
-callers observe one dedupe state. The host package manages caller keys and retry policy but does not
-own correlation or cached results. The first public
+callers observe one dedupe state. The managed-host module manages caller keys and retry policy but
+does not own correlation or cached results. The first public
 contract does not promise crash-persistent deduplication. A daemon or producer restart loses
 in-memory evidence, so a retry after restart remains application-owned with
 `deliveryCertainty: "unknown"` unless the app has stronger durable evidence.
@@ -693,7 +733,9 @@ Graceful stop:
 7. releases generation-owned discovery/coordinator state;
 8. resolves `stopped` exactly once.
 
-Forced stop skips the drain and immediately rejects work and closes active transports. Node and Bun adapters expose the same `stop({ force?, drainTimeoutMs? })` and `stopped` semantics. Repeated or concurrent stop calls are idempotent and share one completion.
+Forced stop skips the drain and immediately rejects work and closes active transports. The Node
+and Bun conditional implementations expose the same `stop({ force?, drainTimeoutMs? })` and
+`stopped` semantics. Repeated or concurrent stop calls are idempotent and share one completion.
 
 ## Discovery, singleton launch, and ownership
 
@@ -886,14 +928,17 @@ Any unresolved critical or high security finding blocks publication.
 
 ### Runtime and packaging gate
 
-- Each tarball contains built ESM, declarations, README, license, and only intended exports.
-- No tarball contains `src`, tests, credentials, runtime files, local artifacts, or unresolved `workspace:*` ranges.
-- Fresh external projects install tarballs and complete register/list/get/dispatch/result/reconnect/shutdown under Node 22 and Bun 1.3.14.
+- The tarball contains built ESM, declarations, README, license, and only intended exports.
+- It contains no `src`, tests, credentials, runtime files, local artifacts, or unresolved
+  `workspace:*` ranges.
+- Fresh external projects install that tarball and complete
+  register/list/get/dispatch/result/reconnect/shutdown under Node 22 and Bun 1.3.14.
 - Node tests execute under Node without Bun globals or `bun:test`.
 - Type consumers compile with NodeNext and bundler resolution without repository path aliases.
-- Node/Bun adapters share one lifecycle and transport conformance suite.
-- Bun consumers do not install `ws` unless selecting the Node adapter.
-- Changesets fixed-group output and topological publish dry-runs are coherent.
+- Node/Bun conditional entries share one lifecycle, API-surface, and transport conformance suite.
+- The package root selects Bun before Node under Bun, and the Bun runtime never imports or executes
+  `ws`.
+- Changesets output and the single-package publish dry-run are coherent.
 - npm `@hunk` scope ownership, provenance, and trusted publishing are verified.
 
 ## Baseline evidence
@@ -966,10 +1011,10 @@ Phase 7 must remove obsolete Hunk paths, preserve product semantics, run full en
 | Decision             | Contract                                                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Daemon scope         | One daemon per immutable `appId`, many sessions; never a universal cross-app hub.                                      |
-| Package topology     | Five packages: core, main, Node adapter, Bun adapter, host/supervisor.                                                 |
-| Public names         | Keep `@hunk/session-broker*`; publication waits for verified scope ownership.                                          |
+| Package topology     | One `@hunk/session-broker` package with internal modules and automatic Bun/Node conditional resolution.                |
+| Public name          | `@hunk/session-broker`; publication waits for verified scope ownership.                                                |
 | Runtime support      | ESM; Node 22+ and Bun 1.3.14+; no browser/edge/Deno/CommonJS.                                                          |
-| Package versions     | Fixed group, first public version `0.1.0`; wire versions remain independent.                                           |
+| Package version      | One package, first public version `0.1.0`; wire versions remain independent.                                           |
 | Application identity | Stable validated `appId`, never inferred from path/port/package.                                                       |
 | Session baseline     | Opaque app-scoped `sessionId`; connection-bound ownership.                                                             |
 | Compatibility        | Highest overlapping broker and app integer ranges plus explicit features/descriptors.                                  |
