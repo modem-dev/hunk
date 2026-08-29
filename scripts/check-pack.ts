@@ -179,8 +179,14 @@ export default function (hunk: HunkExtensionAPI) {
         range: [0, 4],
         tone: matchTone,
       };
-      const invalidTone: ExtensionLineHighlightTone[] = ["current", "info", "warning", "error"];
-      hunk.log(String(invalidTone.length));
+      const otherTones: ExtensionLineHighlightTone[] = [
+        "current",
+        "info",
+        "warning",
+        "error",
+        "dim",
+      ];
+      hunk.log(String(otherTones.length));
       // @ts-expect-error Ranges are immutable tuples.
       mark.range[0] = 2;
       return [mark];

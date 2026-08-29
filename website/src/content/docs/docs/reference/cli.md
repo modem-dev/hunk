@@ -539,7 +539,7 @@ hunk session highlight add (<session-id> | --repo <path>) --file <path> (--old-l
 | `--repo <path>`  | target the live session whose repo root matches this path                         |
 | `--old-line <n>` | 1-based line number on the old side                                               |
 | `--new-line <n>` | 1-based line number on the new side                                               |
-| `--tone <tone>`  | mark tone: match, current, info, warning, error (default match)                   |
+| `--tone <tone>`  | mark tone: match, current, info, warning, error, dim (default match)              |
 | `--focus`        | add the mark and land the viewport on its line                                    |
 | `--json`         | emit structured JSON                                                              |
 

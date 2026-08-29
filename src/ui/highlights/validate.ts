@@ -31,6 +31,7 @@ const LINE_HIGHLIGHT_TONES: ReadonlySet<string> = new Set([
   "info",
   "warning",
   "error",
+  "dim",
 ]);
 
 /** One structurally valid mark, with the tone default applied. */

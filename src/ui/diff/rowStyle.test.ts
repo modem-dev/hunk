@@ -120,4 +120,49 @@ describe("lineHighlightToneStyle", () => {
       }
     }
   });
+
+  test("resolves dim tone to transform foreground toward background with readable contrast", () => {
+    for (const theme of THEMES) {
+      for (const kind of ["context", "addition", "deletion"] as const) {
+        const baseBg = stackCellPalette(kind, theme).contentBg;
+        const resolved = lineHighlightToneStyle("dim", baseBg, theme);
+        expect(resolved).toBeDefined();
+        expect(resolved!.transformFg).toBeDefined();
+
+        const syntaxFg = "#e06c75";
+        const dimmed = resolved!.transformFg!(syntaxFg, baseBg);
+        const effectiveBg =
+          baseBg === TRANSPARENT_BACKGROUND
+            ? theme.appearance === "dark"
+              ? "#000000"
+              : "#ffffff"
+            : baseBg;
+        expect(contrastRatio(dimmed, effectiveBg)).toBeGreaterThanOrEqual(1.6);
+        // Dimmed foreground must be closer to background than the original foreground
+        expect(hexColorDistance(dimmed, effectiveBg)).toBeLessThan(
+          hexColorDistance(syntaxFg, effectiveBg),
+        );
+      }
+    }
+  });
+
+  test("resolves dim tone on transparent surfaces to readable contrast", () => {
+    for (const base of THEMES) {
+      const theme = withTransparentSurfaces(base);
+      const contextBg = stackCellPalette("context", theme).contentBg;
+      expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
+      const assumedBg = theme.appearance === "dark" ? "#000000" : "#ffffff";
+
+      const resolved = lineHighlightToneStyle("dim", contextBg, theme);
+      expect(resolved).toBeDefined();
+      expect(resolved!.transformFg).toBeDefined();
+
+      const syntaxFg = "#e06c75";
+      const dimmed = resolved!.transformFg!(syntaxFg, contextBg);
+      expect(contrastRatio(dimmed, assumedBg)).toBeGreaterThanOrEqual(1.6);
+      expect(hexColorDistance(dimmed, assumedBg)).toBeLessThan(
+        hexColorDistance(syntaxFg, assumedBg),
+      );
+    }
+  });
 });

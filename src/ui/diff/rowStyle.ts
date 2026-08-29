@@ -199,12 +199,20 @@ const LINE_HIGHLIGHT_MAX_BLEND = 0.85;
 // read: a mark that eats its own text would defeat the point of marking it.
 const MIN_LINE_HIGHLIGHT_TEXT_CONTRAST = 3.1;
 
-/** How one resolved mark paints: a background, plus a foreground when the mark inverts. */
-export interface LineHighlightStyle {
-  bg: string;
-  /** Set only for reverse-video marks; tinted marks keep the spans' own colors. */
-  fg?: string;
-}
+/** How one resolved mark paints: a background, plus a foreground when the mark inverts or dims. */
+export type LineHighlightStyle =
+  | {
+      bg: string;
+      /** Set only for reverse-video marks; tinted marks keep the spans' own colors. */
+      fg?: string;
+      transformFg?: never;
+    }
+  | {
+      bg?: string;
+      fg?: string;
+      /** Set for marks that transform the span's foreground color (e.g. dimming). */
+      transformFg: (sourceFg: string | undefined, spanBg: string | undefined) => string;
+    };
 
 const lineHighlightStyleCache = new WeakMap<
   AppTheme,
@@ -232,7 +240,10 @@ function effectiveHighlightBackground(baseBg: string, theme: AppTheme) {
 }
 
 /** The theme color one tinted highlight tone pulls the line background toward. */
-function lineHighlightToneAnchor(tone: ExtensionLineHighlightTone, theme: AppTheme) {
+function lineHighlightToneAnchor(
+  tone: Exclude<ExtensionLineHighlightTone, "dim">,
+  theme: AppTheme,
+) {
   switch (tone) {
     case "info":
       return theme.badgeNeutral;
@@ -293,6 +304,21 @@ function strengthenLineHighlightBg(
  * degradation word-diff emphasis uses.
  */
 export function lineHighlightToneStyle(
+  tone: "dim",
+  baseBg: string,
+  theme: AppTheme,
+): Extract<LineHighlightStyle, { transformFg: unknown }> | undefined;
+export function lineHighlightToneStyle(
+  tone: Exclude<ExtensionLineHighlightTone, "dim">,
+  baseBg: string,
+  theme: AppTheme,
+): Extract<LineHighlightStyle, { bg: string }> | undefined;
+export function lineHighlightToneStyle(
+  tone: ExtensionLineHighlightTone,
+  baseBg: string,
+  theme: AppTheme,
+): LineHighlightStyle | undefined;
+export function lineHighlightToneStyle(
   tone: ExtensionLineHighlightTone,
   baseBg: string,
   theme: AppTheme,
@@ -312,12 +338,72 @@ export function lineHighlightToneStyle(
   return resolved;
 }
 
+const DEFAULT_DIM_RATIO = 0.45;
+const MIN_DIM_TEXT_CONTRAST = 1.6;
+
+const dimSpanFgCache = new WeakMap<AppTheme, Map<string, string>>();
+
+/** Dim a span's foreground color toward its effective background while preserving hue. */
+export function dimSpanFg(
+  sourceFg: string | undefined,
+  baseBg: string,
+  theme: AppTheme,
+  ratio = DEFAULT_DIM_RATIO,
+): string {
+  let themeCache = dimSpanFgCache.get(theme);
+  if (!themeCache) {
+    themeCache = new Map();
+    dimSpanFgCache.set(theme, themeCache);
+  }
+  const cacheKey = `${baseBg}:${sourceFg ?? ""}:${ratio}`;
+  const cached = themeCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const effectiveBg = effectiveHighlightBackground(baseBg, theme);
+  const fallbackFg = theme.syntaxColors.default || theme.text;
+  const effectiveFg =
+    sourceFg && isHexThemeColor(sourceFg)
+      ? sourceFg
+      : isHexThemeColor(fallbackFg)
+        ? fallbackFg
+        : theme.appearance === "dark"
+          ? "#adbac7"
+          : "#24292f";
+
+  let result = effectiveFg;
+  const candidate = blendHex(effectiveFg, effectiveBg, ratio);
+  if (contrastRatio(candidate, effectiveBg) >= MIN_DIM_TEXT_CONTRAST) {
+    result = candidate;
+  } else {
+    for (let step = 1; step <= 9; step += 1) {
+      const stepRatio = ratio + step * 0.05;
+      if (stepRatio > 0.901) break;
+      const strengthened = blendHex(effectiveFg, effectiveBg, stepRatio);
+      if (contrastRatio(strengthened, effectiveBg) >= MIN_DIM_TEXT_CONTRAST) {
+        result = strengthened;
+        break;
+      }
+    }
+  }
+
+  themeCache.set(cacheKey, result);
+  return result;
+}
+
 /** Compute one uncached tone style; `lineHighlightToneStyle` owns memoization. */
 function resolveLineHighlightToneStyle(
   tone: ExtensionLineHighlightTone,
   baseBg: string,
   theme: AppTheme,
 ): LineHighlightStyle | undefined {
+  if (tone === "dim") {
+    return {
+      transformFg: (sourceFg, spanBg) => dimSpanFg(sourceFg, spanBg ?? baseBg, theme),
+    };
+  }
+
   if (tone === "current" && isHexThemeColor(theme.text)) {
     return { bg: theme.text, fg: effectiveHighlightBackground(theme.background, theme) };
   }

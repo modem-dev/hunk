@@ -136,7 +136,7 @@ export type SessionDaemonRequest =
       line: number;
       start: number;
       end: number;
-      tone?: "match" | "current" | "info" | "warning" | "error";
+      tone?: "match" | "current" | "info" | "warning" | "error" | "dim";
       reveal: boolean;
     }
   | {

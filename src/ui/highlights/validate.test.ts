@@ -22,6 +22,7 @@ describe("validateLineHighlights", () => {
     const validation = validateLineHighlights([
       { side: "new", line: 3, range: [2, 8] },
       { side: "old", line: 1, range: [0, 1], tone: "error" },
+      { side: "new", line: 4, range: [0, 10], tone: "dim" },
     ]);
     expect(validation).toEqual({
       ok: true,
@@ -29,6 +30,7 @@ describe("validateLineHighlights", () => {
       marks: [
         { side: "new", line: 3, start: 2, end: 8, tone: "match" },
         { side: "old", line: 1, start: 0, end: 1, tone: "error" },
+        { side: "new", line: 4, start: 0, end: 10, tone: "dim" },
       ],
     });
   });

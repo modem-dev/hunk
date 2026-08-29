@@ -1194,7 +1194,7 @@ describe("parseCli", () => {
     ).rejects.toThrow("Highlight --end must be greater than --start");
     await expect(
       parseCli([...base, "--new-line", "42", "--start", "0", "--end", "4", "--tone", "loud"]),
-    ).rejects.toThrow("Highlight tone must be one of match, current, info, warning, error.");
+    ).rejects.toThrow("Highlight tone must be one of match, current, info, warning, error, dim.");
     await expect(parseCli([...base, "--start", "0", "--end", "4"])).rejects.toThrow(
       "Specify exactly one highlight target: --old-line <n> or --new-line <n>.",
     );

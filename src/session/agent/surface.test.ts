@@ -121,8 +121,8 @@ describe("session agent command surface", () => {
     expect(parseByFlag.get("--end")).toBe("positiveInt");
   });
 
-  test("recognizes exactly the five shared highlight tones", () => {
-    for (const tone of ["match", "current", "info", "warning", "error"]) {
+  test("recognizes exactly the six shared highlight tones", () => {
+    for (const tone of ["match", "current", "info", "warning", "error", "dim"]) {
       expect(isHighlightTone(tone)).toBe(true);
     }
     expect(isHighlightTone("loud")).toBe(false);

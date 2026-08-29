@@ -250,6 +250,68 @@ describe("applyLineHighlightsToSpans", () => {
     ]);
   });
 
+  test("transforms foreground colors when transformFg is provided (dim tone)", () => {
+    const spans: RenderSpan[] = [
+      { text: "const ", fg: "#c678dd" },
+      { text: "alpha", fg: "#e5c07b" },
+      { text: " = 10;", fg: "#abb2bf" },
+    ];
+
+    const painted = applyLineHighlightsToSpans(
+      spans,
+      [{ startCol: 0, endCol: 17, tone: "dim" }],
+      () => ({
+        transformFg: (fg) => (fg ? `#dim-${fg.replace("#", "")}` : "#dim-default"),
+      }),
+    );
+
+    expect(painted).toEqual([
+      { text: "const ", fg: "#dim-c678dd" },
+      { text: "alpha", fg: "#dim-e5c07b" },
+      { text: " = 10;", fg: "#dim-abb2bf" },
+    ]);
+  });
+
+  test("preserves word-diff background while transforming foreground on dim marks", () => {
+    const spans: RenderSpan[] = [
+      { text: "alpha", fg: "#c678dd", bg: "#204020" },
+      { text: "beta", fg: "#e5c07b" },
+    ];
+
+    const painted = applyLineHighlightsToSpans(
+      spans,
+      [{ startCol: 0, endCol: 9, tone: "dim" }],
+      () => ({
+        transformFg: (fg, bg) => `${fg ?? ""}:${bg ?? "none"}`,
+      }),
+    );
+
+    expect(painted).toEqual([
+      { text: "alpha", fg: "#c678dd:#204020", bg: "#204020" },
+      { text: "beta", fg: "#e5c07b:none" },
+    ]);
+  });
+
+  test("allows active search hits (current) to override dim ranges", () => {
+    const spans: RenderSpan[] = [{ text: "const alpha = 10;", fg: "#ffffff" }];
+
+    const painted = applyLineHighlightsToSpans(
+      spans,
+      [
+        { startCol: 0, endCol: 17, tone: "dim" },
+        { startCol: 6, endCol: 11, tone: "current" },
+      ],
+      (tone) =>
+        tone === "dim" ? { transformFg: () => "#dimmed" } : { bg: "#eeeeee", fg: "#111111" },
+    );
+
+    expect(painted).toEqual([
+      { text: "const ", fg: "#dimmed" },
+      { text: "alpha", fg: "#111111", bg: "#eeeeee" },
+      { text: " = 10;", fg: "#dimmed" },
+    ]);
+  });
+
   test("resolves overlaps with the later range winning", () => {
     const spans: RenderSpan[] = [{ text: "abcdefghij" }];
 

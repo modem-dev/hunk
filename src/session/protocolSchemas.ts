@@ -115,7 +115,7 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     line: z.int().positive(),
     start: z.int().nonnegative(),
     end: z.int().positive(),
-    tone: z.enum(["match", "current", "info", "warning", "error"]).optional(),
+    tone: z.enum(["match", "current", "info", "warning", "error", "dim"]).optional(),
     reveal: z.boolean(),
   }),
   z.strictObject({

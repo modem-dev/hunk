@@ -252,7 +252,7 @@ export interface SessionHighlightAddCommandInput {
   start: number;
   /** Exclusive end offset; must exceed `start`. */
   end: number;
-  tone?: "match" | "current" | "info" | "warning" | "error";
+  tone?: "match" | "current" | "info" | "warning" | "error" | "dim";
   reveal: boolean;
 }
 

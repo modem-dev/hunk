@@ -463,9 +463,10 @@ export interface ExtensionFileView {
  * is never invisible on a green line. A transparent cell has no color to blend
  * against, so the host resolves the tint against the background it assumes the
  * terminal shows. `"current"` is the emphatic variant of `"match"` — search
- * uses it for the match the user is on.
+ * uses it for the match the user is on. `"dim"` recedes the text toward its
+ * background while preserving token hues.
  */
-export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning" | "error";
+export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning" | "error" | "dim";
 
 /**
  * One marked character range inside one diff line.

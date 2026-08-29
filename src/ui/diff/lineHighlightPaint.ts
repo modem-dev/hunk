@@ -414,10 +414,11 @@ function toneAtColumn(plan: LineHighlightCutPlan, col: number) {
   return interval >= 0 && interval < tones.length ? tones[interval] : undefined;
 }
 
-/** The resolved paint for one tone: a background, plus a foreground when the mark inverts. */
+/** The resolved paint for one tone: a background, plus a foreground when the mark inverts or dims. */
 export interface LineHighlightSpanStyle {
-  bg: string;
+  bg?: string;
   fg?: string;
+  transformFg?: (sourceFg: string | undefined, spanBg: string | undefined) => string;
 }
 
 /**
@@ -451,13 +452,24 @@ export function applyLineHighlightsToSpans(
     if (text.length === 0) return;
     const tone = toneAtColumn(plan, startCol);
     const style = tone === undefined ? undefined : resolveStyle(tone);
+    if (style === undefined) {
+      appendSpan(result, { ...span, text });
+      return;
+    }
+    if (style.transformFg) {
+      appendSpan(result, {
+        ...span,
+        text,
+        fg: style.transformFg(span.fg, span.bg),
+        bg: style.bg ?? span.bg,
+      });
+      return;
+    }
     appendSpan(
       result,
-      style === undefined
-        ? { ...span, text }
-        : style.fg === undefined
-          ? { ...span, text, bg: style.bg }
-          : { ...span, text, bg: style.bg, fg: style.fg },
+      style.fg === undefined
+        ? { ...span, text, bg: style.bg ?? span.bg }
+        : { ...span, text, bg: style.bg, fg: style.fg },
     );
   };
 

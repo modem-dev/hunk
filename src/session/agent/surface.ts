@@ -169,12 +169,12 @@ export const HIGHLIGHT_TARGET_CONSTRAINT = {
   flags: ["--old-line <n>", "--new-line <n>"],
 } as const satisfies AgentCommandConstraint;
 
-/** The five-tone vocabulary highlight marks share with extension line highlighters. */
-export const HIGHLIGHT_TONES = ["match", "current", "info", "warning", "error"] as const;
+/** The six-tone vocabulary highlight marks share with extension line highlighters. */
+export const HIGHLIGHT_TONES = ["match", "current", "info", "warning", "error", "dim"] as const;
 
 export type HighlightTone = (typeof HIGHLIGHT_TONES)[number];
 
-/** Check one CLI-provided tone value against the shared five-tone vocabulary. */
+/** Check one CLI-provided tone value against the shared six-tone vocabulary. */
 export function isHighlightTone(value: string): value is HighlightTone {
   return (HIGHLIGHT_TONES as readonly string[]).includes(value);
 }
