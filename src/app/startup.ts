@@ -22,6 +22,7 @@ import type {
   SessionCommandInput,
 } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
+import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
@@ -115,6 +116,7 @@ export interface StartupDeps {
   stdoutIsTTY?: boolean;
   stdout?: NodeJS.WriteStream;
   env?: NodeJS.ProcessEnv;
+  bunVersion?: string;
 }
 
 /** Normalize startup work so help, pager, and app-bootstrap paths can be tested directly. */
@@ -136,6 +138,7 @@ export async function prepareStartupPlan(
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
+  const bunVersion = deps.bunVersion ?? Bun.version;
   const loadBaseVcsCatalog = createBundledVcsCatalogLoader();
 
   let parsedCliInput = await parseCliImpl(argv);
@@ -293,6 +296,18 @@ export async function prepareStartupPlan(
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
 
+  if (cliInput.options.watch) {
+    assertReliableWatchRuntime(bunVersion);
+    if (!canReloadInput(cliInput)) {
+      throw new HunkUserError(
+        "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
+        [
+          "Use a patch file path instead of stdin, and avoid `--agent-context -` for watched sessions.",
+        ],
+      );
+    }
+  }
+
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
@@ -308,15 +323,6 @@ export async function prepareStartupPlan(
         (await detectTerminalThemeModeFromBackgroundImpl({ input: themeInput, output: stdout })) ??
         undefined;
     }
-  }
-
-  if (cliInput.options.watch && !canReloadInput(cliInput)) {
-    throw new HunkUserError(
-      "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
-      [
-        "Use a patch file path instead of stdin, and avoid `--agent-context -` for watched sessions.",
-      ],
-    );
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and

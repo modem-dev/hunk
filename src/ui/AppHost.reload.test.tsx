@@ -106,6 +106,59 @@ async function settleHighlights(setup: Awaited<ReturnType<typeof testRender>>) {
   }
 }
 
+describe("reload watch runtime compatibility", () => {
+  test("refuses a live reload that enables watch mode under an affected Bun runtime", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-watch-runtime-"));
+    const file = join(dir, "test.txt");
+
+    execSync("git init && git config user.email test@test && git config user.name test", {
+      cwd: dir,
+      stdio: "ignore",
+    });
+    writeFileSync(file, "original line\n");
+    execSync("git add . && git commit -m init", { cwd: dir, stdio: "ignore" });
+    writeFileSync(file, "original line\nfirst change\n");
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
+    );
+    const { dispatchCommand, hostClient } = createTestHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} hostClient={hostClient} bunVersion="1.3.10" />,
+      { width: 120, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+
+      await expect(
+        dispatchCommand({
+          type: "command",
+          requestId: "reload-watch-runtime",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "vcs",
+              staged: false,
+              options: { mode: "stack", excludeUntracked: true, watch: true },
+            },
+          },
+        }),
+      ).rejects.toThrow("can deadlock while closing filesystem watchers");
+
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("first change");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      await removeTestDirectory(dir);
+    }
+  });
+});
+
 describe("reload stale highlight cache", () => {
   test("r key picks up new file content for file-pair diffs", async () => {
     const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-file-"));

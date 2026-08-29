@@ -375,6 +375,37 @@ describe("startup planning", () => {
     }
   });
 
+  test("rejects watch mode before affected Bun runtimes can deadlock", async () => {
+    const cliInput: CliInput = {
+      kind: "vcs",
+      staged: false,
+      options: { watch: true },
+    };
+    let loaded = false;
+    let opened = false;
+
+    await expect(
+      prepareStartupPlan(["bun", "hunk", "diff", "--watch"], {
+        bunVersion: "1.3.10",
+        parseCliImpl: async () => cliInput as ParsedCliInput,
+        resolveRuntimeCliInputImpl: (input) => input,
+        resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+        loadAppBootstrapImpl: async (input) => {
+          loaded = true;
+          return createBootstrap(input);
+        },
+        openControllingTerminalImpl: () => {
+          opened = true;
+          return { stdin: {} as never, close: () => {} };
+        },
+        stdinIsTTY: false,
+        stdoutIsTTY: true,
+      }),
+    ).rejects.toThrow("can deadlock while closing filesystem watchers");
+    expect(loaded).toBe(false);
+    expect(opened).toBe(false);
+  });
+
   test("rejects watch mode for stdin-backed patch inputs", async () => {
     const cliInput: CliInput = {
       kind: "patch",

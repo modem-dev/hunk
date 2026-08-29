@@ -71,7 +71,7 @@ Keep the change focused on one user problem. Before adding another helper, state
 
 Requirements:
 
-- Bun 1.3+
+- Bun 1.3.14+
 - Node.js 18+
 - Git
 - macOS, Linux, or Windows

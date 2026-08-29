@@ -34,6 +34,7 @@ import type {
   WorkspaceFileWriter,
   WorkspaceWriteRunner,
 } from "./hooks/useExtensionWorkspaceControls";
+import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 
 /** A replacement registry prepared for adoption and optionally already retiring. */
@@ -56,6 +57,7 @@ export function AppHost({
   startupNoticeResolver,
   watchRuntime,
   workspaceFileWriter,
+  bunVersion = Bun.version,
 }: {
   bootstrap: AppBootstrap;
   /** Process and terminal interrupts routed through host-owned extension retirement. */
@@ -71,6 +73,8 @@ export function AppHost({
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
+  /** Runtime identity injection for reload compatibility tests. */
+  bunVersion?: string;
 }) {
   const initialBootstrap = bootstrap.reloadContext.vcsCatalog
     ? bootstrap
@@ -264,6 +268,9 @@ export function AppHost({
         cwd,
         vcsCatalog: discoveryCatalog,
       });
+      if (configured.input.options.watch) {
+        assertReliableWatchRuntime(bunVersion);
+      }
       let replacementExtensions: ExtensionLoadResult | undefined;
 
       if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
