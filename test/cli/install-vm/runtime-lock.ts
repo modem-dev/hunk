@@ -1,13 +1,4 @@
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /** Return whether a process id still names a live process, treating permission denial as live. */
@@ -29,13 +20,12 @@ function readOwnerPid(lockDirectory: string) {
   return Number(owner.pid);
 }
 
-/** Acquire the shared install-VM runtime lock, reclaiming only a demonstrably stale owner. */
+/** Acquire the shared install-VM runtime lock without racing stale-owner reclamation. */
 export function acquireInstallVmRuntimeLock(
   lockDirectory: string,
   options: {
     pid?: number;
     alive?: (pid: number) => boolean;
-    beforeStaleClaim?: () => void;
   } = {},
 ) {
   const pid = options.pid ?? process.pid;
@@ -44,9 +34,14 @@ export function acquireInstallVmRuntimeLock(
 
   const create = () => {
     mkdirSync(lockDirectory);
-    writeFileSync(path.join(lockDirectory, "owner.json"), `${JSON.stringify({ pid })}\n`, {
-      mode: 0o600,
-    });
+    try {
+      writeFileSync(path.join(lockDirectory, "owner.json"), `${JSON.stringify({ pid })}\n`, {
+        mode: 0o600,
+      });
+    } catch (error) {
+      rmSync(lockDirectory, { recursive: true, force: true });
+      throw error;
+    }
   };
 
   for (;;) {
@@ -70,40 +65,9 @@ export function acquireInstallVmRuntimeLock(
       if (alive(observedOwner)) {
         throw new Error(`Install VM suite is already running under pid ${observedOwner}.`);
       }
-
-      options.beforeStaleClaim?.();
-      const quarantine = `${lockDirectory}.stale-${pid}-${randomUUID()}`;
-      try {
-        renameSync(lockDirectory, quarantine);
-      } catch (claimError) {
-        if ((claimError as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw claimError;
-      }
-
-      let claimedOwner: number | undefined;
-      try {
-        claimedOwner = readOwnerPid(quarantine);
-      } catch {
-        // An invalid stale lock is safe to quarantine, but never silently replace a new valid one.
-      }
-      if (claimedOwner !== undefined && claimedOwner !== observedOwner) {
-        try {
-          renameSync(quarantine, lockDirectory);
-        } catch {
-          rmSync(quarantine, { recursive: true, force: true });
-        }
-        continue;
-      }
-
-      try {
-        create();
-      } catch (createError) {
-        rmSync(quarantine, { recursive: true, force: true });
-        if ((createError as NodeJS.ErrnoException).code === "EEXIST") continue;
-        throw createError;
-      }
-      rmSync(quarantine, { recursive: true, force: true });
-      break;
+      throw new Error(
+        `Install VM lock belongs to stale pid ${observedOwner}; remove it after confirming no suite is running: ${lockDirectory}`,
+      );
     }
   }
 

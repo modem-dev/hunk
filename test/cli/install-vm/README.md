@@ -24,6 +24,10 @@ The first run lazily builds the controller image and downloads checksum-pinned F
 bun run test:install-vm:clean
 ```
 
+The runner deliberately does not reclaim a stale `tmp/install-vm/.lock`, because deleting a lock
+owned by a racing process is unsafe. After an interrupted host dies, confirm no suite is running and
+remove that lock directory manually before retrying.
+
 Every scenario gets a sparse/reflink clone of the verified immutable base image, an ephemeral run-only SSH public key injected into that clone, and isolated HOME, PATH, npm prefix, pnpm global directory, and pnpm store. Hunk's generated fixture packages are checksum-pinned and published to the local registry. Verdaccio currently proxies uncached transitive dependencies, so first-run package installation still depends on npm availability; the historical corruption oracle also deliberately uses the live npm registry while consuming the validated exact Hunk, Bun, and pnpm pins from `pins.json`. Results include `result.json`, `junit.xml`, structured commands and observations, guest command logs, assertions, and Firecracker console output. Writable disks, SSH keys, sockets, cache identities, locks, and registry credentials are excluded from result artifacts.
 
 ## Security boundary

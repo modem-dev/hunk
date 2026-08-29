@@ -6,6 +6,7 @@ import {
   assertDistinctInstallVmRuntimePaths,
   assertSafeCleanTarget,
   assertSafeInstallVmRuntimePath,
+  buildControllerImageCommand,
   buildDockerRunCommand,
   buildInstallVmJunit,
   evaluateCommandExpectation,
@@ -93,6 +94,12 @@ describe("install VM contract", () => {
         historical: { ...validPins.historical, bunVersion: "^1.4.0" },
       }),
     ).toThrow("Historical bun must be pinned");
+
+    const buildCommand = buildControllerImageCommand("hunk-install-vm:test", "/harness", validPins);
+    expect(buildCommand).toContain(`CONTROLLER_IMAGE=${validPins.controllerImage}`);
+    expect(buildCommand).toContain(`NODE_VERSION=${validPins.node.version}`);
+    expect(buildCommand).toContain(`NODE_URL=${validPins.node.url}`);
+    expect(buildCommand).toContain(`NODE_SHA256=${validPins.node.sha256}`);
   });
 
   test("validates scenarios and rejects unsafe or duplicate definitions", () => {
@@ -222,7 +229,7 @@ describe("install VM contract", () => {
     }
   });
 
-  test("acquires one runtime lock and reclaims a stale pid without deleting a racing owner", () => {
+  test("acquires one runtime lock and refuses to reclaim stale or invalid owners", () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-lock-"));
     const lock = path.join(root, ".lock");
     try {
@@ -231,31 +238,20 @@ describe("install VM contract", () => {
         "already running",
       );
       release();
-      mkdirSync(lock);
-      writeFileSync(path.join(lock, "owner.json"), '{"pid":303}\n');
-      const releaseReclaimed = acquireInstallVmRuntimeLock(lock, {
-        pid: 404,
-        alive: () => false,
-      });
-      releaseReclaimed();
 
       mkdirSync(lock);
-      writeFileSync(path.join(lock, "owner.json"), '{"pid":505}\n');
-      let raced = false;
+      writeFileSync(path.join(lock, "owner.json"), '{"pid":303}\n');
       expect(() =>
         acquireInstallVmRuntimeLock(lock, {
-          pid: 606,
-          alive: (pid) => pid === 707,
-          beforeStaleClaim: () => {
-            if (raced) return;
-            raced = true;
-            rmSync(lock, { recursive: true });
-            mkdirSync(lock);
-            writeFileSync(path.join(lock, "owner.json"), '{"pid":707}\n');
-          },
+          pid: 404,
+          alive: () => false,
         }),
-      ).toThrow("already running under pid 707");
-      expect(readFileSync(path.join(lock, "owner.json"), "utf8")).toContain("707");
+      ).toThrow("belongs to stale pid 303");
+      expect(readFileSync(path.join(lock, "owner.json"), "utf8")).toContain("303");
+
+      writeFileSync(path.join(lock, "owner.json"), '{"pid":"broken"}\n');
+      expect(() => acquireInstallVmRuntimeLock(lock, { pid: 505 })).toThrow("has no valid owner");
+      expect(readFileSync(path.join(lock, "owner.json"), "utf8")).toContain("broken");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

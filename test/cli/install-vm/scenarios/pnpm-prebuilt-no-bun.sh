@@ -15,7 +15,12 @@ run_expect markup-guide 0 hunk markup guide
 assert_contains markup-guide-output "$command_dir/markup-guide.log" "STML"
 run_expect dependency-tree 0 pnpm list -g --depth Infinity --json
 # Locate the actual projected platform binary rather than trusting only the global shim.
-resolved_binary=$(find "$HOME/pnpm" -path '*/hunkdiff-linux-x64/*/bin/hunk' -type f -print -quit 2>/dev/null)
+resolved_binary=$(find "$HOME/pnpm" -path '*/hunkdiff-linux-x64/*/bin/hunk' \( -type f -o -type l \) -print -quit 2>/dev/null)
+if [[ -n $resolved_binary ]]; then
+  assert_path_state projected-platform-binary executable "$resolved_binary"
+else
+  record_assertion projected-platform-binary failed executable missing "pnpm projection did not contain hunkdiff-linux-x64"
+fi
 record_observation hunkVersion "$current"
 record_observation installSource pnpm-prebuilt
 record_observation resolvedExecutable "$resolved_binary"

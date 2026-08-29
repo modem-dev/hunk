@@ -1,4 +1,6 @@
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+# The runner always overrides this parse-safe default with the digest from pins.json.
+ARG CONTROLLER_IMAGE=scratch
+FROM ${CONTROLLER_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
@@ -16,10 +18,11 @@ RUN apt-get update \
       xz-utils=5.6.1+really5.4.5-1ubuntu0.3 \
  && rm -rf /var/lib/apt/lists/*
 
-ARG NODE_VERSION=24.14.1
-ARG NODE_SHA256=84d38715d449447117d05c3e71acd78daa49d5b1bfa8aacf610303920c3322be
+ARG NODE_VERSION
+ARG NODE_URL
+ARG NODE_SHA256
 RUN curl --fail --show-error --location --connect-timeout 15 --max-time 300 --retry 3 \
-      -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      -o /tmp/node.tar.xz "${NODE_URL}" \
  && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
  && tar -xJf /tmp/node.tar.xz -C /opt \
  && ln -s "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" /usr/local/bin/node \

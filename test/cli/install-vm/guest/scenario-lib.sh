@@ -128,7 +128,7 @@ assert_path_state() {
 
 assert_tree_has_no_bun_packages() {
   local id=$1 root=$2 found
-  found=$(find "$root" -type d \( -path '*/node_modules/bun' -o -path '*/node_modules/@oven/bun-*' \) -print -quit 2>/dev/null)
+  found=$(find "$root" \( -type d -o -type l \) \( -path '*/node_modules/bun' -o -path '*/node_modules/@oven/bun-*' \) -print -quit 2>/dev/null)
   if [[ -z $found ]]; then
     record_assertion "$id" passed "no bun or @oven/bun-* package" absent "$root"
   else

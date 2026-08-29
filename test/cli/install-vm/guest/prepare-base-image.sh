@@ -39,17 +39,27 @@ download_checked vmlinux "$(pin_value '.kernel.url')" "$(pin_value '.kernel.sha2
 download_checked rootfs.squashfs "$(pin_value '.rootfs.url')" "$(pin_value '.rootfs.sha256')"
 download_checked node.tar.xz "$(pin_value '.node.url')" "$(pin_value '.node.sha256')"
 
-extract_dir=$(mktemp -d)
-trap 'rm -rf "$extract_dir"' RETURN
-tar --no-same-owner -xzf "$cache/downloads/firecracker-${fc_version}.tgz" -C "$extract_dir"
-install -m 0755 \
-  "$extract_dir/release-v${fc_version}-x86_64/firecracker-v${fc_version}-x86_64" \
-  "$cache/base/firecracker.partial.$$"
-mv "$cache/base/firecracker.partial.$$" "$cache/base/firecracker"
-trap - RETURN
-rm -rf "$extract_dir"
-cp "$cache/downloads/vmlinux" "$cache/base/vmlinux.partial"
-mv "$cache/base/vmlinux.partial" "$cache/base/vmlinux"
+install_firecracker() (
+  local extract_dir partial
+  extract_dir=$(mktemp -d)
+  partial="$cache/base/firecracker.partial.$$"
+  trap 'rm -rf "$extract_dir" "$partial"' EXIT
+  tar --no-same-owner -xzf "$cache/downloads/firecracker-${fc_version}.tgz" -C "$extract_dir"
+  install -m 0755 \
+    "$extract_dir/release-v${fc_version}-x86_64/firecracker-v${fc_version}-x86_64" \
+    "$partial"
+  mv "$partial" "$cache/base/firecracker"
+)
+
+install_kernel() (
+  local partial="$cache/base/vmlinux.partial.$$"
+  trap 'rm -f "$partial"' EXIT
+  cp "$cache/downloads/vmlinux" "$partial"
+  mv "$partial" "$cache/base/vmlinux"
+)
+
+install_firecracker
+install_kernel
 
 # Older harness revisions cached an SSH identity; current runs use an ephemeral key.
 rm -f "$cache/base/id_ed25519" "$cache/base/id_ed25519.pub"
@@ -73,14 +83,23 @@ if [[ -f $base && -f $base_digest ]]; then
   }
 fi
 
-if [[ ! -f $base ]]; then
-  # Expand the read-only rootfs into a sparse ext4 image that each scenario can clone and mutate.
+build_base_image() (
+  local build_dir partial digest_partial identity_partial node_version digest committed=0
   build_dir=$(mktemp -d)
   partial="${base}.partial.$$"
+  digest_partial="${base_digest}.partial.$$"
+  identity_partial="${base_identity}.partial.$$"
+  # ShellCheck cannot see that the EXIT trap invokes this cleanup function.
+  # shellcheck disable=SC2317
   cleanup_base() {
-    rm -rf "$build_dir" "$partial"
+    rm -rf "$build_dir" "$partial" "$digest_partial" "$identity_partial"
+    if [[ $committed == 0 ]]; then
+      rm -f "$base" "$base_digest" "$base_identity"
+    fi
   }
-  trap cleanup_base RETURN
+  trap cleanup_base EXIT
+
+  # Expand the read-only rootfs into a sparse ext4 image that each scenario can clone and mutate.
   unsquashfs -d "$build_dir/root" "$cache/downloads/rootfs.squashfs" >/dev/null
   mkdir -p "$build_dir/root/root/.ssh" "$build_dir/root/opt" "$build_dir/root/etc/systemd/network"
   : >"$build_dir/root/root/.ssh/authorized_keys"
@@ -102,13 +121,17 @@ NETWORK
   truncate -s 4G "$partial"
   mkfs.ext4 -q -d "$build_dir/root" -F "$partial"
   e2fsck -fn "$partial" >/dev/null
+  digest=$(sha256sum "$partial" | cut -d' ' -f1)
+  printf '%s  %s\n' "$digest" "$(basename "$base")" >"$digest_partial"
+  printf '%s\n' "$identity" >"$identity_partial"
   mv "$partial" "$base"
-  (cd "$(dirname "$base")" && sha256sum "$(basename "$base")" >"$(basename "$base_digest").partial")
-  printf '%s\n' "$identity" >"${base_identity}.partial"
-  mv "${base_digest}.partial" "$base_digest"
-  mv "${base_identity}.partial" "$base_identity"
-  trap - RETURN
-  rm -rf "$build_dir"
+  mv "$digest_partial" "$base_digest"
+  mv "$identity_partial" "$base_identity"
+  committed=1
+)
+
+if [[ ! -f $base ]]; then
+  build_base_image
 fi
 
 (cd "$(dirname "$base")" && sha256sum -c "$(basename "$base_digest")" >/dev/null)

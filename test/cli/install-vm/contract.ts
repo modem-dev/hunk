@@ -97,7 +97,7 @@ const SCENARIO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
-/** Validate that every remote VM input is immutable and checksum-pinned. */
+/** Validate checksum-attested VM inputs and exact versions used by compatibility scenarios. */
 export function validateInstallVmPins(value: unknown) {
   if (!value || typeof value !== "object") throw new Error("Pin manifest must be an object.");
   const pins = value as Record<string, unknown>;
@@ -370,6 +370,29 @@ export interface DockerRunPaths {
   cacheDir: string;
   fixtureDir: string;
   outputDir: string;
+}
+
+/** Build the controller image from the same validated image and Node pins used by the guest. */
+export function buildControllerImageCommand(
+  image: string,
+  harnessRoot: string,
+  pins: InstallVmPins,
+) {
+  return [
+    "docker",
+    "build",
+    "--build-arg",
+    `CONTROLLER_IMAGE=${pins.controllerImage}`,
+    "--build-arg",
+    `NODE_VERSION=${pins.node.version}`,
+    "--build-arg",
+    `NODE_URL=${pins.node.url}`,
+    "--build-arg",
+    `NODE_SHA256=${pins.node.sha256}`,
+    "--tag",
+    image,
+    harnessRoot,
+  ];
 }
 
 /** Build the least-privilege Docker command used only by the explicit VM runner. */

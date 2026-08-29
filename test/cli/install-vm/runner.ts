@@ -23,6 +23,7 @@ import {
   assertDistinctInstallVmRuntimePaths,
   assertSafeCleanTarget,
   assertSafeInstallVmRuntimePath,
+  buildControllerImageCommand,
   buildDockerRunCommand,
   buildInstallVmJunit,
   loadScenarioManifest,
@@ -297,7 +298,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const image = controllerImageTag();
-    await commandRunner.run(["docker", "build", "--tag", image, harnessRoot]);
+    await commandRunner.run(buildControllerImageCommand(image, harnessRoot, pins));
     const revalidatedPaths = {
       cacheDir: assertSafeInstallVmRuntimePath(repoRoot, cacheDir),
       fixtureDir: assertSafeInstallVmRuntimePath(repoRoot, fixtureDir),
