@@ -60,6 +60,61 @@ describe("session reload filesystem bounds", () => {
     }
   });
 
+  test("rejects option-like VCS ranges and refs in daemon reloads", () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-options-"));
+
+    try {
+      const bounds = createSessionReloadBounds(
+        bootstrapFor({ kind: "vcs", staged: false, options: {} }, repo),
+        { cwd: repo },
+      );
+
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          range: "--output=/tmp/hunk-poc",
+          staged: false,
+          options: {},
+        }),
+      ).toThrow("diff range that looks like a VCS option");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "show",
+          ref: "--output=/tmp/hunk-poc",
+          options: {},
+        }),
+      ).toThrow("show ref that looks like a VCS option");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "stash-show",
+          ref: "-R",
+          options: {},
+        }),
+      ).toThrow("stash-show ref that looks like a VCS option");
+
+      // Plain revisions and ranges still reload, including literal-dash pathspecs that
+      // bundled backends append after `--` so the VCS treats them as paths.
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          range: "main..feature",
+          staged: false,
+          pathspecs: ["--help"],
+          options: {},
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "stash-show",
+          ref: "stash@{1}",
+          options: {},
+        }),
+      ).not.toThrow();
+    } finally {
+      rmSync(repo, { force: true, recursive: true });
+    }
+  });
+
   test("rejects daemon reload source paths outside the initial repo root", () => {
     const repo = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-repo-"));
     const outside = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-outside-"));
