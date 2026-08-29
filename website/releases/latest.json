@@ -1,6 +1,6 @@
 {
-  "version": "0.19.1",
-  "minor": "0.19",
-  "date": "2026-08-24",
-  "summary": "Git-installable extensions, exact-line agent guidance"
+  "version": "0.20.0",
+  "minor": "0.20",
+  "date": "2026-08-25",
+  "summary": "One-line install, self-updates, extension directory"
 }

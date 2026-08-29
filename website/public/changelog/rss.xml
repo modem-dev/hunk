@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.20</title>
+      <link>https://hunk.dev/changelog/0.20/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.20/</guid>
+      <pubDate>Tue, 25 Aug 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.20 adds a checksum-verified one-line installer and self-updates, launches a directory of 12 community extensions, and makes line-level reviewing faster and more precise.</description>
+    </item>
+    <item>
       <title>Hunk 0.19</title>
       <link>https://hunk.dev/changelog/0.19/</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.19/</guid>

@@ -11,7 +11,7 @@ head:
   - tag: meta
     attrs:
       property: og:image:alt
-      content: "Hunk changelog — 19 release series · March 2026 – August 2026"
+      content: "Hunk changelog — 20 release series · March 2026 – August 2026"
   - tag: meta
     attrs:
       name: twitter:image
@@ -24,13 +24,13 @@ head:
 
 ## [Hunk 0.20](/changelog/0.20/)
 
-Unreleased · 1 release · 11 changes
+Latest · August 25, 2026 · 2 releases · 14 changes
 
 Hunk 0.20 adds a checksum-verified one-line installer and self-updates, launches a directory of 12 community extensions, and makes line-level reviewing faster and more precise.
 
 ## [Hunk 0.19](/changelog/0.19/)
 
-Latest · August 16, 2026 – August 24, 2026 · 2 releases · 39 changes
+August 16, 2026 – August 24, 2026 · 2 releases · 39 changes
 
 Hunk 0.19.0 expands the extension platform, makes live agent guidance more precise, and keeps large reviews responsive.
 

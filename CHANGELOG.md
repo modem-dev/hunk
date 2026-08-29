@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.1
+
+### Patch Changes
+
+- [`29f18c8`](https://github.com/modem-dev/hunk/commit/29f18c8e3bcb7fa148245f722a4c1feabc713f22) - Prevent syntax-highlight cache collisions from displaying stale code after review reloads.
+
+- [`e76dbcc`](https://github.com/modem-dev/hunk/commit/e76dbcc8acc2d17ba0bd0340b1e1b4102c736985) - Keep the theme selector responsive and its highlighted row visible during rapid keyboard navigation.
+
+- [`3fb3e15`](https://github.com/modem-dev/hunk/commit/3fb3e155f653d5d5b1ae7e6c1c959769a926eead) - Reject session reload inputs whose VCS `range` or `ref` values look like command options. A caller reaching the session broker could otherwise inject `git` flags such as `--output=<path>` through a `/session-api` reload request and make Hunk write diff output to an arbitrary path.
+
 ## 0.20.0
 
 ### Minor Changes

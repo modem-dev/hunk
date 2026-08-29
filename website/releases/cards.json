@@ -3,16 +3,17 @@
     "slug": "index",
     "title": "Changelog",
     "tagline": "Every Hunk release, grouped by minor series.",
-    "meta": "19 release series · March 2026 – August 2026",
-    "chips": ["0.19", "0.18", "0.17", "0.16", "0.15", "…"],
-    "alt": "Hunk changelog — 19 release series · March 2026 – August 2026"
+    "meta": "20 release series · March 2026 – August 2026",
+    "chips": ["0.20", "0.19", "0.18", "0.17", "0.16", "…"],
+    "alt": "Hunk changelog — 20 release series · March 2026 – August 2026"
   },
   {
     "slug": "0.20",
     "title": "Hunk 0.20",
     "tagline": "Hunk 0.20 adds a checksum-verified one-line installer and self-updates, launches a directory of 12 community extensions, and makes…",
-    "meta": "Unreleased · 1 release · 11 changes",
-    "alt": "Hunk 0.20 release notes — Unreleased · 1 release · 11 changes"
+    "meta": "August 25, 2026 · 2 releases · 14 changes",
+    "latest": true,
+    "alt": "Hunk 0.20 release notes — August 25, 2026 · 2 releases · 14 changes"
   },
   {
     "slug": "0.19",
@@ -20,7 +21,6 @@
     "tagline": "Hunk 0.19.0 expands the extension platform, makes live agent guidance more precise, and keeps large reviews responsive.",
     "meta": "August 16, 2026 – August 24, 2026 · 2 releases · 39 changes",
     "chips": ["0.19.1", "0.19.0"],
-    "latest": true,
     "alt": "Hunk 0.19 release notes — August 16, 2026 – August 24, 2026 · 2 releases · 39 changes"
   },
   {
