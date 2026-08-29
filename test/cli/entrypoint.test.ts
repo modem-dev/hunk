@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -358,7 +359,9 @@ describe("CLI entrypoint contracts", () => {
       expect(JSON.parse(Buffer.from(proc.stdout).toString("utf8"))).toEqual({
         args: ["sync", "--help"],
         input: "payload",
-        cwd: root,
+        // `ctx.cwd` is the spawned process's own cwd, which macOS reports through the
+        // `/var` -> `/private/var` symlink that `tmpdir()` hands back unresolved.
+        cwd: realpathSync(root),
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
