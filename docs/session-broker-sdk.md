@@ -212,10 +212,18 @@ responses repeat the exact selected application revision/features; producers rej
 before parsing input. Target incompatibility returns a structured error without mutating the caller
 session.
 
-Caller sessions start at sequence `"1"` and use a 64-sequence seen-bitmap window supporting 32
-concurrent out-of-order requests. Accept an unseen value from `highest - 63` through `highest + 64`,
-shifting for a new high; reject duplicates, older values, and larger jumps. Libraries allocate
-monotonically before dispatch and never reuse a sequence after transport failure.
+Sequence `"0"` is reserved and rejected. Caller sessions initialize `highest = 0` with a zero bitmap,
+start allocation at `"1"`, and support 32 concurrent out-of-order requests. A 64-bit bitmap bit `d`
+records whether `highest - d` was accepted for `0 <= d <= 63`. For a sequence at or
+below `highest`, require that range and an unset bit, then set it. For a sequence above `highest`,
+require a delta of at most 64, shift the bitmap by that delta (clearing it at 64), discard expired
+history, set the new `highest`, and mark bit 0. Thus accepted candidates span `highest - 63` through
+`highest + 64`, while the bitmap stores only the 64 replay-relevant accepted values. Reject
+duplicates, older values, and larger jumps. Compare before subtracting rather than computing an
+overflowing `highest + 64`; clear rather than shift by 64. The check and bitmap/highest update are one
+atomic admission transition per caller session. Libraries allocate monotonically before dispatch,
+never reuse a sequence after transport failure, and open a new authenticated caller session before
+uint64 exhaustion rather than wrapping.
 
 Responses bind broker revision, target application contract when applicable, generation, request
 ID, and structured result/error. Callers renegotiate after daemon restart, not per lower-revision
