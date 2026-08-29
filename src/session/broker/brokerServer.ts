@@ -40,6 +40,7 @@ import {
   type SessionDaemonResponse,
 } from "../protocol";
 import { parseSessionDaemonRequest } from "../protocolSchemas";
+import { hunkSessionProtocolParsers } from "./protocolParsers";
 
 const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
@@ -460,6 +461,7 @@ function createHunkBrokerController(
   state: HunkSessionBrokerState,
 ): SessionBrokerController<ListedHunkSession, HunkSessionServerMessage, HunkSessionCommandResult> {
   return {
+    protocolParsers: hunkSessionProtocolParsers,
     listSessions: () => state.listSessions(),
     getSession: (selector) => state.getSession(selector),
     getSessionCount: () => state.getSessionCount(),

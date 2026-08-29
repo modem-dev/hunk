@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./canonicalJson";
 export * from "./auth";
+export * from "./validation";
 export * from "./brokerWire";
 export * from "./limits";
 export * from "./brokerState";

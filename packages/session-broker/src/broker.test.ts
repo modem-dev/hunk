@@ -9,6 +9,7 @@ import {
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import { SessionBroker } from "./broker";
+import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 
 interface TestSessionInfo {
   title: string;
@@ -57,15 +58,34 @@ function parseState(value: unknown): TestSessionState | null {
   return { selectedIndex, noteCount };
 }
 
+const protocolParsers = createSessionBrokerProtocolParsers<
+  TestSessionInfo,
+  TestSessionState,
+  TestServerMessage,
+  unknown
+>({
+  appRevision: 1,
+  features: [],
+  parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+  parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: ["annotate", "reload_view"].map((command) => ({
+    command: command as TestServerMessage["command"],
+    version: 1,
+    parseInput: (value: unknown) => (value && typeof value === "object" ? value : null),
+    parseResult: (value: unknown) => (value && typeof value === "object" ? value : null),
+  })),
+});
+
 function createBroker() {
   return new SessionBroker<TestSessionInfo, TestSessionState, TestServerMessage>({
-    parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
-    parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+    protocolParsers,
   });
 }
 
 function createRegistration(
-  overrides: Partial<TestRegistration> & { info?: Partial<TestSessionInfo> } = {},
+  overrides: Partial<TestRegistration> & {
+    info?: Partial<TestSessionInfo>;
+  } = {},
 ): TestRegistration {
   return {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
@@ -99,6 +119,10 @@ function createSnapshot(
 }
 
 describe("session broker wrapper", () => {
+  test("exposes the exact parser registry that owns its state contracts", () => {
+    expect(createBroker().protocolParsers).toBe(protocolParsers);
+  });
+
   test("stores raw registrations and snapshots without a custom projection adapter", () => {
     const broker = createBroker();
     const connection = { send() {} };
@@ -156,7 +180,10 @@ describe("session broker wrapper", () => {
       timeoutMessage: "Timed out waiting for annotate.",
     });
 
-    const outgoing = JSON.parse(sent[0]!) as { requestId: string; command: string };
+    const outgoing = JSON.parse(sent[0]!) as {
+      requestId: string;
+      command: string;
+    };
     expect(outgoing.command).toBe("annotate");
 
     broker.handleCommandResult(connection, {

@@ -1,4 +1,5 @@
 import {
+  BrokerProtocolError,
   MAX_HTTP_BODY_BYTES,
   PayloadTooLargeError,
   callerPrincipalAllows,
@@ -20,12 +21,16 @@ import {
   type CallerRequestAuthenticator,
 } from "./authentication";
 import {
+  parseSessionBrokerJsonBytes,
+  parseSessionBrokerJsonText,
+  type SessionBrokerProtocolParsers,
+} from "./protocolParsers";
+import {
   DEFAULT_SESSION_BROKER_API_PATH,
   DEFAULT_SESSION_BROKER_CAPABILITIES_PATH,
   DEFAULT_SESSION_BROKER_HEALTH_PATH,
   DEFAULT_SESSION_BROKER_SOCKET_PATH,
   type SessionBrokerCapabilities,
-  type SessionBrokerDaemonRequest,
   type SessionBrokerDaemonResponse,
   type SessionBrokerAuthenticatedResponse,
   type SessionBrokerAuditEvent,
@@ -63,94 +68,18 @@ function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
-/** Parse one websocket envelope without committing the daemon to any runtime socket type. */
-function parseSocketEnvelope(message: string) {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(message);
-  } catch {
-    return null;
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    return null;
-  }
-
-  const type = (parsed as { type?: unknown }).type;
-  return typeof type === "string"
-    ? (parsed as object as { type: string } & Record<string, unknown>)
-    : null;
+/** Build one redacted protocol failure body without reflecting parser details. */
+function protocolError(error: unknown) {
+  return {
+    error: "protocol-validation-failed",
+    code: error instanceof BrokerProtocolError ? error.code : "invalid-app-payload",
+  } as const;
 }
 
 /** Return whether one raw broker API request body was explicitly sent as JSON. */
 function hasJsonContentType(request: Request) {
   const contentType = request.headers.get("content-type");
   return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
-}
-
-/** Decode one raw broker API request body and surface a friendly transport-level error. */
-function parseJsonRequest<CommandName extends string = string, CommandInput = unknown>(
-  body: Uint8Array,
-): SessionBrokerDaemonRequest<CommandName, CommandInput> {
-  let parsed: unknown;
-  try {
-    if (body[0] === 0xef && body[1] === 0xbb && body[2] === 0xbf) {
-      throw new TypeError("UTF-8 BOM is not permitted.");
-    }
-    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
-  } catch {
-    throw new Error("Expected one strictly encoded JSON request body.");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Expected one JSON request object.");
-  }
-  const record = parsed as Record<string, unknown>;
-  if (record.action === "list") return { action: "list" };
-  if (record.action !== "get" && record.action !== "dispatch") {
-    throw new Error("Unknown broker API action.");
-  }
-  if (!record.selector || typeof record.selector !== "object" || Array.isArray(record.selector)) {
-    throw new Error("Expected one broker session selector.");
-  }
-  const selector = record.selector as Record<string, unknown>;
-  for (const key of ["sessionId", "sessionPath", "repoRoot", "repoBoundary"] as const) {
-    if (selector[key] !== undefined && typeof selector[key] !== "string") {
-      throw new Error("Expected one valid broker session selector.");
-    }
-  }
-  if (selector.sessionId !== undefined && !isValidBrokerIdentifier(selector.sessionId)) {
-    throw new Error("Expected one valid broker session identifier.");
-  }
-  if (record.action === "get") {
-    return { action: "get", selector: selector as SessionTargetSelector };
-  }
-  if (!isValidBrokerIdentifier(record.command)) {
-    throw new Error("Expected one valid broker command name.");
-  }
-  const commandVersion = record.commandVersion ?? 1;
-  if (!isValidBrokerRevision(commandVersion)) {
-    throw new Error("Expected one positive broker command version.");
-  }
-  if (
-    record.timeoutMs !== undefined &&
-    (!Number.isSafeInteger(record.timeoutMs) || (record.timeoutMs as number) <= 0)
-  ) {
-    throw new Error("Expected one positive command timeout.");
-  }
-  if (record.timeoutMessage !== undefined && typeof record.timeoutMessage !== "string") {
-    throw new Error("Expected one command timeout message.");
-  }
-  return {
-    action: "dispatch",
-    selector: selector as SessionTargetSelector,
-    command: record.command as CommandName,
-    commandVersion,
-    input: record.input as CommandInput,
-    ...(record.timeoutMs === undefined ? {} : { timeoutMs: record.timeoutMs as number }),
-    ...(record.timeoutMessage === undefined
-      ? {}
-      : { timeoutMessage: record.timeoutMessage as string }),
-  };
 }
 
 /** Build the default dispatch timeout text so adapters can override only when they need to. */
@@ -172,6 +101,12 @@ export class SessionBrokerDaemon<
 
   private readonly startedAt = Date.now();
   private readonly capabilities: SessionBrokerCapabilities;
+  private readonly protocolParsers: SessionBrokerProtocolParsers<
+    unknown,
+    unknown,
+    ServerMessage,
+    CommandResult
+  >;
   private readonly idleTimeoutMs: number;
   private readonly staleSessionTtlMs: number;
   private readonly staleSessionSweepIntervalMs: number;
@@ -188,10 +123,7 @@ export class SessionBrokerDaemon<
 
   constructor(
     private readonly broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>,
-    options: Omit<
-      SessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>,
-      "broker"
-    > = {},
+    options: Omit<SessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>, "broker">,
   ) {
     const exposeAuthenticatedHttpApi =
       (options.exposeHttpApi ?? false) &&
@@ -210,8 +142,15 @@ export class SessionBrokerDaemon<
         : undefined,
     };
     this.capabilities = options.capabilities ?? { version: 1 };
+    this.protocolParsers = broker.protocolParsers;
+    if (
+      options.appRevision !== undefined &&
+      options.appRevision !== this.protocolParsers.appRevision
+    ) {
+      throw new TypeError("Session broker app revision does not match its parser registry.");
+    }
     this.appId = options.appId ?? "session-broker";
-    this.appRevision = options.appRevision;
+    this.appRevision = this.protocolParsers.appRevision;
     this.callerAuthenticator = options.callerAuthenticator;
     this.authorizer = options.authorizer;
     this.audit = options.audit;
@@ -257,7 +196,9 @@ export class SessionBrokerDaemon<
     if (url.pathname === this.paths.health) {
       // Treat health checks as a cheap maintenance pulse so stale sessions disappear even when the
       // daemon is mostly idle and no websocket traffic is flowing.
-      const removed = this.broker.pruneStaleSessions({ ttlMs: this.staleSessionTtlMs });
+      const removed = this.broker.pruneStaleSessions({
+        ttlMs: this.staleSessionTtlMs,
+      });
       if (removed > 0) {
         this.noteActivity();
       }
@@ -284,7 +225,11 @@ export class SessionBrokerDaemon<
       }
       const authenticated = await this.authenticateRequest(request, body, "diagnostics");
       if (authenticated instanceof Response) return authenticated;
-      if (!(await this.authorize(request, authenticated, { operation: "diagnostics" }))) {
+      if (
+        !(await this.authorize(request, authenticated, {
+          operation: "diagnostics",
+        }))
+      ) {
         return this.authenticatedResponse(authenticated, { error: "authorization-denied" }, 403);
       }
       const inactive = this.rejectInactiveRequest(authenticated);
@@ -301,9 +246,12 @@ export class SessionBrokerDaemon<
     return null;
   }
 
-  handleConnectionMessage(connection: SessionBrokerPeer, message: string) {
-    const parsed = parseSocketEnvelope(message);
-    if (!parsed) {
+  handleConnectionMessage(connection: SessionBrokerPeer, message: unknown) {
+    let parsed;
+    try {
+      parsed = this.protocolParsers.parseClientMessage(parseSessionBrokerJsonText(message));
+    } catch {
+      connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Malformed session broker protocol.");
       return;
     }
 
@@ -330,10 +278,6 @@ export class SessionBrokerDaemon<
         break;
       }
       case "snapshot": {
-        if (typeof parsed.sessionId !== "string") {
-          return;
-        }
-
         // Snapshot updates are only valid after registration. Closing missing or invalid sessions
         // keeps the broker state single-sourced instead of guessing how to recover.
         const updateResult = this.broker.updateSnapshot(
@@ -355,10 +299,6 @@ export class SessionBrokerDaemon<
         break;
       }
       case "heartbeat": {
-        if (typeof parsed.sessionId !== "string") {
-          return;
-        }
-
         const seenResult = this.broker.markSessionSeen(connection, parsed.sessionId);
         if (seenResult === "not-owner") {
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session ownership rejected.");
@@ -369,24 +309,20 @@ export class SessionBrokerDaemon<
         break;
       }
       case "command-result": {
-        if (typeof parsed.requestId !== "string" || typeof parsed.ok !== "boolean") {
-          return;
-        }
-
-        const result = this.broker.handleCommandResult(connection, {
-          requestId: parsed.requestId,
-          ok: parsed.ok,
-          result: parsed.result as CommandResult | undefined,
-          error: typeof parsed.error === "string" ? parsed.error : undefined,
-        });
+        const result = this.broker.handleCommandResult(connection, parsed);
         if (result === "not-owner") {
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Command ownership rejected.");
           return;
         }
 
-        if (result === "handled") {
-          this.noteActivity();
+        if (result === "invalid") {
+          // A result that violates the pending command contract invalidates the producer's current
+          // assumptions. The broker keeps pending state coherent until disconnect cleanup runs.
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Malformed command result.");
+          return;
         }
+
+        if (result === "handled") this.noteActivity();
         break;
       }
     }
@@ -420,7 +356,9 @@ export class SessionBrokerDaemon<
 
   private startLifecycle() {
     this.sweepTimer = setInterval(() => {
-      const removed = this.broker.pruneStaleSessions({ ttlMs: this.staleSessionTtlMs });
+      const removed = this.broker.pruneStaleSessions({
+        ttlMs: this.staleSessionTtlMs,
+      });
       if (removed > 0) {
         this.noteActivity();
       }
@@ -482,7 +420,10 @@ export class SessionBrokerDaemon<
       if (!this.callerAuthenticator || !this.authorizer) {
         return jsonError("Broker control is unavailable.", 404);
       }
-      const authenticated = await this.callerAuthenticator.authenticate({ request, body });
+      const authenticated = await this.callerAuthenticator.authenticate({
+        request,
+        body,
+      });
       if (
         !authenticated ||
         typeof authenticated !== "object" ||
@@ -532,7 +473,10 @@ export class SessionBrokerDaemon<
     },
   ): Promise<boolean> {
     const principal: CallerPrincipal = authenticated.principal;
-    const allowedByGrant = callerPrincipalAllows(principal, { appId: this.appId, ...facts });
+    const allowedByGrant = callerPrincipalAllows(principal, {
+      appId: this.appId,
+      ...facts,
+    });
     let allowedByApp = false;
     if (allowedByGrant && this.authorizer) {
       try {
@@ -579,7 +523,10 @@ export class SessionBrokerDaemon<
         ? { appContract: { appRevision: this.appRevision, features: [] } }
         : {}),
     });
-    const envelope: SessionBrokerAuthenticatedResponse = { body: structuredBody, authentication };
+    const envelope: SessionBrokerAuthenticatedResponse = {
+      body: structuredBody,
+      authentication,
+    };
     return new Response(canonicalizeJson(envelope as unknown as CanonicalJsonValue), {
       status,
       headers: { "content-type": "application/json" },
@@ -615,15 +562,11 @@ export class SessionBrokerDaemon<
     const authenticated = await this.authenticateRequest(request, body, "list");
     if (authenticated instanceof Response) return authenticated;
 
-    let input: SessionBrokerDaemonRequest<ServerMessage["command"]>;
+    let input;
     try {
-      input = parseJsonRequest<ServerMessage["command"]>(body);
+      input = this.protocolParsers.parseDaemonRequest(parseSessionBrokerJsonBytes(body));
     } catch (error) {
-      return this.authenticatedResponse(
-        authenticated,
-        { error: error instanceof Error ? error.message : "Invalid broker API request." },
-        400,
-      );
+      return this.authenticatedResponse(authenticated, protocolError(error), 400);
     }
 
     const operation = input.action as CallerOperation;
@@ -657,27 +600,32 @@ export class SessionBrokerDaemon<
         case "get":
           response = { session: this.broker.getSession(input.selector) };
           break;
-        case "dispatch":
+        case "dispatch": {
+          // Resolve the target before invoking app-owned parsing so the exact target contract is
+          // selected first. This read-only lookup happens only after authentication/authorization.
+          this.broker.getSession(input.selector);
           response = {
             result: await this.broker.dispatchCommand({
               selector: input.selector,
               command: input.command,
               commandVersion: input.commandVersion ?? 1,
-              input: input.input as Extract<
-                ServerMessage,
-                { command: ServerMessage["command"] }
-              >["input"],
+              input: input.input,
               timeoutMessage: input.timeoutMessage ?? defaultTimeoutMessage(input.command),
               timeoutMs: input.timeoutMs,
             }),
           };
           break;
+        }
       }
       return this.authenticatedResponse(authenticated, response, 200, targetSpecific);
     } catch (error) {
       return this.authenticatedResponse(
         authenticated,
-        { error: error instanceof Error ? error.message : "Unknown broker API error." },
+        error instanceof BrokerProtocolError
+          ? protocolError(error)
+          : {
+              error: error instanceof Error ? error.message : "Unknown broker API error.",
+            },
         400,
         targetSpecific,
       );

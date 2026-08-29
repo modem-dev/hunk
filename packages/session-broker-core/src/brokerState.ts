@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isValidBrokerRevision } from "./auth";
+import { parseBrokerAppPayload } from "./validation";
 import { matchesSessionSelector, repoSelectorDistance, type SelectableSession } from "./selectors";
 import type {
   SessionRegistration,
@@ -11,6 +12,8 @@ import type {
 interface PendingCommand<Result> {
   sessionId: string;
   socket: DaemonSessionSocket;
+  command: string;
+  commandVersion: number;
   resolve: (result: Result) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -48,9 +51,21 @@ export interface SessionBrokerViewAdapter<
   SelectedContext,
   SessionReview,
   SessionCommentSummary,
+  ServerMessage extends SessionServerMessage = SessionServerMessage,
+  CommandResult = unknown,
 > {
   parseRegistration: (value: unknown) => SessionRegistration<Info> | null;
   parseSnapshot: (value: unknown) => SessionSnapshot<State> | null;
+  parseCommandInput: (
+    command: ServerMessage["command"],
+    version: number,
+    value: unknown,
+  ) => unknown;
+  parseCommandResult: (
+    command: ServerMessage["command"],
+    version: number,
+    value: unknown,
+  ) => CommandResult | null;
   buildListedSession: (entry: SessionBrokerEntry<Info, State>) => ListedSession;
   buildSelectedContext: (session: ListedSession) => SelectedContext;
   buildSessionReview: (
@@ -63,7 +78,7 @@ export interface SessionBrokerViewAdapter<
 export type RegisterSessionResult = "registered" | "invalid" | "already-connected";
 export type UpdateSnapshotResult = "updated" | "invalid" | "not-owner";
 export type MarkSessionSeenResult = "seen" | "not-owner";
-export type HandleCommandResult = "handled" | "not-found" | "not-owner";
+export type HandleCommandResult = "handled" | "not-found" | "not-owner" | "invalid";
 
 export type SessionTargetSelector = SessionTargetInput;
 
@@ -170,7 +185,9 @@ export class SessionBrokerState<
       ListedSession,
       SelectedContext,
       SessionReview,
-      SessionCommentSummary
+      SessionCommentSummary,
+      ServerMessage,
+      CommandResult
     >,
   ) {}
 
@@ -213,21 +230,15 @@ export class SessionBrokerState<
     registrationInput: unknown,
     snapshotInput: unknown,
   ): RegisterSessionResult {
-    const registration = this.view.parseRegistration(registrationInput);
-    const snapshot = this.view.parseSnapshot(snapshotInput);
-    if (!registration || !snapshot) {
-      const previousSessionId = this.sessionIdsBySocket.get(socket);
-      if (previousSessionId) {
-        // Drop any stale session already tied to this socket so an incompatible replacement
-        // payload cannot leave old review data behind after an upgrade or reload.
-        this.removeSession(
-          previousSessionId,
-          new Error("The session sent an incompatible registration payload."),
-        );
-      }
-
+    let registration: SessionRegistration<Info> | null;
+    let snapshot: SessionSnapshot<State> | null;
+    try {
+      registration = this.view.parseRegistration(registrationInput);
+      snapshot = this.view.parseSnapshot(snapshotInput);
+    } catch {
       return "invalid";
     }
+    if (!registration || !snapshot) return "invalid";
 
     const existing = this.sessions.get(registration.sessionId);
     if (existing && existing.socket !== socket) {
@@ -268,10 +279,13 @@ export class SessionBrokerState<
       return "not-owner";
     }
 
-    const snapshot = this.view.parseSnapshot(snapshotInput);
-    if (!snapshot) {
+    let snapshot: SessionSnapshot<State> | null;
+    try {
+      snapshot = this.view.parseSnapshot(snapshotInput);
+    } catch {
       return "invalid";
     }
+    if (!snapshot) return "invalid";
 
     this.sessions.set(ownedSessionId, {
       ...entry,
@@ -360,6 +374,10 @@ export class SessionBrokerState<
       throw new TypeError("Command version must be a positive safe integer.");
     }
     const session = resolveSessionTarget(this.listSessions(), selector);
+    const parsedInput = parseBrokerAppPayload(
+      (value) => this.view.parseCommandInput(command, commandVersion, value),
+      input,
+    ) as Extract<ServerMessage, { command: CommandName }>["input"];
     const requestId = randomUUID();
 
     return new Promise<ResultType>((resolve, reject) => {
@@ -381,6 +399,8 @@ export class SessionBrokerState<
       this.pendingCommands.set(requestId, {
         sessionId: session.sessionId,
         socket: entry.socket,
+        command,
+        commandVersion,
         resolve: (result) => resolve(result as ResultType),
         reject,
         timeout,
@@ -392,7 +412,7 @@ export class SessionBrokerState<
           requestId,
           command,
           commandVersion,
-          input,
+          input: parsedInput,
         } as Extract<ServerMessage, { command: CommandName }>;
 
         entry.socket.send(JSON.stringify(message));
@@ -426,14 +446,31 @@ export class SessionBrokerState<
       return "not-owner";
     }
 
-    clearTimeout(pending.timeout);
-    this.pendingCommands.delete(message.requestId);
-
     if (message.ok) {
-      pending.resolve(message.result as CommandResult);
+      let result: CommandResult;
+      try {
+        result = parseBrokerAppPayload(
+          (value) =>
+            this.view.parseCommandResult(
+              pending.command as ServerMessage["command"],
+              pending.commandVersion,
+              value,
+            ),
+          message.result,
+        );
+      } catch {
+        // Keep the pending entry intact until the malformed producer is closed and normal
+        // connection cleanup rejects it. This avoids resolving work from an invalid contract.
+        return "invalid";
+      }
+      clearTimeout(pending.timeout);
+      this.pendingCommands.delete(message.requestId);
+      pending.resolve(result);
       return "handled";
     }
 
+    clearTimeout(pending.timeout);
+    this.pendingCommands.delete(message.requestId);
     pending.reject(new Error(message.error ?? "The session failed to handle the command."));
     return "handled";
   }

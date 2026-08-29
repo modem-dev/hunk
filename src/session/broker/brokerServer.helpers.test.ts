@@ -212,6 +212,37 @@ describe("handleSessionApiRequest", () => {
     expect(response.status).toBe(400);
   });
 
+  test("rejects malformed nested HTTP daemon request bodies before state dispatch", async () => {
+    const { state, calls } = createFakeState();
+    const malformed = [
+      { action: "get", selector: { sessionId: "s-1", extra: true } },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: { kind: "vcs", staged: false, options: { tabWidth: 0 } },
+      },
+      {
+        action: "comment-apply",
+        selector: { sessionId: "s-1" },
+        comments: [{ filePath: "a.ts", summary: "note", hunkNumber: 0 }],
+        revealMode: "first",
+      },
+    ];
+
+    for (const body of malformed) {
+      const response = await handleSessionApiRequest(
+        state,
+        new Request(`http://127.0.0.1:${PORT}/session-api`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(calls).toEqual([]);
+  });
+
   test("routes list/get/context/review to the matching state methods", async () => {
     const { state, calls } = createFakeState();
     for (const action of ["list", "get", "context", "review"] as const) {

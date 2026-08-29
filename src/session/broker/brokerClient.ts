@@ -4,11 +4,7 @@ import {
   type SessionBrokerConnectionBridge,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
-import type {
-  SessionRegistration,
-  SessionServerMessage,
-  SessionSnapshot,
-} from "@hunk/session-broker-core";
+import type { SessionRegistration, SessionSnapshot } from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_SOCKET_PATH,
   resolveSessionBrokerConfig,
@@ -19,6 +15,7 @@ import {
   readSessionBrokerHealth,
   waitForSessionBrokerShutdown,
 } from "./brokerLauncher";
+import { hunkSessionProtocolParsers } from "./protocolParsers";
 import {
   readHunkSessionDaemonCapabilities,
   reportHunkDaemonUpgradeRestart,
@@ -38,47 +35,37 @@ const INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX = "Incompatible session ";
 const INCOMPATIBLE_SESSION_CLOSE_MESSAGE =
   "This window is too old for the refreshed session broker daemon. Restart the window to reconnect.";
 
-type SessionAppBridge<
-  ServerMessage extends SessionServerMessage = SessionServerMessage,
-  Result = unknown,
-> = SessionBrokerConnectionBridge<ServerMessage, Result>;
+type SessionAppBridge = SessionBrokerConnectionBridge<
+  HunkSessionServerMessage,
+  HunkSessionCommandResult
+>;
 
 interface SessionBrokerClientTiming {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
 }
 
-/** The broker client bound to Hunk's session info, state, message, and result types. */
-export type HunkSessionBrokerClient = SessionBrokerClient<
-  HunkSessionInfo,
-  HunkSessionState,
-  HunkSessionServerMessage,
-  HunkSessionCommandResult
->;
+/** The concrete broker client bound to Hunk's session contracts. */
+export type HunkSessionBrokerClient = SessionBrokerClient;
 
-/** Keep one running app session registered with the local session broker daemon. */
-export class SessionBrokerClient<
-  Info = unknown,
-  State = unknown,
-  ServerMessage extends SessionServerMessage = SessionServerMessage,
-  Result = unknown,
-> {
+/** Keep one running Hunk session registered with the local session broker daemon. */
+export class SessionBrokerClient {
   private connection: GenericSessionBrokerConnection<
-    Info,
-    State,
+    HunkSessionInfo,
+    HunkSessionState,
     SessionBrokerSocketLike,
-    ServerMessage,
-    Result
+    HunkSessionServerMessage,
+    HunkSessionCommandResult
   > | null = null;
-  private bridge: SessionAppBridge<ServerMessage, Result> | null = null;
+  private bridge: SessionAppBridge | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private startupPromise: Promise<void> | null = null;
   private lastConnectionWarning: string | null = null;
 
   constructor(
-    private registration: SessionRegistration<Info>,
-    private snapshot: SessionSnapshot<State>,
+    private registration: SessionRegistration<HunkSessionInfo>,
+    private snapshot: SessionSnapshot<HunkSessionState>,
     private timing: SessionBrokerClientTiming = {},
   ) {}
 
@@ -122,7 +109,10 @@ export class SessionBrokerClient<
     return this.registration;
   }
 
-  replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
+  replaceSession(
+    registration: SessionRegistration<HunkSessionInfo>,
+    snapshot: SessionSnapshot<HunkSessionState>,
+  ) {
     // Let the connection validate/send first. If it throws, the client keeps
     // serving the previous registration and snapshot as one coherent pair.
     this.connection?.replaceSession(registration, snapshot);
@@ -201,12 +191,12 @@ export class SessionBrokerClient<
     }
   }
 
-  setBridge(bridge: SessionAppBridge<ServerMessage, Result> | null) {
+  setBridge(bridge: SessionAppBridge | null) {
     this.bridge = bridge;
     this.connection?.setBridge(bridge);
   }
 
-  updateSnapshot(snapshot: SessionSnapshot<State>) {
+  updateSnapshot(snapshot: SessionSnapshot<HunkSessionState>) {
     this.snapshot = snapshot;
     this.connection?.updateSnapshot(snapshot);
   }
@@ -217,17 +207,18 @@ export class SessionBrokerClient<
     }
 
     this.connection = createSessionBrokerConnection<
-      Info,
-      State,
+      HunkSessionInfo,
+      HunkSessionState,
       SessionBrokerSocketLike,
-      ServerMessage,
-      Result
+      HunkSessionServerMessage,
+      HunkSessionCommandResult
     >({
       url: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
       createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
       registration: this.registration,
       snapshot: this.snapshot,
       bridge: this.bridge,
+      protocolParsers: hunkSessionProtocolParsers,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
       resolveClose: (event) =>

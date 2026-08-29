@@ -11,6 +11,7 @@ import {
 } from "@hunk/session-broker-core";
 import { SessionBroker } from "./broker";
 import { createSessionBrokerDaemon } from "./daemon";
+import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type { AuthenticatedCallerRequest } from "./authentication";
 
 interface TestSessionInfo {
@@ -45,10 +46,51 @@ function parseState(value: unknown): TestSessionState | null {
   return selectedIndex === null ? null : { selectedIndex };
 }
 
+const protocolParsers = createSessionBrokerProtocolParsers<
+  TestSessionInfo,
+  TestSessionState,
+  TestServerMessage,
+  unknown
+>({
+  appRevision: 1,
+  features: [],
+  parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+  parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: [
+    {
+      command: "annotate",
+      version: 1,
+      parseInput: (value) => {
+        const record = brokerWireParsers.asRecord(value);
+        return record && typeof record.summary === "string" ? { summary: record.summary } : null;
+      },
+      parseResult: (value) => {
+        const record = brokerWireParsers.asRecord(value);
+        return record && Object.keys(record).length === 1 && record.applied === true
+          ? { applied: true }
+          : null;
+      },
+    },
+    {
+      command: "annotate",
+      version: 2,
+      parseInput: (value) => {
+        const record = brokerWireParsers.asRecord(value);
+        return record && typeof record.summary === "string" ? { summary: record.summary } : null;
+      },
+      parseResult: (value) => {
+        const record = brokerWireParsers.asRecord(value);
+        return record && Object.keys(record).length === 1 && record.applied === true
+          ? { applied: true }
+          : null;
+      },
+    },
+  ],
+});
+
 function createBroker() {
   return new SessionBroker<TestSessionInfo, TestSessionState, TestServerMessage>({
-    parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
-    parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+    protocolParsers,
   });
 }
 
@@ -186,7 +228,10 @@ describe("session broker daemon", () => {
       new Request("http://broker.test/broker", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
+        body: JSON.stringify({
+          action: "get",
+          selector: { sessionId: "session-1" },
+        }),
       }),
     );
     await expect(authenticatedBody(getResponse)).resolves.toMatchObject({
@@ -347,7 +392,10 @@ describe("session broker daemon", () => {
       ...authenticatedHttpApi,
     });
 
-    const oversized = JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) });
+    const oversized = JSON.stringify({
+      action: "list",
+      filler: "x".repeat(5 * 1024 * 1024),
+    });
     const response = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
@@ -414,7 +462,121 @@ describe("session broker daemon", () => {
     );
 
     const response = await pendingResponse;
-    await expect(authenticatedBody(response)).resolves.toEqual({ result: { applied: true } });
+    await expect(authenticatedBody(response)).resolves.toEqual({
+      result: { applied: true },
+    });
+    daemon.shutdown();
+  });
+
+  test("executes each app parser once per daemon boundary and forwards transformed input", async () => {
+    const calls = { registration: 0, snapshot: 0, input: 0, result: 0 };
+    const countingParsers = createSessionBrokerProtocolParsers<
+      TestSessionInfo,
+      TestSessionState,
+      TestServerMessage,
+      unknown
+    >({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => {
+        calls.registration += 1;
+        return parseSessionRegistrationEnvelope(value, parseInfo);
+      },
+      parseSnapshot: (value) => {
+        calls.snapshot += 1;
+        return parseSessionSnapshotEnvelope(value, parseState);
+      },
+      commands: [
+        {
+          command: "annotate",
+          version: 1,
+          parseInput: (value) => {
+            calls.input += 1;
+            const record = brokerWireParsers.asRecord(value);
+            return typeof record?.summary === "string"
+              ? { summary: record.summary.toUpperCase() }
+              : null;
+          },
+          parseResult: (value) => {
+            calls.result += 1;
+            const record = brokerWireParsers.asRecord(value);
+            return record?.applied === true ? { applied: true } : null;
+          },
+        },
+      ],
+    });
+    const broker = new SessionBroker<TestSessionInfo, TestSessionState, TestServerMessage>({
+      protocolParsers: countingParsers,
+    });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+    });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    expect(calls).toEqual({
+      registration: 1,
+      snapshot: 1,
+      input: 0,
+      result: 0,
+    });
+
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "snapshot",
+        sessionId: "session-1",
+        snapshot: createSnapshot({ selectedIndex: 1 }),
+      }),
+    );
+    expect(calls.snapshot).toBe(2);
+
+    const pending = daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "dispatch",
+          selector: { sessionId: "session-1" },
+          command: "annotate",
+          input: { summary: "review note" },
+        }),
+      }),
+    );
+    await Bun.sleep(0);
+    expect(calls.input).toBe(1);
+    const command = JSON.parse(owner.sent.at(-1)!) as {
+      requestId: string;
+      input: { summary: string };
+    };
+    expect(command.input).toEqual({ summary: "REVIEW NOTE" });
+
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: command.requestId,
+        ok: true,
+        result: { applied: true },
+      }),
+    );
+    await expect(authenticatedBody(await pending)).resolves.toEqual({
+      result: { applied: true },
+    });
+    expect(calls).toEqual({
+      registration: 1,
+      snapshot: 2,
+      input: 1,
+      result: 1,
+    });
     daemon.shutdown();
   });
 
@@ -458,7 +620,10 @@ describe("session broker daemon", () => {
     daemon.handleConnectionMessage(owner.connection, register);
     daemon.handleConnectionMessage(duplicate.connection, register);
 
-    expect(duplicate.closed).toEqual({ code: 1008, reason: "Session registration rejected." });
+    expect(duplicate.closed).toEqual({
+      code: 1008,
+      reason: "Session registration rejected.",
+    });
     daemon.handleConnectionClose(duplicate.connection);
     expect(daemon.listSessions()).toHaveLength(1);
     expect(daemon.listSessions()[0]).toMatchObject({ sessionId: "session-1" });
@@ -498,20 +663,31 @@ describe("session broker daemon", () => {
       JSON.stringify({
         type: "snapshot",
         sessionId: "session-1",
-        snapshot: createSnapshot({ updatedAt: "2026-04-15T00:00:01.000Z", selectedIndex: 1 }),
+        snapshot: createSnapshot({
+          updatedAt: "2026-04-15T00:00:01.000Z",
+          selectedIndex: 1,
+        }),
       }),
     );
-    expect(snapshotPeer.closed).toEqual({ code: 1008, reason: "Session ownership rejected." });
+    expect(snapshotPeer.closed).toEqual({
+      code: 1008,
+      reason: "Session ownership rejected.",
+    });
     expect(daemon.getSession({ sessionId: "session-1" })).toMatchObject({
       snapshot: { state: { selectedIndex: 0 } },
     });
 
-    const ownerSeenAt = daemon.getSession({ sessionId: "session-1" }).lastSeenAt;
+    const ownerSeenAt = daemon.getSession({
+      sessionId: "session-1",
+    }).lastSeenAt;
     daemon.handleConnectionMessage(
       heartbeatPeer.connection,
       JSON.stringify({ type: "heartbeat", sessionId: "session-1" }),
     );
-    expect(heartbeatPeer.closed).toEqual({ code: 1008, reason: "Session ownership rejected." });
+    expect(heartbeatPeer.closed).toEqual({
+      code: 1008,
+      reason: "Session ownership rejected.",
+    });
     expect(daemon.getSession({ sessionId: "session-1" }).lastSeenAt).toBe(ownerSeenAt);
 
     const pendingResponse = daemon.handleRequest(
@@ -538,7 +714,10 @@ describe("session broker daemon", () => {
         result: { applied: "forged" },
       }),
     );
-    expect(resultPeer.closed).toEqual({ code: 1008, reason: "Command ownership rejected." });
+    expect(resultPeer.closed).toEqual({
+      code: 1008,
+      reason: "Command ownership rejected.",
+    });
     expect(daemon.getHealth().pendingCommands).toBe(1);
 
     daemon.handleConnectionMessage(
@@ -551,7 +730,92 @@ describe("session broker daemon", () => {
       }),
     );
     const response = await pendingResponse;
-    await expect(authenticatedBody(response)).resolves.toEqual({ result: { applied: true } });
+    await expect(authenticatedBody(response)).resolves.toEqual({
+      result: { applied: true },
+    });
+    daemon.shutdown();
+  });
+
+  test("closes malformed results without resolving pending work or leaking parser details", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+    });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    const pendingResponse = daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "dispatch",
+          selector: { sessionId: "session-1" },
+          command: "annotate",
+          input: { summary: "note" },
+        }),
+      }),
+    );
+    await Bun.sleep(0);
+    const outgoing = JSON.parse(owner.sent.at(-1)!) as { requestId: string };
+
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { applied: false, parserStack: "secret" },
+      }),
+    );
+
+    expect(owner.closed).toEqual({
+      code: 1008,
+      reason: "Malformed command result.",
+    });
+    expect(daemon.getHealth().pendingCommands).toBe(1);
+    daemon.handleConnectionClose(owner.connection);
+    const response = await pendingResponse;
+    const text = await response?.text();
+    expect(text).not.toContain("parserStack");
+    expect(daemon.getHealth().pendingCommands).toBe(0);
+    daemon.shutdown();
+  });
+
+  test("preserves the prior registration when a replacement parser rejects", () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+    });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: { ...createRegistration(), unexpected: true },
+        snapshot: createSnapshot(),
+      }),
+    );
+    expect(owner.closed).toEqual({
+      code: 1008,
+      reason: "Incompatible session registration.",
+    });
+    expect(daemon.listSessions()).toHaveLength(1);
+    expect(daemon.listSessions()[0]).toMatchObject({ sessionId: "session-1" });
     daemon.shutdown();
   });
 

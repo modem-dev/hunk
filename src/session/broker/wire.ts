@@ -5,11 +5,13 @@ import {
   MAX_REGISTRATION_HUNKS_PER_FILE,
   MAX_REGISTRATION_PATCH_BYTES,
   MAX_SNAPSHOT_LIVE_COMMENTS,
+  BrokerProtocolError,
   MAX_SNAPSHOT_REVIEW_NOTES,
   brokerWireParsers,
+  parseBrokerString,
+  parseExactBrokerRecord,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
-  utf8ByteLength,
 } from "@hunk/session-broker-core";
 import {
   parseHunkReviewPublicationAddress,
@@ -36,35 +38,42 @@ const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
 ]);
 const EXPERIMENTAL_FEATURE_SET = new Set<string>(EXPERIMENTAL_FEATURES);
 
-/** Preserve only recognized experimental feature ids from a session registration. */
+/** Parse unique recognized experimental feature ids without silently dropping malformed entries. */
 function parseExperimentalFeatures(value: unknown): ExperimentalFeature[] {
-  if (!Array.isArray(value)) {
-    return [];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new BrokerProtocolError("invalid-app-payload");
+  if (
+    value.some((feature) => typeof feature !== "string" || !EXPERIMENTAL_FEATURE_SET.has(feature))
+  ) {
+    throw new BrokerProtocolError("invalid-app-payload");
   }
+  return [...new Set(value)] as ExperimentalFeature[];
+}
 
-  return [...new Set(value)].filter(
-    (feature): feature is ExperimentalFeature =>
-      typeof feature === "string" && EXPERIMENTAL_FEATURE_SET.has(feature),
-  );
+/** Read one app-owned object with an exact field set. */
+function exactRecord(
+  value: unknown,
+  required: readonly string[],
+  optional: readonly string[] = [],
+) {
+  return parseExactBrokerRecord(value, required, optional);
 }
 
 /** Parse one optional diff-side line range tuple when the payload shape matches. */
 function parseOptionalRange(value: unknown): [number, number] | undefined {
+  if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.length !== 2) {
-    return undefined;
+    throw new BrokerProtocolError("invalid-app-payload");
   }
-
-  const start = brokerWireParsers.parsePositiveInt(value[0]);
-  const end = brokerWireParsers.parsePositiveInt(value[1]);
-  return start !== null && end !== null ? [start, end] : undefined;
+  const start = brokerWireParsers.parseNonNegativeInt(value[0]);
+  const end = brokerWireParsers.parseNonNegativeInt(value[1]);
+  if (start === null || end === null) throw new BrokerProtocolError("invalid-app-payload");
+  return [start, end];
 }
 
 /** Parse one registered review hunk from the app-owned session payload. */
 function parseSessionReviewHunk(value: unknown): SessionReviewHunk | null {
-  const record = brokerWireParsers.asRecord(value);
-  if (!record) {
-    return null;
-  }
+  const record = exactRecord(value, ["index", "header"], ["oldRange", "newRange"]);
 
   const index = brokerWireParsers.parseNonNegativeInt(record.index);
   const header = brokerWireParsers.parseRequiredString(record.header);
@@ -82,10 +91,11 @@ function parseSessionReviewHunk(value: unknown): SessionReviewHunk | null {
 
 /** Parse one registered review file from the app-owned session payload. */
 function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
-  const record = brokerWireParsers.asRecord(value);
-  if (!record) {
-    return null;
-  }
+  const record = exactRecord(
+    value,
+    ["id", "path", "additions", "deletions", "hunks"],
+    ["previousPath", "patch", "hunkCount"],
+  );
 
   const id = brokerWireParsers.parseRequiredString(record.id);
   const path = brokerWireParsers.parseRequiredString(record.path);
@@ -98,6 +108,16 @@ function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
   if (!Array.isArray(record.hunks) || record.hunks.length > MAX_REGISTRATION_HUNKS_PER_FILE) {
     return null;
   }
+  const assertedHunkCount =
+    record.hunkCount === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.hunkCount);
+  if (
+    record.hunkCount !== undefined &&
+    (assertedHunkCount === null || assertedHunkCount !== record.hunks.length)
+  ) {
+    return null;
+  }
 
   const hunks = record.hunks.map(parseSessionReviewHunk);
   if (hunks.some((hunk) => hunk === null)) {
@@ -106,10 +126,12 @@ function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
 
   // Reject files whose patch text alone would blow the per-file memory budget instead of
   // silently dropping it, so an oversized registration fails loudly rather than half-loading.
-  const patch = brokerWireParsers.parseOptionalString(record.patch);
-  if (patch !== undefined && utf8ByteLength(patch) > MAX_REGISTRATION_PATCH_BYTES) {
-    return null;
-  }
+  const patch =
+    record.patch === undefined
+      ? undefined
+      : parseBrokerString(record.patch, {
+          maxBytes: MAX_REGISTRATION_PATCH_BYTES,
+        });
 
   return {
     id,
@@ -134,10 +156,11 @@ function parseReviewInputKind(value: unknown): CliInput["kind"] | null {
 
 /** Parse one live comment summary from the app-owned snapshot payload. */
 function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSummary | null {
-  const record = brokerWireParsers.asRecord(value);
-  if (!record) {
-    return null;
-  }
+  const record = exactRecord(
+    value,
+    ["commentId", "filePath", "hunkIndex", "summary", "createdAt", "line", "side"],
+    ["rationale", "author"],
+  );
 
   const commentId = brokerWireParsers.parseRequiredString(record.commentId);
   const filePath = brokerWireParsers.parseRequiredString(record.filePath);
@@ -173,10 +196,11 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
 
 /** Parse one review note summary from the app-owned snapshot payload. */
 function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary | null {
-  const record = brokerWireParsers.asRecord(value);
-  if (!record) {
-    return null;
-  }
+  const record = exactRecord(
+    value,
+    ["noteId", "source", "filePath", "body", "createdAt"],
+    ["hunkIndex", "oldRange", "newRange", "title", "author", "updatedAt", "editable"],
+  );
 
   const noteId = brokerWireParsers.parseRequiredString(record.noteId);
   const filePath = brokerWireParsers.parseRequiredString(record.filePath);
@@ -196,11 +220,18 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
     return null;
   }
 
+  const hunkIndex =
+    record.hunkIndex === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
+  if (record.hunkIndex !== undefined && hunkIndex === null) return null;
+  if (record.editable !== undefined && typeof record.editable !== "boolean") return null;
+
   return {
     noteId,
     source,
     filePath,
-    hunkIndex: brokerWireParsers.parseNonNegativeInt(record.hunkIndex) ?? undefined,
+    hunkIndex: hunkIndex ?? undefined,
     oldRange: parseOptionalRange(record.oldRange),
     newRange: parseOptionalRange(record.newRange),
     body,
@@ -214,10 +245,12 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
 
 /** Parse the app-owned registration info embedded inside one broker registration envelope. */
 function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
-  const record = brokerWireParsers.asRecord(value);
-  if (!record || !Array.isArray(record.files) || record.files.length > MAX_REGISTRATION_FILES) {
-    return null;
-  }
+  const record = exactRecord(
+    value,
+    ["inputKind", "title", "sourceLabel", "files"],
+    ["experimentalFeatures", "reviewCatalog", "reviewCapabilityDigest"],
+  );
+  if (!Array.isArray(record.files) || record.files.length > MAX_REGISTRATION_FILES) return null;
 
   const inputKind = parseReviewInputKind(record.inputKind);
   const title = brokerWireParsers.parseRequiredString(record.title);
@@ -265,9 +298,22 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
 
 /** Parse the app-owned snapshot state embedded inside one broker snapshot envelope. */
 function parseHunkSessionState(value: unknown): HunkSessionState | null {
-  const record = brokerWireParsers.asRecord(value);
+  const record = exactRecord(
+    value,
+    ["liveComments", "selectedHunkIndex", "showAgentNotes"],
+    [
+      "selectedFileId",
+      "selectedFilePath",
+      "selectedHunkOldRange",
+      "selectedHunkNewRange",
+      "noteMarkupWidth",
+      "liveCommentCount",
+      "reviewNoteCount",
+      "reviewNotes",
+      "reviewPublication",
+    ],
+  );
   if (
-    !record ||
     !Array.isArray(record.liveComments) ||
     record.liveComments.length > MAX_SNAPSHOT_LIVE_COMMENTS ||
     (Array.isArray(record.reviewNotes) && record.reviewNotes.length > MAX_SNAPSHOT_REVIEW_NOTES)
@@ -291,12 +337,36 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     return null;
   }
 
-  const liveComments = record.liveComments
-    .map(parseSessionLiveCommentSummary)
-    .filter((comment): comment is SessionLiveCommentSummary => comment !== null);
-  const reviewNotes = (Array.isArray(record.reviewNotes) ? record.reviewNotes : [])
-    .map(parseSessionReviewNoteSummary)
-    .filter((note): note is SessionReviewNoteSummary => note !== null);
+  if (record.reviewNotes !== undefined && !Array.isArray(record.reviewNotes)) return null;
+  const assertedLiveCommentCount =
+    record.liveCommentCount === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.liveCommentCount);
+  const assertedReviewNoteCount =
+    record.reviewNoteCount === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.reviewNoteCount);
+  if (
+    (record.liveCommentCount !== undefined && assertedLiveCommentCount === null) ||
+    (record.reviewNoteCount !== undefined && assertedReviewNoteCount === null)
+  ) {
+    return null;
+  }
+  const liveComments = record.liveComments.map(parseSessionLiveCommentSummary);
+  const reviewNotes = (record.reviewNotes ?? []).map(parseSessionReviewNoteSummary);
+  if (
+    liveComments.some((comment) => comment === null) ||
+    reviewNotes.some((note) => note === null) ||
+    (assertedLiveCommentCount !== undefined && assertedLiveCommentCount !== liveComments.length) ||
+    (assertedReviewNoteCount !== undefined && assertedReviewNoteCount !== reviewNotes.length)
+  ) {
+    return null;
+  }
+  const noteMarkupWidth =
+    record.noteMarkupWidth === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.noteMarkupWidth);
+  if (record.noteMarkupWidth !== undefined && noteMarkupWidth === null) return null;
 
   return {
     selectedFileId: brokerWireParsers.parseOptionalString(record.selectedFileId),
@@ -305,11 +375,11 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     selectedHunkOldRange: parseOptionalRange(record.selectedHunkOldRange),
     selectedHunkNewRange: parseOptionalRange(record.selectedHunkNewRange),
     showAgentNotes,
-    noteMarkupWidth: brokerWireParsers.parseNonNegativeInt(record.noteMarkupWidth) ?? undefined,
+    noteMarkupWidth: noteMarkupWidth ?? undefined,
     liveCommentCount: liveComments.length,
-    liveComments,
+    liveComments: liveComments as SessionLiveCommentSummary[],
     reviewNoteCount: reviewNotes.length,
-    reviewNotes,
+    reviewNotes: reviewNotes as SessionReviewNoteSummary[],
     ...(reviewPublication ? { reviewPublication } : {}),
   };
 }

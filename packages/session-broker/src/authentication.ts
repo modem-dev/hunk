@@ -14,6 +14,9 @@ import {
   isValidBrokerIdentifier,
   isValidBrokerRevision,
   principalFromGrant,
+  parseBrokerIdentifier,
+  parseBrokerString,
+  parseExactBrokerRecord,
   type BrokerAppContract,
   type BrokerChallengeTranscriptInput,
   type BrokerGrant,
@@ -514,7 +517,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
 
   /** Issue one bounded, expiring challenge signed by the daemon identity. */
   async issueChallenge(
-    request: SessionBrokerHelloChallengeRequest,
+    request: unknown,
     listenerEndpoint: string,
   ): Promise<SessionBrokerHelloChallenge> {
     this.pruneExpired();
@@ -572,7 +575,8 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
   }
 
   /** Consume one caller proof and issue a short-lived replay-protected caller session. */
-  async completeCallerHello(proof: SessionBrokerHelloProof): Promise<AuthenticatedCallerSession> {
+  async completeCallerHello(proofInput: unknown): Promise<AuthenticatedCallerSession> {
+    const proof = this.parseHelloProof(proofInput);
     const pending = this.takeChallenge(proof.challengeId, "caller");
     await this.verifyProof(pending, proof.signature);
     const grant = pending.grant as CallerGrant;
@@ -651,9 +655,10 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
 
   /** Consume one producer proof and sign the connection binding supplied by the adapter. */
   async completeProducerHello(
-    proof: SessionBrokerHelloProof,
-    connectionId: string,
+    proofInput: unknown,
+    connectionId: unknown,
   ): Promise<AuthenticatedProducerHello> {
+    const proof = this.parseHelloProof(proofInput);
     if (!isValidBrokerIdentifier(connectionId)) authenticationError("invalid-credential");
     const pending = this.takeChallenge(proof.challengeId, "producer");
     await this.verifyProof(pending, proof.signature);
@@ -820,37 +825,63 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
   }
 
   private validateHello(
-    request: SessionBrokerHelloChallengeRequest,
+    value: unknown,
     listenerEndpoint: string,
   ): SessionBrokerHelloChallengeRequest {
-    if (
-      !request ||
-      typeof request !== "object" ||
-      (request.role !== "producer" && request.role !== "caller") ||
-      request.appId !== this.config.appId ||
-      !isValidBrokerIdentifier(request.keyId) ||
-      !isValidBrokerIdentifier(request.grantId) ||
-      !isValidBrokerIdentifier(request.initiatorNonce) ||
-      request.endpoint !== listenerEndpoint ||
-      !parseEndpoint(request.endpoint) ||
-      !parseEndpoint(listenerEndpoint) ||
-      !request.proposal ||
-      request.proposal.brokerRevision !== SESSION_BROKER_PROTOCOL_REVISION ||
-      request.proposal.appRevision !== this.config.appRevision ||
-      !Array.isArray(request.proposal.features) ||
-      request.proposal.features.length !== 0
-    ) {
-      authenticationError("invalid-credential");
+    try {
+      const request = parseExactBrokerRecord(value, [
+        "role",
+        "appId",
+        "endpoint",
+        "keyId",
+        "grantId",
+        "initiatorNonce",
+        "proposal",
+      ] as const);
+      const proposal = parseExactBrokerRecord(request.proposal, [
+        "brokerRevision",
+        "appRevision",
+        "features",
+      ] as const);
+      if (
+        (request.role !== "producer" && request.role !== "caller") ||
+        request.appId !== this.config.appId ||
+        request.endpoint !== listenerEndpoint ||
+        typeof request.endpoint !== "string" ||
+        !parseEndpoint(request.endpoint) ||
+        !parseEndpoint(listenerEndpoint) ||
+        proposal.brokerRevision !== SESSION_BROKER_PROTOCOL_REVISION ||
+        proposal.appRevision !== this.config.appRevision ||
+        !Array.isArray(proposal.features) ||
+        proposal.features.length !== 0
+      ) {
+        authenticationError("invalid-credential");
+      }
+      return Object.freeze({
+        role: request.role,
+        appId: this.config.appId,
+        endpoint: request.endpoint,
+        keyId: parseBrokerIdentifier(request.keyId),
+        grantId: parseBrokerIdentifier(request.grantId),
+        initiatorNonce: parseBrokerIdentifier(request.initiatorNonce),
+        proposal: fixedProposal(this.config.appRevision),
+      });
+    } catch {
+      return authenticationError("invalid-credential");
     }
-    return Object.freeze({
-      role: request.role,
-      appId: this.config.appId,
-      endpoint: request.endpoint,
-      keyId: request.keyId,
-      grantId: request.grantId,
-      initiatorNonce: request.initiatorNonce,
-      proposal: fixedProposal(this.config.appRevision),
-    });
+  }
+
+  /** Parse one exact proof envelope before consuming challenge state. */
+  private parseHelloProof(value: unknown): SessionBrokerHelloProof {
+    try {
+      const proof = parseExactBrokerRecord(value, ["challengeId", "signature"] as const);
+      return {
+        challengeId: parseBrokerIdentifier(proof.challengeId),
+        signature: parseBrokerString(proof.signature, { maxBytes: 1_024 }),
+      };
+    } catch {
+      return authenticationError("invalid-credential");
+    }
   }
 
   private takeChallenge(challengeId: string, role: BrokerGrant["kind"]): PendingChallenge {

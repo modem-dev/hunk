@@ -1,9 +1,12 @@
-import type {
-  SessionClientMessage,
-  SessionRegistration,
-  SessionServerMessage,
-  SessionSnapshot,
+import {
+  BrokerProtocolError,
+  type SessionClientMessage,
+  type SessionRegistration,
+  type SessionServerMessage,
+  type SessionSnapshot,
 } from "@hunk/session-broker-core";
+import type { SessionBrokerProtocolParsers } from "./protocolParsers";
+import { parseSessionBrokerJsonText } from "./protocolParsers";
 import type {
   SessionBrokerConnectionCloseDirective,
   SessionBrokerSocketCloseEvent,
@@ -33,6 +36,7 @@ export interface SessionBrokerConnectionOptions<
   registration: SessionRegistration<Info>;
   snapshot: SessionSnapshot<State>;
   bridge?: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
+  protocolParsers: SessionBrokerProtocolParsers<Info, State, ServerMessage, Result>;
   heartbeatIntervalMs?: number;
   reconnectDelayMs?: number;
   openState?: number;
@@ -145,14 +149,15 @@ export class SessionBrokerConnection<
     };
 
     socket.onmessage = (event) => {
-      if (typeof event.data !== "string") {
-        return;
-      }
-
       let parsed: ServerMessage;
       try {
-        parsed = JSON.parse(event.data) as ServerMessage;
+        parsed = this.options.protocolParsers.parseServerMessage(
+          parseSessionBrokerJsonText(event.data),
+        );
       } catch {
+        // Never invoke the app bridge after a malformed or mismatched command contract. Closing
+        // prevents this producer from retaining daemon assumptions that were not actually parsed.
+        socket.close(1008, "Malformed session broker command.");
         return;
       }
 
@@ -254,13 +259,24 @@ export class SessionBrokerConnection<
 
     try {
       const result = await this.bridge.dispatchCommand(message);
+      const parsedResult = this.options.protocolParsers.parseCommandResult(
+        message.command,
+        message.commandVersion ?? 1,
+        result,
+      );
       this.sendToSocket(socket, {
         type: "command-result",
         requestId: message.requestId,
         ok: true,
-        result,
+        result: parsedResult,
       });
     } catch (error) {
+      // Parser failures invalidate the selected command contract and cannot be represented as an
+      // app command rejection. Close without reflecting callback details.
+      if (error instanceof BrokerProtocolError) {
+        socket.close(1008, "Malformed session broker command result.");
+        return;
+      }
       this.sendToSocket(socket, {
         type: "command-result",
         requestId: message.requestId,

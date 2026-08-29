@@ -11,6 +11,7 @@ import {
   type SessionTargetSelector,
   type UpdateSnapshotResult,
 } from "@hunk/session-broker-core";
+import type { SessionBrokerProtocolParsers } from "./protocolParsers";
 
 /** Minimal socket shape the broker needs in order to target one live session. */
 export interface SessionBrokerPeer {
@@ -30,9 +31,13 @@ export interface SessionBrokerRecord<Info = unknown, State = unknown> {
   snapshot: SessionSnapshot<State>;
 }
 
-export interface SessionBrokerOptions<Info, State> {
-  parseRegistration: (value: unknown) => SessionRegistration<Info> | null;
-  parseSnapshot: (value: unknown) => SessionSnapshot<State> | null;
+export interface SessionBrokerOptions<
+  Info,
+  State,
+  ServerMessage extends SessionServerMessage = SessionServerMessage,
+  CommandResult = unknown,
+> {
+  protocolParsers: SessionBrokerProtocolParsers<Info, State, ServerMessage, CommandResult>;
   describeSession?: (
     registration: SessionRegistration<Info>,
     snapshot: SessionSnapshot<State>,
@@ -45,6 +50,13 @@ export interface SessionBrokerController<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   CommandResult = unknown,
 > {
+  /** The parser registry bound to this controller's state and command contracts. */
+  readonly protocolParsers: SessionBrokerProtocolParsers<
+    unknown,
+    unknown,
+    ServerMessage,
+    CommandResult
+  >;
   listSessions(): SessionView[];
   getSession(selector: SessionTargetSelector): SessionView;
   getSessionCount(): number;
@@ -108,6 +120,8 @@ export class SessionBroker<
   ServerMessage,
   CommandResult
 > {
+  readonly protocolParsers: SessionBrokerProtocolParsers<Info, State, ServerMessage, CommandResult>;
+
   private readonly state: SessionBrokerState<
     Info,
     State,
@@ -120,16 +134,33 @@ export class SessionBroker<
   >;
 
   private readonly describeSession: NonNullable<
-    SessionBrokerOptions<Info, State>["describeSession"]
+    SessionBrokerOptions<Info, State, ServerMessage, CommandResult>["describeSession"]
   >;
 
-  constructor(options: SessionBrokerOptions<Info, State>) {
+  constructor(options: SessionBrokerOptions<Info, State, ServerMessage, CommandResult>) {
     this.describeSession =
       options.describeSession ?? ((registration, _snapshot) => defaultSessionTitle(registration));
+    this.protocolParsers = options.protocolParsers;
 
     this.state = new SessionBrokerState({
-      parseRegistration: options.parseRegistration,
-      parseSnapshot: options.parseSnapshot,
+      parseRegistration: (value) => {
+        try {
+          return this.protocolParsers.parseRegistration(value);
+        } catch {
+          return null;
+        }
+      },
+      parseSnapshot: (value) => {
+        try {
+          return this.protocolParsers.parseSnapshot(value);
+        } catch {
+          return null;
+        }
+      },
+      parseCommandInput: (command, version, value) =>
+        this.protocolParsers.parseCommandInput(command, version, value),
+      parseCommandResult: (command, version, value) =>
+        this.protocolParsers.parseCommandResult(command, version, value),
       buildListedSession: (entry) => this.buildRecord(entry),
       buildSelectedContext: (session) => session,
       buildSessionReview: (entry) => this.buildRecord(entry),

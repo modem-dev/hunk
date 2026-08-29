@@ -8,7 +8,11 @@ import {
   type SessionRegistration,
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
-import { SessionBroker, createSessionBrokerDaemon } from "@hunk/session-broker";
+import {
+  SessionBroker,
+  createSessionBrokerDaemon,
+  createSessionBrokerProtocolParsers,
+} from "@hunk/session-broker";
 import { serveSessionBrokerDaemon } from "./serve";
 
 interface TestSessionInfo {
@@ -53,7 +57,9 @@ function createRegistration(overrides: Partial<SessionRegistration<TestSessionIn
 }
 
 function createSnapshot(
-  overrides: Partial<SessionSnapshot<TestSessionState>["state"]> & { updatedAt?: string } = {},
+  overrides: Partial<SessionSnapshot<TestSessionState>["state"]> & {
+    updatedAt?: string;
+  } = {},
 ) {
   const { updatedAt = "2026-04-15T00:00:00.000Z", ...stateOverrides } = overrides;
   return {
@@ -64,6 +70,14 @@ function createSnapshot(
     },
   } satisfies SessionSnapshot<TestSessionState>;
 }
+
+const protocolParsers = createSessionBrokerProtocolParsers({
+  appRevision: 1,
+  features: [],
+  parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+  parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: [],
+});
 
 async function reserveLoopbackPort() {
   const listener = createServer(() => undefined);
@@ -102,10 +116,7 @@ async function waitUntil<T>(
 
 describe("session broker node adapter", () => {
   test("serves the generic daemon API and websocket path through Node", async () => {
-    const broker = new SessionBroker({
-      parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
-      parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
-    });
+    const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
       broker,
       capabilities: { version: 1 },
@@ -202,7 +213,10 @@ describe("session broker node adapter", () => {
       const response = await fetch(`http://127.0.0.1:${port}/broker`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
+        body: JSON.stringify({
+          action: "get",
+          selector: { sessionId: "session-1" },
+        }),
       });
       await expect(response.json()).resolves.toMatchObject({
         body: {

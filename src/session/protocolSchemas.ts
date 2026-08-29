@@ -1,6 +1,14 @@
 import { z } from "zod";
 import type { CliInput } from "../core/run/commandInputs";
-import type { SessionDaemonRequest } from "./protocol";
+import { EXPERIMENTAL_FEATURES } from "../core/run/experimental";
+import {
+  HUNK_SESSION_API_VERSION,
+  HUNK_SESSION_DAEMON_VERSION,
+  type SessionDaemonAction,
+  type SessionDaemonCapabilities,
+  type SessionDaemonRequest,
+  type SessionDaemonResponses,
+} from "./protocol";
 
 /**
  * Runtime validation for the session daemon's HTTP action surface.
@@ -20,20 +28,96 @@ const selectorSchema = z.strictObject({
 });
 
 const sideSchema = z.enum(["old", "new"]);
+const sessionDaemonActionSchema = z.enum([
+  "list",
+  "get",
+  "context",
+  "review",
+  "navigate",
+  "reload",
+  "comment-add",
+  "comment-apply",
+  "comment-list",
+  "comment-rm",
+  "comment-clear",
+  "highlight-add",
+  "highlight-clear",
+]);
 
-/**
- * Reload payloads embed a full parsed CLI input tree whose deep shape is owned by the CLI
- * parser, so this envelope check is intentionally shallow: an object with a string `kind`
- * discriminant. A well-formed-but-wrong tree still reaches the reload path, where thrown errors
- * surface through the daemon's JSON error response rather than a schema rejection.
- */
-const nextInputSchema = z.custom<CliInput>(
-  (value) =>
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    typeof (value as { kind?: unknown }).kind === "string",
-);
+const sessionDaemonCapabilitiesSchema = z.strictObject({
+  version: z.literal(HUNK_SESSION_API_VERSION),
+  daemonVersion: z.literal(HUNK_SESSION_DAEMON_VERSION),
+  actions: z.array(sessionDaemonActionSchema),
+});
+
+const commonOptionsSchema = z.strictObject({
+  mode: z.enum(["auto", "split", "stack"]).optional(),
+  cursorLine: z.enum(["row", "number", "off"]).optional(),
+  vcs: z.string().optional(),
+  theme: z.string().optional(),
+  agentContext: z.string().optional(),
+  pager: z.boolean().optional(),
+  watch: z.boolean().optional(),
+  experimental: z.boolean().optional(),
+  fast: z.boolean().optional(),
+  excludeUntracked: z.boolean().optional(),
+  lineNumbers: z.boolean().optional(),
+  tabWidth: z.int().positive().optional(),
+  fileGap: z.int().nonnegative().optional(),
+  hunkGap: z.int().nonnegative().optional(),
+  wrapLines: z.boolean().optional(),
+  hunkHeaders: z.boolean().optional(),
+  menuBar: z.boolean().optional(),
+  sidebar: z.union([z.boolean(), z.literal("auto")]).optional(),
+  agentNotes: z.boolean().optional(),
+  copyDecorations: z.boolean().optional(),
+  promptSaveViewPreferences: z.boolean().optional(),
+  transparentBackground: z.boolean().optional(),
+  colorMoved: z.boolean().optional(),
+  extensions: z.boolean().optional(),
+  extensionPaths: z.array(z.string()).optional(),
+});
+
+/** Parses the complete reloadable CLI input tree carried inside a command. */
+export const cliInputSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("vcs"),
+    range: z.string().optional(),
+    staged: z.boolean(),
+    pathspecs: z.array(z.string()).optional(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("show"),
+    ref: z.string().optional(),
+    pathspecs: z.array(z.string()).optional(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("stash-show"),
+    ref: z.string().optional(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("diff"),
+    left: z.string(),
+    right: z.string(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("patch"),
+    file: z.string().optional(),
+    text: z.string().optional(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("difftool"),
+    left: z.string(),
+    right: z.string(),
+    path: z.string().optional(),
+    options: commonOptionsSchema,
+  }),
+]) satisfies z.ZodType<CliInput>;
 
 const commentApplyItemSchema = z.strictObject({
   filePath: z.string(),
@@ -69,7 +153,7 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("reload"),
     selector: selectorSchema,
-    nextInput: nextInputSchema,
+    nextInput: cliInputSchema,
     sourcePath: z.string().optional(),
   }),
   z.strictObject({
@@ -124,6 +208,251 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     filePath: z.string().optional(),
   }),
 ]);
+
+const nonnegative = z.int().nonnegative();
+const positive = z.int().positive();
+const lineRangeSchema = z.tuple([nonnegative, nonnegative]);
+const inputKindSchema = z.enum(["vcs", "show", "stash-show", "diff", "patch", "difftool"]);
+const experimentalFeaturesSchema = z.array(z.enum(EXPERIMENTAL_FEATURES));
+const terminalLocationSchema = z.strictObject({
+  source: z.string(),
+  tty: z.string().optional(),
+  windowId: z.string().optional(),
+  tabId: z.string().optional(),
+  paneId: z.string().optional(),
+  terminalId: z.string().optional(),
+  sessionId: z.string().optional(),
+});
+const terminalSchema = z.strictObject({
+  program: z.string().optional(),
+  locations: z.array(terminalLocationSchema),
+});
+const fileSummarySchema = z.strictObject({
+  id: z.string(),
+  path: z.string(),
+  previousPath: z.string().optional(),
+  additions: nonnegative,
+  deletions: nonnegative,
+  hunkCount: nonnegative,
+});
+const reviewHunkSchema = z.strictObject({
+  index: nonnegative,
+  header: z.string(),
+  oldRange: lineRangeSchema.optional(),
+  newRange: lineRangeSchema.optional(),
+});
+const selectedHunkSchema = reviewHunkSchema.omit({ header: true });
+const reviewFileSchema = fileSummarySchema.extend({
+  patch: z.string().optional(),
+  hunks: z.array(reviewHunkSchema),
+});
+const liveCommentSchema = z.strictObject({
+  commentId: z.string(),
+  filePath: z.string(),
+  hunkIndex: nonnegative,
+  side: sideSchema,
+  line: positive,
+  summary: z.string(),
+  rationale: z.string().optional(),
+  author: z.string().optional(),
+  createdAt: z.string(),
+});
+const reviewNoteSchema = z.strictObject({
+  noteId: z.string(),
+  source: z.enum(["ai", "agent", "user"]),
+  filePath: z.string(),
+  hunkIndex: nonnegative.optional(),
+  oldRange: lineRangeSchema.optional(),
+  newRange: lineRangeSchema.optional(),
+  body: z.string(),
+  title: z.string().optional(),
+  author: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(),
+  editable: z.boolean(),
+});
+const snapshotSchema = z.strictObject({
+  updatedAt: z.string(),
+  state: z.strictObject({
+    selectedFileId: z.string().optional(),
+    selectedFilePath: z.string().optional(),
+    selectedHunkIndex: nonnegative,
+    selectedHunkOldRange: lineRangeSchema.optional(),
+    selectedHunkNewRange: lineRangeSchema.optional(),
+    showAgentNotes: z.boolean(),
+    noteMarkupWidth: nonnegative.optional(),
+    liveCommentCount: nonnegative,
+    liveComments: z.array(liveCommentSchema),
+    reviewNoteCount: nonnegative.optional(),
+    reviewNotes: z.array(reviewNoteSchema).optional(),
+    reviewPublication: z
+      .strictObject({ generation: z.string(), stateRevision: nonnegative })
+      .optional(),
+  }),
+});
+const listedSessionSchema = z.strictObject({
+  sessionId: z.string(),
+  pid: positive,
+  cwd: z.string(),
+  repoRoot: z.string().optional(),
+  launchedAt: z.string(),
+  terminal: terminalSchema.optional(),
+  inputKind: inputKindSchema,
+  title: z.string(),
+  sourceLabel: z.string(),
+  experimentalFeatures: experimentalFeaturesSchema.optional(),
+  fileCount: nonnegative,
+  files: z.array(fileSummarySchema),
+  snapshot: snapshotSchema,
+});
+const selectedContextSchema = z.strictObject({
+  sessionId: z.string(),
+  title: z.string(),
+  sourceLabel: z.string(),
+  cwd: z.string().optional(),
+  repoRoot: z.string().optional(),
+  inputKind: inputKindSchema,
+  experimentalFeatures: experimentalFeaturesSchema.optional(),
+  selectedFile: fileSummarySchema.nullable(),
+  selectedHunk: selectedHunkSchema.nullable(),
+  showAgentNotes: z.boolean(),
+  noteMarkupWidth: nonnegative.optional(),
+  liveCommentCount: nonnegative,
+});
+const reviewSchema = z.strictObject({
+  sessionId: z.string(),
+  title: z.string(),
+  sourceLabel: z.string(),
+  cwd: z.string().optional(),
+  repoRoot: z.string().optional(),
+  inputKind: inputKindSchema,
+  experimentalFeatures: experimentalFeaturesSchema.optional(),
+  selectedFile: reviewFileSchema.nullable(),
+  selectedHunk: reviewHunkSchema.nullable(),
+  showAgentNotes: z.boolean(),
+  liveCommentCount: nonnegative,
+  reviewNoteCount: nonnegative.optional(),
+  reviewNotes: z.array(reviewNoteSchema).optional(),
+  files: z.array(reviewFileSchema),
+});
+
+const appliedCommentSchema = z.strictObject({
+  commentId: z.string(),
+  fileId: z.string(),
+  filePath: z.string(),
+  hunkIndex: nonnegative,
+  side: sideSchema,
+  line: positive,
+  markupWidth: nonnegative.optional(),
+  markupNotes: z.array(z.string()).optional(),
+});
+
+/** Strict Hunk command result schemas shared by broker and HTTP response validation. */
+export const hunkCommandResultSchemas = {
+  comment: appliedCommentSchema,
+  comment_batch: z.strictObject({ applied: z.array(appliedCommentSchema) }),
+  navigate_to_hunk: z.strictObject({
+    fileId: z.string(),
+    filePath: z.string(),
+    hunkIndex: nonnegative,
+    selectedHunk: selectedHunkSchema.optional(),
+    revealed: z.enum(["line", "hunk"]).optional(),
+    side: sideSchema.optional(),
+    line: positive.optional(),
+  }),
+  reload_session: z.strictObject({
+    sessionId: z.string(),
+    inputKind: inputKindSchema,
+    title: z.string(),
+    sourceLabel: z.string(),
+    fileCount: nonnegative,
+    selectedFilePath: z.string().optional(),
+    selectedHunkIndex: nonnegative,
+  }),
+  remove_comment: z.strictObject({
+    commentId: z.string(),
+    removed: z.boolean(),
+    remainingCommentCount: nonnegative,
+    source: z.enum(["ai", "agent", "user"]).optional(),
+  }),
+  clear_comments: z.strictObject({
+    removedCount: nonnegative,
+    remainingCommentCount: nonnegative,
+    filePath: z.string().optional(),
+    includeUser: z.boolean().optional(),
+    removedLiveCommentCount: nonnegative.optional(),
+    removedUserNoteCount: nonnegative.optional(),
+    remainingLiveCommentCount: nonnegative.optional(),
+    remainingUserNoteCount: nonnegative.optional(),
+  }),
+  highlight: z.strictObject({
+    fileId: z.string(),
+    filePath: z.string(),
+    hunkIndex: nonnegative,
+    side: sideSchema,
+    line: positive,
+    start: nonnegative,
+    end: positive,
+    tone: z.enum(["match", "current", "info", "warning", "error"]),
+    fileMarkCount: nonnegative,
+    revealed: z.enum(["line", "hunk"]).optional(),
+  }),
+  clear_highlights: z.strictObject({
+    removedCount: nonnegative,
+    remainingCount: nonnegative,
+    filePath: z.string().optional(),
+  }),
+} as const;
+
+const daemonResponseSchemas = {
+  list: z.strictObject({ sessions: z.array(listedSessionSchema) }),
+  get: z.strictObject({ session: listedSessionSchema }),
+  context: z.strictObject({ context: selectedContextSchema }),
+  review: z.strictObject({ review: reviewSchema }),
+  navigate: z.strictObject({
+    result: hunkCommandResultSchemas.navigate_to_hunk,
+  }),
+  reload: z.strictObject({ result: hunkCommandResultSchemas.reload_session }),
+  "comment-add": z.strictObject({ result: hunkCommandResultSchemas.comment }),
+  "comment-apply": z.strictObject({
+    result: hunkCommandResultSchemas.comment_batch,
+  }),
+  "comment-list": z.strictObject({
+    comments: z.array(z.union([liveCommentSchema, reviewNoteSchema])),
+  }),
+  "comment-rm": z.strictObject({
+    result: hunkCommandResultSchemas.remove_comment,
+  }),
+  "comment-clear": z.strictObject({
+    result: hunkCommandResultSchemas.clear_comments,
+  }),
+  "highlight-add": z.strictObject({
+    result: hunkCommandResultSchemas.highlight,
+  }),
+  "highlight-clear": z.strictObject({
+    result: hunkCommandResultSchemas.clear_highlights,
+  }),
+} satisfies {
+  [Action in SessionDaemonAction]: z.ZodType<SessionDaemonResponses[Action]>;
+};
+
+/** Strictly parse the response associated with one Hunk session API action. */
+export function parseSessionDaemonResponse<Action extends SessionDaemonAction>(
+  action: Action,
+  value: unknown,
+): SessionDaemonResponses[Action] {
+  const result = daemonResponseSchemas[action].safeParse(value);
+  if (!result.success) {
+    throw new Error(`Invalid Hunk session daemon response for ${action}.`);
+  }
+  return result.data as SessionDaemonResponses[Action];
+}
+
+/** Parse one exact cross-process Hunk daemon capability response. */
+export function parseSessionDaemonCapabilities(value: unknown): SessionDaemonCapabilities | null {
+  const result = sessionDaemonCapabilitiesSchema.safeParse(value);
+  return result.success ? result.data : null;
+}
 
 /** Compose one readable rejection reason from the first schema issue. */
 function describeFirstIssue(error: z.ZodError) {

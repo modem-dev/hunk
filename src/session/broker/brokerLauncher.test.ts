@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
+  parseSessionBrokerHealth,
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
 } from "./brokerLauncher";
@@ -34,6 +35,24 @@ afterEach(() => {
 });
 
 describe("session daemon launcher", () => {
+  test("strictly parses minimal and legacy health responses", () => {
+    expect(parseSessionBrokerHealth({ ok: true })).toEqual({ ok: true });
+    expect(
+      parseSessionBrokerHealth({
+        ok: true,
+        pid: 123,
+        sessions: 1,
+        pendingCommands: 0,
+        startedAt: "2026-04-15T00:00:00.000Z",
+        uptimeMs: 10,
+        staleSessionTtlMs: 45_000,
+        paths: { health: "/health", socket: "/session" },
+      }),
+    ).toMatchObject({ ok: true, pid: 123, sessions: 1 });
+    for (const value of [null, [], { ok: "yes" }, { ok: true, pid: 1.5 }, { ok: true, extra: 1 }]) {
+      expect(parseSessionBrokerHealth(value)).toBeNull();
+    }
+  });
   test("reuses the current script entrypoint when Hunk is running from source or a JS wrapper", () => {
     expect(resolveDaemonLaunchCommand(["bun", "src/main.tsx", "diff"], "/usr/bin/bun")).toEqual({
       command: "/usr/bin/bun",

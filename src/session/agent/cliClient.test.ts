@@ -334,6 +334,34 @@ describe("HTTP Hunk session CLI client", () => {
     );
   });
 
+  test("rejects malformed successful responses instead of returning asserted types", async () => {
+    globalThis.fetch = (async () =>
+      Response.json({
+        sessions: [{ sessionId: "partial", unknown: true }],
+      })) as unknown as typeof fetch;
+
+    const client = createHttpHunkSessionCliClient();
+    await expect(client.listSessions()).rejects.toThrow(
+      "Invalid Hunk session daemon response for list.",
+    );
+
+    globalThis.fetch = (async () => new Response("not json")) as unknown as typeof fetch;
+    await expect(client.listSessions()).rejects.toThrow(
+      "Invalid Hunk session daemon response for list.",
+    );
+  });
+
+  test("returns schema-transformed response objects", async () => {
+    const session = createTestListedSession();
+    globalThis.fetch = (async () =>
+      Response.json({ sessions: [session] })) as unknown as typeof fetch;
+
+    const client = createHttpHunkSessionCliClient();
+    const result = await client.listSessions();
+    expect(result).toEqual([session]);
+    expect(result[0]).not.toBe(session);
+  });
+
   test("throws daemon response errors with JSON messages or status text fallbacks", async () => {
     globalThis.fetch = (async () =>
       Response.json(
