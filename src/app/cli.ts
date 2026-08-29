@@ -1159,16 +1159,18 @@ async function parseSessionNavigateCommand(tokens: string[]): Promise<ParsedCliI
 
   await parseStandaloneCommand(command, tokens);
 
-  // A comment id is resolved by the daemon and must not silently discard another selector.
+  // A comment id or a direction is resolved by the daemon and must not silently discard another
+  // selector, so every selector combination is rejected rather than ranked.
+  const hasAbsoluteTarget =
+    parsedOptions.file !== undefined ||
+    parsedOptions.hunk !== undefined ||
+    parsedOptions.oldLine !== undefined ||
+    parsedOptions.newLine !== undefined;
+  const hasCommentDirection =
+    parsedOptions.nextComment === true || parsedOptions.prevComment === true;
   const commentHasConflictingSelector =
-    parsedOptions.comment !== undefined &&
-    (parsedOptions.file !== undefined ||
-      parsedOptions.hunk !== undefined ||
-      parsedOptions.oldLine !== undefined ||
-      parsedOptions.newLine !== undefined ||
-      parsedOptions.nextComment === true ||
-      parsedOptions.prevComment === true);
-  if (commentHasConflictingSelector) {
+    parsedOptions.comment !== undefined && (hasAbsoluteTarget || hasCommentDirection);
+  if (commentHasConflictingSelector || (hasCommentDirection && hasAbsoluteTarget)) {
     throw new Error(
       "Specify exactly one navigation selector: --comment, --next-comment / --prev-comment, or --file with a navigation target.",
     );

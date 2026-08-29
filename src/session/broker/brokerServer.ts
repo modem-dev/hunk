@@ -279,6 +279,15 @@ function resolveNavigateCommandInput(
     };
   }
 
+  const hasAbsoluteTarget =
+    input.filePath !== undefined ||
+    input.hunkNumber !== undefined ||
+    input.side !== undefined ||
+    input.line !== undefined;
+  if (input.commentDirection !== undefined && hasAbsoluteTarget) {
+    throw new Error("navigate commentDirection cannot be combined with another navigation target.");
+  }
+
   if (
     !input.commentDirection &&
     input.hunkNumber === undefined &&
@@ -287,6 +296,14 @@ function resolveNavigateCommandInput(
     throw new Error(
       "navigate requires commentId, commentDirection, hunkNumber, or both side and line.",
     );
+  }
+
+  // The live terminal cannot resolve a hunk or a line without the file that owns it.
+  if (
+    input.filePath === undefined &&
+    (input.hunkNumber !== undefined || input.line !== undefined)
+  ) {
+    throw new Error("navigate requires filePath for a hunk or line target.");
   }
 
   // Exact coordinates take precedence so callers reveal the row rather than only its hunk.

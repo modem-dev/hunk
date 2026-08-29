@@ -1432,6 +1432,32 @@ describe("parseCli", () => {
     }
   });
 
+  test("rejects session navigate when a comment direction is combined with an absolute target", async () => {
+    const conflictingOptions = [
+      ["--file", "README.md"],
+      ["--hunk", "1"],
+      ["--old-line", "10"],
+      ["--new-line", "10"],
+      ["--file", "README.md", "--hunk", "2"],
+    ];
+
+    for (const direction of ["--next-comment", "--prev-comment"]) {
+      for (const conflictingOption of conflictingOptions) {
+        await expect(
+          parseCli([
+            "bun",
+            "hunk",
+            "session",
+            "navigate",
+            "session-1",
+            direction,
+            ...conflictingOption,
+          ]),
+        ).rejects.toThrow("Specify exactly one navigation selector");
+      }
+    }
+  });
+
   test("rejects session navigate with both --next-comment and --prev-comment", async () => {
     await expect(
       parseCli([
