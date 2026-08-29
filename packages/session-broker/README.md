@@ -2,6 +2,15 @@
 
 Runtime-neutral session broker daemon and connection helpers.
 
+The implementation and release contract for turning these internal workspaces into a supported
+per-application SDK lives in
+[`docs/session-broker-sdk.md`](https://github.com/modem-dev/hunk/blob/main/docs/session-broker-sdk.md).
+Current package APIs predate that contract and do not yet satisfy every security, compatibility,
+supervision, or packaging gate it defines. **Both the generic WebSocket producer path and optional
+raw HTTP control path are currently unauthenticated and are internal-only. Do not deploy them as a
+security boundary.** Hunk currently adds loopback Host/Origin checks around its custom session
+routes; only its separate browser-review routes add a per-session capability.
+
 This is the **main broker package** in the workspace. It owns the reusable broker behavior without committing to Bun or Node server APIs.
 
 Use this package when you want to:
@@ -40,7 +49,7 @@ If you are choosing one package to build against, start here.
 - app-specific projections like Hunk review exports, comments, or selected hunks
 - daemon process launch policy
 
-## Quick start
+## Current internal quick start
 
 ### 1. Create a broker
 
@@ -106,7 +115,10 @@ At this point the daemon can:
 - process websocket register/snapshot/heartbeat/result messages
 - prune stale sessions and request idle shutdown
 
-The raw HTTP broker API is opt-in. Enable it only when your host application wants to expose the generic `list` / `get` / `dispatch` command surface:
+The raw HTTP broker API is opt-in. **The current internal API has no generic authentication or
+Host/Origin enforcement. Do not deploy this option, even on loopback, until the security contract
+in `docs/session-broker-sdk.md` is implemented.** It exists only for controlled package tests
+today:
 
 ```ts
 const daemon = createSessionBrokerDaemon({
@@ -178,9 +190,9 @@ The helper owns:
 
 ## Raw broker API
 
-The daemon's runtime-neutral HTTP API is intentionally small and disabled by default. When `exposeHttpApi: true` is set, it serves:
+The daemon always serves `GET /health`. Its raw capability/control API is intentionally small and
+disabled by default. When `exposeHttpApi: true` is set, it additionally serves:
 
-- `GET /health`
 - `GET /broker/capabilities`
 - `POST /broker`
 
