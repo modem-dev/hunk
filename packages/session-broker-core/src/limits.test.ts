@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
+  InvalidContentLengthError,
   PayloadTooLargeError,
+  boundHttpResponse,
   readRequestBytesWithLimit,
+  readRequestBytesWithReservation,
   readRequestTextWithLimit,
   utf8ByteLength,
 } from "./limits";
+import { BrokerCapacityError, ResourceBudget } from "./budgets";
 
 /** Build a streaming request body so the read path runs without a Content-Length header. */
 function streamingRequest(byteLength: number, chunkSize = 64 * 1024) {
@@ -52,6 +56,40 @@ describe("readRequestTextWithLimit", () => {
     );
   });
 
+  test("rejects malformed Content-Length instead of treating it as undeclared", async () => {
+    const request = new Request("http://broker.test/api", {
+      method: "POST",
+      headers: { "content-length": "01" },
+      body: "x",
+    });
+    await expect(readRequestBytesWithLimit(request, 1024)).rejects.toBeInstanceOf(
+      InvalidContentLengthError,
+    );
+  });
+
+  test("accounts source-plus-merged peak and transfers retained body capacity", async () => {
+    const budget = new ResourceBudget(8, "http");
+    const request = new Request("http://broker.test/api", { method: "POST", body: "éé" });
+    const read = await readRequestBytesWithReservation(request, 4, budget);
+    expect(read.bytes.byteLength).toBe(4);
+    expect(budget.used).toBe(4);
+    expect(budget.tryReserve(5)).toBeNull();
+    read.reservation.release();
+    read.reservation.release();
+    expect(budget.used).toBe(0);
+  });
+
+  test("rolls back a failed merged-copy peak reservation for reuse", async () => {
+    const budget = new ResourceBudget(7, "http");
+    const request = new Request("http://broker.test/api", { method: "POST", body: "1234" });
+    await expect(readRequestBytesWithReservation(request, 4, budget)).rejects.toBeInstanceOf(
+      BrokerCapacityError,
+    );
+    expect(budget.used).toBe(0);
+    const reused = budget.reserve(7);
+    reused.release();
+  });
+
   test("returns the decoded body when it stays under the limit", async () => {
     const request = new Request("http://broker.test/api", {
       method: "POST",
@@ -77,6 +115,49 @@ describe("readRequestTextWithLimit", () => {
     const request = new Request("http://broker.test/api", { method: "GET" });
 
     await expect(readRequestTextWithLimit(request, 1024)).resolves.toBe("");
+  });
+});
+
+describe("boundHttpResponse", () => {
+  test("accepts an exact-ceiling response and charges it until pull", async () => {
+    const budget = new ResourceBudget(8, "response");
+    const response = await boundHttpResponse(new Response("1234"), 4, budget);
+    expect(response.status).toBe(200);
+    expect(budget.used).toBe(4);
+    expect(await response.text()).toBe("1234");
+    expect(budget.used).toBe(0);
+  });
+
+  test("releases a retained response reservation when its body is cancelled", async () => {
+    const budget = new ResourceBudget(8, "response");
+    const response = await boundHttpResponse(new Response("1234"), 4, budget);
+    expect(budget.used).toBe(4);
+    await response.body!.cancel();
+    expect(budget.used).toBe(0);
+  });
+
+  test("rolls back a failed response-copy peak reservation for reuse", async () => {
+    const budget = new ResourceBudget(7, "response");
+    const response = await boundHttpResponse(new Response("1234"), 4, budget);
+    expect(response.status).toBe(503);
+    expect(budget.used).toBe(0);
+    const reused = budget.reserve(7);
+    reused.release();
+  });
+
+  test("cancels a declared-oversized response body before rejecting it", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await boundHttpResponse(
+      new Response(body, { headers: { "content-length": "5" } }),
+      4,
+    );
+    expect(response.status).toBe(503);
+    expect(cancelled).toBe(true);
   });
 });
 

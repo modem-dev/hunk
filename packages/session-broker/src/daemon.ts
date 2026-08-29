@@ -1,16 +1,24 @@
 import {
+  BrokerCapacityError,
   BrokerProtocolError,
-  MAX_HTTP_BODY_BYTES,
+  InvalidContentLengthError,
   PayloadTooLargeError,
+  ResourceBudget,
+  readRequestBytesWithReservation,
+  mergeSessionBrokerLimits,
+  DEFAULT_SESSION_BROKER_LIMITS,
   callerPrincipalAllows,
   canonicalizeJson,
   isValidBrokerAppId,
   isValidBrokerIdentifier,
   isValidBrokerRevision,
-  readRequestBytesWithLimit,
+  utf8ByteLength,
+  type BudgetReservation,
   type CallerOperation,
   type CallerPrincipal,
   type CanonicalJsonValue,
+  type SessionBrokerLimitOptions,
+  type SessionBrokerLimits,
   type SessionServerMessage,
   type SessionTargetSelector,
 } from "@hunk/session-broker-core";
@@ -44,6 +52,18 @@ const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 const INCOMPATIBLE_PAYLOAD_CLOSE_CODE = 1008;
+const BROKER_STATE_LIMITS = [
+  "maxSessions",
+  "maxCommandsPerSession",
+  "maxCommandsTotal",
+  "maxCommandInputBytes",
+  "maxCommandResultBytes",
+  "maxQueuedCommandBytes",
+  "maxRetainedSessionBytes",
+  "maxRetainedBytes",
+  "defaultCommandTimeoutMs",
+  "maxCommandTimeoutMs",
+] as const satisfies readonly (keyof SessionBrokerLimits)[];
 
 export interface SessionBrokerDaemonOptions<
   SessionView = unknown,
@@ -62,10 +82,32 @@ export interface SessionBrokerDaemonOptions<
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
+  limits?: SessionBrokerLimitOptions["limits"];
+  unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
 }
 
 function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
+}
+
+/** Reject transport framing that claims a body on a bodyless GET/HEAD control. */
+function bodylessTransportError(request: Request): Response | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const contentLength = request.headers.get("content-length");
+  const transferEncoding = request.headers.get("transfer-encoding");
+  if (
+    transferEncoding !== null ||
+    (contentLength !== null &&
+      (!/^(?:0|[1-9][0-9]*)$/.test(contentLength) || contentLength !== "0"))
+  ) {
+    return jsonError("Broker capabilities requests must not include a transport body.");
+  }
+  return null;
+}
+
+/** Map resource admission failures to stable retryable HTTP errors. */
+function capacityResponse(error: BrokerCapacityError) {
+  return Response.json({ error: error.code, resource: error.resource }, { status: 503 });
 }
 
 /** Build one redacted protocol failure body without reflecting parser details. */
@@ -99,6 +141,8 @@ export class SessionBrokerDaemon<
   readonly paths: SessionBrokerHttpPaths;
   readonly stopped: Promise<void>;
 
+  readonly limits: Readonly<SessionBrokerLimits>;
+
   private readonly startedAt = Date.now();
   private readonly capabilities: SessionBrokerCapabilities;
   private readonly protocolParsers: SessionBrokerProtocolParsers<
@@ -115,6 +159,8 @@ export class SessionBrokerDaemon<
   private readonly callerAuthenticator?: CallerRequestAuthenticator;
   private readonly authorizer?: SessionBrokerAuthorizer;
   private readonly audit?: SessionBrokerAuditHook;
+  private readonly httpControlBudget: ResourceBudget;
+  private readonly httpBodyBudget: ResourceBudget;
   private lastActivityAt = this.startedAt;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -125,6 +171,25 @@ export class SessionBrokerDaemon<
     private readonly broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>,
     options: Omit<SessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>, "broker">,
   ) {
+    const brokerLimits = broker.limits ?? DEFAULT_SESSION_BROKER_LIMITS;
+    this.limits = mergeSessionBrokerLimits(brokerLimits, {
+      ...(options.limits ? { limits: options.limits } : {}),
+      ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
+    });
+    if (BROKER_STATE_LIMITS.some((name) => this.limits[name] !== brokerLimits[name])) {
+      throw new TypeError(
+        "Session broker state limits must be configured on the broker controller before daemon composition.",
+      );
+    }
+    this.httpControlBudget = new ResourceBudget(
+      this.limits.maxConcurrentHttpControls,
+      "maxConcurrentHttpControls",
+      "busy",
+    );
+    this.httpBodyBudget = new ResourceBudget(
+      this.limits.maxInFlightHttpBodyBytes,
+      "maxInFlightHttpBodyBytes",
+    );
     const exposeAuthenticatedHttpApi =
       (options.exposeHttpApi ?? false) &&
       isValidBrokerAppId(options.appId) &&
@@ -190,6 +255,52 @@ export class SessionBrokerDaemon<
     return pathname === this.paths.socket;
   }
 
+  /** Run one app-specific finite HTTP control through the daemon's shared count/body budgets. */
+  async handleBoundedControl(
+    request: Request,
+    handler: (body: Uint8Array) => Response | Promise<Response>,
+    responses: {
+      payloadTooLarge?: (error: PayloadTooLargeError) => Response;
+      maxBodyBytes?: number;
+    } = {},
+  ): Promise<Response> {
+    let control: BudgetReservation;
+    try {
+      control = this.httpControlBudget.reserve();
+    } catch (error) {
+      return capacityResponse(error as BrokerCapacityError);
+    }
+    let bodyReservation: BudgetReservation | null = null;
+    try {
+      try {
+        const read = await readRequestBytesWithReservation(
+          request,
+          Math.min(
+            responses.maxBodyBytes ?? this.limits.maxHttpBodyBytes,
+            this.limits.maxHttpBodyBytes,
+          ),
+          this.httpBodyBudget,
+        );
+        bodyReservation = read.reservation;
+        return await handler(read.bytes);
+      } catch (error) {
+        if (error instanceof BrokerCapacityError) return capacityResponse(error);
+        if (error instanceof PayloadTooLargeError) {
+          if (responses.payloadTooLarge) return responses.payloadTooLarge(error);
+          return Response.json(
+            { error: "capacity-exceeded", resource: "maxHttpBodyBytes" },
+            { status: 413 },
+          );
+        }
+        if (error instanceof InvalidContentLengthError) return jsonError("Invalid Content-Length.");
+        return jsonError("Could not read broker control request body.");
+      }
+    } finally {
+      bodyReservation?.release();
+      control.release();
+    }
+  }
+
   async handleRequest(request: Request) {
     const url = new URL(request.url);
 
@@ -209,33 +320,7 @@ export class SessionBrokerDaemon<
     }
 
     if (this.paths.capabilities && url.pathname === this.paths.capabilities) {
-      if (request.method !== "GET") {
-        return jsonError("Broker capabilities requests must use GET.", 405);
-      }
-      let body: Uint8Array;
-      try {
-        body = await readRequestBytesWithLimit(request, MAX_HTTP_BODY_BYTES);
-      } catch (error) {
-        return error instanceof PayloadTooLargeError
-          ? jsonError(error.message, 413)
-          : jsonError("Could not read broker capabilities request body.");
-      }
-      if (body.byteLength !== 0) {
-        return jsonError("Broker capabilities requests must not include a body.");
-      }
-      const authenticated = await this.authenticateRequest(request, body, "diagnostics");
-      if (authenticated instanceof Response) return authenticated;
-      if (
-        !(await this.authorize(request, authenticated, {
-          operation: "diagnostics",
-        }))
-      ) {
-        return this.authenticatedResponse(authenticated, { error: "authorization-denied" }, 403);
-      }
-      const inactive = this.rejectInactiveRequest(authenticated);
-      if (inactive) return inactive;
-      this.noteActivity();
-      return this.authenticatedResponse(authenticated, this.capabilities, 200);
+      return this.handleCapabilitiesRequest(request);
     }
 
     if (this.paths.api && url.pathname === this.paths.api) {
@@ -273,6 +358,10 @@ export class SessionBrokerDaemon<
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session registration rejected.");
           return;
         }
+        if (registrationResult === "capacity-exceeded") {
+          connection.close?.(1013, "Session broker capacity exceeded.");
+          return;
+        }
 
         this.noteActivity();
         break;
@@ -292,6 +381,10 @@ export class SessionBrokerDaemon<
 
         if (updateResult === "invalid") {
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Incompatible session snapshot.");
+          return;
+        }
+        if (updateResult === "capacity-exceeded") {
+          connection.close?.(1013, "Session broker capacity exceeded.");
           return;
         }
 
@@ -350,6 +443,7 @@ export class SessionBrokerDaemon<
     }
 
     this.broker.shutdown(error);
+    this.callerAuthenticator?.clear?.();
     this.resolveStopped?.();
     this.resolveStopped = null;
   }
@@ -514,21 +608,44 @@ export class SessionBrokerDaemon<
     targetSpecific = false,
   ): Promise<Response> {
     // Normalize with JSON semantics first so optional undefined fields cannot create digest aliases.
-    const structuredBody = JSON.parse(JSON.stringify(body)) as CanonicalJsonValue;
-    canonicalizeJson(structuredBody);
+    let structuredBody = JSON.parse(JSON.stringify(body)) as CanonicalJsonValue;
+    let responseStatus = status;
+    const targetContract =
+      targetSpecific && this.appRevision !== undefined
+        ? { appContract: { appRevision: this.appRevision, features: [] as const } }
+        : {};
+    if (utf8ByteLength(canonicalizeJson(structuredBody)) > this.limits.maxHttpResponseBytes) {
+      structuredBody = { error: "capacity-exceeded", resource: "maxHttpResponseBytes" };
+      responseStatus = 503;
+    }
     const authentication = await authenticated.signResponse({
-      httpStatus: status,
+      httpStatus: responseStatus,
       body: structuredBody,
-      ...(targetSpecific && this.appRevision !== undefined
-        ? { appContract: { appRevision: this.appRevision, features: [] } }
-        : {}),
+      ...targetContract,
     });
-    const envelope: SessionBrokerAuthenticatedResponse = {
+    let envelope: SessionBrokerAuthenticatedResponse = {
       body: structuredBody,
       authentication,
     };
-    return new Response(canonicalizeJson(envelope as unknown as CanonicalJsonValue), {
-      status,
+    let serializedEnvelope = canonicalizeJson(envelope as unknown as CanonicalJsonValue);
+    if (utf8ByteLength(serializedEnvelope) > this.limits.maxHttpResponseBytes) {
+      structuredBody = { error: "capacity-exceeded", resource: "maxHttpResponseBytes" };
+      responseStatus = 503;
+      envelope = {
+        body: structuredBody,
+        authentication: await authenticated.signResponse({
+          httpStatus: responseStatus,
+          body: structuredBody,
+          ...targetContract,
+        }),
+      };
+      serializedEnvelope = canonicalizeJson(envelope as unknown as CanonicalJsonValue);
+    }
+    if (utf8ByteLength(serializedEnvelope) > this.limits.maxHttpResponseBytes) {
+      return new Response(null, { status: 503 });
+    }
+    return new Response(serializedEnvelope, {
+      status: responseStatus,
       headers: { "content-type": "application/json" },
     });
   }
@@ -541,94 +658,173 @@ export class SessionBrokerDaemon<
     }
   }
 
-  private async handleApiRequest(request: Request) {
-    if (request.method !== "POST") {
-      return jsonError("Broker API requests must use POST.", 405);
-    }
-    if (!hasJsonContentType(request)) {
-      return jsonError("Expected Content-Type application/json.", 415);
-    }
-
-    let body: Uint8Array;
+  /** Run one authenticated capabilities control under the shared HTTP budgets. */
+  private async handleCapabilitiesRequest(request: Request): Promise<Response> {
+    let control: BudgetReservation;
     try {
-      body = await readRequestBytesWithLimit(request, MAX_HTTP_BODY_BYTES);
+      control = this.httpControlBudget.reserve();
     } catch (error) {
-      return error instanceof PayloadTooLargeError
-        ? jsonError(error.message, 413)
-        : jsonError("Could not read broker API request body.");
+      return capacityResponse(error as BrokerCapacityError);
     }
-
-    // Authenticate the exact transport bytes before decoding or interpreting attacker-controlled JSON.
-    const authenticated = await this.authenticateRequest(request, body, "list");
-    if (authenticated instanceof Response) return authenticated;
-
-    let input;
+    let bodyReservation: BudgetReservation | null = null;
     try {
-      input = this.protocolParsers.parseDaemonRequest(parseSessionBrokerJsonBytes(body));
-    } catch (error) {
-      return this.authenticatedResponse(authenticated, protocolError(error), 400);
-    }
-
-    const operation = input.action as CallerOperation;
-    const selector = "selector" in input ? input.selector : undefined;
-    const sessionId = selector?.sessionId;
-    const command = input.action === "dispatch" ? input.command : undefined;
-    const commandVersion = input.action === "dispatch" ? (input.commandVersion ?? 1) : undefined;
-    const facts = {
-      operation,
-      ...(sessionId !== undefined ? { sessionId } : {}),
-      ...(command !== undefined ? { command, commandVersion } : {}),
-    };
-    const targetSpecific = input.action !== "list";
-    if (!(await this.authorize(request, authenticated, facts))) {
-      return this.authenticatedResponse(
-        authenticated,
-        { error: "authorization-denied" },
-        403,
-        targetSpecific,
-      );
-    }
-    const inactive = this.rejectInactiveRequest(authenticated);
-    if (inactive) return inactive;
-
-    try {
-      let response: SessionBrokerDaemonResponse<SessionView, CommandResult>;
-      switch (input.action) {
-        case "list":
-          response = { sessions: this.broker.listSessions() };
-          break;
-        case "get":
-          response = { session: this.broker.getSession(input.selector) };
-          break;
-        case "dispatch": {
-          // Resolve the target before invoking app-owned parsing so the exact target contract is
-          // selected first. This read-only lookup happens only after authentication/authorization.
-          this.broker.getSession(input.selector);
-          response = {
-            result: await this.broker.dispatchCommand({
-              selector: input.selector,
-              command: input.command,
-              commandVersion: input.commandVersion ?? 1,
-              input: input.input,
-              timeoutMessage: input.timeoutMessage ?? defaultTimeoutMessage(input.command),
-              timeoutMs: input.timeoutMs,
-            }),
-          };
-          break;
-        }
+      const transportError = bodylessTransportError(request);
+      if (transportError) return transportError;
+      if (request.method !== "GET") {
+        return jsonError("Broker capabilities requests must use GET.", 405);
       }
-      return this.authenticatedResponse(authenticated, response, 200, targetSpecific);
+      let body: Uint8Array;
+      try {
+        const read = await readRequestBytesWithReservation(
+          request,
+          this.limits.maxHttpBodyBytes,
+          this.httpBodyBudget,
+        );
+        body = read.bytes;
+        bodyReservation = read.reservation;
+      } catch (error) {
+        if (error instanceof BrokerCapacityError) return capacityResponse(error);
+        return error instanceof PayloadTooLargeError
+          ? Response.json(
+              { error: "capacity-exceeded", resource: "maxHttpBodyBytes" },
+              { status: 413 },
+            )
+          : error instanceof InvalidContentLengthError
+            ? jsonError("Invalid Content-Length.")
+            : jsonError("Could not read broker capabilities request body.");
+      }
+      if (body.byteLength !== 0) {
+        return jsonError("Broker capabilities requests must not include a body.");
+      }
+      const authenticated = await this.authenticateRequest(request, body, "diagnostics");
+      if (authenticated instanceof Response) return authenticated;
+      if (!(await this.authorize(request, authenticated, { operation: "diagnostics" }))) {
+        return this.authenticatedResponse(authenticated, { error: "authorization-denied" }, 403);
+      }
+      const inactive = this.rejectInactiveRequest(authenticated);
+      if (inactive) return inactive;
+      this.noteActivity();
+      return this.authenticatedResponse(authenticated, this.capabilities, 200);
+    } finally {
+      bodyReservation?.release();
+      control.release();
+    }
+  }
+
+  private async handleApiRequest(request: Request) {
+    let control: BudgetReservation;
+    try {
+      control = this.httpControlBudget.reserve();
     } catch (error) {
-      return this.authenticatedResponse(
-        authenticated,
-        error instanceof BrokerProtocolError
-          ? protocolError(error)
-          : {
-              error: error instanceof Error ? error.message : "Unknown broker API error.",
-            },
-        400,
-        targetSpecific,
-      );
+      return capacityResponse(error as BrokerCapacityError);
+    }
+    let bodyReservation: BudgetReservation | null = null;
+    try {
+      if (request.method !== "POST") {
+        return jsonError("Broker API requests must use POST.", 405);
+      }
+      if (!hasJsonContentType(request)) {
+        return jsonError("Expected Content-Type application/json.", 415);
+      }
+
+      let body: Uint8Array;
+      try {
+        const read = await readRequestBytesWithReservation(
+          request,
+          this.limits.maxHttpBodyBytes,
+          this.httpBodyBudget,
+        );
+        body = read.bytes;
+        bodyReservation = read.reservation;
+      } catch (error) {
+        if (error instanceof BrokerCapacityError) return capacityResponse(error);
+        return error instanceof PayloadTooLargeError
+          ? Response.json(
+              { error: "capacity-exceeded", resource: "maxHttpBodyBytes" },
+              { status: 413 },
+            )
+          : error instanceof InvalidContentLengthError
+            ? jsonError("Invalid Content-Length.")
+            : jsonError("Could not read broker API request body.");
+      }
+
+      // Authenticate the exact transport bytes before decoding or interpreting attacker-controlled JSON.
+      const authenticated = await this.authenticateRequest(request, body, "list");
+      if (authenticated instanceof Response) return authenticated;
+
+      let input;
+      try {
+        input = this.protocolParsers.parseDaemonRequest(parseSessionBrokerJsonBytes(body));
+      } catch (error) {
+        return this.authenticatedResponse(authenticated, protocolError(error), 400);
+      }
+
+      const operation = input.action as CallerOperation;
+      const selector = "selector" in input ? input.selector : undefined;
+      const sessionId = selector?.sessionId;
+      const command = input.action === "dispatch" ? input.command : undefined;
+      const commandVersion = input.action === "dispatch" ? (input.commandVersion ?? 1) : undefined;
+      const facts = {
+        operation,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(command !== undefined ? { command, commandVersion } : {}),
+      };
+      const targetSpecific = input.action !== "list";
+      if (!(await this.authorize(request, authenticated, facts))) {
+        return this.authenticatedResponse(
+          authenticated,
+          { error: "authorization-denied" },
+          403,
+          targetSpecific,
+        );
+      }
+      const inactive = this.rejectInactiveRequest(authenticated);
+      if (inactive) return inactive;
+
+      try {
+        let response: SessionBrokerDaemonResponse<SessionView, CommandResult>;
+        switch (input.action) {
+          case "list":
+            response = { sessions: this.broker.listSessions() };
+            break;
+          case "get":
+            response = { session: this.broker.getSession(input.selector) };
+            break;
+          case "dispatch": {
+            // Resolve the target before invoking app-owned parsing so the exact target contract is
+            // selected first. This read-only lookup happens only after authentication/authorization.
+            this.broker.getSession(input.selector);
+            response = {
+              result: await this.broker.dispatchCommand({
+                selector: input.selector,
+                command: input.command,
+                commandVersion: input.commandVersion ?? 1,
+                input: input.input,
+                timeoutMessage: input.timeoutMessage ?? defaultTimeoutMessage(input.command),
+                timeoutMs: input.timeoutMs,
+              }),
+            };
+            break;
+          }
+        }
+        return this.authenticatedResponse(authenticated, response, 200, targetSpecific);
+      } catch (error) {
+        return this.authenticatedResponse(
+          authenticated,
+          error instanceof BrokerCapacityError
+            ? { error: error.code, resource: error.resource }
+            : error instanceof BrokerProtocolError
+              ? protocolError(error)
+              : {
+                  error: error instanceof Error ? error.message : "Unknown broker API error.",
+                },
+          error instanceof BrokerCapacityError ? 503 : 400,
+          targetSpecific,
+        );
+      }
+    } finally {
+      bodyReservation?.release();
+      control.release();
     }
   }
 }

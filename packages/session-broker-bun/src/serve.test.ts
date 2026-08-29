@@ -13,6 +13,7 @@ import {
   createSessionBrokerDaemon,
   createSessionBrokerProtocolParsers,
 } from "@hunk/session-broker";
+import SESSION_BROKER_ADAPTER_CONFORMANCE from "../../../test/fixtures/sessionBrokerAdapterConformance.json" with { type: "json" };
 import { serveSessionBrokerDaemon } from "./serve";
 
 interface TestSessionInfo {
@@ -114,6 +115,51 @@ async function waitUntil<T>(
   }
 }
 
+async function openTestSocket(url: string) {
+  const socket = new WebSocket(url);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Timed out waiting for websocket open.")),
+      1_000,
+    );
+    socket.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      () => {
+        clearTimeout(timer);
+        reject(new Error("Websocket failed to open."));
+      },
+      { once: true },
+    );
+  });
+  return socket;
+}
+
+function testSocketCloseCode(socket: WebSocket) {
+  return new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Timed out waiting for websocket close.")),
+      1_000,
+    );
+    socket.addEventListener(
+      "close",
+      (event) => {
+        clearTimeout(timer);
+        resolve(event.code);
+      },
+      { once: true },
+    );
+    socket.addEventListener("error", () => {}, { once: true });
+  });
+}
+
 async function readHealth(port: number) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
@@ -150,6 +196,198 @@ afterEach(() => {
 });
 
 describe("session broker bun adapter", () => {
+  test("uses the shared binary, oversize, and pressure close corpus", () => {
+    expect(SESSION_BROKER_ADAPTER_CONFORMANCE).toMatchObject({
+      textOnly: { binaryCloseCode: 1003 },
+      inbound: { oversizedCloseCode: 1009, pressureCloseCode: 1013 },
+    });
+  });
+
+  test("closes binary, oversized, and aggregate-pressure messages per the shared corpus", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxWsMessageBytes: 8, maxInFlightWsBytes: 0 },
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const binary = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      const binaryClosed = testSocketCloseCode(binary);
+      binary.send(new Uint8Array([1]));
+      expect(await binaryClosed).toBe(SESSION_BROKER_ADAPTER_CONFORMANCE.textOnly.binaryCloseCode);
+
+      const oversized = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      const oversizedClosed = testSocketCloseCode(oversized);
+      oversized.send("123456789");
+      expect(await oversizedClosed).toBe(
+        SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.oversizedCloseCode,
+      );
+
+      const pressure = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      const pressureClosed = testSocketCloseCode(pressure);
+      pressure.send("{}");
+      expect(await pressureClosed).toBe(
+        SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.pressureCloseCode,
+      );
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("accepts a websocket message exactly at the configured byte ceiling", async () => {
+    const message = JSON.stringify({
+      type: "register",
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+    });
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxWsMessageBytes: new TextEncoder().encode(message).byteLength },
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const socket = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      socket.send(message);
+      await waitUntil("exact-ceiling registration", () =>
+        broker.listSessions().length === 1 ? true : null,
+      );
+      socket.close();
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("manual stop retires peer admission and rejects late message delivery", async () => {
+    let snapshotCalls = 0;
+    const countingParsers = createSessionBrokerProtocolParsers({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+      parseSnapshot: (value) => {
+        snapshotCalls += 1;
+        return parseSessionSnapshotEnvelope(value, parseState);
+      },
+      commands: [],
+    });
+    const broker = new SessionBroker({ protocolParsers: countingParsers });
+    const daemon = createSessionBrokerDaemon({ broker });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    const socket = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+    socket.send(
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    await waitUntil("initial snapshot parse", () => (snapshotCalls === 1 ? true : null));
+
+    let peerRetired = false;
+    let transportSettled = false;
+    let stoppedSettled = false;
+    const closed = testSocketCloseCode(socket).then(() => {
+      peerRetired = true;
+    });
+    const stopResult = Promise.resolve(server.stop(false)).then(() => {
+      transportSettled = true;
+    });
+    const stopped = server.stopped.then(() => {
+      stoppedSettled = true;
+    });
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "snapshot",
+          sessionId: "session-1",
+          snapshot: createSnapshot({ selectedIndex: 1 }),
+        }),
+      );
+    } catch {
+      // A runtime may reject the send synchronously once forced shutdown begins.
+    }
+    await stopped;
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "snapshot",
+          sessionId: "session-1",
+          snapshot: createSnapshot({ selectedIndex: 2 }),
+        }),
+      );
+    } catch {
+      // The peer may already observe the forced close.
+    }
+    await Bun.sleep(20);
+    await Promise.all([closed, stopResult]);
+
+    expect(snapshotCalls).toBe(1);
+    expect({ peerRetired, transportSettled, stoppedSettled }).toEqual({
+      peerRetired: true,
+      transportSettled: true,
+      stoppedSettled: true,
+    });
+  });
+
+  test("waits for an active custom HTTP handler before resolving stopped", async () => {
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => (enter = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({ broker });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({
+      daemon,
+      hostname: "127.0.0.1",
+      port,
+      handleRequest: async () => {
+        enter();
+        await gate;
+        return new Response("done");
+      },
+    });
+    const request = fetch(`http://127.0.0.1:${port}/deferred`).catch(() => null);
+    await entered;
+    let stoppedSettled = false;
+    const stopped = server.stopped.then(() => {
+      stoppedSettled = true;
+    });
+    const transportStop = Promise.resolve(server.stop(true));
+    await Bun.sleep(20);
+    expect(stoppedSettled).toBe(false);
+    release();
+    await Promise.all([request, transportStop, stopped]);
+    expect(stoppedSettled).toBe(true);
+  });
+
+  test("admits exactly the configured number of active websocket peers", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxUnauthenticatedSockets: 1 },
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const first = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      await expect(openTestSocket(`ws://127.0.0.1:${port}/session`)).rejects.toThrow();
+      const closed = testSocketCloseCode(first);
+      first.close();
+      await closed;
+      const afterRelease = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      afterRelease.close();
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
   test("serves the generic daemon API and websocket path through Bun", async () => {
     const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
@@ -248,6 +486,70 @@ describe("session broker bun adapter", () => {
       });
 
       socket.close();
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("serves a custom HTTP response exactly at the configured byte ceiling", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({ broker, limits: { maxHttpResponseBytes: 4 } });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({
+      daemon,
+      hostname: "127.0.0.1",
+      port,
+      handleRequest: () => new Response("1234"),
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/exact`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("1234");
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("releases bounded response capacity when HEAD suppresses the body", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxHttpResponseBytes: 4, maxInFlightHttpResponseBytes: 8 },
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({
+      daemon,
+      hostname: "127.0.0.1",
+      port,
+      handleRequest: () => new Response("1234"),
+    });
+    try {
+      expect((await fetch(`http://127.0.0.1:${port}/head`, { method: "HEAD" })).status).toBe(200);
+      const afterHead = await fetch(`http://127.0.0.1:${port}/after-head`);
+      expect(afterHead.status).toBe(200);
+      expect(await afterHead.text()).toBe("1234");
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("falls back to an empty 503 when even the capacity envelope exceeds the response cap", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({ broker, limits: { maxHttpResponseBytes: 1 } });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({
+      daemon,
+      hostname: "127.0.0.1",
+      port,
+      handleRequest: () => new Response("too large"),
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/large`);
+      expect(response.status).toBe(503);
+      expect(await response.text()).toBe("");
     } finally {
       server.stop(true);
       await server.stopped;

@@ -1,5 +1,13 @@
 import {
+  BrokerCapacityError,
   BrokerProtocolError,
+  ReservationGroup,
+  ResourceBudget,
+  resolveSessionBrokerLimits,
+  utf8ByteLength,
+  type BudgetReservation,
+  type SessionBrokerLimitOptions,
+  type SessionBrokerLimits,
   type SessionClientMessage,
   type SessionRegistration,
   type SessionServerMessage,
@@ -16,6 +24,20 @@ import type {
 const DEFAULT_RECONNECT_DELAY_MS = 3_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SOCKET_OPEN_STATE = 1;
+const PRODUCER_COMMAND_OVERHEAD_BYTES = 128;
+
+interface QueuedProducerCommand<Socket, Message> {
+  socket: Socket;
+  message: Message;
+  reservation: BudgetReservation;
+}
+
+/** Measure one JSON-safe command value without relying on UTF-16 string length. */
+function commandValueBytes(value: unknown): number {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new BrokerProtocolError("invalid-app-payload");
+  return utf8ByteLength(serialized);
+}
 
 export interface SessionBrokerConnectionBridge<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
@@ -42,6 +64,8 @@ export interface SessionBrokerConnectionOptions<
   openState?: number;
   resolveClose?: (event: SessionBrokerSocketCloseEvent) => SessionBrokerConnectionCloseDirective;
   onWarning?: (message: string) => void;
+  limits?: SessionBrokerLimitOptions["limits"];
+  unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
 }
 
 /**
@@ -57,7 +81,13 @@ export class SessionBrokerConnection<
 > {
   private socket: Socket | null = null;
   private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
-  private queuedMessages: Array<{ socket: Socket; message: ServerMessage }> = [];
+  readonly limits: Readonly<SessionBrokerLimits>;
+
+  private queuedMessages: Array<QueuedProducerCommand<Socket, ServerMessage>> = [];
+  private executingMessages = new Set<QueuedProducerCommand<Socket, ServerMessage>>();
+  private readonly queuedCommandCountBudget: ResourceBudget;
+  private readonly queuedCommandByteBudget: ResourceBudget;
+  private draining = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
@@ -73,9 +103,23 @@ export class SessionBrokerConnection<
       Result
     >,
   ) {
+    this.limits = resolveSessionBrokerLimits({
+      ...(options.limits ? { limits: options.limits } : {}),
+      ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
+    });
     this.bridge = options.bridge ?? null;
     this.registration = options.registration;
     this.snapshot = options.snapshot;
+    this.queuedCommandCountBudget = new ResourceBudget(
+      this.limits.maxPreBridgeCommands,
+      "maxPreBridgeCommands",
+      "queue-full",
+    );
+    this.queuedCommandByteBudget = new ResourceBudget(
+      this.limits.maxQueuedCommandBytes,
+      "maxQueuedCommandBytes",
+      "queue-full",
+    );
   }
 
   start() {
@@ -88,6 +132,9 @@ export class SessionBrokerConnection<
 
   stop() {
     this.stopped = true;
+    for (const entry of this.queuedMessages.splice(0)) entry.reservation.release();
+    for (const entry of this.executingMessages) entry.reservation.release();
+    this.executingMessages.clear();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -149,11 +196,26 @@ export class SessionBrokerConnection<
     };
 
     socket.onmessage = (event) => {
+      if (this.stopped || this.socket !== socket) return;
+      if (typeof event.data !== "string") {
+        socket.close(1003, "Session broker accepts text messages only.");
+        return;
+      }
+      if (utf8ByteLength(event.data) > this.limits.maxWsMessageBytes) {
+        socket.close(1009, "Message exceeds the session broker size limit.");
+        return;
+      }
+
       let parsed: ServerMessage;
       try {
-        parsed = this.options.protocolParsers.parseServerMessage(
-          parseSessionBrokerJsonText(event.data),
-        );
+        const raw = parseSessionBrokerJsonText(event.data) as { input?: unknown };
+        if (commandValueBytes(raw?.input) > this.limits.maxCommandInputBytes) {
+          throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+        }
+        parsed = this.options.protocolParsers.parseServerMessage(raw);
+        if (commandValueBytes(parsed.input) > this.limits.maxCommandInputBytes) {
+          throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+        }
       } catch {
         // Never invoke the app bridge after a malformed or mismatched command contract. Closing
         // prevents this producer from retaining daemon assumptions that were not actually parsed.
@@ -170,7 +232,13 @@ export class SessionBrokerConnection<
         this.stopHeartbeat();
       }
 
-      this.queuedMessages = this.queuedMessages.filter((queued) => queued.socket !== socket);
+      this.queuedMessages = this.queuedMessages.filter((queued) => {
+        if (queued.socket !== socket) return true;
+        queued.reservation.release();
+        return false;
+      });
+      // Executing bridge work retains its reservation until its promise settles. A disconnect
+      // prevents its response from migrating but does not make the retained input or work vanish.
       if (this.stopped) {
         return;
       }
@@ -250,20 +318,90 @@ export class SessionBrokerConnection<
   }
 
   private async handleServerMessage(socket: Socket, message: ServerMessage) {
-    if (!this.bridge) {
-      // Sessions may connect before the host app has finished wiring its command bridge. Bind each
-      // queued command to its source so a reconnect cannot inherit work from a disconnected socket.
-      this.queuedMessages.push({ socket, message });
+    const reservations = new ReservationGroup();
+    try {
+      reservations.add(this.queuedCommandCountBudget.reserve());
+      reservations.add(
+        this.queuedCommandByteBudget.reserve(
+          commandValueBytes(message) + PRODUCER_COMMAND_OVERHEAD_BYTES,
+        ),
+      );
+    } catch {
+      reservations.release();
+      try {
+        this.sendToSocket(socket, {
+          type: "command-result",
+          requestId: message.requestId,
+          ok: false,
+          error: "queue-full",
+        });
+      } catch {
+        socket.close(1013, "Session broker queue pressure exceeded.");
+      }
       return;
     }
 
+    // Every admitted command, including one executing in a hung bridge, retains its reservation.
+    this.queuedMessages.push({ socket, message, reservation: reservations });
+    if (this.bridge) await this.flushQueuedMessages(socket);
+  }
+
+  private async flushQueuedMessages(socket = this.socket) {
+    if (!this.bridge || !socket || this.draining) return;
+    this.draining = true;
     try {
-      const result = await this.bridge.dispatchCommand(message);
+      // Take one command at a time so newly received work joins the same FIFO and a disconnect can
+      // prevent every command that has not started from executing on a replacement transport.
+      for (;;) {
+        if (!this.bridge) return;
+        const index = this.queuedMessages.findIndex((entry) => entry.socket === socket);
+        if (index < 0) return;
+        const [entry] = this.queuedMessages.splice(index, 1);
+        if (!entry) return;
+        if (
+          this.socket !== entry.socket ||
+          entry.socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
+        ) {
+          entry.reservation.release();
+          return;
+        }
+        this.executingMessages.add(entry);
+        try {
+          await this.executeServerMessage(entry.socket, entry.message);
+        } finally {
+          this.executingMessages.delete(entry);
+          entry.reservation.release();
+        }
+      }
+    } finally {
+      this.draining = false;
+      if (
+        this.bridge &&
+        this.socket &&
+        this.queuedMessages.some((entry) => entry.socket === this.socket)
+      ) {
+        void this.flushQueuedMessages(this.socket);
+      }
+    }
+  }
+
+  /** Execute one already-admitted command without re-entering the producer FIFO. */
+  private async executeServerMessage(socket: Socket, message: ServerMessage) {
+    const bridge = this.bridge;
+    if (!bridge) return;
+    try {
+      const result = await bridge.dispatchCommand(message);
+      if (commandValueBytes(result) > this.limits.maxCommandResultBytes) {
+        throw new BrokerProtocolError("invalid-app-payload");
+      }
       const parsedResult = this.options.protocolParsers.parseCommandResult(
         message.command,
         message.commandVersion ?? 1,
         result,
       );
+      if (commandValueBytes(parsedResult) > this.limits.maxCommandResultBytes) {
+        throw new BrokerProtocolError("invalid-app-payload");
+      }
       this.sendToSocket(socket, {
         type: "command-result",
         requestId: message.requestId,
@@ -271,8 +409,6 @@ export class SessionBrokerConnection<
         result: parsedResult,
       });
     } catch (error) {
-      // Parser failures invalidate the selected command contract and cannot be represented as an
-      // app command rejection. Close without reflecting callback details.
       if (error instanceof BrokerProtocolError) {
         socket.close(1008, "Malformed session broker command result.");
         return;
@@ -283,28 +419,6 @@ export class SessionBrokerConnection<
         ok: false,
         error: error instanceof Error ? error.message : "Unknown broker connection error.",
       });
-    }
-  }
-
-  private async flushQueuedMessages(socket = this.socket) {
-    if (!this.bridge || !socket || this.queuedMessages.length === 0) {
-      return;
-    }
-
-    // Snapshot only this transport's queue so commands cannot cross a disconnect. Commands received
-    // while replay runs stay in the queue for a later pass and preserve their original ordering.
-    const queued = this.queuedMessages.filter((entry) => entry.socket === socket);
-    this.queuedMessages = this.queuedMessages.filter((entry) => entry.socket !== socket);
-
-    for (const entry of queued) {
-      if (
-        this.socket !== entry.socket ||
-        entry.socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
-      ) {
-        break;
-      }
-
-      await this.handleServerMessage(entry.socket, entry.message);
     }
   }
 }

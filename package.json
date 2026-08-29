@@ -86,6 +86,7 @@
     "test": "bun run ./scripts/run-test-suite.ts",
     "test:theme-contrast": "bun test src/ui/themes.test.ts --test-name-pattern contrast",
     "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",
+    "test:session-broker-node": "bun run ./scripts/test-session-broker-node.ts",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "test:install-vm": "bun run ./test/cli/install-vm/runner.ts",
     "test:install-vm:clean": "bun run ./test/cli/install-vm/runner.ts --clean",

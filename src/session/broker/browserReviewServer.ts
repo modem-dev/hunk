@@ -141,6 +141,12 @@ export interface BrowserReviewServerOptions {
   maxStreams?: number;
   maxStreamsPerSession?: number;
   maxStreamBufferBytes?: number;
+  /** Admit one authorized action through the host daemon's shared HTTP control budgets. */
+  handleActionControl?: (
+    request: Request,
+    handler: (body: Uint8Array) => Promise<Response>,
+    payloadTooLarge: () => Response,
+  ) => Promise<Response>;
   /** Smaller event chunking for tests; the protocol's bound still caps it. */
   eventChunkBytes?: number;
 }
@@ -162,6 +168,7 @@ interface ReviewAuthorization {
 }
 
 const TEXT_ENCODER = new TextEncoder();
+const FATAL_TEXT_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 /** Digest one presented capability the same way the session digested it when minting. */
 function capabilityDigest(token: string) {
@@ -239,8 +246,17 @@ export class BrowserReviewServer {
         return this.requireMethod(request, "GET") ?? this.handleEvents(request, authorization);
       case "resource":
         return this.requireMethod(request, "GET") ?? this.handleResource(request, route);
-      case "actions":
-        return this.requireMethod(request, "POST") ?? this.handleAction(request, route.sessionId);
+      case "actions": {
+        const methodError = this.requireMethod(request, "POST");
+        if (methodError) return methodError;
+        return this.options.handleActionControl
+          ? this.options.handleActionControl(
+              request,
+              (body) => this.handleAction(request, route.sessionId, body),
+              () => this.failure("payload-too-large"),
+            )
+          : this.handleAction(request, route.sessionId);
+      }
     }
   }
 
@@ -397,17 +413,25 @@ export class BrowserReviewServer {
    * to the daemon's existing forwarding path, which plans it at the producer through the
    * same intent the keyboard uses.
    */
-  private async handleAction(request: Request, sessionId: string): Promise<Response> {
+  private async handleAction(
+    request: Request,
+    sessionId: string,
+    bodyBytes?: Uint8Array,
+  ): Promise<Response> {
     if (!hasJsonContentType(request)) {
       return this.failure("unsupported-media-type");
     }
 
     let value: unknown;
     try {
-      const text = await readRequestTextWithLimit(
-        request,
-        Math.min(MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HTTP_BODY_BYTES),
-      );
+      const maxBytes = Math.min(MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HTTP_BODY_BYTES);
+      let text: string;
+      if (bodyBytes === undefined) {
+        text = await readRequestTextWithLimit(request, maxBytes);
+      } else {
+        if (bodyBytes.byteLength > maxBytes) throw new PayloadTooLargeError(maxBytes);
+        text = FATAL_TEXT_DECODER.decode(bodyBytes);
+      }
       value = JSON.parse(text);
     } catch (error) {
       return this.failure(

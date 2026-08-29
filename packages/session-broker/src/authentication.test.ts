@@ -4,6 +4,7 @@ import {
   buildCallerRequestTranscript,
   type CallerGrant,
   type ProducerGrant,
+  type SessionBrokerLimits,
 } from "@hunk/session-broker-core";
 import {
   SessionBrokerAuthenticationError,
@@ -57,9 +58,14 @@ async function setup(
   options: {
     revoked?: () => boolean;
     maxChallenges?: number;
+    maxChallengeBytes?: number;
     maxChallengeTranscriptBytes?: number;
     maxCallerSessions?: number;
+    limits?: Partial<SessionBrokerLimits>;
+    unsafeLimits?: Partial<SessionBrokerLimits>;
+    challengeTtlMs?: number;
     callerSessionTtlMs?: number;
+    callerGrantExpiresAt?: number;
     crypto?: SessionBrokerCrypto;
   } = {},
 ) {
@@ -73,15 +79,26 @@ async function setup(
     generation: "generation-1",
     daemonIdentity: { keyId: "daemon-key-1", privateKey: daemon.privateKey },
     credentials: [
-      { grant: callerGrant(), publicKey: caller.publicKey },
+      {
+        grant: callerGrant(
+          options.callerGrantExpiresAt === undefined
+            ? {}
+            : { expiresAt: options.callerGrantExpiresAt },
+        ),
+        publicKey: caller.publicKey,
+      },
       { grant: producerGrant(), publicKey: producer.publicKey },
     ],
     now: () => now,
     isRevoked: options.revoked,
     maxChallenges: options.maxChallenges,
+    maxChallengeBytes: options.maxChallengeBytes,
     maxChallengeTranscriptBytes: options.maxChallengeTranscriptBytes,
     maxCallerSessions: options.maxCallerSessions,
+    challengeTtlMs: options.challengeTtlMs,
     callerSessionTtlMs: options.callerSessionTtlMs,
+    limits: options.limits,
+    unsafeLimits: options.unsafeLimits,
     crypto: options.crypto,
   });
   return {
@@ -109,8 +126,11 @@ function challengeRequest(
   };
 }
 
-async function openCallerSession(setupResult: Awaited<ReturnType<typeof setup>>) {
-  const request = challengeRequest();
+async function signedHelloProof(
+  setupResult: Awaited<ReturnType<typeof setup>>,
+  role: "caller" | "producer" = "caller",
+) {
+  const request = challengeRequest(role);
   const challenge = await setupResult.authenticator.issueChallenge(request, request.endpoint);
   const transcript = challengeTranscriptForClient(request, challenge, "generation-1");
   expect(
@@ -128,14 +148,61 @@ async function openCallerSession(setupResult: Awaited<ReturnType<typeof setup>>)
       transcript,
     ),
   ).toBe(true);
-  const signature = encodeBase64Url(
-    await webSessionBrokerCrypto.sign(setupResult.caller.privateKey, transcript),
-  );
+  const signer =
+    role === "caller" ? setupResult.caller.privateKey : setupResult.producer.privateKey;
+  const signature = encodeBase64Url(await webSessionBrokerCrypto.sign(signer, transcript));
+  return { challengeId: challenge.challengeId, signature, transcript };
+}
+
+async function openCallerSession(setupResult: Awaited<ReturnType<typeof setup>>) {
+  const proof = await signedHelloProof(setupResult);
   const session = await setupResult.authenticator.completeCallerHello({
-    challengeId: challenge.challengeId,
-    signature,
+    challengeId: proof.challengeId,
+    signature: proof.signature,
   });
-  return { session, transcript };
+  return { session, transcript: proof.transcript };
+}
+
+function controlledCrypto() {
+  type Gate = { entered: Promise<void>; release: () => void };
+  let nextVerify: { entered: () => void; released: Promise<void> } | null = null;
+  let nextSign: { entered: () => void; released: Promise<void> } | null = null;
+  const arm = (kind: "verify" | "sign"): Gate => {
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => (enter = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const gate = { entered: enter, released };
+    if (kind === "verify") nextVerify = gate;
+    else nextSign = gate;
+    return { entered, release };
+  };
+  return {
+    crypto: {
+      randomBytes: webSessionBrokerCrypto.randomBytes,
+      sha256: webSessionBrokerCrypto.sha256,
+      async sign(privateKey: CryptoKey, value: Uint8Array) {
+        const gate = nextSign;
+        nextSign = null;
+        if (gate) {
+          gate.entered();
+          await gate.released;
+        }
+        return webSessionBrokerCrypto.sign(privateKey, value);
+      },
+      async verify(publicKey: CryptoKey, signature: Uint8Array, value: Uint8Array) {
+        const gate = nextVerify;
+        nextVerify = null;
+        if (gate) {
+          gate.entered();
+          await gate.released;
+        }
+        return webSessionBrokerCrypto.verify(publicKey, signature, value);
+      },
+    } satisfies SessionBrokerCrypto,
+    deferNextVerify: () => arm("verify"),
+    deferNextSign: () => arm("sign"),
+  };
 }
 
 async function signedRequest(
@@ -277,6 +344,121 @@ describe("session broker signed authentication", () => {
     await expect(sessionValues.authenticator.authenticate(signed)).rejects.toMatchObject({
       code: "caller-session-expired",
     });
+  });
+
+  test("keeps authentication TTLs lower-only unless unsafe limits raise their contract", async () => {
+    const lowered = await setup({
+      limits: { challengeTtlMs: 700, callerSessionTtlMs: 900 },
+      challengeTtlMs: 600,
+      callerSessionTtlMs: 800,
+    });
+    const loweredChallenge = await lowered.authenticator.issueChallenge(
+      challengeRequest(),
+      challengeRequest().endpoint,
+    );
+    expect(loweredChallenge.expiresAt).toBe(2_600);
+    expect((await openCallerSession(lowered)).session.expiresAt).toBe(2_800);
+
+    await expect(setup({ challengeTtlMs: 15_001 })).rejects.toThrow("unsafeLimits");
+    await expect(setup({ callerSessionTtlMs: 300_001 })).rejects.toThrow("unsafeLimits");
+    await expect(setup({ limits: { challengeTtlMs: 500 }, challengeTtlMs: 501 })).rejects.toThrow(
+      "unsafeLimits",
+    );
+
+    const raised = await setup({
+      unsafeLimits: { challengeTtlMs: 20_000, callerSessionTtlMs: 400_000 },
+      callerGrantExpiresAt: 1_000_000,
+    });
+    const raisedChallenge = await raised.authenticator.issueChallenge(
+      challengeRequest(),
+      challengeRequest().endpoint,
+    );
+    expect(raisedChallenge.expiresAt).toBe(22_000);
+    expect((await openCallerSession(raised)).session.expiresAt).toBe(402_000);
+  });
+
+  test("clear invalidates deferred challenge signing but keeps its capacity until settlement", async () => {
+    const controlled = controlledCrypto();
+    const values = await setup({ crypto: controlled.crypto, maxChallenges: 1 });
+    const gate = controlled.deferNextSign();
+    const issued = values.authenticator.issueChallenge(
+      challengeRequest(),
+      challengeRequest().endpoint,
+    );
+    await gate.entered;
+    values.authenticator.clear();
+    await expect(
+      values.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint),
+    ).rejects.toMatchObject({ code: "authentication-capacity" });
+    gate.release();
+    await expect(issued).rejects.toMatchObject({ code: "invalid-credential" });
+    await expect(
+      values.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint),
+    ).resolves.toMatchObject({ daemonKeyId: "daemon-key-1" });
+  });
+
+  test("clear invalidates deferred caller proof and reuses capacity only after settlement", async () => {
+    const controlled = controlledCrypto();
+    const values = await setup({
+      crypto: controlled.crypto,
+      maxChallenges: 1,
+      maxCallerSessions: 1,
+    });
+    const proof = await signedHelloProof(values);
+    const gate = controlled.deferNextSign();
+    const completion = values.authenticator.completeCallerHello({
+      challengeId: proof.challengeId,
+      signature: proof.signature,
+    });
+    await gate.entered;
+    values.authenticator.clear();
+    await expect(openCallerSession(values)).rejects.toMatchObject({
+      code: "authentication-capacity",
+    });
+    gate.release();
+    await expect(completion).rejects.toMatchObject({ code: "invalid-credential" });
+    const replacement = await openCallerSession(values);
+    expect(replacement.session.principal.principalId).toBe("caller-1");
+  });
+
+  test("clear invalidates deferred producer acknowledgement until retained capacity settles", async () => {
+    const controlled = controlledCrypto();
+    const values = await setup({ crypto: controlled.crypto, maxChallenges: 1 });
+    const proof = await signedHelloProof(values, "producer");
+    const gate = controlled.deferNextSign();
+    const completion = values.authenticator.completeProducerHello(
+      { challengeId: proof.challengeId, signature: proof.signature },
+      "connection-1",
+    );
+    await gate.entered;
+    values.authenticator.clear();
+    await expect(signedHelloProof(values, "producer")).rejects.toMatchObject({
+      code: "authentication-capacity",
+    });
+    gate.release();
+    await expect(completion).rejects.toMatchObject({ code: "invalid-credential" });
+    const next = await signedHelloProof(values, "producer");
+    await expect(
+      values.authenticator.completeProducerHello(
+        { challengeId: next.challengeId, signature: next.signature },
+        "connection-2",
+      ),
+    ).resolves.toMatchObject({ connectionId: "connection-2" });
+  });
+
+  test("clear invalidates response signing across deferred crypto", async () => {
+    const controlled = controlledCrypto();
+    const values = await setup({ crypto: controlled.crypto });
+    const caller = await openCallerSession(values);
+    const authenticated = await values.authenticator.authenticate(
+      await signedRequest(values, caller, "1"),
+    );
+    const gate = controlled.deferNextSign();
+    const signing = authenticated.signResponse({ httpStatus: 200, body: { ok: true } });
+    await gate.entered;
+    values.authenticator.clear();
+    gate.release();
+    await expect(signing).rejects.toMatchObject({ code: "invalid-credential" });
   });
 
   test("binds method, canonical target, body digest, request ID, and replay sequence", async () => {
@@ -551,6 +733,40 @@ describe("session broker signed authentication", () => {
     }
   });
 
+  test("retains incomplete-handshake capacity through asynchronous proof verification", async () => {
+    let blockVerify = false;
+    let releaseVerify!: () => void;
+    const verifyGate = new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+    });
+    const cryptoWithGate: SessionBrokerCrypto = {
+      ...webSessionBrokerCrypto,
+      async verify(publicKey, signature, value) {
+        if (blockVerify) await verifyGate;
+        return webSessionBrokerCrypto.verify(publicKey, signature, value);
+      },
+    };
+    const values = await setup({ maxChallenges: 1, crypto: cryptoWithGate });
+    const request = challengeRequest();
+    const challenge = await values.authenticator.issueChallenge(request, request.endpoint);
+    const transcript = challengeTranscriptForClient(request, challenge, "generation-1");
+    const signature = encodeBase64Url(
+      await webSessionBrokerCrypto.sign(values.caller.privateKey, transcript),
+    );
+
+    blockVerify = true;
+    const completing = values.authenticator.completeCallerHello({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+    await Bun.sleep(0);
+    await expect(
+      values.authenticator.issueChallenge(request, request.endpoint),
+    ).rejects.toMatchObject({ code: "authentication-capacity" });
+    releaseVerify();
+    await expect(completing).resolves.toMatchObject({ brokerRevision: 1 });
+  });
+
   test("bounds pending challenge counts and retained transcript bytes", async () => {
     const values = await setup({ maxChallenges: 1 });
     await values.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint);
@@ -565,9 +781,32 @@ describe("session broker signed authentication", () => {
       byteBound.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint),
     ).rejects.toMatchObject({ code: "authentication-capacity" });
 
+    const completeRecordBound = await setup({ maxChallengeBytes: 512 });
+    await expect(
+      completeRecordBound.authenticator.issueChallenge(
+        challengeRequest(),
+        challengeRequest().endpoint,
+      ),
+    ).rejects.toMatchObject({ code: "authentication-capacity" });
+
     const noCallerCapacity = await setup({ maxCallerSessions: 0 });
     await expect(openCallerSession(noCallerCapacity)).rejects.toMatchObject({
       code: "authentication-capacity",
     });
+
+    const noCallerByteCapacity = await setup({
+      limits: { maxCallerSessionBytes: 1, maxCallerSessionsBytes: 1 },
+    });
+    await expect(openCallerSession(noCallerByteCapacity)).rejects.toMatchObject({
+      code: "authentication-capacity",
+    });
+
+    const reusableCallerCapacity = await setup({ maxCallerSessions: 1 });
+    const first = await openCallerSession(reusableCallerCapacity);
+    reusableCallerCapacity.authenticator.revokeCallerSession(first.session.callerSessionId);
+    await expect(openCallerSession(reusableCallerCapacity)).resolves.toMatchObject({
+      session: { initialSequence: "1" },
+    });
+    reusableCallerCapacity.authenticator.clear();
   });
 });

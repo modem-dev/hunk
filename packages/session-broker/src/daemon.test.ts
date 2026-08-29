@@ -293,6 +293,39 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("rejects transport bodies on bodyless capabilities before authentication", async () => {
+    let authenticationCalls = 0;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+      callerAuthenticator: {
+        authenticate: async () => {
+          authenticationCalls += 1;
+          return authenticatedHttpApi.callerAuthenticator.authenticate();
+        },
+      },
+    });
+
+    for (const [method, headers] of [
+      ["GET", new Headers({ "content-length": "1" })],
+      ["GET", new Headers({ "content-length": "01" })],
+      ["GET", new Headers({ "transfer-encoding": "chunked" })],
+      ["HEAD", new Headers({ "content-length": "1" })],
+    ] as const) {
+      const response = await daemon.handleRequest(
+        new Request("http://broker.test/broker/capabilities", { method, headers }),
+      );
+      expect(response?.status).toBe(400);
+      await expect(response?.json()).resolves.toEqual({
+        error: "Broker capabilities requests must not include a transport body.",
+      });
+    }
+    expect(authenticationCalls).toBe(0);
+    daemon.shutdown();
+  });
+
   test("does not expose the raw broker HTTP API by default", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
@@ -405,8 +438,9 @@ describe("session broker daemon", () => {
     );
 
     expect(response?.status).toBe(413);
-    await expect(response?.json()).resolves.toMatchObject({
-      error: expect.stringContaining("session broker limit"),
+    await expect(response?.json()).resolves.toEqual({
+      error: "capacity-exceeded",
+      resource: "maxHttpBodyBytes",
     });
     daemon.shutdown();
   });
@@ -957,6 +991,79 @@ describe("session broker daemon", () => {
     });
     expect(authorized).toBe(false);
     expect(responseText).not.toContain("private");
+    daemon.shutdown();
+  });
+
+  test("rejects daemon state limits that were not configured on its broker controller", () => {
+    expect(() =>
+      createSessionBrokerDaemon({
+        broker: createBroker(),
+        limits: { maxSessions: 0 },
+      }),
+    ).toThrow("state limits must be configured on the broker controller");
+  });
+
+  test("returns busy before admitting more than the configured concurrent controls", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+      limits: { maxConcurrentHttpControls: 1 },
+      callerAuthenticator: {
+        authenticate: async () => {
+          await gate;
+          return authenticatedHttpApi.callerAuthenticator.authenticate();
+        },
+      },
+    });
+    const request = () =>
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      });
+    const first = daemon.handleRequest(request());
+    await Bun.sleep(0);
+    const overflow = await daemon.handleRequest(request());
+    expect(overflow?.status).toBe(503);
+    await expect(overflow?.json()).resolves.toEqual({
+      error: "busy",
+      resource: "maxConcurrentHttpControls",
+    });
+    release();
+    expect((await first)?.status).toBe(200);
+    daemon.shutdown();
+  });
+
+  test("supports a lower route-specific body ceiling and releases its reservation", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      limits: { maxHttpBodyBytes: 8, maxInFlightHttpBodyBytes: 8 },
+    });
+    let handled = 0;
+    const invoke = (body: string) =>
+      daemon.handleBoundedControl(
+        new Request("http://broker.test/custom", { method: "POST", body }),
+        (bytes) => {
+          handled += 1;
+          return new Response(new TextDecoder().decode(bytes));
+        },
+        {
+          maxBodyBytes: 4,
+          payloadTooLarge: () => new Response(null, { status: 413 }),
+        },
+      );
+
+    const exact = await invoke("1234");
+    expect(exact.status).toBe(200);
+    expect(await exact.text()).toBe("1234");
+    expect((await invoke("12345")).status).toBe(413);
+    expect((await invoke("1234")).status).toBe(200);
+    expect(handled).toBe(2);
     daemon.shutdown();
   });
 

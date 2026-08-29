@@ -381,6 +381,55 @@ describe("browser review surface: actions", () => {
     );
   }
 
+  test("authorizes before admitting an action to the shared body control", async () => {
+    let admissions = 0;
+    const { origin } = start(undefined, {
+      handleActionControl: async (_request, handler) => {
+        admissions += 1;
+        return handler(new Uint8Array());
+      },
+    });
+
+    const response = await postAction(
+      origin,
+      {
+        protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+        generation: "generation:unused",
+        actor: ACTOR,
+        action: { type: "filter/set", filter: "alpha" },
+      },
+      { token: null } as RequestInit,
+    );
+
+    expect(response.status).toBe(401);
+    expect(admissions).toBe(0);
+  });
+
+  test("parses authorized action bytes once through the injected shared control", async () => {
+    let admissions = 0;
+    let bodyWasConsumedBeforeAdmission = false;
+    const { harness, origin } = start(undefined, {
+      handleActionControl: async (request, handler) => {
+        admissions += 1;
+        bodyWasConsumedBeforeAdmission = request.bodyUsed;
+        return handler(new Uint8Array(await request.arrayBuffer()));
+      },
+    });
+    const generation = harness.producer.getPublication().generation;
+
+    const response = await postAction(origin, {
+      protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+      generation,
+      actor: ACTOR,
+      action: { type: "filter/set", filter: "bounded" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(admissions).toBe(1);
+    expect(bodyWasConsumedBeforeAdmission).toBe(false);
+    expect(harness.producer.getReviewState()?.filter).toBe("bounded");
+  });
+
   test("applies one action at the producer and reports where the review landed", async () => {
     const { harness, origin } = start();
     const generation = harness.producer.getPublication().generation;

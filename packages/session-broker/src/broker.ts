@@ -4,6 +4,8 @@ import {
   type MarkSessionSeenResult,
   type RegisterSessionResult,
   type SessionBrokerEntry,
+  type SessionBrokerLimitOptions,
+  type SessionBrokerLimits,
   type SessionRegistration,
   type SessionServerMessage,
   type SessionSnapshot,
@@ -38,6 +40,8 @@ export interface SessionBrokerOptions<
   CommandResult = unknown,
 > {
   protocolParsers: SessionBrokerProtocolParsers<Info, State, ServerMessage, CommandResult>;
+  limits?: SessionBrokerLimitOptions["limits"];
+  unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
   describeSession?: (
     registration: SessionRegistration<Info>,
     snapshot: SessionSnapshot<State>,
@@ -57,6 +61,7 @@ export interface SessionBrokerController<
     ServerMessage,
     CommandResult
   >;
+  readonly limits?: Readonly<SessionBrokerLimits>;
   listSessions(): SessionView[];
   getSession(selector: SessionTargetSelector): SessionView;
   getSessionCount(): number;
@@ -142,30 +147,40 @@ export class SessionBroker<
       options.describeSession ?? ((registration, _snapshot) => defaultSessionTitle(registration));
     this.protocolParsers = options.protocolParsers;
 
-    this.state = new SessionBrokerState({
-      parseRegistration: (value) => {
-        try {
-          return this.protocolParsers.parseRegistration(value);
-        } catch {
-          return null;
-        }
+    this.state = new SessionBrokerState(
+      {
+        parseRegistration: (value) => {
+          try {
+            return this.protocolParsers.parseRegistration(value);
+          } catch {
+            return null;
+          }
+        },
+        parseSnapshot: (value) => {
+          try {
+            return this.protocolParsers.parseSnapshot(value);
+          } catch {
+            return null;
+          }
+        },
+        parseCommandInput: (command, version, value) =>
+          this.protocolParsers.parseCommandInput(command, version, value),
+        parseCommandResult: (command, version, value) =>
+          this.protocolParsers.parseCommandResult(command, version, value),
+        buildListedSession: (entry) => this.buildRecord(entry),
+        buildSelectedContext: (session) => session,
+        buildSessionReview: (entry) => this.buildRecord(entry),
+        listComments: () => [],
       },
-      parseSnapshot: (value) => {
-        try {
-          return this.protocolParsers.parseSnapshot(value);
-        } catch {
-          return null;
-        }
+      {
+        ...(options.limits ? { limits: options.limits } : {}),
+        ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
       },
-      parseCommandInput: (command, version, value) =>
-        this.protocolParsers.parseCommandInput(command, version, value),
-      parseCommandResult: (command, version, value) =>
-        this.protocolParsers.parseCommandResult(command, version, value),
-      buildListedSession: (entry) => this.buildRecord(entry),
-      buildSelectedContext: (session) => session,
-      buildSessionReview: (entry) => this.buildRecord(entry),
-      listComments: () => [],
-    });
+    );
+  }
+
+  get limits() {
+    return this.state.limits;
   }
 
   listSessions() {

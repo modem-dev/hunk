@@ -343,6 +343,187 @@ describe("session broker connection", () => {
     connection.stop();
   });
 
+  test("enforces text framing and the exact websocket message ceiling before app parsing", async () => {
+    const maxBytes = 512;
+    let inputCalls = 0;
+    let bridgeCalls = 0;
+    const boundedParsers = createSessionBrokerProtocolParsers<
+      TestSessionInfo,
+      TestSessionState,
+      TestServerMessage,
+      { ok: true }
+    >({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => value as SessionRegistration<TestSessionInfo>,
+      parseSnapshot: (value) => value as SessionSnapshot<TestSessionState>,
+      commands: [
+        {
+          command: "annotate",
+          version: 1,
+          parseInput: (value) => {
+            inputCalls += 1;
+            return value as { summary: string };
+          },
+          parseResult: () => ({ ok: true }),
+        },
+      ],
+    });
+    const socket = new TestSocket();
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers: boundedParsers,
+      bridge: {
+        dispatchCommand: async () => {
+          bridgeCalls += 1;
+          return { ok: true };
+        },
+      },
+      limits: { maxWsMessageBytes: maxBytes },
+      reconnectDelayMs: 10_000,
+    });
+    connection.start();
+    socket.emitOpen();
+
+    const prefix = JSON.stringify({
+      type: "command",
+      requestId: "request-exact",
+      command: "annotate",
+      input: { summary: "" },
+    });
+    const emptySummaryBytes = new TextEncoder().encode(prefix).byteLength;
+    const exact = JSON.stringify({
+      type: "command",
+      requestId: "request-exact",
+      command: "annotate",
+      input: { summary: "x".repeat(maxBytes - emptySummaryBytes) },
+    });
+    expect(new TextEncoder().encode(exact).byteLength).toBe(maxBytes);
+    socket.emitMessage(exact);
+    await Bun.sleep(0);
+    expect({ inputCalls, bridgeCalls }).toEqual({ inputCalls: 1, bridgeCalls: 1 });
+
+    connection.stop();
+
+    const emitRejected = (data: unknown) => {
+      const rejectedSocket = new TestSocket();
+      const rejectedConnection = createSessionBrokerConnection<
+        TestSessionInfo,
+        TestSessionState,
+        TestSocket,
+        TestServerMessage,
+        { ok: true }
+      >({
+        url: "ws://broker.test/session",
+        createSocket: () => rejectedSocket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers: boundedParsers,
+        bridge: {
+          dispatchCommand: async () => {
+            bridgeCalls += 1;
+            return { ok: true };
+          },
+        },
+        limits: { maxWsMessageBytes: maxBytes },
+        reconnectDelayMs: 10_000,
+      });
+      rejectedConnection.start();
+      rejectedSocket.emitOpen();
+      rejectedSocket.emitMessage(data);
+      const close = rejectedSocket.lastClose;
+      rejectedConnection.stop();
+      return close;
+    };
+
+    expect(emitRejected(`${exact} `)).toMatchObject({ code: 1009 });
+    expect(emitRejected("{".repeat(maxBytes + 1))).toMatchObject({ code: 1009 });
+    expect(
+      emitRejected(
+        JSON.stringify({
+          type: "command",
+          requestId: "request-extra",
+          command: "annotate",
+          input: { summary: "not parsed" },
+          extra: true,
+        }),
+      ),
+    ).toMatchObject({ code: 1008 });
+    expect(emitRejected(new Uint8Array([123, 125]))).toMatchObject({ code: 1003 });
+    expect({ inputCalls, bridgeCalls }).toEqual({ inputCalls: 1, bridgeCalls: 1 });
+  });
+
+  test("ignores a late socket callback after stop before parsing or reserving", async () => {
+    let inputCalls = 0;
+    let bridgeCalls = 0;
+    const lateParsers = createSessionBrokerProtocolParsers<
+      TestSessionInfo,
+      TestSessionState,
+      TestServerMessage,
+      { ok: true }
+    >({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => value as SessionRegistration<TestSessionInfo>,
+      parseSnapshot: (value) => value as SessionSnapshot<TestSessionState>,
+      commands: [
+        {
+          command: "annotate",
+          version: 1,
+          parseInput: (value) => {
+            inputCalls += 1;
+            return value as { summary: string };
+          },
+          parseResult: () => ({ ok: true }),
+        },
+      ],
+    });
+    const socket = new TestSocket();
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers: lateParsers,
+      bridge: {
+        dispatchCommand: async () => {
+          bridgeCalls += 1;
+          return { ok: true };
+        },
+      },
+      limits: { maxPreBridgeCommands: 1 },
+    });
+    connection.start();
+    socket.emitOpen();
+    connection.stop();
+    socket.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-late",
+        command: "annotate",
+        input: { summary: "late" },
+      }),
+    );
+    await Bun.sleep(0);
+
+    expect({ inputCalls, bridgeCalls }).toEqual({ inputCalls: 0, bridgeCalls: 0 });
+  });
+
   test("does not migrate a late command result onto a replacement socket", async () => {
     const sockets: TestSocket[] = [];
     let resolveCommand!: (result: { ok: true }) => void;
@@ -489,6 +670,186 @@ describe("session broker connection", () => {
     await Bun.sleep(0);
 
     expect(dispatched).toEqual(["request-1"]);
+    connection.stop();
+  });
+
+  test("keeps 32 missing-bridge commands FIFO and explicitly rejects the 33rd", async () => {
+    const socket = new TestSocket();
+    const dispatched: string[] = [];
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+    });
+    connection.start();
+    socket.emitOpen();
+    for (let index = 1; index <= 33; index += 1) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: `request-${index}`,
+          command: "annotate",
+          input: { summary: `note-${index}` },
+        }),
+      );
+    }
+    const overflow = JSON.parse(socket.sent.at(-1)!) as { requestId: string; error: string };
+    expect(overflow).toMatchObject({ requestId: "request-33", error: "queue-full" });
+
+    connection.setBridge({
+      dispatchCommand: async (message) => {
+        dispatched.push(message.requestId);
+        return { ok: true };
+      },
+    });
+    await Bun.sleep(10);
+    expect(dispatched).toEqual(Array.from({ length: 32 }, (_, index) => `request-${index + 1}`));
+    connection.stop();
+  });
+
+  test("keeps a hung bridge plus queued commands within the same 32-command budget", async () => {
+    const socket = new TestSocket();
+    const never = new Promise<{ ok: true }>(() => {});
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: { dispatchCommand: () => never },
+    });
+    connection.start();
+    socket.emitOpen();
+    for (let index = 1; index <= 33; index += 1) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: `request-${index}`,
+          command: "annotate",
+          input: { summary: `note-${index}` },
+        }),
+      );
+    }
+    await Bun.sleep(0);
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      requestId: "request-33",
+      error: "queue-full",
+    });
+    connection.stop();
+  });
+
+  test("retains a hung command reservation across disconnect and reconnect", async () => {
+    const sockets: TestSocket[] = [];
+    const never = new Promise<{ ok: true }>(() => {});
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: { dispatchCommand: () => never },
+      reconnectDelayMs: 1,
+      limits: { maxPreBridgeCommands: 1 },
+    });
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    sockets[0]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-hung",
+        command: "annotate",
+        input: { summary: "hung" },
+      }),
+    );
+    await Bun.sleep(0);
+    sockets[0]!.emitClose();
+    await Bun.sleep(5);
+    sockets[1]!.emitOpen();
+    sockets[1]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-new",
+        command: "annotate",
+        input: { summary: "new" },
+      }),
+    );
+
+    expect(JSON.parse(sockets[1]!.sent.at(-1)!)).toMatchObject({
+      requestId: "request-new",
+      error: "queue-full",
+    });
+    connection.stop();
+  });
+
+  test("serializes bridge execution while preserving arrival order", async () => {
+    const socket = new TestSocket();
+    const started: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: {
+        dispatchCommand: async (message) => {
+          started.push(message.requestId);
+          if (message.requestId === "request-1") await firstGate;
+          return { ok: true };
+        },
+      },
+    });
+    connection.start();
+    socket.emitOpen();
+    for (const requestId of ["request-1", "request-2"]) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId,
+          command: "annotate",
+          input: { summary: requestId },
+        }),
+      );
+    }
+    await Bun.sleep(0);
+    expect(started).toEqual(["request-1"]);
+    releaseFirst();
+    await Bun.sleep(0);
+    expect(started).toEqual(["request-1", "request-2"]);
     connection.stop();
   });
 

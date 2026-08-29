@@ -17,7 +17,12 @@ import {
   parseBrokerIdentifier,
   parseBrokerString,
   parseExactBrokerRecord,
+  ReservationGroup,
+  ResourceBudget,
+  resolveSessionBrokerLimits,
+  utf8ByteLength,
   type BrokerAppContract,
+  type BudgetReservation,
   type BrokerChallengeTranscriptInput,
   type BrokerGrant,
   type BrokerHelloProposal,
@@ -28,6 +33,7 @@ import {
   type ProducerGrant,
   type ProducerOperation,
   type ProducerPrincipal,
+  type SessionBrokerLimitOptions,
 } from "@hunk/session-broker-core";
 import {
   decodeBase64Url,
@@ -36,15 +42,27 @@ import {
   type SessionBrokerCrypto,
 } from "./crypto";
 
-const DEFAULT_CHALLENGE_TTL_MS = 15_000;
-const DEFAULT_CALLER_SESSION_TTL_MS = 5 * 60_000;
-const DEFAULT_MAX_CHALLENGES = 128;
-const DEFAULT_MAX_CHALLENGE_BYTES = 4 * 1024 * 1024;
-const DEFAULT_MAX_CHALLENGE_TRANSCRIPT_BYTES = 64 * 1024;
-const DEFAULT_MAX_CALLER_SESSIONS = 256;
 const UNIQUE_ID_RETRIES = 16;
 const RANDOM_ID_BYTES = 24;
 const MAX_ENDPOINT_LENGTH = 2_048;
+const CHALLENGE_RECORD_OVERHEAD_BYTES = 320;
+const CALLER_SESSION_RECORD_OVERHEAD_BYTES = 384;
+const CRYPTO_KEY_REFERENCE_BYTES = 64;
+
+/** Measure retained JSON fields plus opaque runtime references and map bookkeeping. */
+function retainedRecordBytes(values: readonly unknown[], overhead: number): number {
+  let total = overhead + CRYPTO_KEY_REFERENCE_BYTES;
+  for (const value of values) {
+    if (value instanceof Uint8Array) {
+      total += value.byteLength;
+      continue;
+    }
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) authenticationError("invalid-credential");
+    total += utf8ByteLength(serialized);
+  }
+  return total;
+}
 const PRODUCER_OPERATIONS = new Set<ProducerOperation>(["register", "reconnect"]);
 const CALLER_OPERATIONS = new Set<CallerOperation>([
   "list",
@@ -163,6 +181,7 @@ export interface AuthenticatedCallerRequest {
 
 export interface CallerRequestAuthenticator {
   authenticate(input: CallerRequestAuthenticationInput): Promise<AuthenticatedCallerRequest>;
+  clear?(): void;
 }
 
 interface PendingChallenge {
@@ -171,7 +190,7 @@ interface PendingChallenge {
   readonly grant: BrokerGrant;
   readonly publicKey: CryptoKey;
   readonly expiresAt: number;
-  readonly retainedBytes: number;
+  readonly reservation: BudgetReservation;
 }
 
 interface CallerSessionRecord {
@@ -181,6 +200,7 @@ interface CallerSessionRecord {
   readonly helloTranscriptHash: string;
   readonly expiresAt: number;
   readonly replay: CallerSequenceReplayWindow;
+  readonly reservation: BudgetReservation;
 }
 
 export interface SessionBrokerAuthenticatorOptions {
@@ -198,6 +218,8 @@ export interface SessionBrokerAuthenticatorOptions {
   readonly maxChallengeBytes?: number;
   readonly maxChallengeTranscriptBytes?: number;
   readonly maxCallerSessions?: number;
+  readonly limits?: SessionBrokerLimitOptions["limits"];
+  readonly unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
 }
 
 interface AuthenticatorSnapshot {
@@ -213,6 +235,8 @@ interface AuthenticatorSnapshot {
   readonly maxChallengeBytes: number;
   readonly maxChallengeTranscriptBytes: number;
   readonly maxCallerSessions: number;
+  readonly maxCallerSessionBytes: number;
+  readonly maxCallerSessionsBytes: number;
 }
 
 function authenticationError(code: SessionBrokerAuthenticationFailureCode): never {
@@ -246,11 +270,13 @@ function configuredNumber(
   fallback: number,
   name: string,
   allowZero: boolean,
+  maximum = fallback,
 ): number {
   const selected = value ?? fallback;
   if (!Number.isSafeInteger(selected) || selected < (allowZero ? 0 : 1)) {
     invalidStartup(`${name} must be ${allowZero ? "a non-negative" : "a positive"} safe integer.`);
   }
+  if (selected > maximum) invalidStartup(`${name} may only be raised through unsafeLimits.`);
   return selected;
 }
 
@@ -379,6 +405,15 @@ function copyOptions(options: SessionBrokerAuthenticatorOptions): AuthenticatorS
   if (options.isRevoked !== undefined && typeof options.isRevoked !== "function") {
     invalidStartup("isRevoked must be a function.");
   }
+  const limits = resolveSessionBrokerLimits({
+    ...(options.limits ? { limits: options.limits } : {}),
+    ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
+  });
+  const retainedCallerCapacity =
+    limits.maxCallerSessionBytes === 0
+      ? 0
+      : Math.floor(limits.maxCallerSessionsBytes / limits.maxCallerSessionBytes);
+  const maxCallerSessions = Math.min(limits.maxCallerSessions, retainedCallerCapacity);
   return Object.freeze({
     appId: options.appId,
     appRevision: options.appRevision,
@@ -391,40 +426,48 @@ function copyOptions(options: SessionBrokerAuthenticatorOptions): AuthenticatorS
     ...(options.isRevoked ? { isRevoked: options.isRevoked } : {}),
     challengeTtlMs: configuredNumber(
       options.challengeTtlMs,
-      DEFAULT_CHALLENGE_TTL_MS,
+      limits.challengeTtlMs,
       "challengeTtlMs",
       false,
+      limits.challengeTtlMs,
     ),
     callerSessionTtlMs: configuredNumber(
       options.callerSessionTtlMs,
-      DEFAULT_CALLER_SESSION_TTL_MS,
+      limits.callerSessionTtlMs,
       "callerSessionTtlMs",
       false,
+      limits.callerSessionTtlMs,
     ),
     maxChallenges: configuredNumber(
       options.maxChallenges,
-      DEFAULT_MAX_CHALLENGES,
+      limits.maxIncompleteHandshakes,
       "maxChallenges",
       true,
+      limits.maxIncompleteHandshakes,
     ),
     maxChallengeBytes: configuredNumber(
       options.maxChallengeBytes,
-      DEFAULT_MAX_CHALLENGE_BYTES,
+      limits.maxIncompleteHandshakeBytes,
       "maxChallengeBytes",
       true,
+      limits.maxIncompleteHandshakeBytes,
     ),
     maxChallengeTranscriptBytes: configuredNumber(
       options.maxChallengeTranscriptBytes,
-      DEFAULT_MAX_CHALLENGE_TRANSCRIPT_BYTES,
+      limits.maxHandshakeProposalBytes,
       "maxChallengeTranscriptBytes",
       true,
+      limits.maxHandshakeProposalBytes,
     ),
     maxCallerSessions: configuredNumber(
       options.maxCallerSessions,
-      DEFAULT_MAX_CALLER_SESSIONS,
+      maxCallerSessions,
       "maxCallerSessions",
       true,
+      maxCallerSessions,
     ),
+    maxCallerSessionBytes: limits.maxCallerSessionBytes,
+    maxCallerSessionsBytes: limits.maxCallerSessionsBytes,
   });
 }
 
@@ -505,14 +548,31 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
   private readonly credentials: Map<string, SessionBrokerCredential>;
   private readonly challenges = new Map<string, PendingChallenge>();
   private readonly callerSessions = new Map<string, CallerSessionRecord>();
+  private readonly reservedChallengeIds = new Set<string>();
   private readonly reservedCallerSessionIds = new Set<string>();
-  private challengeBytes = 0;
-  private pendingCallerSessionAdmissions = 0;
+  private readonly challengeCountBudget: ResourceBudget;
+  private readonly challengeBudget: ResourceBudget;
+  private readonly callerSessionCountBudget: ResourceBudget;
+  private readonly callerSessionByteBudget: ResourceBudget;
+  private clearEpoch = 0;
 
   constructor(options: SessionBrokerAuthenticatorOptions) {
     this.config = copyOptions(options);
     this.crypto = copyCrypto(options.crypto);
     this.credentials = copyCredentials(options.credentials, this.config.appId);
+    this.challengeCountBudget = new ResourceBudget(
+      this.config.maxChallenges,
+      "maxIncompleteHandshakes",
+    );
+    this.challengeBudget = new ResourceBudget(this.config.maxChallengeBytes, "challengeBytes");
+    this.callerSessionCountBudget = new ResourceBudget(
+      this.config.maxCallerSessions,
+      "maxCallerSessions",
+    );
+    this.callerSessionByteBudget = new ResourceBudget(
+      this.config.maxCallerSessionsBytes,
+      "maxCallerSessionsBytes",
+    );
   }
 
   /** Issue one bounded, expiring challenge signed by the daemon identity. */
@@ -520,10 +580,8 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     request: unknown,
     listenerEndpoint: string,
   ): Promise<SessionBrokerHelloChallenge> {
+    const epoch = this.clearEpoch;
     this.pruneExpired();
-    if (this.challenges.size >= this.config.maxChallenges) {
-      authenticationError("authentication-capacity");
-    }
     const normalized = this.validateHello(request, listenerEndpoint);
     const credential = this.credentials.get(
       `${normalized.role}:${normalized.keyId}:${normalized.grantId}`,
@@ -533,7 +591,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     }
     this.requireActiveGrant(credential.grant);
 
-    const challengeId = this.uniqueId((id) => this.challenges.has(id));
+    const challengeId = this.uniqueId(
+      (id) => this.challenges.has(id) || this.reservedChallengeIds.has(id),
+    );
     const responderNonce = this.randomId();
     const expiresAt = this.currentTime() + this.config.challengeTtlMs;
     if (!Number.isFinite(expiresAt)) authenticationError("invalid-credential");
@@ -542,25 +602,37 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       generation: this.config.generation,
       responderNonce,
     });
-    if (
-      transcript.byteLength > this.config.maxChallengeTranscriptBytes ||
-      this.challengeBytes + transcript.byteLength > this.config.maxChallengeBytes
-    ) {
+    const retainedBytes = retainedRecordBytes(
+      [challengeId, normalized, credential.grant, transcript, expiresAt],
+      CHALLENGE_RECORD_OVERHEAD_BYTES,
+    );
+    if (retainedBytes > this.config.maxChallengeTranscriptBytes) {
       authenticationError("authentication-capacity");
     }
-    this.challengeBytes += transcript.byteLength;
-    this.challenges.set(challengeId, {
-      request: normalized,
-      transcript,
-      grant: credential.grant,
-      publicKey: credential.publicKey,
-      expiresAt,
-      retainedBytes: transcript.byteLength,
-    });
+    const reservation = new ReservationGroup();
+    try {
+      reservation.add(this.challengeCountBudget.reserve());
+      reservation.add(this.challengeBudget.reserve(retainedBytes));
+    } catch {
+      reservation.release();
+      authenticationError("authentication-capacity");
+    }
+    this.reservedChallengeIds.add(challengeId);
+    let committed = false;
     try {
       const daemonSignature = encodeBase64Url(
         await this.crypto.sign(this.config.daemonIdentity.privateKey, transcript),
       );
+      this.assertClearEpoch(epoch);
+      this.challenges.set(challengeId, {
+        request: normalized,
+        transcript,
+        grant: credential.grant,
+        publicKey: credential.publicKey,
+        expiresAt,
+        reservation,
+      });
+      committed = true;
       return Object.freeze({
         challengeId,
         responderNonce,
@@ -569,49 +641,62 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
         daemonSignature,
       });
     } catch {
-      this.deleteChallenge(challengeId);
-      authenticationError("invalid-credential");
+      return authenticationError("invalid-credential");
+    } finally {
+      this.reservedChallengeIds.delete(challengeId);
+      if (!committed) reservation.release();
     }
   }
 
   /** Consume one caller proof and issue a short-lived replay-protected caller session. */
   async completeCallerHello(proofInput: unknown): Promise<AuthenticatedCallerSession> {
+    const epoch = this.clearEpoch;
     const proof = this.parseHelloProof(proofInput);
     const pending = this.takeChallenge(proof.challengeId, "caller");
-    await this.verifyProof(pending, proof.signature);
-    const grant = pending.grant as CallerGrant;
-    this.requireActiveGrant(grant);
-    this.pruneExpired();
-    if (
-      this.callerSessions.size + this.pendingCallerSessionAdmissions >=
-      this.config.maxCallerSessions
-    ) {
-      authenticationError("authentication-capacity");
-    }
-    this.pendingCallerSessionAdmissions += 1;
-
     try {
-      return await this.createCallerSession(pending, grant);
+      await this.verifyProof(pending, proof.signature);
+      this.assertClearEpoch(epoch);
+      const grant = pending.grant as CallerGrant;
+      this.requireActiveGrant(grant);
+      this.pruneExpired();
+      return await this.createCallerSession(pending, grant, epoch);
     } finally {
-      this.pendingCallerSessionAdmissions -= 1;
+      pending.reservation.release();
     }
   }
 
   private async createCallerSession(
     pending: PendingChallenge,
     grant: CallerGrant,
+    epoch: number,
   ): Promise<AuthenticatedCallerSession> {
     const transcriptHash = encodeBase64Url(await this.crypto.sha256(pending.transcript));
+    this.assertClearEpoch(epoch);
     const callerSessionId = this.uniqueId(
       (id) => this.callerSessions.has(id) || this.reservedCallerSessionIds.has(id),
     );
     this.reservedCallerSessionIds.add(callerSessionId);
+    const reservations = new ReservationGroup();
+    let committed = false;
     try {
       const expiresAt = Math.min(
         grant.expiresAt,
         this.currentTime() + this.config.callerSessionTtlMs,
       );
       const principal = principalFromGrant(grant);
+      const retainedBytes = retainedRecordBytes(
+        [callerSessionId, principal, grant, transcriptHash, expiresAt],
+        CALLER_SESSION_RECORD_OVERHEAD_BYTES,
+      );
+      if (retainedBytes > this.config.maxCallerSessionBytes) {
+        authenticationError("authentication-capacity");
+      }
+      try {
+        reservations.add(this.callerSessionCountBudget.reserve());
+        reservations.add(this.callerSessionByteBudget.reserve(retainedBytes));
+      } catch {
+        authenticationError("authentication-capacity");
+      }
       const daemonSignature = encodeBase64Url(
         await this.crypto.sign(
           this.config.daemonIdentity.privateKey,
@@ -628,6 +713,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
           }),
         ),
       );
+      this.assertClearEpoch(epoch);
       this.callerSessions.set(callerSessionId, {
         principal,
         grant,
@@ -635,7 +721,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
         helloTranscriptHash: transcriptHash,
         expiresAt,
         replay: new CallerSequenceReplayWindow(),
+        reservation: reservations,
       });
+      committed = true;
       return Object.freeze({
         callerSessionId,
         principal,
@@ -650,6 +738,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       });
     } finally {
       this.reservedCallerSessionIds.delete(callerSessionId);
+      if (!committed) reservations.release();
     }
   }
 
@@ -658,38 +747,46 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     proofInput: unknown,
     connectionId: unknown,
   ): Promise<AuthenticatedProducerHello> {
+    const epoch = this.clearEpoch;
     const proof = this.parseHelloProof(proofInput);
     if (!isValidBrokerIdentifier(connectionId)) authenticationError("invalid-credential");
     const pending = this.takeChallenge(proof.challengeId, "producer");
-    await this.verifyProof(pending, proof.signature);
-    const grant = pending.grant as ProducerGrant;
-    this.requireActiveGrant(grant);
-    const helloTranscriptHash = encodeBase64Url(await this.crypto.sha256(pending.transcript));
-    const daemonSignature = encodeBase64Url(
-      await this.crypto.sign(
-        this.config.daemonIdentity.privateKey,
-        buildBrokerHelloAckTranscript({
-          role: "producer",
-          appId: this.config.appId,
-          generation: this.config.generation,
-          keyId: grant.keyId,
-          grantId: grant.grantId,
-          helloTranscriptHash,
-          selection: pending.request.proposal,
-          connectionId,
-        }),
-      ),
-    );
-    return Object.freeze({
-      principal: principalFromGrant(grant),
-      connectionId,
-      brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
-      appRevision: this.config.appRevision,
-      features: Object.freeze([]) as readonly [],
-      helloTranscriptHash,
-      daemonKeyId: this.config.daemonIdentity.keyId,
-      daemonSignature,
-    });
+    try {
+      await this.verifyProof(pending, proof.signature);
+      this.assertClearEpoch(epoch);
+      const grant = pending.grant as ProducerGrant;
+      this.requireActiveGrant(grant);
+      const helloTranscriptHash = encodeBase64Url(await this.crypto.sha256(pending.transcript));
+      this.assertClearEpoch(epoch);
+      const daemonSignature = encodeBase64Url(
+        await this.crypto.sign(
+          this.config.daemonIdentity.privateKey,
+          buildBrokerHelloAckTranscript({
+            role: "producer",
+            appId: this.config.appId,
+            generation: this.config.generation,
+            keyId: grant.keyId,
+            grantId: grant.grantId,
+            helloTranscriptHash,
+            selection: pending.request.proposal,
+            connectionId,
+          }),
+        ),
+      );
+      this.assertClearEpoch(epoch);
+      return Object.freeze({
+        principal: principalFromGrant(grant),
+        connectionId,
+        brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
+        appRevision: this.config.appRevision,
+        features: Object.freeze([]) as readonly [],
+        helloTranscriptHash,
+        daemonKeyId: this.config.daemonIdentity.keyId,
+        daemonSignature,
+      });
+    } finally {
+      pending.reservation.release();
+    }
   }
 
   /** Verify one signed HTTP request and atomically admit its sequence before returning authority. */
@@ -710,9 +807,14 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     }
     const session = this.callerSessions.get(callerSessionId);
     if (!session) authenticationError("caller-session-expired");
-    this.requireActiveGrant(session.grant);
+    try {
+      this.requireActiveGrant(session.grant);
+    } catch (error) {
+      this.deleteCallerSession(callerSessionId);
+      throw error;
+    }
     if (this.currentTime() >= session.expiresAt) {
-      this.callerSessions.delete(callerSessionId);
+      this.deleteCallerSession(callerSessionId);
       authenticationError("caller-session-expired");
     }
 
@@ -756,17 +858,38 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     }
 
     const principal = session.principal;
+    const epoch = this.clearEpoch;
+    const assertActive = () => {
+      this.assertClearEpoch(epoch);
+      this.assertCallerSessionActive(callerSessionId, session);
+    };
     return Object.freeze({
       principal,
       requestId,
-      assertActive: () => this.assertCallerSessionActive(callerSessionId, session),
-      signResponse: (input: CallerResponseSigningInput) => this.signResponse(requestId, input),
+      assertActive,
+      signResponse: (input: CallerResponseSigningInput) =>
+        this.signResponse(requestId, input, assertActive),
     });
   }
 
   /** Revoke one in-memory caller session without exposing whether it previously existed. */
   revokeCallerSession(callerSessionId: string): void {
-    this.callerSessions.delete(callerSessionId);
+    this.deleteCallerSession(callerSessionId);
+  }
+
+  /** Release every retained authentication record during shutdown or credential reload. */
+  clear(): void {
+    this.clearEpoch += 1;
+    for (const id of this.challenges.keys()) this.deleteChallenge(id);
+    for (const id of this.callerSessions.keys()) this.deleteCallerSession(id);
+    // Deferred crypto still retains its transcript, key inputs, and reserved identities. Their
+    // reservations and ids remain live until each operation observes the epoch change and settles,
+    // preventing clear/reload loops from exceeding resource or uniqueness ceilings.
+  }
+
+  /** Reject authority that crossed a credential-clear lifecycle boundary. */
+  private assertClearEpoch(epoch: number): void {
+    if (epoch !== this.clearEpoch) authenticationError("invalid-credential");
   }
 
   /** Recheck identity, revocation, and expiry after every asynchronous policy boundary. */
@@ -774,9 +897,14 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     if (this.callerSessions.get(callerSessionId) !== session) {
       authenticationError("caller-session-expired");
     }
-    this.requireActiveGrant(session.grant);
+    try {
+      this.requireActiveGrant(session.grant);
+    } catch (error) {
+      this.deleteCallerSession(callerSessionId);
+      throw error;
+    }
     if (this.currentTime() >= session.expiresAt) {
-      this.callerSessions.delete(callerSessionId);
+      this.deleteCallerSession(callerSessionId);
       authenticationError("caller-session-expired");
     }
   }
@@ -784,7 +912,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
   private async signResponse(
     requestId: string,
     input: CallerResponseSigningInput,
+    assertActive: () => void,
   ): Promise<SessionBrokerResponseAuthentication> {
+    assertActive();
     if (!Number.isInteger(input.httpStatus) || input.httpStatus < 100 || input.httpStatus > 599) {
       authenticationError("invalid-credential");
     }
@@ -800,6 +930,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       ? Object.freeze({ appRevision: this.config.appRevision, features: Object.freeze([]) })
       : undefined;
     const bodyDigest = encodeBase64Url(await this.crypto.sha256(canonicalJsonBytes(input.body)));
+    assertActive();
     const transcript = buildBrokerResponseTranscript({
       appId: this.config.appId,
       generation: this.config.generation,
@@ -812,6 +943,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     const daemonSignature = encodeBase64Url(
       await this.crypto.sign(this.config.daemonIdentity.privateKey, transcript),
     );
+    assertActive();
     return Object.freeze({
       generation: this.config.generation,
       brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
@@ -888,11 +1020,17 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     if (!isValidBrokerIdentifier(challengeId)) authenticationError("challenge-used");
     const pending = this.challenges.get(challengeId);
     if (!pending) authenticationError("challenge-used");
-    // Delete before any asynchronous verification so concurrent proofs cannot both consume it.
-    this.deleteChallenge(challengeId);
-    if (this.currentTime() >= pending.expiresAt) authenticationError("challenge-expired");
-    if (pending.grant.kind !== role) authenticationError("invalid-credential");
-    return pending;
+    // Remove lookup authority before asynchronous verification so a second proof cannot consume it.
+    // The count/byte reservation remains live until the consuming proof completes.
+    this.challenges.delete(challengeId);
+    try {
+      if (this.currentTime() >= pending.expiresAt) authenticationError("challenge-expired");
+      if (pending.grant.kind !== role) authenticationError("invalid-credential");
+      return pending;
+    } catch (error) {
+      pending.reservation.release();
+      throw error;
+    }
   }
 
   private async verifyProof(pending: PendingChallenge, encodedSignature: string): Promise<void> {
@@ -934,7 +1072,14 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
     const challenge = this.challenges.get(challengeId);
     if (!challenge) return;
     this.challenges.delete(challengeId);
-    this.challengeBytes = Math.max(0, this.challengeBytes - challenge.retainedBytes);
+    challenge.reservation.release();
+  }
+
+  private deleteCallerSession(callerSessionId: string): void {
+    const session = this.callerSessions.get(callerSessionId);
+    if (!session) return;
+    this.callerSessions.delete(callerSessionId);
+    session.reservation.release();
   }
 
   private pruneExpired(): void {
@@ -943,7 +1088,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       if (now >= challenge.expiresAt) this.deleteChallenge(id);
     }
     for (const [id, session] of this.callerSessions) {
-      if (now >= session.expiresAt) this.callerSessions.delete(id);
+      if (now >= session.expiresAt) this.deleteCallerSession(id);
     }
   }
 
