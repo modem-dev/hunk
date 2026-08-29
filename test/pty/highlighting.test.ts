@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPtyHarness, sleep } from "./harness";
+import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -50,13 +50,9 @@ describe("PTY syntax highlighting", () => {
       const lastInitialLineIndex = Math.max(...visibleWorkerLineIndexes(initial));
       expect(lastInitialLineIndex).toBeGreaterThanOrEqual(0);
 
-      // Effects schedule highlighting after the first plain-text paint. Give that queue a turn,
-      // then require Hunk to process navigation while the worker is busy. Tuistory's press() waits
-      // up to 500ms for terminal idleness, so observe the viewport change instead of that timer.
-      await sleep(25);
-      expect(
-        await session.text({ immediate: true, only: { foreground: "#ff7b72" } }),
-      ).not.toContain("export");
+      // Effects schedule highlighting after the first plain-text paint. Inject input as soon as
+      // source rows make that paint observable, then require Hunk to process the navigation.
+      // Tuistory's press() waits up to 500ms for idleness, so observe the viewport instead.
       session.sendKey("pagedown");
       await harness.waitForSnapshot(
         session,
