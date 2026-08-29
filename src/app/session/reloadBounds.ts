@@ -22,6 +22,11 @@ import type { VcsCatalog } from "../../core/vcs/types";
  *
  * All candidate paths are realpath-normalized through existing ancestors so symlinks cannot escape
  * the roots, including paths whose final file does not exist yet.
+ *
+ * Revision-shaped fields (`vcs` `range`, `show`/`stash-show` `ref`) must name revisions, not
+ * command options: a value beginning with `-` would let a daemon caller inject flags such as
+ * `--output=<path>` into the VCS backend's spawned command. Pathspecs are exempt because every
+ * bundled backend appends them after `--`, where the VCS treats them as paths.
  */
 
 export interface SessionReloadBounds {
@@ -148,6 +153,13 @@ function assertReloadSourceWithinBounds(bounds: SessionReloadBounds, cwd: string
   return candidate;
 }
 
+/** Reject daemon-supplied revision fields that a VCS backend would parse as command options. */
+function assertReloadRevisionNotOptionLike(description: string, value: string) {
+  if (value.startsWith("-")) {
+    throw new Error(`Session reload refused ${description} that looks like a VCS option: ${value}`);
+  }
+}
+
 /** Validate common reload options that may cause filesystem reads. */
 function validateCommonReloadOptions(
   bounds: SessionReloadBounds,
@@ -199,8 +211,15 @@ export function validateSessionReloadWithinBounds(
       }
       break;
     case "vcs":
+      if (nextInput.range) {
+        assertReloadRevisionNotOptionLike("diff range", nextInput.range);
+      }
+      break;
     case "show":
     case "stash-show":
+      if (nextInput.ref) {
+        assertReloadRevisionNotOptionLike(`${nextInput.kind} ref`, nextInput.ref);
+      }
       break;
   }
 

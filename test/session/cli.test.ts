@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -478,6 +478,56 @@ sessionDescribe("session CLI integration", () => {
       );
       expect(reload.proc.exitCode).not.toBe(0);
       expect(reload.stderr).toContain("outside the initial Hunk root");
+
+      const get = runSessionCli(["get", sessionId, "--json"], port);
+      expect(get.proc.exitCode).toBe(0);
+      expect(JSON.parse(get.stdout)).toMatchObject({
+        session: {
+          files: [{ path: fixture.afterName }],
+        },
+      });
+    } finally {
+      await cleanupHunkSession(session, fixture, port);
+    }
+  }, 20_000);
+
+  test("reload refuses option-like VCS ranges sent directly to the session API", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "reload-injection",
+      ["export const visible = 1;"],
+      ["export const visible = 2;"],
+    );
+    mkdirSync(join(fixture.dir, ".git"));
+    const session = spawnHunkSession(fixture, port);
+
+    try {
+      const listed = await waitForRegisteredSessions(port);
+
+      const sessionId = listed[0]!.sessionId;
+      // Bypass the CLI parser on purpose: the raw daemon surface is the attacker-controlled
+      // path, so reproduce the injected flag exactly as a hostile /session-api caller would.
+      const sentinel = join(fixture.dir, "hunk-poc");
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "reload",
+          selector: { sessionId },
+          nextInput: {
+            kind: "vcs",
+            range: `--output=${sentinel}`,
+            staged: false,
+            options: {},
+          },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: expect.stringContaining("looks like a VCS option"),
+      });
+      expect(existsSync(sentinel)).toBe(false);
 
       const get = runSessionCli(["get", sessionId, "--json"], port);
       expect(get.proc.exitCode).toBe(0);

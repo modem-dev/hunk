@@ -56,6 +56,23 @@ export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   args.push("--", ...pathspecs);
 }
 
+/**
+ * Return one caller-supplied revision or range argument, refusing option-like values.
+ * Revisions and ranges never start with `-`, so a leading dash is injected content (for
+ * example `--output=<path>`) that Git would parse as a flag; it fails closed here instead
+ * of reaching the spawned command.
+ */
+export function requireGitRevisionArg(input: GitBackedInput, value: string) {
+  if (value.startsWith("-")) {
+    throw new HunkExtensionUserError(
+      `\`${formatGitCommandLabel(input)}\` refused revision \`${value}\` because it looks like a Git option.`,
+      { suggestions: ["Pass a plain revision or range, such as `HEAD` or `main..feature`."] },
+    );
+  }
+
+  return value;
+}
+
 // @pierre/diffs currently assumes git-style a/ and b/ prefixes when parsing patch headers.
 // Force byte-safe path quoting and canonical prefixes so user/repo git config cannot replace raw
 // non-UTF-8 bytes during stdout decoding or break the shared parser's expected side prefixes.
@@ -130,7 +147,7 @@ export function buildGitDiffArgs(
   }
 
   if (input.range) {
-    args.push(input.range);
+    args.push(requireGitRevisionArg(input, input.range));
   }
 
   if (excludedPathspecs.length > 0) {
@@ -155,7 +172,7 @@ export function buildGitDiffNumstatArgs(input: ExtensionVcsDiffInput) {
   }
 
   if (input.range) {
-    args.push(input.range);
+    args.push(requireGitRevisionArg(input, input.range));
   }
 
   appendGitPathspecs(args, input.pathspecs);
@@ -237,7 +254,7 @@ export function buildGitShowArgs(
   ];
 
   if (input.ref) {
-    args.push(input.ref);
+    args.push(requireGitRevisionArg(input, input.ref));
   }
 
   appendGitPathspecs(args, input.pathspecs);
@@ -259,7 +276,7 @@ export function buildGitStashShowArgs(
   ];
 
   if (input.ref) {
-    args.push(input.ref);
+    args.push(requireGitRevisionArg(input, input.ref));
   }
 
   return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
@@ -564,7 +581,7 @@ function isWorkingTreeGitDiffInput(
 
   const revs = runGitText({
     input,
-    args: ["rev-parse", "--revs-only", input.range],
+    args: ["rev-parse", "--revs-only", requireGitRevisionArg(input, input.range)],
     cwd,
     gitExecutable,
     preventOptionalLocks,
@@ -825,7 +842,7 @@ function resolveRangeRevisions(
 ): { positives: string[]; negatives: string[] } {
   const revs = runGitText({
     input,
-    args: ["rev-parse", "--revs-only", range],
+    args: ["rev-parse", "--revs-only", requireGitRevisionArg(input, range)],
     cwd: repoRoot ?? cwd,
     gitExecutable,
   })
