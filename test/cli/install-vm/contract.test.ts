@@ -155,6 +155,7 @@ describe("install VM contract", () => {
         startedAt: "2026-01-01T00:00:00Z",
         finishedAt: "2026-01-01T00:00:01Z",
         platform: "linux-x64",
+        sourceIdentity: "a".repeat(64),
         status: "failed",
       },
       tools: {},
@@ -274,24 +275,62 @@ describe("install VM contract", () => {
     }
   });
 
-  test("replaces a pending timeout kill when an interrupt overlaps it", async () => {
-    const runner = new InstallVmCommandRunner();
+  test("replaces the timeout's pending kill when an interrupt overlaps it", async () => {
+    let nextTimer = 0;
+    const timers = new Map<number, { callback: () => void; delayMs: number }>();
+    const cancelled: number[] = [];
+    const kills: NodeJS.Signals[] = [];
+    let resolveExit!: (exitCode: number) => void;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    const runner = new InstallVmCommandRunner({
+      spawn: () => ({
+        exited,
+        kill: (signal) => {
+          kills.push(signal);
+          if (signal === "SIGINT") resolveExit(130);
+        },
+      }),
+      schedule: (callback, delayMs) => {
+        const timer = ++nextTimer;
+        timers.set(timer, { callback, delayMs });
+        return timer;
+      },
+      cancel: (timer) => {
+        const id = timer as number;
+        cancelled.push(id);
+        timers.delete(id);
+      },
+    });
     runner.start();
     try {
-      const command = runner.run(
-        [process.execPath, "-e", 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 60_000)'],
-        { timeoutMs: 10 },
-      );
-      await Bun.sleep(20);
+      const command = runner.run(["fake-command"], { timeoutMs: 10 });
+      const timeoutTimer = [...timers.keys()][0]!;
+      expect(timers.get(timeoutTimer)?.delayMs).toBe(10);
+      const timeoutCallback = timers.get(timeoutTimer)!.callback;
+      timers.delete(timeoutTimer);
+      timeoutCallback();
+
+      expect(kills).toEqual(["SIGTERM"]);
+      const timeoutKillTimer = [...timers.keys()][0]!;
+      expect(timers.get(timeoutKillTimer)?.delayMs).toBe(10_000);
+
       process.emit("SIGINT", "SIGINT");
-      const startedAt = Date.now();
+      expect(kills).toEqual(["SIGTERM", "SIGINT"]);
+      expect(cancelled).toContain(timeoutKillTimer);
+      const interruptKillTimer = [...timers.keys()][0]!;
+      expect(interruptKillTimer).not.toBe(timeoutKillTimer);
+      expect(timers.get(interruptKillTimer)?.delayMs).toBe(10_000);
+
       const failure = await command.then(
         () => undefined,
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(InstallVmCommandError);
       expect((failure as InstallVmCommandError).exitCode).toBe(130);
-      expect(Date.now() - startedAt).toBeLessThan(1_000);
+      expect(cancelled).toContain(interruptKillTimer);
+      expect(timers.size).toBe(0);
     } finally {
       runner.stop();
     }

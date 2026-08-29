@@ -71,6 +71,7 @@ export interface InstallVmRunResult {
     startedAt: string;
     finishedAt: string;
     platform: "linux-x64";
+    sourceIdentity: string;
     status: "passed" | "failed" | "skipped";
     skipReason?: string;
   };

@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -14,6 +22,12 @@ import {
   verifyInstallVmFixtures,
   type InstallVmFixtureManifest,
 } from "./prepare-fixtures";
+
+/** Initialize the minimal Git checkout required by source-identity discovery. */
+function initializeTestGitRepo(repo: string) {
+  const result = Bun.spawnSync(["git", "init", "--quiet"], { cwd: repo, stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error("Unable to initialize test Git repository.");
+}
 
 /** Hash one small test fixture. */
 function sha256(filePath: string) {
@@ -102,20 +116,54 @@ describe("install VM package fixtures", () => {
     });
   });
 
-  test("checkout identity includes root documentation and workspace package inputs", () => {
+  test("checkout identity includes every non-ignored file with platform-neutral paths", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-identity-"));
     try {
+      initializeTestGitRepo(repo);
+      writeFileSync(path.join(repo, ".gitignore"), "ignored.txt\n");
       writeFileSync(path.join(repo, "package.json"), '{"version":"1.0.0"}\n');
       const initial = computeInstallVmFixtureSourceIdentity(repo);
-      writeFileSync(path.join(repo, "README.md"), "docs\n");
-      const withReadme = computeInstallVmFixtureSourceIdentity(repo);
-      mkdirSync(path.join(repo, "packages", "fixture"), { recursive: true });
-      writeFileSync(path.join(repo, "packages", "fixture", "index.ts"), "export {};\n");
-      const withPackage = computeInstallVmFixtureSourceIdentity(repo);
-      expect(withReadme).not.toBe(initial);
-      expect(withPackage).not.toBe(withReadme);
+      mkdirSync(path.join(repo, ".github", "workflows"), { recursive: true });
+      writeFileSync(path.join(repo, ".github", "workflows", "install-vm.yml"), "workflow\n");
+      const withWorkflow = computeInstallVmFixtureSourceIdentity(repo);
+      writeFileSync(path.join(repo, "ignored.txt"), "ignored\n");
+      const withIgnoredFile = computeInstallVmFixtureSourceIdentity(repo);
+      expect(withWorkflow).not.toBe(initial);
+      expect(withIgnoredFile).toBe(withWorkflow);
+
+      const tool = path.join(repo, "tool.sh");
+      writeFileSync(tool, "#!/bin/sh\n");
+      chmodSync(tool, 0o644);
+      const regularTool = computeInstallVmFixtureSourceIdentity(repo);
+      chmodSync(tool, 0o755);
+      const executableTool = computeInstallVmFixtureSourceIdentity(repo);
+      if (process.platform !== "win32") expect(executableTool).not.toBe(regularTool);
+
+      const link = path.join(repo, "fixture-link");
+      symlinkSync("first-target", link, "file");
+      const firstLink = computeInstallVmFixtureSourceIdentity(repo);
+      rmSync(link);
+      symlinkSync("second-target", link, "file");
+      expect(computeInstallVmFixtureSourceIdentity(repo)).not.toBe(firstLink);
     } finally {
       rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("checkout identity frames paths and contents without concatenation collisions", () => {
+    const first = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-collision-a-"));
+    const second = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-collision-b-"));
+    try {
+      initializeTestGitRepo(first);
+      initializeTestGitRepo(second);
+      writeFileSync(path.join(first, "a"), "bc");
+      writeFileSync(path.join(second, "ab"), "c");
+      expect(computeInstallVmFixtureSourceIdentity(first)).not.toBe(
+        computeInstallVmFixtureSourceIdentity(second),
+      );
+    } finally {
+      rmSync(first, { recursive: true, force: true });
+      rmSync(second, { recursive: true, force: true });
     }
   });
 
@@ -123,6 +171,7 @@ describe("install VM package fixtures", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-source-"));
     const fixtures = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-fixtures-"));
     try {
+      initializeTestGitRepo(repo);
       mkdirSync(path.join(repo, "test", "cli", "install-vm"), { recursive: true });
       writeFileSync(path.join(repo, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
       writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");

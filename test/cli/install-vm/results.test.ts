@@ -7,7 +7,10 @@ import {
   parseAssertionTsv,
   parseCommandTsv,
   parseObservationTsv,
+  validateInstallVmReleaseResult,
 } from "./results";
+
+const sourceIdentity = "a".repeat(64);
 
 const scenario = {
   id: "negative-case",
@@ -52,6 +55,134 @@ describe("install VM results", () => {
       "exit code",
     );
     expect(() => parseObservationTsv("dependencyTreePath\t../secret\n")).toThrow("Unsafe");
+    expect(() => parseObservationTsv("dependencyTreePath\t..\n")).toThrow("Unsafe");
+    expect(() => parseCommandTsv("bad\tpassed\texit 0\t0\t..\n")).toThrow("Unsafe");
+  });
+
+  test("release validation rejects stale, partial, and non-passing evidence", () => {
+    const releaseExpected = {
+      sourceIdentity,
+      pnpmVersion: "11.23.0",
+      scenarios: [scenario],
+    };
+    const result = {
+      schemaVersion: 1 as const,
+      run: {
+        id: "run",
+        startedAt: "2026-01-01T00:00:00Z",
+        finishedAt: "2026-01-01T00:00:01Z",
+        platform: "linux-x64" as const,
+        sourceIdentity,
+        status: "passed" as const,
+      },
+      tools: {
+        firecracker: "Firecracker v1.16.1",
+        kernel: "6.18.44",
+        node: "v24.14.1",
+        npm: "11.11.0",
+        pnpm: releaseExpected.pnpmVersion,
+        verdaccio: "v6.10.1",
+      },
+      scenarios: [
+        {
+          id: scenario.id,
+          description: scenario.description,
+          status: "passed" as const,
+          durationMs: 10,
+          exitCode: 0,
+          commands: [
+            {
+              id: "command",
+              status: "passed" as const,
+              expectation: "exit 0",
+              exitCode: 0,
+              logPath: "commands/command.log",
+            },
+          ],
+          observations: {},
+          assertions: [
+            {
+              id: "assertion",
+              status: "passed" as const,
+              expected: "safe",
+              actual: "safe",
+              message: "evidence matched",
+            },
+          ],
+          artifacts: ["scenarios/negative-case/commands"],
+        },
+      ],
+    };
+    expect(validateInstallVmReleaseResult(result, releaseExpected)).toBe(result);
+    expect(() =>
+      validateInstallVmReleaseResult(result, {
+        ...releaseExpected,
+        sourceIdentity: "b".repeat(64),
+      }),
+    ).toThrow("current checkout identity");
+    expect(() =>
+      validateInstallVmReleaseResult(result, {
+        ...releaseExpected,
+        scenarios: [scenario, { ...scenario, id: "second-scenario", script: "second-scenario.sh" }],
+      }),
+    ).toThrow("complete scenario manifest");
+    expect(() =>
+      validateInstallVmReleaseResult(
+        { ...result, run: { ...result.run, status: "skipped" } },
+        releaseExpected,
+      ),
+    ).toThrow("not passed");
+    expect(() =>
+      validateInstallVmReleaseResult(
+        {
+          schemaVersion: 1,
+          run: { sourceIdentity, status: "passed" },
+          scenarios: [{ id: scenario.id, status: "passed" }],
+        },
+        releaseExpected,
+      ),
+    ).toThrow("malformed run metadata");
+    expect(() =>
+      validateInstallVmReleaseResult(
+        {
+          ...result,
+          scenarios: [
+            {
+              ...result.scenarios[0],
+              commands: [{ ...result.scenarios[0]!.commands[0], status: "failed" }],
+            },
+          ],
+        },
+        releaseExpected,
+      ),
+    ).toThrow("malformed command evidence");
+
+    for (const tools of [
+      { ...result.tools, pnpm: "11.22.0" },
+      { ...result.tools, npm: "" },
+      { ...result.tools, extra: "unexpected" },
+      Object.fromEntries(Object.entries(result.tools).filter(([key]) => key !== "kernel")),
+    ]) {
+      expect(() => validateInstallVmReleaseResult({ ...result, tools }, releaseExpected)).toThrow(
+        "tool evidence",
+      );
+    }
+
+    for (const scenarioEvidence of [
+      { ...result.scenarios[0], artifacts: [".."] },
+      { ...result.scenarios[0], observations: { dependencyTreePath: ".." } },
+      {
+        ...result.scenarios[0],
+        commands: [{ ...result.scenarios[0]!.commands[0], logPath: ".." }],
+      },
+    ]) {
+      expect(() =>
+        validateInstallVmReleaseResult(
+          { ...result, scenarios: [scenarioEvidence] },
+          releaseExpected,
+        ),
+      ).toThrow("Unsafe install VM artifact path");
+    }
   });
 
   test("writes deterministic JSON and JUnit projections", () => {
@@ -82,11 +213,13 @@ describe("install VM results", () => {
         runId: "run",
         startedAt: "2026-01-01T00:00:00Z",
         finishedAt: "2026-01-01T00:00:01Z",
+        sourceIdentity,
         scenarios: [scenario],
         tools: { zeta: "2", alpha: "1" },
       });
 
       expect(result.run.status).toBe("passed");
+      expect(result.run.sourceIdentity).toBe(sourceIdentity);
       expect(Object.keys(result.tools)).toEqual(["alpha", "zeta"]);
       expect(result.scenarios[0]?.commands[0]?.exitCode).toBe(1);
       expect(result.scenarios[0]?.observations.hunkVersion).toBe("1.2.3");
@@ -116,6 +249,7 @@ describe("install VM results", () => {
           runId: "run",
           startedAt: "2026-01-01T00:00:00Z",
           finishedAt: "2026-01-01T00:00:01Z",
+          sourceIdentity,
           scenarios: [scenario],
           tools: {},
         }).run.status,
@@ -131,6 +265,7 @@ describe("install VM results", () => {
           runId: "run",
           startedAt: "2026-01-01T00:00:00Z",
           finishedAt: "2026-01-01T00:00:01Z",
+          sourceIdentity,
           scenarios: [scenario],
           tools: {},
         }),

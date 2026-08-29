@@ -6,7 +6,6 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   readlinkSync,
   renameSync,
   rmSync,
@@ -47,23 +46,6 @@ export interface InstallVmFixtureManifest {
   packages: FixturePackage[];
 }
 
-const SOURCE_IDENTITY_PATHS = [
-  "package.json",
-  "bun.lock",
-  "README.md",
-  "bin",
-  "packages",
-  "src",
-  "scripts",
-  "skills",
-  "install.sh",
-  "LICENSE",
-  "tsconfig.json",
-  "tsconfig.opentui.json",
-  "tsconfig.extension.json",
-  "test/cli/install-vm",
-] as const;
-
 /** Build reduced meta/platform manifests for deterministic package-manager topology tests. */
 export function buildSyntheticPackageManifests(version: string) {
   const platformSpec = getPlatformPackageSpecForHost("linux", "x64");
@@ -94,25 +76,78 @@ function sha256(filePath: string) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-/** Hash every source input that can change the generated VM package and curl fixtures. */
-export function computeInstallVmFixtureSourceIdentity(repoRoot: string) {
-  const hash = createHash("sha256");
-  const pending = SOURCE_IDENTITY_PATHS.map((entry) => path.join(repoRoot, entry));
-  const files: string[] = [];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    if (!existsSync(current)) continue;
-    const stats = lstatSync(current);
-    if (stats.isDirectory()) {
-      for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
-    } else {
-      files.push(current);
-    }
+function readCheckoutGitList(repoRoot: string, args: string[]) {
+  const listed = Bun.spawnSync(["git", ...args], {
+    cwd: repoRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (listed.exitCode !== 0) {
+    throw new Error(
+      `Unable to enumerate the install VM checkout: ${new TextDecoder().decode(listed.stderr).trim()}`,
+    );
   }
-  for (const file of files.sort()) {
-    hash.update(path.relative(repoRoot, file));
-    const stats = lstatSync(file);
-    hash.update(stats.isSymbolicLink() ? readlinkSync(file) : readFileSync(file));
+  return new TextDecoder().decode(listed.stdout).split("\0").filter(Boolean);
+}
+
+/** Add one unambiguous length-delimited field to a checkout identity. */
+function updateIdentityField(hash: ReturnType<typeof createHash>, value: string | Uint8Array) {
+  const bytes = typeof value === "string" ? Buffer.from(value) : value;
+  hash.update(`${bytes.byteLength}:`);
+  hash.update(bytes);
+}
+
+/** Hash every tracked or non-ignored untracked file in the current checkout. */
+export function computeInstallVmFixtureSourceIdentity(repoRoot: string) {
+  const indexModes = new Map<string, string>();
+  for (const entry of readCheckoutGitList(repoRoot, ["ls-files", "--stage", "-z"])) {
+    const separator = entry.indexOf("\t");
+    if (separator < 0) throw new Error("Git returned malformed install VM checkout metadata.");
+    const header = entry.slice(0, separator);
+    const relativePath = entry.slice(separator + 1);
+    indexModes.set(relativePath, header.split(" ", 1)[0]!);
+  }
+  const relativePaths = readCheckoutGitList(repoRoot, [
+    "ls-files",
+    "-z",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+  ]).sort();
+
+  const hash = createHash("sha256");
+  for (const relativePath of relativePaths) {
+    const filePath = path.join(repoRoot, ...relativePath.split("/"));
+    updateIdentityField(hash, relativePath);
+    let stats: ReturnType<typeof lstatSync>;
+    try {
+      stats = lstatSync(filePath);
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+      updateIdentityField(hash, "missing");
+      updateIdentityField(hash, "");
+      continue;
+    }
+
+    const indexedMode = indexModes.get(relativePath);
+    const mode = stats.isSymbolicLink()
+      ? "120000"
+      : process.platform === "win32" && indexedMode
+        ? indexedMode
+        : stats.isFile()
+          ? stats.mode & 0o111
+            ? "100755"
+            : "100644"
+          : "unsupported";
+    updateIdentityField(hash, mode);
+    updateIdentityField(
+      hash,
+      stats.isSymbolicLink()
+        ? readlinkSync(filePath)
+        : stats.isFile()
+          ? readFileSync(filePath)
+          : "",
+    );
   }
   return hash.digest("hex");
 }

@@ -34,7 +34,11 @@ import {
   type InstallVmRunResult,
 } from "./contract";
 import { collectInstallVmPreflightFailures } from "./preflight";
-import { prepareInstallVmFixtures, verifyInstallVmFixtures } from "./prepare-fixtures";
+import {
+  computeInstallVmFixtureSourceIdentity,
+  prepareInstallVmFixtures,
+  verifyInstallVmFixtures,
+} from "./prepare-fixtures";
 import { aggregateInstallVmResults } from "./results";
 import { acquireInstallVmRuntimeLock } from "./runtime-lock";
 
@@ -55,14 +59,44 @@ export class InstallVmCommandError extends Error {
   }
 }
 
+interface HostCommandProcess {
+  exited: Promise<number>;
+  kill(signal: NodeJS.Signals): void;
+}
+
+interface HostCommandRunnerDependencies {
+  spawn: (
+    command: string[],
+    options: {
+      cwd: string;
+      env: NodeJS.ProcessEnv;
+      stdin: "inherit";
+      stdout: "inherit";
+      stderr: "inherit";
+    },
+  ) => HostCommandProcess;
+  schedule: (callback: () => void, delayMs: number) => unknown;
+  cancel: (timer: unknown) => void;
+}
+
 /** Runs host commands asynchronously while forwarding interrupts and bounding shutdown. */
 export class InstallVmCommandRunner {
-  private activeProcess: ReturnType<typeof Bun.spawn> | undefined;
+  private activeProcess: HostCommandProcess | undefined;
   private interruptedExitCode: number | undefined;
-  private terminationTimer: ReturnType<typeof setTimeout> | undefined;
+  private terminationTimer: unknown;
+  private readonly dependencies: HostCommandRunnerDependencies;
 
   private readonly handleSigint = () => this.interrupt("SIGINT", 130);
   private readonly handleSigterm = () => this.interrupt("SIGTERM", 143);
+
+  constructor(dependencies: Partial<HostCommandRunnerDependencies> = {}) {
+    this.dependencies = {
+      spawn: dependencies.spawn ?? ((command, options) => Bun.spawn(command, options)),
+      schedule: dependencies.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs)),
+      cancel:
+        dependencies.cancel ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>)),
+    };
+  }
 
   start() {
     process.once("SIGINT", this.handleSigint);
@@ -72,7 +106,8 @@ export class InstallVmCommandRunner {
   stop() {
     process.off("SIGINT", this.handleSigint);
     process.off("SIGTERM", this.handleSigterm);
-    if (this.terminationTimer) clearTimeout(this.terminationTimer);
+    if (this.terminationTimer !== undefined) this.dependencies.cancel(this.terminationTimer);
+    this.terminationTimer = undefined;
   }
 
   private interrupt(signal: NodeJS.Signals, exitCode: number) {
@@ -80,8 +115,10 @@ export class InstallVmCommandRunner {
     this.interruptedExitCode = exitCode;
     this.activeProcess?.kill(signal);
     if (this.activeProcess) {
-      if (this.terminationTimer) clearTimeout(this.terminationTimer);
-      this.terminationTimer = setTimeout(
+      if (this.terminationTimer !== undefined) {
+        this.dependencies.cancel(this.terminationTimer);
+      }
+      this.terminationTimer = this.dependencies.schedule(
         () => this.activeProcess?.kill("SIGKILL"),
         TERMINATION_GRACE_MS,
       );
@@ -96,7 +133,7 @@ export class InstallVmCommandRunner {
 
   async run(command: string[], options: { cwd?: string; timeoutMs?: number } = {}) {
     this.checkInterrupted();
-    const proc = Bun.spawn(command, {
+    const proc = this.dependencies.spawn(command, {
       cwd: options.cwd ?? repoRoot,
       env: process.env,
       stdin: "inherit",
@@ -105,18 +142,23 @@ export class InstallVmCommandRunner {
     });
     this.activeProcess = proc;
     let timedOut = false;
-    const timeout = setTimeout(() => {
+    const timeout = this.dependencies.schedule(() => {
       timedOut = true;
       proc.kill("SIGTERM");
-      this.terminationTimer = setTimeout(() => proc.kill("SIGKILL"), TERMINATION_GRACE_MS);
+      this.terminationTimer = this.dependencies.schedule(
+        () => proc.kill("SIGKILL"),
+        TERMINATION_GRACE_MS,
+      );
     }, options.timeoutMs ?? COMMAND_TIMEOUT_MS);
 
     let exitCode: number;
     try {
       exitCode = await proc.exited;
     } finally {
-      clearTimeout(timeout);
-      if (this.terminationTimer) clearTimeout(this.terminationTimer);
+      this.dependencies.cancel(timeout);
+      if (this.terminationTimer !== undefined) {
+        this.dependencies.cancel(this.terminationTimer);
+      }
       this.terminationTimer = undefined;
       this.activeProcess = undefined;
     }
@@ -169,6 +211,7 @@ function writeSkippedResult(
   runId: string,
   startedAt: string,
   scenarios: ReturnType<typeof selectScenarios>,
+  sourceIdentity: string,
   reason: string,
 ) {
   const result: InstallVmRunResult = {
@@ -178,6 +221,7 @@ function writeSkippedResult(
       startedAt,
       finishedAt: new Date().toISOString(),
       platform: "linux-x64",
+      sourceIdentity,
       status: "skipped",
       skipReason: reason,
     },
@@ -264,11 +308,12 @@ export async function main(argv = process.argv.slice(2)) {
   chmodSync(outputDir, 0o700);
   chmodSync(cacheDir, 0o700);
 
+  const sourceIdentity = computeInstallVmFixtureSourceIdentity(repoRoot);
   const failures = await collectInstallVmPreflightFailures(defaultRuntimeRoot);
   if (failures.length > 0) {
     const reason = failures.join(" ");
     if (options.allowSkip) {
-      writeSkippedResult(outputDir, runId, startedAt, selected, reason);
+      writeSkippedResult(outputDir, runId, startedAt, selected, sourceIdentity, reason);
       console.warn(`Skipped install VM suite: ${reason}`);
       console.warn(`Result: ${path.join(outputDir, "result.json")}`);
       return 0;
@@ -305,7 +350,10 @@ export async function main(argv = process.argv.slice(2)) {
       outputDir: assertSafeInstallVmRuntimePath(repoRoot, outputDir),
     };
     assertDistinctInstallVmRuntimePaths(revalidatedPaths);
-    verifyInstallVmFixtures(repoRoot, revalidatedPaths.fixtureDir);
+    const fixtureManifest = verifyInstallVmFixtures(repoRoot, revalidatedPaths.fixtureDir);
+    if (fixtureManifest.sourceIdentity !== sourceIdentity) {
+      throw new Error("Install VM checkout changed while the suite was preparing fixtures.");
+    }
     const dockerCommand = buildDockerRunCommand(
       image,
       revalidatedPaths,
@@ -323,12 +371,16 @@ export async function main(argv = process.argv.slice(2)) {
         `Guest pnpm version drifted: expected ${pins.pnpmVersion}, got ${tools.pnpm}`,
       );
     }
+    if (computeInstallVmFixtureSourceIdentity(repoRoot) !== sourceIdentity) {
+      throw new Error("Install VM checkout changed while the suite was running.");
+    }
     commandRunner.checkInterrupted();
     const result = aggregateInstallVmResults({
       outputDir,
       runId,
       startedAt,
       finishedAt: new Date().toISOString(),
+      sourceIdentity,
       scenarios: selected,
       tools,
     });

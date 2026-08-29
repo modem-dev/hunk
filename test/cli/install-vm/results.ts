@@ -17,11 +17,18 @@ interface RawScenarioResult {
 }
 
 const RESULT_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]*$/;
+const SOURCE_IDENTITY_PATTERN = /^[a-f0-9]{64}$/;
 
 /** Return one safe relative artifact path, rejecting traversal and absolute paths. */
 function safeArtifactPath(value: string) {
   const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
-  if (normalized !== value || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) {
+  if (
+    normalized !== value ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    path.posix.isAbsolute(normalized)
+  ) {
     throw new Error(`Unsafe install VM artifact path: ${value}`);
   }
   return normalized;
@@ -92,12 +99,157 @@ export function parseObservationTsv(contents: string): InstallVmScenarioObservat
   return observations;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOnlyStringValues(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function hasUniqueIds(records: readonly Record<string, unknown>[]) {
+  const ids = records.map((record) => record.id);
+  return ids.every((id) => typeof id === "string") && new Set(ids).size === ids.length;
+}
+
+/** Validate that release evidence is complete, consistent, and matches this checkout. */
+export function validateInstallVmReleaseResult(
+  value: unknown,
+  expected: {
+    sourceIdentity: string;
+    pnpmVersion: string;
+    scenarios: readonly InstallVmScenario[];
+  },
+) {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.run)) {
+    throw new Error("Install VM result must use schemaVersion 1 and contain run evidence.");
+  }
+  const run = value.run;
+  if (
+    typeof run.id !== "string" ||
+    run.id.length === 0 ||
+    typeof run.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(run.startedAt)) ||
+    typeof run.finishedAt !== "string" ||
+    !Number.isFinite(Date.parse(run.finishedAt)) ||
+    Date.parse(run.finishedAt) < Date.parse(run.startedAt) ||
+    run.platform !== "linux-x64" ||
+    run.skipReason !== undefined
+  ) {
+    throw new Error("Install VM result has malformed run metadata.");
+  }
+  if (
+    !SOURCE_IDENTITY_PATTERN.test(expected.sourceIdentity) ||
+    run.sourceIdentity !== expected.sourceIdentity
+  ) {
+    throw new Error("Install VM result does not match the current checkout identity.");
+  }
+  if (run.status !== "passed") {
+    throw new Error(`Install VM release result is ${String(run.status)}, not passed.`);
+  }
+  const expectedToolKeys = ["firecracker", "kernel", "node", "npm", "pnpm", "verdaccio"];
+  if (
+    !hasOnlyStringValues(value.tools) ||
+    Object.keys(value.tools).sort().join("\0") !== expectedToolKeys.join("\0") ||
+    Object.values(value.tools).some((tool) => tool.trim().length === 0) ||
+    value.tools.pnpm !== expected.pnpmVersion
+  ) {
+    throw new Error("Install VM release result has malformed or drifted tool evidence.");
+  }
+  if (!Array.isArray(value.scenarios)) {
+    throw new Error("Install VM release result has no scenario evidence.");
+  }
+
+  const scenarioRecords = value.scenarios.filter(isRecord);
+  if (scenarioRecords.length !== value.scenarios.length || !hasUniqueIds(scenarioRecords)) {
+    throw new Error("Install VM release result has malformed or duplicate scenarios.");
+  }
+  const expectedById = new Map(expected.scenarios.map((scenario) => [scenario.id, scenario]));
+  const expectedIds = [...expectedById.keys()].sort();
+  const actualIds = scenarioRecords.map((scenario) => scenario.id as string).sort();
+  if (JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
+    throw new Error("Install VM release result does not cover the complete scenario manifest.");
+  }
+
+  for (const scenario of scenarioRecords) {
+    const id = scenario.id as string;
+    const definition = expectedById.get(id)!;
+    if (
+      scenario.description !== definition.description ||
+      scenario.status !== "passed" ||
+      scenario.exitCode !== 0 ||
+      !Number.isSafeInteger(scenario.durationMs) ||
+      (scenario.durationMs as number) < 0 ||
+      !Array.isArray(scenario.commands) ||
+      scenario.commands.length === 0 ||
+      !Array.isArray(scenario.assertions) ||
+      scenario.assertions.length === 0 ||
+      !hasOnlyStringValues(scenario.observations) ||
+      !Array.isArray(scenario.artifacts) ||
+      scenario.artifacts.length === 0
+    ) {
+      throw new Error(`Install VM release result has incomplete evidence for ${id}.`);
+    }
+
+    for (const [key, observation] of Object.entries(scenario.observations)) {
+      if (!RESULT_KEY_PATTERN.test(key)) {
+        throw new Error(`Install VM release result has malformed observations for ${id}.`);
+      }
+      if (key.endsWith("Path")) safeArtifactPath(observation);
+    }
+
+    const commandRecords = scenario.commands.filter(isRecord);
+    if (commandRecords.length !== scenario.commands.length || !hasUniqueIds(commandRecords)) {
+      throw new Error(`Install VM release result has malformed commands for ${id}.`);
+    }
+    for (const command of commandRecords) {
+      if (
+        typeof command.id !== "string" ||
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(command.id) ||
+        command.status !== "passed" ||
+        typeof command.expectation !== "string" ||
+        !Number.isSafeInteger(command.exitCode) ||
+        typeof command.logPath !== "string"
+      ) {
+        throw new Error(`Install VM release result has malformed command evidence for ${id}.`);
+      }
+      safeArtifactPath(command.logPath);
+    }
+
+    const assertionRecords = scenario.assertions.filter(isRecord);
+    if (assertionRecords.length !== scenario.assertions.length || !hasUniqueIds(assertionRecords)) {
+      throw new Error(`Install VM release result has malformed assertions for ${id}.`);
+    }
+    for (const assertion of assertionRecords) {
+      if (
+        typeof assertion.id !== "string" ||
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(assertion.id) ||
+        assertion.status !== "passed" ||
+        typeof assertion.expected !== "string" ||
+        typeof assertion.actual !== "string" ||
+        typeof assertion.message !== "string"
+      ) {
+        throw new Error(`Install VM release result has malformed assertion evidence for ${id}.`);
+      }
+    }
+    for (const artifact of scenario.artifacts) {
+      if (typeof artifact !== "string") {
+        throw new Error(`Install VM release result has malformed artifacts for ${id}.`);
+      }
+      safeArtifactPath(artifact);
+    }
+  }
+
+  return value as unknown as InstallVmRunResult;
+}
+
 /** Aggregate bounded scenario result files into stable JSON and JUnit artifacts. */
 export function aggregateInstallVmResults(options: {
   outputDir: string;
   runId: string;
   startedAt: string;
   finishedAt: string;
+  sourceIdentity: string;
   scenarios: readonly InstallVmScenario[];
   tools: Record<string, string>;
   skipReason?: string;
@@ -189,6 +341,7 @@ export function aggregateInstallVmResults(options: {
       startedAt: options.startedAt,
       finishedAt: options.finishedAt,
       platform: "linux-x64",
+      sourceIdentity: options.sourceIdentity,
       status,
       ...(options.skipReason ? { skipReason: options.skipReason } : {}),
     },
