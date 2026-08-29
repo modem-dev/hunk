@@ -127,7 +127,7 @@ describe("themes", () => {
     expect(dark.syntaxColors.default).toBe("#e6edf3");
     expect(dark.addedSignColor).toBe("#2ea043");
     expect(dark.removedSignColor).toBe("#f85149");
-    expect(dark.addedBg).toBe(blendHex("#2ea043", "#0d1117", 0.18));
+    expect(dark.addedBg).toBe(blendHex("#2ea043", "#0d1117", 0.14));
     expect(dark.removedBg).toBe(blendHex("#f85149", "#0d1117", 0.2));
 
     expect(light.background).toBe("#ffffff");

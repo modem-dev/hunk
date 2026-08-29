@@ -92,8 +92,12 @@ function readableTintedBackground(
   foreground: string,
   preferredAmount: number,
 ) {
-  for (let amount = preferredAmount; amount >= 0.02; amount -= 0.02) {
-    const candidate = blendHex(tintColor, background, amount);
+  // Step by 0.01 so pale accents stop at their full readable strength; a coarser 0.02 step can
+  // round the word-emphasis tint down and leave the row tint without enough separation room.
+  // Step counts stay integral so accumulated float drift cannot skip the final step.
+  const maxSteps = Math.round(preferredAmount / 0.01);
+  for (let step = maxSteps; step >= 1; step -= 1) {
+    const candidate = blendHex(tintColor, background, step * 0.01);
     if (contrastRatio(foreground, candidate) >= MIN_GUTTER_CONTRAST) {
       return candidate;
     }
@@ -111,8 +115,10 @@ function readableSeparatedRowBackground(
   contentBackground: string,
 ) {
   let readableFallback: string | undefined;
-  for (let amount = preferredAmount; amount >= 0.02; amount -= 0.02) {
-    const candidate = blendHex(tintColor, background, amount);
+  // Step counts stay integral so accumulated float drift cannot skip the final 0.02 step.
+  const maxSteps = Math.round(preferredAmount / 0.02);
+  for (let step = maxSteps; step >= 1; step -= 1) {
+    const candidate = blendHex(tintColor, background, step * 0.02);
     if (contrastRatio(foreground, candidate) < MIN_GUTTER_CONTRAST) {
       continue;
     }
