@@ -42,11 +42,28 @@ function tooLarge(maxBytes: number): ExtensionVcsFileSourceTooLarge {
   return { kind: "too-large", maxBytes };
 }
 
-/** Encode a repo-relative path as one literal Jujutsu fileset. */
+/** Encode a repo-relative path as one alias-insensitive literal Jujutsu fileset. */
 function jjFilePathFileset(path: string) {
-  const literalPath = Array.from(path, (character) =>
-    "\\*?[]{}".includes(character) ? `\\${character}` : character,
-  ).join("");
+  const literalPath = Array.from(path, (character) => {
+    switch (character) {
+      case "*":
+        return "[*]";
+      case "?":
+        return "[?]";
+      case "[":
+        return "[[]";
+      case "]":
+        return "[]]";
+      case "{":
+        return "[{]";
+      case "}":
+        return "[}]";
+      case "\\":
+        return process.platform === "win32" ? "/" : "[\\\\]";
+      default:
+        return character;
+    }
+  }).join("");
   return JSON.stringify(literalPath);
 }
 

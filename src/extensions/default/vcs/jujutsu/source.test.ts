@@ -59,12 +59,14 @@ afterEach(() => {
 });
 
 const jjTest = Bun.which("jj") ? test : test.skip;
+const unixJjTest = Bun.which("jj") && process.platform !== "win32" ? test : test.skip;
 
 describe("Jujutsu source reading", () => {
   jjTest("reads exact commit contents through `jj file show`", async () => {
     const repoRoot = createTempJjRepo("hunk-source-jj-");
     const filePath = "-note [exact] file.txt";
     writeFileSync(join(repoRoot, filePath), "first revision\n");
+    writeFileSync(join(repoRoot, "-note e file.txt"), "glob decoy\n");
     jj(repoRoot, "commit", "-m", "first");
     const firstCommitId = jj(repoRoot, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
 
@@ -78,6 +80,18 @@ describe("Jujutsu source reading", () => {
     await expect(
       readJjFileSource({ repoRoot, commitId: secondCommitId, path: filePath }),
     ).resolves.toBe("second revision\n");
+  });
+
+  unixJjTest("reads Unix filenames containing backslashes", async () => {
+    const repoRoot = createTempJjRepo("hunk-source-jj-backslash-");
+    const filePath = "a\\b.txt";
+    writeFileSync(join(repoRoot, filePath), "backslash source\n");
+    jj(repoRoot, "commit", "-m", "backslash");
+    const commitId = jj(repoRoot, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
+
+    await expect(readJjFileSource({ repoRoot, commitId, path: filePath })).resolves.toBe(
+      "backslash source\n",
+    );
   });
 
   jjTest("ignores fileset aliases and file-show templates", async () => {
@@ -184,7 +198,7 @@ describe("Jujutsu source reading", () => {
           {
             repoRoot: process.cwd(),
             commitId: "0123456789abcdef",
-            path: '-leading [fileset] "path".txt',
+            path: '-leading *?[fileset]{path} "file".txt',
           },
           { jjExecutable: "custom-jj" },
         ),
@@ -207,7 +221,7 @@ describe("Jujutsu source reading", () => {
         "-T",
         '""',
         "--",
-        '"-leading \\\\[fileset\\\\] \\"path\\".txt"',
+        '"-leading [*][?][[]fileset[]][{]path[}] \\"file\\".txt"',
       ],
     ]);
   });
