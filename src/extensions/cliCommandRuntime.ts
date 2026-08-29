@@ -41,6 +41,19 @@ function chunkByteLength(chunk: string | Uint8Array) {
   return typeof chunk === "string" ? new TextEncoder().encode(chunk).byteLength : chunk.byteLength;
 }
 
+/**
+ * Reject a revoked or invalid write without leaving an unhandled rejection behind.
+ *
+ * A handler that fires a write it never awaits — a `setTimeout` progress line landing after
+ * settlement is the usual shape — would otherwise crash the process and replace the command's
+ * real exit status. The rejection still reaches any caller that awaits it.
+ */
+function rejectWrite(error: Error): Promise<void> {
+  const rejected = Promise.reject(error);
+  void rejected.catch(() => undefined);
+  return rejected;
+}
+
 /** Wrap a process-owned stream without granting close or post-handler access. */
 function createLeasedWriter(
   stream: ExtensionCliWritable,
@@ -51,12 +64,10 @@ function createLeasedWriter(
   return Object.freeze({
     write(chunk: string | Uint8Array) {
       if (!active()) {
-        return Promise.reject(new Error("Extension CLI output is no longer available."));
+        return rejectWrite(new Error("Extension CLI output is no longer available."));
       }
       if (typeof chunk !== "string" && !(chunk instanceof Uint8Array)) {
-        return Promise.reject(
-          new TypeError("Extension CLI output must be a string or Uint8Array."),
-        );
+        return rejectWrite(new TypeError("Extension CLI output must be a string or Uint8Array."));
       }
 
       record(chunkByteLength(chunk));

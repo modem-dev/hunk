@@ -74,6 +74,41 @@ describe("extension CLI command runtime", () => {
     await expect(leasedWriter?.write("late")).rejects.toThrow("no longer available");
   });
 
+  test("does not surface an unhandled rejection when a handler discards a revoked write", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandledRejection);
+
+    try {
+      let writeAfterSettlement: (() => void) | undefined;
+      const execution = await runExtensionCliCommand({
+        extensionId: "tools",
+        commandName: "tools",
+        args: [],
+        stdin: (async function* () {})(),
+        stdout: createTestWriter([]),
+        stderr: createTestWriter([]),
+        signals: new EventEmitter(),
+        handler: async (_args, ctx) => {
+          // A progress line scheduled by the handler and never awaited, the shape a stray
+          // `setTimeout` write takes once the command has already returned its result.
+          writeAfterSettlement = () => {
+            void ctx.stdout.write("late\n");
+            void ctx.stderr.write(42 as never);
+          };
+          return { kind: "exit", code: 0 };
+        },
+      });
+
+      expect(execution.result).toEqual({ kind: "exit", code: 0 });
+      writeAfterSettlement?.();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
   test("closes output leases before draining writes accepted by the handler", async () => {
     const callbacks: Array<(error?: Error | null) => void> = [];
     let chainedWrite: Promise<void> | undefined;
