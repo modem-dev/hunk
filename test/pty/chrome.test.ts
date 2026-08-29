@@ -111,6 +111,7 @@ describe("PTY chrome", () => {
       expect(selector).toContain("Theme selector");
       const selectedIndex = themes.findIndex((theme) => selector.includes(`›  ${theme.id}`));
       expect(selectedIndex).toBeGreaterThanOrEqual(0);
+      expect(themes[selectedIndex]?.id).not.toBe(initialThemeId);
     } finally {
       session.close();
     }
