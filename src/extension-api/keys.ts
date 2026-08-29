@@ -70,15 +70,15 @@ const MODIFIER_TOKENS: Record<string, keyof Omit<ParsedKeyChord, "base">> = {
  * registration instead of silently never firing.
  */
 export function parseKeyChord(chord: string): ParsedKeyChord | { error: string } {
-  const tokens = chord
-    .split("+")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
-  // A literal "+" binding arrives as empty tokens; treat the lone "+" specially.
-  if (tokens.length === 0) {
-    return chord.trim() === "+"
-      ? { base: "+", ctrl: false, meta: false, option: false, shift: false }
-      : { error: `Empty key chord "${chord}"` };
+  // A literal "+" binding splits into empty segments below; recognize it before
+  // segments are validated, so the intentional plus-key chord stays valid.
+  if (chord.trim() === "+") {
+    return { base: "+", ctrl: false, meta: false, option: false, shift: false };
+  }
+
+  const tokens = chord.split("+").map((token) => token.trim());
+  if (tokens.some((token) => token.length === 0)) {
+    return { error: `Key chord "${chord}" has an empty component around "+"` };
   }
 
   const parsed: ParsedKeyChord = {

@@ -87,6 +87,31 @@ describe("parseKeyChord", () => {
     expect(parseKeyChord("")).toHaveProperty("error");
   });
 
+  test("rejects chords with an empty segment around a plus", () => {
+    // A missing component around "+" must be refused, not silently
+    // normalized into a different, real shortcut.
+    expect(parseKeyChord("s+")).toHaveProperty("error");
+    expect(parseKeyChord("+s")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl++s")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl+s+")).toHaveProperty("error");
+  });
+
+  test("keeps the literal plus-key chord valid", () => {
+    const literalPlus = {
+      base: "+",
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+    };
+    expect(parsed("+")).toEqual(literalPlus);
+    expect(parsed(" + ")).toEqual(literalPlus);
+  });
+
+  test("tolerates whitespace around valid components", () => {
+    expect(parsed("ctrl + s")).toEqual(parsed("ctrl+s"));
+  });
+
   test("refuses shift on symbols and digits, keeps it for letters and named keys", () => {
     // Shifted symbols have no layout-independent identity; the binding must
     // name the character shift produces instead.

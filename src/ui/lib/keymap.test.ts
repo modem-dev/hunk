@@ -106,6 +106,14 @@ describe("resolveCommandKeys", () => {
     expect(issues[0]?.message).toContain("not a usable key chord");
   });
 
+  test("a chord with an empty segment is rejected without claiming the real shortcut", () => {
+    const { keys, issues } = resolve({ "hunk.app.quit": ["s+", "ctrl+q"] });
+
+    expect(keys.get("hunk.app.quit")).toEqual(["ctrl+q"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain("not a usable key chord");
+  });
+
   test("unknown ids are reported, softly when they look like extension commands", () => {
     const { keys, issues } = resolve({ "hunk.app.quti": "x", "ghost.command": "z" });
 
