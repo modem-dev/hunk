@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  InvalidContentLengthError,
   PayloadTooLargeError,
   readRequestBytesWithLimit,
+  readRequestBytesWithReservation,
   readRequestTextWithLimit,
   utf8ByteLength,
 } from "./limits";
+import { ResourceBudget } from "./budgets";
 
 /** Build a streaming request body so the read path runs without a Content-Length header. */
 function streamingRequest(byteLength: number, chunkSize = 64 * 1024) {
@@ -50,6 +53,29 @@ describe("readRequestTextWithLimit", () => {
     await expect(readRequestTextWithLimit(request, 256 * 1024)).rejects.toBeInstanceOf(
       PayloadTooLargeError,
     );
+  });
+
+  test("rejects malformed Content-Length instead of treating it as undeclared", async () => {
+    const request = new Request("http://broker.test/api", {
+      method: "POST",
+      headers: { "content-length": "01" },
+      body: "x",
+    });
+    await expect(readRequestBytesWithLimit(request, 1024)).rejects.toBeInstanceOf(
+      InvalidContentLengthError,
+    );
+  });
+
+  test("retains aggregate byte capacity through parse and releases it idempotently", async () => {
+    const budget = new ResourceBudget(4, "http");
+    const request = new Request("http://broker.test/api", { method: "POST", body: "éé" });
+    const read = await readRequestBytesWithReservation(request, 4, budget);
+    expect(read.bytes.byteLength).toBe(4);
+    expect(budget.used).toBe(4);
+    expect(budget.tryReserve(1)).toBeNull();
+    read.reservation.release();
+    read.reservation.release();
+    expect(budget.used).toBe(0);
   });
 
   test("returns the decoded body when it stays under the limit", async () => {

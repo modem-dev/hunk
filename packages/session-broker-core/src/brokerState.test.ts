@@ -5,6 +5,7 @@ import {
   type SessionBrokerListedSession,
   type SessionBrokerViewAdapter,
 } from "./brokerState";
+import type { SessionBrokerLimitOptions } from "./budgets";
 import {
   SESSION_BROKER_REGISTRATION_VERSION,
   brokerWireParsers,
@@ -134,7 +135,7 @@ const testBrokerView: SessionBrokerViewAdapter<
   listComments: (_session, filter) => [{ id: "note-1", filePath: filter.filePath }],
 };
 
-function createState() {
+function createState(limitOptions: SessionBrokerLimitOptions = {}) {
   return new SessionBrokerState<
     TestSessionInfo,
     TestSessionState,
@@ -144,7 +145,7 @@ function createState() {
     TestSelectedContext,
     TestSessionReview,
     TestCommentSummary
-  >(testBrokerView);
+  >(testBrokerView, limitOptions);
 }
 
 function createRegistration(
@@ -650,5 +651,240 @@ describe("session broker state", () => {
     // still reaps it — the wake grace is one sweep, not immortality.
     expect(state.pruneStaleSessions({ ttlMs, now: lastSeenAt + wallClockJumpMs + 15_000 })).toBe(1);
     expect(state.listSessions()).toHaveLength(0);
+  });
+
+  test("schedules commands FIFO with one active command per session", async () => {
+    const state = createState();
+    const sent: string[] = [];
+    const socket = { send: (data: string) => sent.push(data) };
+    state.registerSession(socket, createRegistration(), createSnapshot());
+
+    const first = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "a", summary: "first" },
+      timeoutMessage: "first timeout",
+    });
+    const second = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "b", summary: "second" },
+      timeoutMessage: "second timeout",
+    });
+    expect(sent).toHaveLength(1);
+    const firstId = JSON.parse(sent[0]!).requestId as string;
+    state.handleCommandResult(socket, {
+      requestId: firstId,
+      ok: true,
+      result: { kind: "annotated", annotationId: "one" },
+    });
+    expect(sent).toHaveLength(2);
+    const secondId = JSON.parse(sent[1]!).requestId as string;
+    state.handleCommandResult(socket, {
+      requestId: secondId,
+      ok: true,
+      result: { kind: "annotated", annotationId: "two" },
+    });
+    await expect(first).resolves.toMatchObject({ annotationId: "one" });
+    await expect(second).resolves.toMatchObject({ annotationId: "two" });
+  });
+
+  test("lets different sessions progress independently", async () => {
+    const state = createState();
+    const firstSent: string[] = [];
+    const secondSent: string[] = [];
+    const firstSocket = { send: (data: string) => firstSent.push(data) };
+    const secondSocket = { send: (data: string) => secondSent.push(data) };
+    state.registerSession(firstSocket, createRegistration(), createSnapshot());
+    state.registerSession(
+      secondSocket,
+      createRegistration({ sessionId: "session-2", cwd: "/two", repoRoot: "/two" }),
+      createSnapshot(),
+    );
+    const first = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "a", summary: "one" },
+      timeoutMessage: "timeout",
+    });
+    const second = state.dispatchCommand({
+      selector: { sessionId: "session-2" },
+      command: "annotate",
+      input: { filePath: "b", summary: "two" },
+      timeoutMessage: "timeout",
+    });
+    expect([firstSent.length, secondSent.length]).toEqual([1, 1]);
+    for (const [socket, raw, pending, id] of [
+      [firstSocket, firstSent[0]!, first, "one"],
+      [secondSocket, secondSent[0]!, second, "two"],
+    ] as const) {
+      state.handleCommandResult(socket, {
+        requestId: JSON.parse(raw).requestId,
+        ok: true,
+        result: { kind: "annotated", annotationId: id },
+      });
+      await expect(pending).resolves.toMatchObject({ annotationId: id });
+    }
+  });
+
+  test("rejects exact count boundaries plus one without dropping admitted work", async () => {
+    const state = createState({
+      limits: { maxCommandsPerSession: 2, maxCommandsTotal: 2 },
+    });
+    const sent: string[] = [];
+    const socket = { send: (data: string) => sent.push(data) };
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const commands = ["one", "two"].map((summary) =>
+      state.dispatchCommand({
+        selector: { sessionId: "session-1" },
+        command: "annotate",
+        input: { filePath: "a", summary },
+        timeoutMessage: "timeout",
+      }),
+    );
+    expect(() =>
+      state.dispatchCommand({
+        selector: { sessionId: "session-1" },
+        command: "annotate",
+        input: { filePath: "a", summary: "three" },
+        timeoutMessage: "timeout",
+      }),
+    ).toThrow("queue-full");
+    state.shutdown();
+    for (const command of commands) await expect(command).rejects.toThrow("shut down");
+  });
+
+  test("accounts queued command UTF-8 bytes at the exact daemon boundary", async () => {
+    const input = { filePath: "é", summary: "😀" };
+    const bytes =
+      new TextEncoder().encode(
+        JSON.stringify({
+          type: "command",
+          requestId: "0".repeat(36),
+          command: "annotate",
+          commandVersion: 1,
+          input,
+        }),
+      ).byteLength + 128;
+    const state = createState({ limits: { maxQueuedCommandBytes: bytes } });
+    const socket = { send() {} };
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const admitted = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input,
+      timeoutMessage: "timeout",
+    });
+    expect(() =>
+      state.dispatchCommand({
+        selector: { sessionId: "session-1" },
+        command: "annotate",
+        input,
+        timeoutMessage: "timeout",
+      }),
+    ).toThrow("queue-full");
+    state.shutdown();
+    await expect(admitted).rejects.toThrow("shut down");
+  });
+
+  test("releases a timed-out active command and advances its session FIFO", async () => {
+    const state = createState({ limits: { defaultCommandTimeoutMs: 5, maxCommandTimeoutMs: 100 } });
+    const sent: string[] = [];
+    const socket = { send: (data: string) => sent.push(data) };
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const first = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "a", summary: "one" },
+      timeoutMessage: "timed out",
+    });
+    const second = state.dispatchCommand({
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { filePath: "b", summary: "two" },
+      timeoutMessage: "second timeout",
+      timeoutMs: 100,
+    });
+    await expect(first).rejects.toThrow("timed out");
+    expect(sent).toHaveLength(2);
+    state.handleCommandResult(socket, {
+      requestId: JSON.parse(sent[1]!).requestId,
+      ok: true,
+      result: { kind: "annotated", annotationId: "two" },
+    });
+    await expect(second).resolves.toMatchObject({ annotationId: "two" });
+    expect(() =>
+      state.dispatchCommand({
+        selector: { sessionId: "session-1" },
+        command: "annotate",
+        input: { filePath: "c", summary: "three" },
+        timeoutMessage: "timeout",
+        timeoutMs: 101,
+      }),
+    ).toThrow("capacity-exceeded");
+  });
+
+  test("rejects a new session at capacity without evicting the existing owner", () => {
+    const state = createState({ limits: { maxSessions: 1 } });
+    const first = { send() {} };
+    const second = { send() {} };
+    expect(state.registerSession(first, createRegistration(), createSnapshot())).toBe("registered");
+    expect(
+      state.registerSession(
+        second,
+        createRegistration({ sessionId: "session-2" }),
+        createSnapshot(),
+      ),
+    ).toBe("capacity-exceeded");
+    expect(state.listSessions().map((session) => session.sessionId)).toEqual(["session-1"]);
+  });
+
+  test("transfers a same-socket count reservation when the session id changes at capacity", () => {
+    const state = createState({ limits: { maxSessions: 1 } });
+    const socket = { send() {} };
+    expect(state.registerSession(socket, createRegistration(), createSnapshot())).toBe(
+      "registered",
+    );
+    expect(
+      state.registerSession(
+        socket,
+        createRegistration({ sessionId: "session-2", cwd: "/two", repoRoot: "/two" }),
+        createSnapshot(),
+      ),
+    ).toBe("registered");
+    expect(state.listSessions().map((session) => session.sessionId)).toEqual(["session-2"]);
+  });
+
+  test("accepts identical registration and snapshot replacement at the exact retained ceiling", () => {
+    const registration = createRegistration();
+    const snapshot = createSnapshot();
+    const retainedBytes =
+      new TextEncoder().encode(JSON.stringify({ registration, snapshot })).byteLength + 256;
+    const state = createState({
+      limits: { maxRetainedSessionBytes: retainedBytes, maxRetainedBytes: retainedBytes },
+    });
+    const socket = { send() {} };
+    expect(state.registerSession(socket, registration, snapshot)).toBe("registered");
+    expect(state.registerSession(socket, registration, snapshot)).toBe("registered");
+    expect(state.updateSnapshot(socket, "session-1", snapshot)).toBe("updated");
+  });
+
+  test("preserves retained state when a replacement cannot reserve capacity", () => {
+    const registration = createRegistration();
+    const snapshot = createSnapshot();
+    const retainedBytes =
+      new TextEncoder().encode(JSON.stringify({ registration, snapshot })).byteLength + 256;
+    const state = createState({
+      limits: { maxRetainedSessionBytes: retainedBytes, maxRetainedBytes: retainedBytes },
+    });
+    const socket = { send() {} };
+    expect(state.registerSession(socket, registration, snapshot)).toBe("registered");
+    expect(
+      state.updateSnapshot(socket, "session-1", {
+        ...snapshot,
+        state: { selectedIndex: 123_456, noteCount: 0 },
+      }),
+    ).toBe("capacity-exceeded");
+    expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
   });
 });

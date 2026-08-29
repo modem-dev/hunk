@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import type { AddressInfo } from "node:net";
-import type { SessionServerMessage } from "@hunk/session-broker-core";
+import type { AddressInfo, Socket } from "node:net";
+import {
+  BrokerCapacityError,
+  ResourceBudget,
+  boundHttpResponse,
+  type BudgetReservation,
+  type SessionServerMessage,
+} from "@hunk/session-broker-core";
 import type { SessionBrokerDaemon, SessionBrokerPeer } from "@hunk/session-broker";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -39,10 +45,34 @@ function defaultServeError(error: unknown, address: { hostname: string; port: nu
   );
 }
 
-function toNodeConnection(socket: WebSocket): SessionBrokerPeer {
+function toNodeConnection(
+  socket: WebSocket,
+  outboundBudget: ResourceBudget,
+  maxPeerBytes: number,
+): SessionBrokerPeer {
   return {
     send(data: string) {
-      socket.send(data);
+      const bytes = Buffer.byteLength(data);
+      if (bytes > maxPeerBytes - socket.bufferedAmount) {
+        socket.close(1013, "Session broker outbound pressure exceeded.");
+        throw new BrokerCapacityError("busy", "maxOutboundBytesPerPeer");
+      }
+      const reservation = outboundBudget.tryReserve(bytes);
+      if (!reservation) {
+        socket.close(1013, "Session broker outbound pressure exceeded.");
+        throw new BrokerCapacityError("busy", "maxOutboundBytesTotal");
+      }
+      try {
+        socket.send(data, (error) => {
+          reservation.release();
+          if (error && socket.readyState < 2) {
+            socket.close(1013, "Session broker outbound delivery failed.");
+          }
+        });
+      } catch (error) {
+        reservation.release();
+        throw error;
+      }
     },
     close(code?: number, reason?: string) {
       socket.close(code, reason);
@@ -67,21 +97,56 @@ async function toRequest(request: IncomingMessage, hostname: string, port: numbe
   } as RequestInit & { duplex?: "half" });
 }
 
-async function writeResponse(nodeResponse: ServerResponse, response: Response) {
+async function writeResponse(
+  nodeResponse: ServerResponse,
+  sourceResponse: Response,
+  responseBudget: ResourceBudget,
+  maxResponseBytes: number,
+) {
+  const response = await boundHttpResponse(sourceResponse, maxResponseBytes, responseBudget);
+  const streaming = response.headers
+    .get("content-type")
+    ?.toLowerCase()
+    .startsWith("text/event-stream");
   nodeResponse.statusCode = response.status;
   nodeResponse.statusMessage = response.statusText;
-
-  response.headers.forEach((value, key) => {
-    nodeResponse.setHeader(key, value);
-  });
-
+  response.headers.forEach((value, key) => nodeResponse.setHeader(key, value));
   if (!response.body) {
     nodeResponse.end();
     return;
   }
 
-  const body = Buffer.from(await response.arrayBuffer());
-  nodeResponse.end(body);
+  const reader = response.body.getReader();
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (!streaming && total > maxResponseBytes) {
+        await reader.cancel().catch(() => {});
+        nodeResponse.destroy(new BrokerCapacityError("capacity-exceeded", "maxHttpResponseBytes"));
+        return;
+      }
+      const reservation = streaming ? null : responseBudget.tryReserve(value.byteLength);
+      if (!streaming && !reservation) {
+        await reader.cancel().catch(() => {});
+        nodeResponse.destroy(new BrokerCapacityError("busy", "maxHttpResponseBytes"));
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        nodeResponse.write(value, (error) => {
+          reservation?.release();
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    }
+    nodeResponse.end();
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 /** Serve one runtime-neutral broker daemon through Node HTTP and ws. */
@@ -92,26 +157,70 @@ export async function serveSessionBrokerDaemon<
 >(
   options: ServeSessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>,
 ): Promise<RunningSessionBrokerDaemon> {
+  const inboundBudget = new ResourceBudget(
+    options.daemon.limits.maxInFlightWsBytes,
+    "maxInFlightWsBytes",
+  );
+  const outboundBudget = new ResourceBudget(
+    options.daemon.limits.maxOutboundBytesTotal,
+    "maxOutboundBytesTotal",
+    "busy",
+  );
+  const responseBudget = new ResourceBudget(
+    options.daemon.limits.maxHttpResponseBytes,
+    "maxHttpResponseBytes",
+    "busy",
+  );
   const server = createServer(async (incoming, outgoing) => {
     const request = await toRequest(incoming, options.hostname, options.port);
     const customResponse = await options.handleRequest?.(request, server);
     if (customResponse !== undefined) {
-      await writeResponse(outgoing, customResponse);
+      await writeResponse(
+        outgoing,
+        customResponse,
+        responseBudget,
+        options.daemon.limits.maxHttpResponseBytes,
+      );
       return;
     }
 
     const daemonResponse = await options.daemon.handleRequest(request);
     if (daemonResponse) {
-      await writeResponse(outgoing, daemonResponse);
+      await writeResponse(
+        outgoing,
+        daemonResponse,
+        responseBudget,
+        options.daemon.limits.maxHttpResponseBytes,
+      );
       return;
     }
 
-    await writeResponse(outgoing, (await options.notFound?.(request)) ?? defaultNotFound());
+    await writeResponse(
+      outgoing,
+      (await options.notFound?.(request)) ?? defaultNotFound(),
+      responseBudget,
+      options.daemon.limits.maxHttpResponseBytes,
+    );
   });
-  const webSocketServer = new WebSocketServer({ noServer: true });
+  const unauthenticatedSocketBudget = new ResourceBudget(
+    options.daemon.limits.maxUnauthenticatedSockets,
+    "maxUnauthenticatedSockets",
+    "busy",
+  );
+  const webSocketServer = new WebSocketServer({
+    noServer: true,
+    maxPayload: Math.max(1, options.daemon.limits.maxWsMessageBytes),
+  });
   // Reuse one stable peer wrapper per websocket so close events unregister the same logical
   // connection object that registration and message handling used earlier.
   const peerBySocket = new WeakMap<WebSocket, SessionBrokerPeer>();
+  const admissionBySocket = new WeakMap<WebSocket, BudgetReservation>();
+  const activeWebSockets = new Set<WebSocket>();
+  const activeSockets = new Set<Socket>();
+  server.on("connection", (socket) => {
+    activeSockets.add(socket);
+    socket.once("close", () => activeSockets.delete(socket));
+  });
   let resolved = false;
   let resolveStopped: (() => void) | null = null;
   const stopped = new Promise<void>((resolve) => {
@@ -128,20 +237,58 @@ export async function serveSessionBrokerDaemon<
   };
 
   webSocketServer.on("connection", (socket: WebSocket) => {
-    const peer = toNodeConnection(socket);
+    activeWebSockets.add(socket);
+    const peer = toNodeConnection(
+      socket,
+      outboundBudget,
+      options.daemon.limits.maxOutboundBytesPerPeer,
+    );
     peerBySocket.set(socket, peer);
-    socket.on("message", (message: string | Buffer | ArrayBuffer | Buffer[]) => {
-      const text =
-        typeof message === "string"
-          ? message
-          : Array.isArray(message)
-            ? Buffer.concat(message).toString()
-            : message instanceof ArrayBuffer
-              ? Buffer.from(new Uint8Array(message)).toString()
-              : Buffer.from(message).toString();
-      options.daemon.handleConnectionMessage(peer, text);
+    socket.on("message", (message: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
+      if (isBinary) {
+        socket.close(1003, "Session broker accepts text messages only.");
+        return;
+      }
+      const bytes = Array.isArray(message)
+        ? Buffer.concat(message)
+        : message instanceof ArrayBuffer
+          ? Buffer.from(new Uint8Array(message))
+          : Buffer.from(message);
+      if (bytes.byteLength > options.daemon.limits.maxWsMessageBytes) {
+        socket.close(1009, "Message exceeds the session broker size limit.");
+        return;
+      }
+      const reservation = inboundBudget.tryReserve(bytes.byteLength);
+      if (!reservation) {
+        socket.close(1013, "Session broker inbound pressure exceeded.");
+        return;
+      }
+      try {
+        let text: string;
+        try {
+          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch {
+          socket.close(1007, "Malformed UTF-8 session broker message.");
+          return;
+        }
+        try {
+          options.daemon.handleConnectionMessage(peer, text);
+        } catch (error) {
+          socket.close(
+            error instanceof BrokerCapacityError ? 1013 : 1011,
+            "Session broker message handling failed.",
+          );
+        }
+      } finally {
+        reservation.release();
+      }
     });
+    // ws reports maxPayload violations through an error event before its protocol close. Keep the
+    // process alive while ws completes the required 1009 close handshake.
+    socket.on("error", () => {});
     socket.on("close", (code: number, reason: Buffer) => {
+      activeWebSockets.delete(socket);
+      admissionBySocket.get(socket)?.release();
       options.daemon.handleConnectionClose(peerBySocket.get(socket) ?? peer);
       // The runtime-neutral daemon only cares that the transport closed; Node-specific close data
       // stays ignored here instead of leaking into the shared broker API.
@@ -158,9 +305,22 @@ export async function serveSessionBrokerDaemon<
       return;
     }
 
-    webSocketServer.handleUpgrade(request, socket, head, (webSocket: WebSocket) => {
-      webSocketServer.emit("connection", webSocket, request);
-    });
+    const admission = unauthenticatedSocketBudget.tryReserve();
+    if (!admission) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    socket.once("close", () => admission.release());
+    try {
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket: WebSocket) => {
+        admissionBySocket.set(webSocket, admission);
+        webSocketServer.emit("connection", webSocket, request);
+      });
+    } catch {
+      admission.release();
+      socket.destroy();
+    }
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -183,21 +343,41 @@ export async function serveSessionBrokerDaemon<
     server.listen(options.port, options.hostname);
   });
 
-  const stop = async () => {
-    // Shut down the daemon first so pending broker commands reject before the transport disappears.
-    options.daemon.shutdown();
-    await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
-      });
-    });
-    finish();
+  let stopPromise: Promise<void> | null = null;
+  const stop = () => {
+    if (stopPromise) return stopPromise;
+    stopPromise = (async () => {
+      // Reject broker work, then terminate active peers before waiting for ws/server close callbacks.
+      options.daemon.shutdown();
+      const peerClosures = [...activeWebSockets].map(
+        (socket) =>
+          new Promise<void>((resolve) => {
+            if (socket.readyState === socket.CLOSED) return resolve();
+            socket.once("close", () => resolve());
+            socket.terminate();
+          }),
+      );
+      for (const socket of activeSockets) socket.destroy();
+      await Promise.all(peerClosures);
+      await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
+      const closeServer = () => {
+        server.close();
+        server.closeAllConnections();
+      };
+      if ((globalThis as { Bun?: unknown }).Bun) {
+        // Bun's Node compatibility layer does not consistently emit Server's close callback after
+        // upgraded sockets are terminated; the real Node path below still awaits native closure.
+        closeServer();
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          server.once("close", resolve);
+          server.once("error", reject);
+          closeServer();
+        });
+      }
+      finish();
+    })();
+    return stopPromise;
   };
 
   void options.daemon.stopped.then(async () => {

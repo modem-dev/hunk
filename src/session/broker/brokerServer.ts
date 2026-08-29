@@ -25,9 +25,10 @@ import type {
   RemovedCommentResult,
 } from "../types";
 import {
+  BrokerCapacityError,
   MAX_HTTP_BODY_BYTES,
   PayloadTooLargeError,
-  readRequestTextWithLimit,
+  readRequestBytesWithLimit,
 } from "@hunk/session-broker-core";
 import { listHunkSessionNotes } from "./projections";
 import {
@@ -209,11 +210,10 @@ export function validateOriginHeader(request: Request, expectedPort: number, all
   return null;
 }
 
-async function parseJsonRequest(request: Request) {
-  const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
+function parseJsonRequestBytes(bytes: Uint8Array) {
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     throw new Error("Expected one JSON request body.");
   }
@@ -221,7 +221,11 @@ async function parseJsonRequest(request: Request) {
   return parseSessionDaemonRequest(raw);
 }
 
-export async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
+export async function handleSessionApiRequest(
+  state: HunkSessionBrokerState,
+  request: Request,
+  bodyBytes?: Uint8Array,
+) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
   }
@@ -231,7 +235,9 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
   }
 
   try {
-    const input = await parseJsonRequest(request);
+    const input = parseJsonRequestBytes(
+      bodyBytes ?? (await readRequestBytesWithLimit(request, MAX_HTTP_BODY_BYTES)),
+    );
     let response: SessionDaemonResponse;
 
     switch (input.action) {
@@ -446,6 +452,9 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
     if (error instanceof PayloadTooLargeError) {
       return jsonError(error.message, 413);
     }
+    if (error instanceof BrokerCapacityError) {
+      return Response.json({ error: error.code, resource: error.resource }, { status: 503 });
+    }
 
     return jsonError(error instanceof Error ? error.message : "Unknown session API error.");
   }
@@ -462,6 +471,7 @@ function createHunkBrokerController(
 ): SessionBrokerController<ListedHunkSession, HunkSessionServerMessage, HunkSessionCommandResult> {
   return {
     protocolParsers: hunkSessionProtocolParsers,
+    limits: state.limits,
     listSessions: () => state.listSessions(),
     getSession: (selector) => state.getSession(selector),
     getSessionCount: () => state.getSessionCount(),
@@ -546,7 +556,11 @@ export function serveSessionBrokerDaemon(
       // Keep the richer Hunk session API here rather than in the shared package so commands like
       // review, reload, and comment flows stay app-specific.
       if (url.pathname === HUNK_SESSION_API_PATH) {
-        return handleSessionApiRequest(state, request);
+        return daemon.handleBoundedControl(
+          request,
+          (body) => handleSessionApiRequest(state, request, body),
+          { payloadTooLarge: (error) => jsonError(error.message, 413) },
+        );
       }
 
       // The review surface authorizes every one of its own routes with a per-session

@@ -405,8 +405,9 @@ describe("session broker daemon", () => {
     );
 
     expect(response?.status).toBe(413);
-    await expect(response?.json()).resolves.toMatchObject({
-      error: expect.stringContaining("session broker limit"),
+    await expect(response?.json()).resolves.toEqual({
+      error: "capacity-exceeded",
+      resource: "maxHttpBodyBytes",
     });
     daemon.shutdown();
   });
@@ -916,6 +917,51 @@ describe("session broker daemon", () => {
     });
     expect(authorized).toBe(false);
     expect(responseText).not.toContain("private");
+    daemon.shutdown();
+  });
+
+  test("rejects daemon state limits that were not configured on its broker controller", () => {
+    expect(() =>
+      createSessionBrokerDaemon({
+        broker: createBroker(),
+        limits: { maxSessions: 0 },
+      }),
+    ).toThrow("state limits must be configured on the broker controller");
+  });
+
+  test("returns busy before admitting more than the configured concurrent controls", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+      limits: { maxConcurrentHttpControls: 1 },
+      callerAuthenticator: {
+        authenticate: async () => {
+          await gate;
+          return authenticatedHttpApi.callerAuthenticator.authenticate();
+        },
+      },
+    });
+    const request = () =>
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      });
+    const first = daemon.handleRequest(request());
+    await Bun.sleep(0);
+    const overflow = await daemon.handleRequest(request());
+    expect(overflow?.status).toBe(503);
+    await expect(overflow?.json()).resolves.toEqual({
+      error: "busy",
+      resource: "maxConcurrentHttpControls",
+    });
+    release();
+    expect((await first)?.status).toBe(200);
     daemon.shutdown();
   });
 

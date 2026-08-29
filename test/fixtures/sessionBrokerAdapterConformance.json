@@ -1,0 +1,13 @@
+{
+  "textOnly": {
+    "binaryCloseCode": 1003
+  },
+  "inbound": {
+    "oversizedCloseCode": 1009,
+    "pressureCloseCode": 1013,
+    "maxMessageBytes": 8388608
+  },
+  "outbound": {
+    "pressureCloseCode": 1013
+  }
+}

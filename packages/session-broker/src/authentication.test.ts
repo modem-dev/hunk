@@ -57,8 +57,10 @@ async function setup(
   options: {
     revoked?: () => boolean;
     maxChallenges?: number;
+    maxChallengeBytes?: number;
     maxChallengeTranscriptBytes?: number;
     maxCallerSessions?: number;
+    limits?: { maxCallerSessionBytes?: number; maxCallerSessionsBytes?: number };
     callerSessionTtlMs?: number;
     crypto?: SessionBrokerCrypto;
   } = {},
@@ -79,9 +81,11 @@ async function setup(
     now: () => now,
     isRevoked: options.revoked,
     maxChallenges: options.maxChallenges,
+    maxChallengeBytes: options.maxChallengeBytes,
     maxChallengeTranscriptBytes: options.maxChallengeTranscriptBytes,
     maxCallerSessions: options.maxCallerSessions,
     callerSessionTtlMs: options.callerSessionTtlMs,
+    limits: options.limits,
     crypto: options.crypto,
   });
   return {
@@ -551,6 +555,40 @@ describe("session broker signed authentication", () => {
     }
   });
 
+  test("retains incomplete-handshake capacity through asynchronous proof verification", async () => {
+    let blockVerify = false;
+    let releaseVerify!: () => void;
+    const verifyGate = new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+    });
+    const cryptoWithGate: SessionBrokerCrypto = {
+      ...webSessionBrokerCrypto,
+      async verify(publicKey, signature, value) {
+        if (blockVerify) await verifyGate;
+        return webSessionBrokerCrypto.verify(publicKey, signature, value);
+      },
+    };
+    const values = await setup({ maxChallenges: 1, crypto: cryptoWithGate });
+    const request = challengeRequest();
+    const challenge = await values.authenticator.issueChallenge(request, request.endpoint);
+    const transcript = challengeTranscriptForClient(request, challenge, "generation-1");
+    const signature = encodeBase64Url(
+      await webSessionBrokerCrypto.sign(values.caller.privateKey, transcript),
+    );
+
+    blockVerify = true;
+    const completing = values.authenticator.completeCallerHello({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+    await Bun.sleep(0);
+    await expect(
+      values.authenticator.issueChallenge(request, request.endpoint),
+    ).rejects.toMatchObject({ code: "authentication-capacity" });
+    releaseVerify();
+    await expect(completing).resolves.toMatchObject({ brokerRevision: 1 });
+  });
+
   test("bounds pending challenge counts and retained transcript bytes", async () => {
     const values = await setup({ maxChallenges: 1 });
     await values.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint);
@@ -565,9 +603,32 @@ describe("session broker signed authentication", () => {
       byteBound.authenticator.issueChallenge(challengeRequest(), challengeRequest().endpoint),
     ).rejects.toMatchObject({ code: "authentication-capacity" });
 
+    const completeRecordBound = await setup({ maxChallengeBytes: 512 });
+    await expect(
+      completeRecordBound.authenticator.issueChallenge(
+        challengeRequest(),
+        challengeRequest().endpoint,
+      ),
+    ).rejects.toMatchObject({ code: "authentication-capacity" });
+
     const noCallerCapacity = await setup({ maxCallerSessions: 0 });
     await expect(openCallerSession(noCallerCapacity)).rejects.toMatchObject({
       code: "authentication-capacity",
     });
+
+    const noCallerByteCapacity = await setup({
+      limits: { maxCallerSessionBytes: 1, maxCallerSessionsBytes: 1 },
+    });
+    await expect(openCallerSession(noCallerByteCapacity)).rejects.toMatchObject({
+      code: "authentication-capacity",
+    });
+
+    const reusableCallerCapacity = await setup({ maxCallerSessions: 1 });
+    const first = await openCallerSession(reusableCallerCapacity);
+    reusableCallerCapacity.authenticator.revokeCallerSession(first.session.callerSessionId);
+    await expect(openCallerSession(reusableCallerCapacity)).resolves.toMatchObject({
+      session: { initialSequence: "1" },
+    });
+    reusableCallerCapacity.authenticator.clear();
   });
 });

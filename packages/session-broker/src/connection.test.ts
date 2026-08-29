@@ -492,6 +492,186 @@ describe("session broker connection", () => {
     connection.stop();
   });
 
+  test("keeps 32 missing-bridge commands FIFO and explicitly rejects the 33rd", async () => {
+    const socket = new TestSocket();
+    const dispatched: string[] = [];
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+    });
+    connection.start();
+    socket.emitOpen();
+    for (let index = 1; index <= 33; index += 1) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: `request-${index}`,
+          command: "annotate",
+          input: { summary: `note-${index}` },
+        }),
+      );
+    }
+    const overflow = JSON.parse(socket.sent.at(-1)!) as { requestId: string; error: string };
+    expect(overflow).toMatchObject({ requestId: "request-33", error: "queue-full" });
+
+    connection.setBridge({
+      dispatchCommand: async (message) => {
+        dispatched.push(message.requestId);
+        return { ok: true };
+      },
+    });
+    await Bun.sleep(10);
+    expect(dispatched).toEqual(Array.from({ length: 32 }, (_, index) => `request-${index + 1}`));
+    connection.stop();
+  });
+
+  test("keeps a hung bridge plus queued commands within the same 32-command budget", async () => {
+    const socket = new TestSocket();
+    const never = new Promise<{ ok: true }>(() => {});
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: { dispatchCommand: () => never },
+    });
+    connection.start();
+    socket.emitOpen();
+    for (let index = 1; index <= 33; index += 1) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: `request-${index}`,
+          command: "annotate",
+          input: { summary: `note-${index}` },
+        }),
+      );
+    }
+    await Bun.sleep(0);
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      requestId: "request-33",
+      error: "queue-full",
+    });
+    connection.stop();
+  });
+
+  test("retains a hung command reservation across disconnect and reconnect", async () => {
+    const sockets: TestSocket[] = [];
+    const never = new Promise<{ ok: true }>(() => {});
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: { dispatchCommand: () => never },
+      reconnectDelayMs: 1,
+      limits: { maxPreBridgeCommands: 1 },
+    });
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    sockets[0]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-hung",
+        command: "annotate",
+        input: { summary: "hung" },
+      }),
+    );
+    await Bun.sleep(0);
+    sockets[0]!.emitClose();
+    await Bun.sleep(5);
+    sockets[1]!.emitOpen();
+    sockets[1]!.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-new",
+        command: "annotate",
+        input: { summary: "new" },
+      }),
+    );
+
+    expect(JSON.parse(sockets[1]!.sent.at(-1)!)).toMatchObject({
+      requestId: "request-new",
+      error: "queue-full",
+    });
+    connection.stop();
+  });
+
+  test("serializes bridge execution while preserving arrival order", async () => {
+    const socket = new TestSocket();
+    const started: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: {
+        dispatchCommand: async (message) => {
+          started.push(message.requestId);
+          if (message.requestId === "request-1") await firstGate;
+          return { ok: true };
+        },
+      },
+    });
+    connection.start();
+    socket.emitOpen();
+    for (const requestId of ["request-1", "request-2"]) {
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId,
+          command: "annotate",
+          input: { summary: requestId },
+        }),
+      );
+    }
+    await Bun.sleep(0);
+    expect(started).toEqual(["request-1"]);
+    releaseFirst();
+    await Bun.sleep(0);
+    expect(started).toEqual(["request-1", "request-2"]);
+    connection.stop();
+  });
+
   test("reconnects after socket close unless a close directive disables it", async () => {
     const sockets: TestSocket[] = [];
     const warnings: string[] = [];
