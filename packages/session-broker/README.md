@@ -6,10 +6,12 @@ The implementation and release contract for turning these internal workspaces in
 per-application SDK lives in
 [`docs/session-broker-sdk.md`](https://github.com/modem-dev/hunk/blob/main/docs/session-broker-sdk.md).
 Current package APIs predate that contract and do not yet satisfy every security, compatibility,
-supervision, or packaging gate it defines. **Both the generic WebSocket producer path and optional
-raw HTTP control path are currently unauthenticated and are internal-only. Do not deploy them as a
-security boundary.** Hunk currently adds loopback Host/Origin checks around its custom session
-routes; only its separate browser-review routes add a per-session capability.
+supervision, or packaging gate it defines. The package now provides signed producer/caller hello,
+short-lived caller sessions, replay admission, and default-deny raw HTTP authorization primitives.
+**Hunk credential discovery and automatic producer/caller activation intentionally remain deferred
+to the later Hunk runtime-adapter change (PR 5 of this stack).** Until that composition lands, the
+legacy Hunk WebSocket and custom session routes remain internal-only; no bearer fallback is
+available. Hunk's separate browser-review capabilities remain independent.
 
 This is the **main broker package** in the workspace. It owns the reusable broker behavior without committing to Bun or Node server APIs.
 
@@ -117,21 +119,13 @@ At this point the daemon can:
 - process websocket register/snapshot/heartbeat/result messages
 - prune stale sessions and request idle shutdown
 
-The raw HTTP broker API is opt-in. **The current internal API has no generic authentication or
-Host/Origin enforcement. Do not deploy this option, even on loopback, until the security contract
-in `docs/session-broker-sdk.md` is implemented.** It exists only for controlled package tests
-today:
-
-```ts
-const daemon = createSessionBrokerDaemon({
-  broker,
-  capabilities: {
-    version: 1,
-    name: "example-broker",
-  },
-  exposeHttpApi: true,
-});
-```
+The raw HTTP broker API is opt-in and fails closed: `exposeHttpApi: true` exposes no control route
+unless an explicit immutable `appId`, a singleton `appRevision`, a `callerAuthenticator`, and an app
+`authorizer` are supplied. The included
+`SessionBrokerAuthenticator` implements Ed25519 challenge/proof and signed requests; applications
+inject app-scoped grants, public verifiers, daemon signing identity, revocation policy, and their
+own default-deny authorization hook. It performs no filesystem, environment, coordinator, or Hunk
+credential discovery.
 
 ### 3. Serve it through a runtime adapter
 
@@ -193,7 +187,8 @@ The helper owns:
 ## Raw broker API
 
 The daemon always serves `GET /health`. Its raw capability/control API is intentionally small and
-disabled by default. When `exposeHttpApi: true` is set, it additionally serves:
+disabled by default. When `exposeHttpApi: true` is set together with an explicit `appId`, singleton
+`appRevision`, caller authenticator, and authorizer, it additionally serves:
 
 - `GET /broker/capabilities`
 - `POST /broker`
@@ -203,10 +198,14 @@ Request body shapes:
 ```ts
 { action: "list" }
 { action: "get", selector: { sessionId: "..." } }
-{ action: "dispatch", selector: { sessionId: "..." }, command: "...", input: {...} }
+{ action: "dispatch", selector: { sessionId: "..." }, command: "...", commandVersion: 1, input: {...} }
 ```
 
-Responses return raw session records or command results.
+An omitted `commandVersion` is validated and deliberately defaults to revision `1` for current
+internal callers. Authentication covers the exact bounded HTTP body bytes before strict UTF-8 and
+JSON decoding. Authenticated responses use `{ body, authentication }`; the signed authentication
+record binds daemon generation, broker revision, target application contract when applicable,
+request ID, HTTP status, and the canonical structured-body digest.
 
 ## Hunk-specific layering
 

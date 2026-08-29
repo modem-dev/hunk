@@ -1,4 +1,10 @@
-import type { SessionTargetInput } from "@hunk/session-broker-core";
+import type {
+  BrokerAppContract,
+  CallerOperation,
+  CallerPrincipal,
+  SessionTargetInput,
+} from "@hunk/session-broker-core";
+import type { SessionBrokerResponseAuthentication } from "./authentication";
 
 export const DEFAULT_SESSION_BROKER_HEALTH_PATH = "/health";
 export const DEFAULT_SESSION_BROKER_API_PATH = "/broker";
@@ -35,6 +41,7 @@ export type SessionBrokerDaemonRequest<
       action: "dispatch";
       selector: SessionTargetInput;
       command: CommandName;
+      commandVersion?: number;
       input: CommandInput;
       timeoutMs?: number;
       timeoutMessage?: string;
@@ -50,6 +57,17 @@ export type SessionBrokerDaemonResponse<SessionView = unknown, CommandResult = u
   | {
       result: CommandResult;
     };
+
+/** Carry one structured daemon body together with its generation-bound response signature. */
+export interface SessionBrokerAuthenticatedResponse<Body = unknown> {
+  readonly body: Body;
+  readonly authentication: SessionBrokerResponseAuthentication;
+}
+
+/** Select the fixed Phase-1 application contract for target-specific responses. */
+export interface SessionBrokerTargetContract extends BrokerAppContract {
+  readonly features: readonly [];
+}
 
 export interface SessionBrokerHealth {
   ok: boolean;
@@ -86,3 +104,35 @@ export interface SessionBrokerConnectionCloseDirective {
   reconnect?: boolean;
   warning?: string;
 }
+
+/** Facts supplied to the mandatory app authorization hook after signed authentication. */
+export interface SessionBrokerAuthorizationContext {
+  readonly principal: CallerPrincipal;
+  readonly operation: CallerOperation;
+  readonly sessionId?: string;
+  readonly command?: string;
+  readonly commandVersion?: number;
+  readonly requestId?: string;
+  readonly signal: AbortSignal;
+}
+
+export type SessionBrokerAuthorizer = (
+  context: SessionBrokerAuthorizationContext,
+) => boolean | Promise<boolean>;
+
+/** Redacted decision metadata suitable for an app-owned audit sink. */
+export interface SessionBrokerAuditEvent {
+  readonly appId: string;
+  readonly principalId?: string;
+  readonly keyId?: string;
+  readonly sessionId?: string;
+  readonly operation: CallerOperation;
+  readonly command?: string;
+  readonly commandVersion?: number;
+  readonly requestId?: string;
+  readonly decision: "allow" | "deny";
+  readonly outcome: "authenticated" | "authentication-failed" | "authorization-failed";
+  readonly timestamp: number;
+}
+
+export type SessionBrokerAuditHook = (event: SessionBrokerAuditEvent) => void | Promise<void>;

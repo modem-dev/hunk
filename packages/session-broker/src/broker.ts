@@ -65,6 +65,7 @@ export interface SessionBrokerController<
   dispatchCommand(options: {
     selector: SessionTargetInput;
     command: ServerMessage["command"];
+    commandVersion?: number;
     input: unknown;
     timeoutMessage: string;
     timeoutMs?: number;
@@ -183,12 +184,14 @@ export class SessionBroker<
   dispatchCommand<ResultType extends CommandResult, CommandName extends ServerMessage["command"]>({
     selector,
     command,
+    commandVersion,
     input,
     timeoutMessage,
     timeoutMs,
   }: {
     selector: SessionTargetInput;
     command: CommandName;
+    commandVersion?: number;
     input: Extract<ServerMessage, { command: CommandName }>["input"];
     timeoutMessage: string;
     timeoutMs?: number;
@@ -196,12 +199,14 @@ export class SessionBroker<
   dispatchCommand({
     selector,
     command,
+    commandVersion,
     input,
     timeoutMessage,
     timeoutMs,
   }: {
     selector: SessionTargetInput;
     command: ServerMessage["command"];
+    commandVersion?: number;
     input: unknown;
     timeoutMessage: string;
     timeoutMs?: number;
@@ -209,6 +214,7 @@ export class SessionBroker<
     return this.state.dispatchCommand<CommandResult, ServerMessage["command"]>({
       selector,
       command,
+      commandVersion,
       input: input as Extract<ServerMessage, { command: ServerMessage["command"] }>["input"],
       timeoutMessage,
       timeoutMs,

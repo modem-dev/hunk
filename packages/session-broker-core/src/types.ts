@@ -71,5 +71,6 @@ export type SessionServerMessage<CommandName extends string = string, Input = un
   type: "command";
   requestId: string;
   command: CommandName;
+  commandVersion?: number;
   input: Input;
 };
