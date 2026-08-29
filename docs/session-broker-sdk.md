@@ -555,6 +555,19 @@ Security outranks wire compatibility: no migration accepts unauthenticated contr
 Preservation means paths, selectors, outputs, and automatic credential discovery for upgraded
 clients—not interoperability with pre-authentication binaries.
 
+Hunk's fixed-endpoint Phase-1 credential store uses a home-local `.hunk` parent when
+`XDG_RUNTIME_DIR` is unavailable, rather than a predictable name in a shared temporary directory.
+It inherits the current user's ACL when it creates the `hunk-mcp/security-v1` directory
+on Windows and rejects symbolic-link redirection. Node does not
+provide a portable owner/DACL or general reparse-point inspection API, so this integration cannot
+detect a pre-existing custom permissive DACL or every non-symlink reparse point; completing native
+Windows ACL validation remains a release-gate item before the reusable package is published.
+
+The fixed-endpoint integration authenticates bootstrap reconnects, distinguishes `register` from
+`reconnect` scope, atomically retires the previous socket, and rejects its uncertain work. It does
+not yet claim the durable candidate-key `registered`/`registration-ack` rotation sequence above;
+that sequence remains a publication gate rather than an unauthenticated compatibility fallback.
+
 Before publishing even `initializing`, a Hunk candidate binds and retains the legacy guard endpoint;
 only its holder may enter coordinator election. A contender unable to bind waits a bounded startup
 interval for authenticated coordinator publication, then reports an unverifiable listener and launches

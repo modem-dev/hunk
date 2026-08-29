@@ -85,11 +85,13 @@ function fakeDaemon(overrides = {}, behavior = {}) {
     maxOutboundBytesTotal: 64 * 1024 * 1024,
     maxHttpResponseBytes: 8 * 1024 * 1024,
     maxUnauthenticatedSockets: 64,
+    maxHandshakeDurationMs: 15_000,
     ...overrides,
   };
   return {
     limits,
     stopped: new Promise(() => {}),
+    requiresProducerAuthentication: behavior.requiresProducerAuthentication ?? false,
     matchesSocketPath: (pathname) => pathname === "/session",
     handleConnectionMessage: behavior.handleConnectionMessage ?? (() => {}),
     handleConnectionClose() {},
@@ -112,11 +114,15 @@ test("Node WebCrypto Ed25519 and base64url work without Bun globals", async () =
 test("Node adapter consumes the shared text/binary/oversize/pressure corpus", async () => {
   const port = await reservePort();
   const running = await serveSessionBrokerDaemon({
-    daemon: fakeDaemon({
-      maxWsMessageBytes: 8,
-      maxHttpResponseBytes: 8,
-      maxUnauthenticatedSockets: 1,
-    }),
+    daemon: fakeDaemon(
+      {
+        maxWsMessageBytes: 8,
+        maxHttpResponseBytes: 8,
+        maxUnauthenticatedSockets: 1,
+        maxHandshakeDurationMs: 1_000,
+      },
+      { requiresProducerAuthentication: true },
+    ),
     hostname: "127.0.0.1",
     port,
     handleRequest: (request) =>

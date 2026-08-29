@@ -5,6 +5,7 @@ import {
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
   type CallerPrincipal,
+  type ProducerOperation,
   type SessionRegistration,
   type SessionServerMessage,
   type SessionSnapshot,
@@ -12,7 +13,11 @@ import {
 import { SessionBroker } from "./broker";
 import { createSessionBrokerDaemon } from "./daemon";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
-import type { AuthenticatedCallerRequest } from "./authentication";
+import type {
+  AuthenticatedCallerRequest,
+  AuthenticatedProducerHello,
+  SessionBrokerHelloChallenge,
+} from "./authentication";
 
 interface TestSessionInfo {
   title: string;
@@ -170,9 +175,13 @@ async function authenticatedBody(response: Response | null) {
 function createConnection() {
   const sent: string[] = [];
   let closed: { code?: number; reason?: string } | null = null;
+  let authenticated = false;
 
   return {
     sent,
+    get authenticated() {
+      return authenticated;
+    },
     get closed() {
       return closed;
     },
@@ -182,6 +191,9 @@ function createConnection() {
       },
       close(code?: number, reason?: string) {
         closed = { code, reason };
+      },
+      markAuthenticated() {
+        authenticated = true;
       },
     },
   };
@@ -605,6 +617,81 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("requires reconnect scope before atomically replacing an authenticated owner", async () => {
+    let operations: readonly ProducerOperation[] = ["register"];
+    const principal = () => ({
+      kind: "producer" as const,
+      appId: "dev.example",
+      principalId: "producer-1",
+      keyId: "producer-key-1",
+      grantId: "producer-grant-1",
+      scopes: operations,
+    });
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello(_proof, connectionId) {
+          return {
+            principal: principal(),
+            connectionId: String(connectionId),
+            brokerRevision: 1,
+            appRevision: 1,
+            features: [],
+            helloTranscriptHash: "transcript-1",
+            daemonKeyId: "daemon-key-1",
+            daemonSignature: "signature-1",
+          } satisfies AuthenticatedProducerHello;
+        },
+        assertProducerActive() {},
+      },
+    });
+    const first = createConnection();
+    const denied = createConnection();
+    const replacement = createConnection();
+    const authenticate = async (connection: ReturnType<typeof createConnection>["connection"]) => {
+      daemon.handleConnectionMessage(connection, JSON.stringify({ type: "hello-init", hello: {} }));
+      await Bun.sleep(0);
+      daemon.handleConnectionMessage(
+        connection,
+        JSON.stringify({ type: "hello-proof", proof: {} }),
+      );
+      await Bun.sleep(0);
+    };
+    const register = (connection: ReturnType<typeof createConnection>["connection"]) =>
+      daemon.handleConnectionMessage(
+        connection,
+        JSON.stringify({
+          type: "register",
+          registration: createRegistration(),
+          snapshot: createSnapshot(),
+        }),
+      );
+
+    await authenticate(first.connection);
+    expect(first.authenticated).toBe(false);
+    register(first.connection);
+    expect(first.authenticated).toBe(true);
+    await authenticate(denied.connection);
+    register(denied.connection);
+    expect(denied.closed?.reason).toContain("scope rejected");
+    expect(first.closed).toBeNull();
+
+    operations = ["reconnect"];
+    await authenticate(replacement.connection);
+    register(replacement.connection);
+    expect(first.closed?.reason).toContain("owner reconnected");
+    expect(daemon.listSessions()).toHaveLength(1);
+  });
+
   test("rejects duplicate live registration without retiring the owner", () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
@@ -845,6 +932,15 @@ describe("session broker daemon", () => {
         return true;
       },
     });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
     const post = (body: unknown) =>
       daemon.handleRequest(
         new Request("http://broker.test/broker", {
@@ -854,13 +950,13 @@ describe("session broker daemon", () => {
         }),
       );
 
-    expect((await post({ action: "get", selector: { sessionId: "missing" } }))?.status).toBe(403);
+    expect((await post({ action: "get", selector: { sessionId: "session-1" } }))?.status).toBe(403);
     expect(appAuthorizerCalls).toBe(0);
     expect(
       (
         await post({
           action: "dispatch",
-          selector: { sessionId: "missing" },
+          selector: { sessionId: "session-1" },
           command: "forbidden",
           input: {},
         })
@@ -871,7 +967,7 @@ describe("session broker daemon", () => {
       (
         await post({
           action: "dispatch",
-          selector: { sessionId: "missing" },
+          selector: { sessionId: "session-1" },
           command: "allowed",
           commandVersion: 0,
           input: {},

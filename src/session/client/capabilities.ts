@@ -7,9 +7,9 @@ import { parseSessionDaemonCapabilities } from "../protocolSchemas";
 import { HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS, requestSessionDaemonHttp } from "./daemonHttp";
 
 export const HUNK_DAEMON_UPGRADE_RESTART_NOTICE =
-  "[hunk:session] Restarting stale session daemon after upgrade.";
+  "[hunk:session] The legacy session daemon requires a manual restart; Hunk will not signal an unverifiable PID.";
 
-/** Tell the user that Hunk is refreshing an old daemon left running across an upgrade. */
+/** Tell the user that an unverifiable legacy daemon must be stopped manually. */
 export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = console.error) {
   log(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
 }

@@ -7,6 +7,7 @@ import {
 } from "../../../test/helpers/session-daemon-fixtures";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
 import { SessionBrokerClient } from "./brokerClient";
+import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -120,33 +121,10 @@ describe("Hunk session daemon client", () => {
     }
   }, 10_000);
 
-  test("restartIncompatibleDaemon lets startup recover when the stale daemon already exited", async () => {
-    const server = createServer((_request, response) => {
-      response.writeHead(404, { "content-type": "text/plain" });
-      response.end("gone");
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => resolve());
-    });
-
-    const address = server.address();
-    const port = typeof address === "object" && address ? address.port : 0;
-    const config = {
-      host: "127.0.0.1",
-      port,
-      httpOrigin: `http://127.0.0.1:${port}`,
-      wsOrigin: `ws://127.0.0.1:${port}`,
-    };
-
+  test("does not retain the legacy PID-based incompatible-daemon replacement path", () => {
     const client = new SessionBrokerClient(createRegistration(), createSnapshot());
-
-    try {
-      await expect((client as any).restartIncompatibleDaemon(config)).resolves.toBeUndefined();
-    } finally {
-      client.stop();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
+    expect((client as any).restartIncompatibleDaemon).toBeUndefined();
+    client.stop();
   });
 
   test("logs one actionable warning when a refreshed daemon rejects an older Hunk window", async () => {
@@ -224,6 +202,7 @@ describe("Hunk session daemon client", () => {
         await Bun.sleep(25);
       }
 
+      (client as any).credentials = await loadOrCreateHunkSessionBrokerCredentials();
       await (client as any).connect({
         host: "127.0.0.1",
         port,

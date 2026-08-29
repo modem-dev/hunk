@@ -78,8 +78,8 @@ describe("parseHostAndPort", () => {
     expect(parseHostAndPort("[::1]:0")).toBeNull();
   });
 
-  test("tolerates an unbracketed IPv6 literal by dropping the port", () => {
-    expect(parseHostAndPort("::1")).toEqual({ host: "::1", port: undefined });
+  test("rejects ambiguous unbracketed IPv6 authorities", () => {
+    expect(parseHostAndPort("::1")).toBeNull();
   });
 });
 

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type {
+  ProducerGrant,
   SessionRegistration,
   SessionServerMessage,
   SessionSnapshot,
 } from "@hunk/session-broker-core";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import {
+  SESSION_BROKER_REGISTRATION_VERSION,
+  SESSION_BROKER_SIGNATURE_ALGORITHM,
+} from "@hunk/session-broker-core";
 import { createSessionBrokerConnection } from "./connection";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type { SessionBrokerSocketLike } from "./types";
@@ -147,6 +151,58 @@ describe("session broker connection", () => {
       updatedAt: "2026-04-15T00:00:01.000Z",
       state: { selectedIndex: 1 },
     });
+  });
+
+  test("withholds registration and replacement updates until producer authentication completes", async () => {
+    const socket = new TestSocket();
+    const pair = (await crypto.subtle.generateKey("Ed25519", false, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const grant: ProducerGrant = {
+      kind: "producer",
+      appId: "dev.example",
+      principalId: "producer-1",
+      keyId: "producer-key-1",
+      grantId: "producer-grant-1",
+      algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
+      issuedAt: Date.now() - 1_000,
+      expiresAt: Date.now() + 60_000,
+      revocationId: "producer-revocation-1",
+      mayDelegate: false,
+      operations: ["register", "reconnect"],
+    };
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      producerAuthentication: {
+        appId: "dev.example",
+        appRevision: 1,
+        credential: { grant, privateKey: pair.privateKey },
+        daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
+      },
+    });
+
+    connection.start();
+    socket.emitOpen();
+    connection.updateSnapshot({
+      ...createSnapshot(),
+      state: { selectedIndex: 2 },
+    });
+    connection.replaceSession(createRegistration(), createSnapshot());
+
+    expect(socket.sent).toHaveLength(1);
+    expect(JSON.parse(socket.sent[0]!)).toMatchObject({ type: "hello-init" });
+    connection.stop();
   });
 
   test("keeps the previous registration when replacement send throws", () => {

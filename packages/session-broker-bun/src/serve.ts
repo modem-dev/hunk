@@ -10,6 +10,7 @@ import type { SessionBrokerDaemon, SessionBrokerPeer } from "@hunk/session-broke
 
 interface BrokerWebSocketData {
   admission: BudgetReservation;
+  handshakeTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface ServeSessionBrokerDaemonOptions<
@@ -123,6 +124,16 @@ export function serveSessionBrokerDaemon<
         }
       },
       close: (code, reason) => socket.close(code, reason),
+      markAuthenticated() {
+        const data = (socket as typeof socket & { data?: BrokerWebSocketData }).data;
+        if (!data) return;
+        if (data.handshakeTimer) {
+          clearTimeout(data.handshakeTimer);
+          data.handshakeTimer = undefined;
+        }
+        activeAdmissions.delete(data.admission);
+        data.admission.release();
+      },
     };
     peers.set(key, peer);
     return peer;
@@ -192,6 +203,17 @@ export function serveSessionBrokerDaemon<
         );
       },
       websocket: {
+        open: (socket) => {
+          if (!options.daemon.requiresProducerAuthentication) {
+            activeAdmissions.delete(socket.data.admission);
+            socket.data.admission.release();
+            return;
+          }
+          socket.data.handshakeTimer = setTimeout(() => {
+            socket.close(1008, "Session broker authentication timed out.");
+          }, options.daemon.limits.maxHandshakeDurationMs);
+          socket.data.handshakeTimer.unref?.();
+        },
         // Bun cannot customize the close code of its native payload rejection. Keep the native cap
         // at the fixed aggregate ceiling so decoded messages above the per-message limit reach the
         // portable 1009 path while runtime buffering remains bounded.
@@ -239,6 +261,7 @@ export function serveSessionBrokerDaemon<
         },
         close: (socket) => {
           const key = socket as object;
+          if (socket.data.handshakeTimer) clearTimeout(socket.data.handshakeTimer);
           bufferedReservations.get(key)?.release();
           bufferedReservations.delete(key);
           activeAdmissions.delete(socket.data.admission);

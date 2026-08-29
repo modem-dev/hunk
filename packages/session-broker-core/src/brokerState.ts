@@ -287,6 +287,7 @@ export class SessionBrokerState<
     socket: DaemonSessionSocket,
     registrationInput: unknown,
     snapshotInput: unknown,
+    options: { replaceOwner?: boolean } = {},
   ): RegisterSessionResult {
     let registration: SessionRegistration<Info> | null;
     let snapshot: SessionSnapshot<State> | null;
@@ -312,7 +313,7 @@ export class SessionBrokerState<
     if (retainedBytes > this.limits.maxRetainedSessionBytes) return "capacity-exceeded";
 
     const existing = this.sessions.get(registration.sessionId);
-    if (existing && existing.socket !== socket) return "already-connected";
+    if (existing && existing.socket !== socket && !options.replaceOwner) return "already-connected";
     const previousSessionId = this.sessionIdsBySocket.get(socket);
     const transferSessionId = existing ? registration.sessionId : previousSessionId;
     const previousRetained = transferSessionId
@@ -321,13 +322,27 @@ export class SessionBrokerState<
     const previousCount = transferSessionId
       ? this.sessionReservations.get(transferSessionId)
       : undefined;
+    const abandonedRetained =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.retainedReservations.get(previousSessionId)
+        : undefined;
+    const abandonedCount =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.sessionReservations.get(previousSessionId)
+        : undefined;
 
     let retainedReservation: BudgetReservation | null = null;
     let sessionReservation: BudgetReservation | null = null;
     try {
       try {
         retainedReservation = previousRetained
-          ? this.retainedByteBudget.resize(previousRetained, retainedBytes)
+          ? abandonedRetained
+            ? this.retainedByteBudget.resizeWithCredit(
+                previousRetained,
+                retainedBytes,
+                abandonedRetained,
+              )
+            : this.retainedByteBudget.resize(previousRetained, retainedBytes)
           : this.retainedByteBudget.reserve(retainedBytes);
         sessionReservation = previousCount ?? this.sessionBudget.reserve();
       } catch {
@@ -335,11 +350,20 @@ export class SessionBrokerState<
       }
 
       const now = new Date().toISOString();
+      if (existing && existing.socket !== socket) {
+        this.sessionIdsBySocket.delete(existing.socket);
+        this.rejectPendingCommandsForSession(
+          registration.sessionId,
+          new Error("The session owner reconnected."),
+        );
+      }
       if (previousSessionId && previousSessionId !== registration.sessionId) {
         // Detach the old identity without releasing the reservations transferred to its replacement.
         this.sessions.delete(previousSessionId);
         this.retainedReservations.delete(previousSessionId);
         this.sessionReservations.delete(previousSessionId);
+        abandonedRetained?.release();
+        abandonedCount?.release();
         this.rejectPendingCommandsForSession(
           previousSessionId,
           new Error("The session registration was replaced."),

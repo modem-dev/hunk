@@ -27,6 +27,7 @@ describe("session broker limits", () => {
       maxHttpResponseBytes: 8 * 1024 * 1024,
       maxWsMessageBytes: 8 * 1024 * 1024,
       maxInFlightWsBytes: 64 * 1024 * 1024,
+      maxHandshakeDurationMs: 15_000,
     });
     expect(Object.isFrozen(DEFAULT_SESSION_BROKER_LIMITS)).toBe(true);
   });
@@ -72,6 +73,18 @@ describe("resource reservations", () => {
     expect(() => budget.reserve(1)).toThrow(BrokerCapacityError);
     reservation.release();
     reservation.release();
+    expect(budget.used).toBe(0);
+  });
+
+  test("combines a replacement and retired reservation without transient over-admission", () => {
+    const budget = new ResourceBudget(10, "bytes");
+    const target = budget.reserve(6);
+    const credit = budget.reserve(4);
+    const replacement = budget.resizeWithCredit(target, 9, credit);
+    expect(budget.used).toBe(9);
+    expect(target.released).toBe(true);
+    expect(credit.released).toBe(true);
+    replacement.release();
     expect(budget.used).toBe(0);
   });
 

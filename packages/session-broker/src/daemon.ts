@@ -8,6 +8,7 @@ import {
   mergeSessionBrokerLimits,
   DEFAULT_SESSION_BROKER_LIMITS,
   callerPrincipalAllows,
+  producerPrincipalAllows,
   canonicalizeJson,
   isValidBrokerAppId,
   isValidBrokerIdentifier,
@@ -17,6 +18,7 @@ import {
   type CallerOperation,
   type CallerPrincipal,
   type CanonicalJsonValue,
+  type ProducerPrincipal,
   type SessionBrokerLimitOptions,
   type SessionBrokerLimits,
   type SessionServerMessage,
@@ -27,6 +29,7 @@ import {
   SessionBrokerAuthenticationError,
   type AuthenticatedCallerRequest,
   type CallerRequestAuthenticator,
+  type SessionBrokerHelloAuthenticator,
 } from "./authentication";
 import {
   parseSessionBrokerJsonBytes,
@@ -65,6 +68,19 @@ const BROKER_STATE_LIMITS = [
   "maxCommandTimeoutMs",
 ] as const satisfies readonly (keyof SessionBrokerLimits)[];
 
+export interface SessionBrokerAuthenticatedControlFacts {
+  readonly operation: CallerOperation;
+  readonly sessionId?: string;
+  readonly command?: string;
+  readonly commandVersion?: number;
+  readonly targetSpecific?: boolean;
+}
+
+export interface SessionBrokerAuthenticatedControlResult {
+  readonly body: CanonicalJsonValue;
+  readonly status?: number;
+}
+
 export interface SessionBrokerDaemonOptions<
   SessionView = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
@@ -75,6 +91,10 @@ export interface SessionBrokerDaemonOptions<
   paths?: Partial<SessionBrokerHttpPaths>;
   exposeHttpApi?: boolean;
   callerAuthenticator?: CallerRequestAuthenticator;
+  helloAuthenticator?: SessionBrokerHelloAuthenticator;
+  /** @deprecated Use helloAuthenticator. */
+  producerAuthenticator?: SessionBrokerHelloAuthenticator;
+  producerEndpoint?: string;
   authorizer?: SessionBrokerAuthorizer;
   audit?: SessionBrokerAuditHook;
   appId?: string;
@@ -114,6 +134,17 @@ function defaultTimeoutMessage(command: string) {
   return `Timed out waiting for the session to handle ${command}.`;
 }
 
+/** Match the immutable producer identity that is allowed to reclaim one session. */
+function sameProducerBinding(left: ProducerPrincipal, right: ProducerPrincipal) {
+  return (
+    left.appId === right.appId &&
+    left.principalId === right.principalId &&
+    left.keyId === right.keyId &&
+    left.grantId === right.grantId &&
+    left.sessionId === right.sessionId
+  );
+}
+
 /**
  * Runtime-neutral daemon engine that owns broker lifecycle, health, stale pruning, and raw HTTP
  * plus websocket message handling without choosing Bun, Node, or any other server implementation.
@@ -142,7 +173,21 @@ export class SessionBrokerDaemon<
   private readonly appId: string;
   private readonly appRevision?: number;
   private readonly callerAuthenticator?: CallerRequestAuthenticator;
+  private readonly helloAuthenticator?: SessionBrokerHelloAuthenticator;
+  private readonly producerEndpoint?: string;
   private readonly authorizer?: SessionBrokerAuthorizer;
+  private readonly producerAuthentication = new WeakMap<
+    SessionBrokerPeer,
+    { state: "challenged" | "authenticated"; principal?: ProducerPrincipal; sessionId?: string }
+  >();
+  private readonly producerOwners = new Map<
+    string,
+    { connection: SessionBrokerPeer; principal: ProducerPrincipal }
+  >();
+  private readonly producerReconnects = new Map<
+    string,
+    { principal: ProducerPrincipal; disconnectedAt: number }
+  >();
   private readonly audit?: SessionBrokerAuditHook;
   private readonly httpControlBudget: ResourceBudget;
   private readonly httpBodyBudget: ResourceBudget;
@@ -202,6 +247,14 @@ export class SessionBrokerDaemon<
     this.appId = options.appId ?? "session-broker";
     this.appRevision = this.protocolParsers.appRevision;
     this.callerAuthenticator = options.callerAuthenticator;
+    this.helloAuthenticator = options.helloAuthenticator ?? options.producerAuthenticator;
+    this.producerEndpoint = options.producerEndpoint;
+    if (options.producerAuthenticator && !this.producerEndpoint) {
+      throw new TypeError("Authenticated producer transport requires its listener endpoint.");
+    }
+    if (this.producerEndpoint && !this.helloAuthenticator) {
+      throw new TypeError("Authenticated producer transport requires a hello authenticator.");
+    }
     this.authorizer = options.authorizer;
     this.audit = options.audit;
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
@@ -238,6 +291,10 @@ export class SessionBrokerDaemon<
 
   matchesSocketPath(pathname: string) {
     return pathname === this.paths.socket;
+  }
+
+  get requiresProducerAuthentication() {
+    return this.producerEndpoint !== undefined;
   }
 
   /** Run one app-specific finite HTTP control through the daemon's shared count/body budgets. */
@@ -283,6 +340,27 @@ export class SessionBrokerDaemon<
   async handleRequest(request: Request) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/session-auth/challenge" || url.pathname === "/session-auth/proof") {
+      if (request.method !== "POST" || !hasJsonContentType(request) || !this.helloAuthenticator) {
+        return jsonError("Session broker authentication requires an upgraded client.", 401);
+      }
+      return this.handleBoundedControl(request, async (body) => {
+        try {
+          const input = parseSessionBrokerJsonBytes(body);
+          const result = url.pathname.endsWith("/challenge")
+            ? await this.helloAuthenticator!.issueChallenge(input, request.url)
+            : await this.helloAuthenticator!.completeCallerHello(input);
+          return Response.json(result);
+        } catch (error) {
+          const code =
+            error instanceof SessionBrokerAuthenticationError
+              ? error.code
+              : "authentication-required";
+          return Response.json({ error: code }, { status: 401 });
+        }
+      });
+    }
+
     if (url.pathname === this.paths.health) {
       // Treat health checks as a cheap maintenance pulse so stale sessions disappear even when the
       // daemon is mostly idle and no websocket traffic is flowing.
@@ -292,6 +370,7 @@ export class SessionBrokerDaemon<
       if (removed > 0) {
         this.noteActivity();
       }
+      this.reconcileProducerOwners();
 
       // Public health is deliberately liveness-only. Apps may expose authenticated diagnostics on
       // a separate route, but broker identity, paths, counts, and process facts stay private.
@@ -311,6 +390,65 @@ export class SessionBrokerDaemon<
   }
 
   handleConnectionMessage(connection: SessionBrokerPeer, message: unknown) {
+    if (typeof message === "string" && utf8ByteLength(message) > this.limits.maxWsMessageBytes) {
+      connection.close?.(1009, "Session broker message exceeded its limit.");
+      return;
+    }
+    if (this.producerEndpoint && this.helloAuthenticator) {
+      const authentication = this.producerAuthentication.get(connection);
+      if (authentication?.state !== "authenticated") {
+        void this.handleProducerHelloMessage(connection, message, authentication);
+        return;
+      }
+    }
+    this.handleAuthenticatedConnectionMessage(connection, message);
+  }
+
+  /** Complete the producer hello before allowing any registration-shaped message to reach state. */
+  private async handleProducerHelloMessage(
+    connection: SessionBrokerPeer,
+    message: unknown,
+    current?: {
+      state: "challenged" | "authenticated";
+      principal?: ProducerPrincipal;
+      sessionId?: string;
+    },
+  ) {
+    try {
+      const value = parseSessionBrokerJsonText(message) as Record<string, unknown>;
+      if (!current) {
+        if (value?.type !== "hello-init" || !("hello" in value)) throw new Error();
+        const challenged = { state: "challenged" as const };
+        this.producerAuthentication.set(connection, challenged);
+        const challenge = await this.helloAuthenticator!.issueChallenge(
+          value.hello,
+          this.producerEndpoint!,
+        );
+        if (this.producerAuthentication.get(connection) !== challenged) return;
+        connection.send(JSON.stringify({ type: "hello-challenge", challenge }));
+        return;
+      }
+      if (current.state !== "challenged" || value?.type !== "hello-proof" || !("proof" in value)) {
+        throw new Error();
+      }
+      const connectionId = `b_${crypto.randomUUID().replaceAll("-", "")}_0`;
+      const ack = await this.helloAuthenticator!.completeProducerHello(value.proof, connectionId);
+      if (this.producerAuthentication.get(connection) !== current) return;
+      this.producerAuthentication.set(connection, {
+        state: "authenticated",
+        principal: ack.principal,
+      });
+      connection.send(JSON.stringify({ type: "hello-ack", ack }));
+    } catch {
+      this.producerAuthentication.delete(connection);
+      connection.close?.(
+        INCOMPATIBLE_PAYLOAD_CLOSE_CODE,
+        "Session broker authentication required; upgrade Hunk.",
+      );
+    }
+  }
+
+  private handleAuthenticatedConnectionMessage(connection: SessionBrokerPeer, message: unknown) {
     let parsed;
     try {
       parsed = this.protocolParsers.parseClientMessage(parseSessionBrokerJsonText(message));
@@ -319,12 +457,47 @@ export class SessionBrokerDaemon<
       return;
     }
 
+    const producerAuthentication = this.producerAuthentication.get(connection);
+    if (this.producerEndpoint && this.helloAuthenticator && producerAuthentication?.principal) {
+      try {
+        this.helloAuthenticator.assertProducerActive(producerAuthentication.principal);
+      } catch {
+        connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session producer authority expired.");
+        return;
+      }
+    }
     switch (parsed.type) {
       case "register": {
+        const sessionId = (parsed.registration as { sessionId: string }).sessionId;
+        this.pruneProducerReconnects();
+        const owner = this.producerOwners.get(sessionId);
+        const reconnect =
+          owner && owner.connection !== connection ? owner : this.producerReconnects.get(sessionId);
+        const operation = reconnect ? "reconnect" : "register";
+        if (
+          this.producerEndpoint &&
+          this.helloAuthenticator &&
+          (!producerAuthentication?.principal ||
+            (producerAuthentication.sessionId !== undefined &&
+              producerAuthentication.sessionId !== sessionId) ||
+            (reconnect &&
+              !sameProducerBinding(producerAuthentication.principal, reconnect.principal)) ||
+            !producerPrincipalAllows(producerAuthentication.principal, {
+              appId: this.appId,
+              operation,
+              sessionId,
+            }))
+        ) {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session producer scope rejected.");
+          return;
+        }
+        if (producerAuthentication) producerAuthentication.sessionId = sessionId;
+        const replacedConnection = owner?.connection !== connection ? owner?.connection : undefined;
         const registrationResult = this.broker.registerSession(
           connection,
           parsed.registration,
           parsed.snapshot,
+          { replaceOwner: replacedConnection !== undefined },
         );
         if (registrationResult === "invalid") {
           // Close immediately when the registration payload is incompatible so the session does not
@@ -342,10 +515,23 @@ export class SessionBrokerDaemon<
           return;
         }
 
+        if (producerAuthentication?.principal) {
+          this.producerOwners.set(sessionId, {
+            connection,
+            principal: producerAuthentication.principal,
+          });
+          this.producerReconnects.delete(sessionId);
+        }
+        connection.markAuthenticated?.();
+        replacedConnection?.close?.(1000, "Session owner reconnected.");
         this.noteActivity();
         break;
       }
       case "snapshot": {
+        if (this.producerEndpoint && producerAuthentication?.sessionId !== parsed.sessionId) {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session producer scope rejected.");
+          return;
+        }
         // Snapshot updates are only valid after registration. Closing missing or invalid sessions
         // keeps the broker state single-sourced instead of guessing how to recover.
         const updateResult = this.broker.updateSnapshot(
@@ -371,6 +557,10 @@ export class SessionBrokerDaemon<
         break;
       }
       case "heartbeat": {
+        if (this.producerEndpoint && producerAuthentication?.sessionId !== parsed.sessionId) {
+          connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session producer scope rejected.");
+          return;
+        }
         const seenResult = this.broker.markSessionSeen(connection, parsed.sessionId);
         if (seenResult === "not-owner") {
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Session ownership rejected.");
@@ -401,8 +591,54 @@ export class SessionBrokerDaemon<
   }
 
   handleConnectionClose(connection: SessionBrokerPeer) {
+    const authentication = this.producerAuthentication.get(connection);
+    this.producerAuthentication.delete(connection);
+    const sessionId = authentication?.sessionId;
+    if (sessionId && authentication.principal) {
+      const owner = this.producerOwners.get(sessionId);
+      if (owner?.connection === connection) {
+        this.producerOwners.delete(sessionId);
+        this.pruneProducerReconnects();
+        if (this.producerReconnects.size >= this.limits.maxSessions) {
+          const oldest = this.producerReconnects.keys().next().value as string | undefined;
+          if (oldest) this.producerReconnects.delete(oldest);
+        }
+        this.producerReconnects.set(sessionId, {
+          principal: authentication.principal,
+          disconnectedAt: Date.now(),
+        });
+      }
+    }
     this.broker.unregisterConnection(connection);
     this.noteActivity();
+  }
+
+  /** Retire producer sockets whose session vanished or whose configured grant is no longer active. */
+  private reconcileProducerOwners() {
+    const live = new Set(this.broker.getSessionIds());
+    for (const [sessionId, owner] of this.producerOwners) {
+      let active = live.has(sessionId);
+      if (active && this.helloAuthenticator) {
+        try {
+          this.helloAuthenticator.assertProducerActive(owner.principal);
+        } catch {
+          active = false;
+        }
+      }
+      if (active) continue;
+      this.producerOwners.delete(sessionId);
+      this.broker.unregisterConnection(owner.connection);
+      owner.connection.close?.(1000, "Session producer authority retired.");
+    }
+  }
+
+  /** Expire bounded reconnect authority on the same horizon as disconnected session state. */
+  private pruneProducerReconnects(now = Date.now()) {
+    for (const [sessionId, reconnect] of this.producerReconnects) {
+      if (now - reconnect.disconnectedAt >= this.staleSessionTtlMs) {
+        this.producerReconnects.delete(sessionId);
+      }
+    }
   }
 
   shutdown(error = new Error("The session broker daemon shut down.")) {
@@ -422,6 +658,8 @@ export class SessionBrokerDaemon<
     }
 
     this.broker.shutdown(error);
+    this.producerOwners.clear();
+    this.producerReconnects.clear();
     this.callerAuthenticator?.clear?.();
     this.resolveStopped?.();
     this.resolveStopped = null;
@@ -435,6 +673,7 @@ export class SessionBrokerDaemon<
       if (removed > 0) {
         this.noteActivity();
       }
+      this.reconcileProducerOwners();
     }, this.staleSessionSweepIntervalMs);
 
     this.sweepTimer.unref?.();
@@ -481,6 +720,69 @@ export class SessionBrokerDaemon<
 
       this.shutdown();
     }, remainingMs);
+  }
+
+  /** Authenticate, authorize, execute, and sign one app-owned finite JSON control. */
+  async handleAuthenticatedControl(
+    request: Request,
+    options: {
+      resolve: (body: Uint8Array) => SessionBrokerAuthenticatedControlFacts;
+      resolveFailureTargetSpecific?: (body: Uint8Array) => boolean;
+      handle: (
+        body: Uint8Array,
+        facts: SessionBrokerAuthenticatedControlFacts,
+      ) =>
+        | SessionBrokerAuthenticatedControlResult
+        | Promise<SessionBrokerAuthenticatedControlResult>;
+    },
+  ): Promise<Response> {
+    return this.handleBoundedControl(request, async (body) => {
+      const authenticated = await this.authenticateRequest(request, body, "list");
+      if (authenticated instanceof Response) return authenticated;
+      let facts: SessionBrokerAuthenticatedControlFacts;
+      try {
+        facts = options.resolve(body);
+      } catch {
+        let targetSpecific = false;
+        try {
+          targetSpecific = options.resolveFailureTargetSpecific?.(body) ?? false;
+        } catch {
+          // Malformed bodies have no trustworthy target contract.
+        }
+        return this.authenticatedResponse(
+          authenticated,
+          { error: "protocol-validation-failed" },
+          400,
+          targetSpecific,
+        );
+      }
+      if (!(await this.authorize(request, authenticated, facts))) {
+        return this.authenticatedResponse(
+          authenticated,
+          { error: "authorization-denied" },
+          403,
+          facts.targetSpecific ?? facts.operation !== "list",
+        );
+      }
+      const inactive = this.rejectInactiveRequest(authenticated);
+      if (inactive) return inactive;
+      try {
+        const result = await options.handle(body, facts);
+        return this.authenticatedResponse(
+          authenticated,
+          result.body,
+          result.status ?? 200,
+          facts.targetSpecific ?? facts.operation !== "list",
+        );
+      } catch {
+        return this.authenticatedResponse(
+          authenticated,
+          { error: "session-control-failed" },
+          400,
+          facts.targetSpecific ?? facts.operation !== "list",
+        );
+      }
+    });
   }
 
   private async authenticateRequest(
@@ -738,7 +1040,20 @@ export class SessionBrokerDaemon<
 
       const operation = input.action as CallerOperation;
       const selector = "selector" in input ? input.selector : undefined;
-      const sessionId = selector?.sessionId;
+      const targetSpecific = input.action !== "list";
+      let sessionId: string | undefined;
+      if (selector) {
+        try {
+          sessionId = this.broker.resolveSessionId(selector);
+        } catch (error) {
+          return this.authenticatedResponse(
+            authenticated,
+            { error: error instanceof Error ? error.message : "Session target resolution failed." },
+            400,
+            true,
+          );
+        }
+      }
       const command = input.action === "dispatch" ? input.command : undefined;
       const commandVersion = input.action === "dispatch" ? (input.commandVersion ?? 1) : undefined;
       const facts = {
@@ -746,7 +1061,6 @@ export class SessionBrokerDaemon<
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(command !== undefined ? { command, commandVersion } : {}),
       };
-      const targetSpecific = input.action !== "list";
       if (!(await this.authorize(request, authenticated, facts))) {
         return this.authenticatedResponse(
           authenticated,
@@ -765,15 +1079,12 @@ export class SessionBrokerDaemon<
             response = { sessions: this.broker.listSessions() };
             break;
           case "get":
-            response = { session: this.broker.getSession(input.selector) };
+            response = { session: this.broker.getSession({ sessionId: sessionId! }) };
             break;
           case "dispatch": {
-            // Resolve the target before invoking app-owned parsing so the exact target contract is
-            // selected first. This read-only lookup happens only after authentication/authorization.
-            this.broker.getSession(input.selector);
             response = {
               result: await this.broker.dispatchCommand({
-                selector: input.selector,
+                selector: { sessionId: sessionId! },
                 command: input.command,
                 commandVersion: input.commandVersion ?? 1,
                 input: input.input,

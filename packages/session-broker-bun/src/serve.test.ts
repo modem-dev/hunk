@@ -236,11 +236,13 @@ describe("session broker bun adapter", () => {
     }
   });
 
-  test("admits exactly the configured number of active websocket peers", async () => {
+  test("admits exactly the configured number of unauthenticated websocket peers", async () => {
     const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
       broker,
-      limits: { maxUnauthenticatedSockets: 1 },
+      limits: { maxUnauthenticatedSockets: 1, maxHandshakeDurationMs: 50 },
+      helloAuthenticator: {} as never,
+      producerEndpoint: "ws://127.0.0.1/session",
     });
     const port = await reserveLoopbackPort();
     const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
@@ -248,8 +250,7 @@ describe("session broker bun adapter", () => {
       const first = await openTestSocket(`ws://127.0.0.1:${port}/session`);
       await expect(openTestSocket(`ws://127.0.0.1:${port}/session`)).rejects.toThrow();
       const closed = testSocketCloseCode(first);
-      first.close();
-      await closed;
+      expect(await closed).toBe(1008);
       const afterRelease = await openTestSocket(`ws://127.0.0.1:${port}/session`);
       afterRelease.close();
     } finally {

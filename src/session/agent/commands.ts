@@ -5,15 +5,9 @@ import type {
 } from "../../core/run/commandInputs";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
-import {
-  ensureSessionBrokerAvailable,
-  isSessionBrokerHealthy,
-  isLoopbackPortReachable,
-  readSessionBrokerHealth,
-  waitForSessionBrokerShutdown,
-} from "../broker/brokerLauncher";
+import { isSessionBrokerHealthy, isLoopbackPortReachable } from "../broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../broker/brokerConfig";
-import { matchesSessionSelector, normalizeSessionSelector } from "@hunk/session-broker-core";
+import { normalizeSessionSelector } from "@hunk/session-broker-core";
 import {
   createHttpHunkSessionCliClient,
   formatClearCommentsOutput,
@@ -73,80 +67,32 @@ function createDaemonCliClient() {
   return sessionCommandTestHooks?.createClient?.() ?? createHttpHunkSessionCliClient();
 }
 
-async function waitForSessionRegistration(selector?: SessionSelectorInput, timeoutMs = 8_000) {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const client = createDaemonCliClient();
-
-    try {
-      const sessions = await client.listSessions();
-      if (sessions.some((session) => matchesSessionSelector(session, selector))) {
-        return true;
-      }
-    } catch {
-      // Keep polling while the fresh daemon/session reconnects.
-    }
-
-    await Bun.sleep(200);
-  }
-
-  return false;
-}
-
 async function restartDaemonForMissingAction(
   action: SessionDaemonAction,
-  selector?: SessionSelectorInput,
+  _selector?: SessionSelectorInput,
 ) {
-  const health = await readSessionBrokerHealth();
-  const pid = health?.pid;
-  const hadSessions = (health?.sessions ?? 0) > 0;
-  if (!pid || pid === process.pid) {
-    throw new Error(
-      `The running Hunk session daemon is missing required support for ${action}. ` +
-        `Restart Hunk so it can launch a fresh daemon from the current source tree.`,
-    );
-  }
-
-  process.kill(pid, "SIGTERM");
-
-  const shutDown = await waitForSessionBrokerShutdown();
-  if (!shutDown) {
-    throw new Error(
-      `Stopped waiting for the old Hunk session daemon to exit after it was found missing ${action}.`,
-    );
-  }
-
-  const config = resolveSessionBrokerConfig();
-  await ensureSessionBrokerAvailable({
-    config,
-    timeoutMs: 3_000,
-    timeoutMessage: "Timed out waiting for the refreshed Hunk session daemon to start.",
-  });
-
-  // `hunk session list` can recover from a stale daemon even when the old process belonged to a
-  // sibling worktree that reports sessions which will never reconnect to this fresh daemon.
-  if (selector || (hadSessions && action !== "list")) {
-    const registered = await waitForSessionRegistration(selector);
-    if (!registered) {
-      throw new Error(
-        "Timed out waiting for the live Hunk session to reconnect after refreshing the session daemon. " +
-          "Restart that Hunk window if it was launched from an older build.",
-      );
-    }
-  }
+  // Public health intentionally carries no PID or identity proof. Never signal an incumbent that
+  // has not completed the signed broker handshake.
+  throw new Error(
+    `The running Hunk session daemon is missing required support for ${action}. ` +
+      "Stop the conflicting or legacy daemon and restart Hunk; it cannot be replaced safely by PID.",
+  );
 }
 
-async function ensureRequiredAction(action: SessionDaemonAction, selector?: SessionSelectorInput) {
-  const client = createDaemonCliClient();
+async function ensureRequiredAction(
+  action: SessionDaemonAction,
+  selector?: SessionSelectorInput,
+  client = createDaemonCliClient(),
+) {
   const capabilities = await client.getCapabilities();
   if (capabilities?.version === HUNK_SESSION_API_VERSION && capabilities.actions.includes(action)) {
-    return;
+    return false;
   }
 
   reportHunkDaemonUpgradeRestart();
   await (sessionCommandTestHooks?.restartDaemonForMissingAction?.(action, selector) ??
     restartDaemonForMissingAction(action, selector));
+  return true;
 }
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
@@ -185,9 +131,13 @@ export async function runSessionCommand(input: SessionCommandInput) {
 
   const normalizedSelector = "selector" in input ? normalizeSessionSelector(input.selector) : null;
   const requiredAction = REQUIRED_ACTION_BY_COMMAND[input.action];
-  await ensureRequiredAction(requiredAction, normalizedSelector ?? undefined);
-
-  const client = createDaemonCliClient();
+  let client = createDaemonCliClient();
+  const refreshed = await ensureRequiredAction(
+    requiredAction,
+    normalizedSelector ?? undefined,
+    client,
+  );
+  if (refreshed) client = createDaemonCliClient();
 
   switch (input.action) {
     case "list": {
