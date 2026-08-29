@@ -63,6 +63,8 @@ function writeTestFixtures(repo: string, fixtures: string) {
   const archiveName = "hunkdiff-linux-x64.tar.gz";
   for (const [version, digestOverride] of [
     ["1.0.0", undefined],
+    [FIXTURE_VERSION_A, undefined],
+    [FIXTURE_VERSION_B, undefined],
     [CURL_BAD_CHECKSUM_VERSION, "0".repeat(64)],
     [CURL_TRUNCATED_VERSION, undefined],
   ] as const) {
@@ -126,6 +128,19 @@ describe("install VM package fixtures", () => {
       writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");
       const manifest = writeTestFixtures(repo, fixtures);
       expect(verifyInstallVmFixtures(repo, fixtures).sourceIdentity).toBe(manifest.sourceIdentity);
+
+      const curlUpgradeArchive = path.join(
+        fixtures,
+        "http",
+        "download",
+        `v${FIXTURE_VERSION_B}`,
+        "hunkdiff-linux-x64.tar.gz",
+      );
+      writeFileSync(curlUpgradeArchive, "tampered\n");
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow(
+        "Invalid curl archive/checksum fixture",
+      );
+      writeFileSync(curlUpgradeArchive, `archive ${FIXTURE_VERSION_B}\n`);
 
       const httpManifest = path.join(fixtures, "http", "fixture-manifest.json");
       writeFileSync(httpManifest, `${JSON.stringify({ ...manifest, currentVersion: "2.0.0" })}\n`);

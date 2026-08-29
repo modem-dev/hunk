@@ -206,6 +206,8 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
     }
   };
   verifyArchiveChecksum(manifest.currentVersion);
+  verifyArchiveChecksum(manifest.versionA);
+  verifyArchiveChecksum(manifest.versionB);
   verifyArchiveChecksum(CURL_BAD_CHECKSUM_VERSION, "0".repeat(64));
   verifyArchiveChecksum(CURL_TRUNCATED_VERSION);
   if (!existsSync(path.join(httpRoot, "install.sh"))) {
@@ -247,6 +249,22 @@ async function packPackage(packageDirectory: string, packageOutput: string) {
   return `${manifest.name.replace(/^@/, "").replaceAll("/", "-")}-${manifest.version}.tgz`;
 }
 
+function writeSyntheticBinary(binaryPath: string, version: string) {
+  writeFileSync(
+    binaryPath,
+    `#!/bin/sh\ncase "\${1:-}" in\n  --version|-v|version) printf '%s\\n' '${version}' ;;\n  --help|-h) printf '%s\\n' 'Usage: hunk [options]' ;;\n  *) printf '%s\\n' 'fixture hunk ${version}' ;;\nesac\n`,
+  );
+  chmodSync(binaryPath, 0o755);
+}
+
+function copyFixtureSkills(repoRoot: string, destination: string) {
+  for (const skill of ["hunk-review", "hunk-extensions"]) {
+    cpSync(path.join(repoRoot, "skills", skill), path.join(destination, "skills", skill), {
+      recursive: true,
+    });
+  }
+}
+
 async function stageSyntheticPackage(
   repoRoot: string,
   stageRoot: string,
@@ -257,30 +275,14 @@ async function stageSyntheticPackage(
   const platformDir = path.join(stageRoot, `${platform.name}-${version}`);
   mkdirSync(path.join(platformDir, "bin"), { recursive: true });
   writeJson(path.join(platformDir, "package.json"), platform);
-  const binaryPath = path.join(platformDir, "bin", "hunk");
-  writeFileSync(
-    binaryPath,
-    `#!/bin/sh\ncase "\${1:-}" in\n  --version|-v|version) printf '%s\\n' '${version}' ;;\n  --help|-h) printf '%s\\n' 'Usage: hunk [options]' ;;\n  *) printf '%s\\n' 'fixture hunk ${version}' ;;\nesac\n`,
-  );
-  chmodSync(binaryPath, 0o755);
+  writeSyntheticBinary(path.join(platformDir, "bin", "hunk"), version);
 
   const metaDir = path.join(stageRoot, `hunkdiff-${version}`);
   mkdirSync(path.join(metaDir, "bin"), { recursive: true });
   mkdirSync(path.join(metaDir, "dist", "npm"), { recursive: true });
   copyFileSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
   chmodSync(path.join(metaDir, "bin", "hunk.cjs"), 0o755);
-  cpSync(
-    path.join(repoRoot, "skills", "hunk-review"),
-    path.join(metaDir, "skills", "hunk-review"),
-    {
-      recursive: true,
-    },
-  );
-  cpSync(
-    path.join(repoRoot, "skills", "hunk-extensions"),
-    path.join(metaDir, "skills", "hunk-extensions"),
-    { recursive: true },
-  );
+  copyFixtureSkills(repoRoot, metaDir);
   writeFileSync(
     path.join(metaDir, "dist", "npm", "main.js"),
     `const args = process.argv.slice(2);\nif (args.includes('--version') || args[0] === 'version') console.log('fallback-${version}');\nelse console.log('fallback fixture ${version}');\n`,
@@ -303,6 +305,34 @@ async function stageSyntheticPackage(
       sha256: sha256(path.join(packageOutput, metaTarball)),
     },
   ];
+}
+
+async function stageSyntheticCurlArchive(
+  repoRoot: string,
+  stageRoot: string,
+  downloads: string,
+  version: string,
+) {
+  const archiveRoot = path.join(stageRoot, `curl-${version}`);
+  const artifactDir = path.join(archiveRoot, "hunkdiff-linux-x64");
+  mkdirSync(artifactDir, { recursive: true });
+  writeSyntheticBinary(path.join(artifactDir, "hunk"), version);
+  copyFixtureSkills(repoRoot, artifactDir);
+  writeFileSync(path.join(artifactDir, "skills", ".fixture-version"), `${version}\n`);
+  writeJson(path.join(artifactDir, "metadata.json"), {
+    packageName: "hunkdiff-linux-x64",
+    os: "linux",
+    cpu: "x64",
+    binaryName: "hunk",
+    fixtureVersion: version,
+  });
+
+  const downloadDir = path.join(downloads, `v${version}`);
+  const archiveName = "hunkdiff-linux-x64.tar.gz";
+  mkdirSync(downloadDir, { recursive: true });
+  const archive = path.join(downloadDir, archiveName);
+  await run(["tar", "-czf", archive, "-C", archiveRoot, path.basename(artifactDir)]);
+  writeFileSync(path.join(downloadDir, "SHA256SUMS"), `${sha256(archive)}  ${archiveName}\n`);
 }
 
 /** Prepare local registry and curl fixtures from the explicitly built checkout. */
@@ -367,6 +397,8 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
       path.join(goodDownloadDir, "SHA256SUMS"),
       `${sha256(goodArchive)}  ${archiveName}\n`,
     );
+    await stageSyntheticCurlArchive(repoRoot, stageRoot, downloads, FIXTURE_VERSION_A);
+    await stageSyntheticCurlArchive(repoRoot, stageRoot, downloads, FIXTURE_VERSION_B);
 
     const badChecksumDir = path.join(downloads, `v${CURL_BAD_CHECKSUM_VERSION}`);
     mkdirSync(badChecksumDir, { recursive: true });

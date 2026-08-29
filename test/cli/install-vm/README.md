@@ -1,6 +1,6 @@
 # Optional Firecracker install compatibility suite
 
-This suite tests Hunk's Linux x64 npm, pnpm, legacy Bun-fallback, offline, and curl installation behavior in fresh Firecracker microVMs. It is completely opt-in: `bun install`, normal tests, typechecking, builds, and packaging do not check for Docker/KVM or download VM assets.
+This suite tests Hunk's Linux x64 npm and pnpm installs/upgrades, legacy Bun fallback, offline execution, and curl install/upgrade behavior in fresh Firecracker microVMs. It is completely opt-in: `bun install`, normal tests, typechecking, builds, and packaging do not check for Docker/KVM or download VM assets.
 
 ## Run
 

@@ -9,6 +9,13 @@
       "network": "local"
     },
     {
+      "id": "npm-global-upgrade",
+      "description": "Upgrade between two registry versions through npm without introducing Bun.",
+      "profile": "node",
+      "script": "npm-global-upgrade.sh",
+      "network": "local"
+    },
+    {
       "id": "pnpm-prebuilt-no-bun",
       "description": "Install the current prebuilt package with pnpm and no Bun runtime.",
       "profile": "node",
@@ -69,6 +76,13 @@
       "description": "Install the standalone release archive without Node or Bun.",
       "profile": "minimal",
       "script": "curl-clean-machine.sh",
+      "network": "local"
+    },
+    {
+      "id": "curl-upgrade",
+      "description": "Upgrade a working curl installation to a newer verified release.",
+      "profile": "minimal",
+      "script": "curl-upgrade.sh",
       "network": "local"
     },
     {
