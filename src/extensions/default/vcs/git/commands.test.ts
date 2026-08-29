@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   buildGitDiffArgs,
+  buildGitDiffNumstatArgs,
   buildGitIgnoredDirectoryArgs,
+  buildGitShowArgs,
   buildGitStashShowArgs,
   buildGitStatusArgs,
   listGitIgnoredDirectoryRoots,
+  listGitUntrackedFiles,
   parseGitIgnoredDirectoryRoots,
   resolveGitDiffEndpoints,
   parseGitNumstat,
@@ -99,6 +102,27 @@ describe("git command helpers", () => {
 
   test("forces byte-safe Git path quoting before stdout decoding", () => {
     expect(buildGitDiffArgs(makeGitInput())).toContain("core.quotePath=true");
+  });
+
+  test("refuses option-like revision values before spawning Git", () => {
+    expect(() => buildGitDiffArgs(makeGitInput({ range: "--output=/tmp/hunk-poc" }))).toThrow(
+      "looks like a Git option",
+    );
+    expect(() => buildGitDiffNumstatArgs(makeGitInput({ range: "-R" }))).toThrow(
+      "looks like a Git option",
+    );
+    expect(() =>
+      buildGitShowArgs({ kind: "show", ref: "--output=/tmp/hunk-poc", options: {} }),
+    ).toThrow("looks like a Git option");
+    expect(() =>
+      buildGitStashShowArgs({ kind: "stash-show", ref: "--output=/tmp/hunk-poc", options: {} }),
+    ).toThrow("looks like a Git option");
+    // Guarded revision helpers must also refuse ranges before any rev-parse spawn.
+    expect(() => listGitUntrackedFiles(makeGitInput({ range: "--output=/tmp/hunk-poc" }))).toThrow(
+      "looks like a Git option",
+    );
+
+    expect(buildGitDiffArgs(makeGitInput({ range: "main..feature" }))).toContain("main..feature");
   });
 
   test("disables external diff tools for stash patches", () => {
