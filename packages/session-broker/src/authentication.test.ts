@@ -212,6 +212,32 @@ describe("session broker signed authentication", () => {
     });
   });
 
+  test("rechecks producer expiry and revocation after hello completion", async () => {
+    let revoked = false;
+    const values = await setup({ revoked: () => revoked });
+    const request = challengeRequest("producer");
+    const challenge = await values.authenticator.issueChallenge(request, request.endpoint);
+    const transcript = challengeTranscriptForClient(request, challenge, "generation-1");
+    const signature = encodeBase64Url(
+      await webSessionBrokerCrypto.sign(values.producer.privateKey, transcript),
+    );
+    const hello = await values.authenticator.completeProducerHello(
+      { challengeId: challenge.challengeId, signature },
+      "connection-1",
+    );
+
+    expect(() => values.authenticator.assertProducerActive(hello.principal)).not.toThrow();
+    revoked = true;
+    expect(() => values.authenticator.assertProducerActive(hello.principal)).toThrow(
+      SessionBrokerAuthenticationError,
+    );
+    revoked = false;
+    values.setNow(10_001);
+    expect(() => values.authenticator.assertProducerActive(hello.principal)).toThrow(
+      SessionBrokerAuthenticationError,
+    );
+  });
+
   test("rejects missing, wrong, expired, revoked, and reused credentials with redacted errors", async () => {
     const values = await setup();
     await expect(

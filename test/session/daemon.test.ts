@@ -52,7 +52,7 @@ async function readHealth(port: number) {
       return null;
     }
 
-    return (await response.json()) as { ok: boolean; pid: number };
+    return (await response.json()) as { ok: boolean };
   } catch {
     return null;
   }
@@ -96,8 +96,8 @@ describe("session daemon lifecycle", () => {
       exited = true;
     });
 
-    // Windows may keep the `bun run` launcher separate from the child serving the daemon.
-    process.kill(health.pid, "SIGTERM");
+    // This test owns the spawned process handle; public health intentionally exposes no PID.
+    proc.kill("SIGTERM");
 
     await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
     await waitUntil("daemon port close", async () =>

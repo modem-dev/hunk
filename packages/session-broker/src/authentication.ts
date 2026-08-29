@@ -117,6 +117,7 @@ export interface SessionBrokerHelloChallengeRequest {
 
 export interface SessionBrokerHelloChallenge {
   readonly challengeId: string;
+  readonly generation: string;
   readonly responderNonce: string;
   readonly expiresAt: number;
   readonly daemonKeyId: string;
@@ -541,8 +542,20 @@ export function canonicalHttpTarget(url: URL): string {
   return query ? `${path}?${query}` : path;
 }
 
+export interface SessionBrokerHelloAuthenticator {
+  issueChallenge(request: unknown, listenerEndpoint: string): Promise<SessionBrokerHelloChallenge>;
+  completeCallerHello(proofInput: unknown): Promise<AuthenticatedCallerSession>;
+  completeProducerHello(
+    proofInput: unknown,
+    connectionId: unknown,
+  ): Promise<AuthenticatedProducerHello>;
+  assertProducerActive(principal: ProducerPrincipal): void;
+}
+
 /** Authenticate bounded producer hellos and generation-bound signed caller request sessions. */
-export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
+export class SessionBrokerAuthenticator
+  implements CallerRequestAuthenticator, SessionBrokerHelloAuthenticator
+{
   private readonly crypto: SessionBrokerCrypto;
   private readonly config: AuthenticatorSnapshot;
   private readonly credentials: Map<string, SessionBrokerCredential>;
@@ -626,6 +639,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       );
       return Object.freeze({
         challengeId,
+        generation: this.config.generation,
         responderNonce,
         expiresAt,
         daemonKeyId: this.config.daemonIdentity.keyId,
@@ -844,6 +858,19 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       assertActive: () => this.assertCallerSessionActive(callerSessionId, session),
       signResponse: (input: CallerResponseSigningInput) => this.signResponse(requestId, input),
     });
+  }
+
+  /** Recheck the configured producer grant before every connection-owned mutation. */
+  assertProducerActive(principal: ProducerPrincipal): void {
+    const credential = this.credentials.get(`producer:${principal.keyId}:${principal.grantId}`);
+    if (
+      !credential ||
+      credential.grant.kind !== "producer" ||
+      JSON.stringify(principalFromGrant(credential.grant)) !== JSON.stringify(principal)
+    ) {
+      authenticationError("invalid-credential");
+    }
+    this.requireActiveGrant(credential.grant);
   }
 
   /** Revoke one in-memory caller session without exposing whether it previously existed. */

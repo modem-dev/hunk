@@ -10,16 +10,13 @@ import {
   resolveSessionBrokerConfig,
   type ResolvedSessionBrokerConfig,
 } from "./brokerConfig";
-import {
-  ensureSessionBrokerAvailable,
-  readSessionBrokerHealth,
-  waitForSessionBrokerShutdown,
-} from "./brokerLauncher";
+import { ensureSessionBrokerAvailable } from "./brokerLauncher";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
 import {
-  readHunkSessionDaemonCapabilities,
-  reportHunkDaemonUpgradeRestart,
-} from "../client/capabilities";
+  loadOrCreateHunkSessionBrokerCredentials,
+  type HunkSessionBrokerCredentials,
+} from "./credentials";
+import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./appContract";
 import type {
   HunkSessionCommandResult,
   HunkSessionInfo,
@@ -34,6 +31,8 @@ const INCOMPATIBLE_SESSION_CLOSE_CODE = 1008;
 const INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX = "Incompatible session ";
 const INCOMPATIBLE_SESSION_CLOSE_MESSAGE =
   "This window is too old for the refreshed session broker daemon. Restart the window to reconnect.";
+const AUTHENTICATION_REFUSAL_MESSAGE =
+  "The process on the Hunk session daemon endpoint could not complete signed authentication. Stop the conflicting or legacy daemon and restart Hunk; it will not be replaced by PID.";
 
 type SessionAppBridge = SessionBrokerConnectionBridge<
   HunkSessionServerMessage,
@@ -62,6 +61,7 @@ export class SessionBrokerClient {
   private stopped = false;
   private startupPromise: Promise<void> | null = null;
   private lastConnectionWarning: string | null = null;
+  private credentials: HunkSessionBrokerCredentials | null = null;
 
   constructor(
     private registration: SessionRegistration<HunkSessionInfo>,
@@ -127,6 +127,7 @@ export class SessionBrokerClient {
   private async ensureDaemonAndConnect() {
     const config = this.resolveConfig();
     await this.ensureDaemonAvailable(config);
+    this.credentials = await loadOrCreateHunkSessionBrokerCredentials();
     this.connect(config);
   }
 
@@ -136,59 +137,9 @@ export class SessionBrokerClient {
       timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
     });
 
-    const capabilities = await readHunkSessionDaemonCapabilities(config);
-    if (!capabilities) {
-      await this.restartIncompatibleDaemon(config);
-      await ensureSessionBrokerAvailable({
-        config,
-        timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
-      });
-
-      if (!(await readHunkSessionDaemonCapabilities(config))) {
-        throw new Error(
-          "The running session broker daemon is incompatible with this build. " +
-            "Restart the app so it can launch a fresh daemon from the current source tree.",
-        );
-      }
-    }
-
+    // Minimal health proves only liveness. Compatibility and identity are established by the
+    // signed websocket hello; an unverifiable incumbent is never signalled or replaced by PID.
     this.lastConnectionWarning = null;
-  }
-
-  private async restartIncompatibleDaemon(config: ResolvedSessionBrokerConfig) {
-    reportHunkDaemonUpgradeRestart();
-    const health = await readSessionBrokerHealth(config);
-    const pid = health?.pid;
-    if (pid === process.pid) {
-      throw new Error(
-        "The running session broker daemon is incompatible with this build. " +
-          "Restart the app so it can launch a fresh daemon from the current source tree.",
-      );
-    }
-
-    // If the stale daemon already disappeared on its own, let the normal startup path launch a
-    // fresh one instead of turning that race into a manual restart error.
-    if (!pid) {
-      return;
-    }
-
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch (error) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") {
-        throw error;
-      }
-    }
-
-    const shutDown = await waitForSessionBrokerShutdown({
-      config,
-      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
-    });
-    if (!shutDown) {
-      throw new Error(
-        "Stopped waiting for the old session broker daemon to exit after it was found incompatible.",
-      );
-    }
   }
 
   setBridge(bridge: SessionAppBridge | null) {
@@ -206,6 +157,7 @@ export class SessionBrokerClient {
       return;
     }
 
+    if (!this.credentials) return;
     this.connection = createSessionBrokerConnection<
       HunkSessionInfo,
       HunkSessionState,
@@ -219,12 +171,25 @@ export class SessionBrokerClient {
       snapshot: this.snapshot,
       bridge: this.bridge,
       protocolParsers: hunkSessionProtocolParsers,
+      producerAuthentication: {
+        appId: HUNK_SESSION_BROKER_APP_ID,
+        appRevision: HUNK_SESSION_BROKER_APP_REVISION,
+        credential: this.credentials.producer,
+        daemon: {
+          keyId: this.credentials.daemonIdentity.keyId,
+          publicKey: this.credentials.daemonPublicKey,
+        },
+      },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
       resolveClose: (event) =>
         this.isIncompatibleSessionClose(event)
           ? { reconnect: false, warning: INCOMPATIBLE_SESSION_CLOSE_MESSAGE }
-          : { reconnect: true },
+          : event.code === INCOMPATIBLE_SESSION_CLOSE_CODE
+            ? { reconnect: false, warning: AUTHENTICATION_REFUSAL_MESSAGE }
+            : event.code === 1006
+              ? { reconnect: true, warning: AUTHENTICATION_REFUSAL_MESSAGE }
+              : { reconnect: true },
       onWarning: (message) => this.warnUnavailable(message),
     });
 

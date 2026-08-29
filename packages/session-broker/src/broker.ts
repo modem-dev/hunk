@@ -19,6 +19,7 @@ import type { SessionBrokerProtocolParsers } from "./protocolParsers";
 export interface SessionBrokerPeer {
   send(data: string): unknown;
   close?(code?: number, reason?: string): unknown;
+  markAuthenticated?(): void;
 }
 
 /** One raw live session record with the original registration and snapshot payloads intact. */
@@ -64,12 +65,15 @@ export interface SessionBrokerController<
   readonly limits?: Readonly<SessionBrokerLimits>;
   listSessions(): SessionView[];
   getSession(selector: SessionTargetSelector): SessionView;
+  resolveSessionId(selector: SessionTargetSelector): string;
+  getSessionIds(): string[];
   getSessionCount(): number;
   getPendingCommandCount(): number;
   registerSession(
     connection: SessionBrokerPeer,
     registrationInput: unknown,
     snapshotInput: unknown,
+    options?: { replaceOwner?: boolean },
   ): RegisterSessionResult;
   updateSnapshot(
     connection: SessionBrokerPeer,
@@ -191,6 +195,14 @@ export class SessionBroker<
     return this.state.getSession(selector);
   }
 
+  resolveSessionId(selector: SessionTargetSelector) {
+    return this.state.getSession(selector).sessionId;
+  }
+
+  getSessionIds() {
+    return this.state.listSessions().map((session) => session.sessionId);
+  }
+
   getSessionCount() {
     return this.state.getSessionCount();
   }
@@ -203,8 +215,9 @@ export class SessionBroker<
     connection: SessionBrokerPeer,
     registrationInput: unknown,
     snapshotInput: unknown,
+    options?: { replaceOwner?: boolean },
   ) {
-    return this.state.registerSession(connection, registrationInput, snapshotInput);
+    return this.state.registerSession(connection, registrationInput, snapshotInput, options);
   }
 
   updateSnapshot(

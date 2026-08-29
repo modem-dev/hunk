@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseBrokerSafeInteger,
@@ -93,7 +93,11 @@ function safeRuntimeToken(value: string) {
 }
 
 function resolveRuntimeBaseDir(env: NodeJS.ProcessEnv = process.env) {
-  return env.XDG_RUNTIME_DIR?.trim() || tmpdir();
+  const configured = env.XDG_RUNTIME_DIR?.trim();
+  if (configured) return configured;
+  // Unix temporary directories are commonly shared across users. Keep the fallback beneath the
+  // current home directory instead of a predictable shared-/tmp name another account can pre-own.
+  return typeof process.getuid === "function" ? join(homedir(), ".hunk") : tmpdir();
 }
 
 function isRunningPid(pid: number) {
@@ -146,7 +150,7 @@ function tryAcquireDaemonLaunchLock({
   staleAfterMs: number;
 }): SessionBrokerLaunchLock | null {
   const paths = resolveSessionBrokerRuntimePaths(config, env);
-  mkdirSync(paths.runtimeDir, { recursive: true });
+  mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
 
   const payload: SessionBrokerLaunchLockFile = {
     ownerPid: process.pid,

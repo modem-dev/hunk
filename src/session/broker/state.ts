@@ -206,8 +206,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     socket: HunkBrokerConnection,
     registrationInput: unknown,
     snapshotInput: unknown,
+    options?: { replaceOwner?: boolean },
   ) {
-    const registered = super.registerSession(socket, registrationInput, snapshotInput);
+    const registered = super.registerSession(socket, registrationInput, snapshotInput, options);
     this.reconcileMirroredSessions();
     if (registered !== "registered") {
       return registered;

@@ -527,6 +527,77 @@ describe("session broker state", () => {
     expect(state.listSessions()).toHaveLength(1);
   });
 
+  test("atomically replaces a live owner without leaking the replacement socket's prior reservations", () => {
+    const registration = createRegistration();
+    const snapshot = createSnapshot();
+    const retainedBytes =
+      new TextEncoder().encode(JSON.stringify({ registration, snapshot })).byteLength + 256;
+    const expandedRegistration = createRegistration({
+      info: { ...registration.info, title: "x".repeat(64) },
+    });
+    const expandedBytes =
+      new TextEncoder().encode(
+        JSON.stringify({
+          registration: expandedRegistration,
+          snapshot: createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+        }),
+      ).byteLength + 256;
+    const state = createState({
+      limits: {
+        maxSessions: 2,
+        maxRetainedSessionBytes: expandedBytes,
+        maxRetainedBytes: retainedBytes * 2,
+      },
+    });
+    const originalSocket = { send() {} };
+    const replacementSocket = { send() {} };
+    state.registerSession(originalSocket, registration, snapshot);
+    state.registerSession(
+      replacementSocket,
+      createRegistration({ sessionId: "session-2" }),
+      snapshot,
+    );
+
+    expect(
+      state.registerSession(
+        replacementSocket,
+        expandedRegistration,
+        createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+        { replaceOwner: true },
+      ),
+    ).toBe("registered");
+    expect(state.markSessionSeen(originalSocket, "session-1")).toBe("not-owner");
+    expect(state.markSessionSeen(replacementSocket, "session-1")).toBe("seen");
+    state.unregisterSocket(originalSocket);
+    expect(state.listSessions()).toHaveLength(1);
+  });
+
+  test("releases the replacement socket's prior session count reservation", () => {
+    const state = createState({ limits: { maxSessions: 2 } });
+    const originalSocket = { send() {} };
+    const replacementSocket = { send() {} };
+    const thirdSocket = { send() {} };
+    state.registerSession(originalSocket, createRegistration(), createSnapshot());
+    state.registerSession(
+      replacementSocket,
+      createRegistration({ sessionId: "session-2" }),
+      createSnapshot(),
+    );
+    expect(
+      state.registerSession(replacementSocket, createRegistration(), createSnapshot(), {
+        replaceOwner: true,
+      }),
+    ).toBe("registered");
+    expect(
+      state.registerSession(
+        thirdSocket,
+        createRegistration({ sessionId: "session-3" }),
+        createSnapshot(),
+      ),
+    ).toBe("registered");
+    expect(state.listSessions()).toHaveLength(2);
+  });
+
   test("rejects commands immediately when the live session socket cannot accept them", async () => {
     const state = createState();
     const socket = {

@@ -49,6 +49,7 @@ function toNodeConnection(
   socket: WebSocket,
   outboundBudget: ResourceBudget,
   maxPeerBytes: number,
+  markAuthenticated: () => void,
 ): SessionBrokerPeer {
   return {
     send(data: string) {
@@ -77,6 +78,7 @@ function toNodeConnection(
     close(code?: number, reason?: string) {
       socket.close(code, reason);
     },
+    markAuthenticated,
   };
 }
 
@@ -215,6 +217,7 @@ export async function serveSessionBrokerDaemon<
   // connection object that registration and message handling used earlier.
   const peerBySocket = new WeakMap<WebSocket, SessionBrokerPeer>();
   const admissionBySocket = new WeakMap<WebSocket, BudgetReservation>();
+  const handshakeTimers = new WeakMap<WebSocket, ReturnType<typeof setTimeout>>();
   const activeWebSockets = new Set<WebSocket>();
   const activeSockets = new Set<Socket>();
   server.on("connection", (socket) => {
@@ -238,11 +241,28 @@ export async function serveSessionBrokerDaemon<
 
   webSocketServer.on("connection", (socket: WebSocket) => {
     activeWebSockets.add(socket);
+    const markAuthenticated = () => {
+      admissionBySocket.get(socket)?.release();
+      admissionBySocket.delete(socket);
+      const timer = handshakeTimers.get(socket);
+      if (timer) clearTimeout(timer);
+      handshakeTimers.delete(socket);
+    };
     const peer = toNodeConnection(
       socket,
       outboundBudget,
       options.daemon.limits.maxOutboundBytesPerPeer,
+      markAuthenticated,
     );
+    if (options.daemon.requiresProducerAuthentication) {
+      const timer = setTimeout(() => {
+        socket.close(1008, "Session broker authentication timed out.");
+      }, options.daemon.limits.maxHandshakeDurationMs);
+      timer.unref?.();
+      handshakeTimers.set(socket, timer);
+    } else {
+      markAuthenticated();
+    }
     peerBySocket.set(socket, peer);
     socket.on("message", (message: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
       if (isBinary) {
@@ -288,7 +308,11 @@ export async function serveSessionBrokerDaemon<
     socket.on("error", () => {});
     socket.on("close", (code: number, reason: Buffer) => {
       activeWebSockets.delete(socket);
+      const timer = handshakeTimers.get(socket);
+      if (timer) clearTimeout(timer);
+      handshakeTimers.delete(socket);
       admissionBySocket.get(socket)?.release();
+      admissionBySocket.delete(socket);
       options.daemon.handleConnectionClose(peerBySocket.get(socket) ?? peer);
       // The runtime-neutral daemon only cares that the transport closed; Node-specific close data
       // stays ignored here instead of leaking into the shared broker API.
