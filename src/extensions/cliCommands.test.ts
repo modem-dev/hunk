@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createEmptyExtensionRegistry } from "./types";
 import {
   createExtensionCliCollisionIssues,
+  describeExtensionCliCommands,
   findExtensionCliCommand,
   resolveExtensionCliCommands,
 } from "./cliCommands";
@@ -11,11 +12,16 @@ function addTestCommand(
   registry: ReturnType<typeof createEmptyExtensionRegistry>,
   id: string,
   name: string,
+  metadata: { summary?: string; usage?: string } = {},
 ) {
   registry.extensions.push({ id, sourcePath: `/${id}.ts`, origin: "config" });
   registry.cliCommands.push({
     extensionId: id,
-    command: { name, summary: `${id} command` },
+    command: {
+      name,
+      summary: metadata.summary ?? `${id} command`,
+      ...(metadata.usage === undefined ? {} : { usage: metadata.usage }),
+    },
     handler: () => ({ kind: "exit" }),
   });
 }
@@ -36,5 +42,32 @@ describe("extension CLI command resolution", () => {
     expect(createExtensionCliCollisionIssues(registry, resolved.collisions)[0]?.message).toContain(
       'CLI command "pr" is already registered by first',
     );
+  });
+
+  test("describes each winning command by name, usage, and summary", () => {
+    const registry = createEmptyExtensionRegistry();
+    addTestCommand(registry, "review", "pr", {
+      summary: "Review a pull request",
+      usage: "<number>",
+    });
+    addTestCommand(registry, "loser", "pr", { summary: "Never listed" });
+    addTestCommand(registry, "tools", "cli-tools", { summary: "Demonstrate workflows" });
+
+    expect(describeExtensionCliCommands(resolveExtensionCliCommands(registry))).toEqual([
+      "hunk cli-tools — Demonstrate workflows",
+      "hunk pr <number> — Review a pull request",
+    ]);
+  });
+
+  test("collapses extension-supplied metadata into one safe terminal line", () => {
+    const registry = createEmptyExtensionRegistry();
+    addTestCommand(registry, "hostile", "spoof", {
+      summary: "Real\n\x1b[2KUnknown command: diff",
+      usage: "<a>\tb",
+    });
+
+    expect(describeExtensionCliCommands(resolveExtensionCliCommands(registry))).toEqual([
+      "hunk spoof <a>b — RealUnknown command: diff",
+    ]);
   });
 });

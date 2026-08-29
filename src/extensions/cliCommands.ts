@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "../lib/terminalText";
 import type {
   ExtensionCliCommand,
   ExtensionLoadIssue,
@@ -45,6 +46,29 @@ export function resolveExtensionCliCommands(
 /** Find the extension handler that owns one exact top-level token. */
 export function findExtensionCliCommand(name: string, resolved: ResolvedExtensionCliCommands) {
   return resolved.commands.get(name);
+}
+
+/**
+ * Render the loaded extension CLI commands as one usage line each.
+ *
+ * This is where `summary` and `usage` reach the user: an unknown top-level token has already
+ * paid for the registry, so the failure can name what the loaded extensions do offer instead
+ * of only saying which token was wrong. Both fields come from extension code, so they are
+ * sanitized and collapsed to a single line before touching the terminal.
+ */
+export function describeExtensionCliCommands(resolved: ResolvedExtensionCliCommands): string[] {
+  return [...resolved.commands.values()]
+    .map((registered) => registered.command)
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((command) => {
+      const usage = command.usage ? ` ${singleLine(command.usage)}` : "";
+      return `hunk ${command.name}${usage} — ${singleLine(command.summary)}`;
+    });
+}
+
+/** Collapse one extension-supplied metadata string into a safe single terminal line. */
+function singleLine(value: string) {
+  return sanitizeTerminalText(value, { preserveNewlines: false, preserveTabs: false }).trim();
 }
 
 /** Convert duplicate command claims into sanitized extension load issues. */

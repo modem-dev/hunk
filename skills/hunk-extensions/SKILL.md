@@ -127,7 +127,9 @@ hunk --extension ./my-ext.ts my-command sync --help
 ```
 
 The handler receives frozen args plus `ctx.cwd`, `ctx.signal`, streaming
-`ctx.stdin`, and leased `ctx.stdout`/`ctx.stderr` writers. Return `{ kind:
+`ctx.stdin`, and leased `ctx.stdout`/`ctx.stderr` writers. `summary` and
+`usage` are listed when a token reaches discovery unclaimed, so write them as
+one short line each. Return `{ kind:
 "exit", code? }` or `{ kind: "delegate", argv: ["diff", ...] }`. Delegation is
 built-in-only and one-time: do not write stdout or read stdin before delegating;
 use stderr for progress. Reading stdin is an exit-only workflow. Respect cancellation promptly.

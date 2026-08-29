@@ -43,6 +43,17 @@ hunk --extension ./greptile.ts greptile sync
 
 Bare help remains static; `hunk greptile --help` passes `--help` to the handler.
 
+`summary` and `usage` surface when a top-level token reaches extension
+discovery unclaimed. That failure lists every loaded command instead of only
+naming the bad token, so keep both to one short line:
+
+```text
+hunk: Unknown command: nosuchthing
+
+Extension commands available here:
+hunk gh <number|owner/repo#number|pull-request-url> [--repo <owner/repo>] — Review a GitHub pull request
+```
+
 For a complete implementation, see the dependency-free
 [`github-pr` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr).
 It fetches GitHub PR diffs directly, delegates a temporary patch with

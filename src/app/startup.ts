@@ -221,6 +221,14 @@ export async function prepareStartupPlan(
       const registered = resolved.commands.commands.get(invocation.commandName);
       if (!registered) {
         const suggestions: string[] = [];
+        // The registry is already loaded, so name what the loaded extensions do offer rather
+        // than reporting only the token that failed.
+        const available = (await import("../extensions/cliCommands")).describeExtensionCliCommands(
+          resolved.commands,
+        );
+        if (available.length > 0) {
+          suggestions.push("Extension commands available here:", ...available);
+        }
         if (resolved.extensions.pendingTrustRepoRoot) {
           suggestions.push(
             `Open a normal review in ${resolved.extensions.pendingTrustRepoRoot} to decide whether to trust its extensions, then retry.`,

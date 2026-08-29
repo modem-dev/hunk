@@ -126,6 +126,44 @@ describe("startup planning", () => {
     expect(shutdowns).toBe(1);
   });
 
+  test("lists the loaded extension commands when the requested token is unclaimed", async () => {
+    const invocation = {
+      kind: "extension-cli" as const,
+      commandName: "toolz",
+      args: [],
+      extensionPaths: ["/tools.ts"],
+      extensionsEnabled: true,
+    };
+    const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.extensions.push({ id: "tools", sourcePath: "/tools.ts", origin: "flag" });
+    extensions.registry.cliCommands.push({
+      extensionId: "tools",
+      command: { name: "tools", summary: "Demonstrate workflows", usage: "<status|review>" },
+      handler: () => ({ kind: "exit" }),
+    });
+
+    const plan = prepareStartupPlan(["bun", "hunk", "toolz"], {
+      parseCliImpl: async () => invocation,
+      resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+        configured: {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        },
+        extensions,
+        commands: resolveExtensionCliCommands(extensions.registry),
+        collisionIssues: [],
+        discoveryCatalog: baseVcsCatalog,
+      }),
+    });
+
+    await expect(plan).rejects.toMatchObject({
+      message: "Unknown command: toolz",
+      suggestions: [
+        "Extension commands available here:",
+        "hunk tools <status|review> — Demonstrate workflows",
+      ],
+    });
+  });
+
   test("rejects a disabled extension command before bootstrap resolution", async () => {
     let resolved = false;
 

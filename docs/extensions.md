@@ -331,6 +331,22 @@ be avoided.
 Bare `hunk --help` remains static and does not load extensions. The extension
 owns `hunk <name> --help` and receives `--help` unchanged.
 
+`summary` and `usage` are what Hunk shows when a top-level token reaches
+extension discovery but no extension claims it. That failure has already paid
+for the registry, so it lists every loaded command rather than only naming the
+token that was wrong:
+
+```text
+hunk: Unknown command: nosuchthing
+
+Extension commands available here:
+hunk cli-tools <status|review> [args...] — Demonstrate extension-provided CLI workflows
+hunk gh <number|owner/repo#number|pull-request-url> [--repo <owner/repo>] — Review a GitHub pull request
+```
+
+Both fields are collapsed to one sanitized line, so an extension cannot forge
+host output with newlines or escape sequences.
+
 The dependency-free [`github-pr` example](../examples/extensions/github-pr/)
 is a complete network workflow built on this contract. It fetches a GitHub PR
 diff without the `gh` CLI, writes a temporary patch with restrictive POSIX
