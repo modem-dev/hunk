@@ -4,12 +4,14 @@ import {
   brokerWireParsers,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
+  type CallerPrincipal,
   type SessionRegistration,
   type SessionServerMessage,
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import { SessionBroker } from "./broker";
 import { createSessionBrokerDaemon } from "./daemon";
+import type { AuthenticatedCallerRequest } from "./authentication";
 
 interface TestSessionInfo {
   title: string;
@@ -77,6 +79,52 @@ function createSnapshot(
   };
 }
 
+function authenticatedRequest(principal: CallerPrincipal): AuthenticatedCallerRequest {
+  return {
+    principal,
+    requestId: "request-1",
+    assertActive() {},
+    async signResponse(input) {
+      return {
+        generation: "generation-1",
+        brokerRevision: 1,
+        ...(input.appContract ? { appContract: input.appContract } : {}),
+        requestId: "request-1",
+        httpStatus: input.httpStatus,
+        bodyDigest: "test-body-digest",
+        daemonKeyId: "daemon-key-1",
+        daemonSignature: "test-signature",
+      };
+    },
+  };
+}
+
+const authenticatedHttpApi = {
+  appId: "session-broker",
+  appRevision: 1,
+  callerAuthenticator: {
+    authenticate: async () =>
+      authenticatedRequest({
+        kind: "caller" as const,
+        appId: "session-broker",
+        principalId: "test-caller",
+        keyId: "test-key",
+        grantId: "test-grant",
+        operations: ["list", "get", "dispatch", "diagnostics"] as const,
+        commands: [
+          { name: "annotate", version: 1 },
+          { name: "annotate", version: 2 },
+        ],
+      }),
+  },
+  authorizer: async () => true,
+};
+
+async function authenticatedBody(response: Response | null) {
+  const envelope = (await response?.json()) as { body: unknown } | undefined;
+  return envelope?.body;
+}
+
 function createConnection() {
   const sent: string[] = [];
   let closed: { code?: number; reason?: string } | null = null;
@@ -103,6 +151,7 @@ describe("session broker daemon", () => {
       broker: createBroker(),
       capabilities: { version: 1, name: "test-broker" },
       exposeHttpApi: true,
+      ...authenticatedHttpApi,
     });
     const { connection } = createConnection();
     daemon.handleConnectionMessage(
@@ -129,7 +178,7 @@ describe("session broker daemon", () => {
       }),
     );
     expect(listResponse).toBeInstanceOf(Response);
-    await expect(listResponse?.json()).resolves.toMatchObject({
+    await expect(authenticatedBody(listResponse)).resolves.toMatchObject({
       sessions: [{ sessionId: "session-1", title: "repo working tree" }],
     });
 
@@ -140,13 +189,62 @@ describe("session broker daemon", () => {
         body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
       }),
     );
-    await expect(getResponse?.json()).resolves.toMatchObject({
+    await expect(authenticatedBody(getResponse)).resolves.toMatchObject({
       session: {
         registration: { sessionId: "session-1" },
         snapshot: { state: { selectedIndex: 0 } },
       },
     });
 
+    daemon.shutdown();
+  });
+
+  test("refuses exposeHttpApi without both an explicit authenticator and authorizer", async () => {
+    const withoutAuthentication = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      appId: "session-broker",
+    });
+    const withoutAuthorization = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      appId: "session-broker",
+      callerAuthenticator: authenticatedHttpApi.callerAuthenticator,
+    });
+
+    for (const daemon of [withoutAuthentication, withoutAuthorization]) {
+      expect(daemon.paths).toEqual({ health: "/health", socket: "/session" });
+      await expect(
+        daemon.handleRequest(
+          new Request("http://broker.test/broker", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "list" }),
+          }),
+        ),
+      ).resolves.toBeNull();
+      daemon.shutdown();
+    }
+  });
+
+  test("requires GET with an empty body for authenticated capabilities", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+    });
+
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker/capabilities", {
+        method: "POST",
+        body: "unsigned bytes",
+      }),
+    );
+
+    expect(response?.status).toBe(405);
     daemon.shutdown();
   });
 
@@ -182,6 +280,7 @@ describe("session broker daemon", () => {
       broker: createBroker(),
       capabilities: { version: 1 },
       exposeHttpApi: true,
+      ...authenticatedHttpApi,
     });
 
     const response = await daemon.handleRequest(
@@ -199,11 +298,53 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("authenticates exact body bytes before strictly rejecting BOM and malformed UTF-8", async () => {
+    const authenticatedBodies: number[][] = [];
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      appId: "session-broker",
+      appRevision: 1,
+      callerAuthenticator: {
+        authenticate: async ({ body }) => {
+          authenticatedBodies.push([...body]);
+          return authenticatedRequest({
+            kind: "caller",
+            appId: "session-broker",
+            principalId: "test-caller",
+            keyId: "test-key",
+            grantId: "test-grant",
+            operations: ["list"],
+            commands: [],
+          });
+        },
+      },
+      authorizer: async () => true,
+    });
+    const malformedBodies = [
+      new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('{"action":"list"}')]),
+      new Uint8Array([0x7b, 0x22, 0x78, 0x22, 0x3a, 0xc0, 0xaf, 0x7d]),
+    ];
+    for (const body of malformedBodies) {
+      const response = await daemon.handleRequest(
+        new Request("http://broker.test/broker", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        }),
+      );
+      expect(response?.status).toBe(400);
+    }
+    expect(authenticatedBodies).toEqual(malformedBodies.map((body) => [...body]));
+    daemon.shutdown();
+  });
+
   test("rejects raw broker API bodies that exceed the size limit", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
       exposeHttpApi: true,
+      ...authenticatedHttpApi,
     });
 
     const oversized = JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) });
@@ -227,6 +368,7 @@ describe("session broker daemon", () => {
       broker: createBroker(),
       capabilities: { version: 1 },
       exposeHttpApi: true,
+      ...authenticatedHttpApi,
     });
     const session = createConnection();
     const { connection, sent } = session;
@@ -247,14 +389,19 @@ describe("session broker daemon", () => {
           action: "dispatch",
           selector: { sessionId: "session-1" },
           command: "annotate",
+          commandVersion: 2,
           input: { summary: "Review note" },
         }),
       }),
     );
 
     await Bun.sleep(0);
-    const outgoing = JSON.parse(sent[sent.length - 1]!) as { requestId: string; command: string };
-    expect(outgoing.command).toBe("annotate");
+    const outgoing = JSON.parse(sent[sent.length - 1]!) as {
+      requestId: string;
+      command: string;
+      commandVersion: number;
+    };
+    expect(outgoing).toMatchObject({ command: "annotate", commandVersion: 2 });
 
     daemon.handleConnectionMessage(
       connection,
@@ -267,7 +414,7 @@ describe("session broker daemon", () => {
     );
 
     const response = await pendingResponse;
-    await expect(response?.json()).resolves.toEqual({ result: { applied: true } });
+    await expect(authenticatedBody(response)).resolves.toEqual({ result: { applied: true } });
     daemon.shutdown();
   });
 
@@ -323,6 +470,7 @@ describe("session broker daemon", () => {
       broker: createBroker(),
       capabilities: { version: 1 },
       exposeHttpApi: true,
+      ...authenticatedHttpApi,
     });
     const owner = createConnection();
     const snapshotPeer = createConnection();
@@ -403,7 +551,107 @@ describe("session broker daemon", () => {
       }),
     );
     const response = await pendingResponse;
-    await expect(response?.json()).resolves.toEqual({ result: { applied: true } });
+    await expect(authenticatedBody(response)).resolves.toEqual({ result: { applied: true } });
+    daemon.shutdown();
+  });
+
+  test("requires operation, command, and app authorization before broker control", async () => {
+    let appAuthorizerCalls = 0;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      appId: "session-broker",
+      appRevision: 1,
+      callerAuthenticator: {
+        authenticate: async () =>
+          authenticatedRequest({
+            kind: "caller" as const,
+            appId: "session-broker",
+            principalId: "limited-caller",
+            keyId: "limited-key",
+            grantId: "limited-grant",
+            operations: ["list", "dispatch"] as const,
+            commands: [{ name: "allowed", version: 1 }],
+          }),
+      },
+      authorizer: async () => {
+        appAuthorizerCalls += 1;
+        return true;
+      },
+    });
+    const post = (body: unknown) =>
+      daemon.handleRequest(
+        new Request("http://broker.test/broker", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+
+    expect((await post({ action: "get", selector: { sessionId: "missing" } }))?.status).toBe(403);
+    expect(appAuthorizerCalls).toBe(0);
+    expect(
+      (
+        await post({
+          action: "dispatch",
+          selector: { sessionId: "missing" },
+          command: "forbidden",
+          input: {},
+        })
+      )?.status,
+    ).toBe(403);
+    expect(appAuthorizerCalls).toBe(0);
+    expect(
+      (
+        await post({
+          action: "dispatch",
+          selector: { sessionId: "missing" },
+          command: "allowed",
+          commandVersion: 0,
+          input: {},
+        })
+      )?.status,
+    ).toBe(400);
+    expect(appAuthorizerCalls).toBe(0);
+    expect((await post({ action: "list" }))?.status).toBe(200);
+    expect(appAuthorizerCalls).toBe(1);
+    daemon.shutdown();
+  });
+
+  test("returns stable redacted authentication failures without invoking app authorization", async () => {
+    let authorized = false;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      appId: "session-broker",
+      appRevision: 1,
+      callerAuthenticator: {
+        authenticate: async () => {
+          const { SessionBrokerAuthenticationError } = await import("./authentication");
+          throw new SessionBrokerAuthenticationError("invalid-signature");
+        },
+      },
+      authorizer: async () => {
+        authorized = true;
+        return true;
+      },
+    });
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      }),
+    );
+    expect(response?.status).toBe(401);
+    const responseText = await response?.text();
+    expect(JSON.parse(responseText ?? "null")).toEqual({
+      error: "authentication-failed",
+      code: "invalid-signature",
+    });
+    expect(authorized).toBe(false);
+    expect(responseText).not.toContain("private");
     daemon.shutdown();
   });
 

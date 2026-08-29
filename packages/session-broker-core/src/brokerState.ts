@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isValidBrokerRevision } from "./auth";
 import { matchesSessionSelector, repoSelectorDistance, type SelectableSession } from "./selectors";
 import type {
   SessionRegistration,
@@ -343,16 +344,21 @@ export class SessionBrokerState<
   dispatchCommand<ResultType extends CommandResult, CommandName extends ServerMessage["command"]>({
     selector,
     command,
+    commandVersion = 1,
     input,
     timeoutMessage,
     timeoutMs = 15_000,
   }: {
     selector: SessionTargetInput;
     command: CommandName;
+    commandVersion?: number;
     input: Extract<ServerMessage, { command: CommandName }>["input"];
     timeoutMessage: string;
     timeoutMs?: number;
   }) {
+    if (!isValidBrokerRevision(commandVersion)) {
+      throw new TypeError("Command version must be a positive safe integer.");
+    }
     const session = resolveSessionTarget(this.listSessions(), selector);
     const requestId = randomUUID();
 
@@ -385,6 +391,7 @@ export class SessionBrokerState<
           type: "command",
           requestId,
           command,
+          commandVersion,
           input,
         } as Extract<ServerMessage, { command: CommandName }>;
 

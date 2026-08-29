@@ -38,6 +38,7 @@ export class PayloadTooLargeError extends Error {
 
 // Reused across every websocket message, HTTP body, and patch check to avoid a per-call alloc.
 const sharedTextEncoder = new TextEncoder();
+const fatalTextDecoder = new TextDecoder("utf-8", { fatal: true });
 
 /** UTF-8 byte length of a string without allocating a Buffer in non-Node runtimes. */
 export function utf8ByteLength(value: string): number {
@@ -45,73 +46,43 @@ export function utf8ByteLength(value: string): number {
 }
 
 /**
- * Read one request body as text while enforcing a hard byte ceiling.
+ * Read one request body as exact bytes while enforcing a hard byte ceiling.
  *
  * The Content-Length header is rejected early when it already declares an oversized body, and the
  * stream is aborted mid-read so a missing or lying Content-Length cannot force the daemon to
  * buffer an unbounded body before the cap is noticed.
  */
-export async function readRequestTextWithLimit(
+export async function readRequestBytesWithLimit(
   request: Request,
   maxBytes: number,
-): Promise<string> {
+): Promise<Uint8Array> {
   const declared = request.headers.get("content-length");
-  if (declared) {
-    const length = Number.parseInt(declared, 10);
-    if (Number.isInteger(length) && length > maxBytes) {
-      throw new PayloadTooLargeError(maxBytes);
-    }
+  if (declared && /^(?:0|[1-9][0-9]*)$/.test(declared) && Number(declared) > maxBytes) {
+    throw new PayloadTooLargeError(maxBytes);
   }
 
   const body = request.body;
-  if (!body) {
-    // Some runtimes do not expose a streaming body; the Content-Length guard above still bounds
-    // well-behaved clients, and the post-read check bounds the rest.
-    const text = await request.text();
-    if (utf8ByteLength(text) > maxBytes) {
-      throw new PayloadTooLargeError(maxBytes);
-    }
-
-    return text;
-  }
+  if (!body) return new Uint8Array();
 
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    let done: boolean;
-    let value: Uint8Array | undefined;
-    try {
-      const result = await reader.read();
-      done = result.done;
-      value = result.value;
-    } catch (error) {
-      reader.releaseLock();
-      throw error;
-    }
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
 
-    if (done) {
-      break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new PayloadTooLargeError(maxBytes);
+      }
+      chunks.push(value);
     }
-
-    if (!value) {
-      continue;
-    }
-
-    total += value.byteLength;
-    if (total > maxBytes) {
-      // Stop pulling from the stream immediately so the body cannot grow past the cap.
-      await reader.cancel().catch(() => {});
-      // cancel() does not release the lock per the Streams spec; release it explicitly so the
-      // over-limit path matches the normal-exit path instead of waiting for GC.
-      reader.releaseLock();
-      throw new PayloadTooLargeError(maxBytes);
-    }
-
-    chunks.push(value);
+  } finally {
+    reader.releaseLock();
   }
-
-  reader.releaseLock();
 
   const merged = new Uint8Array(total);
   let offset = 0;
@@ -119,6 +90,13 @@ export async function readRequestTextWithLimit(
     merged.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return merged;
+}
 
-  return new TextDecoder().decode(merged);
+/** Read and strictly decode one bounded request body as UTF-8 text. */
+export async function readRequestTextWithLimit(
+  request: Request,
+  maxBytes: number,
+): Promise<string> {
+  return fatalTextDecoder.decode(await readRequestBytesWithLimit(request, maxBytes));
 }

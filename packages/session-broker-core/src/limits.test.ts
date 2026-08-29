@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { PayloadTooLargeError, readRequestTextWithLimit, utf8ByteLength } from "./limits";
+import {
+  PayloadTooLargeError,
+  readRequestBytesWithLimit,
+  readRequestTextWithLimit,
+  utf8ByteLength,
+} from "./limits";
 
 /** Build a streaming request body so the read path runs without a Content-Length header. */
 function streamingRequest(byteLength: number, chunkSize = 64 * 1024) {
@@ -57,6 +62,15 @@ describe("readRequestTextWithLimit", () => {
     await expect(readRequestTextWithLimit(request, 1024 * 1024)).resolves.toBe(
       JSON.stringify({ action: "list" }),
     );
+  });
+
+  test("returns exact bytes and rejects malformed UTF-8 only during strict text decoding", async () => {
+    const bytes = new Uint8Array([0x7b, 0xc0, 0xaf, 0x7d]);
+    const byteRequest = new Request("http://broker.test/api", { method: "POST", body: bytes });
+    await expect(readRequestBytesWithLimit(byteRequest, 1024)).resolves.toEqual(bytes);
+
+    const textRequest = new Request("http://broker.test/api", { method: "POST", body: bytes });
+    await expect(readRequestTextWithLimit(textRequest, 1024)).rejects.toBeInstanceOf(TypeError);
   });
 
   test("treats a missing body as an empty string", async () => {

@@ -110,6 +110,34 @@ describe("session broker node adapter", () => {
       broker,
       capabilities: { version: 1 },
       exposeHttpApi: true,
+      appId: "test.app",
+      appRevision: 1,
+      callerAuthenticator: {
+        authenticate: async () => ({
+          principal: {
+            kind: "caller" as const,
+            appId: "test.app",
+            principalId: "test-caller",
+            keyId: "test-key",
+            grantId: "test-grant",
+            operations: ["list", "get"] as const,
+            commands: [],
+          },
+          requestId: "request-1",
+          assertActive() {},
+          signResponse: async ({ httpStatus, appContract }) => ({
+            generation: "generation-1",
+            brokerRevision: 1 as const,
+            ...(appContract ? { appContract } : {}),
+            requestId: "request-1",
+            httpStatus,
+            bodyDigest: "test-digest",
+            daemonKeyId: "daemon-key-1",
+            daemonSignature: "test-signature",
+          }),
+        }),
+      },
+      authorizer: async () => true,
     });
     const port = await reserveLoopbackPort();
     const server = await serveSessionBrokerDaemon({
@@ -120,7 +148,7 @@ describe("session broker node adapter", () => {
 
     try {
       const health = await fetch(`http://127.0.0.1:${port}/health`);
-      await expect(health.json()).resolves.toMatchObject({ ok: true, sessions: 0 });
+      await expect(health.json()).resolves.toMatchObject({ ok: true });
 
       const socket = new WebSocket(`ws://127.0.0.1:${port}/session`);
       await new Promise<void>((resolve, reject) => {
@@ -165,8 +193,10 @@ describe("session broker node adapter", () => {
           return null;
         }
 
-        const payload = (await response.json()) as { sessions: { sessionId: string }[] };
-        return payload.sessions.length === 1 ? payload : null;
+        const payload = (await response.json()) as {
+          body: { sessions: { sessionId: string }[] };
+        };
+        return payload.body.sessions.length === 1 ? payload : null;
       });
 
       const response = await fetch(`http://127.0.0.1:${port}/broker`, {
@@ -175,9 +205,11 @@ describe("session broker node adapter", () => {
         body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
       });
       await expect(response.json()).resolves.toMatchObject({
-        session: {
-          registration: { sessionId: "session-1" },
-          snapshot: { state: { selectedIndex: 0 } },
+        body: {
+          session: {
+            registration: { sessionId: "session-1" },
+            snapshot: { state: { selectedIndex: 0 } },
+          },
         },
       });
 
