@@ -4,12 +4,20 @@ import path from "node:path";
 export type InstallVmProfile = "minimal" | "node";
 export type InstallVmNetwork = "local" | "live";
 
+export interface InstallVmScenarioRequiredEvidence {
+  commands?: string[];
+  commandExpectations?: Record<string, string>;
+  assertions?: string[];
+  observations?: string[];
+}
+
 export interface InstallVmScenario {
   id: string;
   description: string;
   profile: InstallVmProfile;
   script: string;
   network: InstallVmNetwork;
+  requiredEvidence?: InstallVmScenarioRequiredEvidence;
 }
 
 export interface InstallVmScenarioManifest {
@@ -97,6 +105,36 @@ export interface InstallVmPins {
 const SCENARIO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const ZERO_EXIT_COMMAND_EXPECTATIONS = new Set([
+  "background PTY remains live",
+  "SIGSTOP exact owned B client",
+  "SIGCONT exact owned B client",
+]);
+
+/** Validate one expectation against the closed install-VM command grammar. */
+export function validateInstallVmCommandExpectation(expectation: string, exitCode?: number) {
+  const exitMatch = /^exit (-?(?:0|[1-9][0-9]*))$/.exec(expectation);
+  if (exitMatch) {
+    if (exitCode !== undefined && exitCode !== Number(exitMatch[1])) {
+      throw new Error(`Install VM command has impossible exit expectation: ${expectation}.`);
+    }
+    return;
+  }
+  if (expectation === "nonzero exit") {
+    if (exitCode === 0) {
+      throw new Error("Install VM command has impossible nonzero exit expectation.");
+    }
+    return;
+  }
+  if (expectation === "observed exit") return;
+  if (ZERO_EXIT_COMMAND_EXPECTATIONS.has(expectation)) {
+    if (exitCode !== undefined && exitCode !== 0) {
+      throw new Error(`Install VM command has impossible zero-exit expectation: ${expectation}.`);
+    }
+    return;
+  }
+  throw new Error(`Install VM command has unsupported expectation: ${expectation}.`);
+}
 
 /** Validate checksum-attested VM inputs and exact versions used by compatibility scenarios. */
 export function validateInstallVmPins(value: unknown) {
@@ -217,6 +255,62 @@ export function validateScenarioManifest(value: unknown): InstallVmScenarioManif
     }
     if (path.basename(scenario.script) !== scenario.script || !scenario.script.endsWith(".sh")) {
       throw new Error(`Scenario ${scenario.id} has an unsafe script path.`);
+    }
+    if (scenario.requiredEvidence !== undefined) {
+      if (!scenario.requiredEvidence || typeof scenario.requiredEvidence !== "object") {
+        throw new Error(`Scenario ${scenario.id} has malformed required evidence.`);
+      }
+      const requiredEvidence = scenario.requiredEvidence as Record<string, unknown>;
+      const expectedKeys = ["commands", "commandExpectations", "assertions", "observations"];
+      if (Object.keys(requiredEvidence).some((key) => !expectedKeys.includes(key))) {
+        throw new Error(`Scenario ${scenario.id} has unknown required evidence.`);
+      }
+      for (const key of ["commands", "assertions", "observations"] as const) {
+        const entries = requiredEvidence[key];
+        if (entries === undefined) continue;
+        if (
+          !Array.isArray(entries) ||
+          entries.length === 0 ||
+          entries.some(
+            (entry) =>
+              typeof entry !== "string" ||
+              (key === "observations"
+                ? !/^[A-Za-z][A-Za-z0-9]*$/.test(entry)
+                : !SCENARIO_ID_PATTERN.test(entry)),
+          ) ||
+          new Set(entries).size !== entries.length
+        ) {
+          throw new Error(`Scenario ${scenario.id} has malformed required ${key}.`);
+        }
+      }
+      const commandExpectations = requiredEvidence.commandExpectations;
+      if (commandExpectations !== undefined) {
+        if (
+          !commandExpectations ||
+          typeof commandExpectations !== "object" ||
+          Array.isArray(commandExpectations) ||
+          (Object.getPrototypeOf(commandExpectations) !== Object.prototype &&
+            Object.getPrototypeOf(commandExpectations) !== null)
+        ) {
+          throw new Error(`Scenario ${scenario.id} has malformed command expectations.`);
+        }
+        const commands = requiredEvidence.commands;
+        const expectationRecord = commandExpectations as Record<string, unknown>;
+        if (
+          !Array.isArray(commands) ||
+          Object.keys(expectationRecord).sort().join("\0") !== [...commands].sort().join("\0")
+        ) {
+          throw new Error(
+            `Scenario ${scenario.id} command expectations must exactly match required commands.`,
+          );
+        }
+        for (const [commandId, expectation] of Object.entries(expectationRecord)) {
+          if (!SCENARIO_ID_PATTERN.test(commandId) || typeof expectation !== "string") {
+            throw new Error(`Scenario ${scenario.id} has malformed command expectations.`);
+          }
+          validateInstallVmCommandExpectation(expectation);
+        }
+      }
     }
   }
 
