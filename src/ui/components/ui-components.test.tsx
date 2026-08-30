@@ -1220,6 +1220,34 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane first nowrap paint fills a tall viewport past the overscan neighbor", async () => {
+    const files = createWindowingFiles(8);
+    const theme = resolveTheme("github-dark-default", null);
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 40,
+    });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("window-3.ts");
+      expect(frame).toContain("file3Extra = true");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("github-dark-default", null);
