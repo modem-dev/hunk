@@ -9,6 +9,10 @@ describe("estimateInitialRenderViewportHeight", () => {
   test("never returns an empty window while geometry is still unknown", () => {
     expect(estimateInitialRenderViewportHeight(0, 0)).toBe(1);
   });
+
+  test("does not include a bottom pane in the review viewport estimate", () => {
+    expect(estimateInitialRenderViewportHeight(100, 1, 5)).toBe(5);
+  });
 });
 
 describe("resolveRenderViewportHeight", () => {

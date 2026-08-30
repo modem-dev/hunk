@@ -200,6 +200,10 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
+  const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
+    id: number;
+    edge: "top" | "bottom";
+  }>({ id: 0, edge: "top" });
   const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
@@ -719,6 +723,15 @@ export function App({
     delta: number,
     unit: "step" | "viewport" | "content" | "half" = "viewport",
   ) => {
+    if (unit === "content") {
+      if (delta !== 0) {
+        setScrollEdgeRequest((current) => ({
+          id: current.id + 1,
+          edge: delta > 0 ? "bottom" : "top",
+        }));
+      }
+      return;
+    }
     if (unit === "half") {
       const scrollBox = diffScrollRef.current;
       if (!scrollBox) return;
@@ -1312,6 +1325,7 @@ export function App({
             wrapToggleScrollTop={wrapToggleScrollTopRef.current}
             layoutToggleScrollTop={layoutToggleScrollTopRef.current}
             layoutToggleRequestId={layoutToggleRequestId}
+            scrollEdgeRequest={scrollEdgeRequest}
             selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
             selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
             cursorLine={cursorLine}
