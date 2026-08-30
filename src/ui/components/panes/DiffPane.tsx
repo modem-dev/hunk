@@ -669,6 +669,30 @@ export function DiffPane({
   // is required before passive viewport-follow selection can trigger.
   const lastViewportSelectionTopRef = useRef<number | null>(null);
   const lastViewportRowAnchorRef = useRef<ViewportRowAnchor | null>(null);
+  // Track the previous selected anchor to detect actual selection changes.
+  const prevSelectedAnchorIdRef = useRef<string | null>(null);
+  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
+  const pendingSelectionSettleRef = useRef(false);
+  const pendingSelectionRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  /** Clear scheduled selection-reveal retries without changing the resettle policy. */
+  const clearPendingSelectionRevealTimers = useCallback(() => {
+    for (const timeout of pendingSelectionRevealTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    pendingSelectionRevealTimeoutsRef.current = [];
+  }, []);
+
+  /** Retire selection reveal work once another explicit scroll policy becomes authoritative. */
+  const supersedePendingSelectionReveal = useCallback(() => {
+    clearPendingSelectionRevealTimers();
+    pendingSelectionSettleRef.current = false;
+  }, [clearPendingSelectionRevealTimers]);
+
+  /** Clear any pending "selected file to top" follow-up. */
+  const clearPendingFileTopAlign = useCallback(() => {
+    pendingFileTopAlignFileIdRef.current = null;
+  }, []);
 
   /** Track the currently hover-owned file without making scroll handlers depend on render state. */
   const setHoveredFileForRowActions = useCallback((fileId: string) => {
@@ -978,6 +1002,8 @@ export function DiffPane({
       return;
     }
 
+    supersedePendingSelectionReveal();
+    clearPendingFileTopAlign();
     previousScrollEdgeRequestIdRef.current = pendingScrollEdgeRequest.id;
     const viewportHeight = scrollBox.viewport.height || scrollEdgeViewportHeight;
     const nextTop = clampVerticalScrollTop(
@@ -988,10 +1014,12 @@ export function DiffPane({
     setScrollViewport({ top: nextTop, height: viewportHeight });
     scrollBox.scrollTo(nextTop);
   }, [
+    clearPendingFileTopAlign,
     pendingScrollEdgeRequest,
     requestedScrollEdgeTop,
     scrollEdgeViewportHeight,
     scrollRef,
+    supersedePendingSelectionReveal,
     totalContentHeight,
   ]);
   const fileSectionIndexById = useMemo(
@@ -1884,31 +1912,6 @@ export function DiffPane({
   /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
   const selectedFileBodyTop =
     selectedFileIndex >= 0 ? (fileSectionLayouts[selectedFileIndex]?.bodyTop ?? 0) : 0;
-
-  // Track the previous selected anchor to detect actual selection changes.
-  const prevSelectedAnchorIdRef = useRef<string | null>(null);
-  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
-  const pendingSelectionSettleRef = useRef(false);
-  const pendingSelectionRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  /** Clear scheduled selection-reveal retries without changing the resettle policy. */
-  const clearPendingSelectionRevealTimers = useCallback(() => {
-    for (const timeout of pendingSelectionRevealTimeoutsRef.current) {
-      clearTimeout(timeout);
-    }
-    pendingSelectionRevealTimeoutsRef.current = [];
-  }, []);
-
-  /** Retire selection reveal work once an explicit line alignment becomes authoritative. */
-  const supersedePendingSelectionReveal = useCallback(() => {
-    clearPendingSelectionRevealTimers();
-    pendingSelectionSettleRef.current = false;
-  }, [clearPendingSelectionRevealTimers]);
-
-  /** Clear any pending "selected file to top" follow-up. */
-  const clearPendingFileTopAlign = useCallback(() => {
-    pendingFileTopAlignFileIdRef.current = null;
-  }, []);
 
   /**
    * Report whether the align has landed as far as the rest of this pane can observe it.
