@@ -13,7 +13,12 @@ import type { RenderSpan } from "./diffRowModel";
 /** Append a styled span while preserving color-run coalescing. */
 function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
   const previous = target.at(-1);
-  if (previous && previous.fg === span.fg && previous.bg === span.bg) {
+  if (
+    previous &&
+    previous.fg === span.fg &&
+    previous.bg === span.bg &&
+    previous.transformFg === span.transformFg
+  ) {
     previous.text += span.text;
   } else {
     target.push(span);

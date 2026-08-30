@@ -249,8 +249,8 @@ function resolveGapLines(
  * Marks addressing lines the review cannot show (inside a collapsed,
  * unexpanded gap without loaded source, or absent from a partial patch) are
  * silently invisible — the mark is valid, the line just is not rendered.
- * Ranges are sorted by start column; paint applies them in order with later
- * ranges winning overlaps, so the result is deterministic.
+ * Ranges retain semantic input order; paint applies them with later ranges
+ * winning overlaps, including agent marks appended over extension marks.
  */
 export function buildLineHighlightPaintIndex({
   file,
@@ -268,18 +268,7 @@ export function buildLineHighlightPaintIndex({
     return undefined;
   }
 
-  const marksByKey = new Map<string, ValidatedLineHighlight[]>();
-  for (const mark of marks) {
-    const key = lineHighlightPaintKey(mark.side, mark.line);
-    const bucket = marksByKey.get(key);
-    if (bucket) {
-      bucket.push(mark);
-    } else {
-      marksByKey.set(key, [mark]);
-    }
-  }
-
-  const addressedKeys = new Set(marksByKey.keys());
+  const addressedKeys = new Set(marks.map((mark) => lineHighlightPaintKey(mark.side, mark.line)));
   const lines = resolvePatchLines(file, addressedKeys);
   if (sourceText !== undefined) {
     resolveGapLines(file, addressedKeys, lines, sourceText);
@@ -301,30 +290,27 @@ export function buildLineHighlightPaintIndex({
     return bucket;
   };
 
-  for (const [key, keyMarks] of marksByKey) {
+  for (const mark of marks) {
+    const key = lineHighlightPaintKey(mark.side, mark.line);
     const line = lines.get(key);
     if (!line) continue;
-    for (const mark of keyMarks) {
-      const range = markToColRange(mark, line.rawText, tabWidth);
-      if (!range) continue;
-      bucketFor(key, line.counterpartKey).push(range);
-    }
+    const range = markToColRange(mark, line.rawText, tabWidth);
+    if (!range) continue;
+    bucketFor(key, line.counterpartKey).push(range);
   }
 
-  if (index.size === 0) {
-    return undefined;
-  }
-
-  for (const ranges of index.values()) {
-    ranges.sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol);
-  }
-  return index;
+  return index.size === 0 ? undefined : index;
 }
 
 /** Append a span preserving color-run coalescing. */
 function appendSpan(target: RenderSpan[], span: RenderSpan) {
   const previous = target.at(-1);
-  if (previous && previous.fg === span.fg && previous.bg === span.bg) {
+  if (
+    previous &&
+    previous.fg === span.fg &&
+    previous.bg === span.bg &&
+    previous.transformFg === span.transformFg
+  ) {
     previous.text += span.text;
   } else {
     target.push(span);
@@ -460,8 +446,8 @@ export function applyLineHighlightsToSpans(
       appendSpan(result, {
         ...span,
         text,
-        fg: style.transformFg(span.fg, span.bg),
         bg: style.bg ?? span.bg,
+        transformFg: style.transformFg,
       });
       return;
     }

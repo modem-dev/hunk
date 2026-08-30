@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Add `dim` tone to `hunk.registerLineHighlighter` for fading diff text toward line backgrounds while preserving syntax highlighting token hues.
+Add a `dim` tone to `hunk.registerLineHighlighter` and `hunk session highlight add` for fading diff text toward line backgrounds while preserving syntax highlighting token hues.

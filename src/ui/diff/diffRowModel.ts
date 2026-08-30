@@ -13,6 +13,8 @@ export interface RenderSpan {
   text: string;
   fg?: string;
   bg?: string;
+  /** Resolve paint-only foreground effects after cursor and copy-selection backgrounds apply. */
+  transformFg?: (sourceFg: string | undefined, renderedBg: string) => string;
 }
 
 export interface SplitLineCell {

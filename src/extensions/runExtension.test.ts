@@ -822,7 +822,7 @@ describe("toInternalVcsAdapter detection ids", () => {
     }
   });
 
-  test("registers generic CLI commands through API v10", () => {
+  test("registers generic CLI commands through the current API", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
     const handler = () => ({ kind: "exit" as const });
@@ -832,7 +832,7 @@ describe("toInternalVcsAdapter detection ids", () => {
       registry,
       issues,
       factory: (hunk) => {
-        expect(hunk.apiVersion).toBe(10);
+        expect(hunk.apiVersion).toBe(HUNK_EXTENSION_API_VERSION);
         hunk.registerCliCommand(
           { name: "greptile", summary: "Work with Greptile", usage: "<action>" },
           handler,

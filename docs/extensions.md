@@ -280,11 +280,12 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `10`). Branch on it if you want
-one file to support several Hunk versions. Version 10 adds generic top-level CLI commands;
-version 9 added exact-filename and glob selectors to `registerFileLanguage`; version 8 added authoritative review snapshots to command handlers;
-version 7 added the current source line to
-command selection snapshots. Version 6 added session behavior,
+The API generation this Hunk speaks (currently `11`). Branch on it if you want
+one file to support several Hunk versions. Version 11 adds the `"dim"`
+line-highlight tone; version 10 added generic top-level CLI commands; version 9
+added exact-filename and glob selectors to `registerFileLanguage`; version 8
+added authoritative review snapshots to command handlers; version 7 added the
+current source line to command selection snapshots. Version 6 added session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
 version 4 added keyboard modes and docked panes, with API-v3 sidebar names

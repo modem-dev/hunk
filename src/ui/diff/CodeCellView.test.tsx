@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, type ReactNode } from "react";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
+import { contrastRatio } from "../lib/color";
 import {
   cursorLineHighlightBg,
   lineHighlightToneStyle,
@@ -32,15 +33,23 @@ async function captureCodeRow(node: ReactNode, width = 40, height = 4) {
   }
 }
 
-/** Return the normalized hex background of the first captured span carrying text. */
+/** Return normalized colors from the first captured span carrying text. */
+function colorsForText(capture: Awaited<ReturnType<typeof captureCodeRow>>["spans"], text: string) {
+  const span = capture.lines
+    .flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(text));
+  return {
+    fg: capturedTestColorToHex(span?.fg)?.toLowerCase(),
+    bg: capturedTestColorToHex(span?.bg)?.toLowerCase(),
+  };
+}
+
+/** Return the normalized background of the first captured span carrying text. */
 function backgroundForText(
   capture: Awaited<ReturnType<typeof captureCodeRow>>["spans"],
   text: string,
 ) {
-  const span = capture.lines
-    .flatMap((line) => line.spans)
-    .find((candidate) => candidate.text.includes(text));
-  return capturedTestColorToHex(span?.bg)?.toLowerCase();
+  return colorsForText(capture, text).bg;
 }
 
 const stackRow: Extract<DiffRow, { type: "stack-line" }> = {
@@ -134,6 +143,86 @@ describe("CodeCellView painting", () => {
           theme,
         )!.bg.toLowerCase(),
       );
+    }
+  });
+
+  test("resolves dim foregrounds against the final cursor background", async () => {
+    const theme = resolveTheme("ayu-light", null);
+    const row: Extract<DiffRow, { type: "stack-line" }> = {
+      ...stackRow,
+      key: "paint:dim-cursor",
+      cell: {
+        ...stackRow.cell,
+        spans: [{ text: "dimtext", fg: theme.syntaxColors.default }],
+      },
+    };
+    const lineHighlights: LineHighlightPaintIndex = new Map([
+      [lineHighlightPaintKey("new", 1), [{ startCol: 0, endCol: 7, tone: "dim" }]],
+    ]);
+
+    for (const wrapLines of [false, true]) {
+      const capture = await captureCodeRow(
+        codeRowView(row, {
+          cursorHighlight: { stableKey: row.key, side: "new", style: "row" },
+          lineHighlights,
+          theme,
+          wrapLines,
+        }),
+      );
+      const colors = colorsForText(capture.spans, "dimtext");
+
+      expect(colors.fg).toBeDefined();
+      expect(colors.bg).toBeDefined();
+      expect(contrastRatio(colors.fg!, colors.bg!)).toBeGreaterThanOrEqual(1.6);
+    }
+  });
+
+  test("resolves selected and unselected pieces of one dim span against their own backgrounds", async () => {
+    const theme = resolveTheme("ayu-light", null);
+    const row: Extract<DiffRow, { type: "stack-line" }> = {
+      ...stackRow,
+      key: "paint:dim-copy-selection",
+      cell: {
+        ...stackRow.cell,
+        spans: [{ text: "dimtext", fg: theme.syntaxColors.default }],
+      },
+    };
+    const lineHighlights: LineHighlightPaintIndex = new Map([
+      [lineHighlightPaintKey("new", 1), [{ startCol: 0, endCol: 7, tone: "dim" }]],
+    ]);
+
+    for (const wrapLines of [false, true]) {
+      const plannedRow = legacyPlannedDiffRow(row);
+      const layout = planCodeRowLayout(plannedRow, {
+        width: 12,
+        lineNumberDigits: 1,
+        showLineNumbers: false,
+        wrapLines,
+      });
+      if (!layout || layout.kind !== "stack") throw new Error("Expected stack layout");
+      const contentStart = layout.cell.prefixWidth + layout.cell.gutterWidth;
+      const capture = await captureCodeRow(
+        codeRowView(row, {
+          copySelectedRowRange: {
+            startCol: contentStart + 1,
+            endCol: contentStart + 3,
+          },
+          lineHighlights,
+          theme,
+          wrapLines,
+        }),
+      );
+      const ordinary = colorsForText(capture.spans, "d");
+      const selected = colorsForText(capture.spans, "im");
+
+      expect(ordinary.fg).toBeDefined();
+      expect(ordinary.bg).toBeDefined();
+      expect(selected.fg).toBeDefined();
+      expect(selected.bg).toBeDefined();
+      expect(contrastRatio(ordinary.fg!, ordinary.bg!)).toBeGreaterThanOrEqual(1.6);
+      expect(contrastRatio(selected.fg!, selected.bg!)).toBeGreaterThanOrEqual(1.6);
+      expect(selected.bg).not.toBe(ordinary.bg);
+      expect(selected.fg).not.toBe(ordinary.fg);
     }
   });
 

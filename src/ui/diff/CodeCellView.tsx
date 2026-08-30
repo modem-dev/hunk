@@ -59,6 +59,12 @@ function styledTextColor(value: string | undefined) {
   return parsed;
 }
 
+/** Resolve paint-only foreground effects against the background the terminal will draw. */
+function renderedSpanForeground(span: RenderSpan, fallbackColor: string, renderedBg: string) {
+  const sourceFg = span.fg ?? fallbackColor;
+  return span.transformFg ? span.transformFg(sourceFg, renderedBg) : sourceFg;
+}
+
 /** Convert a React span fragment into OpenTUI's direct styled-text run list. */
 function styledTextFromSpanNodes(nodes: ReactNode[]) {
   const chunks: TextChunk[] = [];
@@ -123,11 +129,12 @@ function appendFixedInlineChunks(
   }
 
   for (const span of trimmed) {
+    const background = renderedBackground(span.bg ?? fallbackBg);
     chunks.push({
       __isChunk: true,
       text: span.text,
-      fg: styledTextColor(span.fg ?? fallbackColor),
-      bg: styledTextColor(renderedBackground(span.bg ?? fallbackBg)),
+      fg: styledTextColor(renderedSpanForeground(span, fallbackColor, background)),
+      bg: styledTextColor(background),
     });
   }
   if (!paddingMerged && paddingAmount > 0) {
@@ -168,11 +175,12 @@ function appendPlainInlineChunks(
   }
 
   for (const span of trimmed) {
+    const background = span.bg ?? fallbackBg;
     chunks.push({
       __isChunk: true,
       text: span.text,
-      fg: styledTextColor(span.fg ?? fallbackColor),
-      bg: styledTextColor(span.bg ?? fallbackBg),
+      fg: styledTextColor(renderedSpanForeground(span, fallbackColor, background)),
+      bg: styledTextColor(background),
     });
   }
   if (!paddingMerged && paddingAmount > 0) {
@@ -352,12 +360,14 @@ function renderInlineSpans(
   let elementIndex = 0;
 
   for (const span of trimmed) {
+    const baseBackground = span.bg ?? fallbackBg;
     if (!needsBlending) {
+      const background = renderedBackground(baseBackground);
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={renderedBackground(span.bg ?? fallbackBg)}
+          fg={renderedSpanForeground(span, fallbackColor, background)}
+          bg={background}
         >
           {span.text}
         </span>,
@@ -375,8 +385,8 @@ function renderInlineSpans(
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          fg={renderedSpanForeground(span, fallbackColor, baseBackground)}
+          bg={baseBackground}
         >
           {span.text}
         </span>,
@@ -393,8 +403,8 @@ function renderInlineSpans(
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          fg={renderedSpanForeground(span, fallbackColor, baseBackground)}
+          bg={baseBackground}
         >
           {span.text}
         </span>,
@@ -411,19 +421,20 @@ function renderInlineSpans(
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          fg={renderedSpanForeground(span, fallbackColor, baseBackground)}
+          bg={baseBackground}
         >
           {prefix}
         </span>,
       );
     }
     if (selected) {
+      const selectedBackground = highlightBg(baseBackground);
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={highlightBg(span.bg ?? fallbackBg)}
+          fg={renderedSpanForeground(span, fallbackColor, selectedBackground)}
+          bg={selectedBackground}
         >
           {selected}
         </span>,
@@ -433,8 +444,8 @@ function renderInlineSpans(
       elements.push(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          fg={renderedSpanForeground(span, fallbackColor, baseBackground)}
+          bg={baseBackground}
         >
           {suffix}
         </span>,
