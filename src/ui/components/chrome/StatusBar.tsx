@@ -1,6 +1,6 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
+import stringWidth from "string-width";
 import { isEscapeKey } from "../../lib/keyboard";
-import { measureTextWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 /** Render the active file filter, transient notice, and persistent keyboard-mode badge. */
@@ -28,7 +28,7 @@ export function StatusBar({
   onExitMode?: () => void;
 }) {
   const modeWidth = modeText
-    ? Math.min(measureTextWidth(modeText) + 2, Math.max(6, Math.floor(terminalWidth / 2)))
+    ? Math.min(stringWidth(modeText) + 2, Math.max(6, Math.floor(terminalWidth / 2)))
     : 0;
 
   return (

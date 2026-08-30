@@ -130,9 +130,9 @@
     "chokidar": "^4.0.3",
     "commander": "^14.0.3",
     "diff": "^8.0.3",
-    "emoji-regex": "^10.6.0",
     "get-east-asian-width": "^1.5.0",
     "shell-quote": "1.9.0",
+    "string-width": "^8.2.1",
     "zod": "~4.4.3"
   },
   "devDependencies": {

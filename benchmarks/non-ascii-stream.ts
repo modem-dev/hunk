@@ -1,6 +1,6 @@
 // Benchmark first-frame and scroll-tick latency on a stream whose diff *content*
 // contains CJK, emoji, and box-drawing characters. Non-ASCII content bypasses
-// measureTextWidth's ASCII fast path, so this exercises complex terminal-width calculation on
+// measureTextWidth's ASCII fast path, so this exercises the string-width cost on
 // real line content rather than just chrome glyphs.
 import { performance } from "node:perf_hooks";
 import { testRender } from "@opentui/react/test-utils";

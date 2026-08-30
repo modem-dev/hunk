@@ -19,7 +19,7 @@ interface LargeSplitStreamFixtureOptions {
   linesPerFile?: number;
   changedStartLine?: number;
   changedEndLine?: number;
-  /** "non-ascii" embeds CJK/emoji/box-drawing chars to exercise terminal-width calculation. */
+  /** "non-ascii" embeds CJK/emoji/box-drawing chars in line content to exercise string-width. */
   contentVariant?: ContentVariant;
 }
 
