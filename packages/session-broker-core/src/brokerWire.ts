@@ -74,9 +74,7 @@ function parseSessionTerminalLocation(value: unknown): SessionTerminalLocation {
     ...(record.terminalId === undefined
       ? {}
       : { terminalId: parseBrokerString(record.terminalId) }),
-    ...(record.sessionId === undefined
-      ? {}
-      : { sessionId: parseBrokerIdentifier(record.sessionId) }),
+    ...(record.sessionId === undefined ? {} : { sessionId: parseBrokerString(record.sessionId) }),
   };
 }
 
