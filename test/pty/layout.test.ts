@@ -411,7 +411,7 @@ describe("PTY layout", () => {
     }
   });
 
-  test("dragging the sidebar through 30 content columns switches to compact paths", async () => {
+  test("dragging the sidebar through 31 content columns switches to compact paths", async () => {
     const fixture = harness.createNestedSidebarRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -439,20 +439,20 @@ describe("PTY layout", () => {
           ?.indexOf("src/"),
       ).toBe(2);
 
-      await dragMouse(session, 34, 6, 32, 6);
+      await dragMouse(session, 34, 6, 33, 6);
       const resized = await harness.waitForSnapshot(
         session,
         (text) =>
           text
             .split("\n")
-            .map((line) => line.slice(0, 32))
+            .map((line) => line.slice(0, 33))
             .join("\n")
             .includes("src/ui/"),
         5_000,
       );
       const resizedSidebar = resized
         .split("\n")
-        .map((line) => line.slice(0, 32))
+        .map((line) => line.slice(0, 33))
         .join("\n");
 
       expect(resizedSidebar).toContain("src/ui/");

@@ -55,7 +55,7 @@ export interface FileDirectoryEntry {
 export type FileSidebarMode = "flat" | "tree";
 export type SidebarEntry = FileListEntry | FileGroupEntry | FileDirectoryEntry;
 
-export const TREE_FILE_SIDEBAR_MIN_CONTENT_WIDTH = 31;
+export const TREE_FILE_SIDEBAR_MIN_CONTENT_WIDTH = 32;
 
 /** Choose the compact or hierarchical sidebar projection for an available content width. */
 export function resolveFileSidebarMode(contentWidth: number): FileSidebarMode {

@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Show a fully expanded file tree when the file sidebar has more than 30 content columns.
+Show a fully expanded file tree when the file sidebar reaches its preferred 34-column width.

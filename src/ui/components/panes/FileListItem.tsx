@@ -172,7 +172,7 @@ export const FileListItem = memo(function FileListItem({
         }}
       >
         {icon && <text fg={color}>{icon} </text>}
-        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
+        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth, "…"), nameWidth)}</text>
         {statsSectionWidth > 0 && (
           <box
             style={{

@@ -494,7 +494,7 @@ describe("UI components", () => {
     expect(frame).not.toContain("M +2 -1 AI");
   });
 
-  test("the bundled sidebar switches to its expanded tree at 31 content columns", async () => {
+  test("the bundled sidebar switches to its expanded tree at 32 content columns", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = toReadOnlyFileViews([
       createTestDiffFile("alpha", "src/ui/alpha.ts", "a\n", "aa\n"),
@@ -513,8 +513,8 @@ describe("UI components", () => {
       selectedHunkIndex: 0,
       theme,
     };
-    const flatFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={32} />, 36, 8);
-    const treeFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);
+    const flatFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);
+    const treeFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={34} />, 36, 8);
 
     expect(flatFrame).toContain("src/ui/");
     expect(

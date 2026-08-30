@@ -155,8 +155,8 @@ describe("AppHost sidebar resize", () => {
     await flush(setup);
     expect(sidebarFrame(setup)).not.toContain("src/ui/");
 
-    // Raw pane width 32 leaves 30 content columns, which selects compact mode.
-    await dragDivider(setup, INITIAL_DIVIDER_COLUMN, 33);
+    // Raw pane width 33 leaves 31 content columns, just below the preferred tree width.
+    await dragDivider(setup, INITIAL_DIVIDER_COLUMN, 34);
 
     expect(sidebarFrame(setup)).toContain("src/ui/");
   });

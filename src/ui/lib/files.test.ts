@@ -150,9 +150,9 @@ describe("files helpers", () => {
     ]);
   });
 
-  test("resolveFileSidebarMode switches only above 30 content columns", () => {
-    expect(resolveFileSidebarMode(30)).toBe("flat");
-    expect(resolveFileSidebarMode(31)).toBe("tree");
+  test("resolveFileSidebarMode switches at the preferred sidebar width", () => {
+    expect(resolveFileSidebarMode(31)).toBe("flat");
+    expect(resolveFileSidebarMode(32)).toBe("tree");
   });
 
   test("buildTreeSidebarEntries expands paths without changing file order", () => {
