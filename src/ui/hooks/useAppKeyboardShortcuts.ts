@@ -35,6 +35,7 @@ export interface UseAppKeyboardShortcutsOptions {
    * order. Modal navigation stays in this hook; commands own the rest.
    */
   commands: readonly AppCommand[];
+  clearVisualSelection?: () => boolean;
   denyRepoExtensions: () => void;
   /** The extension dialog currently on screen, or `null` when none is. */
   extensionDialog: ExtensionDialogRequest | null;
@@ -106,6 +107,7 @@ export function useAppKeyboardShortcuts({
   closeThemeSelector,
   closeExtensionTrustPrompt,
   commands,
+  clearVisualSelection,
   denyRepoExtensions,
   extensionDialog,
   acceptExtensionDialog,
@@ -137,6 +139,7 @@ export function useAppKeyboardShortcuts({
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
+  const clearVisualSelectionRef = useRef(clearVisualSelection);
   const focusAreaRef = useRef(focusArea);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
@@ -160,6 +163,7 @@ export function useAppKeyboardShortcuts({
 
   activeMenuIdRef.current = activeMenuId;
   commandsRef.current = commands;
+  clearVisualSelectionRef.current = clearVisualSelection;
   focusAreaRef.current = focusArea;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
@@ -615,6 +619,12 @@ export function useAppKeyboardShortcuts({
     );
     if (reviewOwned) return;
 
+    // Clear only when a selection is active; otherwise Escape remains available to an
+    // extension command because Clear Selection no longer owns a global binding.
+    if (isEscapeKey(key) && clearVisualSelectionRef.current?.()) {
+      consumeKey(key);
+      return;
+    }
     dispatchCommandShortcut(key);
   });
 }

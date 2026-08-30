@@ -121,6 +121,141 @@ describe("applySessionReviewAction", () => {
     expect(result).toMatchObject({ ok: false, code: "file-not-found" });
   });
 
+  test("accepts only ranges fully covered by visible patch rows", () => {
+    const { producer, publication, file } = createTestProducer();
+    const visibleTarget = {
+      newRange: [1, 3] as const,
+      preferred: { side: "new" as const, line: 2 },
+    };
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          {
+            type: "notes/start-draft",
+            fileKey: file.key,
+            hunkIndex: 0,
+            target: visibleTarget,
+          },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    producer.applyIntent(
+      { type: "notes/create-user", consumeDraft: true },
+      {
+        noteId: "discard",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+    );
+
+    const collapsed = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/start-draft",
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [3, 17], preferred: { side: "new", line: 3 } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(collapsed).toMatchObject({ ok: false, code: "invalid-request" });
+  });
+
+  test("rejects a range start whose requested hunk differs from its resolved owner", () => {
+    const { producer, publication, file } = createTestProducer();
+
+    const result = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/start-draft",
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [17, 19], preferred: { side: "new", line: 18 } },
+        },
+        publication.generation,
+      ),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).toBeNull();
+  });
+
+  test("requires a save precondition to match the draft's exact range", () => {
+    const { producer, publication, store, file } = createTestProducer();
+    const target = { newRange: [1, 3] as const, preferred: { side: "new" as const, line: 2 } };
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0, target },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    store.dispatch({ type: "draft/update", body: "exact range" });
+
+    const competing = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [2, 3], preferred: { side: "new", line: 2 } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(competing).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    const identitylessRange = applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/create-user", consumeDraft: true, target }, publication.generation),
+    );
+    expect(identitylessRange).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    const wrongOwner = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 1,
+          target,
+        },
+        publication.generation,
+      ),
+    );
+    expect(wrongOwner).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          {
+            type: "notes/create-user",
+            consumeDraft: true,
+            fileKey: file.key,
+            hunkIndex: 0,
+            target,
+          },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    expect(producer.getReviewState()!.userNotes.at(-1)!.note.anchor.newRange).toEqual([1, 3]);
+  });
+
   // Intent: B10 — a note on a line inside an expanded gap is expressible remotely, and the
   // hunk that ends up owning it is core's answer through the shared anchor path, never one
   // this tier recomputed (D3).
@@ -156,6 +291,10 @@ describe("applySessionReviewAction", () => {
       line,
       hunkIndex: 1,
     });
+    expect(draft.expandedLineSource).toEqual({
+      sourceIdentity: file.sourceIdentity,
+      sourceAttested: true,
+    });
 
     // Remote composition travels through the same semantic body-update intent as the terminal.
     expect(
@@ -167,6 +306,22 @@ describe("applySessionReviewAction", () => {
         ),
       ).ok,
     ).toBe(true);
+
+    const disguisedRangeSave = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 1,
+          target: { newRange: [line, line], preferred: { side: "new", line } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(disguisedRangeSave).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
 
     // Saving with the same target as a precondition persists the note; its owner hunk is
     // the fallback the anchor resolver chose, which is the hunk the reviewer was reading.
@@ -324,7 +479,13 @@ describe("applySessionReviewAction", () => {
     const result = applySessionReviewAction(
       producer,
       envelope(
-        { type: "notes/create-user", consumeDraft: true, target: { side: "new", line: 999 } },
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { side: "new", line: 999 },
+        },
         publication.generation,
       ),
     );

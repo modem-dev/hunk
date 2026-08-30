@@ -46,6 +46,8 @@ export type PlannedReviewRow =
       anchorSide?: "old" | "new";
       noteCount: number;
       noteIndex: number;
+      /** Connect this ranged note to the external annotation rail. */
+      rangeGuideConnection?: "terminate" | "continue";
     }
   | {
       kind: "hunk-gap";
@@ -284,8 +286,7 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
     }
 
     const anchorSide = note.anchor.preferred?.side;
-    const coveredRows = fileLineRows.filter((row) => rowOverlapsNoteRange(row, note.anchor));
-    const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
+    const guideRows = fileLineRows.filter((row) => rowOverlapsNoteRange(row, note.anchor));
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
     anchorPlacements.push({
@@ -333,6 +334,33 @@ function buildNoteGuideSideByRowKey(placementsByAnchor: Map<string, InlineVisibl
   return guideSideByRowKey;
 }
 
+/** Find rows where one aggregate range rail must continue through an inserted note card. */
+function rangeGuideContinuationRowKeys(
+  rows: DiffRow[],
+  placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>,
+) {
+  const lineRowIndexByKey = new Map(lineRows(rows).map((row, index) => [row.key, index]));
+  const continuationRowKeys = new Set<string>();
+
+  for (const placements of placementsByAnchor.values()) {
+    for (const placement of placements) {
+      const guidedIndices = [...placement.guidedRowKeys].flatMap((key) => {
+        const index = lineRowIndexByKey.get(key);
+        return index === undefined ? [] : [index];
+      });
+      const lastGuidedIndex = Math.max(-1, ...guidedIndices);
+      for (const key of placement.guidedRowKeys) {
+        const index = lineRowIndexByKey.get(key);
+        if (index !== undefined && index < lastGuidedIndex) {
+          continuationRowKeys.add(key);
+        }
+      }
+    }
+  }
+
+  return continuationRowKeys;
+}
+
 function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
   if (showHunkHeaders) {
     return row.type === "hunk-header";
@@ -370,6 +398,7 @@ export function buildReviewRenderPlan({
 }) {
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
+  const rangeGuideContinuationRows = rangeGuideContinuationRowKeys(rows, placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();
 
@@ -422,6 +451,11 @@ export function buildReviewRenderPlan({
         anchorSide: placement.anchorSide,
         noteCount: placement.noteCount,
         noteIndex: placement.noteIndex,
+        rangeGuideConnection: !noteGuideSideByRowKey.has(row.key)
+          ? undefined
+          : placement.noteIndex < placement.noteCount - 1 || rangeGuideContinuationRows.has(row.key)
+            ? "continue"
+            : "terminate",
       });
     });
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   createPtyHarness,
+  dragMouse,
   lineIndexOf,
   moveMouse,
   revealAddNoteAffordance,
@@ -373,6 +374,39 @@ describe("PTY notes", () => {
         5_000,
       );
       expect(deletedLeaf).not.toContain("Nested reply.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("mouse range across replacement sides opens and saves the exact multiline draft", async () => {
+    const fixture = harness.createWideCharacterFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 110,
+      rows: 22,
+    });
+
+    try {
+      const initial = await session.waitForText(/export const plain = 'after';/, {
+        timeout: 15_000,
+      });
+      const oldEndRow = lineIndexOf(initial, "export const plain = 'before';") - 1;
+      const newStartRow = lineIndexOf(initial, "export const wide = '한국어';") - 1;
+      expect(oldEndRow).toBeGreaterThan(0);
+      expect(newStartRow).toBe(oldEndRow + 1);
+
+      await dragMouse(session, 12, oldEndRow, 24, newStartRow);
+      await session.waitForText(/c Comment\s+y Copy\s+Esc Clear/, { timeout: 5_000 });
+      await session.press("c");
+      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      expect(draft).toContain("L2 → R1");
+
+      await session.type("Mixed replacement feedback.");
+      await session.type("\x13");
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(saved).toContain("L2 → R1");
+      expect(saved).toContain("Mixed replacement feedback.");
     } finally {
       session.close();
     }

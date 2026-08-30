@@ -286,7 +286,8 @@ describe("the Extensions menu", () => {
     ]);
 
     expect(items(menus.extensions).map((item) => [item.label, item.hint])).toEqual([
-      ["Sync notes", "y"],
+      // Built-in Copy Selection owns y; extension commands remain menu-invocable when unbound.
+      ["Sync notes", undefined],
       ["Stash notes", undefined],
       ["Quiet mode", undefined],
     ]);

@@ -28,6 +28,9 @@ Rules worth knowing:
 - Two entries claiming one chord is a conflict: the first in the file wins and
   the session reports the other. Unknown command ids and unusable chords are
   reported the same way, and the rest of the table still applies.
+- **Escape clears an active visual selection contextually** after overlays and
+  extension modes have had their normal ownership. Without a selection, Escape
+  remains available to extension commands because clear-selection is unbound.
 
 Chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with `+`
 around a base key: a character (`"y"`, `"["`), an uppercase letter for its
@@ -55,6 +58,8 @@ The built-in commands and the keys they ship with:
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
+| `hunk.review.clearSelection`                   | Clear the active visual selection              | _(none)_                     |
+| `hunk.review.copySelection`                    | Copy the active visual selection               | `y`                          |
 | `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
@@ -76,6 +81,7 @@ The built-in commands and the keys they ship with:
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
+| `hunk.review.startVisualSelection`             | Start visual line selection                    | `v`                          |
 | `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |

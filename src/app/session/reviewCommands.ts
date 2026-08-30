@@ -23,9 +23,16 @@ import { randomUUID } from "node:crypto";
 import type { ReviewProducer } from "../review/producer";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
 import { resolveReviewExpandedLine } from "../../core/review/expansion";
+import { reviewRangeTargetCoverageIssue } from "../../core/review/geometry";
 import { requireReviewFile, ReviewIntentPlanningError } from "../../core/review/intents";
-import type { ReviewState } from "../../core/review/state";
-import type { ReviewFileV1, ReviewLineAddressV1 } from "../../core/review/types";
+import type { ReviewDraftNote, ReviewState } from "../../core/review/state";
+import type {
+  ReviewFileV1,
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewNoteTargetV1,
+  ReviewRangeTargetV1,
+} from "../../core/review/types";
 import {
   toReviewIntent,
   type HunkReviewActionEnvelopeV1,
@@ -134,6 +141,62 @@ function checkExpandedLine(
       );
 }
 
+/** Compare inclusive ranges without treating tuple identity as semantic identity. */
+function rangesEqual(left: ReviewLineRange | undefined, right: ReviewLineRange | undefined) {
+  return left === undefined
+    ? right === undefined
+    : right !== undefined && left[0] === right[0] && left[1] === right[1];
+}
+
+/** Return whether a save precondition names the active draft's exact anchor. */
+function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) {
+  const anchor = draft.anchor;
+  if ("line" in target) {
+    if (draft.targetKind === "range") return false;
+    if (!anchor) return draft.side === target.side && draft.line === target.line;
+    const expectedRange = [target.line, target.line] as const;
+    return (
+      anchor.preferred?.side === target.side &&
+      anchor.preferred.line === target.line &&
+      rangesEqual(anchor.oldRange, target.side === "old" ? expectedRange : undefined) &&
+      rangesEqual(anchor.newRange, target.side === "new" ? expectedRange : undefined)
+    );
+  }
+  if (draft.targetKind === "line") return false;
+  return (
+    anchor !== undefined &&
+    rangesEqual(anchor.oldRange, target.oldRange) &&
+    rangesEqual(anchor.newRange, target.newRange) &&
+    anchor.preferred?.side === target.preferred.side &&
+    anchor.preferred.line === target.preferred.line
+  );
+}
+
+/** Reject ranges that name absent rows, collapsed gaps, or an unrelated preferred line. */
+function checkRangeTarget(
+  producer: ReviewProducer,
+  file: ReviewFileV1,
+  target: ReviewRangeTargetV1,
+): HunkReviewFailureV1 | undefined {
+  const issue = reviewRangeTargetCoverageIssue(file.hunks, target);
+  if (!issue) return undefined;
+  if (issue === "preferred") {
+    return fail(
+      producer,
+      "invalid-request",
+      `The preferred ${target.preferred.side} line is outside the review range it places.`,
+    );
+  }
+  const range = issue === "old" ? target.oldRange : issue === "new" ? target.newRange : undefined;
+  return fail(
+    producer,
+    "invalid-request",
+    range
+      ? `The ${issue} range ${range[0]}-${range[1]} includes lines not visible in the current patch.`
+      : "The review range does not contain any source lines.",
+  );
+}
+
 /**
  * Validate everything about one action that needs the current review to be known.
  *
@@ -146,28 +209,51 @@ function checkAgainstReview(
   state: ReviewState,
   action: HunkReviewActionV1,
 ): HunkReviewFailureV1 | undefined {
-  if (action.type === "notes/start-draft") {
-    if (!action.expandedLineProof || !action.target) {
-      return undefined;
-    }
+  if (action.type === "notes/start-draft" && action.target) {
     const file = requireReviewFile(state, action.fileKey);
-    return checkExpandedLine(producer, file, action.target, action.expandedLineProof);
+    if (!("line" in action.target)) {
+      if (action.expandedLineProof) {
+        return fail(
+          producer,
+          "invalid-request",
+          "A one-line expansion proof cannot attest a range.",
+        );
+      }
+      return checkRangeTarget(producer, file, action.target);
+    }
+    return action.expandedLineProof
+      ? checkExpandedLine(producer, file, action.target, action.expandedLineProof)
+      : undefined;
   }
 
   if (action.type === "notes/create-user" && action.target) {
     // A stated target is a precondition on the draft being saved, so two surfaces cannot
     // silently save each other's work: the draft must still be the one the caller opened.
     const draft = state.draftNote;
-    if (!draft || draft.side !== action.target.side || draft.line !== action.target.line) {
+    if (
+      !("line" in action.target) &&
+      (action.fileKey === undefined || action.hunkIndex === undefined)
+    ) {
       return fail(
         producer,
-        "draft-missing",
-        `No review note draft is open at ${action.target.side} line ${action.target.line}.`,
+        "invalid-request",
+        "A range save precondition requires its file and owner hunk.",
       );
     }
-    if (!action.expandedLineProof) {
-      return undefined;
+    if (
+      !draft ||
+      (action.fileKey !== undefined && draft.fileKey !== action.fileKey) ||
+      (action.hunkIndex !== undefined && draft.hunkIndex !== action.hunkIndex) ||
+      !draftMatchesTarget(draft, action.target)
+    ) {
+      return fail(producer, "draft-missing", "No review note draft is open at that exact anchor.");
     }
+    if (!("line" in action.target)) {
+      return action.expandedLineProof
+        ? fail(producer, "invalid-request", "A one-line expansion proof cannot attest a range.")
+        : undefined;
+    }
+    if (!action.expandedLineProof) return undefined;
     const file = requireReviewFile(state, draft.fileKey);
     return checkExpandedLine(producer, file, action.target, action.expandedLineProof);
   }

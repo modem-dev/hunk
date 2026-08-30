@@ -11,7 +11,12 @@
  * `ReviewHunkV1` both satisfy them, so the terminal can call these primitives from its
  * render path without projecting a whole semantic document first.
  */
-import type { ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
+import type {
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "./types";
 
 /** The per-side extent of one hunk: 1-based start plus the rows it spans on that side. */
 export interface ReviewHunkSpan {
@@ -57,6 +62,54 @@ export function reviewHunkRanges(hunk: ReviewHunkSpan) {
 /** Return whether two inclusive line ranges overlap. */
 export function reviewRangesOverlap(left: ReviewLineRange, right: ReviewLineRange) {
   return left[0] <= right[1] && right[0] <= left[1];
+}
+
+/** Return whether every line in a range is backed by visible rows in the patch hunks. */
+export function reviewRangeCoveredByHunks(
+  hunks: readonly ReviewHunkSpan[],
+  side: ReviewSide,
+  range: ReviewLineRange,
+) {
+  let nextLine = range[0];
+  const covered = hunks
+    .filter((hunk) => (side === "new" ? hunk.additionCount : hunk.deletionCount) > 0)
+    .map((hunk) => reviewHunkRange(hunk, side))
+    .sort((left, right) => left[0] - right[0]);
+
+  for (const [start, end] of covered) {
+    if (end < nextLine) continue;
+    if (start > nextLine) return false;
+    nextLine = Math.max(nextLine, end + 1);
+    if (nextLine > range[1]) return true;
+  }
+  return false;
+}
+
+export type ReviewRangeCoverageIssue = "preferred" | "old" | "new" | "empty";
+
+/** Report why one range target is not fully backed by visible patch rows. */
+export function reviewRangeTargetCoverageIssue(
+  hunks: readonly ReviewHunkSpan[],
+  target: ReviewRangeTargetV1,
+): ReviewRangeCoverageIssue | undefined {
+  const preferredRange = target.preferred.side === "old" ? target.oldRange : target.newRange;
+  if (
+    !preferredRange ||
+    target.preferred.line < preferredRange[0] ||
+    target.preferred.line > preferredRange[1]
+  ) {
+    return "preferred";
+  }
+  if (!target.oldRange && !target.newRange) {
+    return "empty";
+  }
+  if (target.oldRange && !reviewRangeCoveredByHunks(hunks, "old", target.oldRange)) {
+    return "old";
+  }
+  if (target.newRange && !reviewRangeCoveredByHunks(hunks, "new", target.newRange)) {
+    return "new";
+  }
+  return undefined;
 }
 
 /** Find the first hunk whose extent on one side covers one line, or -1. */

@@ -138,6 +138,7 @@ describe("PTY current line", () => {
       }
 
       session.writeRaw(`\x1b[<0;31;${endRow + 1}m`);
+      await session.press("y");
       await session.waitForText(/Copied selection to clipboard/, { timeout: 5_000 });
     } finally {
       session.close();

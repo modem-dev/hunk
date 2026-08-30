@@ -172,7 +172,7 @@ export function storedNoteToUserNote(
 
 /** Render the semantic draft as the draft the diff pane places and edits. */
 export function storedDraftToDraftNote(draft: ReviewDraftNote, file: DiffFile): DraftReviewNote {
-  const anchor = reviewLineAnchor(file.metadata.hunks, draft);
+  const anchor = draft.anchor ?? reviewLineAnchor(file.metadata.hunks, draft);
   return {
     id: draft.id,
     kind: draft.kind ?? "create",

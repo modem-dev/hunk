@@ -150,7 +150,7 @@ describe("extension command navigation", () => {
         `    const label = fileId === fileIds[2] ? "third" : "other";\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "selected " + label + " " + hunkIndex + "\\n");\n` +
         `  });\n` +
-        `  hunk.registerCommand({ id: "probe", title: "Probe", key: "y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "probe", title: "Probe", key: "Y" }, (ctx) => {\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "enabled " + ctx.commands.isEnabled("hunk.review.nextHunk") + "\\n");\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "own " + ctx.commands.execute("ext.probe") + "\\n");\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "move " + ctx.commands.execute("hunk.review.nextHunk", { count: 2 }) + "\\n");\n` +
@@ -167,7 +167,7 @@ describe("extension command navigation", () => {
         "the review to render",
       );
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -201,7 +201,7 @@ describe("extension command navigation", () => {
         `  });\n` +
         // An out-of-range index on purpose: the guard clamps it into the
         // file's real hunk range before it reaches the review controller.
-        `  hunk.registerCommand({ id: "jump", title: "Jump", key: "y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "jump", title: "Jump", key: "Y" }, (ctx) => {\n` +
         `    ctx.navigation.selectHunk(fileIds[1], 99);\n` +
         `  });\n` +
         `}\n`,
@@ -216,7 +216,7 @@ describe("extension command navigation", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
 
       // `selection_changed` firing for the second file is the whole proof:
@@ -242,7 +242,7 @@ describe("extension command navigation", () => {
         `  hunk.on("selection_changed", ({ fileId }) => {\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "selected " + fileId + "\\n");\n` +
         `  });\n` +
-        `  hunk.registerCommand({ id: "bogus", title: "Bogus", key: "y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "bogus", title: "Bogus", key: "Y" }, (ctx) => {\n` +
         `    ctx.navigation.selectFile("no-such-file");\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, "handler-finished\\n");\n` +
         `  });\n` +
@@ -258,7 +258,7 @@ describe("extension command navigation", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,

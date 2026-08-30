@@ -10,9 +10,13 @@
  * live-agent note lifecycle still resolve at their current owners.
  */
 import type { ReviewAction } from "./actions";
-import { reviewLineAnchor } from "./anchors";
+import { reviewLineAnchor, reviewRangeAnchor } from "./anchors";
 import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
-import { reviewDefaultHunkLineTarget } from "./geometry";
+import {
+  reviewDefaultHunkLineTarget,
+  reviewHunkIndexForLine,
+  reviewRangeTargetCoverageIssue,
+} from "./geometry";
 import { reviewNoteWithinSizeLimit } from "./noteSize";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
@@ -41,7 +45,14 @@ import {
   type ReviewStoredNote,
 } from "./state";
 import type { ReviewStore } from "./store";
-import type { ReviewFileV1, ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
+import type {
+  ReviewFileV1,
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewNoteTargetV1,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "./types";
 
 /**
  * The facts core refuses to invent, supplied by whoever submits an intent.
@@ -91,7 +102,7 @@ export type ReviewIntent =
       type: "notes/start-draft";
       fileKey: string;
       hunkIndex: number;
-      target?: ReviewLineAddressV1;
+      target?: ReviewNoteTargetV1;
       reveal?: ReviewRevealRequest;
     }
   /** Open an editable reviewer note in the shared composer. */
@@ -267,7 +278,8 @@ export type ReviewIntentPlanningErrorCode =
   | "invalid-note-parent"
   | "blank-note"
   | "note-too-large"
-  | "missing-fact";
+  | "missing-fact"
+  | "invalid-request";
 
 /** Typed semantic rejection raised before any review state is reduced or published. */
 export class ReviewIntentPlanningError extends Error {
@@ -394,18 +406,51 @@ function planDraftStart(
   requireHunk(file, intent.hunkIndex);
   const hunk = file.hunks[intent.hunkIndex]!;
   // Where a note about the whole hunk belongs is one shared answer; a caller that
-  // measured a specific line the reviewer put a cursor on overrides it.
+  // measured a specific line or range the reviewer selected overrides it.
   const target = intent.target ?? reviewDefaultHunkLineTarget(hunk);
   if (state.draftNote) {
     throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
   }
+  const rangeTarget = "preferred" in target ? (target as ReviewRangeTargetV1) : null;
+  const lineTarget = rangeTarget ? null : (target as ReviewLineAddressV1);
+  if (rangeTarget) {
+    const coverageIssue = reviewRangeTargetCoverageIssue(file.hunks, rangeTarget);
+    if (coverageIssue) {
+      throw new ReviewIntentPlanningError(
+        "invalid-request",
+        `Review range target is not covered by the current patch (${coverageIssue}).`,
+      );
+    }
+  }
+  const preferred = rangeTarget?.preferred ?? lineTarget!;
+  const anchor = rangeTarget
+    ? reviewRangeAnchor(file.hunks, { ...rangeTarget, hunkIndex: intent.hunkIndex })
+    : reviewLineAnchor(file.hunks, { ...lineTarget!, hunkIndex: intent.hunkIndex });
+  if (rangeTarget && anchor.ownerHunkIndex !== intent.hunkIndex) {
+    throw new ReviewIntentPlanningError(
+      "invalid-request",
+      `Review range resolves to hunk ${anchor.ownerHunkIndex ?? "none"}, not requested hunk ${intent.hunkIndex}.`,
+    );
+  }
+  const expandedLineTarget =
+    lineTarget !== null && reviewHunkIndexForLine(file.hunks, lineTarget.side, lineTarget.line) < 0;
   const draft: ReviewDraftNote = {
     kind: "create",
     id: requireFact(facts.draftId, "draftId"),
     fileKey: file.key,
-    hunkIndex: intent.hunkIndex,
-    side: target.side,
-    line: target.line,
+    hunkIndex: anchor.ownerHunkIndex ?? intent.hunkIndex,
+    side: preferred.side,
+    line: preferred.line,
+    targetKind: rangeTarget ? "range" : "line",
+    ...(expandedLineTarget
+      ? {
+          expandedLineSource: {
+            ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
+            sourceAttested: file.sourceAttested === true,
+          },
+        }
+      : {}),
+    anchor,
     body: "",
   };
   return {
@@ -432,13 +477,25 @@ function draftForStoredNote(
   const file = requireReviewFile(state, entry.note.fileKey);
   const hunkIndex = reviewNoteCurrentOwnerHunkIndex(entry.note, file);
   requireHunk(file, hunkIndex);
-  const target = entry.note.anchor.preferred ?? { side: "new" as const, line: 1 };
+  const anchor = entry.note.anchor;
+  const target = anchor.preferred ?? { side: "new" as const, line: 1 };
+  const oldRangeIsMultiline =
+    anchor.oldRange !== undefined && anchor.oldRange[0] !== anchor.oldRange[1];
+  const newRangeIsMultiline =
+    anchor.newRange !== undefined && anchor.newRange[0] !== anchor.newRange[1];
   const common = {
     id: requireFact(facts.draftId, "draftId"),
     fileKey: file.key,
     hunkIndex,
     side: target.side,
     line: target.line,
+    targetKind:
+      (anchor.oldRange !== undefined && anchor.newRange !== undefined) ||
+      oldRangeIsMultiline ||
+      newRangeIsMultiline
+        ? ("range" as const)
+        : ("line" as const),
+    anchor,
   };
   return mode === "edit"
     ? { ...common, kind: "edit", targetNoteId: entry.note.id, body: entry.note.summary }
@@ -594,7 +651,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
       source: "user",
       originalSource: "user",
       fileKey: file.key,
-      anchor: parent ? parent.note.anchor : reviewLineAnchor(file.hunks, draft),
+      anchor: parent ? parent.note.anchor : (draft.anchor ?? reviewLineAnchor(file.hunks, draft)),
       summary: draft.body.trim(),
       author: "user",
       createdAt: requireFact(facts.timestamp, "timestamp"),

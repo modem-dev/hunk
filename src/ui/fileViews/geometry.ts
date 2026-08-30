@@ -104,6 +104,7 @@ export function measureFileViewGeometry({
     bodyHeight,
     hunkAnchorRows,
     hunkBounds,
+    hunkSpans: [],
     lineNumberDigits: 1,
     // Alternate rows are not Pierre rows, so raw copy selection intentionally remains unavailable.
     plannedRows: [],

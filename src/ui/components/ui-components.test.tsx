@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { MouseButtons } from "@opentui/core/testing";
+import { useKeyboard } from "@opentui/react";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppBootstrap } from "../../core/bootstrap";
@@ -22,6 +23,7 @@ import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/app
 import { resolveCommandKeys } from "../lib/keymap";
 import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
 import type { LineCursor } from "../lib/lineCursors";
+import type { ReviewSelectionActionsHandle } from "./panes/DiffPane";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
@@ -662,17 +664,24 @@ describe("UI components", () => {
     const copyText = mock((_text: string) => undefined);
     const selectLine = mock((_cursor: LineCursor) => undefined);
     const startUserNote = mock(() => undefined);
-    const setup = await testRender(
-      <DiffPane
-        {...createDiffPaneProps([file], theme, {
-          cursorLine: "row",
-          onCopySelectionText: copyText,
-          onStartUserNoteAtHunk: startUserNote,
-          onViewportLineCursorChange: selectLine,
-        })}
-      />,
-      { width: 80, height: 8 },
-    );
+    const SelectionDiffPane = () => {
+      const selectionActionsRef = useRef<ReviewSelectionActionsHandle | null>(null);
+      useKeyboard((key) => {
+        if (key.name === "y" || key.sequence === "y") selectionActionsRef.current?.copy();
+      });
+      return (
+        <DiffPane
+          {...createDiffPaneProps([file], theme, {
+            cursorLine: "row",
+            onCopySelectionText: copyText,
+            onStartUserNoteAtHunk: startUserNote,
+            onViewportLineCursorChange: selectLine,
+          })}
+          selectionActionsRef={selectionActionsRef}
+        />
+      );
+    };
+    const setup = await testRender(<SelectionDiffPane />, { width: 80, height: 8 });
 
     try {
       await settleDiffPane(setup);
@@ -722,8 +731,11 @@ describe("UI components", () => {
         selectLine.mockClear();
         await setup.mockMouse.drag(oldX, changedY, oldX + 4, changedY, MouseButtons.LEFT);
       });
-      expect(copyText).toHaveBeenCalled();
+      expect(copyText).not.toHaveBeenCalled();
       expect(selectLine).not.toHaveBeenCalled();
+
+      await act(async () => setup.mockInput.typeText("y"));
+      expect(copyText).toHaveBeenCalled();
 
       await act(async () => {
         await setup.mockMouse.moveTo(newX, changedY);
@@ -1069,7 +1081,7 @@ describe("UI components", () => {
                   capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
               ),
             ).length;
-          expect(measuredHeight).toBe(reserveAddNoteColumn ? 3 : 2);
+          expect(measuredHeight).toBe(reserveAddNoteColumn ? 2 : 1);
           expect(renderedHeight).toBe(measuredHeight);
         } finally {
           await act(async () => {
@@ -3406,7 +3418,9 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteTopIndex = lines.findIndex((line) => line.includes("╭") && line.includes("╮"));
+    const noteTopIndex = lines.findIndex(
+      (line) => line.includes("╭") && (line.includes("╮") || line.includes("┬")),
+    );
     expect(noteTopIndex).toBeGreaterThan(0);
     expect(lines[noteTopIndex - 1]).toContain("export const add = true;");
     expect(lines[noteTopIndex - 1]?.trim()).not.toBe("│");

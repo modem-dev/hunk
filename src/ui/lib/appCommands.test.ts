@@ -268,7 +268,7 @@ describe("builtinCommandKeyDefaults", () => {
       "u",
       "ctrl+u",
     ]);
-    // The menu-only commands ship unbound, and are reported so users can bind them.
+    // Commands with contextual or menu routing ship unbound and remain user-bindable.
     expect(
       defaults
         .filter((entry) => entry.defaultKeys.length === 0)
@@ -279,6 +279,7 @@ describe("builtinCommandKeyDefaults", () => {
       "hunk.review.alignCurrentLineBottom",
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",
+      "hunk.review.clearSelection",
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.applyFilePresentationToAllMatching",

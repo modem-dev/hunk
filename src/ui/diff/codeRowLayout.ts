@@ -100,7 +100,8 @@ export function planCodeRowLayout(
   }
 
   const prefixWidth = 1;
-  const trailingGuideWidth = plannedRow.noteGuideSide === "new" ? 1 : 0;
+  // Range guides render in the pane's external annotation gutter and never consume code width.
+  const trailingGuideWidth = 0;
   const addNoteBadgeWidth =
     showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? CODE_ROW_ADD_NOTE_BADGE_WIDTH : 0;
 

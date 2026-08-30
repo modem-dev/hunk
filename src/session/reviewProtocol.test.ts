@@ -116,6 +116,80 @@ describe("review action round trip", () => {
   });
 });
 
+describe("range note targets", () => {
+  test("preserves an exact multiline target on the wire", () => {
+    const action = {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [5, 8], preferred: { side: "new", line: 8 } },
+    };
+    const parsed = parseHunkReviewAction(action);
+    expect(parsed.ok && parsed.value).toEqual(action as never);
+    expect(parsed.ok && toReviewIntent(parsed.value)).toEqual(action as never);
+  });
+
+  test("preserves old and new ranges together", () => {
+    const action = {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: {
+        oldRange: [5, 7],
+        newRange: [5, 8],
+        preferred: { side: "new", line: 8 },
+      },
+    };
+    const parsed = parseHunkReviewAction(action);
+    expect(parsed.ok && parsed.value).toEqual(action as never);
+    expect(parsed.ok && toReviewIntent(parsed.value)).toEqual(action as never);
+  });
+
+  test("requires identity on exact range save preconditions", () => {
+    const action = {
+      type: "notes/create-user",
+      consumeDraft: true,
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { oldRange: [5, 8], preferred: { side: "old", line: 5 } },
+    };
+    const parsed = parseHunkReviewAction(action);
+    expect(parsed.ok && parsed.value).toEqual(action as never);
+    expect(
+      parseHunkReviewAction({
+        type: "notes/create-user",
+        consumeDraft: true,
+        target: action.target,
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseHunkReviewAction({
+        type: "notes/create-user",
+        consumeDraft: true,
+        fileKey: FILE_KEY,
+        target: action.target,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("rejects inverted ranges and preferred lines outside or opposite the range", () => {
+    for (const target of [
+      { newRange: [8, 5], preferred: { side: "new", line: 8 } },
+      { newRange: [5, 8], preferred: { side: "new", line: 9 } },
+      { newRange: [5, 8], preferred: { side: "old", line: 5 } },
+    ]) {
+      expect(
+        parseHunkReviewAction({
+          type: "notes/start-draft",
+          fileKey: FILE_KEY,
+          hunkIndex: 1,
+          target,
+        }).ok,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("expanded-line proof", () => {
   const proof = {
     gapId: "before:1",
