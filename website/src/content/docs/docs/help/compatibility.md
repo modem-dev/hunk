@@ -3,7 +3,7 @@ title: Terminal and platform compatibility
 description: Understand Hunk's OS requirements and the terminal capabilities behind mouse, color, copy, and layout behavior.
 ---
 
-Hunk supports macOS, Linux, and Windows with Node.js 18 or newer. Git is recommended; Jujutsu and Sapling support requires their respective command-line tools.
+Hunk supports macOS, Linux, and Windows. npm installs require Node.js 22 or newer; standalone installs do not require Node.js. Git is recommended; Jujutsu and Sapling support requires their respective command-line tools.
 
 ## Terminal capabilities
 
@@ -22,7 +22,7 @@ SSH, tmux, and similar layers can filter mouse, clipboard, keyboard, or color se
 
 ## Windows notes
 
-Run Hunk in a modern Windows terminal with Node.js on `PATH`. Repository paths and config locations follow platform conventions; examples use shell-neutral Hunk arguments where possible. Git Bash, PowerShell, and other shells quote commands differently, so adapt multi-line shell examples to your environment.
+Run Hunk in a modern Windows terminal. npm installs require Node.js 22 or newer on `PATH`; standalone mise installs do not require Node.js. Repository paths and config locations follow platform conventions; examples use shell-neutral Hunk arguments where possible. Git Bash, PowerShell, and other shells quote commands differently, so adapt multi-line shell examples to your environment.
 
 ## Light and dark backgrounds
 

@@ -101,6 +101,7 @@ describe("install VM package fixtures", () => {
 
     expect(fixtureA.meta.version).not.toBe(fixtureB.meta.version);
     expect("dependencies" in fixtureA.meta).toBe(false);
+    expect(fixtureA.meta.engines).toEqual({ node: ">=22" });
     expect(fixtureA.meta.optionalDependencies).toEqual({
       "hunkdiff-linux-x64": FIXTURE_VERSION_A,
     });

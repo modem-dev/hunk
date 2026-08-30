@@ -1,7 +1,7 @@
 // Storyboard compositor: renders planned frame states in headless Chromium
 // against a stage template and writes PNG frames plus an ffmpeg concat list.
 //
-// Runs under plain Node (>=18). playwright-core is deliberately NOT a
+// Runs under plain Node (>=22). playwright-core is deliberately NOT a
 // dependency of this package — it must match the Chromium build it drives, so
 // the caller provides a work directory whose own node_modules carries the
 // right version, and it is resolved from there at run time.

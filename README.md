@@ -61,7 +61,7 @@ Requirements:
 
 - macOS, Linux, or Windows
 - On x86-64, a CPU with SSE4.2 (Intel Nehalem 2008+, AMD Bulldozer 2011+); arm64 has no CPU feature floor
-- Node.js 18+ for the npm install; the install script, Homebrew, mise, and Nix ship a standalone binary
+- Node.js 22+ for the npm install; the install script, Homebrew, mise, and Nix ship a standalone binary that does not require Node.js
 - Git recommended for most workflows
 
 > Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.

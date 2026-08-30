@@ -65,7 +65,7 @@ export function buildSyntheticPackageManifests(version: string) {
     bin: { hunk: "./bin/hunk.cjs", hunkdiff: "./bin/hunk.cjs" },
     files: ["bin", "dist/npm", "skills"],
     optionalDependencies: buildOptionalDependencyMap(version, [platformSpec]),
-    engines: { node: ">=18" },
+    engines: { node: ">=22" },
     license: "MIT",
   };
   return { meta, platform };
