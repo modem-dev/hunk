@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import stringWidth from "string-width";
-import { createPtyHarness, dragMouse, rightmostColumnOf } from "./harness";
+import { createPtyHarness, dragMouse, rightmostColumnOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -406,6 +406,52 @@ describe("PTY layout", () => {
 
       expect(rightmostColumnOf(resized, "alpha.ts")).toBeGreaterThan(initialMainColumn);
       expect(resized).toContain("beta.ts");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("retains a sidebar drag when its first cell switches the file projection", async () => {
+    const fixture = harness.createNestedSidebarRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
+
+      // Press the left edge of the five-cell hit target. The first motion lands on a tree row
+      // and switches that row out for the compact projection before the second motion arrives.
+      session.writeRaw("\x1b[<0;34;7M");
+      await sleep(20);
+      session.writeRaw("\x1b[<32;33;7M");
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text
+            .split("\n")
+            .map((line) => line.slice(0, 33))
+            .join("\n")
+            .includes("src/ui/"),
+        5_000,
+      );
+      session.writeRaw("\x1b[<32;21;7M");
+      await sleep(20);
+      session.writeRaw("\x1b[<0;21;7m");
+      await session.waitIdle();
+
+      const resized = await harness.waitForSnapshot(
+        session,
+        (text) => rightmostColumnOf(text, "alpha.ts") <= initialMainColumn - 8,
+        5_000,
+      );
+      expect(rightmostColumnOf(resized, "alpha.ts")).toBeLessThanOrEqual(initialMainColumn - 8);
     } finally {
       session.close();
     }

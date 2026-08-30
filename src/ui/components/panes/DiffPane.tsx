@@ -1,6 +1,5 @@
 import {
   MouseButton,
-  type CliRenderer,
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core";
@@ -30,6 +29,7 @@ import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
 import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
+import { setMouseCapture } from "../../lib/mouseCapture";
 import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
@@ -246,18 +246,6 @@ const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
 const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
-
-/** Keep OpenTUI's drag capture on the persistent scrollbox instead of a repainting text row. */
-function retainCopySelectionCapture(renderer: CliRenderer, scrollBox: ScrollBoxRenderable) {
-  // OpenTUI exposes capture internally but has no public pointer-capture API yet. Its dispatcher
-  // otherwise captures the first dragged text node, which selection highlighting immediately
-  // replaces and leaves unable to receive the rest of the gesture.
-  (
-    renderer as unknown as {
-      setCapturedRenderable: (renderable: ScrollBoxRenderable) => void;
-    }
-  ).setCapturedRenderable(scrollBox);
-}
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
@@ -1339,7 +1327,7 @@ export function DiffPane({
       if (copySelectionDragRef.current) {
         const scrollBox = scrollRef.current;
         if (scrollBox) {
-          retainCopySelectionCapture(renderer, scrollBox);
+          setMouseCapture(renderer, scrollBox);
         }
         suppressNativeSelection();
         event.preventDefault();

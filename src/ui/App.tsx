@@ -1,4 +1,8 @@
-import type { ScrollBoxRenderable } from "@opentui/core";
+import type {
+  BoxRenderable,
+  MouseEvent as TuiMouseEvent,
+  ScrollBoxRenderable,
+} from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import {
   Suspense,
@@ -93,6 +97,7 @@ import {
 } from "./lib/extensionPanes";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
+import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
@@ -190,6 +195,7 @@ export function App({
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const paneResizeCaptureRef = useRef<BoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
@@ -457,6 +463,12 @@ export function App({
     pagerMode,
     responsiveShowsSidebar: responsiveLayout.showSidebar,
   });
+
+  useEffect(() => {
+    if (resizingPaneKey === null) {
+      setMouseCapture(renderer, undefined);
+    }
+  }, [renderer, resizingPaneKey]);
 
   const {
     accept: acceptExtensionDialog,
@@ -1173,6 +1185,16 @@ export function App({
     );
   };
 
+  // OpenTUI normally chooses a drag target only after the pointer first moves. Capture on press
+  // so a fast motion or a sidebar projection swap cannot transfer the gesture to a transient row.
+  const beginCapturedPaneResize = (planned: PlannedPane, event: TuiMouseEvent) => {
+    if (!beginPaneResize(planned, event)) return;
+    if (paneResizeCaptureRef.current) {
+      setMouseCapture(renderer, paneResizeCaptureRef.current);
+    }
+    closeMenu();
+  };
+
   const renderDivider = (planned: PlannedPane) =>
     planned.divider ? (
       <box
@@ -1191,9 +1213,7 @@ export function App({
           height={planned.divider.height}
           isResizing={resizingPaneKey === planned.pane.key}
           theme={activeTheme}
-          onMouseDown={(event) => {
-            if (beginPaneResize(planned, event)) closeMenu();
-          }}
+          onMouseDown={(event) => beginCapturedPaneResize(planned, event)}
           onMouseDrag={updatePaneResize}
           onMouseDragEnd={endPaneResize}
           onMouseUp={endPaneResize}
@@ -1227,6 +1247,7 @@ export function App({
       ) : null}
 
       <box
+        ref={paneResizeCaptureRef}
         style={{
           width: bodyWidth,
           height: bodyHeight,
