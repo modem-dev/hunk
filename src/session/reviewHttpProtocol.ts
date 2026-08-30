@@ -26,9 +26,12 @@
  * wrote it with.
  */
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
-import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
+import type { HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import { utf8ByteLength } from "../core/review/validation";
+import { isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
+import { reviewErrorMessage, type HunkReviewClientErrorCodeV1 } from "./reviewErrorCatalog";
+
+export type { HunkReviewClientErrorCodeV1 } from "./reviewErrorCatalog";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
@@ -72,6 +75,60 @@ export function isReviewCapabilityToken(value: unknown): value is string {
     value.length === REVIEW_CAPABILITY_TOKEN_LENGTH &&
     /^[A-Za-z0-9_-]+$/.test(value)
   );
+}
+
+/**
+ * Headers a resource response states its whole-resource measurement in.
+ *
+ * A published catalog describes resources the producer has not measured yet — measuring
+ * one means producing its bytes — so a reader cannot get the size and digest to verify a
+ * read from the catalog it addressed the read with. They travel with the bytes instead,
+ * on every window of them, which is what lets a client hold a multi-window read to one
+ * measurement through the shared `ReviewChunkAssembler` rather than trusting whatever
+ * arrives (`docs/browser-review-seam-audit.md`, C2).
+ *
+ * Deliberately about the whole resource, never about the slice: `content-range` and
+ * `content-length` already describe the slice, and a per-window digest would let a
+ * truncated read verify.
+ */
+export const HUNK_REVIEW_CONTENT_SIZE_HEADER = "hunk-review-content-size";
+export const HUNK_REVIEW_CONTENT_DIGEST_HEADER = "hunk-review-content-digest";
+
+/** One resource's whole-content measurement, as the surface states and a reader parses it. */
+export interface HunkReviewContentMeasurement {
+  byteLength: number;
+  digest: string;
+}
+
+/** Render one measurement as the headers every window of a resource carries. */
+export function reviewContentMeasurementHeaders({
+  byteLength,
+  digest,
+}: HunkReviewContentMeasurement): Record<string, string> {
+  return {
+    [HUNK_REVIEW_CONTENT_SIZE_HEADER]: String(byteLength),
+    [HUNK_REVIEW_CONTENT_DIGEST_HEADER]: digest,
+  };
+}
+
+/**
+ * Read one measurement back off a response, or nothing when it does not state one.
+ *
+ * Validated rather than trusted: the digest must be in the canonical form the shared
+ * validator accepts, so a reader cannot adopt a measurement it would later be unable to
+ * compare against (D5).
+ */
+export function parseReviewContentMeasurementHeaders(
+  headers: Headers,
+): HunkReviewContentMeasurement | undefined {
+  const digest = headers.get(HUNK_REVIEW_CONTENT_DIGEST_HEADER);
+  const size = headers.get(HUNK_REVIEW_CONTENT_SIZE_HEADER);
+  // Read as a decimal integer rather than through `Number`, which reads an absent header
+  // as zero — a size a zero-length resource legitimately has.
+  const byteLength = size !== null && /^\d{1,15}$/.test(size) ? Number(size) : Number.NaN;
+  return isReviewSha256Digest(digest) && Number.isSafeInteger(byteLength)
+    ? { byteLength, digest }
+    : undefined;
 }
 
 /** One route on the review surface, named by what it serves rather than by its path. */
@@ -172,45 +229,6 @@ export function parseReviewCapabilityFragment(fragment: string): string | undefi
   return isReviewCapabilityToken(capability) ? capability : undefined;
 }
 
-/**
- * Why one review request failed at the transport rather than at the review.
- *
- * Beside the producer's vocabulary rather than mixed into it: these are things that go
- * wrong before an action or a read ever reaches the session — the caller was not
- * authorized, addressed a session nobody is serving, or sent something the surface will
- * not carry.
- */
-export type HunkReviewTransportErrorCode =
-  /**
-   * No capability, or one that does not match the session addressed.
-   *
-   * Also the answer for a session nobody is serving: telling a caller that a session does
-   * not exist is telling it which sessions do.
-   */
-  | "unauthorized"
-  /** The session is registered but publishes no review to serve. */
-  | "no-publication"
-  /** The request body is larger than this surface accepts. */
-  | "payload-too-large"
-  /** The route exists but not for this method. */
-  | "method-not-allowed"
-  /** The body was not sent as JSON. */
-  | "unsupported-media-type"
-  /** The Host or Origin does not name this local surface. */
-  | "forbidden-origin"
-  /** The action names a type this build's vocabulary does not contain. */
-  | "unsupported-action"
-  /** The surface is already serving as many event streams as it will. */
-  | "too-many-streams";
-
-/**
- * Every code a review client can be told, from any tier.
- *
- * Composed from the producer's vocabulary and the transport's rather than restated as a
- * third list, which is the same rule `HunkReviewFailureCodeV1` follows one level down.
- */
-export type HunkReviewClientErrorCodeV1 = HunkReviewFailureCodeV1 | HunkReviewTransportErrorCode;
-
 /** One refusal, in the shape every review route answers with. */
 export interface HunkReviewHttpFailureV1 {
   ok: false;
@@ -218,6 +236,82 @@ export interface HunkReviewHttpFailureV1 {
   message: string;
   /** What the session is serving now, when the failure was about being out of date. */
   currentGeneration?: string;
+}
+
+/**
+ * HTTP status each failure is reported with.
+ *
+ * Total over the code union, so a code added to any tier's vocabulary cannot reach this
+ * surface without someone deciding what it means to a client. It lives with the rest of
+ * the HTTP contract rather than in the server, because a client reading a body-less
+ * refusal has to answer the same question in the other direction.
+ */
+export const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
+  "stale-generation": 409,
+  "invalid-request": 400,
+  "unsupported-action": 400,
+  "file-not-found": 404,
+  "hunk-not-found": 404,
+  "gap-not-found": 404,
+  "draft-missing": 409,
+  "note-not-found": 404,
+  "missing-fact": 400,
+  "unknown-resource": 404,
+  "resource-unavailable": 502,
+  "resource-too-large": 413,
+  "resource-integrity": 502,
+  "invalid-range": 416,
+  unauthorized: 401,
+  "no-publication": 409,
+  "payload-too-large": 413,
+  "method-not-allowed": 405,
+  "unsupported-media-type": 415,
+  "forbidden-origin": 403,
+  "too-many-streams": 503,
+};
+
+/** Statuses exactly one code claims, derived from the table rather than listed again. */
+const REVIEW_ERROR_STATUS_INVERSE: ReadonlyMap<number, HunkReviewClientErrorCodeV1> = (() => {
+  const claims = new Map<number, HunkReviewClientErrorCodeV1[]>();
+  for (const [code, status] of Object.entries(REVIEW_ERROR_STATUS) as Array<
+    [HunkReviewClientErrorCodeV1, number]
+  >) {
+    claims.set(status, [...(claims.get(status) ?? []), code]);
+  }
+  return new Map(
+    [...claims].flatMap(([status, codes]) => (codes.length === 1 ? [[status, codes[0]!]] : [])),
+  );
+})();
+
+/**
+ * The one code a status stands for, when the table gives it only one.
+ *
+ * A route that refuses without a body — an unsatisfiable range is answered with a bare 416
+ * — leaves a client nothing but the status to read. Several codes share 400, 404, and 409,
+ * and picking one of those would be inventing an answer, so this reports only where the
+ * table is unambiguous and leaves the caller to say what an ambiguous status means to it.
+ */
+export function reviewErrorCodeForStatus(status: number): HunkReviewClientErrorCodeV1 | undefined {
+  return REVIEW_ERROR_STATUS_INVERSE.get(status);
+}
+
+/**
+ * Build one refusal in the shape every review route answers with.
+ *
+ * The message comes from the shared catalog unless a tier supplied a more specific one, so
+ * no consumer — the surface answering, or a client rebuilding what it was told — has to
+ * invent wording for a code (`docs/browser-review-seam-audit.md`, G4).
+ */
+export function reviewHttpFailure(
+  code: HunkReviewClientErrorCodeV1,
+  details: { message?: string; currentGeneration?: string } = {},
+): HunkReviewHttpFailureV1 {
+  return {
+    ok: false,
+    code,
+    message: details.message ?? reviewErrorMessage(code),
+    ...(details.currentGeneration ? { currentGeneration: details.currentGeneration } : {}),
+  };
 }
 
 /**

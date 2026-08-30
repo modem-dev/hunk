@@ -34,14 +34,8 @@ import type {
   CustomSyntaxScopesConfig,
   NamedCustomThemeConfig,
 } from "../../extension-api/types";
-import type {
-  CliInput,
-  CommonOptions,
-  CursorLine,
-  LayoutMode,
-  SidebarVisibility,
-  VcsMode,
-} from "./commandInputs";
+import type { CliInput, CommonOptions, SidebarVisibility, VcsMode } from "./commandInputs";
+import type { CursorLine, LayoutMode, PersistedViewPreferences } from "../review/viewOptions";
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
 export interface ExtensionsConfig {
@@ -71,18 +65,7 @@ export interface ExtensionsConfig {
  */
 export type UserKeyBinding = string | readonly string[] | false;
 
-/** The view options a session persists back to config when the reader saves them. */
-export interface PersistedViewPreferences {
-  mode: LayoutMode;
-  theme?: string;
-  showLineNumbers: boolean;
-  wrapLines: boolean;
-  showHunkHeaders: boolean;
-  showMenuBar: boolean;
-  showAgentNotes: boolean;
-  copyDecorations: boolean;
-  cursorLine: CursorLine;
-}
+export type { PersistedViewPreferences };
 
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.

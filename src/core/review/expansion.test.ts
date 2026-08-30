@@ -3,9 +3,11 @@ import { createTestReviewFile } from "../../../test/helpers/review-store-helpers
 import {
   parseReviewGapId,
   resolveReviewExpandedLine,
+  reviewExpandedGapLines,
   reviewExpansionSide,
   reviewGapAddress,
   reviewGapId,
+  reviewGapSourceForFile,
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapHunk,
@@ -310,5 +312,57 @@ describe("resolveReviewExpandedLine", () => {
     expect(
       resolveReviewExpandedLine(createTestReviewFile({ key: "alpha" }), claim),
     ).toBeUndefined();
+  });
+});
+
+describe("reviewExpandedGapLines", () => {
+  const address = {
+    oldRange: [4, 8] as [number, number],
+    newRange: [6, 10] as [number, number],
+    lineCount: 5,
+  };
+
+  test("pairs both sides' lines and reads the source from the expansion side", () => {
+    expect(reviewExpandedGapLines(address, "new")).toEqual([
+      { oldLine: 4, newLine: 6, sourceLine: 6 },
+      { oldLine: 5, newLine: 7, sourceLine: 7 },
+      { oldLine: 6, newLine: 8, sourceLine: 8 },
+      { oldLine: 7, newLine: 9, sourceLine: 9 },
+      { oldLine: 8, newLine: 10, sourceLine: 10 },
+    ]);
+    expect(reviewExpandedGapLines(address, "old").map((line) => line.sourceLine)).toEqual([
+      4, 5, 6, 7, 8,
+    ]);
+  });
+
+  test("reveals nothing for a gap of no lines", () => {
+    expect(reviewExpandedGapLines({ ...address, lineCount: 0 }, "new")).toEqual([]);
+  });
+
+  // The two directions have to agree, or a surface expands lines it cannot then address:
+  // every line this reveals must resolve back to the gap it came from, and the line on
+  // either side of the gap must not.
+  test("reveals exactly the lines resolveReviewExpandedLine accepts", () => {
+    const file = createTestReviewFile({ key: "alpha", sourceIdentity: "src:1" });
+    const gapId = "before:1";
+    const resolved = reviewGapAddress(reviewGapSourceForFile(file), gapId)!;
+
+    for (const side of ["old", "new"] as const) {
+      const lines = reviewExpandedGapLines(resolved, side);
+      const range = side === "old" ? resolved.oldRange : resolved.newRange;
+
+      expect(lines).toHaveLength(resolved.lineCount);
+      for (const line of lines) {
+        const claim = { gapId, side, line: side === "old" ? line.oldLine : line.newLine };
+        expect(resolveReviewExpandedLine(file, { ...claim, sourceIdentity: "src:1" })).toEqual(
+          resolved,
+        );
+      }
+      for (const outside of [range[0] - 1, range[1] + 1]) {
+        expect(
+          resolveReviewExpandedLine(file, { gapId, side, line: outside, sourceIdentity: "src:1" }),
+        ).toBeUndefined();
+      }
+    }
   });
 });

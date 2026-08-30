@@ -110,6 +110,16 @@ export class ReviewChunkAssembler {
   }
 
   /**
+   * The whole-resource digest the writer declared, once any chunk has declared one.
+   *
+   * Read by a caller that has to pass the measurement on to a reader of its own — the
+   * daemon serving assembled bytes over HTTP — rather than measuring them again.
+   */
+  get declaredDigest() {
+    return this.contentDigest;
+  }
+
+  /**
    * Accept one chunk.
    *
    * Reports `done: true` when the writer marked end of stream; a caller must stop reading

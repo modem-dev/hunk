@@ -26,6 +26,7 @@ import {
   parseReviewEventFrame,
   parseReviewEventFrameName,
   ReviewEventAssembler,
+  ReviewEventSseDecoder,
   reviewEventId,
 } from "../reviewEventProtocol";
 import {
@@ -35,13 +36,12 @@ import {
   type HunkReviewHttpRoute,
 } from "../reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
-import { BrowserReviewServer, type BrowserReviewServerOptions } from "./browserReviewServer";
+import { WebReviewServer, type WebReviewServerOptions } from "./webReviewServer";
 
 const SESSION_ID = "session-http-1";
 const ACTOR = { clientId: "test-client", kind: "browser" } as const;
 
-const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
-  [];
+const running: Array<{ review: WebReviewServer; server: { stop: (force?: boolean) => void } }> = [];
 
 afterEach(() => {
   for (const entry of running.splice(0)) {
@@ -53,9 +53,9 @@ afterEach(() => {
 /** Mount the review surface on a real loopback listener. */
 function serve(
   harness: ReturnType<typeof connectReviewSession>,
-  options: BrowserReviewServerOptions = {},
+  options: WebReviewServerOptions = {},
 ) {
-  const review = new BrowserReviewServer(harness.state, options);
+  const review = new WebReviewServer(harness.state, options);
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -67,10 +67,7 @@ function serve(
 }
 
 /** Connect a session, register it, and mount the surface over it. */
-function start(
-  files = [createTestPatchFile("alpha", 4)],
-  options: BrowserReviewServerOptions = {},
-) {
+function start(files = [createTestPatchFile("alpha", 4)], options: WebReviewServerOptions = {}) {
   const harness = connectReviewSession(files, { sessionId: SESSION_ID });
   harness.register();
   return { harness, ...serve(harness, options) };
@@ -491,29 +488,22 @@ describe("browser review surface: actions", () => {
  */
 async function readEvents(response: Response, events: number) {
   const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
+  const textDecoder = new TextDecoder();
+  const records = new ReviewEventSseDecoder();
   const frames: Array<{ id?: string; event: string; data: unknown }> = [];
   let complete = 0;
-  let buffer = "";
   while (complete < events) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const record = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const lines = record.split("\n");
-      const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
-      const event = lines.find((line) => line.startsWith("event: "))?.slice(7);
-      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
-      if (event && data !== undefined) {
-        frames.push({ ...(id ? { id } : {}), event, data: JSON.parse(data) as unknown });
-        complete += id ? 1 : 0;
-      }
-      boundary = buffer.indexOf("\n\n");
+    for (const record of records.push(textDecoder.decode(value, { stream: true }))) {
+      frames.push({
+        ...(record.id === undefined ? {} : { id: record.id }),
+        event: record.event,
+        data: JSON.parse(record.data) as unknown,
+      });
+      complete += record.id === undefined ? 0 : 1;
     }
   }
   await reader.cancel();

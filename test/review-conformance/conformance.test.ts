@@ -57,6 +57,7 @@ describe("review conformance corpus", () => {
       "core review model",
       "terminal render planning",
       "review producer",
+      "browser review projection",
     ]);
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
@@ -65,6 +66,7 @@ describe("review conformance corpus", () => {
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",
       "broker review mirror",
+      "browser review mirror",
     ]);
     expect(REVIEW_SNAPSHOT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "extension review snapshot",
@@ -74,7 +76,8 @@ describe("review conformance corpus", () => {
     ]);
     expect(REVIEW_EVENT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review event protocol",
-      "browser review HTTP surface",
+      "web review HTTP surface",
+      "browser review client reader",
     ]);
   });
 

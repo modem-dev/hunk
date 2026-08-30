@@ -14,9 +14,10 @@ import type {
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
+import type { CursorLine, LayoutMode } from "../review/viewOptions";
 
-export type LayoutMode = "auto" | "split" | "stack";
-export type CursorLine = "row" | "number" | "off";
+// Declared with the shared view-option classification so both tiers name one union.
+export type { CursorLine, LayoutMode };
 export type SidebarVisibility = boolean | "auto";
 export type VcsMode = string;
 

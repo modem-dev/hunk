@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { createReviewCapability } from "../app/review/capability";
 import {
   HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY,
+  HUNK_REVIEW_CONTENT_DIGEST_HEADER,
+  HUNK_REVIEW_CONTENT_SIZE_HEADER,
   isReviewCapabilityToken,
+  parseReviewContentMeasurementHeaders,
+  reviewContentMeasurementHeaders,
   parseReviewCapabilityFragment,
   parseReviewHttpPath,
   REVIEW_CAPABILITY_TOKEN_LENGTH,
@@ -106,6 +110,50 @@ describe("review url", () => {
     expect(parseReviewCapabilityFragment("#other=value")).toBeUndefined();
     expect(
       parseReviewCapabilityFragment(`#${HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY}=short`),
+    ).toBeUndefined();
+  });
+});
+
+describe("resource measurement headers", () => {
+  const MEASUREMENT = { byteLength: 4_096, digest: "a".repeat(64) };
+
+  test("round-trips one whole-resource measurement", () => {
+    const headers = new Headers(reviewContentMeasurementHeaders(MEASUREMENT));
+
+    expect(parseReviewContentMeasurementHeaders(headers)).toEqual(MEASUREMENT);
+  });
+
+  test("reads a zero-length resource, which has no satisfiable range at all", () => {
+    const headers = new Headers(
+      reviewContentMeasurementHeaders({ byteLength: 0, digest: MEASUREMENT.digest }),
+    );
+
+    expect(parseReviewContentMeasurementHeaders(headers)).toEqual({
+      byteLength: 0,
+      digest: MEASUREMENT.digest,
+    });
+  });
+
+  test("refuses a response that states no measurement, or an unusable one", () => {
+    expect(parseReviewContentMeasurementHeaders(new Headers())).toBeUndefined();
+    expect(
+      parseReviewContentMeasurementHeaders(
+        new Headers({ [HUNK_REVIEW_CONTENT_DIGEST_HEADER]: MEASUREMENT.digest }),
+      ),
+    ).toBeUndefined();
+    // Uppercase hex is exactly the drift the canonical form exists to refuse.
+    expect(
+      parseReviewContentMeasurementHeaders(
+        new Headers(reviewContentMeasurementHeaders({ ...MEASUREMENT, digest: "A".repeat(64) })),
+      ),
+    ).toBeUndefined();
+    expect(
+      parseReviewContentMeasurementHeaders(
+        new Headers({
+          ...reviewContentMeasurementHeaders(MEASUREMENT),
+          [HUNK_REVIEW_CONTENT_SIZE_HEADER]: "not-a-number",
+        }),
+      ),
     ).toBeUndefined();
   });
 });

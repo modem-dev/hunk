@@ -7,17 +7,22 @@ const KEY = {
   resourceId: "resource:patch:file:a",
 };
 const OTHER = { ...KEY, resourceId: "resource:patch:file:b" };
+const SHA256_HEX_LENGTH = 64;
 
-function bytes(length: number) {
-  return new Uint8Array(length);
+/** One loaded resource of the given size, with the digest its assembly verified against. */
+function resource(length: number) {
+  return {
+    bytes: new Uint8Array(length),
+    digest: "0".repeat(SHA256_HEX_LENGTH),
+  };
 }
 
 describe("ReviewResourceCache", () => {
   test("returns what it stored", () => {
     const cache = new ReviewResourceCache();
-    cache.store(KEY, bytes(4));
+    cache.store(KEY, resource(4));
 
-    expect(cache.get(KEY)).toEqual(bytes(4));
+    expect(cache.get(KEY)).toEqual(resource(4));
     expect(cache.get(OTHER)).toBeUndefined();
     expect(cache.getCachedBytes()).toBe(4);
   });
@@ -25,20 +30,20 @@ describe("ReviewResourceCache", () => {
   // Intent: the daemon holds many sessions, so retained bytes are capped across all of them.
   test("evicts the least recently used entry to stay inside the byte budget", () => {
     const cache = new ReviewResourceCache({ cacheBytes: 10 });
-    cache.store(KEY, bytes(6));
-    cache.store(OTHER, bytes(6));
+    cache.store(KEY, resource(6));
+    cache.store(OTHER, resource(6));
 
     expect(cache.get(KEY)).toBeUndefined();
-    expect(cache.get(OTHER)).toEqual(bytes(6));
+    expect(cache.get(OTHER)).toEqual(resource(6));
     expect(cache.getCachedBytes()).toBe(6);
   });
 
   test("promotes a read entry so it is not the next evicted", () => {
     const cache = new ReviewResourceCache({ cacheBytes: 10 });
-    cache.store(KEY, bytes(4));
-    cache.store(OTHER, bytes(4));
+    cache.store(KEY, resource(4));
+    cache.store(OTHER, resource(4));
     cache.get(KEY);
-    cache.store({ ...KEY, resourceId: "resource:patch:file:c" }, bytes(4));
+    cache.store({ ...KEY, resourceId: "resource:patch:file:c" }, resource(4));
 
     expect(cache.get(KEY)).toBeDefined();
     expect(cache.get(OTHER)).toBeUndefined();
@@ -91,9 +96,9 @@ describe("ReviewResourceCache", () => {
 
   test("drops everything belonging to a retired generation", () => {
     const cache = new ReviewResourceCache();
-    cache.store(KEY, bytes(4));
+    cache.store(KEY, resource(4));
     const reservation = cache.reserve(OTHER, 4);
-    cache.store({ ...KEY, generation: "generation:p1:1" }, bytes(4));
+    cache.store({ ...KEY, generation: "generation:p1:1" }, resource(4));
 
     cache.evictGeneration("s-1", "generation:p1:0");
     expect(cache.get(KEY)).toBeUndefined();
@@ -106,8 +111,8 @@ describe("ReviewResourceCache", () => {
 
   test("drops everything belonging to a departed session", () => {
     const cache = new ReviewResourceCache();
-    cache.store(KEY, bytes(4));
-    cache.store({ ...KEY, sessionId: "s-2" }, bytes(4));
+    cache.store(KEY, resource(4));
+    cache.store({ ...KEY, sessionId: "s-2" }, resource(4));
 
     cache.evictSession("s-1");
     expect(cache.getEntryCount()).toBe(1);
@@ -116,7 +121,7 @@ describe("ReviewResourceCache", () => {
 
   test("clears completely on shutdown", () => {
     const cache = new ReviewResourceCache();
-    cache.store(KEY, bytes(4));
+    cache.store(KEY, resource(4));
     cache.reserve(OTHER, 4);
 
     cache.clear();
