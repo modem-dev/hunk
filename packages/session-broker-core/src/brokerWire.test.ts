@@ -53,6 +53,45 @@ describe("session broker wire parsing", () => {
     ).toBeNull();
   });
 
+  test("rejects prototype-shaped registration and terminal metadata extras", () => {
+    const parseInfo = (value: unknown) => (value && typeof value === "object" ? value : null);
+    const registration = {
+      registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
+      sessionId: "session-1",
+      pid: 123,
+      cwd: "/repo",
+      launchedAt: "2026-03-22T00:00:00.000Z",
+      info: { ok: true },
+    } as Record<string, unknown>;
+    Object.defineProperty(registration, "constructor", {
+      configurable: true,
+      enumerable: true,
+      value: "unexpected",
+    });
+    expect(parseSessionRegistrationEnvelope(registration, parseInfo)).toBeNull();
+
+    const terminal = { locations: [] } as Record<string, unknown>;
+    Object.defineProperty(terminal, "toString", {
+      configurable: true,
+      enumerable: true,
+      value: "unexpected",
+    });
+    expect(
+      parseSessionRegistrationEnvelope(
+        {
+          registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
+          sessionId: "session-1",
+          pid: 123,
+          cwd: "/repo",
+          launchedAt: "2026-03-22T00:00:00.000Z",
+          terminal,
+          info: { ok: true },
+        },
+        parseInfo,
+      ),
+    ).toBeNull();
+  });
+
   test("snapshot parsing delegates opaque app state validation", () => {
     const snapshot = parseSessionSnapshotEnvelope(
       {

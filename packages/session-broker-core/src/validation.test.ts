@@ -33,6 +33,30 @@ describe("session broker runtime validation", () => {
     expect(code(() => parseBrokerSelector({ repoRoot: null }))).toBe("invalid-field");
   });
 
+  test("rejects prototype-shaped extras and exotic records without rejecting null prototypes", () => {
+    for (const key of ["__proto__", "constructor", "toString"]) {
+      const value = { required: 1 } as Record<string, unknown>;
+      Object.defineProperty(value, key, { configurable: true, enumerable: true, value: true });
+      expect(code(() => parseExactBrokerRecord(value, ["required"] as const))).toBe("invalid-keys");
+    }
+
+    class RecordSubclass {
+      required = 1;
+    }
+    const customPrototype = Object.assign(Object.create({ inherited: true }), { required: 1 });
+    const inheritedRequired = Object.create({ required: 1 }) as Record<string, unknown>;
+    for (const value of [new RecordSubclass(), customPrototype, inheritedRequired]) {
+      expect(code(() => parseExactBrokerRecord(value, ["required"] as const))).toBe(
+        "invalid-record",
+      );
+    }
+
+    const nullPrototype = Object.assign(Object.create(null) as Record<string, unknown>, {
+      required: 1,
+    });
+    expect(parseExactBrokerRecord(nullPrototype, ["required"] as const).required).toBe(1);
+  });
+
   test("bounds identifiers, revisions, uint64 values, and deadlines", () => {
     expect(parseBrokerAppId("dev.hunk")).toBe("dev.hunk");
     expect(parseBrokerIdentifier("session-1")).toBe("session-1");

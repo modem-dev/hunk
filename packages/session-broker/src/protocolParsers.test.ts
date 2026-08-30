@@ -172,6 +172,70 @@ describe("session broker authoritative protocol parsers", () => {
     );
   });
 
+  test("rejects prototype-shaped extras across producer, bridge, and HTTP envelopes", () => {
+    const validValues = [
+      {
+        parse: (value: unknown) => parsers.parseClientMessage(value),
+        value: { type: "heartbeat", sessionId: "session-1" },
+      },
+      {
+        parse: (value: unknown) => parsers.parseServerMessage(value),
+        value: {
+          type: "command",
+          requestId: "request-1",
+          command: "annotate",
+          commandVersion: 2,
+          input: { summary: "note" },
+        },
+      },
+      {
+        parse: (value: unknown) => parsers.parseDaemonRequest(value),
+        value: { action: "list" },
+      },
+    ] as const;
+
+    for (const { parse, value } of validValues) {
+      for (const key of ["__proto__", "constructor", "toString"]) {
+        const malformed = { ...value } as Record<string, unknown>;
+        Object.defineProperty(malformed, key, {
+          configurable: true,
+          enumerable: true,
+          value: true,
+        });
+        expect(failureCode(() => parse(malformed))).toBe("invalid-keys");
+      }
+    }
+  });
+
+  test("rejects exotic envelope prototypes and accepts null-prototype records", () => {
+    class HeartbeatEnvelope {
+      type = "heartbeat" as const;
+      sessionId = "session-1";
+    }
+    const inherited = Object.create({ type: "heartbeat", sessionId: "session-1" }) as Record<
+      string,
+      unknown
+    >;
+    const customPrototype = Object.assign(Object.create({ inherited: true }), {
+      type: "heartbeat",
+      sessionId: "session-1",
+    });
+    for (const value of [new HeartbeatEnvelope(), inherited, customPrototype]) {
+      expect(failureCode(() => parsers.parseClientMessage(value))).toBe("invalid-record");
+    }
+
+    const heartbeat = Object.assign(Object.create(null) as Record<string, unknown>, {
+      type: "heartbeat",
+      sessionId: "session-1",
+    });
+    const list = Object.assign(Object.create(null) as Record<string, unknown>, { action: "list" });
+    expect(parsers.parseClientMessage(heartbeat)).toEqual({
+      type: "heartbeat",
+      sessionId: "session-1",
+    });
+    expect(parsers.parseDaemonRequest(list)).toEqual({ action: "list" });
+  });
+
   test("leaves registration and snapshot app payloads untouched for controller parsing", () => {
     const registration = { malformedForApp: true };
     const snapshot = { transformedLater: true };
