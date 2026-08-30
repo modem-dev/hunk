@@ -30,10 +30,7 @@ import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
 import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import { setMouseCapture } from "../../lib/mouseCapture";
-import type {
-  DraftReviewNote,
-  StoredReviewNoteRenderMetadata,
-} from "../../lib/reviewNoteMapping";
+import type { DraftReviewNote, StoredReviewNoteRenderMetadata } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
   reviewNoteSource,
