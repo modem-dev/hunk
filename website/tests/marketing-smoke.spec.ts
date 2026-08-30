@@ -12,7 +12,123 @@ test("marketing page links into documentation and preserves core calls to action
   await expect(
     page.getByRole("navigation", { name: "Main navigation" }).getByText("Docs"),
   ).toHaveAttribute("href", "/docs/");
-  await expect(page.getByRole("button", { name: "Copy: npm i -g hunkdiff" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "curl" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "Copy curl install command" })).toBeVisible();
+  await expect(page.locator(".install-context")).toContainText(
+    "verifies it when release checksums and local tooling are available",
+  );
+  await expect(page.locator(".install-context")).toContainText("Starting with Hunk 0.20");
+  await expect(page.locator(".install-context")).toContainText("Older releases update once");
+  await expect(page.locator(".install-context")).toContainText("owning workflows");
+});
+
+test("install selector exposes every method without repeating the old install list", async ({
+  page,
+}) => {
+  await page.goto("/#install");
+
+  const picker = page.locator("#install");
+  await expect(picker).toBeVisible();
+  await expect(page.locator("section.install")).toHaveCount(0);
+
+  const methods = [
+    ["curl", "curl -fsSL https://hunk.dev/install.sh | sh"],
+    ["Homebrew", "brew install hunk"],
+    ["npm", "npm i -g hunkdiff"],
+    ["mise", "mise use -g hunk"],
+    ["Nix", "nix run github:modem-dev/hunk"],
+  ] as const;
+
+  for (const [name, command] of methods) {
+    const tab = page.getByRole("tab", { name });
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tabpanel")).toContainText(command);
+  }
+});
+
+test("install fragments initialize and follow browser history", async ({ page }) => {
+  await page.goto("/#install-panel-nix");
+  const nix = page.getByRole("tab", { name: "Nix" });
+  await expect(nix).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toContainText("nix run github:modem-dev/hunk");
+
+  const homebrew = page.getByRole("tab", { name: "Homebrew" });
+  await homebrew.click();
+  await expect(page).toHaveURL(/#install-panel-homebrew$/);
+  await expect(homebrew).toHaveAttribute("aria-selected", "true");
+
+  await nix.click();
+  await expect(page).toHaveURL(/#install-panel-nix$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/#install-panel-homebrew$/);
+  await expect(homebrew).toHaveAttribute("aria-selected", "true");
+  await page.goForward();
+  await expect(page).toHaveURL(/#install-panel-nix$/);
+  await expect(nix).toHaveAttribute("aria-selected", "true");
+
+  await page.evaluate(() => {
+    window.location.hash = "install-panel-npm";
+  });
+  await expect(page.getByRole("tab", { name: "npm" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("install commands remain ordinary reachable content without JavaScript", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+
+  try {
+    await page.goto("/");
+    await expect(page.getByRole("tab")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Nix" })).toHaveAttribute(
+      "href",
+      "#install-panel-nix",
+    );
+    await expect(page.locator(".install-panel")).toHaveCount(5);
+    for (const panel of await page.locator(".install-panel").all())
+      await expect(panel).toBeVisible();
+    await expect(page.locator(".install-copy:visible")).toHaveCount(0);
+    await page.getByRole("link", { name: "Nix" }).click();
+    await expect(page).toHaveURL(/#install-panel-nix$/);
+    await expect(page.locator("#install-panel-nix")).toContainText("nix run github:modem-dev/hunk");
+  } finally {
+    await context.close();
+  }
+});
+
+test("install tabs support roving keyboard navigation", async ({ page }) => {
+  await page.goto("/");
+  const curl = page.getByRole("tab", { name: "curl" });
+  await curl.focus();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Homebrew" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Homebrew" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.keyboard.press("End");
+  const nix = page.getByRole("tab", { name: "Nix" });
+  await expect(nix).toBeFocused();
+  await expect
+    .poll(async () => {
+      const railBounds = await page.locator(".install-tab-scroll").boundingBox();
+      const tabBounds = await nix.boundingBox();
+      if (!railBounds || !tabBounds) return false;
+      return (
+        tabBounds.x >= railBounds.x - 1 &&
+        tabBounds.x + tabBounds.width <= railBounds.x + railBounds.width + 1
+      );
+    })
+    .toBe(true);
+  await page.keyboard.press("Home");
+  await expect(curl).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Nix" })).toBeFocused();
 });
 
 test("marketing and docs share the canonical brand shell", async ({ page }) => {
@@ -73,6 +189,14 @@ test("shared headers stay usable at narrow and tablet breakpoints", async ({ pag
     expect(overflow, `page scrolled sideways at ${width}px`).toBeLessThanOrEqual(0);
   }
 
+  await page.setViewportSize({ width: 320, height: 700 });
+  const tabRail = page.locator(".install-tab-scroll");
+  const tabRailGeometry = await tabRail.evaluate((rail) => ({
+    clientWidth: rail.clientWidth,
+    scrollWidth: rail.scrollWidth,
+  }));
+  expect(tabRailGeometry.scrollWidth).toBeGreaterThan(tabRailGeometry.clientWidth);
+
   await page.setViewportSize({ width: 780, height: 800 });
   await page.goto("/docs/");
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();
@@ -83,13 +207,32 @@ test("shared headers stay usable at narrow and tablet breakpoints", async ({ pag
   expect(search!.x + search!.width).toBeLessThanOrEqual(menu!.x);
 });
 
-test("install command copies with accessible feedback", async ({ context, page }) => {
+test("selected install command copies with accessible feedback", async ({ context, page }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
-  await page.getByRole("button", { name: "Copy: npm i -g hunkdiff" }).click();
+  await page.getByRole("button", { name: "Copy curl install command" }).click();
 
   await expect(page.getByText("Copied to clipboard")).toHaveText("Copied to clipboard");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("npm i -g hunkdiff");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "curl -fsSL https://hunk.dev/install.sh | sh",
+  );
+});
+
+test("copy failure gives visible recovery guidance", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      configurable: true,
+      value: () => Promise.reject(new Error("clipboard unavailable")),
+    });
+  });
+
+  const copy = page.getByRole("button", { name: "Copy curl install command" });
+  await copy.click();
+  await expect(copy.locator("[data-copy-label]")).toHaveText("[ select ]");
+  await expect(copy.locator("[data-copy-status]")).toHaveText(
+    "Could not copy. Select the command manually.",
+  );
 });
 
 test("the theme picker ships one shot, then warms the rest before they are clicked", async ({

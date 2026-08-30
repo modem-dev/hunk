@@ -284,15 +284,29 @@ describe("series page", () => {
     expect(page).not.toContain("npm i -g");
   });
 
-  test("offers Homebrew only on the current release, which is all it can install", () => {
+  test("uses curl for new installs and hunk update on the current release", () => {
     const current =
       series &&
       renderSeriesPage({ series, notes: undefined, dates, latestReleasedVersion: "0.19.0" });
+    expect(current).toContain("curl -fsSL https://hunk.dev/install.sh | sh");
+    expect(current).toContain("verifies downloads when release checksums and local tooling");
+    expect(current).toContain("Hunk 0.20 or newer");
+    expect(current).toContain("default install script, npm, or Homebrew");
+    expect(current).toContain("Hunk's canonical update command");
+    expect(current).toContain("On an older Hunk release, update once");
+    expect(current).toContain("hunk update");
+    expect(current).toContain(
+      "custom-directory installs remain owned by their own update workflows",
+    );
+    expect(current).not.toContain("npm i -g hunkdiff@0.19.0");
+  });
+
+  test("preserves a pinned npm install for a superseded release", () => {
     const superseded =
       series &&
       renderSeriesPage({ series, notes: undefined, dates, latestReleasedVersion: "0.20.0" });
-    expect(current).toContain("brew update && brew upgrade hunk");
-    expect(superseded).not.toContain("brew");
+    expect(superseded).not.toContain("curl -fsSL");
+    expect(superseded).not.toContain("hunk update");
     expect(superseded).toContain("npm i -g hunkdiff@0.19.0");
   });
 

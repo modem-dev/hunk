@@ -2,10 +2,9 @@
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
 import CommunityVideos from "../components/marketing/CommunityVideos.astro";
-import CopyCommand from "../components/marketing/CopyCommand.astro";
 import FeatureShowcase from "../components/marketing/FeatureShowcase.astro";
+import InstallTabs from "../components/marketing/InstallTabs.astro";
 import MoreFeatures from "../components/marketing/MoreFeatures.astro";
-import PlatformIcons from "../components/marketing/PlatformIcons.astro";
 import ThemeShot from "../components/marketing/ThemeShot.astro";
 import latestRelease from "../../releases/latest.json";
 import "../styles/marketing.css";
@@ -120,8 +119,15 @@ const formattedStars =
             Hunk is a review-first diff viewer that plays nice with agents. It's fast, it looks
             good, and it works everywhere.
           </p>
-          <div class="cta">
-            <CopyCommand command="npm i -g hunkdiff" />
+          <InstallTabs />
+          <p class="install-context">
+            The default curl installer downloads a standalone binary for macOS and Linux, verifies
+            it when release checksums and local tooling are available, and warns otherwise. On
+            Windows, use npm or mise. Starting with Hunk 0.20, <b>hunk update</b> is canonical for
+            default install-script, npm, and Homebrew installs. Older releases update once through
+            their current install method; other installs keep using their owning workflows.
+          </p>
+          <div class="cta hero-secondary">
             <a class="ghost" href={REPO}>
               Star on GitHub
               {
@@ -168,26 +174,6 @@ const formattedStars =
           </h2>
           <FeatureShowcase />
           <MoreFeatures />
-        </section>
-
-        <section class="install" id="install">
-          <div class="install-head">
-            <div>
-              <p class="kicker"># install</p>
-              <h2>Wherever your terminal lives.</h2>
-            </div>
-            <PlatformIcons />
-          </div>
-          <ul>
-            <li><span class="t">npm</span><code>npm i -g hunkdiff</code></li>
-            <li><span class="t">Homebrew</span><code>brew install hunk</code></li>
-            <li><span class="t">mise</span><code>mise use -g hunk</code></li>
-            <li><span class="t">Nix</span><code>nix run github:modem-dev/hunk</code></li>
-          </ul>
-          <p class="req">
-            Then <b>hunk diff</b> to review your working tree, or <b>hunk show</b> to review a commit.
-            npm installs require Node.js 22 or newer; standalone installs do not require Node.js.
-          </p>
         </section>
 
         <section class="last">

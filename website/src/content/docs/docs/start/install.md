@@ -3,18 +3,18 @@ title: Install
 description: Install Hunk with the install script, npm, Homebrew, mise, or Nix and verify the CLI.
 ---
 
-Hunk runs on macOS, Linux, and Windows. npm installs require Node.js 22 or newer; the install script, Homebrew, mise, and Nix installs are self-contained binaries that do not require Node.js. Git is recommended for the most common review workflows.
+Hunk runs on macOS, Linux, and Windows. The install script is the default method on macOS and Linux; npm or mise covers Windows. npm installs require Node.js 22 or newer, while the install script, Homebrew, mise, and Nix installs are self-contained binaries that do not require Node.js. Git is recommended for the most common review workflows.
 
-## Install script
+## Install script (default)
 
-On macOS and Linux, the install script downloads the prebuilt binary for your machine:
+On macOS and Linux, the default install script downloads the prebuilt binary for your machine:
 
 ```bash
 curl -fsSL https://hunk.dev/install.sh | sh
 hunk --version
 ```
 
-It verifies the downloaded archive against the release's published `SHA256SUMS`, installs into `~/.hunk` (binary at `~/.hunk/bin/hunk`, bundled agent skills beside it), and adds `~/.hunk/bin` to `PATH` in your shell's startup file. Restart your shell afterwards.
+When the release publishes `SHA256SUMS` and your machine has `sha256sum` or `shasum`, the script verifies the downloaded archive before installing. Otherwise it warns that verification was skipped and continues. It installs into `~/.hunk` (binary at `~/.hunk/bin/hunk`, bundled agent skills beside it) and adds `~/.hunk/bin` to `PATH` in your shell's startup file. Restart your shell afterwards.
 
 The script reads three settings:
 
@@ -30,9 +30,9 @@ curl -fsSL https://hunk.dev/install.sh | sh -s -- --no-modify-path
 curl -fsSL https://hunk.dev/install.sh | HUNK_VERSION=0.19.0 sh
 ```
 
-`hunk update` refreshes a default install in place. An install redirected with `HUNK_INSTALL_DIR` cannot be auto-detected later (the variable is gone once your shell exits), so update one of those by re-running the script with the same `HUNK_INSTALL_DIR`; the installer prints a reminder at the end of a custom-directory install.
+On Hunk 0.20 and newer, `hunk update` refreshes a default install in place. An install redirected with `HUNK_INSTALL_DIR` cannot be auto-detected later (the variable is gone once your shell exits), so update one of those by re-running the script with the same `HUNK_INSTALL_DIR`; the installer prints a reminder at the end of a custom-directory install.
 
-Windows is not covered by the script; use npm there.
+Windows is not covered by the script; use npm or mise there.
 
 ## npm
 
@@ -93,14 +93,14 @@ You should see `Usage: hunk <command> [options]`. If the shell cannot find Hunk,
 
 ## Update Hunk
 
-`hunk update` replaces Hunk with the newest release, using the package manager that installed it:
+Starting with Hunk 0.20, `hunk update` is the canonical way to move npm, Homebrew, and default install-script installs to the newest release. It uses the package manager that installed Hunk:
 
 ```bash
 hunk update          # install the newest release
-hunk update --check  # report the installed and available versions
-hunk update 0.19.0   # install a specific npm release
+hunk update --check  # check without installing
+hunk update 0.20.0   # install an exact npm or default install-script release
 ```
 
-npm installs (including `bun` and `pnpm` global installs), Homebrew installs, and install-script installs update in place; a curl install re-runs the install script with the target version. mise, Nix, and local source builds are owned by their own tooling, so Hunk prints the command that updates them — `mise up hunk`, your Nix configuration, or `bun run install:bin` — instead of updating itself. Pass `--method npm`, `--method brew`, or `--method curl` if Hunk detects the wrong one.
+On an older Hunk release, update once with the installer or package manager that installed it; after that, use `hunk update`. npm installs (including `bun` and `pnpm` global installs), Homebrew installs, and default install-script installs update in place; an install-script update re-runs the installer with the target version and the same conditional checksum verification described above. mise, Nix, and local source builds remain owned by their own tooling, so use `mise up hunk`, your Nix configuration, or `bun run install:bin` instead. A custom `HUNK_INSTALL_DIR` also requires re-running the installer with the same directory, as described above. Pass `--method npm`, `--method brew`, or `--method curl` if Hunk detects the wrong method.
 
 Next, [review your first working tree](/docs/start/quick-start/).

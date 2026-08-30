@@ -32,30 +32,24 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 
 ## Install
 
-```bash
-npm i -g hunkdiff
-```
-
-Or with the install script on macOS and Linux, which downloads the prebuilt binary, verifies its checksum, and installs into `~/.hunk`:
+The default installation method on macOS and Linux downloads a standalone binary and installs it into `~/.hunk`. It checks the archive against the release checksum when both `SHA256SUMS` and a supported checksum tool are available, and warns otherwise:
 
 ```bash
 curl -fsSL https://hunk.dev/install.sh | sh
 ```
 
-Or with Homebrew:
+Windows users can install with npm or mise. Other installation methods are also available:
 
 ```bash
-brew install hunk
+npm i -g hunkdiff                    # macOS, Linux, or Windows; requires Node.js 22+
+brew install hunk                    # macOS or Linux
+mise use -g hunk                     # macOS, Linux, or Windows
 ```
 
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
-Or with [mise](https://mise.jdx.dev) (Windows requires mise 2026.8.6 or newer):
-
-```bash
-mise use -g hunk
-```
+Windows requires mise 2026.8.6 or newer. Nix users can use the `default` package exported in `flake.nix`; see [nix/README.md](./nix/README.md) for details. Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
 Requirements:
 
@@ -64,11 +58,17 @@ Requirements:
 - Node.js 22+ for the npm install; the install script, Homebrew, mise, and Nix ship a standalone binary that does not require Node.js
 - Git recommended for most workflows
 
-> Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
+### Update Hunk
 
-> Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
+Starting with Hunk 0.20, npm, Homebrew, and default install-script installs use Hunk’s canonical update command:
 
-Later, `hunk update` installs the newest release with whichever package manager you used (`hunk update --check` just reports the versions). mise, Nix, and source installs print the command that updates them instead.
+```bash
+hunk update          # install the newest release
+hunk update --check  # check without installing
+hunk update 0.20.0   # select an exact npm or default install-script release
+```
+
+On an older release, update once with the installer or package manager that installed Hunk, then use `hunk update` going forward. Custom `HUNK_INSTALL_DIR` installs must re-run the installer with the same directory; mise, Nix, and source installs use their owning tools instead.
 
 ## Quick start
 

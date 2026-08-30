@@ -732,19 +732,35 @@ export function renderSeriesPage({
   }
 
   if (installable) {
-    lines.push(
-      "```sh",
-      `npm i -g hunkdiff@${installable}`,
-      // Homebrew always tracks the newest formula, so it can only be offered for the current
-      // release; on a superseded series it would quietly install something else.
-      ...(isCurrent ? ["brew update && brew upgrade hunk"] : []),
-      "```",
-      "",
-      isCurrent
-        ? "This is the current release. See [all install options](/docs/start/install/)."
-        : `Hunk ${series.minor} is no longer the current release. See [the latest release](/changelog/) or [all install options](/docs/start/install/).`,
-      "",
-    );
+    if (isCurrent) {
+      lines.push(
+        "New to Hunk? Use the default installer. It verifies downloads when release checksums and local tooling are available, and warns otherwise:",
+        "",
+        "```sh",
+        "curl -fsSL https://hunk.dev/install.sh | sh",
+        "```",
+        "",
+        "Already on Hunk 0.20 or newer with the default install script, npm, or Homebrew? Move to this release with Hunk's canonical update command:",
+        "",
+        "```sh",
+        "hunk update",
+        "```",
+        "",
+        "On an older Hunk release, update once through the installer or package manager that installed it, then use `hunk update`. mise, Nix, source, and custom-directory installs remain owned by their own update workflows. This is the current release; see [all install options](/docs/start/install/).",
+        "",
+      );
+    } else {
+      // A superseded release needs an explicitly pinned installer. The default installer and
+      // Homebrew both track latest, so offering either here would silently install another series.
+      lines.push(
+        "```sh",
+        `npm i -g hunkdiff@${installable}`,
+        "```",
+        "",
+        `Hunk ${series.minor} is no longer the current release. See [the latest release](/changelog/) or [all install options](/docs/start/install/).`,
+        "",
+      );
+    }
   }
 
   if (highlightBullets) {

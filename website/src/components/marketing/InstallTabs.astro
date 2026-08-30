@@ -1,0 +1,187 @@
+---
+const installMethods = [
+  {
+    id: "curl",
+    label: "curl",
+    command: "curl -fsSL https://hunk.dev/install.sh | sh",
+  },
+  { id: "homebrew", label: "Homebrew", command: "brew install hunk" },
+  { id: "npm", label: "npm", command: "npm i -g hunkdiff" },
+  { id: "mise", label: "mise", command: "mise use -g hunk" },
+  { id: "nix", label: "Nix", command: "nix run github:modem-dev/hunk" },
+] as const;
+---
+
+<section class="install-picker" id="install" data-install-tabs aria-label="Install Hunk">
+  <nav class="install-tab-scroll" aria-label="Install method">
+    <div class="install-tabs" data-install-tablist>
+      {
+        installMethods.map((method) => (
+          <a
+            id={`install-tab-${method.id}`}
+            class="install-tab"
+            href={`#install-panel-${method.id}`}
+            data-install-tab
+          >
+            {method.label}
+          </a>
+        ))
+      }
+    </div>
+  </nav>
+
+  {
+    installMethods.map((method) => (
+      <div id={`install-panel-${method.id}`} class="install-panel" data-install-panel>
+        <h3 class="sr-only">{method.label} install command</h3>
+        <code class="install-command" tabindex="0">
+          <span class="install-prompt" aria-hidden="true">$</span>
+          <span>{method.command}</span>
+        </code>
+        <button
+          class="install-copy"
+          type="button"
+          data-copy-command={method.command}
+          aria-label={`Copy ${method.label} install command`}
+          hidden
+        >
+          <span aria-hidden="true" data-copy-label>[ copy ]</span>
+          <span class="sr-only" aria-live="polite" data-copy-status></span>
+        </button>
+      </div>
+    ))
+  }
+</section>
+
+<script>
+  type InstallHistoryMode = "none" | "push" | "replace";
+
+  /** Activates install tabs and keeps their URL, keyboard, panel, and copy state synchronized. */
+  function connectInstallTabs(picker: HTMLElement) {
+    const tablist = picker.querySelector<HTMLElement>("[data-install-tablist]");
+    const tabs = [...picker.querySelectorAll<HTMLAnchorElement>("[data-install-tab]")];
+    const panels = [...picker.querySelectorAll<HTMLElement>("[data-install-panel]")];
+    const rail = picker.querySelector<HTMLElement>(".install-tab-scroll");
+    if (!tablist || tabs.length === 0) return;
+
+    tablist.setAttribute("role", "tablist");
+    for (const [index, tab] of tabs.entries()) {
+      const panel = panels[index];
+      if (!panel) continue;
+
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", panel.id);
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tab.id);
+    }
+
+    for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-copy-command]")) {
+      button.hidden = false;
+    }
+    picker.dataset.enhanced = "true";
+
+    /** Scrolls the tab rail just enough to expose the active method. */
+    function revealTab(tab: HTMLAnchorElement) {
+      if (!rail) return;
+      const railBounds = rail.getBoundingClientRect();
+      const tabBounds = tab.getBoundingClientRect();
+      if (tabBounds.left < railBounds.left) {
+        rail.scrollLeft += tabBounds.left - railBounds.left;
+      } else if (tabBounds.right > railBounds.right) {
+        rail.scrollLeft += tabBounds.right - railBounds.right;
+      }
+    }
+
+    /** Returns the tab named by the URL fragment, falling back to curl. */
+    function tabFromLocation() {
+      return tabs.find((tab) => tab.hash === window.location.hash) ?? tabs[0];
+    }
+
+    /** Updates the URL fragment without letting the browser jump the command panel. */
+    function updateFragment(tab: HTMLAnchorElement, mode: InstallHistoryMode) {
+      if (mode === "none" || window.location.hash === tab.hash) return;
+      const method = mode === "push" ? "pushState" : "replaceState";
+      window.history[method](null, "", tab.hash);
+    }
+
+    /** Selects one method and optionally records it in browser history. */
+    function activateTab(
+      tab: HTMLAnchorElement,
+      options: { historyMode?: InstallHistoryMode; reveal?: boolean } = {},
+    ) {
+      for (const candidate of tabs) {
+        const selected = candidate === tab;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.tabIndex = selected ? 0 : -1;
+
+        const panelId = candidate.getAttribute("aria-controls");
+        const panel = panelId ? picker.querySelector<HTMLElement>(`#${panelId}`) : null;
+        if (panel) panel.hidden = !selected;
+      }
+
+      updateFragment(tab, options.historyMode ?? "none");
+      if (options.reveal) revealTab(tab);
+    }
+
+    for (const [index, tab] of tabs.entries()) {
+      tab.addEventListener("click", (event) => {
+        event.preventDefault();
+        activateTab(tab, { historyMode: "push", reveal: true });
+      });
+      tab.addEventListener("keydown", (event) => {
+        let nextIndex: number | undefined;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+        if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === "Home") nextIndex = 0;
+        if (event.key === "End") nextIndex = tabs.length - 1;
+        if (nextIndex === undefined) return;
+
+        event.preventDefault();
+        const nextTab = tabs[nextIndex];
+        if (!nextTab) return;
+        activateTab(nextTab, { historyMode: "replace", reveal: true });
+        nextTab.focus({ preventScroll: true });
+      });
+    }
+
+    /** Follows fragments changed by links, browser navigation, or external scripts. */
+    function syncFromLocation() {
+      const tab = tabFromLocation();
+      if (tab) activateTab(tab, { reveal: true });
+    }
+
+    window.addEventListener("hashchange", syncFromLocation);
+    window.addEventListener("popstate", syncFromLocation);
+    syncFromLocation();
+
+    for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-copy-command]")) {
+      button.addEventListener("click", async () => {
+        const status = button.querySelector<HTMLElement>("[data-copy-status]");
+        const label = button.querySelector<HTMLElement>("[data-copy-label]");
+
+        button.classList.remove("copied", "failed");
+        if (label) label.textContent = "[ copy ]";
+        try {
+          await navigator.clipboard.writeText(button.dataset.copyCommand ?? "");
+          button.classList.add("copied");
+          if (label) label.textContent = "[ copied ]";
+          if (status) status.textContent = "Copied to clipboard";
+        } catch {
+          button.classList.add("failed");
+          if (label) label.textContent = "[ select ]";
+          if (status) status.textContent = "Could not copy. Select the command manually.";
+        }
+
+        window.setTimeout(() => {
+          button.classList.remove("copied", "failed");
+          if (label) label.textContent = "[ copy ]";
+          if (status) status.textContent = "";
+        }, 2400);
+      });
+    }
+  }
+
+  for (const picker of document.querySelectorAll<HTMLElement>("[data-install-tabs]")) {
+    connectInstallTabs(picker);
+  }
+</script>

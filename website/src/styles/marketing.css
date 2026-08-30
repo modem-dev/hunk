@@ -142,52 +142,159 @@ a:focus-visible {
   flex-wrap: wrap;
 }
 
-.marketing .copy,
 .marketing .ghost {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 11px 16px;
+  padding: 11px 18px;
   border: 1.5px solid var(--ink);
   border-radius: 8px;
+  background: var(--acc);
   box-shadow: 3px 3px 0 var(--ink);
+  color: var(--paper);
   font-family: var(--mono);
   font-size: 14px;
+  font-weight: 600;
   transition: 0.12s;
 }
 
-.marketing .copy {
-  position: relative;
-  height: auto;
-  background: var(--paper);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.marketing .ghost {
-  padding-inline: 18px;
-  background: var(--acc);
-  color: var(--paper);
-  font-weight: 600;
-}
-
-.marketing .copy:hover,
 .marketing .ghost:hover {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--ink);
 }
 
-.marketing .copy .prompt {
-  color: var(--acc);
+/* Offers every supported installer in one terminal-like control. The scrollable tab rail keeps the
+   selected command and copy action inside the page bounds at phone widths. */
+.marketing .install-picker {
+  width: 100%;
+  scroll-margin-top: 18px;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
 }
 
-.marketing .copy .ico {
+.marketing .install-tab-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border-bottom: 1.5px solid var(--ink);
+  overscroll-behavior-x: contain;
+}
+
+.marketing .install-tabs {
   display: flex;
-  color: var(--soft);
+  width: max-content;
+  min-width: 100%;
 }
 
-.marketing .copy.copied .ico {
+.marketing .install-tab {
+  flex: 1 0 auto;
+  padding: 11px 18px 10px;
+  border: 0;
+  border-right: 1.5px solid var(--rule);
+  background: var(--hunk-paper-hover);
+  color: var(--soft);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.marketing .install-tab:last-child {
+  border-right: 0;
+}
+
+.marketing .install-tab[aria-selected="true"] {
+  box-shadow: inset 0 -3px 0 var(--acc);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.marketing .install-tab:hover {
+  color: var(--ink);
+}
+
+.marketing .install-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 84px;
+  padding: 16px 18px;
+  gap: 16px;
+}
+
+.marketing .install-panel + .install-panel {
+  border-top: 1.5px solid var(--rule);
+}
+
+.marketing .install-picker[data-enhanced="true"] .install-panel {
+  border-top: 0;
+}
+
+.marketing .install-picker[data-enhanced="true"] .install-panel[hidden],
+.marketing .install-copy[hidden] {
+  display: none;
+}
+
+.marketing .install-command {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  gap: 10px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(13px, 2vw, 16px);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.marketing .install-command:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.marketing .install-prompt {
+  color: var(--soft);
+  user-select: none;
+}
+
+.marketing .install-copy {
+  padding: 8px 10px;
+  border: 1.5px solid var(--rule);
+  background: transparent;
   color: var(--acc);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.marketing .install-copy:hover,
+.marketing .install-copy.copied {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .install-copy.failed {
+  border-color: var(--del);
+  color: var(--del);
+}
+
+.marketing .install-context {
+  max-width: 760px;
+  margin: 15px 0 0;
+  color: var(--hunk-body);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.marketing .hero-secondary {
+  margin-top: 18px;
 }
 
 .marketing .ghost .stars {
@@ -303,15 +410,13 @@ a:focus-visible {
   text-decoration-color: var(--acc);
 }
 
-.marketing .feats,
-.marketing .install {
+.marketing .feats {
   max-width: 960px;
   margin: 0 auto;
   padding: 0 36px 104px;
 }
 
 .marketing .feats h2,
-.marketing .install h2,
 .marketing .band h2 {
   margin: 0 0 30px;
   font-size: clamp(22px, 3.4vw, 34px);
@@ -700,77 +805,6 @@ a:focus-visible {
   text-decoration-color: var(--acc);
 }
 
-.marketing .install {
-  padding-bottom: 92px;
-}
-
-.marketing .install-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-  margin-bottom: 30px;
-}
-
-.marketing .install-head h2 {
-  margin: 0;
-}
-
-.marketing .os {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  color: var(--soft);
-}
-
-.marketing .os svg {
-  display: block;
-  width: 26px;
-  height: 26px;
-  fill: currentcolor;
-}
-
-.marketing .install ul {
-  margin: 0 0 18px;
-  padding: 0;
-  border-top: 1.5px solid var(--ink);
-  list-style: none;
-}
-
-.marketing .install li {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 20px;
-  align-items: center;
-  padding: 15px 4px;
-  border-bottom: 1.5px solid var(--rule);
-}
-
-.marketing .install .t {
-  color: var(--soft);
-  font-size: 12.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.marketing .install code {
-  overflow-wrap: anywhere;
-  font-family: var(--mono);
-  font-size: 15px;
-}
-
-.marketing .install code::before {
-  color: var(--acc);
-  content: "$ ";
-}
-
-.marketing .req {
-  margin: 0;
-  color: var(--hunk-body);
-  font-size: 13.5px;
-}
-
 @media (max-width: 980px) {
   /* Copy stacks above its capture on narrow screens. */
   .marketing .show-item {
@@ -794,7 +828,6 @@ a:focus-visible {
   .marketing .paper,
   .marketing .feats,
   .marketing .band,
-  .marketing .install,
   .marketing .last {
     padding-right: 20px;
     padding-left: 20px;
@@ -809,9 +842,13 @@ a:focus-visible {
 }
 
 @media (max-width: 480px) {
-  .marketing .install li {
-    grid-template-columns: 1fr;
-    gap: 4px;
+  .marketing .install-panel {
+    padding-inline: 12px;
+    gap: 10px;
+  }
+
+  .marketing .install-tab {
+    padding-inline: 15px;
   }
 }
 
