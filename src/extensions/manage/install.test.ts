@@ -229,7 +229,7 @@ describe("hunk extension command runner", () => {
         stdout: (text: string) => out.push(text),
         stderr: (text: string) => err.push(text),
         ...(confirmAnswer !== undefined ? { confirm: async () => confirmAnswer } : {}),
-        env: { XDG_CONFIG_HOME: configDir } as NodeJS.ProcessEnv,
+        env: { XDG_STATE_HOME: configDir } as NodeJS.ProcessEnv,
       },
     };
   }

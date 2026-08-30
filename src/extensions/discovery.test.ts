@@ -264,7 +264,7 @@ describe("extension discovery", () => {
     const candidates = discoverExtensions({
       cwd: home,
       repoRoot: undefined,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
 
     expect(candidates).toEqual([{ id: "themed", path: globalPath, origin: "global" }]);
