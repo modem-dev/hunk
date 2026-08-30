@@ -56,6 +56,20 @@ describe("buildFileRenderWindow", () => {
     expect(plan.bottomSpacerHeight).toBe(0);
   });
 
+  test("a zero-height viewport at the top only mounts the first file plus overscan", () => {
+    const layouts = createLayouts(6, 8);
+    const plan = buildFileRenderWindow({
+      fileSectionLayouts: layouts,
+      overscanFiles: 1,
+      scrollTop: 0,
+      viewportHeight: 0,
+    });
+
+    expect(plan.mountedFileIndices).toEqual([0, 1]);
+    expect(plan.visibleStartIndex).toBe(0);
+    expect(plan.visibleEndIndex).toBe(0);
+  });
+
   test("mounts the visible first file and reserves the rest in one bottom spacer", () => {
     const layouts = createLayouts(4);
     const plan = buildFileRenderWindow({

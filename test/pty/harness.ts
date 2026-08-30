@@ -742,6 +742,17 @@ end
     ]);
   }
 
+  /** Build many short files so a tall first paint must mount past the first-file overscan neighbor. */
+  function createManyShortFileRepoFixture() {
+    return createGitRepoFixture(
+      Array.from({ length: 8 }, (_, index) => ({
+        path: `short-${index}.ts`,
+        before: `export const short${index} = ${index};\n`,
+        after: `export const short${index} = ${index + 10};\n`,
+      })),
+    );
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1110,6 +1121,7 @@ end
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
+    createManyShortFileRepoFixture,
     createPinnedHeaderRepoFixture,
     createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,
