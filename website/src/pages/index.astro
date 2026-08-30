@@ -106,7 +106,7 @@ const formattedStars =
   <body>
     <div class="marketing">
       <header class="top">
-        <BrandHeader current="home" />
+        <BrandHeader current="home" stars={formattedStars} />
       </header>
 
       <main>
@@ -120,21 +120,6 @@ const formattedStars =
             good, and it works everywhere.
           </p>
           <InstallTabs />
-          <div class="cta hero-secondary">
-            <a class="ghost" href={REPO}>
-              Star on GitHub
-              {
-                formattedStars && (
-                  <span class="stars">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.9l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.94z"></path>
-                    </svg>
-                    {formattedStars}
-                  </span>
-                )
-              }
-            </a>
-          </div>
           {
             latestRelease && (
               <a class="release-ribbon" href={`/changelog/${latestRelease.minor}/`}>

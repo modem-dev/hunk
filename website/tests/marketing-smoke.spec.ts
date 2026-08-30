@@ -14,11 +14,16 @@ test("marketing page links into documentation and preserves core calls to action
   ).toHaveAttribute("href", "/docs/");
   await expect(page.getByRole("tab", { name: "curl" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: "Copy curl install command" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Star Hunk on GitHub" })).toHaveAttribute(
+    "href",
+    "https://github.com/modem-dev/hunk",
+  );
+  await expect(page.locator(".hero-secondary")).toHaveCount(0);
 });
 
 test("install selector exposes every method without repeating the old install list", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/#install");
 
   const picker = page.locator("#install");
@@ -38,6 +43,14 @@ test("install selector exposes every method without repeating the old install li
     await tab.click();
     await expect(tab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tabpanel")).toContainText(command);
+  }
+
+  if (!testInfo.project.name.startsWith("mobile")) {
+    const pickerBounds = await picker.boundingBox();
+    const tabBounds = await page.locator(".install-tabs").boundingBox();
+    expect(pickerBounds).not.toBeNull();
+    expect(tabBounds).not.toBeNull();
+    expect(tabBounds!.width).toBeLessThan(pickerBounds!.width);
   }
 });
 
@@ -165,15 +178,18 @@ test("shared headers stay usable at narrow and tablet breakpoints", async ({ pag
   for (const width of [320, 360, 375, 390, 414, 430]) {
     await page.setViewportSize({ width, height: 700 });
     const rows = await marketingNavigation.evaluate((nav) => {
-      const tops = [...nav.querySelectorAll("a")]
+      const centers = [...nav.querySelectorAll("a")]
         .filter((link) => link.getClientRects().length > 0)
-        .map((link) => Math.round(link.getBoundingClientRect().top));
-      return new Set(tops).size;
+        .map((link) => {
+          const bounds = link.getBoundingClientRect();
+          return Math.round(bounds.top + bounds.height / 2);
+        });
+      return new Set(centers).size;
     });
     expect(rows, `nav wrapped at ${width}px`).toBe(1);
 
     // Whatever else is dropped, these three always remain reachable.
-    for (const name of ["Docs", "Changelog", "GitHub ↗"]) {
+    for (const name of ["Docs", "Changelog", "Star Hunk on GitHub"]) {
       await expect(marketingNavigation.getByRole("link", { name })).toBeVisible();
     }
 

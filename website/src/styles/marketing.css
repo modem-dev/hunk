@@ -185,11 +185,10 @@ a:focus-visible {
 .marketing .install-tabs {
   display: flex;
   width: max-content;
-  min-width: 100%;
 }
 
 .marketing .install-tab {
-  flex: 1 0 auto;
+  flex: none;
   padding: 11px 18px 10px;
   border: 0;
   border-right: 1.5px solid var(--rule);
@@ -202,10 +201,6 @@ a:focus-visible {
   letter-spacing: 0.07em;
   text-decoration: none;
   text-transform: uppercase;
-}
-
-.marketing .install-tab:last-child {
-  border-right: 0;
 }
 
 .marketing .install-tab[aria-selected="true"] {
@@ -295,20 +290,6 @@ a:focus-visible {
 .marketing .install-copy.failed {
   border-color: var(--del);
   color: var(--del);
-}
-
-.marketing .hero-secondary {
-  margin-top: 18px;
-}
-
-.marketing .ghost .stars {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: 2px;
-  padding-left: 10px;
-  border-left: 1.5px solid rgb(255 255 255 / 40%);
-  font-variant-numeric: tabular-nums;
 }
 
 .marketing .paper {

@@ -22,7 +22,7 @@ test("the marketing header still fits its navigation on a phone", async ({ page 
   await page.goto("/");
   const header = page.locator(".brand-header-inner");
   await expect(header).toBeVisible();
-  // A fifth nav item must not push the header into a horizontal scroll.
+  // The compact star control must not push the header into a horizontal scroll.
   const overflow = await header.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
   const documentOverflow = await page.evaluate(
