@@ -286,6 +286,7 @@ export function AgentInlineNote({
   const ancestorGuides = thread?.ancestorHasNextSibling ?? [];
   const displayedAncestorGuides =
     visualThreadDepth > 1 ? ancestorGuides.slice(-(visualThreadDepth - 1)) : [];
+  const threadGuideColor = theme.muted;
 
   /** Draw one tree prefix without changing the card's measured placement. */
   const threadGutterText = (row: "top" | "continuation") => {
@@ -479,7 +480,7 @@ export function AgentInlineNote({
           style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
         >
           <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+            <text fg={threadGuideColor} bg={theme.panel}>
               {threadGutterText("continuation")}
             </text>
           </box>
@@ -507,7 +508,7 @@ export function AgentInlineNote({
           style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
         >
           <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+            <text fg={threadGuideColor} bg={theme.panel}>
               {threadGutterText("top")}
             </text>
           </box>
@@ -547,7 +548,7 @@ export function AgentInlineNote({
             {Array.from({ length: draftTextareaRows }, (_, rowIndex) => (
               <text
                 key={`draft-textarea-thread-gutter:${rowIndex}`}
-                fg={theme.noteBorder}
+                fg={threadGuideColor}
                 bg={theme.panel}
               >
                 {threadGutterText("continuation")}
@@ -621,7 +622,7 @@ export function AgentInlineNote({
           style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
         >
           <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+            <text fg={threadGuideColor} bg={theme.panel}>
               {threadGutterText("continuation")}
             </text>
           </box>
@@ -653,7 +654,7 @@ export function AgentInlineNote({
       style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
     >
       <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-        <text fg={theme.noteBorder} bg={theme.panel}>
+        <text fg={threadGuideColor} bg={theme.panel}>
           {threadGutterText("continuation")}
         </text>
       </box>
@@ -719,7 +720,7 @@ export function AgentInlineNote({
     <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+          <text fg={threadGuideColor} bg={theme.panel}>
             {threadGutterText("top")}
           </text>
         </box>
@@ -780,7 +781,7 @@ export function AgentInlineNote({
 
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+          <text fg={threadGuideColor} bg={theme.panel}>
             {threadGutterText("continuation")}
           </text>
         </box>

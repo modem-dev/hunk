@@ -2772,6 +2772,13 @@ describe("UI components", () => {
       expect(restingLines[0]).toContain("R2");
       expect(restingFrame).not.toContain("r reply");
       expect(restingLines[measured - 1]).toContain("│ ╰");
+      const topSpans = setup.captureSpans().lines[0]?.spans ?? [];
+      expect(capturedTestColorToHex(topSpans.find((span) => span.text.includes("├─"))?.fg)).toBe(
+        theme.muted.toLowerCase(),
+      );
+      expect(capturedTestColorToHex(topSpans.find((span) => span.text.includes("╭─"))?.fg)).toBe(
+        theme.noteBorder.toLowerCase(),
+      );
 
       await act(async () => {
         await setup.mockMouse.moveTo(63, measured);
