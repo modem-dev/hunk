@@ -106,6 +106,27 @@ export function buildLineCursors(
   });
 }
 
+/** Reuse the previous ordered cursor list when remeasurement preserved every navigation target. */
+export function reuseEquivalentLineCursors(previous: LineCursor[], next: LineCursor[]) {
+  if (
+    previous.length === next.length &&
+    next.every((cursor, index) => {
+      const prior = previous[index];
+      return (
+        prior?.fileId === cursor.fileId &&
+        prior.hunkIndex === cursor.hunkIndex &&
+        prior.stableKey === cursor.stableKey &&
+        prior.expandedGapKey === cursor.expandedGapKey &&
+        prior.target.side === cursor.target.side &&
+        prior.target.line === cursor.target.line
+      );
+    })
+  ) {
+    return previous;
+  }
+  return next;
+}
+
 /** Find the first cursor in one hunk, then anywhere in its file. */
 function nearestCursorInFile(cursors: LineCursor[], fileId: string, hunkIndex: number) {
   return (

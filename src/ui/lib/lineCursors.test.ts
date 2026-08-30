@@ -15,6 +15,7 @@ import {
   findLineCursorAt,
   findNextLineCursor,
   firstLineCursorInHunk,
+  reuseEquivalentLineCursors,
   resolveLineCursor,
   type LineCursor,
 } from "./lineCursors";
@@ -193,6 +194,26 @@ describe("buildLineCursors", () => {
 
   test("returns nothing when no files are visible", () => {
     expect(buildLineCursors([], [])).toEqual([]);
+  });
+});
+
+describe("reuseEquivalentLineCursors", () => {
+  test("keeps list identity when remeasurement preserves every cursor", () => {
+    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const next = previous.map((cursor) => ({ ...cursor, target: { ...cursor.target } }));
+
+    expect(reuseEquivalentLineCursors(previous, next)).toBe(previous);
+  });
+
+  test("keeps a changed cursor list", () => {
+    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const next = previous.map((cursor, index) =>
+      index === 0
+        ? { ...cursor, target: { ...cursor.target, line: cursor.target.line + 1 } }
+        : cursor,
+    );
+
+    expect(reuseEquivalentLineCursors(previous, next)).toBe(next);
   });
 });
 

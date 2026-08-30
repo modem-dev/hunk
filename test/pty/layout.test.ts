@@ -43,6 +43,35 @@ describe("PTY layout", () => {
     }
   });
 
+  test("the first nowrap frame fills a tall viewport past the first-file overscan neighbor", async () => {
+    // File windowing with a still-unmeasured (0) viewport only mounts the leading file plus one
+    // overscan neighbor. A tall first paint must use the estimated height so later short files
+    // appear without any scroll input.
+    const fixture = harness.createManyShortFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 40,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      const firstFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("short-3.ts") && text.includes("short3 = 13"),
+        8_000,
+      );
+
+      expect(firstFrame).toContain("short-3.ts");
+      expect(firstFrame).toContain("short3 = 13");
+    } finally {
+      session.close();
+    }
+  });
   test("split rows keep the center separator aligned after wide characters", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({

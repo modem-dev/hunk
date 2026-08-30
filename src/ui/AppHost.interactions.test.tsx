@@ -433,6 +433,14 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+/** Let initial viewport measurement enable row windowing before testing imperative scroll jumps. */
+async function settleViewportMeasurement(setup: Awaited<ReturnType<typeof testRender>>) {
+  await act(async () => {
+    await Bun.sleep(32);
+    await setup.renderOnce();
+  });
+}
+
 /** Let wrap-toggle renders and follow-up layout retries settle before asserting on the frame. */
 async function settleWrapToggle(setup: Awaited<ReturnType<typeof testRender>>) {
   await flush(setup);
@@ -2462,6 +2470,7 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
+      await settleViewportMeasurement(setup);
       let frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 1001");
 
@@ -2478,6 +2487,39 @@ describe("App interactions", () => {
       await flush(setup);
       frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 1001");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("G supersedes a pending selected-hunk reveal", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await settleViewportMeasurement(setup);
+      await pressHunkNavigationKey(setup, "]", 1);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g", { shift: true });
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(160);
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("export const mid = 4;");
+      expect(frame).not.toContain("line 021 changed");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2525,6 +2567,7 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
+      await settleViewportMeasurement(setup);
       let frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 1001");
 
