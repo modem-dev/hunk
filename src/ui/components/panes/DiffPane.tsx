@@ -121,7 +121,7 @@ const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 /**
  * Resets OpenTUI's wheel remainder after Hunk reroutes a shifted wheel event.
  *
- * OpenTUI 0.5.1 keeps this operation private, so retain this compatibility bridge only until
+ * OpenTUI 0.5.6 keeps this operation private, so retain this compatibility bridge only until
  * OpenTUI exposes a public reset API. A missing operation must fail loudly rather than let a
  * later vertical wheel event consume the stale remainder and move the review viewport.
  */
@@ -132,7 +132,7 @@ export function resetOpenTuiScrollAccumulators(scrollBox: ScrollBoxRenderable) {
 
   if (!compatibilityScrollBox.resetScrollAccumulators) {
     throw new Error(
-      "OpenTUI 0.5.1 ScrollBoxRenderable.resetScrollAccumulators is required after shifted wheel input. Update this compatibility bridge when upgrading OpenTUI.",
+      "OpenTUI 0.5.6 ScrollBoxRenderable.resetScrollAccumulators is required after shifted wheel input. Update this compatibility bridge when upgrading OpenTUI.",
     );
   }
 

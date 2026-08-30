@@ -7,7 +7,7 @@ Use `HunkDiffView` when you want a batteries-included single-file diff, or compo
 ## Install
 
 ```bash
-npm i hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.1 @opentui/react@^0.5.1 react
+npm i hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.6 @opentui/react@^0.5.6 react
 ```
 
 `hunkdiff` declares Pierre diffs, OpenTUI, and React as peer dependencies, so install them in your app. Pierre diffs is optional for CLI-only installs but required when importing `hunkdiff/opentui`.
