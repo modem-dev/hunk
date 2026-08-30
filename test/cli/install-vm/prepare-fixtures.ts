@@ -47,7 +47,10 @@ export interface InstallVmFixtureManifest {
 }
 
 /** Build reduced meta/platform manifests for deterministic package-manager topology tests. */
-export function buildSyntheticPackageManifests(version: string) {
+export function buildSyntheticPackageManifests(
+  version: string,
+  engines: Readonly<Record<string, string>>,
+) {
   const platformSpec = getPlatformPackageSpecForHost("linux", "x64");
   const platform = buildPlatformPackageManifest(
     {
@@ -65,7 +68,7 @@ export function buildSyntheticPackageManifests(version: string) {
     bin: { hunk: "./bin/hunk.cjs", hunkdiff: "./bin/hunk.cjs" },
     files: ["bin", "dist/npm", "skills"],
     optionalDependencies: buildOptionalDependencyMap(version, [platformSpec]),
-    engines: { node: ">=22" },
+    engines: { ...engines },
     license: "MIT",
   };
   return { meta, platform };
@@ -312,9 +315,10 @@ async function stageSyntheticPackage(
   repoRoot: string,
   stageRoot: string,
   version: string,
+  engines: Readonly<Record<string, string>>,
   packageOutput: string,
 ) {
-  const { meta, platform } = buildSyntheticPackageManifests(version);
+  const { meta, platform } = buildSyntheticPackageManifests(version, engines);
   const platformDir = path.join(stageRoot, `${platform.name}-${version}`);
   mkdirSync(path.join(platformDir, "bin"), { recursive: true });
   writeJson(path.join(platformDir, "package.json"), platform);
@@ -384,8 +388,15 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
   const releaseRoot = releaseNpmDir(repoRoot);
   const currentManifest = JSON.parse(
     readFileSync(path.join(releaseRoot, "hunkdiff", "package.json"), "utf8"),
-  ) as { version: string; dependencies?: Record<string, string> };
+  ) as {
+    version: string;
+    dependencies?: Record<string, string>;
+    engines?: Record<string, string>;
+  };
   assertNoMandatoryBunDependency(currentManifest);
+  if (!currentManifest.engines) {
+    throw new Error("Install VM fixtures require staged npm engine metadata.");
+  }
   const currentVersion = currentManifest.version;
   const sourceIdentity = computeInstallVmFixtureSourceIdentity(repoRoot);
   const temporaryRoot = `${outputRoot}.partial-${process.pid}`;
@@ -417,10 +428,22 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
       });
     }
     packages.push(
-      ...(await stageSyntheticPackage(repoRoot, stageRoot, FIXTURE_VERSION_A, packageOutput)),
+      ...(await stageSyntheticPackage(
+        repoRoot,
+        stageRoot,
+        FIXTURE_VERSION_A,
+        currentManifest.engines,
+        packageOutput,
+      )),
     );
     packages.push(
-      ...(await stageSyntheticPackage(repoRoot, stageRoot, FIXTURE_VERSION_B, packageOutput)),
+      ...(await stageSyntheticPackage(
+        repoRoot,
+        stageRoot,
+        FIXTURE_VERSION_B,
+        currentManifest.engines,
+        packageOutput,
+      )),
     );
 
     const httpRoot = path.join(temporaryRoot, "http");

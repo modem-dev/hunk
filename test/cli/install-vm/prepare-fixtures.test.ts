@@ -95,13 +95,14 @@ function writeTestFixtures(repo: string, fixtures: string) {
 }
 
 describe("install VM package fixtures", () => {
-  test("builds two distinct Linux x64 package topologies without mandatory Bun", () => {
-    const fixtureA = buildSyntheticPackageManifests(FIXTURE_VERSION_A);
-    const fixtureB = buildSyntheticPackageManifests(FIXTURE_VERSION_B);
+  test("builds two distinct Linux x64 package topologies from staged engine metadata", () => {
+    const stagedEngines = { node: ">=99" };
+    const fixtureA = buildSyntheticPackageManifests(FIXTURE_VERSION_A, stagedEngines);
+    const fixtureB = buildSyntheticPackageManifests(FIXTURE_VERSION_B, stagedEngines);
 
     expect(fixtureA.meta.version).not.toBe(fixtureB.meta.version);
     expect("dependencies" in fixtureA.meta).toBe(false);
-    expect(fixtureA.meta.engines).toEqual({ node: ">=22" });
+    expect(fixtureA.meta.engines).toEqual(stagedEngines);
     expect(fixtureA.meta.optionalDependencies).toEqual({
       "hunkdiff-linux-x64": FIXTURE_VERSION_A,
     });
