@@ -7,6 +7,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 [![CI status](https://img.shields.io/github/actions/workflow/status/modem-dev/hunk/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/modem-dev/hunk/actions/workflows/ci.yml?branch=main)
 [![Latest release](https://img.shields.io/github/v/release/modem-dev/hunk?style=for-the-badge)](https://github.com/modem-dev/hunk/releases)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+[![Join the Discord community](https://img.shields.io/badge/Discord-Join%20community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WZFjaP6Gt8)
 
 - multi-file review stream with sidebar navigation
 - inline AI and agent annotations beside the code
