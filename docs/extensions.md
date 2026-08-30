@@ -280,10 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `12`). Branch on it if you want
-one file to support several Hunk versions. Version 12 adds responsive fractional
-pane sizing; version 11 added the `"dim"` line-highlight tone; version 10 added
-generic top-level CLI commands; version 9
+The API generation this Hunk speaks (currently `13`). Branch on it if you want
+one file to support several Hunk versions. Version 13 adds saved-note parent identities and
+committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
+the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
 added authoritative review snapshots to command handlers; version 7 added the
 current source line to command selection snapshots. Version 6 added session behavior,
@@ -1513,8 +1513,8 @@ ReviewStore, or `null` after this command's review generation has been retired.
 It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
-paths, stats, and flags; notes carry their complete resolved old/new anchor and
-`active`/`stale`/`orphaned` reconciliation status.
+paths, stats, and flags; notes carry their complete resolved old/new anchor,
+optional direct `parentId`, and `active`/`stale`/`orphaned` reconciliation status.
 
 This is the command-time source for exporters, publishers, and audit tools. Drafts
 are excluded because they are not saved. Static sidecar annotations that never
@@ -1804,7 +1804,7 @@ the review then active.
 | `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
 | `note_created`         | `{ note }`              | a user saves an inline review note                        |
-| `note_edited`          | `{ note }`              | an in-progress inline note's body changes                 |
+| `note_edited`          | `{ note }`              | a draft body changes or an existing note is saved         |
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
 | `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
@@ -1830,7 +1830,9 @@ and F10 menu navigation are also not commands.
 refresh key, or the reload after granting extension trust).
 
 `note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
-session. Review notes are session-local state, so there is no backlog to replay
+session. `note_edited` carries `note.draft: true` for composer changes and
+`note.draft: false` for an identity-preserving saved-note edit. Replies include their direct
+`parentId`. Review notes are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
 either. Use them for incremental UI reactions only. A command that needs the

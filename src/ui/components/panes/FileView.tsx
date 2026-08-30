@@ -174,7 +174,8 @@ function FileViewComponent({
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
                 draft={plannedRow.note.draft}
-                onClose={plannedRow.note.onRemove}
+                actions={plannedRow.note.actions}
+                thread={plannedRow.note.thread}
                 theme={theme}
                 width={width}
               />

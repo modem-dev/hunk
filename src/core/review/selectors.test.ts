@@ -9,6 +9,7 @@ import {
   isReviewGapExpanded,
   reviewFileKeysWithRetiredContent,
   reviewFileMatchesFilter,
+  selectActiveReplyableReviewNoteId,
   selectActiveRevealNoteId,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
@@ -18,6 +19,8 @@ import {
   selectReviewGapForSelection,
   selectReviewNavigationFiles,
   selectStoredReviewNotes,
+  selectThreadedStoredReviewNotes,
+  selectVisibleThreadedStoredReviewNotes,
   resolveReviewRevealNoteId,
   selectRevealTarget,
   selectVisibleReviewFiles,
@@ -191,6 +194,73 @@ describe("note selectors", () => {
       ["live-orphaned", "orphaned"],
       ["user-stale", "stale"],
     ]);
+  });
+
+  test("flattens arbitrarily deep reply trees in deterministic depth-first order", () => {
+    const state = {
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
+      liveNotes: [createTestStoredNote({ id: "root", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({ id: "child-a", parentId: "root", fileKey: "alpha", source: "user" }),
+        createTestStoredNote({ id: "child-b", parentId: "root", fileKey: "alpha", source: "user" }),
+        createTestStoredNote({
+          id: "grandchild",
+          parentId: "child-a",
+          fileKey: "alpha",
+          source: "user",
+        }),
+      ],
+    };
+
+    expect(
+      selectThreadedStoredReviewNotes(state).map(({ entry, rootId, depth }) => ({
+        id: entry.note.id,
+        rootId,
+        depth,
+      })),
+    ).toEqual([
+      { id: "root", rootId: "root", depth: 0 },
+      { id: "child-a", rootId: "root", depth: 1 },
+      { id: "grandchild", rootId: "root", depth: 2 },
+      { id: "child-b", rootId: "root", depth: 1 },
+    ]);
+    expect(
+      selectVisibleThreadedStoredReviewNotes(state).map(
+        ({ entry, visibleAncestorHasNextSibling, hasNextVisibleSibling }) => ({
+          id: entry.note.id,
+          ancestors: visibleAncestorHasNextSibling,
+          hasNextSibling: hasNextVisibleSibling,
+        }),
+      ),
+    ).toEqual([
+      { id: "root", ancestors: [], hasNextSibling: false },
+      { id: "child-a", ancestors: [false], hasNextSibling: true },
+      { id: "grandchild", ancestors: [false, true], hasNextSibling: false },
+      { id: "child-b", ancestors: [false], hasNextSibling: false },
+    ]);
+  });
+
+  test("collapses visual depth when an agent parent is hidden", () => {
+    const state = {
+      ...createTestReviewState(["alpha"], { showAgentNotes: false }),
+      liveNotes: [createTestStoredNote({ id: "agent-root", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({
+          id: "user-reply",
+          parentId: "agent-root",
+          fileKey: "alpha",
+          source: "user",
+        }),
+      ],
+    };
+
+    expect(
+      selectVisibleThreadedStoredReviewNotes(state).map(({ entry, visibleDepth }) => ({
+        id: entry.note.id,
+        visibleDepth,
+      })),
+    ).toEqual([{ id: "user-reply", visibleDepth: 0 }]);
+    expect(selectActiveReplyableReviewNoteId(state)).toBe("user-reply");
   });
 
   test("group notes by the hunk that owns them, not by range containment", () => {

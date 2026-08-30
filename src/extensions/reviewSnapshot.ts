@@ -43,6 +43,7 @@ function projectNote(entry: ReviewStoredNote): ExtensionReviewSnapshotNote {
   const note = entry.note;
   return Object.freeze({
     id: note.id,
+    ...(note.parentId !== undefined ? { parentId: note.parentId } : {}),
     source: note.source,
     ...(note.originalSource !== undefined ? { originalSource: note.originalSource } : {}),
     fileKey: note.fileKey,

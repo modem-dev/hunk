@@ -409,11 +409,12 @@ export function DiffSectionBody({
                 annotation={plannedRow.annotation}
                 anchorSide={plannedRow.anchorSide}
                 draft={plannedRow.note.draft}
+                actions={plannedRow.note.actions}
+                thread={plannedRow.note.thread}
                 file={file}
                 layout={layout}
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
-                onClose={plannedRow.note.onRemove}
                 theme={theme}
                 width={width}
               />

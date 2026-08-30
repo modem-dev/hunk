@@ -286,12 +286,12 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   vocabulary, so a wire-reachable intent without a parser does not compile.
   `scripts/review-vocabulary.test.ts` is the ladder's rung 5: it asserts the equality, that
   every exclusion names a real intent once, and that every type in the vocabulary really
-  reaches a parser. Round-trip fixtures for all twelve actions live in
+  reaches a parser. Round-trip fixtures for every action live in
   `test/review-conformance/wireFixtures.ts`, registered as the `review wire protocol` consumer.
-  Residual: remote note _composition_ is not expressible yet. The vocabulary has no
-  draft-body intent, so a remote client can open a draft and save it but not type into it;
-  adding one is Phase 5's note-editing work, and until then the gap is a named absence rather
-  than a forgotten action.
+  _Repaid (note editing and replies)_: `notes/update-draft` now carries remote composer text,
+  while `notes/start-edit`, `notes/start-reply`, and `notes/update-user` share saved-note
+  mutation and reply semantics across terminal and remote surfaces. Their strict parsers and
+  hand-authored wire fixtures keep the expanded vocabulary total.
 
 Renderer-specific, do not unify: terminal line-cursor measurement/reconciliation; browser
 requestAnimationFrame/MutationObserver reveal mechanics; tree presentation details (duplicate

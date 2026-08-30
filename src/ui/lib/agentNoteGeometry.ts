@@ -14,6 +14,8 @@ export interface AgentNoteGeometryInput {
   layout: Exclude<LayoutMode, "auto">;
   /** Diff pane content width (the `width` prop the diff view renders at). */
   width: number;
+  /** Logical reply depth; visual indentation is deliberately bounded. */
+  threadDepth?: number;
 }
 
 export interface AgentNoteBoxLayout {
@@ -34,6 +36,7 @@ export function agentNoteBoxLayout({
   anchorSide,
   layout,
   width,
+  threadDepth = 0,
 }: AgentNoteGeometryInput): AgentNoteBoxLayout {
   // Docked notes align to the same column split the side-by-side diff uses.
   const splitWidths = resolveSplitPaneWidths(width);
@@ -44,12 +47,17 @@ export function agentNoteBoxLayout({
     : canDockLeft
       ? splitWidths.leftWidth
       : Math.max(34, width - 4);
-  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
+  const threadIndent = Math.min(Math.max(0, threadDepth), 3) * 2;
+  const boxWidth = clamp(
+    preferredDockWidth - threadIndent,
+    28,
+    Math.max(28, width - 4 - threadIndent),
+  );
   const boxLeft = canDockRight
     ? Math.max(0, width - boxWidth)
     : canDockLeft
-      ? 0
-      : Math.min(4, Math.max(0, width - boxWidth));
+      ? threadIndent
+      : Math.min(4 + threadIndent, Math.max(0, width - boxWidth));
   const innerWidth = Math.max(1, boxWidth - 2);
   const contentWidth = Math.max(1, innerWidth - 2);
 

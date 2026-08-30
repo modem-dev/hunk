@@ -34,6 +34,7 @@ import {
   type ReviewIntentType,
 } from "../core/review/intents";
 import { REVIEW_SELECTION_WRAP_POLICY, type ReviewSelectionScope } from "../core/review/navigation";
+import { MAX_REVIEW_NOTE_BYTES } from "../core/review/noteSize";
 import {
   parseReadReviewResourceRequest,
   parseReviewResourceId,
@@ -394,6 +395,19 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
     // A proof is evidence about a line, so it is meaningless without one to be about.
     (record.expandedLineProof === undefined || record.target !== undefined),
+  "notes/start-edit": (record) =>
+    hasExactKeys(record, keysWith(["type", "noteId"], { reveal: record.reveal })) &&
+    isIdentifier(record.noteId) &&
+    (record.reveal === undefined || parseReveal(record.reveal) !== undefined),
+  "notes/start-reply": (record) =>
+    hasExactKeys(record, keysWith(["type", "noteId"], { reveal: record.reveal })) &&
+    isIdentifier(record.noteId) &&
+    (record.reveal === undefined || parseReveal(record.reveal) !== undefined),
+  "notes/update-draft": (record) =>
+    hasExactKeys(record, ["type", "body"]) &&
+    typeof record.body === "string" &&
+    utf8ByteLength(record.body) <= MAX_REVIEW_NOTE_BYTES,
+  "notes/cancel-draft": (record) => hasExactKeys(record, ["type"]),
   "notes/create-user": (record) =>
     hasExactKeys(
       record,
@@ -407,6 +421,10 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     (record.expandedLineProof === undefined ||
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
     (record.expandedLineProof === undefined || record.target !== undefined),
+  "notes/update-user": (record) =>
+    hasExactKeys(record, ["type", "noteId", "consumeDraft"]) &&
+    isIdentifier(record.noteId) &&
+    record.consumeDraft === true,
   "notes/remove-user": (record) =>
     hasExactKeys(record, ["type", "noteId"]) && isIdentifier(record.noteId),
   "notes/remove-live": (record) =>

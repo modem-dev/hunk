@@ -57,7 +57,14 @@ describe("live comment round trip", () => {
       comment.filePath,
     );
 
-    expect(restored).toEqual(comment);
+    expect(restored).toEqual({
+      ...comment,
+      reviewNoteId: comment.id,
+      semanticallyStored: true,
+      threadDepth: 0,
+      title: undefined,
+      updatedAt: undefined,
+    });
   });
 
   test("classifies the note once, at the boundary", () => {
@@ -90,6 +97,9 @@ describe("user note projection", () => {
 
     expect(storedNoteToUserNote(note, "alpha.ts")).toEqual({
       id: "user:1",
+      reviewNoteId: "user:1",
+      semanticallyStored: true,
+      threadDepth: 0,
       source: "user",
       filePath: "alpha.ts",
       hunkIndex: 1,
@@ -120,6 +130,7 @@ describe("draft projection", () => {
       ),
     ).toEqual({
       id: "draft:1",
+      kind: "create",
       fileId: "alpha",
       filePath: "alpha.ts",
       hunkIndex: 0,

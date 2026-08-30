@@ -68,6 +68,8 @@ export function plannedReviewRowHeight(
       anchorSide: row.anchorSide,
       layout,
       width,
+      actions: row.note.actions,
+      threadDepth: row.note.thread?.depth,
     });
   }
 

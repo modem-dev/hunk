@@ -21,6 +21,8 @@ function plannedFileViewRowHeight(
     // Alternate presentations are one full-width stack even when raw code uses split columns.
     layout: "stack",
     width,
+    actions: row.note.actions,
+    threadDepth: row.note.thread?.depth,
   });
 }
 

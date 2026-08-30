@@ -259,6 +259,7 @@ const liveCommentSchema = z.strictObject({
 });
 const reviewNoteSchema = z.strictObject({
   noteId: z.string(),
+  parentId: z.string().optional(),
   source: z.enum(["ai", "agent", "user"]),
   filePath: z.string(),
   hunkIndex: nonnegative.optional(),

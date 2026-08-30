@@ -888,6 +888,108 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("saved user notes edit in place and form arbitrarily nested reply chains", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+      let rootId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote();
+        controller.updateDraftNote("Root note");
+        rootId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteEdit(rootId);
+        controller.updateDraftNote("Edited root note");
+        expect(controller.saveDraftNote()?.id).toBe(rootId);
+      });
+      await flush(setup);
+
+      let childId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteReply(rootId);
+        controller.updateDraftNote("Child reply");
+        childId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteReply(childId);
+        controller.updateDraftNote("Grandchild reply");
+        controller.saveDraftNote();
+      });
+      await flush(setup);
+
+      const notes = expectValue(controllerRef.current).reviewNoteSummaries;
+      expect(notes.map((note) => [note.body, note.parentId])).toEqual([
+        ["Edited root note", undefined],
+        ["Child reply", rootId],
+        ["Grandchild reply", childId],
+      ]);
+      expect(new Set(notes.map((note) => note.noteId)).size).toBe(3);
+      expect(() => expectValue(controllerRef.current).removeUserNote(rootId)).toThrow(
+        "cannot be removed while it has replies",
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("mouse-targeted edit and reply drafts preserve the current viewport anchor", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+      let rootId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote();
+        controller.updateDraftNote("Root note");
+        rootId = controller.saveDraftNote()?.id ?? "";
+        controller.moveLineCursor(2);
+      });
+      await flush(setup);
+      const preservedCursor = expectValue(controllerRef.current).lineCursor;
+      const revealBeforeEdit = expectValue(controllerRef.current).store.getSnapshot().reveal;
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteEdit(rootId, { preserveViewport: true });
+        expect(controller.store.getSnapshot().reveal).toEqual({
+          ...revealBeforeEdit,
+          scrollToNote: false,
+        });
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(preservedCursor);
+
+      await act(async () => expectValue(controllerRef.current).cancelDraftNote());
+      await flush(setup);
+      const revealBeforeReply = expectValue(controllerRef.current).store.getSnapshot().reveal;
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteReply(rootId, { preserveViewport: true });
+        expect(controller.store.getSnapshot().reveal).toEqual({
+          ...revealBeforeReply,
+          scrollToNote: false,
+        });
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(preservedCursor);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("rapid duplicate saves persist exactly one user note with a unique id", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
     const fixedNow = 1_700_000_000_000;

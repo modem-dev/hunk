@@ -8,9 +8,23 @@ import {
   AgentInlineNote,
   draftVisualLineCount,
   measureAgentInlineNoteHeight,
+  shortReviewNoteAge,
 } from "./AgentInlineNote";
 
 const theme = resolveTheme("github-dark-default", null);
+
+describe("shortReviewNoteAge", () => {
+  const now = Date.parse("2026-08-30T12:00:00.000Z");
+
+  test("formats compact minute, hour, day, week, and year labels", () => {
+    expect(shortReviewNoteAge("2026-08-30T11:59:45.000Z", now)).toBe("now");
+    expect(shortReviewNoteAge("2026-08-30T11:18:00.000Z", now)).toBe("42m");
+    expect(shortReviewNoteAge("2026-08-30T10:00:00.000Z", now)).toBe("2h");
+    expect(shortReviewNoteAge("2026-08-28T12:00:00.000Z", now)).toBe("2d");
+    expect(shortReviewNoteAge("2026-08-09T12:00:00.000Z", now)).toBe("3w");
+    expect(shortReviewNoteAge("2025-08-30T12:00:00.000Z", now)).toBe("1y");
+  });
+});
 
 describe("draftVisualLineCount", () => {
   const cases: Array<[string, string, number, number]> = [
@@ -145,7 +159,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 function renderedCardRowCount(frame: string) {
   const lines = frame.split("\n");
   const top = lines.findIndex((line) => line.includes("╭─"));
-  const bottom = lines.reduce((last, line, index) => (line.includes("┴") ? index : last), -1);
+  const bottom = lines.reduce((last, line, index) => (line.includes("╯") ? index : last), -1);
   expect(top).toBeGreaterThanOrEqual(0);
   expect(bottom).toBeGreaterThan(top);
   return bottom - top + 1;

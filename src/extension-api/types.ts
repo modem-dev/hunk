@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 12;
+export const HUNK_EXTENSION_API_VERSION = 13;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1512,6 +1512,7 @@ export interface ExtensionReviewSnapshotNoteAnchor {
 /** One complete saved note in an authoritative extension review snapshot. */
 export interface ExtensionReviewSnapshotNote {
   readonly id: string;
+  readonly parentId?: string;
   readonly source: "ai" | "agent" | "user";
   readonly originalSource?: string;
   readonly fileKey: string;
@@ -1863,6 +1864,8 @@ export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 /** A user-authored note as reported by note lifecycle events. */
 export interface ExtensionReviewNote {
   id: string;
+  /** Direct parent identity for a saved reply or reply draft. */
+  parentId?: string;
   fileId: string;
   filePath: string;
   hunkIndex: number;
@@ -1891,7 +1894,7 @@ export interface ExtensionEventPayloads {
   watch_reload_pending: Record<string, never>;
   /** A user saved a new inline review note. */
   note_created: { note: ExtensionReviewNote };
-  /** The body of an in-progress inline review note changed. */
+  /** A draft body changed (`draft: true`) or an existing note was saved (`draft: false`). */
   note_edited: { note: ExtensionReviewNote };
   session_reload: { changeset: ExtensionChangeset; reason: SessionReloadReason };
   shutdown: Record<string, never>;

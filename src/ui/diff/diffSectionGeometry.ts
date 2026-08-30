@@ -64,7 +64,7 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
   }
 
   return `:notes:${visibleAgentNotes
-    .map(({ annotation }) => {
+    .map(({ annotation, actions, thread }) => {
       const key = JSON.stringify({
         author: annotation.author,
         id: annotation.id,
@@ -74,6 +74,15 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
         source: annotation.source,
         summary: annotation.summary,
         title: annotation.title,
+        parentId: thread?.parentId,
+        threadDepth: thread?.depth,
+        actions: actions
+          ? {
+              edit: Boolean(actions.onEdit),
+              reply: Boolean(actions.onReply),
+              delete: Boolean(actions.onDelete),
+            }
+          : undefined,
       });
       return `${key.length}:${key}`;
     })
@@ -245,6 +254,8 @@ function measurePlannedDiffSectionRowHeight(
       anchorSide: row.anchorSide,
       layout,
       width,
+      actions: row.note.actions,
+      threadDepth: row.note.thread?.depth,
     });
   }
 

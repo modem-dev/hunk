@@ -288,6 +288,136 @@ describe("user note creation", () => {
   });
 });
 
+describe("user note editing", () => {
+  test("prefills an edit draft and replaces the saved note without changing its identity", () => {
+    const original = createTestStoredNote({
+      id: "user-1",
+      fileKey: "alpha",
+      source: "user",
+      summary: "before",
+      editable: true,
+      createdAt: "2023-01-01T00:00:00.000Z",
+    });
+    const state = { ...createTestReviewState(), userNotes: [original] };
+    const started = planReviewIntent(
+      state,
+      { type: "notes/start-edit", noteId: "user-1" },
+      { draftId: "draft:edit" },
+    );
+    const withDraft = started.actions.reduce(reduceReviewState, state);
+
+    expect(withDraft.draftNote).toMatchObject({
+      kind: "edit",
+      targetNoteId: "user-1",
+      body: "before",
+    });
+    const edited = planReviewIntent(withDraft, {
+      type: "notes/update-draft",
+      body: "  after  ",
+    }).actions.reduce(reduceReviewState, withDraft);
+    const saved = planReviewIntent(
+      edited,
+      { type: "notes/update-user", noteId: "user-1", consumeDraft: true },
+      { timestamp: FACTS.timestamp },
+    );
+    const next = saved.actions.reduce(reduceReviewState, edited);
+
+    expect(saved.outcome).toMatchObject({ type: "notes/updated" });
+    expect(next.draftNote).toBeNull();
+    expect(next.userNotes).toHaveLength(1);
+    expect(next.userNotes[0]?.note).toMatchObject({
+      id: "user-1",
+      summary: "after",
+      createdAt: "2023-01-01T00:00:00.000Z",
+      updatedAt: FACTS.timestamp,
+    });
+    expect(next.userNotes[0]?.note.anchor).toEqual(original.note.anchor);
+  });
+
+  test("reopens retained notes after reload clamps away their former hunk", () => {
+    const original = createTestStoredNote({
+      id: "user-1",
+      fileKey: "alpha",
+      hunkIndex: 1,
+      source: "user",
+      editable: true,
+    });
+    const state = {
+      ...createTestReviewState([{ key: "alpha", hunkCount: 1 }]),
+      userNotes: [original],
+    };
+
+    const plan = planReviewIntent(
+      state,
+      { type: "notes/start-edit", noteId: "user-1" },
+      { draftId: "draft:edit" },
+    );
+
+    expect(plan.outcome).toMatchObject({
+      type: "notes/draft-started",
+      draft: { kind: "edit", targetNoteId: "user-1", hunkIndex: 0 },
+    });
+  });
+
+  test("rejects blank edits without retiring the draft", () => {
+    const state = {
+      ...createTestReviewState(),
+      userNotes: [
+        createTestStoredNote({
+          id: "user-1",
+          fileKey: "alpha",
+          source: "user",
+          editable: true,
+        }),
+      ],
+    };
+    const started = planReviewIntent(
+      state,
+      { type: "notes/start-edit", noteId: "user-1" },
+      { draftId: "draft:edit" },
+    ).actions.reduce(reduceReviewState, state);
+    const blank = reduceReviewState(started, { type: "draft/update", body: "  " });
+
+    expect(() =>
+      planReviewIntent(
+        blank,
+        { type: "notes/update-user", noteId: "user-1", consumeDraft: true },
+        { timestamp: FACTS.timestamp },
+      ),
+    ).toThrow(ReviewIntentPlanningError);
+    expect(blank.draftNote).not.toBeNull();
+  });
+});
+
+describe("threaded replies", () => {
+  test("copies the parent's anchor and records its direct identity", () => {
+    const parent = createTestStoredNote({ id: "live-1", fileKey: "alpha", hunkIndex: 1, line: 12 });
+    const state = { ...createTestReviewState(), liveNotes: [parent] };
+    const started = planReviewIntent(
+      state,
+      { type: "notes/start-reply", noteId: "live-1" },
+      { draftId: "draft:reply" },
+    ).actions.reduce(reduceReviewState, state);
+    const written = planReviewIntent(started, {
+      type: "notes/update-draft",
+      body: "reply body",
+    }).actions.reduce(reduceReviewState, started);
+    const plan = planReviewIntent(
+      written,
+      { type: "notes/create-user", consumeDraft: true },
+      FACTS,
+    );
+
+    expect(plan.outcome).toMatchObject({
+      type: "notes/created",
+      note: { note: { id: "user:1", parentId: "live-1", summary: "reply body" } },
+    });
+    expect(
+      plan.outcome?.type === "notes/created" ? plan.outcome.note.note.anchor : undefined,
+    ).toEqual(parent.note.anchor);
+  });
+});
+
 describe("note removal", () => {
   test("removes from the collection that owns the note", () => {
     const state = reduceReviewState(createTestReviewState(), {
@@ -301,6 +431,28 @@ describe("note removal", () => {
     });
     expect(() => planReviewIntent(state, { type: "notes/remove-user", noteId: "live-1" })).toThrow(
       ReviewIntentPlanningError,
+    );
+  });
+
+  test("blocks removing a parent while replies still reference it", () => {
+    const state = {
+      ...createTestReviewState(),
+      liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({
+          id: "reply-1",
+          parentId: "live-1",
+          fileKey: "alpha",
+          source: "user",
+        }),
+      ],
+    };
+
+    expect(() => planReviewIntent(state, { type: "notes/remove-live", noteId: "live-1" })).toThrow(
+      new ReviewIntentPlanningError(
+        "note-has-replies",
+        "Review note live-1 cannot be removed while it has replies.",
+      ),
     );
   });
 });
@@ -322,6 +474,31 @@ describe("bulk clear", () => {
       remainingLiveCount: 1,
       remainingUserCount: 0,
     });
+  });
+
+  test("rejects clearing a live parent while retaining its user reply", () => {
+    const state = {
+      ...createTestReviewState(),
+      liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({
+          id: "reply-1",
+          parentId: "live-1",
+          fileKey: "alpha",
+          source: "user",
+        }),
+      ],
+    };
+
+    expect(() => planReviewIntent(state, { type: "notes/clear" })).toThrow(
+      new ReviewIntentPlanningError(
+        "note-has-replies",
+        "Review notes cannot be cleared while replies to them would remain.",
+      ),
+    );
+    expect(
+      planReviewIntent(state, { type: "notes/clear", includeUser: true }).outcome,
+    ).toMatchObject({ removedLiveCount: 1, removedUserCount: 1 });
   });
 
   test("counts user notes only when the caller clears them too", () => {
@@ -391,6 +568,7 @@ describe("notes/start-draft", () => {
       {
         type: "draft/start",
         draft: {
+          kind: "create",
           id: "draft:1",
           fileKey: "alpha",
           hunkIndex: 1,
@@ -409,7 +587,15 @@ describe("notes/start-draft", () => {
     ]);
     expect(plan.outcome).toEqual({
       type: "notes/draft-started",
-      draft: { id: "draft:1", fileKey: "alpha", hunkIndex: 1, side: "new", line: 12, body: "" },
+      draft: {
+        kind: "create",
+        id: "draft:1",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        side: "new",
+        line: 12,
+        body: "",
+      },
     });
   });
 

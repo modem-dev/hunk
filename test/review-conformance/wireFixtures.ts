@@ -89,6 +89,37 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     },
   },
   {
+    id: "start-edit-draft",
+    findings: ["B12"],
+    description: "Opening one saved reviewer note for identity-preserving editing.",
+    action: { type: "notes/start-edit", noteId: "user:1" },
+    expected: { accepted: true, intent: { type: "notes/start-edit", noteId: "user:1" } },
+  },
+  {
+    id: "start-reply-draft",
+    findings: ["B12"],
+    description: "Opening a reply composer beneath one semantically stored note.",
+    action: { type: "notes/start-reply", noteId: "live:1" },
+    expected: { accepted: true, intent: { type: "notes/start-reply", noteId: "live:1" } },
+  },
+  {
+    id: "update-draft-body",
+    findings: ["B12"],
+    description: "Transporting composer text through the shared semantic path.",
+    action: { type: "notes/update-draft", body: "A remote reply" },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/update-draft", body: "A remote reply" },
+    },
+  },
+  {
+    id: "cancel-draft",
+    findings: ["B12"],
+    description: "Cancelling the one active shared composer.",
+    action: { type: "notes/cancel-draft" },
+    expected: { accepted: true, intent: { type: "notes/cancel-draft" } },
+  },
+  {
     id: "start-draft-on-an-expanded-line",
     findings: ["B10"],
     description:
@@ -140,6 +171,16 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     description: "Persisting the active draft, with no precondition on where it sits.",
     action: { type: "notes/create-user", consumeDraft: true },
     expected: { accepted: true, intent: { type: "notes/create-user", consumeDraft: true } },
+  },
+  {
+    id: "update-user-note",
+    findings: ["B12"],
+    description: "Committing an edit against the same saved reviewer note.",
+    action: { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+    },
   },
   {
     id: "create-user-note-at-an-expanded-line",

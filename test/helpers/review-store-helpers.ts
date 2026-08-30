@@ -116,8 +116,11 @@ export function createTestStoredNote(input: {
   hunkIndex?: number;
   line?: number;
   source?: ReviewStoredNote["note"]["source"];
+  parentId?: string;
   resolution?: ReviewStoredNote["resolution"];
   summary?: string;
+  editable?: boolean;
+  createdAt?: string;
 }): ReviewStoredNote {
   const hunkIndex = input.hunkIndex ?? 0;
   const line = input.line ?? 1;
@@ -127,11 +130,13 @@ export function createTestStoredNote(input: {
   return {
     note: {
       id: input.id,
+      ...(input.parentId ? { parentId: input.parentId } : {}),
       source: input.source ?? "agent",
       fileKey: input.fileKey,
       anchor: reviewLineAnchor(hunks, { hunkIndex, side: "new", line }),
       summary: input.summary ?? `note ${input.id}`,
-      editable: false,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      editable: input.editable ?? false,
     },
     resolution: input.resolution ?? "active",
   };

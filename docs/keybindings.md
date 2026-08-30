@@ -37,6 +37,12 @@ write the character the shift produces (`"!"`, not `"shift+1"`), since that is
 what terminals report. `ctrl+<letter>` also matches an unnamed bare control
 byte; named Tab and Enter events stay distinct.
 
+Inline saved notes also expose clickable **Edit**, **Reply**, and (for reply-free user notes)
+**Delete** actions. `E` edits the first editable user note in the selected hunk and `R` replies
+to its first visible stored note. Replies inherit the code anchor and may be nested without a
+product depth limit. Static sidecar annotations are not reply targets, and a parent cannot be
+deleted until its replies are removed.
+
 The built-in commands and the keys they ship with:
 
 | Command id                                     | Does                                           | Default keys                 |
@@ -49,6 +55,7 @@ The built-in commands and the keys they ship with:
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
+| `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
@@ -65,6 +72,7 @@ The built-in commands and the keys they ship with:
 | `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
+| `hunk.review.replyToActiveNote`                | Reply to the active review note                | `R`                          |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
