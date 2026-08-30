@@ -45,8 +45,6 @@ export type SessionBrokerDaemonRequest<
       input: CommandInput;
       timeoutMs?: number;
       timeoutMessage?: string;
-      deadline?: number;
-      idempotencyKey?: string;
     };
 
 export type SessionBrokerDaemonResponse<SessionView = unknown, CommandResult = unknown> =

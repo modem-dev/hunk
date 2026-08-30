@@ -468,6 +468,47 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("rejects unsupported dispatch controls before delivering a command", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+    });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+
+    const dispatch = {
+      action: "dispatch",
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      input: { summary: "Review note" },
+    } as const;
+    for (const control of [{ deadline: 1 }, { idempotencyKey: "request-key-1" }]) {
+      const response = await daemon.handleRequest(
+        new Request("http://broker.test/broker", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...dispatch, ...control }),
+        }),
+      );
+      expect(response?.status).toBe(400);
+      await expect(authenticatedBody(response)).resolves.toEqual({
+        error: "protocol-validation-failed",
+        code: "invalid-keys",
+      });
+    }
+    expect(owner.sent).toHaveLength(0);
+    daemon.shutdown();
+  });
+
   test("executes each app parser once per daemon boundary and forwards transformed input", async () => {
     const calls = { registration: 0, snapshot: 0, input: 0, result: 0 };
     const countingParsers = createSessionBrokerProtocolParsers<

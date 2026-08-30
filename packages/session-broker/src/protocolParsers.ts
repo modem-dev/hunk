@@ -3,7 +3,6 @@ import {
   SESSION_BROKER_PROTOCOL_REVISION,
   failBrokerProtocol,
   parseBrokerAppPayload,
-  parseBrokerDeadline,
   parseBrokerIdentifier,
   parseBrokerRevision,
   parseBrokerSelector,
@@ -275,16 +274,7 @@ export class SessionBrokerProtocolParsers<
     const base = parseExactBrokerRecord(
       value,
       ["action"] as const,
-      [
-        "selector",
-        "command",
-        "commandVersion",
-        "input",
-        "timeoutMs",
-        "timeoutMessage",
-        "deadline",
-        "idempotencyKey",
-      ] as const,
+      ["selector", "command", "commandVersion", "input", "timeoutMs", "timeoutMessage"] as const,
     );
     switch (base.action) {
       case "list":
@@ -301,7 +291,7 @@ export class SessionBrokerProtocolParsers<
         const record = parseExactBrokerRecord(
           value,
           ["action", "selector", "command", "input"] as const,
-          ["commandVersion", "timeoutMs", "timeoutMessage", "deadline", "idempotencyKey"] as const,
+          ["commandVersion", "timeoutMs", "timeoutMessage"] as const,
         );
         const command = parseBrokerIdentifier(record.command) as ServerMessage["command"];
         const commandVersion =
@@ -322,12 +312,6 @@ export class SessionBrokerProtocolParsers<
                   maxBytes: 1_024,
                 }),
               }),
-          ...(record.deadline === undefined
-            ? {}
-            : { deadline: parseBrokerDeadline(record.deadline) }),
-          ...(record.idempotencyKey === undefined
-            ? {}
-            : { idempotencyKey: parseBrokerIdentifier(record.idempotencyKey) }),
         };
       }
       default:

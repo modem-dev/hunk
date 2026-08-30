@@ -154,6 +154,21 @@ describe("session broker authoritative protocol parsers", () => {
     }
   });
 
+  test("rejects unsupported dispatch controls instead of accepting and discarding them", () => {
+    const dispatch = {
+      action: "dispatch",
+      selector: { sessionId: "session-1" },
+      command: "annotate",
+      commandVersion: 2,
+      input: { summary: "note" },
+    } as const;
+    for (const control of [{ deadline: 1 }, { idempotencyKey: "request-key-1" }]) {
+      expect(failureCode(() => parsers.parseDaemonRequest({ ...dispatch, ...control }))).toBe(
+        "invalid-keys",
+      );
+    }
+  });
+
   test("enforces complete client envelopes and exact app result contracts", () => {
     expect(
       failureCode(() =>
