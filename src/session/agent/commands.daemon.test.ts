@@ -87,7 +87,9 @@ describe("resolveDaemonAvailability with a foreign process on the port", () => {
           action: "list",
           output: "json",
         } satisfies SessionCommandInput),
-      ).rejects.toThrow(/already in use/);
+      ).rejects.toThrow(
+        /already in use.*Hunk health probe returned HTTP 404 after \d+ms.*busy Hunk daemon or another process/,
+      );
     } finally {
       server.stop(true);
     }
