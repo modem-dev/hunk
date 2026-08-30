@@ -433,6 +433,14 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+/** Let initial viewport measurement enable row windowing before testing imperative scroll jumps. */
+async function settleViewportMeasurement(setup: Awaited<ReturnType<typeof testRender>>) {
+  await act(async () => {
+    await Bun.sleep(32);
+    await setup.renderOnce();
+  });
+}
+
 /** Let wrap-toggle renders and follow-up layout retries settle before asserting on the frame. */
 async function settleWrapToggle(setup: Awaited<ReturnType<typeof testRender>>) {
   await flush(setup);
@@ -2462,6 +2470,7 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
+      await settleViewportMeasurement(setup);
       let frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 1001");
 
@@ -2525,6 +2534,7 @@ describe("App interactions", () => {
 
     try {
       await flush(setup);
+      await settleViewportMeasurement(setup);
       let frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 1001");
 
