@@ -53,14 +53,20 @@ review diffs or compare two concrete files
 
 ```bash
 hunk diff [target] [-- <pathspec...>]
+hunk diff <from> <to> [-- <pathspec...>]
 hunk diff --staged [-- <pathspec...>]
-hunk diff <left> <right>
+hunk diff --files <left> <right>
 ```
+
+Two positional arguments always name revision endpoints, even when matching files exist on disk.
+
+Use `--files <left> <right>` for concrete-file comparison; this replaces the former filesystem-existence disambiguation.
 
 ### Command-specific options
 
 | Option                   | Description                                                                                   |
 | ------------------------ | --------------------------------------------------------------------------------------------- |
+| `--files <paths...>`     | compare exactly two concrete files: --files &lt;left&gt; &lt;right&gt;                        |
 | `--staged`               | show staged changes instead of the working tree                                               |
 | `--cached`               | alias for --staged                                                                            |
 | `--exclude-untracked`    | exclude untracked files from working tree reviews                                             |

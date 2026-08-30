@@ -611,7 +611,7 @@ describe("session command compatibility checks", () => {
     });
   });
 
-  test("passes a separate source path through reload commands", async () => {
+  test("forwards structured endpoints and a separate source path through reload commands", async () => {
     setSessionCommandTestHooks({
       createClient: () =>
         createClient({
@@ -623,6 +623,7 @@ describe("session command compatibility checks", () => {
             expect(input.sourcePath).toBe("/source-repo");
             expect(input.nextInput).toEqual({
               kind: "vcs",
+              rangeEndpoints: { from: "main", to: "feature" },
               staged: false,
               options: {},
             });
@@ -648,6 +649,7 @@ describe("session command compatibility checks", () => {
       sourcePath: "/source-repo",
       nextInput: {
         kind: "vcs",
+        rangeEndpoints: { from: "main", to: "feature" },
         staged: false,
         options: {},
       },

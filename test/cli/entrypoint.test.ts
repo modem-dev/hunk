@@ -316,7 +316,7 @@ describe("CLI entrypoint contracts", () => {
       expect(proc.exitCode).toBe(1);
       expect(stdout).toBe("");
       expect(stderr).toContain("hunk: `hunk diff` must be run inside a Git repository.");
-      expect(stderr).toContain("hunk diff <before-file> <after-file>");
+      expect(stderr).toContain("hunk diff --files <before-file> <after-file>");
       expect(stderr).not.toContain("at runGitText");
       expect(stderr).not.toContain("loadGitChangeset");
       expect(stderr).not.toContain("Bun v");

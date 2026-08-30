@@ -27,8 +27,21 @@ const _schemaMatchesProtocol: Equal<
 void _schemaMatchesProtocol;
 const _cliInputSchemaMatchesProtocol: Equal<z.infer<typeof cliInputSchema>, CliInput> = true;
 void _cliInputSchemaMatchesProtocol;
+const _dualSelectorIsNotCliInput: CliInput = {
+  kind: "vcs",
+  range: "main..feature",
+  // @ts-expect-error A VCS input cannot carry both selector forms.
+  rangeEndpoints: { from: "main", to: "feature" },
+  staged: false,
+  options: {},
+};
+void _dualSelectorIsNotCliInput;
 
 describe("session daemon request validation", () => {
+  test("uses the daemon revision for structured two-endpoint reload payloads", () => {
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(12);
+  });
+
   test("strictly parses cross-process capabilities", () => {
     expect(
       parseSessionDaemonCapabilities({
@@ -96,6 +109,16 @@ describe("session daemon request validation", () => {
         action: "reload",
         selector: { sessionId: "s-1" },
         nextInput: { kind: "show", ref: "HEAD~1", options: {} },
+      },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "vcs",
+          rangeEndpoints: { from: "main", to: "feature" },
+          staged: false,
+          options: {},
+        },
       },
       {
         action: "comment-add",
@@ -277,6 +300,47 @@ describe("session daemon request validation", () => {
         action: "reload",
         selector: { sessionId: "s-1" },
         nextInput: { kind: "patch", options: {}, unknown: true },
+      },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "vcs",
+          rangeEndpoints: { from: "main" },
+          staged: false,
+          options: {},
+        },
+      },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "vcs",
+          rangeEndpoints: { from: "", to: "feature" },
+          staged: false,
+          options: {},
+        },
+      },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "vcs",
+          rangeEndpoints: { from: "main", to: "feature", injected: true },
+          staged: false,
+          options: {},
+        },
+      },
+      {
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "vcs",
+          range: "main..feature",
+          rangeEndpoints: { from: "main", to: "feature" },
+          staged: false,
+          options: {},
+        },
       },
       {
         action: "comment-apply",

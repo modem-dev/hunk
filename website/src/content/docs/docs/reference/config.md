@@ -211,14 +211,14 @@ Enable moved-line coloring when the renderer supports it.
 
 ## Command tables
 
-| Table          | Applies to                                        |
-| -------------- | ------------------------------------------------- |
-| `[vcs]`        | working-tree and target reviews (`hunk diff`)     |
-| `[show]`       | commit and target display reviews (`hunk show`)   |
-| `[stash-show]` | stash reviews (`hunk stash show`)                 |
-| `[diff]`       | two-file comparisons (`hunk diff <left> <right>`) |
-| `[patch]`      | patch-file reviews (`hunk patch`)                 |
-| `[difftool]`   | Git difftool pair reviews (`hunk difftool`)       |
+| Table          | Applies to                                                |
+| -------------- | --------------------------------------------------------- |
+| `[vcs]`        | working-tree and target reviews (`hunk diff`)             |
+| `[show]`       | commit and target display reviews (`hunk show`)           |
+| `[stash-show]` | stash reviews (`hunk stash show`)                         |
+| `[diff]`       | two-file comparisons (`hunk diff --files <left> <right>`) |
+| `[patch]`      | patch-file reviews (`hunk patch`)                         |
+| `[difftool]`   | Git difftool pair reviews (`hunk difftool`)               |
 
 `[pager]` is an additional overlay for any review opened with pager-style chrome. It is applied after the matching command table in the same file.
 

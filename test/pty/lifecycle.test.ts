@@ -214,7 +214,12 @@ describe("PTY lifecycle", () => {
     test.skipIf(process.platform === "win32")(`exits cleanly on ${signal}`, async () => {
       const fixture = harness.createLongWrapFilePair();
       const runtimeDir = harness.createIsolatedConfigHome();
-      const hunkCommand = harness.buildHunkCommand(["diff", fixture.before, fixture.after]);
+      const hunkCommand = harness.buildHunkCommand([
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+      ]);
       const child = spawn("/bin/sh", ["-c", `exec ${hunkCommand}`], {
         cwd: fixture.dir,
         stdio: ["pipe", "pipe", "pipe"],
@@ -248,7 +253,12 @@ describe("PTY lifecycle", () => {
     async () => {
       const fixture = harness.createLongWrapFilePair();
       const { master, slave } = openPtyPair();
-      const hunkCommand = harness.buildHunkCommand(["diff", fixture.before, fixture.after]);
+      const hunkCommand = harness.buildHunkCommand([
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+      ]);
       // `exec` to keep the pid pointing at Hunk
       const child = spawn("/bin/sh", ["-c", `exec ${hunkCommand}`], {
         cwd: fixture.dir,
@@ -296,7 +306,12 @@ describe("PTY lifecycle", () => {
       const pidFile = join(fixture.dir, "hunk.pid");
       const exitFile = join(fixture.dir, "hunk.exit");
       const ttyFile = join(fixture.dir, "hunk.tty");
-      const hunkCommand = harness.buildHunkCommand(["diff", fixture.before, fixture.after]);
+      const hunkCommand = harness.buildHunkCommand([
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+      ]);
       const session = await harness.launchShellCommand({
         command: `trap '' HUP; tty_path="$(tty)"; printf '%s' "$tty_path" > ${harness.shellQuote(ttyFile)}; ${hunkCommand} < "$tty_path" & hunk_pid=$!; printf '%s' "$hunk_pid" > ${harness.shellQuote(pidFile)}; wait "$hunk_pid"; printf '%s' "$?" > ${harness.shellQuote(exitFile)}`,
         cwd: fixture.dir,

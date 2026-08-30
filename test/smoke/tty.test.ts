@@ -429,7 +429,7 @@ async function runTtySmoke(options: {
 }) {
   const fixture = options.longWrapFixture ? createLongWrapFixtureFiles() : createFixtureFiles();
   const transcript = join(fixture.dir, "transcript.txt");
-  const args = ["diff", fixture.before, fixture.after];
+  const args = ["diff", "--files", fixture.before, fixture.after];
 
   if (options.mode) {
     args.push("--mode", options.mode);

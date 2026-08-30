@@ -17,7 +17,7 @@ Other reopenable inputs also work:
 
 ```bash
 hunk show HEAD~1 --watch
-hunk diff before.ts after.ts --watch
+hunk diff --files before.ts after.ts --watch
 hunk patch changes.patch --watch
 ```
 

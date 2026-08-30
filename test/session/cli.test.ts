@@ -110,7 +110,7 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
 }
 
 function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -396,7 +396,7 @@ sessionDescribe("session CLI integration", () => {
       writeFileSync(fixture.after, "export const after = 20;\nexport const extra = 'yes';\n");
 
       const reload = runSessionCli(
-        ["reload", sessionId, "--json", "--", "diff", fixture.before, fixture.after],
+        ["reload", sessionId, "--json", "--", "diff", "--files", fixture.before, fixture.after],
         port,
       );
       expect(reload.proc.exitCode).toBe(0);
@@ -465,6 +465,7 @@ sessionDescribe("session CLI integration", () => {
           outside.dir,
           "--",
           "diff",
+          "--files",
           outside.before,
           outside.after,
         ],

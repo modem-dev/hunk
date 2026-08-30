@@ -8,6 +8,7 @@ import {
   resolveSlRepoRoot,
   runSlText,
 } from "./commands";
+import { describeDiffRange } from "../diffRange";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -79,13 +80,15 @@ export const SaplingVcsAdapter = {
         if (input.staged) {
           throw createSlStagedError(input);
         }
+        const diffArgs = buildSlDiffArgs(input);
         const repoRoot = resolveSlRepoRoot(input, { cwd });
         const repoName = basename(repoRoot);
+        const range = describeDiffRange(input);
         return {
           repoRoot,
           sourceLabel: repoRoot,
-          title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
-          patchText: runSlText({ input, args: buildSlDiffArgs(input), cwd }),
+          title: range ? `${repoName} ${range}` : `${repoName} working copy`,
+          patchText: runSlText({ input, args: diffArgs, cwd }),
           untrackedPaths: listSlUntrackedFiles(input, { cwd, repoRoot }),
         };
       },

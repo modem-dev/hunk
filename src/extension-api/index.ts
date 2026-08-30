@@ -144,6 +144,7 @@ export type {
   ExtensionVcsOperation,
   ExtensionVcsOperations,
   ExtensionVcsPatchResult,
+  ExtensionVcsRangeEndpoints,
   ExtensionVcsReviewOptions,
   ExtensionVcsShowInput,
   ExtensionVcsSkippedFile,

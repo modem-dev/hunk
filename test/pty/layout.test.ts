@@ -127,6 +127,7 @@ describe("PTY layout", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -162,7 +163,7 @@ describe("PTY layout", () => {
   test("split rows keep the center separator aligned after wide characters", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 140,
       rows: 16,
     });
@@ -225,7 +226,7 @@ describe("PTY layout", () => {
   test("the CLI tab width reaches interactive app rendering", async () => {
     const fixture = harness.createTabbedFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack", "-x8"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack", "-x8"],
       cols: 100,
       rows: 12,
     });
@@ -250,7 +251,7 @@ describe("PTY layout", () => {
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 102,
       rows: 20,
     });
@@ -290,7 +291,7 @@ describe("PTY layout", () => {
   test("real PTY sessions can expand and collapse unchanged context", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 140,
       rows: 16,
     });
@@ -701,7 +702,7 @@ describe("PTY layout", () => {
   test("layout hotkeys preserve the current review position in a real PTY", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 220,
       rows: 12,
     });
@@ -755,7 +756,7 @@ describe("PTY layout", () => {
   test("arrow-key horizontal scrolling reveals hidden code columns in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 102,
       rows: 20,
     });
@@ -801,7 +802,7 @@ describe("PTY layout", () => {
   test("shifted mouse-wheel input scrolls code horizontally in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 102,
       rows: 20,
     });
@@ -835,7 +836,7 @@ describe("PTY layout", () => {
   test("wrap toggles reset horizontal code scrolling in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 102,
       rows: 20,
     });

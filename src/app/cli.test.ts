@@ -223,7 +223,7 @@ describe("parseCli", () => {
     writeFileSync(left, "export const answer = 1;\n");
     writeFileSync(right, "export const answer = 2;\n");
 
-    expect(await parseCli(["bun", "hunk", "--fast", left, right])).toMatchObject({
+    expect(await parseCli(["bun", "hunk", "--fast", "--files", left, right])).toMatchObject({
       kind: "diff",
       left,
       right,
@@ -369,22 +369,92 @@ describe("parseCli", () => {
     });
   });
 
-  test("keeps two concrete file paths as file-pair diff mode", async () => {
+  test("parses the explicit two-file comparison form", async () => {
     const dir = createTempDir("hunk-cli-files-");
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
     writeFileSync(left, "before\n");
     writeFileSync(right, "after\n");
 
-    const parsed = await parseCli(["bun", "hunk", "diff", left, right, "--mode", "stack"]);
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "diff",
+      "--files",
+      left,
+      right,
+      "--mode",
+      "stack",
+    ]);
 
     expect(parsed).toMatchObject({
       kind: "diff",
       left,
       right,
-      options: {
-        mode: "stack",
-      },
+      options: { mode: "stack" },
+    });
+  });
+
+  test("treats two existing file paths as revisions unless --files is present", async () => {
+    const dir = createTempDir("hunk-cli-file-shaped-revisions-");
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "before\n");
+    writeFileSync(right, "after\n");
+
+    expect(await parseCli(["bun", "hunk", "diff", left, right])).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: left, to: right },
+    });
+  });
+
+  test("rejects malformed or mixed --files forms", async () => {
+    for (const args of [
+      ["--files", "one"],
+      ["--files", "one", "two", "three"],
+      ["--files", "one", "two", "--staged"],
+      ["target", "--files", "one", "two"],
+    ]) {
+      await expect(parseCli(["bun", "hunk", "diff", ...args])).rejects.toThrow(
+        "exactly two file paths",
+      );
+    }
+  });
+
+  test("parses two revision positionals as structured range endpoints", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main", "feature"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "feature" },
+      staged: false,
+    });
+    expect(parsed).not.toHaveProperty("range", "main..feature");
+  });
+
+  test("keeps two revisions structured when pathspecs follow the separator", async () => {
+    expect(
+      await parseCli(["bun", "hunk", "diff", "main", "feature", "--", "src/app.ts"]),
+    ).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "feature" },
+      pathspecs: ["src/app.ts"],
+    });
+  });
+
+  test("does not use filesystem existence to distinguish a revision from a pathspec", async () => {
+    const dir = createTempDir("hunk-cli-revision-path-");
+    const existing = join(dir, "branch-name");
+    mkdirSync(existing);
+
+    expect(await parseCli(["bun", "hunk", "diff", "HEAD", existing])).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "HEAD", to: existing },
+    });
+    expect(await parseCli(["bun", "hunk", "diff", "HEAD", "--", existing])).toMatchObject({
+      kind: "vcs",
+      range: "HEAD",
+      pathspecs: [existing],
     });
   });
 
@@ -406,10 +476,12 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses target followed by pathspecs without a separator", async () => {
-    const parsed = await parseCli(["bun", "hunk", "diff", "trunk()..@", ".github"]);
-
-    expect(parsed).toMatchObject({
+  test("treats a range-shaped target plus one positional as two revision endpoints", async () => {
+    expect(await parseCli(["bun", "hunk", "diff", "trunk()..@", ".github"])).toMatchObject({
+      kind: "vcs",
+      rangeEndpoints: { from: "trunk()..@", to: ".github" },
+    });
+    expect(await parseCli(["bun", "hunk", "diff", "trunk()..@", "--", ".github"])).toMatchObject({
       kind: "vcs",
       range: "trunk()..@",
       pathspecs: [".github"],
@@ -671,6 +743,33 @@ describe("parseCli", () => {
         pathspecs: ["README.md"],
       },
       output: "json",
+    });
+  });
+
+  test("keeps structured endpoints through nested session reload parsing", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "reload",
+      "session-1",
+      "--",
+      "diff",
+      "main",
+      "feature",
+      "--",
+      "src/app.ts",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "reload",
+      selector: { sessionId: "session-1" },
+      nextInput: {
+        kind: "vcs",
+        rangeEndpoints: { from: "main", to: "feature" },
+        pathspecs: ["src/app.ts"],
+      },
     });
   });
 

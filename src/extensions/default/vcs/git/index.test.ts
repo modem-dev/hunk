@@ -86,6 +86,20 @@ describe("GitVcsAdapter", () => {
     expect(GitVcsAdapter.detect(nested)).toEqual({ id: "git", repoRoot: repo });
   });
 
+  test("rejects option-like endpoints from direct adapter callers", async () => {
+    const repo = createTempRepo("hunk-git-adapter-endpoint-trust-");
+    const input = {
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "--output=unsafe" },
+      staged: false,
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
+
+    await expect(
+      GitVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo }),
+    ).rejects.toThrow("looks like a Git option");
+  });
+
   test("loads working-tree diffs with untracked files through the neutral operation", async () => {
     const repo = createTempRepo("hunk-git-adapter-diff-");
     writeFileSync(join(repo, "tracked.txt"), "old\n");
@@ -129,6 +143,32 @@ describe("GitVcsAdapter", () => {
     // one `git status` covers all of them instead of one `git diff --no-index`
     // subprocess per file, which made review scale with the untracked count.
     expect(result.extraFiles ?? []).toHaveLength(0);
+  });
+
+  test("loads two-revision diffs with exact sources and no working-tree untracked files", async () => {
+    const repo = createTempRepo("hunk-git-adapter-two-revisions-");
+    writeFileSync(join(repo, "tracked.txt"), "old\ncontext\n");
+    git(repo, "add", "tracked.txt");
+    git(repo, "commit", "-m", "old");
+    const from = git(repo, "rev-parse", "HEAD").trim();
+    writeFileSync(join(repo, "tracked.txt"), "new\ncontext\n");
+    git(repo, "commit", "-am", "new");
+    const to = git(repo, "rev-parse", "HEAD").trim();
+    writeFileSync(join(repo, "untracked.txt"), "not part of either revision\n");
+
+    const input = {
+      kind: "vcs",
+      staged: false,
+      rangeEndpoints: { from, to },
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
+    const result = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
+    const file = { path: "tracked.txt", changeType: "change", isUntracked: false } as const;
+
+    expect(result.title).toContain(`${from}..${to}`);
+    expect(result.untrackedPaths).toEqual([]);
+    expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("old\ncontext\n");
+    expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("new\ncontext\n");
   });
 
   test("loads revision and stash patches through adapter operations", async () => {

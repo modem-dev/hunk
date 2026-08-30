@@ -50,6 +50,11 @@ const sessionDaemonCapabilitiesSchema = z.strictObject({
   actions: z.array(sessionDaemonActionSchema),
 });
 
+const rangeEndpointsSchema = z.strictObject({
+  from: z.string().min(1),
+  to: z.string().min(1),
+});
+
 const commonOptionsSchema = z.strictObject({
   mode: z.enum(["auto", "split", "stack"]).optional(),
   cursorLine: z.enum(["row", "number", "off"]).optional(),
@@ -79,10 +84,19 @@ const commonOptionsSchema = z.strictObject({
 });
 
 /** Parses the complete reloadable CLI input tree carried inside a command. */
-export const cliInputSchema = z.discriminatedUnion("kind", [
+export const cliInputSchema: z.ZodType<CliInput> = z.union([
   z.strictObject({
     kind: z.literal("vcs"),
     range: z.string().optional(),
+    rangeEndpoints: z.never().optional(),
+    staged: z.boolean(),
+    pathspecs: z.array(z.string()).optional(),
+    options: commonOptionsSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("vcs"),
+    range: z.never().optional(),
+    rangeEndpoints: rangeEndpointsSchema,
     staged: z.boolean(),
     pathspecs: z.array(z.string()).optional(),
     options: commonOptionsSchema,

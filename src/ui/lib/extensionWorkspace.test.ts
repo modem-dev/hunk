@@ -47,6 +47,15 @@ describe("extension workspace write policy", () => {
   test("refuses every review that is not the plain working tree", () => {
     const inputs: Array<[string, CliInput]> = [
       ["vcs range", { kind: "vcs", staged: false, range: "main..HEAD", options: NO_OPTIONS }],
+      [
+        "vcs endpoints",
+        {
+          kind: "vcs",
+          staged: false,
+          rangeEndpoints: { from: "main", to: "feature" },
+          options: NO_OPTIONS,
+        },
+      ],
       ["vcs staged", { kind: "vcs", staged: true, options: NO_OPTIONS }],
       ["show", { kind: "show", ref: "HEAD", options: NO_OPTIONS }],
       ["stash show", { kind: "stash-show", options: NO_OPTIONS }],

@@ -24,6 +24,7 @@ describe("PTY notes", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -66,6 +67,7 @@ describe("PTY notes", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -97,6 +99,7 @@ describe("PTY notes", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -123,7 +126,7 @@ describe("PTY notes", () => {
   test("opening a draft keeps the active line fixed while pushing following code down", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
       cols: 120,
       rows: 26,
     });
@@ -178,7 +181,16 @@ describe("PTY notes", () => {
   test("cursor-line-off drafts still reveal their default target and full composer", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack", "--cursor-line", "off"],
+      args: [
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "stack",
+        "--cursor-line",
+        "off",
+      ],
       cols: 120,
       rows: 12,
     });
@@ -209,7 +221,7 @@ describe("PTY notes", () => {
   test("user notes can be drafted and saved inline in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -270,7 +282,7 @@ describe("PTY notes", () => {
   test("saved notes can be edited and replied to through clickable threaded actions", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
       cols: 100,
       rows: 30,
     });
@@ -381,7 +393,7 @@ describe("PTY notes", () => {
   test("CJK draft notes wrap instead of scrolling out of view in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 24,
     });
@@ -417,7 +429,7 @@ describe("PTY notes", () => {
   test("rapid Ctrl+S presses save a draft note exactly once", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 24,
     });
@@ -451,7 +463,7 @@ describe("PTY notes", () => {
   test("add-note affordance appears only after mouse movement in a real PTY", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 12,
     });
@@ -498,7 +510,7 @@ describe("PTY notes", () => {
   test("a single Escape cancels a freshly opened empty draft note", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -530,7 +542,7 @@ describe("PTY notes", () => {
   test("clicked add-note drafts can cancel and save with keyboard shortcuts", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -569,7 +581,7 @@ describe("PTY notes", () => {
   test("clicking stack-mode add-note affordances can save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
       cols: 100,
       rows: 20,
     });
@@ -597,7 +609,7 @@ describe("PTY notes", () => {
   test("clicking deletion-only add-note affordances can save draft notes", async () => {
     const fixture = harness.createDeletionOnlyFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 16,
     });
@@ -625,7 +637,7 @@ describe("PTY notes", () => {
   test("clicking context-row add-note affordances can save draft notes", async () => {
     const fixture = harness.createDeletionOnlyFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 16,
     });
@@ -663,7 +675,7 @@ describe("PTY notes", () => {
   test("draft note focus blocks app shortcuts until cancelled", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
       rows: 12,
     });
@@ -748,7 +760,7 @@ describe("PTY notes", () => {
   test("multiple add-note drafts can be saved on one hunk", async () => {
     const fixture = harness.createDeletionOnlyFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -789,7 +801,7 @@ describe("PTY notes", () => {
   test("clicking diff add-note affordances can cancel and save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });

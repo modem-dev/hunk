@@ -47,14 +47,14 @@ wrap_lines = true
 
 Command sections are named after the input Hunk parses, which is not always the command you type. In particular, `hunk diff` on a repository reads `[vcs]`, not `[diff]`:
 
-| Section        | Applies to                                        |
-| -------------- | ------------------------------------------------- |
-| `[vcs]`        | `hunk diff` working-tree and target reviews       |
-| `[show]`       | `hunk show` commit reviews                        |
-| `[stash-show]` | `hunk stash show` reviews                         |
-| `[diff]`       | two-file comparisons (`hunk diff <left> <right>`) |
-| `[patch]`      | `hunk patch` reviews                              |
-| `[difftool]`   | `hunk difftool` pair reviews                      |
+| Section        | Applies to                                                |
+| -------------- | --------------------------------------------------------- |
+| `[vcs]`        | `hunk diff` working-tree and target reviews               |
+| `[show]`       | `hunk show` commit reviews                                |
+| `[stash-show]` | `hunk stash show` reviews                                 |
+| `[diff]`       | two-file comparisons (`hunk diff --files <left> <right>`) |
+| `[patch]`      | `hunk patch` reviews                                      |
+| `[difftool]`   | `hunk difftool` pair reviews                              |
 
 `[pager]` is an overlay applied after the matching command section whenever the invocation uses pager-style behavior.
 

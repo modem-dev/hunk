@@ -127,7 +127,7 @@ describe("PTY key routing", () => {
   test("F10 does not open the menu bar while a note draft is focused", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 24,
     });

@@ -72,7 +72,7 @@ function createGitInput({
       mode: "auto",
       ...options,
     },
-  } satisfies Extract<CliInput, { kind: "vcs" }>;
+  } as Extract<CliInput, { kind: "vcs" }>;
 }
 
 afterEach(() => {
