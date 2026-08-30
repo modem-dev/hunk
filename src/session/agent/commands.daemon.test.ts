@@ -141,7 +141,6 @@ describe("text output formatting", () => {
   test("renders reload, comment-add, and comment-clear as non-empty text", async () => {
     setSessionCommandTestHooks({
       resolveDaemonAvailability: async () => true,
-      restartDaemonForMissingAction: async () => {},
       createClient: () => createFakeClient(),
     });
 

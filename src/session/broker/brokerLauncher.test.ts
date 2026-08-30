@@ -7,6 +7,7 @@ import {
   ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
   parseSessionBrokerHealth,
+  readSessionBrokerLaunchFingerprint,
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
 } from "./brokerLauncher";
@@ -35,6 +36,39 @@ afterEach(() => {
 });
 
 describe("session daemon launcher", () => {
+  test("reads only bounded exact launch metadata as a generation hint", () => {
+    const runtime = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtime };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    mkdirSync(paths.runtimeDir, { recursive: true });
+    const metadata = {
+      pid: 123,
+      host: testConfig.host,
+      port: testConfig.port,
+      command: "/fixture/hunk",
+      args: ["daemon", "serve"],
+      launchedAt: "2026-01-01T00:00:00.000Z",
+      launchedByPid: 122,
+      launchCwd: "/fixture",
+    };
+    writeFileSync(paths.metadataPath, JSON.stringify(metadata));
+    const first = readSessionBrokerLaunchFingerprint(testConfig, env);
+    expect(first).toBe(JSON.stringify(metadata));
+    writeFileSync(paths.metadataPath, JSON.stringify({ ...metadata, pid: 124 }));
+    expect(readSessionBrokerLaunchFingerprint(testConfig, env)).not.toBe(first);
+    for (const malformed of [[], { ...metadata, extra: true }, { ...metadata, args: {} }]) {
+      writeFileSync(paths.metadataPath, JSON.stringify(malformed));
+      expect(readSessionBrokerLaunchFingerprint(testConfig, env)).toBeNull();
+    }
+    writeFileSync(
+      paths.metadataPath,
+      JSON.stringify(metadata).replace('{"pid"', '{"__proto__":true,"pid"'),
+    );
+    expect(readSessionBrokerLaunchFingerprint(testConfig, env)).toBeNull();
+    writeFileSync(paths.metadataPath, "x".repeat(16 * 1024 + 1));
+    expect(readSessionBrokerLaunchFingerprint(testConfig, env)).toBeNull();
+  });
+
   test("strictly parses minimal and legacy health responses", () => {
     expect(parseSessionBrokerHealth({ ok: true })).toEqual({ ok: true });
     expect(

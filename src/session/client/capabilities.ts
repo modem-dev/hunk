@@ -6,13 +6,8 @@ import { HUNK_SESSION_CAPABILITIES_PATH, type SessionDaemonCapabilities } from "
 import { parseSessionDaemonCapabilities } from "../protocolSchemas";
 import { HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS, requestSessionDaemonHttp } from "./daemonHttp";
 
-export const HUNK_DAEMON_UPGRADE_RESTART_NOTICE =
-  "[hunk:session] Restarting stale session daemon after upgrade.";
-
-/** Tell the user that Hunk is refreshing an old daemon left running across an upgrade. */
-export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = console.error) {
-  log(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
-}
+export const HUNK_DAEMON_UPGRADE_WAIT_MESSAGE =
+  "An older or incompatible Hunk session daemon is running. Close older Hunk windows; this window will reconnect automatically.";
 
 /**
  * Read the live daemon's advertised compatibility, returning null when the daemon is too old for
