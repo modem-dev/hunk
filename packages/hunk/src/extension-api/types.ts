@@ -2112,6 +2112,10 @@ export interface ExtensionReviewNote {
   hunkIndex: number;
   side: "old" | "new";
   line: number;
+  /** Inclusive one-based old-side source range, including singleton line anchors. */
+  oldRange?: readonly [number, number];
+  /** Inclusive one-based new-side source range, including singleton line anchors. */
+  newRange?: readonly [number, number];
   body: string;
   /** True while the note is still being composed rather than saved. */
   draft: boolean;

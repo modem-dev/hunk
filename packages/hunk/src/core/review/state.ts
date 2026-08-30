@@ -11,7 +11,13 @@
  * they read, so "which notes are visible" or "where does a note hang" gets one named
  * answer instead of an inline conditional per consumer.
  */
-import type { ReviewDocumentV1, ReviewLineAddressV1, ReviewNoteV1, ReviewSide } from "./types";
+import type {
+  ReviewDocumentV1,
+  ReviewLineAddressV1,
+  ReviewNoteV1,
+  ReviewRangeAnchorV1,
+  ReviewSide,
+} from "./types";
 
 export type ReviewNoteResolution = "active" | "stale" | "orphaned";
 
@@ -143,8 +149,18 @@ interface ReviewDraftNoteBase {
   id: string;
   fileKey: string;
   hunkIndex: number;
+  /** Preferred placement retained for existing terminal and remote projections. */
   side: ReviewSide;
   line: number;
+  /** Distinguishes proof-backed legacy lines from ranges that require patch coverage. */
+  targetKind?: "line" | "range";
+  /** Source authority retained only for a line the patch itself does not cover. */
+  expandedLineSource?: {
+    sourceIdentity?: string;
+    sourceAttested: boolean;
+  };
+  /** Full resolved anchor retained unchanged when the draft is saved. */
+  anchor?: ReviewRangeAnchorV1;
   body: string;
 }
 

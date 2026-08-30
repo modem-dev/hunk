@@ -1991,7 +1991,10 @@ after granting extension trust).
 `note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
 session. `note_edited` carries `note.draft: true` for composer changes and
 `note.draft: false` for an identity-preserving saved-note edit. Replies include their direct
-`parentId`. Review notes are session-local state, so there is no backlog to replay
+`parentId`. Optional `note.oldRange` and `note.newRange` values are inclusive, one-based source
+ranges: line notes may carry singleton ranges, while replacement selections may carry both.
+`note.side` and `note.line` identify the preferred endpoint used to place the note. Review notes
+are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
 either. Use them for incremental UI reactions only.

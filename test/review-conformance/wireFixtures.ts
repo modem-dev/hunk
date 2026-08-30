@@ -120,6 +120,110 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     expected: { accepted: true, intent: { type: "notes/cancel-draft" } },
   },
   {
+    id: "start-draft-on-a-multiline-range",
+    findings: ["B12"],
+    description: "A multiline target retains its inclusive range and preferred endpoint.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+    },
+    expected: {
+      accepted: true,
+      intent: {
+        type: "notes/start-draft",
+        fileKey: FILE_KEY,
+        hunkIndex: 1,
+        target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+      },
+    },
+  },
+  {
+    id: "start-draft-on-a-dual-sided-range",
+    findings: ["B12"],
+    description: "A replacement selection carries both source-side ranges on the wire.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: {
+        oldRange: [7, 8],
+        newRange: [7, 9],
+        preferred: { side: "old", line: 8 },
+      },
+    },
+    expected: {
+      accepted: true,
+      intent: {
+        type: "notes/start-draft",
+        fileKey: FILE_KEY,
+        hunkIndex: 1,
+        target: {
+          oldRange: [7, 8],
+          newRange: [7, 9],
+          preferred: { side: "old", line: 8 },
+        },
+      },
+    },
+  },
+  {
+    id: "save-user-note-at-an-exact-range",
+    findings: ["B12"],
+    description: "A range save precondition is validated on the wire and removed before planning.",
+    action: {
+      type: "notes/create-user",
+      consumeDraft: true,
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+    },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/create-user", consumeDraft: true },
+    },
+  },
+  {
+    id: "reject-inverted-review-range",
+    findings: ["B12"],
+    description: "An inclusive range cannot end before it starts.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: {
+        oldRange: [7, 7],
+        newRange: [9, 7],
+        preferred: { side: "old", line: 7 },
+      },
+    },
+    expected: { accepted: false },
+  },
+  {
+    id: "reject-preferred-line-outside-review-range",
+    findings: ["B12"],
+    description: "The preferred endpoint must stay inside its own side's inclusive range.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 10 } },
+    },
+    expected: { accepted: false },
+  },
+  {
+    id: "reject-preferred-side-absent-from-review-range",
+    findings: ["B12"],
+    description: "The preferred endpoint cannot name a side the target does not carry.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { oldRange: [7, 8], preferred: { side: "new", line: 8 } },
+    },
+    expected: { accepted: false },
+  },
+  {
     id: "start-draft-on-an-expanded-line",
     findings: ["B10"],
     description:

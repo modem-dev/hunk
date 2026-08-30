@@ -165,6 +165,7 @@ function DiffSectionComponent({
               bodyHeight: 0,
               hunkAnchorRows: new Map(),
               hunkBounds: new Map(),
+              hunkSpans: file.metadata.hunks,
               lineNumberDigits: 1,
               plannedRows: [],
               rowBounds: [],

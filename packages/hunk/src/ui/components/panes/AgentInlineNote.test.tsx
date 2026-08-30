@@ -26,6 +26,62 @@ describe("shortReviewNoteAge", () => {
   });
 });
 
+test("AgentInlineNote connects a ranged card to the external annotation rail", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 4], summary: "Connected range" }}
+      anchorSide="new"
+      layout="stack"
+      rangeGuideConnection="terminate"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const top = setup.captureCharFrame().split("\n")[0] ?? "";
+
+    expect(top).toContain("┬");
+    expect(top[60]).toBe("┘");
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
+test("AgentInlineNote continues an aggregate rail through the card", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 4], summary: "Continuing range" }}
+      anchorSide="new"
+      layout="stack"
+      rangeGuideConnection="continue"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const lines = setup.captureCharFrame().split("\n");
+
+    expect(lines[0]?.[60]).toBe("┤");
+    expect(lines.slice(1, 4).every((line) => line[60] === "│")).toBe(true);
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
 describe("draftVisualLineCount", () => {
   const cases: Array<[string, string, number, number]> = [
     // [label, text, width, expected rows]

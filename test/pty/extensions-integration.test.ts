@@ -143,7 +143,7 @@ export default function (hunk) {
       });
     },
   });
-  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "Y" }, (ctx) => {
     ctx.sidebars.toggle("fixture-sidebar");
   });
 }
@@ -210,7 +210,7 @@ export default function (hunk) {
       }),
     });
   }
-  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "Y" }, (ctx) => {
     ctx.panes.toggle("top");
     ctx.panes.toggle("bottom");
   });
@@ -320,7 +320,7 @@ export default function (hunk) {
 `;
 
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
-  hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {
+  hunk.registerCommand({ id: "ask", title: "Ask", key: "Y" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
       title: "Reformat the changeset?",
       body: "Nothing is written to disk. This deliberately long explanation wraps across many terminal rows while the actions remain pinned below it.",
@@ -590,7 +590,7 @@ describe("PTY extensions", () => {
       await session.click(/Extensions/);
       // The dropdown names the command by its title and advertises its key.
       const menu = await session.waitForText(/Toggle fixture/, { timeout: 20_000 });
-      expect(menu).toMatch(/Toggle fixture\s+y/);
+      expect(menu).toMatch(/Toggle fixture\s+Y/);
 
       await session.click(/Toggle fixture/);
       const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
@@ -634,12 +634,12 @@ describe("PTY extensions", () => {
 
       // The registered key dispatches through the shared command table and
       // opens the extension's right-hand pane beside the built-in one.
-      await session.press("y");
+      session.writeRaw("Y");
       const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
       expect(opened).toContain("alpha.ts");
 
       // The same key toggles it away again.
-      await session.press("y");
+      session.writeRaw("Y");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
     } finally {
       session.close();
@@ -748,7 +748,7 @@ describe("PTY extensions", () => {
     });
     try {
       await harness.ensureKeyboardIsLive(session);
-      await session.press("y");
+      session.writeRaw("Y");
       const frame = await harness.waitForSnapshot(
         session,
         (text) =>
@@ -763,7 +763,7 @@ describe("PTY extensions", () => {
       await dragMouse(session, 70, 4, 70, 6);
       await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
 
-      await session.press("y");
+      session.writeRaw("Y");
       await harness.waitForSnapshot(
         session,
         (text) => !text.includes("PANE TOP") && !text.includes("PANE BOTTOM"),
@@ -801,7 +801,7 @@ describe("PTY extensions", () => {
       expect(before).not.toContain("Reformat the changeset?");
       await harness.ensureKeyboardIsLive(session);
 
-      await session.press("y");
+      session.writeRaw("Y");
       const prompt = await harness.waitForSnapshot(
         session,
         (text) => text.includes("Reformat the changeset?"),
@@ -968,7 +968,7 @@ describe("PTY extensions", () => {
         }
       }
       expect(menu).not.toBeNull();
-      expect(menu!).toMatch(/Toggle review triage\s+y/);
+      expect(menu!).toMatch(/Toggle review triage\s+Y/);
       expect(menu).toMatch(/Mark selected hunk…\s+x/);
       expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");

@@ -22,17 +22,17 @@ import {
 import { sanitizeTerminalSpans } from "../../lib/terminalText";
 import { measureTextWidth, sliceTextByWidth } from "../lib/text";
 import { sliceSpansWindow, wrapSpans } from "./styledSpanLayout";
-import type { CopySelectedRowRange } from "../lib/diffSpatial";
+import type { CopySelectedCellRange } from "../lib/diffSpatial";
 
 /** Describes a row highlight passed from review selection policy into cell painting. */
 export interface CodeCellHighlight {
   bg: (baseBg: string) => string;
   /** Global columns to blend; absent blends the gutter alone. */
-  colRange?: CopySelectedRowRange;
+  colRange?: CopySelectedCellRange;
 }
 
 /** Selects the complete content window while preserving wrapped direct-chunk compatibility. */
-export const FULL_CODE_CELL_COL_RANGE: CopySelectedRowRange = {
+export const FULL_CODE_CELL_COL_RANGE: CopySelectedCellRange = {
   startCol: 0,
   endCol: Number.MAX_SAFE_INTEGER,
 };
@@ -268,6 +268,13 @@ function appendPlainStackCellChunks(
 /** Report whether a wrapped highlight can paint existing chunks without slicing token spans. */
 function isChunkCompatibleWrappedHighlight(highlight: CodeCellHighlight | undefined) {
   return !highlight?.colRange || highlight.colRange === FULL_CODE_CELL_COL_RANGE;
+}
+
+/** Whether a highlight paints cell chrome as well as source-text columns. */
+function highlightsWholeCell(highlight: CodeCellHighlight | undefined) {
+  return Boolean(
+    highlight && (!highlight.colRange || highlight.colRange === FULL_CODE_CELL_COL_RANGE),
+  );
 }
 
 /** Append one wrapped cell without constructing intermediate React span elements. */
@@ -599,6 +606,18 @@ function applyHighlightPrefix<P extends { bg: string }>(
   };
 }
 
+/** Convert an inclusive global selection into a half-open content-local range. */
+function contentLocalHighlightRange(
+  range: CopySelectedCellRange | undefined,
+  globalContentStart: number,
+  contentWidth: number,
+) {
+  if (!range || range.endCol < globalContentStart) return undefined;
+  const start = Math.max(0, range.startCol - globalContentStart);
+  const end = Math.min(contentWidth, Math.max(0, range.endCol - globalContentStart + 1));
+  return start < end ? { start, end } : undefined;
+}
+
 /** Render selection-invariant split-cell content behind its independently painted rail. */
 const SplitCellContent = memo(function SplitCellContent({
   cell,
@@ -626,17 +645,16 @@ const SplitCellContent = memo(function SplitCellContent({
   paneOffset: number;
 }) {
   const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const palette = highlightsWholeCell(highlight)
+    ? applyHighlightPalette(basePalette, highlight!.bg)
+    : basePalette;
   const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
-  const colRange = highlight?.colRange;
-  const localColRange =
-    colRange && globalContentStart < colRange.endCol
-      ? {
-          start: Math.max(0, colRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
-        }
-      : undefined;
+  const localColRange = contentLocalHighlightRange(
+    highlight?.colRange,
+    globalContentStart,
+    contentWidth,
+  );
 
   return (
     <>
@@ -674,7 +692,8 @@ function renderSplitCell(
   highlight?: CodeCellHighlight,
   paneOffset = 0,
 ) {
-  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const resolvedPrefix =
+    highlightsWholeCell(highlight) && prefix ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
 
   return (
@@ -727,16 +746,15 @@ const StackCellContent = memo(function StackCellContent({
   highlight?: CodeCellHighlight;
 }) {
   const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const palette = highlightsWholeCell(highlight)
+    ? applyHighlightPalette(basePalette, highlight!.bg)
+    : basePalette;
   const globalContentStart = prefixWidth + gutterWidth;
-  const colRange = highlight?.colRange;
-  const localColRange =
-    colRange && globalContentStart < colRange.endCol
-      ? {
-          start: Math.max(0, colRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
-        }
-      : undefined;
+  const localColRange = contentLocalHighlightRange(
+    highlight?.colRange,
+    globalContentStart,
+    contentWidth,
+  );
 
   return (
     <>
@@ -773,7 +791,8 @@ function renderStackCell(
   },
   highlight?: CodeCellHighlight,
 ) {
-  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const resolvedPrefix =
+    highlightsWholeCell(highlight) && prefix ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
 
   return (
@@ -815,20 +834,20 @@ function renderWrappedSplitCellLine(
   highlight?: CodeCellHighlight,
   paneOffset = 0,
 ) {
-  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
-  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const wholeCellHighlight = highlightsWholeCell(highlight);
+  const resolvedPalette = wholeCellHighlight
+    ? applyHighlightPalette(palette, highlight!.bg)
+    : palette;
+  const resolvedPrefix = wholeCellHighlight ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
-  const colRange = highlight?.colRange;
-  const localColRange =
-    colRange && globalContentStart < colRange.endCol
-      ? {
-          start: Math.max(0, colRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
-        }
-      : undefined;
+  const localColRange = contentLocalHighlightRange(
+    highlight?.colRange,
+    globalContentStart,
+    contentWidth,
+  );
 
   return (
     <>
@@ -871,20 +890,20 @@ function renderWrappedStackCellLine(
   },
   highlight?: CodeCellHighlight,
 ) {
-  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
-  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const wholeCellHighlight = highlightsWholeCell(highlight);
+  const resolvedPalette = wholeCellHighlight
+    ? applyHighlightPalette(palette, highlight!.bg)
+    : palette;
+  const resolvedPrefix = wholeCellHighlight ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;
   const globalContentStart = prefixWidth + gutterWidth;
-  const colRange = highlight?.colRange;
-  const localColRange =
-    colRange && globalContentStart < colRange.endCol
-      ? {
-          start: Math.max(0, colRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, colRange.endCol - globalContentStart + 1)),
-        }
-      : undefined;
+  const localColRange = contentLocalHighlightRange(
+    highlight?.colRange,
+    globalContentStart,
+    contentWidth,
+  );
 
   return (
     <>
@@ -1145,13 +1164,23 @@ function appendNoteGuideChunk(chunks: TextChunk[], enabled: boolean, theme: AppT
   chunks.push({ __isChunk: true, text: "│", fg: styledTextColor(theme.noteBorder) });
 }
 
+export interface WrappedCodeCellLineHighlights {
+  left?: CodeCellHighlight;
+  right?: CodeCellHighlight;
+  stack?: CodeCellHighlight;
+}
+
 export interface WrappedCodeCells {
   /** Number of visual lines derived from canonical styled-span wrapping. */
   lineCount: number;
   /** Background used to fill any separately mounted add-note spacer. */
   contentBackground: string;
-  /** Paint one visual line, optionally extending it behind a reserved badge column. */
-  paintLine: (index: number, trailingWidth?: number) => StyledText;
+  /** Paint one visual line with optional line-specific selection highlights. */
+  paintLine: (
+    index: number,
+    trailingWidth?: number,
+    highlights?: WrappedCodeCellLineHighlights,
+  ) => StyledText;
 }
 
 interface WrappedSplitCodeCellsOptions extends Omit<
@@ -1191,7 +1220,9 @@ function createWrappedSplitCodeCells({
   return {
     lineCount,
     contentBackground: rightLayout.palette.contentBg,
-    paintLine(index, trailingWidth = 0) {
+    paintLine(index, trailingWidth = 0, highlights) {
+      const resolvedLeftHighlight = highlights ? highlights.left : leftHighlight;
+      const resolvedRightHighlight = highlights ? highlights.right : rightHighlight;
       const leftLine = leftLayout.lines[index] ?? {
         gutterText: " ".repeat(leftLayout.gutterWidth),
         spans: [],
@@ -1202,8 +1233,8 @@ function createWrappedSplitCodeCells({
       };
       let styledRow: StyledText;
       if (
-        !isChunkCompatibleWrappedHighlight(leftHighlight) ||
-        !isChunkCompatibleWrappedHighlight(rightHighlight)
+        !isChunkCompatibleWrappedHighlight(resolvedLeftHighlight) ||
+        !isChunkCompatibleWrappedHighlight(resolvedRightHighlight)
       ) {
         styledRow = styledTextFromSpanNodes([
           renderWrappedSplitCellLine(
@@ -1213,7 +1244,7 @@ function createWrappedSplitCodeCells({
             theme,
             `${row.key}:left:${index}`,
             leftPrefix,
-            leftHighlight,
+            resolvedLeftHighlight,
             0,
           ),
           renderWrappedSplitCellLine(
@@ -1223,7 +1254,7 @@ function createWrappedSplitCodeCells({
             theme,
             `${row.key}:right:${index}`,
             rightPrefix,
-            rightHighlight,
+            resolvedRightHighlight,
             layout.left.width,
           ),
           guideOnNewSide ? (
@@ -1241,7 +1272,7 @@ function createWrappedSplitCodeCells({
           layout.left.contentWidth,
           theme,
           leftPrefix,
-          leftHighlight,
+          resolvedLeftHighlight,
         );
         appendWrappedCellChunks(
           chunks,
@@ -1250,7 +1281,7 @@ function createWrappedSplitCodeCells({
           layout.right.contentWidth,
           theme,
           rightPrefix,
-          rightHighlight,
+          resolvedRightHighlight,
         );
         appendNoteGuideChunk(chunks, guideOnNewSide, theme);
         styledRow = new StyledText(chunks);
@@ -1288,10 +1319,11 @@ function createWrappedStackCodeCell({
   return {
     lineCount: wrapped.lines.length,
     contentBackground: wrapped.palette.contentBg,
-    paintLine(index, trailingWidth = 0) {
+    paintLine(index, trailingWidth = 0, highlights) {
+      const resolvedHighlight = highlights ? highlights.stack : highlight;
       const line = wrapped.lines[index]!;
       let styledRow: StyledText;
-      if (isChunkCompatibleWrappedHighlight(highlight)) {
+      if (isChunkCompatibleWrappedHighlight(resolvedHighlight)) {
         const chunks: TextChunk[] = [];
         appendWrappedCellChunks(
           chunks,
@@ -1300,7 +1332,7 @@ function createWrappedStackCodeCell({
           layout.cell.contentWidth,
           theme,
           prefix,
-          highlight,
+          resolvedHighlight,
         );
         appendNoteGuideChunk(chunks, guideOnNewSide, theme);
         styledRow = new StyledText(chunks);
@@ -1313,7 +1345,7 @@ function createWrappedStackCodeCell({
             theme,
             `${row.key}:stack:${index}`,
             prefix,
-            highlight,
+            resolvedHighlight,
           ),
           guideOnNewSide ? (
             <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>

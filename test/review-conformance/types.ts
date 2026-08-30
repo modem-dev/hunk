@@ -113,6 +113,8 @@ export interface ReviewSnapshotProjection {
     parentId?: string;
     fileKey: string;
     resolution: "active" | "stale" | "orphaned";
+    oldRange?: [number, number];
+    newRange?: [number, number];
     preferred?: ConformanceLineAddress;
     intersectingHunkIndices: number[];
     ownerHunkIndex?: number;

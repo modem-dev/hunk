@@ -190,6 +190,7 @@ export function AgentInlineNote({
   layout,
   noteCount = 1,
   noteIndex = 0,
+  rangeGuideConnection,
   draft,
   actions,
   onClose,
@@ -204,6 +205,8 @@ export function AgentInlineNote({
   layout: Exclude<LayoutMode, "auto">;
   noteCount?: number;
   noteIndex?: number;
+  /** Join the card's top-right corner to the external range rail. */
+  rangeGuideConnection?: "terminate" | "continue";
   draft?: {
     body: string;
     focused: boolean;
@@ -280,6 +283,40 @@ export function AgentInlineNote({
     width,
     threadDepth,
   });
+  const rangeConnectorGap = Math.max(0, width - boxLeft - boxWidth);
+  const renderRangeGuideConnector = () =>
+    rangeGuideConnection ? (
+      <box
+        style={{
+          width: rangeConnectorGap + 1,
+          height: 1,
+          backgroundColor: theme.panel,
+        }}
+      >
+        <text fg={theme.noteBorder} bg={theme.panel}>
+          {`${"─".repeat(rangeConnectorGap)}${rangeGuideConnection === "continue" ? "┤" : "┘"}`}
+        </text>
+      </box>
+    ) : null;
+  const renderRangeGuideContinuation = (height: number) =>
+    rangeGuideConnection === "continue" ? (
+      <box
+        style={{
+          position: "absolute",
+          left: width,
+          top: 1,
+          width: 1,
+          height: Math.max(0, height - 1),
+          flexDirection: "column",
+        }}
+      >
+        {Array.from({ length: Math.max(0, height - 1) }, (_, index) => (
+          <text key={`range-guide-continuation:${index}`} fg={theme.noteBorder} bg={theme.panel}>
+            │
+          </text>
+        ))}
+      </box>
+    ) : null;
   const visualThreadDepth = Math.min(Math.max(0, threadDepth), 3);
   const connectorWidth = visualThreadDepth * 2;
   const connectorLeft = Math.max(0, boxLeft - connectorWidth);
@@ -466,7 +503,7 @@ export function AgentInlineNote({
   if (draft) {
     const draftVisibleLineCount = draftVisibleRows;
     const draftTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4));
-    const draftTopBorderSuffix = `${"─".repeat(Math.max(0, boxWidth - 3 - draftTitleText.length))}╮`;
+    const draftTopBorderSuffix = `${"─".repeat(Math.max(0, boxWidth - 3 - draftTitleText.length))}${rangeGuideConnection ? "┬" : "╮"}`;
     const draftActionItems: BorderActionItem[] = [
       { id: "save", keyLabel: "^S", label: "save", onMouseUp: draft.onSave },
       { id: "cancel", keyLabel: "Esc", label: "cancel", onMouseUp: draft.onCancel },
@@ -503,7 +540,15 @@ export function AgentInlineNote({
       ));
 
     return (
-      <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
+      <box
+        style={{
+          position: "relative",
+          width: "100%",
+          flexDirection: "column",
+          overflow: "visible",
+          backgroundColor: theme.panel,
+        }}
+      >
         <box
           style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
         >
@@ -525,6 +570,7 @@ export function AgentInlineNote({
               </span>
             </text>
           </box>
+          {renderRangeGuideConnector()}
         </box>
 
         {renderDraftBodyPaddingRows("draft-body-top-padding", draftTopPaddingRows)}
@@ -628,6 +674,7 @@ export function AgentInlineNote({
           </box>
           {renderBottomBorder(draftActionItems)}
         </box>
+        {renderRangeGuideContinuation(draftTextareaRows + 3)}
       </box>
     );
   }
@@ -716,8 +763,18 @@ export function AgentInlineNote({
   const bottomBorderInnerWidth = Math.max(0, boxWidth - 2);
   const showActionOverlay = actionsHovered && savedActionItems.length > 0;
 
+  const savedHeight = (markupLines?.length ?? lines.length) + 3;
+
   return (
-    <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
+    <box
+      style={{
+        position: "relative",
+        width: "100%",
+        flexDirection: "column",
+        overflow: "visible",
+        backgroundColor: theme.panel,
+      }}
+    >
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
           <text fg={threadGuideColor} bg={theme.panel}>
@@ -765,10 +822,11 @@ export function AgentInlineNote({
           ) : null}
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
             <text fg={theme.noteBorder} bg={theme.panel}>
-              ╮
+              {rangeGuideConnection ? "┬" : "╮"}
             </text>
           </box>
         </box>
+        {renderRangeGuideConnector()}
       </box>
 
       {renderSavedBodyRow("saved-note-top-padding", "", "summary")}
@@ -799,6 +857,7 @@ export function AgentInlineNote({
           </box>
         )}
       </box>
+      {renderRangeGuideContinuation(savedHeight)}
     </box>
   );
 }

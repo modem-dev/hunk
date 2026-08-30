@@ -72,6 +72,12 @@ async function flush(setup: Harness) {
   });
 }
 
+/** Invoke the explicit Copy Selection action after a gesture commits its range. */
+async function copyCommittedSelection(setup: Harness) {
+  await act(async () => setup.mockInput.pressKey("y"));
+  await flush(setup);
+}
+
 /** Poll rendered frames until `predicate` matches, resilient to async repaints. */
 async function waitForFrame(
   setup: Harness,
@@ -90,10 +96,9 @@ async function waitForFrame(
     });
     frame = setup.captureCharFrame();
   }
-  // Surface the timeout so a follow-up assertion failure points at the unmet condition
-  // rather than a generic "string does not contain" message during flake investigations.
-  console.warn(`waitForFrame: "${description}" never matched after ${attempts} attempts`);
-  return frame;
+  throw new Error(
+    `Timed out waiting for "${description}" after ${attempts} attempts. Last frame:\n${frame}`,
+  );
 }
 
 /** Find the screen position of the first occurrence of `needle` in the rendered frame. */
@@ -160,6 +165,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       // The drag moved across rows, so release copies the rendered text and shows feedback.
       expect(copied.length).toBeGreaterThan(0);
@@ -174,6 +180,57 @@ describe("DiffPane copy selection", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("vertical scrolling preserves a committed selection for keyboard actions", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("PAGEDOWN"));
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.at(-1)).toContain("em01");
+      expect(copied.at(-1)).toContain("item02");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a height-only resize clears the committed selection", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("c Comment");
+
+      await act(async () => setup.resize(110, 24));
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("y"));
+      await flush(setup);
+
+      expect(copied).toEqual([]);
+      expect(setup.captureCharFrame()).not.toContain("c Comment");
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -195,6 +252,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.release(end!.x + 8, end!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       expect(copied.length).toBeGreaterThan(0);
       expect(copied.at(-1)).toContain("item05");
@@ -230,6 +288,7 @@ describe("DiffPane copy selection", () => {
         );
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       // Cell-aware slicing keeps the copy aligned with the drag: without it, each full-width
       // character shifted the endpoint and the clipboard over-included "'; //".
@@ -254,6 +313,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.doubleClick(target!.x + 2, target!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       expect(copied.length).toBeGreaterThan(0);
       // Word expansion copies a single contiguous token, not a whole multi-token line.
@@ -280,6 +340,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.click(target!.x + 2, target!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       expect(copied.length).toBeGreaterThan(0);
       // Line expansion copies the full token sequence including the assignment.
@@ -288,6 +349,206 @@ describe("DiffPane copy selection", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("an invalid metadata overlap shows its disabled Comment reason beside the selection", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const header = locateText(frame, "@@");
+      const end = locateText(frame, "item03");
+      expect(header).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(header!.x, header!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      const invalidFrame = await waitForFrame(
+        setup,
+        (text) =>
+          text.includes("Comment requires contiguous") && text.includes("code from one file"),
+        "selection Comment reason",
+      );
+      expect(invalidFrame).toContain("Comment requires contiguous");
+      expect(invalidFrame).toContain("code from one file");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a compact invalid action bar wraps its reason below vertical actions", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap(), {
+      width: 32,
+      height: 26,
+    });
+
+    try {
+      const frame = setup.captureCharFrame();
+      const header = locateText(frame, "@@");
+      expect(header).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          header!.x,
+          header!.y,
+          30,
+          Math.min(header!.y + 3, 24),
+          MouseButtons.LEFT,
+        );
+      });
+      const invalidFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Comment requires") && text.includes("contiguous code from one"),
+        "wrapped compact selection reason",
+      );
+      const rows = invalidFrame.split("\n");
+      const commentRow = rows.findIndex((row) => row.includes("c Comment"));
+      const copyRow = rows.findIndex((row) => row.includes("y Copy"));
+      const clearRow = rows.findIndex((row) => row.includes("Esc Clear"));
+      expect(copyRow).toBe(commentRow + 1);
+      expect(clearRow).toBe(copyRow + 1);
+      expect(rows[clearRow + 1]).toContain("Comment requires");
+      expect(rows[clearRow + 2]).toContain("contiguous code");
+      expect(rows[clearRow + 3]).toContain("file");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("selection actions show and honor remapped command bindings", async () => {
+    const bootstrap = {
+      ...createSelectionBootstrap(),
+      keybindings: {
+        "hunk.review.startNote": "ctrl+n",
+        "hunk.review.copySelection": "ctrl+x",
+      },
+    };
+    const { setup, copied } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      const selectedFrame = setup.captureCharFrame();
+      expect(selectedFrame).toContain("Ctrl+N Comment");
+      expect(selectedFrame).toContain("Ctrl+X Copy");
+      expect(selectedFrame).not.toContain("c Comment");
+      expect(selectedFrame).not.toContain("y Copy");
+
+      await act(async () => setup.mockInput.pressKey("x", { ctrl: true }));
+      await flush(setup);
+      expect(copied).toHaveLength(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("selection actions omit key hints for unbound commands", async () => {
+    const bootstrap: AppBootstrap = {
+      ...createSelectionBootstrap(),
+      keybindings: {
+        "hunk.review.startNote": false,
+        "hunk.review.copySelection": false,
+      },
+    };
+    const { setup } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      const selectedFrame = setup.captureCharFrame();
+      expect(selectedFrame).toContain(" Comment ");
+      expect(selectedFrame).toContain(" Copy ");
+      expect(selectedFrame).not.toContain("c Comment");
+      expect(selectedFrame).not.toContain("y Copy");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a committed mouse range opens the inline composer with c", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("c"));
+      const composerFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Write a note"),
+        "range note composer",
+      );
+      expect(composerFrame).toContain("Write a note");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("Escape contextually clears an active selection without a global command binding", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("c Comment");
+
+      await act(async () => setup.mockInput.pressEscape());
+      const clearedFrame = await waitForFrame(
+        setup,
+        (text) => !text.includes("c Comment"),
+        "selection to clear on Escape",
+      );
+      expect(clearedFrame).not.toContain("c Comment");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keyboard visual selection extends with line navigation and copies with y", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      await act(async () => {
+        await setup.mockInput.pressKey("v");
+        await setup.mockInput.pressKey("j");
+        await setup.mockInput.pressKey("j");
+        await setup.mockInput.pressKey("y");
+      });
+      await flush(setup);
+
+      expect(copied).toHaveLength(1);
+      expect(copied[0]).toContain("item01");
+      expect(copied[0]).toContain("item02");
+      expect(copied[0]).toContain("item03");
+      expect(copied[0]).not.toContain("item04");
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -335,6 +596,7 @@ describe("DiffPane copy selection", () => {
         );
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       expect(copied.length).toBeGreaterThan(0);
     } finally {
@@ -409,6 +671,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       // The drag still resolves a selection, but the unsupported terminal falls back to a notice.
       expect(copied.length).toBe(0);
@@ -446,6 +709,7 @@ describe("DiffPane copy selection", () => {
         );
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       // Dragging from the pinned header into the body still produces a copied selection.
       expect(copied.length).toBeGreaterThan(0);
@@ -472,6 +736,7 @@ describe("DiffPane copy selection", () => {
         await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 2, end!.y, MouseButtons.LEFT);
       });
       await flush(setup);
+      await copyCommittedSelection(setup);
 
       expect(copied.length).toBeGreaterThan(0);
     } finally {

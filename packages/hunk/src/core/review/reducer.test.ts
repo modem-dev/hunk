@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   createTestReviewDocument,
+  createTestReviewHunk,
   createTestReviewState,
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
@@ -10,6 +11,38 @@ import type { ReviewState } from "./state";
 /** Apply several actions in order, as one dispatch batch would. */
 function reduceAll(state: ReviewState, ...actions: Parameters<typeof reduceReviewState>[1][]) {
   return actions.reduce(reduceReviewState, state);
+}
+
+/** Build a draft whose line is backed by full-source authority rather than a patch row. */
+function createExpandedLineDraftState() {
+  return reduceReviewState(
+    createTestReviewState([
+      { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+      { key: "beta" },
+    ]),
+    {
+      type: "draft/start",
+      draft: {
+        id: "draft-gap",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        side: "new",
+        line: 7,
+        targetKind: "line",
+        expandedLineSource: {
+          sourceIdentity: "source:alpha",
+          sourceAttested: true,
+        },
+        anchor: {
+          newRange: [7, 7],
+          preferred: { side: "new", line: 7 },
+          intersectingHunkIndices: [],
+          ownerHunkIndex: 1,
+        },
+        body: "gap feedback",
+      },
+    },
+  );
 }
 
 describe("selection", () => {
@@ -185,6 +218,145 @@ describe("document reconciliation", () => {
     expect(next.expandedGaps).toEqual([]);
   });
 
+  test("preserves and re-resolves an unchanged expanded-gap line draft", () => {
+    const next = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+        { key: "beta" },
+      ]),
+    });
+
+    expect(next.draftNote).toMatchObject({
+      id: "draft-gap",
+      hunkIndex: 1,
+      side: "new",
+      line: 7,
+      targetKind: "line",
+      expandedLineSource: {
+        sourceIdentity: "source:alpha",
+        sourceAttested: true,
+      },
+      body: "gap feedback",
+      anchor: {
+        newRange: [7, 7],
+        preferred: { side: "new", line: 7 },
+        intersectingHunkIndices: [],
+        ownerHunkIndex: 1,
+      },
+    });
+  });
+
+  test("retires an expanded-gap line draft when source identity or attestation changes", () => {
+    const changedIdentity = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:changed", sourceAttested: true },
+        { key: "beta" },
+      ]),
+    });
+    const changedAttestation = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: false },
+        { key: "beta" },
+      ]),
+    });
+
+    expect(changedIdentity.draftNote).toBeNull();
+    expect(changedAttestation.draftNote).toBeNull();
+  });
+
+  test("retires a zero-count-side draft when its source authority changes", () => {
+    const state = createTestReviewState([
+      { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+    ]);
+    const hunk = { ...createTestReviewHunk(0), deletionCount: 0, deletionLines: 0 };
+    state.document.files[0]!.hunks = [hunk];
+    const withDraft = reduceReviewState(state, {
+      type: "draft/start",
+      draft: {
+        id: "draft-zero-side",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        side: "old",
+        line: hunk.deletionStart,
+        targetKind: "line",
+        expandedLineSource: { sourceIdentity: "source:one", sourceAttested: true },
+        body: "source-backed",
+      },
+    });
+    const replacement = createTestReviewDocument([
+      { key: "alpha", sourceIdentity: "source:two", sourceAttested: true },
+    ]);
+    replacement.files[0]!.hunks = [hunk];
+
+    expect(
+      reduceReviewState(withDraft, { type: "document/reconcile", document: replacement }).draftNote,
+    ).toBeNull();
+  });
+
+  test("keeps ordinary patch-line and range drafts when only source authority changes", () => {
+    const state = reduceReviewState(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+        { key: "beta" },
+      ]),
+      {
+        type: "draft/start",
+        draft: {
+          id: "draft-patch",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          side: "new",
+          line: 2,
+          targetKind: "line",
+          body: "patch feedback",
+        },
+      },
+    );
+
+    const replacementDocument = createTestReviewDocument([
+      { key: "alpha", sourceIdentity: "source:two", sourceAttested: false },
+      { key: "beta" },
+    ]);
+    const next = reduceReviewState(state, {
+      type: "document/reconcile",
+      document: replacementDocument,
+    });
+    const rangeState = reduceReviewState(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+        { key: "beta" },
+      ]),
+      {
+        type: "draft/start",
+        draft: {
+          id: "draft-range",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          side: "new",
+          line: 2,
+          targetKind: "range",
+          anchor: {
+            newRange: [1, 3],
+            preferred: { side: "new", line: 2 },
+            intersectingHunkIndices: [0],
+            ownerHunkIndex: 0,
+          },
+          body: "range feedback",
+        },
+      },
+    );
+    const rangeNext = reduceReviewState(rangeState, {
+      type: "document/reconcile",
+      document: replacementDocument,
+    });
+
+    expect(next.draftNote).toMatchObject({ id: "draft-patch", body: "patch feedback" });
+    expect(rangeNext.draftNote).toMatchObject({ id: "draft-range", body: "range feedback" });
+  });
+
   test("keeps notes and the active draft across a reload", () => {
     const state = reduceAll(
       createTestReviewState(),
@@ -196,7 +368,7 @@ describe("document reconciliation", () => {
           fileKey: "alpha",
           hunkIndex: 0,
           side: "new",
-          line: 4,
+          line: 2,
           body: "wip",
         },
       },
@@ -208,7 +380,16 @@ describe("document reconciliation", () => {
     });
 
     expect(next.liveNotes).toHaveLength(1);
-    expect(next.draftNote?.body).toBe("wip");
+    expect(next.draftNote).toMatchObject({
+      body: "wip",
+      targetKind: "line",
+      hunkIndex: 0,
+      anchor: {
+        newRange: [2, 2],
+        preferred: { side: "new", line: 2 },
+        ownerHunkIndex: 0,
+      },
+    });
   });
 });
 

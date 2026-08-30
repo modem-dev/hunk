@@ -4,12 +4,26 @@ export interface VerticalBounds {
   height: number;
 }
 
-/** One selected column extent on a single row, in global review-stream columns (inclusive). */
-export interface CopySelectedRowRange {
+/** One selected column extent on a visual row, in global review-stream columns (inclusive). */
+export interface CopySelectedCellRange {
   /** Global column where the selection starts on this row. */
   startCol: number;
   /** Global column where the selection ends on this row (inclusive). */
   endCol: number;
+}
+
+/** Selection paint for one planned row and, when wrapped, each intersecting visual line. */
+export interface CopySelectedRowRange extends CopySelectedCellRange {
+  /** Per-line paint ranges; omitted entries are outside the selected visual-row interval. */
+  visualLineRanges?: readonly (CopySelectedCellRange | undefined)[];
+}
+
+/** Resolve the selected columns for one visual line of a planned row. */
+export function copySelectedRangeAtVisualLine(
+  range: CopySelectedRowRange | undefined,
+  visualLineIndex: number,
+): CopySelectedCellRange | undefined {
+  return range?.visualLineRanges ? range.visualLineRanges[visualLineIndex] : range;
 }
 
 /**

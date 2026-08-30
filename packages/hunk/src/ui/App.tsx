@@ -45,7 +45,7 @@ import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
-import { DiffPane } from "./components/panes/DiffPane";
+import { DiffPane, type ReviewSelectionActionsHandle } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import {
@@ -86,6 +86,7 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  findAppCommandById,
   observeAppCommandDispatch,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
@@ -223,6 +224,7 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
+  const selectionActionsRef = useRef<ReviewSelectionActionsHandle | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
     id: number;
@@ -294,6 +296,13 @@ export function App({
     ],
   );
   const filteredFiles = review.visibleFiles;
+  const semanticFileIdentities = useMemo(
+    () =>
+      filteredFiles.map(
+        (file) => review.semanticFileIdentityByFileId.get(file.id) ?? `runtime:${file.id}`,
+      ),
+    [filteredFiles, review.semanticFileIdentityByFileId],
+  );
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
   const selectedFileId = selectedFile?.id ?? null;
@@ -680,6 +689,8 @@ export function App({
     });
   const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
   const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
+  // Diff content leaves two outer columns: the first carries the annotation range rail and the
+  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
@@ -822,6 +833,7 @@ export function App({
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
+    if (selectionActionsRef.current?.move(delta)) return;
     if (!activeLineCursor) {
       scrollDiff(delta, "step");
       return;
@@ -1099,7 +1111,13 @@ export function App({
         stepDiffLine,
         selectCursorLine: setCursorLine,
         selectLayoutMode,
-        startUserNote: () => startUserNote(),
+        hasVisualSelection: () => selectionActionsRef.current?.hasSelection() ?? false,
+        startVisualSelection: () => selectionActionsRef.current?.beginKeyboardSelection(),
+        copySelection: () => selectionActionsRef.current?.copy(),
+        clearSelection: () => selectionActionsRef.current?.clear(),
+        startUserNote: () => {
+          if (!selectionActionsRef.current?.comment()) startUserNote();
+        },
         toggleAgentNotes,
         toggleCopyDecorations,
         toggleFocusArea,
@@ -1121,6 +1139,10 @@ export function App({
     ],
     publishCommandExecuted,
   );
+  const selectionCommentKeyLabel = findAppCommandById(appCommands, "hunk.review.startNote")
+    ?.keyLabels[0];
+  const selectionCopyKeyLabel = findAppCommandById(appCommands, "hunk.review.copySelection")
+    ?.keyLabels[0];
   useExtensionRuntimeBindings({
     commands: appCommands,
     navigation: extensionNavigationBindings,
@@ -1186,6 +1208,7 @@ export function App({
     closeThemeSelector,
     closeExtensionTrustPrompt,
     commands: appCommands,
+    clearVisualSelection: () => selectionActionsRef.current?.clear() ?? false,
     denyRepoExtensions,
     extensionDialog,
     acceptExtensionDialog,
@@ -1374,6 +1397,13 @@ export function App({
           endPaneResize(event);
           closeMenu();
           cancelCopySelectionRef.current?.();
+          const reviewLeft = bodyPadding / 2 + presentedPaneLayout.reviewBounds.x;
+          const outsideReview =
+            event.x < reviewLeft ||
+            event.x >= reviewLeft + diffPaneWidth ||
+            event.y < diffPaneScreenTop ||
+            event.y >= diffPaneScreenTop + diffPaneHeight;
+          if (outsideReview) selectionActionsRef.current?.clear();
         }}
       >
         {presentedPaneLayout.panes.map(renderPane)}
@@ -1389,12 +1419,16 @@ export function App({
         >
           <DiffPane
             cancelCopySelectionRef={cancelCopySelectionRef}
+            selectionActionsRef={selectionActionsRef}
+            selectionCommentKeyLabel={selectionCommentKeyLabel}
+            selectionCopyKeyLabel={selectionCopyKeyLabel}
             codeHorizontalOffset={codeHorizontalOffset}
             copyDecorations={copyDecorations}
             diffContentWidth={diffContentWidth}
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}

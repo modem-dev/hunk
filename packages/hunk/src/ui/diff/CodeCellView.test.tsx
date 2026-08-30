@@ -7,6 +7,7 @@ import {
   cursorLineHighlightBg,
   lineHighlightToneStyle,
   selectionHighlightBg,
+  splitCellPalette,
   stackCellPalette,
 } from "./rowStyle";
 import { plannedDiffRowFromRaw, planCodeRowLayout } from "./codeRowLayout";
@@ -112,6 +113,53 @@ describe("CodeCellView painting", () => {
         selectionHighlightBg(stackCellPalette("addition", theme).contentBg, theme).toLowerCase(),
       );
       expect(capture.frame).toContain("abcd");
+    }
+  });
+
+  test("highlights a selection ending on the first source cell", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const splitRow: Extract<DiffRow, { type: "split-line" }> = {
+      type: "split-line",
+      key: "paint:split-first-cell",
+      fileId: "paint",
+      hunkIndex: 0,
+      left: { kind: "deletion", sign: "-", lineNumber: 1, spans: [{ text: "old" }] },
+      right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "new" }] },
+    };
+
+    for (const wrapLines of [false, true]) {
+      for (const row of [stackRow, splitRow]) {
+        const plannedRow = plannedDiffRowFromRaw(row);
+        const width = row.type === "split-line" ? 24 : 12;
+        const layout = planCodeRowLayout(plannedRow, {
+          width,
+          lineNumberDigits: 1,
+          showLineNumbers: false,
+          wrapLines,
+        });
+        if (!layout) throw new Error("Expected code row layout");
+        const contentStart =
+          layout.kind === "stack"
+            ? layout.cell.prefixWidth + layout.cell.gutterWidth
+            : layout.left.width + layout.right.prefixWidth + layout.right.gutterWidth;
+        const capture = await captureCodeRow(
+          codeRowView(row, {
+            copySelectedRowRange: { startCol: contentStart, endCol: contentStart },
+            copySelectedSide: row.type === "split-line" ? "right" : undefined,
+            width,
+            wrapLines,
+          }),
+          width,
+        );
+        const sourceText = row.type === "split-line" ? "n" : "a";
+        const contentBg =
+          row.type === "split-line"
+            ? splitCellPalette("addition", theme).contentBg
+            : stackCellPalette("addition", theme).contentBg;
+        expect(backgroundForText(capture.spans, sourceText)).toBe(
+          selectionHighlightBg(contentBg, theme).toLowerCase(),
+        );
+      }
     }
   });
 

@@ -3,7 +3,7 @@
  * Semantic draft and saved-note transitions remain owned by the terminal review controller.
  */
 import { useCallback, useState } from "react";
-import type { UserNoteLineTarget } from "../../core/liveComments";
+import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import type { ExtensionEventPayloads, ExtensionReviewNote } from "../../extensions/types";
 import type { ActiveAddNoteAffordance } from "../diff/DiffSectionBody";
 import type { LineCursor } from "../lib/lineCursors";
@@ -13,7 +13,15 @@ type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 type UserNoteEventPayloads = Pick<ExtensionEventPayloads, "note_created" | "note_edited">;
 type ProjectableReviewNote = Pick<
   DraftReviewNote,
-  "id" | "fileId" | "filePath" | "hunkIndex" | "side" | "line" | "parentId"
+  | "id"
+  | "fileId"
+  | "filePath"
+  | "hunkIndex"
+  | "side"
+  | "line"
+  | "parentId"
+  | "oldRange"
+  | "newRange"
 > & {
   body?: string;
   summary?: string;
@@ -38,6 +46,8 @@ export function projectExtensionReviewNote(
     hunkIndex: note.hunkIndex,
     side: note.side,
     line: note.line,
+    ...(note.oldRange ? { oldRange: note.oldRange } : {}),
+    ...(note.newRange ? { newRange: note.newRange } : {}),
     body: note.body ?? note.summary ?? "",
     draft,
   };
@@ -51,7 +61,7 @@ export interface UseUserNoteComposerOptions {
   startDraft: (
     fileId?: string,
     hunkIndex?: number,
-    target?: UserNoteLineTarget,
+    target?: ReviewNoteTargetV1,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   startEdit?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
@@ -89,7 +99,7 @@ export function useUserNoteComposer({
 
   /** Start a draft at an explicit target, hovered affordance, or enabled line cursor. */
   const startUserNote = useCallback(
-    (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
+    (fileId?: string, hunkIndex?: number, target?: ReviewNoteTargetV1) => {
       // Hover and the current line are fallbacks only for a fully implicit start. Any
       // explicit location fact must not inherit whichever row happened to remain hovered.
       const hasExplicitTarget =

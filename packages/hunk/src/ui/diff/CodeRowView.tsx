@@ -1,6 +1,6 @@
 /** Mounts split and stack code rows from the canonical code-row layout and paint plans. */
 import type { UserNoteLineTarget } from "../../core/liveComments";
-import type { CopySelectedRowRange } from "../lib/diffSpatial";
+import { copySelectedRangeAtVisualLine, type CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
 import {
   CODE_ROW_ADD_NOTE_BADGE_TEXT,
@@ -58,11 +58,18 @@ function renderAddNoteButton(
   hunkIndex: number,
   target: UserNoteLineTarget | undefined,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  overlayColumn?: number,
 ) {
   return (
     <box
       key={key}
-      style={{ width: CODE_ROW_ADD_NOTE_BADGE_WIDTH, height: 1 }}
+      style={{
+        width: CODE_ROW_ADD_NOTE_BADGE_WIDTH,
+        height: 1,
+        ...(overlayColumn !== undefined
+          ? { position: "absolute" as const, left: overlayColumn, top: 0 }
+          : {}),
+      }}
       onMouseUp={(event) => {
         markNestedRowMouseAction(event);
         onStartUserNoteAtHunk?.(hunkIndex, target);
@@ -70,6 +77,17 @@ function renderAddNoteButton(
     >
       <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
         {CODE_ROW_ADD_NOTE_BADGE_TEXT}
+      </text>
+    </box>
+  );
+}
+
+/** Paint one range guide in the annotation gutter immediately outside diff content. */
+function renderExternalRangeGuide(key: string, width: number, theme: AppTheme) {
+  return (
+    <box key={key} style={{ position: "absolute", left: width, top: 0, width: 1, height: 1 }}>
+      <text fg={theme.noteBorder} bg={theme.panel}>
+        │
       </text>
     </box>
   );
@@ -113,74 +131,78 @@ export function CodeRowView({
     theme,
   ) as CodeDiffRow;
   const { anchorId } = plannedRow;
-  const hasCopySelection = copySelectedRowRange !== undefined;
   const codeRowLayout = planCodeRowLayout(plannedRow, {
     lineNumberDigits,
     reserveAddNoteColumn: Boolean(onStartUserNoteAtHunk),
-    showAddNoteBadge,
+    // Nowrap rows paint the hover affordance over their trailing cells so the note guide stays
+    // fixed. Wrapped rows reserve the column because overlaying continuation text would hide code.
+    showAddNoteBadge: wrapLines && showAddNoteBadge,
     showLineNumbers,
     width,
     wrapLines,
   }) as CodeRowLayoutPlan;
-
-  // For split rows, the user's drag is anchored to one column-half of the diff. Apply the
-  // selection-highlight blend only to that side so it is clear which file (A or B) the
-  // selection represents.
-  const hasLeftSelection = hasCopySelection && copySelectedSide !== "right";
-  const hasRightSelection = hasCopySelection && copySelectedSide !== "left";
 
   // A split context row shows the same source line on both halves, so marking one of them would
   // read as half a row. Change rows keep the split, since the halves are different note targets.
   const splitContextRow =
     row.type === "split-line" && row.left.kind === "context" && row.right.kind === "context";
   const onCursorRow = cursorHighlight !== undefined;
-  const selectionHighlight: CodeCellHighlight = {
+  const selectionHighlight = (visualLineIndex: number): CodeCellHighlight => ({
     bg: (baseBg) => selectionHighlightBg(baseBg, theme),
-    colRange: copySelectedRowRange,
-  };
+    colRange: copySelectedRangeAtVisualLine(copySelectedRowRange, visualLineIndex),
+  });
   const cursorRowHighlight: CodeCellHighlight | undefined = onCursorRow
     ? {
         bg: (baseBg) => cursorLineHighlightBg(baseBg, theme),
         colRange: cursorHighlight.style === "row" ? FULL_CODE_CELL_COL_RANGE : undefined,
       }
     : undefined;
-  const leftHighlight = pickRowHighlight(
-    selectionHighlight,
-    cursorRowHighlight,
-    hasLeftSelection,
-    onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
-  );
-  const rightHighlight = pickRowHighlight(
-    selectionHighlight,
-    cursorRowHighlight,
-    hasRightSelection,
-    onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
-  );
-  const cellHighlight = pickRowHighlight(
-    selectionHighlight,
-    cursorRowHighlight,
-    hasCopySelection,
-    onCursorRow,
-  );
+  /** Resolve copy-selection boundaries separately for each wrapped visual line. */
+  const highlightsAtVisualLine = (visualLineIndex: number) => {
+    const selectedRange = copySelectedRangeAtVisualLine(copySelectedRowRange, visualLineIndex);
+    const lineHasSelection = selectedRange !== undefined;
+    const lineSelectionHighlight = selectionHighlight(visualLineIndex);
+    return {
+      left: pickRowHighlight(
+        lineSelectionHighlight,
+        cursorRowHighlight,
+        lineHasSelection && copySelectedSide !== "right",
+        onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
+      ),
+      right: pickRowHighlight(
+        lineSelectionHighlight,
+        cursorRowHighlight,
+        lineHasSelection && copySelectedSide !== "left",
+        onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
+      ),
+      stack: pickRowHighlight(
+        lineSelectionHighlight,
+        cursorRowHighlight,
+        lineHasSelection,
+        onCursorRow,
+      ),
+    };
+  };
+  const firstLineHighlights = highlightsAtVisualLine(0);
+  const leftHighlight = firstLineHighlights.left;
+  const rightHighlight = firstLineHighlights.right;
+  const cellHighlight = firstLineHighlights.stack;
 
   if (row.type === "split-line") {
     // The planner and row type are derived from the same complete planned row.
     const splitLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "split" }>;
-    const guideOnOldSide = splitLayout.noteGuideSide === "old";
-    const guideOnNewSide = splitLayout.noteGuideSide === "new";
+    const hasRangeGuide = splitLayout.noteGuideSide !== undefined;
     const addNoteTarget = resolveCodeRowNoteTarget(row);
 
     const addBadgeWidth = splitLayout.addNoteBadgeWidth;
     const leftPrefix = {
-      text: guideOnOldSide ? "│" : diffRailMarker(),
-      fg: guideOnOldSide
-        ? theme.noteBorder
-        : splitLeftRailColor(row.left.kind, theme, selected || hasCopySelection),
+      text: diffRailMarker(),
+      fg: splitLeftRailColor(row.left.kind, theme, selected),
       bg: theme.panel,
     };
     const rightPrefix = {
       text: "▌",
-      fg: splitRightRailColor(row.right.kind, theme, selected || hasCopySelection),
+      fg: splitRightRailColor(row.right.kind, theme, selected),
       bg: theme.panel,
     };
 
@@ -188,15 +210,16 @@ export function CodeRowView({
       return (
         <box
           id={anchorId}
-          style={{ width: "100%", height: 1, flexDirection: "row" }}
+          style={{
+            position: "relative",
+            width: "100%",
+            height: 1,
+            flexDirection: "row",
+            overflow: "visible",
+          }}
           onMouseMove={() => onHoverRow?.(row.key)}
         >
-          <box
-            style={{
-              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
-              height: 1,
-            }}
-          >
+          <box style={{ width: "100%", height: 1 }}>
             {codeCellView.renderNowrapSplit({
               row,
               layout: splitLayout,
@@ -208,7 +231,7 @@ export function CodeRowView({
               rightPrefix,
               leftHighlight,
               rightHighlight,
-              guideOnNewSide,
+              guideOnNewSide: false,
             })}
           </box>
           {showAddNoteBadge
@@ -218,8 +241,10 @@ export function CodeRowView({
                 row.hunkIndex,
                 addNoteTarget,
                 onStartUserNoteAtHunk,
+                Math.max(0, width - CODE_ROW_ADD_NOTE_BADGE_WIDTH),
               )
             : null}
+          {hasRangeGuide ? renderExternalRangeGuide(`${row.key}:range-guide`, width, theme) : null}
         </box>
       );
     }
@@ -234,40 +259,50 @@ export function CodeRowView({
       rightPrefix,
       leftHighlight,
       rightHighlight,
-      guideOnNewSide,
+      guideOnNewSide: false,
     });
 
     return (
-      <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
+      <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
         {Array.from({ length: wrapped.lineCount }, (_, index) => {
           const showBadgeOnLine = showAddNoteBadge && index === 0;
-          const styledRow = wrapped.paintLine(index, showBadgeOnLine ? 0 : addBadgeWidth);
+          const styledRow = wrapped.paintLine(
+            index,
+            showBadgeOnLine ? 0 : addBadgeWidth,
+            highlightsAtVisualLine(index),
+          );
 
-          if (!showBadgeOnLine) {
-            return (
-              <text
-                key={`${row.key}:wrap:${index}`}
-                content={styledRow}
-                onMouseMove={() => onHoverRow?.(row.key)}
-              />
-            );
-          }
           return (
             <box
               key={`${row.key}:wrap:${index}`}
-              style={{ width: "100%", height: 1, flexDirection: "row" }}
+              style={{
+                position: "relative",
+                width: "100%",
+                height: 1,
+                flexDirection: "row",
+                overflow: "visible",
+              }}
               onMouseMove={() => onHoverRow?.(row.key)}
             >
-              <box style={{ width: Math.max(0, width - addBadgeWidth), height: 1 }}>
+              {showBadgeOnLine ? (
+                <>
+                  <box style={{ width: Math.max(0, width - addBadgeWidth), height: 1 }}>
+                    <text content={styledRow} />
+                  </box>
+                  {renderAddNoteButton(
+                    `${row.key}:add-note:${index}`,
+                    theme,
+                    row.hunkIndex,
+                    addNoteTarget,
+                    onStartUserNoteAtHunk,
+                  )}
+                </>
+              ) : (
                 <text content={styledRow} />
-              </box>
-              {renderAddNoteButton(
-                `${row.key}:add-note:${index}`,
-                theme,
-                row.hunkIndex,
-                addNoteTarget,
-                onStartUserNoteAtHunk,
               )}
+              {hasRangeGuide
+                ? renderExternalRangeGuide(`${row.key}:range-guide:${index}`, width, theme)
+                : null}
             </box>
           );
         })}
@@ -277,15 +312,12 @@ export function CodeRowView({
 
   // The planner and row type are derived from the same complete planned row.
   const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
-  const guideOnOldSide = stackLayout.noteGuideSide === "old";
-  const guideOnNewSide = stackLayout.noteGuideSide === "new";
+  const hasRangeGuide = stackLayout.noteGuideSide !== undefined;
   const addNoteTarget = resolveCodeRowNoteTarget(row);
   const addBadgeWidth = stackLayout.addNoteBadgeWidth;
   const prefix = {
-    text: guideOnOldSide ? "│" : diffRailMarker(),
-    fg: guideOnOldSide
-      ? theme.noteBorder
-      : stackRailColor(row.cell.kind, theme, selected || hasCopySelection),
+    text: diffRailMarker(),
+    fg: stackRailColor(row.cell.kind, theme, selected),
     bg: theme.panel,
   };
 
@@ -293,15 +325,16 @@ export function CodeRowView({
     return (
       <box
         id={anchorId}
-        style={{ width: "100%", height: 1, flexDirection: "row" }}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: 1,
+          flexDirection: "row",
+          overflow: "visible",
+        }}
         onMouseMove={() => onHoverRow?.(row.key)}
       >
-        <box
-          style={{
-            width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
-            height: 1,
-          }}
-        >
+        <box style={{ width: "100%", height: 1 }}>
           {codeCellView.renderNowrapStack({
             row,
             layout: stackLayout,
@@ -311,7 +344,7 @@ export function CodeRowView({
             horizontalOffset: codeHorizontalOffset,
             prefix,
             highlight: cellHighlight,
-            guideOnNewSide,
+            guideOnNewSide: false,
           })}
         </box>
         {showAddNoteBadge
@@ -321,8 +354,10 @@ export function CodeRowView({
               row.hunkIndex,
               addNoteTarget,
               onStartUserNoteAtHunk,
+              Math.max(0, width - CODE_ROW_ADD_NOTE_BADGE_WIDTH),
             )
           : null}
+        {hasRangeGuide ? renderExternalRangeGuide(`${row.key}:range-guide`, width, theme) : null}
       </box>
     );
   }
@@ -335,19 +370,25 @@ export function CodeRowView({
     theme,
     prefix,
     highlight: cellHighlight,
-    guideOnNewSide,
+    guideOnNewSide: false,
   });
 
   return (
-    <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
+    <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
       {Array.from({ length: wrapped.lineCount }, (_, index) => {
         const showBadgeOnLine = showAddNoteBadge && index === 0;
-        const styledRow = wrapped.paintLine(index);
+        const styledRow = wrapped.paintLine(index, 0, highlightsAtVisualLine(index));
 
         return (
           <box
             key={`${row.key}:wrap:${index}`}
-            style={{ width: "100%", height: 1, flexDirection: "row" }}
+            style={{
+              position: "relative",
+              width: "100%",
+              height: 1,
+              flexDirection: "row",
+              overflow: "visible",
+            }}
             onMouseMove={() => onHoverRow?.(row.key)}
           >
             <box
@@ -371,6 +412,9 @@ export function CodeRowView({
                   addBadgeWidth,
                   wrapped.contentBackground,
                 )}
+            {hasRangeGuide
+              ? renderExternalRangeGuide(`${row.key}:range-guide:${index}`, width, theme)
+              : null}
           </box>
         );
       })}

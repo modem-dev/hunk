@@ -85,7 +85,7 @@ function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "
 }
 
 describe("review render plan", () => {
-  test("inserts an inline note after the anchor row and starts the guide below the note", () => {
+  test("connects the full annotated range directly into its inline note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "alpha",
@@ -117,6 +117,7 @@ describe("review render plan", () => {
       expect(note.anchorSide).toBe("new");
       expect(note.noteCount).toBe(1);
       expect(note.noteIndex).toBe(0);
+      expect(note.rangeGuideConnection).toBe("continue");
     }
 
     const anchoredRow = inlineNoteAnchorRow(plannedRows);
@@ -128,10 +129,42 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([3]);
+    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([2, 3]);
   });
 
-  test("anchors deletion-only notes to old-side rows without a dangling guide above the note", () => {
+  test("keeps the aggregate rail connected through overlapping cards", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "overlap",
+      "overlap.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\nexport const beta = 3;\nexport const gamma = 4;\n",
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const notes = [
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "long",
+        annotation: { newRange: [2, 3], summary: "long range" },
+      }),
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "range-less",
+        annotation: { summary: "hunk note" },
+        target: { hunkIndex: 0, side: "new", line: 2 },
+      }),
+    ];
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      visibleAgentNotes: notes,
+    });
+    const inlineNotes = plannedRows.filter((row) => row.kind === "inline-note");
+
+    expect(inlineNotes).toHaveLength(2);
+    expect(inlineNotes.map((row) => row.rangeGuideConnection)).toEqual(["continue", "continue"]);
+  });
+
+  test("connects a deletion-only anchor row directly into its inline note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "deleted",
@@ -173,7 +206,7 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([]);
+    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1]);
   });
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {

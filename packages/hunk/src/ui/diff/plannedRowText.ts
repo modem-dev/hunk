@@ -210,9 +210,8 @@ export function renderDecoratedPlannedRowText(
       CodeRowLayoutPlan,
       { kind: "split" }
     >;
-    const guideOnOldSide = codeLayout.noteGuideSide === "old";
-    const guideOnNewSide = codeLayout.noteGuideSide === "new";
-    const leftPrefix = guideOnOldSide ? "│" : diffRailMarker();
+    // The external range rail is presentation chrome outside this canonical text width.
+    const leftPrefix = diffRailMarker();
     const rightPrefix = "▌";
 
     const leftCell = buildPlainSplitCellLines(
@@ -254,10 +253,10 @@ export function renderDecoratedPlannedRowText(
         return normalizedLeft;
       }
       if (side === "right") {
-        return `${normalizedRight}${guideOnNewSide ? "│" : ""}`;
+        return normalizedRight;
       }
 
-      return `${normalizedLeft}${normalizedRight}${guideOnNewSide ? "│" : ""}`;
+      return `${normalizedLeft}${normalizedRight}`;
     });
   }
 
@@ -269,9 +268,8 @@ export function renderDecoratedPlannedRowText(
     CodeRowLayoutPlan,
     { kind: "stack" }
   >;
-  const guideOnOldSide = codeLayout.noteGuideSide === "old";
-  const guideOnNewSide = codeLayout.noteGuideSide === "new";
-  const prefix = guideOnOldSide ? "│" : diffRailMarker();
+  // The external range rail is presentation chrome outside this canonical text width.
+  const prefix = diffRailMarker();
   const cellLines = buildPlainStackCellLines(
     preparedRow.cell,
     codeLayout.cell,
@@ -284,7 +282,7 @@ export function renderDecoratedPlannedRowText(
   return cellLines.map((line) => {
     const visibleLine = `${prefix}${line.spansText}`;
     const normalized = padText(visibleLine, Math.max(1, codeLayout.cell.width));
-    return `${normalized}${guideOnNewSide ? "│" : ""}`;
+    return normalized;
   });
 }
 
