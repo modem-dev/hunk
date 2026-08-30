@@ -1,4 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { HUNK_SESSION_DAEMON_VERSION } from "../protocol";
+import {
+  HUNK_SESSION_BROKER_APP_ID,
+  HUNK_SESSION_BROKER_APP_REVISION,
+  HUNK_SESSION_BROKER_FEATURES,
+  HUNK_SESSION_BROKER_REVISION,
+} from "./appContract";
 import {
   DEFAULT_SESSION_BROKER_HOST,
   DEFAULT_SESSION_BROKER_PORT,
@@ -11,6 +18,14 @@ import {
 } from "./brokerConfig";
 
 describe("Hunk session daemon config", () => {
+  test("exports one fixed Phase-1 Hunk contract", () => {
+    expect(HUNK_SESSION_BROKER_APP_ID).toBe("dev.hunk");
+    expect(HUNK_SESSION_BROKER_REVISION).toBe(1);
+    expect(HUNK_SESSION_BROKER_APP_REVISION).toBe(HUNK_SESSION_DAEMON_VERSION);
+    expect(HUNK_SESSION_BROKER_FEATURES).toEqual([]);
+    expect(Object.isFrozen(HUNK_SESSION_BROKER_FEATURES)).toBe(true);
+  });
+
   test("resolves exported host and port metadata as runtime defaults", () => {
     expect(resolveSessionBrokerConfig({})).toMatchObject({
       host: DEFAULT_SESSION_BROKER_HOST,

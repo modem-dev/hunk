@@ -83,6 +83,8 @@ export interface SessionBrokerHealth {
 export interface SessionBrokerSocketCloseEvent {
   code: number;
   reason: string;
+  /** Whether this socket completed authentication and became the active producer transport. */
+  authenticated?: boolean;
 }
 
 export interface SessionBrokerSocketMessageEvent {

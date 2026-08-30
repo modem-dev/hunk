@@ -30,6 +30,7 @@ describe("session broker limits", () => {
       maxInFlightWsBytes: 64 * 1024 * 1024,
       challengeTtlMs: 15_000,
       callerSessionTtlMs: 5 * 60_000,
+      maxHandshakeDurationMs: 15_000,
     });
     expect(Object.isFrozen(DEFAULT_SESSION_BROKER_LIMITS)).toBe(true);
   });
@@ -64,6 +65,31 @@ describe("session broker limits", () => {
     expect(() => resolveSessionBrokerLimits({ limits: { unknown: 1 } as never })).toThrow(
       "Unknown session broker limit",
     );
+    expect(() =>
+      resolveSessionBrokerLimits({
+        limits: { maxWsMessageBytes: 8, maxInFlightWsBytes: 7 },
+      }),
+    ).toThrow("WebSocket message bytes must not exceed in-flight bytes");
+    expect(
+      resolveSessionBrokerLimits({
+        limits: { maxHttpBodyBytes: 4, maxInFlightHttpBodyBytes: 8 },
+      }).maxHttpBodyBytes,
+    ).toBe(4);
+    expect(() =>
+      resolveSessionBrokerLimits({
+        limits: { maxHttpBodyBytes: 4, maxInFlightHttpBodyBytes: 7 },
+      }),
+    ).toThrow("source-plus-copy peak");
+    expect(
+      resolveSessionBrokerLimits({
+        limits: { maxHttpResponseBytes: 4, maxInFlightHttpResponseBytes: 8 },
+      }).maxHttpResponseBytes,
+    ).toBe(4);
+    expect(() =>
+      resolveSessionBrokerLimits({
+        limits: { maxHttpResponseBytes: 4, maxInFlightHttpResponseBytes: 7 },
+      }),
+    ).toThrow("source-plus-copy peak");
   });
 });
 
@@ -75,6 +101,18 @@ describe("resource reservations", () => {
     expect(() => budget.reserve(1)).toThrow(BrokerCapacityError);
     reservation.release();
     reservation.release();
+    expect(budget.used).toBe(0);
+  });
+
+  test("combines a replacement and retired reservation without transient over-admission", () => {
+    const budget = new ResourceBudget(10, "bytes");
+    const target = budget.reserve(6);
+    const credit = budget.reserve(4);
+    const replacement = budget.resizeWithCredit(target, 9, credit);
+    expect(budget.used).toBe(9);
+    expect(target.released).toBe(true);
+    expect(credit.released).toBe(true);
+    replacement.release();
     expect(budget.used).toBe(0);
   });
 

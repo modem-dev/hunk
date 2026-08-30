@@ -5,6 +5,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -17,15 +19,28 @@ import {
   CURL_BAD_CHECKSUM_VERSION,
   CURL_TRUNCATED_VERSION,
   CURL_UNAVAILABLE_VERSION,
+  deriveVerifiedDaemonUpgradeBinaryDigests,
   FIXTURE_VERSION_A,
   FIXTURE_VERSION_B,
   verifyInstallVmFixtures,
   type InstallVmFixtureManifest,
 } from "./prepare-fixtures";
+import {
+  DAEMON_UPGRADE_VERSION_A,
+  DAEMON_UPGRADE_VERSION_B,
+  computeDaemonUpgradeBuildInputIdentity,
+  createDaemonUpgradeCompilerEnvironment,
+  readDaemonRevision,
+  replaceDaemonRevision,
+  snapshotDaemonUpgradeDependencies,
+} from "./prepare-daemon-upgrade-fixtures";
 
 /** Initialize the minimal Git checkout required by source-identity discovery. */
 function initializeTestGitRepo(repo: string) {
-  const result = Bun.spawnSync(["git", "init", "--quiet"], { cwd: repo, stderr: "pipe" });
+  const result = Bun.spawnSync(["git", "init", "--quiet"], {
+    cwd: repo,
+    stderr: "pipe",
+  });
   if (result.exitCode !== 0) throw new Error("Unable to initialize test Git repository.");
 }
 
@@ -40,7 +55,20 @@ function writeTestFixtures(repo: string, fixtures: string) {
   const httpRoot = path.join(fixtures, "http");
   mkdirSync(packageRoot, { recursive: true });
   mkdirSync(httpRoot, { recursive: true });
-  const versions = ["1.0.0", FIXTURE_VERSION_A, FIXTURE_VERSION_B];
+  mkdirSync(path.join(repo, "src", "session"), { recursive: true });
+  mkdirSync(path.join(repo, "node_modules"), { recursive: true });
+  writeFileSync(path.join(repo, "node_modules", "fixture-dependency"), "dependency\n");
+  writeFileSync(
+    path.join(repo, "src", "session", "protocol.ts"),
+    "export const HUNK_SESSION_DAEMON_VERSION = 11;\n",
+  );
+  const versions = [
+    "1.0.0",
+    DAEMON_UPGRADE_VERSION_A,
+    DAEMON_UPGRADE_VERSION_B,
+    FIXTURE_VERSION_A,
+    FIXTURE_VERSION_B,
+  ];
   const packages = versions.flatMap((version) =>
     ["hunkdiff-linux-x64", "hunkdiff"].map((name) => {
       const tarball = `${name}-${version}.tgz`;
@@ -50,11 +78,20 @@ function writeTestFixtures(repo: string, fixtures: string) {
     }),
   );
   const manifest: InstallVmFixtureManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceIdentity: computeInstallVmFixtureSourceIdentity(repo),
+    daemonUpgradeBuildInputIdentity: computeDaemonUpgradeBuildInputIdentity(repo),
     currentVersion: "1.0.0",
     versionA: FIXTURE_VERSION_A,
     versionB: FIXTURE_VERSION_B,
+    daemonUpgrade: {
+      versionA: DAEMON_UPGRADE_VERSION_A,
+      versionB: DAEMON_UPGRADE_VERSION_B,
+      revisionA: 10,
+      revisionB: 11,
+      binarySha256A: "a".repeat(64),
+      binarySha256B: "b".repeat(64),
+    },
     packages,
   };
   const manifestBytes = `${JSON.stringify(manifest, null, 2)}\n`;
@@ -95,6 +132,193 @@ function writeTestFixtures(repo: string, fixtures: string) {
 }
 
 describe("install VM package fixtures", () => {
+  test("derives trusted daemon binary digests from the actual platform tarballs", async () => {
+    if (process.platform !== "linux") return;
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-daemon-tarball-digests-"));
+    try {
+      const packages = path.join(root, "packages");
+      mkdirSync(packages, { recursive: true });
+      const fixtures = [
+        [DAEMON_UPGRADE_VERSION_A, "daemon-a\n"],
+        [DAEMON_UPGRADE_VERSION_B, "daemon-b\n"],
+      ] as const;
+      const entries = [];
+      const digests: string[] = [];
+      for (const [version, contents] of fixtures) {
+        const stage = path.join(root, `stage-${version}`, "package", "bin");
+        mkdirSync(stage, { recursive: true });
+        const binary = path.join(stage, "hunk");
+        writeFileSync(binary, contents);
+        const tarball = `hunkdiff-linux-x64-${version}.tgz`;
+        const packed = Bun.spawnSync(
+          [
+            "tar",
+            "-czf",
+            path.join(packages, tarball),
+            "-C",
+            path.dirname(path.dirname(stage)),
+            "package/bin/hunk",
+          ],
+          { stderr: "pipe" },
+        );
+        expect(packed.exitCode).toBe(0);
+        entries.push({ name: "hunkdiff-linux-x64", version, tarball, sha256: "0".repeat(64) });
+        digests.push(sha256(binary));
+      }
+      const manifest = {
+        schemaVersion: 2,
+        sourceIdentity: "0".repeat(64),
+        daemonUpgradeBuildInputIdentity: "1".repeat(64),
+        currentVersion: "1.0.0",
+        versionA: FIXTURE_VERSION_A,
+        versionB: FIXTURE_VERSION_B,
+        daemonUpgrade: {
+          versionA: DAEMON_UPGRADE_VERSION_A,
+          versionB: DAEMON_UPGRADE_VERSION_B,
+          revisionA: 10,
+          revisionB: 11,
+          binarySha256A: digests[0]!,
+          binarySha256B: digests[1]!,
+        },
+        packages: entries,
+      } satisfies InstallVmFixtureManifest;
+
+      await expect(deriveVerifiedDaemonUpgradeBinaryDigests(root, manifest)).resolves.toEqual({
+        binarySha256A: digests[0]!,
+        binarySha256B: digests[1]!,
+      });
+      manifest.daemonUpgrade.binarySha256A = "f".repeat(64);
+      await expect(deriveVerifiedDaemonUpgradeBinaryDigests(root, manifest)).rejects.toThrow(
+        "do not match their manifest",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("attests dependency bytes, symlink targets, and Bun build inputs", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-daemon-inputs-"));
+    try {
+      const dependencies = path.join(root, "node_modules");
+      const bun = path.join(root, "bun");
+      mkdirSync(dependencies, { recursive: true });
+      writeFileSync(path.join(dependencies, "dependency"), "one");
+      writeFileSync(path.join(dependencies, "other"), "other");
+      symlinkSync("dependency", path.join(dependencies, "link"));
+      writeFileSync(bun, "bun-one");
+      const options = {
+        dependenciesRoot: dependencies,
+        bunExecutable: bun,
+        bunVersion: "1.2.3",
+      };
+      const first = computeDaemonUpgradeBuildInputIdentity(root, options);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+      writeFileSync(path.join(dependencies, "dependency"), "two");
+      expect(computeDaemonUpgradeBuildInputIdentity(root, options)).not.toBe(first);
+      writeFileSync(path.join(dependencies, "dependency"), "one");
+      rmSync(path.join(dependencies, "link"));
+      symlinkSync("other", path.join(dependencies, "link"));
+      expect(computeDaemonUpgradeBuildInputIdentity(root, options)).not.toBe(first);
+
+      const external = path.join(root, "..", `${path.basename(root)}-external`);
+      writeFileSync(external, "outside-one");
+      rmSync(path.join(dependencies, "link"));
+      symlinkSync(external, path.join(dependencies, "link"));
+      expect(() => computeDaemonUpgradeBuildInputIdentity(root, options)).toThrow(
+        "escapes the checkout",
+      );
+      writeFileSync(external, "outside-two");
+      expect(() => computeDaemonUpgradeBuildInputIdentity(root, options)).toThrow(
+        "escapes the checkout",
+      );
+      rmSync(external, { force: true });
+    } finally {
+      rmSync(path.join(root, "..", `${path.basename(root)}-external`), {
+        force: true,
+      });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("forces fixture compiler resolution ahead of a hostile PATH", () => {
+    if (process.platform !== "linux") return;
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-daemon-compiler-"));
+    try {
+      const hostileBin = path.join(root, "hostile");
+      const attestedBun = path.join(root, "attested-bun");
+      mkdirSync(hostileBin);
+      writeFileSync(path.join(hostileBin, "bun"), "#!/bin/sh\nexit 99\n", {
+        mode: 0o755,
+      });
+      writeFileSync(attestedBun, "attested compiler bytes\n", { mode: 0o755 });
+      const compiler = createDaemonUpgradeCompilerEnvironment(path.join(root, "build"), {
+        env: {
+          ...process.env,
+          PATH: `${hostileBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        },
+        bunExecutable: attestedBun,
+      });
+      try {
+        expect(realpathSync(compiler.resolvedBun)).toBe(realpathSync(attestedBun));
+        expect(compiler.resolvedBun.startsWith(path.join(root, "build"))).toBe(true);
+      } finally {
+        compiler.cleanup();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("snapshots dependencies while preserving workspace links inside the isolated tree", () => {
+    if (process.platform !== "linux") return;
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-daemon-deps-"));
+    const isolated = path.join(root, "isolated");
+    try {
+      mkdirSync(path.join(root, "repo", "node_modules", "@hunk"), {
+        recursive: true,
+      });
+      mkdirSync(path.join(root, "repo", "packages", "session-broker"), {
+        recursive: true,
+      });
+      writeFileSync(path.join(root, "repo", "node_modules", "dependency.txt"), "snapshot\n");
+      symlinkSync(
+        "../../packages/session-broker",
+        path.join(root, "repo", "node_modules", "@hunk", "session-broker"),
+      );
+      mkdirSync(path.join(isolated, "packages", "session-broker"), {
+        recursive: true,
+      });
+      writeFileSync(path.join(isolated, "packages", "session-broker", "marker"), "isolated\n");
+
+      snapshotDaemonUpgradeDependencies(
+        path.join(root, "repo"),
+        path.join(isolated, "node_modules"),
+      );
+
+      expect(readFileSync(path.join(isolated, "node_modules", "dependency.txt"), "utf8")).toBe(
+        "snapshot\n",
+      );
+      expect(realpathSync(path.join(isolated, "node_modules", "@hunk", "session-broker"))).toBe(
+        realpathSync(path.join(isolated, "packages", "session-broker")),
+      );
+      writeFileSync(path.join(root, "repo", "node_modules", "dependency.txt"), "mutated\n");
+      expect(readFileSync(path.join(isolated, "node_modules", "dependency.txt"), "utf8")).toBe(
+        "snapshot\n",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rewrites exactly one positive daemon revision for isolated full-binary fixtures", () => {
+    const source = "export const HUNK_SESSION_DAEMON_VERSION = 11;\n";
+    expect(readDaemonRevision(source)).toBe(11);
+    expect(replaceDaemonRevision(source, 10)).toContain("VERSION = 10;");
+    expect(() => readDaemonRevision(`${source}${source}`)).toThrow("exactly one");
+    expect(() => readDaemonRevision("export const unrelated = 1;\n")).toThrow("exactly one");
+    expect(() => replaceDaemonRevision(source, 0)).toThrow("positive safe integer");
+  });
+
   test("builds two distinct Linux x64 package topologies from staged engine metadata", () => {
     const stagedEngines = { node: ">=99" };
     const fixtureA = buildSyntheticPackageManifests(FIXTURE_VERSION_A, stagedEngines);
@@ -174,7 +398,9 @@ describe("install VM package fixtures", () => {
     const fixtures = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-fixtures-"));
     try {
       initializeTestGitRepo(repo);
-      mkdirSync(path.join(repo, "test", "cli", "install-vm"), { recursive: true });
+      mkdirSync(path.join(repo, "test", "cli", "install-vm"), {
+        recursive: true,
+      });
       writeFileSync(path.join(repo, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
       writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");
       const manifest = writeTestFixtures(repo, fixtures);
@@ -204,12 +430,59 @@ describe("install VM package fixtures", () => {
       const drifted = { ...manifest, packages: manifest.packages.slice(0, -1) };
       writeFileSync(path.join(fixtures, "fixture-manifest.json"), `${JSON.stringify(drifted)}\n`);
       writeFileSync(httpManifest, `${JSON.stringify(drifted)}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("exactly six");
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("exactly ten");
+
+      const staleContract = {
+        ...manifest,
+        daemonUpgrade: { ...manifest.daemonUpgrade, revisionA: 9 },
+      };
+      writeFileSync(
+        path.join(fixtures, "fixture-manifest.json"),
+        `${JSON.stringify(staleContract)}\n`,
+      );
+      writeFileSync(httpManifest, `${JSON.stringify(staleContract)}\n`);
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
+
+      const unboundBinary = {
+        ...manifest,
+        daemonUpgrade: {
+          ...manifest.daemonUpgrade,
+          binarySha256A: "b".repeat(64),
+        },
+      };
+      writeFileSync(
+        path.join(fixtures, "fixture-manifest.json"),
+        `${JSON.stringify(unboundBinary)}\n`,
+      );
+      writeFileSync(httpManifest, `${JSON.stringify(unboundBinary)}\n`);
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
+      const unknownContractKey = {
+        ...manifest,
+        daemonUpgrade: { ...manifest.daemonUpgrade, extra: true },
+      };
+      writeFileSync(
+        path.join(fixtures, "fixture-manifest.json"),
+        `${JSON.stringify(unknownContractKey)}\n`,
+      );
+      writeFileSync(httpManifest, `${JSON.stringify(unknownContractKey)}\n`);
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
 
       writeFileSync(path.join(fixtures, "fixture-manifest.json"), manifestBytes);
       writeFileSync(httpManifest, manifestBytes);
       const tarball = path.join(fixtures, "packages", manifest.packages[0]!.tarball);
       writeFileSync(tarball, "tampered\n");
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+      rmSync(tarball);
+      symlinkSync(path.join(repo, "package.json"), tarball);
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+      rmSync(tarball);
+      symlinkSync(path.join("..", manifest.packages[1]!.tarball), tarball);
+      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+      rmSync(tarball);
+      const packages = path.join(fixtures, "packages");
+      const realPackages = path.join(fixtures, "packages-real");
+      renameSync(packages, realPackages);
+      symlinkSync(realPackages, packages);
       expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
     } finally {
       rmSync(repo, { recursive: true, force: true });
