@@ -322,6 +322,49 @@ export interface SessionBrokerHealth {
   staleSessionTtlMs?: number;
 }
 
+type SessionBrokerHealthProbeResult =
+  | { kind: "healthy"; health: SessionBrokerHealth }
+  | { kind: "http-status"; status: number; elapsedMs: number }
+  | { kind: "invalid-json"; elapsedMs: number }
+  | { kind: "invalid-response"; elapsedMs: number }
+  | { kind: "timeout"; timeoutMs: number; elapsedMs: number }
+  | { kind: "request-error"; message: string; elapsedMs: number };
+
+type SessionBrokerHealthProbeFailure = Exclude<SessionBrokerHealthProbeResult, { kind: "healthy" }>;
+
+/** Round one failed probe duration for stable, human-readable diagnostics. */
+function healthProbeElapsedMs(startedAt: number) {
+  return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+/** Bound one runtime-generated transport error before it reaches a terminal. */
+function healthProbeErrorMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message || error.name : String(error);
+  return (
+    raw
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240) || "Unknown request error"
+  );
+}
+
+/** Describe one failed health probe for the final user-facing CLI error. */
+export function describeSessionBrokerHealthProbeFailure(failure: SessionBrokerHealthProbeFailure) {
+  switch (failure.kind) {
+    case "http-status":
+      return `returned HTTP ${failure.status} after ${failure.elapsedMs}ms`;
+    case "invalid-json":
+      return `returned invalid JSON after ${failure.elapsedMs}ms`;
+    case "invalid-response":
+      return `returned an incompatible health payload after ${failure.elapsedMs}ms`;
+    case "timeout":
+      return `timed out after ${failure.timeoutMs}ms (probe elapsed ${failure.elapsedMs}ms)`;
+    case "request-error":
+      return `failed after ${failure.elapsedMs}ms (${failure.message})`;
+  }
+}
+
 /** Parse the minimal or legacy-rich health response without trusting cross-process JSON. */
 export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | null {
   try {
@@ -376,13 +419,18 @@ export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | 
   }
 }
 
-/** Read the daemon's health payload when one is reachable on the configured loopback port. */
-export async function readSessionBrokerHealth(
+/** Probe daemon health while retaining the failure evidence needed for a terminal CLI error. */
+export async function probeSessionBrokerHealth(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
-) {
+): Promise<SessionBrokerHealthProbeResult> {
+  const startedAt = performance.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   timeout.unref?.();
 
   try {
@@ -390,15 +438,48 @@ export async function readSessionBrokerHealth(
       signal: controller.signal,
     });
     if (!response.ok) {
-      return null;
+      return {
+        kind: "http-status",
+        status: response.status,
+        elapsedMs: healthProbeElapsedMs(startedAt),
+      };
     }
 
-    return parseSessionBrokerHealth(await response.json());
-  } catch {
-    return null;
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (timedOut) throw error;
+      return {
+        kind: "invalid-json",
+        elapsedMs: healthProbeElapsedMs(startedAt),
+      };
+    }
+
+    const health = parseSessionBrokerHealth(payload);
+    return health
+      ? { kind: "healthy", health }
+      : { kind: "invalid-response", elapsedMs: healthProbeElapsedMs(startedAt) };
+  } catch (error) {
+    return timedOut
+      ? { kind: "timeout", timeoutMs, elapsedMs: healthProbeElapsedMs(startedAt) }
+      : {
+          kind: "request-error",
+          message: healthProbeErrorMessage(error),
+          elapsedMs: healthProbeElapsedMs(startedAt),
+        };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Read the daemon's health payload while preserving the nullable compatibility contract. */
+export async function readSessionBrokerHealth(
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
+  timeoutMs = 500,
+) {
+  const result = await probeSessionBrokerHealth(config, timeoutMs);
+  return result.kind === "healthy" ? result.health : null;
 }
 
 /** Check whether the loopback session broker already answers health probes. */
@@ -406,7 +487,7 @@ export async function isSessionBrokerHealthy(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
-  return (await readSessionBrokerHealth(config, timeoutMs))?.ok === true;
+  return (await probeSessionBrokerHealth(config, timeoutMs)).kind === "healthy";
 }
 
 /** Check whether some local process is already accepting TCP connections on the daemon port. */

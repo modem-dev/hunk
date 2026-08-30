@@ -6,9 +6,10 @@ import type {
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
 import {
+  describeSessionBrokerHealthProbeFailure,
   ensureSessionBrokerAvailable,
-  isSessionBrokerHealthy,
   isLoopbackPortReachable,
+  probeSessionBrokerHealth,
   readSessionBrokerHealth,
   waitForSessionBrokerShutdown,
 } from "../broker/brokerLauncher";
@@ -151,16 +152,18 @@ async function ensureRequiredAction(action: SessionDaemonAction, selector?: Sess
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
   const config = resolveSessionBrokerConfig();
-  const healthy = await isSessionBrokerHealthy(config);
-  if (healthy) {
+  const healthProbe = await probeSessionBrokerHealth(config);
+  if (healthProbe.kind === "healthy") {
     return true;
   }
 
   const portReachable = await isLoopbackPortReachable(config);
   if (portReachable) {
+    const diagnostic = describeSessionBrokerHealthProbeFailure(healthProbe);
     throw new Error(
-      `Hunk session daemon port ${config.host}:${config.port} is already in use by another process. ` +
-        `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
+      `Hunk session daemon port ${config.host}:${config.port} is already in use, and the listener's ` +
+        `Hunk health probe ${diagnostic}. The listener may be a busy Hunk daemon or another process. ` +
+        `Retry, stop the conflicting process, or set HUNK_MCP_PORT to a different loopback port.`,
     );
   }
 

@@ -1,23 +1,36 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  describeSessionBrokerHealthProbeFailure,
   ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
   parseSessionBrokerHealth,
+  probeSessionBrokerHealth,
+  readSessionBrokerHealth,
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
 } from "./brokerLauncher";
 
 const tempDirs: string[] = [];
+const timeoutProbeTest = platform() === "win32" ? test.skip : test;
 const testConfig = {
   host: "127.0.0.1",
   port: 47657,
   httpOrigin: "http://127.0.0.1:47657",
   wsOrigin: "ws://127.0.0.1:47657",
 };
+
+function createTestBrokerConfig(port: number) {
+  return {
+    host: "127.0.0.1",
+    port,
+    httpOrigin: `http://127.0.0.1:${port}`,
+    wsOrigin: `ws://127.0.0.1:${port}`,
+  };
+}
 
 function createRuntimeDir() {
   const dir = mkdtempSync(join(tmpdir(), "hunk-session-daemon-launcher-test-"));
@@ -53,6 +66,94 @@ describe("session daemon launcher", () => {
       expect(parseSessionBrokerHealth(value)).toBeNull();
     }
   });
+
+  test("retains the health payload for a successful probe", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ ok: true, pid: 123, sessions: 1 }),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      const result = await probeSessionBrokerHealth(config);
+      expect(result).toMatchObject({
+        kind: "healthy",
+        health: { ok: true, pid: 123, sessions: 1 },
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("retains HTTP status while nullable health readers stay compatible", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("unavailable", { status: 503 }),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "http-status",
+        status: 503,
+      });
+      await expect(readSessionBrokerHealth(config)).resolves.toBeNull();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("distinguishes invalid JSON from incompatible health payloads", async () => {
+    let response: "json" | "payload" = "json";
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        response === "json"
+          ? new Response("not-json", { headers: { "content-type": "application/json" } })
+          : Response.json({ ok: "yes" }),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "invalid-json",
+      });
+      response = "payload";
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "invalid-response",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  timeoutProbeTest("retains timeout budget and observed probe latency", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: async () => {
+        await Bun.sleep(100);
+        return Response.json({ ok: true });
+      },
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      const result = await probeSessionBrokerHealth(config, 10);
+      expect(result).toMatchObject({ kind: "timeout", timeoutMs: 10 });
+      if (result.kind !== "timeout") throw new Error("Expected a timeout health probe result.");
+      expect(result.elapsedMs).toBeGreaterThanOrEqual(10);
+      expect(describeSessionBrokerHealthProbeFailure(result)).toMatch(
+        /^timed out after 10ms \(probe elapsed \d+ms\)$/,
+      );
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("reuses the current script entrypoint when Hunk is running from source or a JS wrapper", () => {
     expect(resolveDaemonLaunchCommand(["bun", "src/main.tsx", "diff"], "/usr/bin/bun")).toEqual({
       command: "/usr/bin/bun",
