@@ -45,7 +45,20 @@ const installMethods = [
           aria-label={`Copy ${method.label} install command`}
           hidden
         >
-          <span aria-hidden="true" data-copy-label>[ copy ]</span>
+          <span data-copy-icon aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"></rect>
+              <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+          </span>
+          <span data-copy-success aria-hidden="true" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </span>
+          <span class="install-copy-failure" data-copy-failure aria-hidden="true" hidden>
+            select
+          </span>
           <span class="sr-only" aria-live="polite" data-copy-status></span>
         </button>
       </div>
@@ -155,27 +168,51 @@ const installMethods = [
     syncFromLocation();
 
     for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-copy-command]")) {
+      let resetTimer: number | undefined;
+      let latestAttempt = 0;
+
       button.addEventListener("click", async () => {
         const status = button.querySelector<HTMLElement>("[data-copy-status]");
-        const label = button.querySelector<HTMLElement>("[data-copy-label]");
+        const copyIcon = button.querySelector<HTMLElement>("[data-copy-icon]");
+        const successIcon = button.querySelector<HTMLElement>("[data-copy-success]");
+        const failureLabel = button.querySelector<HTMLElement>("[data-copy-failure]");
+        const attempt = ++latestAttempt;
 
+        if (resetTimer !== undefined) window.clearTimeout(resetTimer);
         button.classList.remove("copied", "failed");
-        if (label) label.textContent = "[ copy ]";
+        copyIcon?.removeAttribute("hidden");
+        successIcon?.setAttribute("hidden", "");
+        failureLabel?.setAttribute("hidden", "");
+        if (status) status.textContent = "";
+
+        let copied = false;
         try {
           await navigator.clipboard.writeText(button.dataset.copyCommand ?? "");
-          button.classList.add("copied");
-          if (label) label.textContent = "[ copied ]";
-          if (status) status.textContent = "Copied to clipboard";
+          copied = true;
         } catch {
+          // The visible label and live region below explain the manual fallback.
+        }
+
+        // A slower clipboard request must not overwrite feedback from a newer click.
+        if (attempt !== latestAttempt) return;
+        copyIcon?.setAttribute("hidden", "");
+        if (copied) {
+          button.classList.add("copied");
+          successIcon?.removeAttribute("hidden");
+          if (status) status.textContent = "Copied to clipboard";
+        } else {
           button.classList.add("failed");
-          if (label) label.textContent = "[ select ]";
+          failureLabel?.removeAttribute("hidden");
           if (status) status.textContent = "Could not copy. Select the command manually.";
         }
 
-        window.setTimeout(() => {
+        resetTimer = window.setTimeout(() => {
           button.classList.remove("copied", "failed");
-          if (label) label.textContent = "[ copy ]";
+          copyIcon?.removeAttribute("hidden");
+          successIcon?.setAttribute("hidden", "");
+          failureLabel?.setAttribute("hidden", "");
           if (status) status.textContent = "";
+          resetTimer = undefined;
         }, 2400);
       });
     }

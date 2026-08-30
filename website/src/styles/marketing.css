@@ -263,14 +263,26 @@ a:focus-visible {
 }
 
 .marketing .install-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 36px;
   padding: 8px 10px;
   border: 1.5px solid var(--rule);
   background: transparent;
   color: var(--acc);
   cursor: pointer;
+}
+
+.marketing .install-copy svg {
+  display: block;
+}
+
+.marketing .install-copy-failure {
   font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.05em;
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -283,14 +295,6 @@ a:focus-visible {
 .marketing .install-copy.failed {
   border-color: var(--del);
   color: var(--del);
-}
-
-.marketing .install-context {
-  max-width: 760px;
-  margin: 15px 0 0;
-  color: var(--hunk-body);
-  font-size: 13px;
-  line-height: 1.55;
 }
 
 .marketing .hero-secondary {

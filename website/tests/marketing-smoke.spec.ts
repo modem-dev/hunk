@@ -14,12 +14,6 @@ test("marketing page links into documentation and preserves core calls to action
   ).toHaveAttribute("href", "/docs/");
   await expect(page.getByRole("tab", { name: "curl" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: "Copy curl install command" })).toBeVisible();
-  await expect(page.locator(".install-context")).toContainText(
-    "verifies it when release checksums and local tooling are available",
-  );
-  await expect(page.locator(".install-context")).toContainText("Starting with Hunk 0.20");
-  await expect(page.locator(".install-context")).toContainText("Older releases update once");
-  await expect(page.locator(".install-context")).toContainText("owning workflows");
 });
 
 test("install selector exposes every method without repeating the old install list", async ({
@@ -213,9 +207,29 @@ test("selected install command copies with accessible feedback", async ({ contex
   await page.getByRole("button", { name: "Copy curl install command" }).click();
 
   await expect(page.getByText("Copied to clipboard")).toHaveText("Copied to clipboard");
+  await expect(page.locator("[data-copy-icon]").first()).toBeHidden();
+  await expect(page.locator("[data-copy-success]").first()).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     "curl -fsSL https://hunk.dev/install.sh | sh",
   );
+});
+
+test("the latest copy feedback keeps its full timeout", async ({ context, page }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page.clock.install();
+
+  const copy = page.getByRole("button", { name: "Copy curl install command" });
+  await copy.click();
+  await expect(copy.locator("[data-copy-success]")).toBeVisible();
+  await page.clock.runFor(1200);
+
+  await copy.click();
+  await page.clock.runFor(1300);
+  await expect(copy.locator("[data-copy-success]")).toBeVisible();
+
+  await page.clock.runFor(1100);
+  await expect(copy.locator("[data-copy-icon]")).toBeVisible();
 });
 
 test("copy failure gives visible recovery guidance", async ({ page }) => {
@@ -229,7 +243,9 @@ test("copy failure gives visible recovery guidance", async ({ page }) => {
 
   const copy = page.getByRole("button", { name: "Copy curl install command" });
   await copy.click();
-  await expect(copy.locator("[data-copy-label]")).toHaveText("[ select ]");
+  await expect(copy.locator("[data-copy-icon]")).toBeHidden();
+  await expect(copy.locator("[data-copy-failure]")).toHaveText("select");
+  await expect(copy.locator("[data-copy-failure]")).toBeVisible();
   await expect(copy.locator("[data-copy-status]")).toHaveText(
     "Could not copy. Select the command manually.",
   );
