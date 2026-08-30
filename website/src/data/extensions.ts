@@ -166,6 +166,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "muzomer/hunk-commit",
+    name: "hunk-commit",
+    summary:
+      "Marks hunks while you review, then stages, commits, or folds them into an earlier commit — in git or Jujutsu, leaving files on disk untouched.",
+    categories: ["Command", "Line highlighter"],
+    version: "0.1.0",
+    apiVersion: 8,
+  },
+  {
     repo: "phl28/hunk-gh-review",
     name: "hunk-gh-review",
     summary:
