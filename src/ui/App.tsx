@@ -1343,6 +1343,7 @@ export function App({
             onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
             onEditUserNote={startUserNoteEdit}
             onReplyToNote={startUserNoteReply}
+            onRemoveLiveNote={review.removeLiveComment}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
             onStartUserNoteAtHunk={startUserNote}

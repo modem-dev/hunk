@@ -128,6 +128,43 @@ function storedReviewNoteMetadata(
     : undefined;
 }
 
+/** Grant saved-note card actions from semantic ownership rather than presentation labels. */
+export function storedReviewNoteActions({
+  editable,
+  hasReplies,
+  noteId,
+  onEditUserNote,
+  onRemoveLiveNote,
+  onRemoveUserNote,
+  onReplyToNote,
+  source,
+}: {
+  editable: boolean;
+  hasReplies: boolean;
+  noteId: string;
+  onEditUserNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  onRemoveLiveNote?: (noteId: string) => void;
+  onRemoveUserNote?: (noteId: string) => void;
+  onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  source: "agent" | "ai" | "user";
+}): VisibleAgentNote["actions"] {
+  const actions: NonNullable<VisibleAgentNote["actions"]> = {};
+  if (source === "user" && editable && onEditUserNote) {
+    actions.onEdit = () => onEditUserNote(noteId, { preserveViewport: true });
+  }
+  if (onReplyToNote) {
+    actions.onReply = () => onReplyToNote(noteId, { preserveViewport: true });
+  }
+  if (!hasReplies) {
+    if (source === "user" && onRemoveUserNote) {
+      actions.onDelete = () => onRemoveUserNote(noteId);
+    } else if (source !== "user" && onRemoveLiveNote) {
+      actions.onDelete = () => onRemoveLiveNote(noteId);
+    }
+  }
+  return Object.keys(actions).length > 0 ? actions : undefined;
+}
+
 /**
  * Resets OpenTUI's wheel remainder after Hunk reroutes a shifted wheel event.
  *
@@ -304,6 +341,7 @@ export function DiffPane({
   onActiveAddNoteAffordanceChange,
   onEditUserNote,
   onReplyToNote,
+  onRemoveLiveNote,
   onRemoveUserNote,
   onSaveDraftNote,
   onStartUserNoteAtHunk,
@@ -373,6 +411,7 @@ export function DiffPane({
   ) => void;
   onEditUserNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
   onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  onRemoveLiveNote?: (noteId: string) => void;
   onRemoveUserNote?: (noteId: string) => void;
   onSaveDraftNote?: () => void;
   onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void;
@@ -563,23 +602,16 @@ export function DiffPane({
           : `annotation:${file.id}:at:${index}`;
         const actions =
           metadata && !draftNote
-            ? {
-                ...(source === "user" && annotation.editable && onEditUserNote
-                  ? {
-                      onEdit: () =>
-                        onEditUserNote(metadata.reviewNoteId, { preserveViewport: true }),
-                    }
-                  : {}),
-                ...(onReplyToNote
-                  ? {
-                      onReply: () =>
-                        onReplyToNote(metadata.reviewNoteId, { preserveViewport: true }),
-                    }
-                  : {}),
-                ...(source === "user" && !metadata.hasReplies && onRemoveUserNote
-                  ? { onDelete: () => onRemoveUserNote(metadata.reviewNoteId) }
-                  : {}),
-              }
+            ? storedReviewNoteActions({
+                editable: annotation.editable === true,
+                hasReplies: metadata.hasReplies === true,
+                noteId: metadata.reviewNoteId,
+                onEditUserNote,
+                onRemoveLiveNote,
+                onRemoveUserNote,
+                onReplyToNote,
+                source,
+              })
             : undefined;
 
         return [
@@ -725,6 +757,7 @@ export function DiffPane({
     onFocusDraftNote,
     onEditUserNote,
     onReplyToNote,
+    onRemoveLiveNote,
     onRemoveUserNote,
     onSaveDraftNote,
     onUpdateDraftNote,

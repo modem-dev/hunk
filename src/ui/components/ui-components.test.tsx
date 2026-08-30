@@ -29,7 +29,7 @@ const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
-const { DiffPane } = await import("./panes/DiffPane");
+const { DiffPane, storedReviewNoteActions } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
@@ -3317,6 +3317,30 @@ describe("UI components", () => {
     expect(frame).not.toContain("alpha.ts note");
     expect(frame).not.toContain("review");
     expect(frame).not.toContain("confidence");
+  });
+
+  test("DiffPane lets reviewers delete stored agent notes but not parents with replies", () => {
+    const onRemoveLiveNote = mock(() => {});
+    const leafActions = storedReviewNoteActions({
+      editable: false,
+      hasReplies: false,
+      noteId: "agent:leaf",
+      onRemoveLiveNote,
+      source: "agent",
+    });
+
+    expect(leafActions?.onEdit).toBeUndefined();
+    leafActions?.onDelete?.();
+    expect(onRemoveLiveNote).toHaveBeenCalledWith("agent:leaf");
+
+    const parentActions = storedReviewNoteActions({
+      editable: false,
+      hasReplies: true,
+      noteId: "agent:parent",
+      onRemoveLiveNote,
+      source: "agent",
+    });
+    expect(parentActions?.onDelete).toBeUndefined();
   });
 
   test("DiffPane split inline notes hand off directly from the anchored row without shifting it", async () => {
