@@ -394,7 +394,7 @@ export const hunkCommandResultSchemas = {
     line: positive,
     start: nonnegative,
     end: positive,
-    tone: z.enum(["match", "current", "info", "warning", "error"]),
+    tone: z.enum(["match", "current", "info", "warning", "error", "dim"]),
     fileMarkCount: nonnegative,
     revealed: z.enum(["line", "hunk"]).optional(),
   }),
