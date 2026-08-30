@@ -520,6 +520,9 @@ describe("UI components", () => {
     expect(treeFrame).not.toContain("src/ui/");
     expect(treeFrame).toContain("src/");
     expect(treeFrame).toContain("ui/");
+    const treeLines = treeFrame.split("\n");
+    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(2);
+    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(4);
     expect(treeFrame).toContain("alpha.ts");
     expect(treeFrame).toContain("beta.ts");
   });

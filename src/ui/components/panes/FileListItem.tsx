@@ -85,14 +85,9 @@ export function FileDirectoryRow({
   textWidth: number;
   theme: ExtensionSidebarTheme;
 }) {
-  const statusLaneWidth = 2;
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
-  const indentWidth = fileSidebarIndentWidth(
-    entry.depth,
-    textWidth,
-    statusLaneWidth + statsSectionWidth + 1,
-  );
-  const labelWidth = Math.max(1, textWidth - 1 - statusLaneWidth - statsSectionWidth - indentWidth);
+  const indentWidth = fileSidebarIndentWidth(entry.depth, textWidth, statsSectionWidth + 1);
+  const labelWidth = Math.max(1, textWidth - 1 - statsSectionWidth - indentWidth);
 
   return (
     <box
@@ -113,10 +108,7 @@ export function FileDirectoryRow({
           backgroundColor: theme.panel,
         }}
       >
-        <text fg={theme.muted}>
-          {"  "}
-          {fitText(entry.label, labelWidth)}
-        </text>
+        <text fg={theme.muted}>{fitText(entry.label, labelWidth)}</text>
       </box>
     </box>
   );

@@ -210,6 +210,9 @@ describe("OpenTUI public components", () => {
     expect(wideFrame).not.toContain("src/ui/");
     expect(wideFrame).toContain("src/");
     expect(wideFrame).toContain("ui/");
+    const wideLines = wideFrame.split("\n");
+    expect(wideLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(1);
+    expect(wideLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(3);
     expect(wideFrame).toContain("alpha.ts");
     expect(wideFrame).toContain("beta.ts");
   });
