@@ -2583,6 +2583,39 @@ describe("App interactions", () => {
     }
   });
 
+  test("G supersedes a pending selected-hunk reveal", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await settleViewportMeasurement(setup);
+      await pressHunkNavigationKey(setup, "]", 1);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g", { shift: true });
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(160);
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("export const mid = 4;");
+      expect(frame).not.toContain("line 021 changed");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("pager mode also supports G and g top/bottom jumps", async () => {
     const before =
       Array.from(
