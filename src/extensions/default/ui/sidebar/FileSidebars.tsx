@@ -32,6 +32,7 @@ type FileSidebarVariantProps = Pick<
 
 interface VirtualizedFileSidebarRowsProps extends Omit<FileSidebarVariantProps, "files"> {
   entries: SidebarEntry[];
+  paddingLeft?: number;
 }
 
 /** Render one windowed sidebar projection with shared file selection and stats lanes. */
@@ -39,6 +40,7 @@ export function VirtualizedFileSidebarRows({
   actions,
   entries,
   estimatedViewportRows,
+  paddingLeft = 1,
   scrollTop,
   selectedFileId,
   textWidth,
@@ -75,7 +77,13 @@ export function VirtualizedFileSidebarRows({
         const { entry } = item;
         if (entry.kind === "group") {
           return (
-            <FileGroupHeader key={entry.id} entry={entry} textWidth={textWidth} theme={theme} />
+            <FileGroupHeader
+              key={entry.id}
+              entry={entry}
+              paddingLeft={paddingLeft}
+              textWidth={textWidth}
+              theme={theme}
+            />
           );
         }
         if (entry.kind === "directory") {
@@ -83,6 +91,7 @@ export function VirtualizedFileSidebarRows({
             <FileDirectoryRow
               key={entry.id}
               entry={entry}
+              paddingLeft={paddingLeft}
               statsWidth={statsWidth}
               textWidth={textWidth}
               theme={theme}
@@ -94,6 +103,7 @@ export function VirtualizedFileSidebarRows({
           <FileListItem
             key={entry.id}
             entry={entry}
+            paddingLeft={paddingLeft}
             selected={entry.id === selectedFileId}
             statsWidth={statsWidth}
             textWidth={textWidth}
@@ -115,7 +125,7 @@ export function FlatFileSidebar({ files, ...props }: FileSidebarVariantProps): R
 /** Render the fully expanded ordered hierarchy for a wide file sidebar. */
 export function TreeFileSidebar({ files, ...props }: FileSidebarVariantProps): ReactNode {
   const entries = useMemo(() => buildTreeSidebarEntries(files), [files]);
-  return <VirtualizedFileSidebarRows {...props} entries={entries} />;
+  return <VirtualizedFileSidebarRows {...props} entries={entries} paddingLeft={0} />;
 }
 
 /**

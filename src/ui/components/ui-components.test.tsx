@@ -517,12 +517,18 @@ describe("UI components", () => {
     const treeFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);
 
     expect(flatFrame).toContain("src/ui/");
+    expect(
+      flatFrame
+        .split("\n")
+        .find((line) => line.includes("src/ui/"))
+        ?.indexOf("src/ui/"),
+    ).toBe(1);
     expect(treeFrame).not.toContain("src/ui/");
     expect(treeFrame).toContain("src/");
     expect(treeFrame).toContain("ui/");
     const treeLines = treeFrame.split("\n");
-    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(2);
-    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(4);
+    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(1);
+    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(3);
     expect(treeFrame).toContain("alpha.ts");
     expect(treeFrame).toContain("beta.ts");
   });

@@ -432,6 +432,12 @@ describe("PTY layout", () => {
       expect(initialSidebar).not.toContain("src/ui/");
       expect(initialSidebar).toContain("src/");
       expect(initialSidebar).toContain("ui/");
+      expect(
+        initialSidebar
+          .split("\n")
+          .find((line) => line.includes("src/"))
+          ?.indexOf("src/"),
+      ).toBe(2);
 
       await dragMouse(session, 34, 6, 32, 6);
       const resized = await harness.waitForSnapshot(
@@ -450,6 +456,12 @@ describe("PTY layout", () => {
         .join("\n");
 
       expect(resizedSidebar).toContain("src/ui/");
+      expect(
+        resizedSidebar
+          .split("\n")
+          .find((line) => line.includes("src/ui/"))
+          ?.indexOf("src/ui/"),
+      ).toBe(2);
       expect(resizedSidebar).toContain("alpha.ts");
       expect(resizedSidebar).toContain("beta.ts");
     } finally {
