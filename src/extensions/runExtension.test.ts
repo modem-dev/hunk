@@ -140,7 +140,7 @@ describe("registerPane", () => {
       registry,
       issues,
       factory: (hunk) => {
-        const size = { preferred: 3, min: 2, max: 4 };
+        const size = { preferred: 3, min: 2, max: 4, fraction: 0.25 };
         for (const placement of ["left", "right"] as const) {
           hunk.registerPane({ id: placement, placement, width: size, component: () => null });
         }
@@ -157,10 +157,10 @@ describe("registerPane", () => {
         pane.placement === "left" || pane.placement === "right" ? pane.width : pane.height,
       ]),
     ).toEqual([
-      ["left", "left", { preferred: 3, min: 2, max: 4 }],
-      ["right", "right", { preferred: 3, min: 2, max: 4 }],
-      ["top", "top", { preferred: 3, min: 2, max: 4 }],
-      ["bottom", "bottom", { preferred: 3, min: 2, max: 4 }],
+      ["left", "left", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
+      ["right", "right", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
+      ["top", "top", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
+      ["bottom", "bottom", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
     ]);
   });
 
@@ -216,8 +216,20 @@ describe("registerPane", () => {
       { id: "component", component: null },
       { id: "placement", placement: "center", component: () => null },
       { id: "zero", width: { preferred: 0 }, component: () => null },
-      { id: "fraction", width: { preferred: 1.5 }, component: () => null },
+      { id: "fractional-preferred", width: { preferred: 1.5 }, component: () => null },
       { id: "infinite", width: { preferred: Number.POSITIVE_INFINITY }, component: () => null },
+      { id: "zero-fraction", width: { preferred: 3, fraction: 0 }, component: () => null },
+      { id: "negative-fraction", width: { preferred: 3, fraction: -0.1 }, component: () => null },
+      { id: "large-fraction", width: { preferred: 3, fraction: 1.01 }, component: () => null },
+      { id: "nan-fraction", width: { preferred: 3, fraction: Number.NaN }, component: () => null },
+      {
+        id: "infinite-fraction",
+        width: { preferred: 3, fraction: Number.POSITIVE_INFINITY },
+        component: () => null,
+      },
+      { id: "string-fraction", width: { preferred: 3, fraction: "0.2" }, component: () => null },
+      { id: "boolean-fraction", width: { preferred: 3, fraction: true }, component: () => null },
+      { id: "null-fraction", width: { preferred: 3, fraction: null }, component: () => null },
       {
         id: "unsafe",
         width: { preferred: Number.MAX_SAFE_INTEGER + 1 },

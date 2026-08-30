@@ -11,6 +11,24 @@ afterEach(() => {
   harness.cleanup();
 });
 
+/** Locate the left pane divider from a rendered terminal frame. */
+function sidebarDividerColumn(frame: string) {
+  const columns = frame
+    .split("\n")
+    .map((line) => line.indexOf("│"))
+    .filter((column) => column >= 0);
+  return columns.length === 0 ? -1 : Math.min(...columns);
+}
+
+/** Return the rendered columns owned by the left sidebar. */
+function sidebarFrame(frame: string) {
+  const divider = sidebarDividerColumn(frame);
+  return frame
+    .split("\n")
+    .map((line) => line.slice(0, divider))
+    .join("\n");
+}
+
 describe("PTY layout", () => {
   test("the first frame fills the viewport bottom with the next file section", async () => {
     // The first review frame must fill the whole viewport: when the leading file overflows just
@@ -303,7 +321,7 @@ describe("PTY layout", () => {
   });
 
   test("auto layout responds to live terminal resize in a real PTY", async () => {
-    const fixture = harness.createTwoFileRepoFixture();
+    const fixture = harness.createNestedSidebarRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "auto"],
       cwd: fixture.dir,
@@ -317,26 +335,41 @@ describe("PTY layout", () => {
       });
 
       expect(harness.countMatches(wide, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+      expect(sidebarFrame(wide)).not.toContain("src/ui/");
       expect(wide).toMatch(/▌.*▌/);
 
-      session.resize({ cols: 150, rows: 24 });
-      const tight = await harness.waitForSnapshot(session, (text) => !/▌.*▌/.test(text), 5_000);
-
-      expect(harness.countMatches(tight, /alpha\.ts/g)).toBeLessThan(
-        harness.countMatches(wide, /alpha\.ts/g),
+      session.resize({ cols: 180, rows: 24 });
+      const medium = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarFrame(text).includes("src/ui/"),
+        5_000,
       );
+      expect(harness.countMatches(medium, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+      expect(medium).toMatch(/▌.*▌/);
+
+      session.resize({ cols: 150, rows: 24 });
+      const narrow = await harness.waitForSnapshot(
+        session,
+        (text) => harness.countMatches(text, /alpha\.ts/g) === 1 && /▌.*▌/.test(text),
+        5_000,
+      );
+      expect(narrow).toMatch(/▌.*▌/);
+
+      session.resize({ cols: 110, rows: 24 });
+      const tight = await harness.waitForSnapshot(session, (text) => !/▌.*▌/.test(text), 5_000);
+      expect(harness.countMatches(tight, /alpha\.ts/g)).toBe(1);
       expect(tight).not.toMatch(/▌.*▌/);
     } finally {
       session.close();
     }
   });
 
-  test("--sidebar shows the sidebar below the viewport width that would reveal it", async () => {
+  test("--sidebar shows the sidebar below the automatic sidebar cutoff", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split", "--sidebar"],
       cwd: fixture.dir,
-      cols: 180,
+      cols: 150,
       rows: 18,
     });
 
@@ -394,10 +427,12 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
+      const initialDividerColumn = sidebarDividerColumn(initial);
 
-      expect(initialMainColumn).toBeGreaterThan(34);
+      expect(initialDividerColumn).toBeGreaterThan(0);
+      expect(initialMainColumn).toBeGreaterThan(initialDividerColumn);
 
-      await dragMouse(session, 34, 6, 54, 6);
+      await dragMouse(session, initialDividerColumn - 2, 6, initialDividerColumn + 18, 6);
       const resized = await harness.waitForSnapshot(
         session,
         (text) => rightmostColumnOf(text, "alpha.ts") >= initialMainColumn + 3,
@@ -411,7 +446,7 @@ describe("PTY layout", () => {
     }
   });
 
-  test("retains a sidebar drag when its first cell switches the file projection", async () => {
+  test("retains a sidebar drag when its first motion switches the file projection", async () => {
     const fixture = harness.createNestedSidebarRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -425,25 +460,29 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
+      const initialDividerColumn = sidebarDividerColumn(initial);
+      const pressColumn = initialDividerColumn - 2;
+      const projectionSwitchColumn = initialDividerColumn - 4;
 
-      // Press the left edge of the five-cell hit target. The first motion lands on a tree row
-      // and switches that row out for the compact projection before the second motion arrives.
-      session.writeRaw("\x1b[<0;34;7M");
+      // Press the left edge of the five-cell hit target. The first motion crosses the tree
+      // threshold and switches that row out before the second motion arrives.
+      session.writeRaw(`\x1b[<0;${pressColumn + 1};7M`);
       await sleep(20);
-      session.writeRaw("\x1b[<32;33;7M");
+      session.writeRaw(`\x1b[<32;${projectionSwitchColumn + 1};7M`);
       await harness.waitForSnapshot(
         session,
         (text) =>
           text
             .split("\n")
-            .map((line) => line.slice(0, 33))
+            .map((line) => line.slice(0, initialDividerColumn - 2))
             .join("\n")
             .includes("src/ui/"),
         5_000,
       );
-      session.writeRaw("\x1b[<32;21;7M");
+      const finalColumn = initialDividerColumn - 16;
+      session.writeRaw(`\x1b[<32;${finalColumn + 1};7M`);
       await sleep(20);
-      session.writeRaw("\x1b[<0;21;7m");
+      session.writeRaw(`\x1b[<0;${finalColumn + 1};7m`);
       await session.waitIdle();
 
       const resized = await harness.waitForSnapshot(
@@ -470,9 +509,11 @@ describe("PTY layout", () => {
       const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
+      const initialDividerColumn = sidebarDividerColumn(initial);
+      const compactDividerColumn = initialDividerColumn - 2;
       const initialSidebar = initial
         .split("\n")
-        .map((line) => line.slice(0, 34))
+        .map((line) => line.slice(0, initialDividerColumn))
         .join("\n");
 
       expect(initialSidebar).not.toContain("src/ui/");
@@ -485,20 +526,20 @@ describe("PTY layout", () => {
           ?.indexOf("src/"),
       ).toBe(2);
 
-      await dragMouse(session, 34, 6, 33, 6);
+      await dragMouse(session, initialDividerColumn - 2, 6, initialDividerColumn - 4, 6);
       const resized = await harness.waitForSnapshot(
         session,
         (text) =>
           text
             .split("\n")
-            .map((line) => line.slice(0, 33))
+            .map((line) => line.slice(0, compactDividerColumn))
             .join("\n")
             .includes("src/ui/"),
         5_000,
       );
       const resizedSidebar = resized
         .split("\n")
-        .map((line) => line.slice(0, 33))
+        .map((line) => line.slice(0, compactDividerColumn))
         .join("\n");
 
       expect(resizedSidebar).toContain("src/ui/");

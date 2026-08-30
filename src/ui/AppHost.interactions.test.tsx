@@ -3213,7 +3213,7 @@ describe("App interactions", () => {
 
   test("sidebar shortcut can force the sidebar open when responsive layout hides it", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
-      width: 160,
+      width: 159,
       height: 24,
     });
 
@@ -3620,7 +3620,7 @@ describe("App interactions", () => {
       const secondFileY = setup
         .captureCharFrame()
         .split("\n")
-        .findIndex((line) => line.slice(0, 34).includes("second.ts"));
+        .findIndex((line) => line.split("│", 1)[0]?.includes("second.ts"));
       expect(secondFileY).toBeGreaterThan(0);
 
       await act(async () => {

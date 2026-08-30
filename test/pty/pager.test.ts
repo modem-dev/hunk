@@ -103,21 +103,21 @@ describe("PTY pager", () => {
       await session.press("space");
       const paged = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("before_18") || text.includes("after_02"),
+        (text) => text.includes("before_18"),
         5_000,
       );
 
-      expect(paged.includes("before_18") || paged.includes("after_02")).toBe(true);
+      expect(paged).toContain("before_18");
 
       await session.press("b");
       const pageRestored = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("before_01") && !text.includes("after_02"),
+        (text) => text.includes("before_01") && !text.includes("before_18"),
         5_000,
       );
 
       expect(pageRestored).toContain("before_01");
-      expect(pageRestored).not.toContain("after_02");
+      expect(pageRestored).not.toContain("before_18");
 
       await session.press("end");
       const bottom = await harness.waitForSnapshot(

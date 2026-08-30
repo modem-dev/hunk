@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 11;
+export const HUNK_EXTENSION_API_VERSION = 12;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1084,9 +1084,18 @@ export type ExtensionPanePlacement = "left" | "right" | "top" | "bottom";
 
 /** Requested pane width or height along its docked edge. */
 export interface ExtensionPaneSize {
+  /** Fixed-cell target when `fraction` is omitted, and a fallback for pre-v12 hosts. */
   preferred: number;
   min?: number;
   max?: number;
+  /**
+   * Responsive target as a fraction of the host body width or height.
+   *
+   * Without a session-local drag override, Hunk rounds the full body-axis
+   * fraction to a terminal cell. It then applies `min`, `max`, and the space
+   * required by the review to the chosen automatic or manual target.
+   */
+  fraction?: number;
 }
 
 /** Opaque host renderer for the selected split row. */
@@ -1146,7 +1155,7 @@ interface ExtensionPaneBase {
   component: ExtensionPaneComponent;
 }
 
-/** A left/right pane sized explicitly in terminal columns. */
+/** A left/right pane sized in terminal columns, optionally with a responsive target. */
 export interface ExtensionVerticalPane extends ExtensionPaneBase {
   /** Defaults to `"left"`. */
   placement?: "left" | "right";
@@ -1155,7 +1164,7 @@ export interface ExtensionVerticalPane extends ExtensionPaneBase {
   height?: never;
 }
 
-/** A top/bottom pane sized explicitly in terminal rows. */
+/** A top/bottom pane sized in terminal rows, optionally with a responsive target. */
 export interface ExtensionHorizontalPane extends ExtensionPaneBase {
   placement: "top" | "bottom";
   /** Defaults to 8 preferred and 3 minimum rows. */

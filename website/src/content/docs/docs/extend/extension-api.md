@@ -7,9 +7,10 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `11`). Branch on it if you want
-one file to support several Hunk versions. Version 11 adds the `dim`
-line-highlight tone; version 10 added generic top-level CLI commands; version 9
+The API generation this Hunk speaks (currently `12`). Branch on it if you want
+one file to support several Hunk versions. Version 12 adds responsive fractional
+pane sizing; version 11 added the `dim` line-highlight tone; version 10 added
+generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
 added authoritative review snapshots to command handlers; version 7 added the
 current source line to command selection snapshots. Version 6 added session

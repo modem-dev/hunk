@@ -14,6 +14,12 @@ describe("bundled sidebar extension", () => {
     // The registration carries the exact component the app renders and the
     // extension pipeline falls back to, so there is one built-in sidebar.
     expect(registered.pane.component).toBe(FlexFileSidebar);
+    expect(registered.pane.width).toEqual({
+      preferred: 34,
+      min: 22,
+      max: 56,
+      fraction: 0.16,
+    });
   });
 
   test("owns the reserved vendor id, so no extension can mint its view key", () => {

@@ -45,6 +45,13 @@ import {
 } from "../lib/extensionPanes";
 import { resizeSidebarWidth } from "../lib/sidebar";
 
+type PaneResizeAxis = "width" | "height";
+
+interface PaneSizeOverride {
+  axis: PaneResizeAxis;
+  size: number;
+}
+
 interface PaneResizeState {
   key: string;
   registered: RegisteredPane;
@@ -151,7 +158,7 @@ export function useExtensionPaneController({
   const [paneOpenState, setPaneOpenState] = useState(() =>
     initialOpenState(sessionPanes, initialSidebar),
   );
-  const [paneSizes, setPaneSizes] = useState<Record<string, number>>({});
+  const [paneSizeOverrides, setPaneSizeOverrides] = useState<Record<string, PaneSizeOverride>>({});
   const [paneResize, setPaneResize] = useState<PaneResizeState | null>(null);
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(
@@ -400,6 +407,18 @@ export function useExtensionPaneController({
     );
   });
 
+  // A same-key reload may move a pane between axes; never reinterpret columns as rows.
+  const paneSizes = useMemo(() => {
+    const sizes: Record<string, number> = {};
+    for (const pane of sessionPanes) {
+      const override = paneSizeOverrides[pane.key];
+      const axis: PaneResizeAxis =
+        pane.placement === "left" || pane.placement === "right" ? "width" : "height";
+      if (override?.axis === axis) sizes[pane.key] = override.size;
+    }
+    return sizes;
+  }, [paneSizeOverrides, sessionPanes]);
+
   // Compute geometry from accepted panes only; extension callbacks never run here.
   const paneLayout = useMemo(
     () =>
@@ -582,9 +601,13 @@ export function useExtensionPaneController({
             resize.minSize,
             Math.min(resize.maxSize, currentMax),
           );
-      setPaneSizes((current) =>
-        current[resize.key] === next ? current : { ...current, [resize.key]: next },
-      );
+      const axis: PaneResizeAxis = vertical ? "width" : "height";
+      setPaneSizeOverrides((current) => {
+        const previous = current[resize.key];
+        return previous?.axis === axis && previous.size === next
+          ? current
+          : { ...current, [resize.key]: { axis, size: next } };
+      });
       event.preventDefault();
       event.stopPropagation();
     },

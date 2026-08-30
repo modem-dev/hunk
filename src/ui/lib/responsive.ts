@@ -2,7 +2,9 @@ import type { LayoutMode } from "../../core/run/commandInputs";
 
 export type ResponsiveViewport = "full" | "medium" | "tight";
 
-const SPLIT_VIEWPORT_MIN_WIDTH = 160;
+/** Keep two diff columns until each side would fall below roughly 60 terminal cells. */
+const AUTO_SPLIT_MIN_WIDTH = 120;
+const SIDEBAR_VIEWPORT_MIN_WIDTH = 160;
 const FULL_VIEWPORT_MIN_WIDTH = 220;
 
 export interface ResponsiveLayout {
@@ -17,7 +19,7 @@ function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
     return "full";
   }
 
-  if (viewportWidth >= SPLIT_VIEWPORT_MIN_WIDTH) {
+  if (viewportWidth >= SIDEBAR_VIEWPORT_MIN_WIDTH) {
     return "medium";
   }
 
@@ -35,7 +37,7 @@ export function resolveResponsiveLayout(
     return {
       viewport,
       layout: "split",
-      showSidebar: viewport === "full",
+      showSidebar: viewport !== "tight",
     };
   }
 
@@ -43,21 +45,13 @@ export function resolveResponsiveLayout(
     return {
       viewport,
       layout: "stack",
-      showSidebar: viewport === "full",
-    };
-  }
-
-  if (viewport === "tight") {
-    return {
-      viewport,
-      layout: "stack",
-      showSidebar: false,
+      showSidebar: viewport !== "tight",
     };
   }
 
   return {
     viewport,
-    layout: "split",
-    showSidebar: viewport === "full",
+    layout: viewportWidth >= AUTO_SPLIT_MIN_WIDTH ? "split" : "stack",
+    showSidebar: viewport !== "tight",
   };
 }

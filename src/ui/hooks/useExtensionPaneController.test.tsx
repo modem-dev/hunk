@@ -411,6 +411,92 @@ describe("useExtensionPaneController", () => {
     }
   });
 
+  test("tracks responsive pane sizes until a drag establishes a restorable override", async () => {
+    const right = registeredPane("meta", "right", {
+      placement: "right",
+      defaultOpen: true,
+      width: { preferred: 20, min: 10, max: 50, fraction: 0.2 },
+    });
+    const harness = await renderController({
+      extensions: loadResultWith([right]),
+      initialSidebar: false,
+    });
+    const rightWidth = () =>
+      harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:right")!.bounds
+        .width;
+
+    try {
+      expect(rightWidth()).toBe(20);
+      await act(async () => harness.setSize({ width: 150, height: 30 }));
+      await harness.settle();
+      expect(rightWidth()).toBe(30);
+
+      const planned = harness
+        .current()
+        .paneLayout.panes.find(({ pane }) => pane.key === "meta:right")!;
+      await act(async () => {
+        harness.current().beginPaneResize(planned, mouseEvent({ x: planned.divider!.x }).event);
+      });
+      await act(async () => {
+        harness.current().updatePaneResize(mouseEvent({ x: planned.divider!.x - 10 }).event);
+      });
+      await harness.settle();
+      expect(rightWidth()).toBe(40);
+      await act(async () => harness.current().endPaneResize());
+
+      await act(async () => harness.setSize({ width: 80, height: 30 }));
+      await harness.settle();
+      expect(rightWidth()).toBe(31);
+      await act(async () => harness.setSize({ width: 150, height: 30 }));
+      await harness.settle();
+      expect(rightWidth()).toBe(40);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("does not reinterpret a same-key width override after a pane moves to a row axis", async () => {
+    const right = registeredPane("meta", "moving", {
+      placement: "right",
+      defaultOpen: true,
+      width: { preferred: 20, min: 10, max: 50 },
+    });
+    const harness = await renderController({
+      extensions: loadResultWith([right]),
+      initialSidebar: false,
+    });
+
+    try {
+      const planned = harness
+        .current()
+        .paneLayout.panes.find(({ pane }) => pane.key === "meta:moving")!;
+      await act(async () => {
+        harness.current().beginPaneResize(planned, mouseEvent({ x: planned.divider!.x }).event);
+        harness.current().updatePaneResize(mouseEvent({ x: planned.divider!.x - 10 }).event);
+      });
+      await harness.settle();
+      expect(
+        harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:moving")!.bounds
+          .width,
+      ).toBe(30);
+      await act(async () => harness.current().endPaneResize());
+
+      const bottom = registeredPane("meta", "moving", {
+        placement: "bottom",
+        defaultOpen: true,
+        height: { preferred: 5, min: 3, max: 12 },
+      });
+      await act(async () => harness.setExtensions(loadResultWith([bottom])));
+      await harness.settle();
+      expect(
+        harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:moving")!.bounds
+          .height,
+      ).toBe(5);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
   test("resizes right panes with inverted drag direction and cancels after terminal shrink", async () => {
     const right = registeredPane("meta", "right", {
       placement: "right",

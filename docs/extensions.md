@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `11`). Branch on it if you want
-one file to support several Hunk versions. Version 11 adds the `"dim"`
-line-highlight tone; version 10 added generic top-level CLI commands; version 9
+The API generation this Hunk speaks (currently `12`). Branch on it if you want
+one file to support several Hunk versions. Version 12 adds responsive fractional
+pane sizing; version 11 added the `"dim"` line-highlight tone; version 10 added
+generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
 added authoritative review snapshots to command handlers; version 7 added the
 current source line to command selection snapshots. Version 6 added session behavior,
@@ -722,9 +723,19 @@ export default function (hunk: HunkExtensionAPI) {
 ```
 
 `placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes
-use `height`. Both accept `{ preferred, min?, max? }`; equal bounds make a fixed
-pane. Defaults are `{ preferred: 34, min: 22 }` columns and
+use `height`. Both accept `{ preferred, min?, max?, fraction? }`; equal bounds
+make a fixed pane. Defaults are `{ preferred: 34, min: 22 }` columns and
 `{ preferred: 8, min: 3 }` rows.
+
+`fraction` opts into live responsive sizing until the user drags the divider. It
+must be greater than `0` and at most `1`; Hunk rounds that fraction of the full
+host body width or height to a terminal cell, then applies `min`, `max`, and the
+space required by the review. `preferred` remains the fixed-cell target when
+`fraction` is omitted. A divider drag establishes a session-local cell override:
+later terminal shrink may clamp it temporarily, and expanding restores it.
+Panes without `fraction` retain their fixed preferred startup size. Folder
+extensions that use `fraction` should declare `"hunk": { "apiVersion": 12 }` in
+their manifest.
 
 Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to

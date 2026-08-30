@@ -459,6 +459,15 @@ export function createExtensionApi(
           throw new Error(`registerPane ${dimension}.${name} must be a positive safe integer.`);
         }
       }
+      if (
+        size.fraction !== undefined &&
+        (typeof size.fraction !== "number" ||
+          !Number.isFinite(size.fraction) ||
+          size.fraction <= 0 ||
+          size.fraction > 1)
+      ) {
+        throw new Error(`registerPane ${dimension}.fraction must be greater than 0 and at most 1.`);
+      }
       if (min > size.preferred || size.preferred > max) {
         throw new Error(`registerPane ${dimension} must satisfy min <= preferred <= max.`);
       }
@@ -475,7 +484,12 @@ export function createExtensionApi(
         }
       }
 
-      const normalizedSize = { preferred: size.preferred, min, max };
+      const normalizedSize = {
+        preferred: size.preferred,
+        min,
+        max,
+        ...(size.fraction === undefined ? {} : { fraction: size.fraction }),
+      };
       registry.panes.push({
         extensionId: metadata.id,
         pane: {

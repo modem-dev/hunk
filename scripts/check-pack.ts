@@ -92,7 +92,7 @@ export default function (hunk: HunkExtensionAPI) {
     props.currentLine?.render("new", props.width);
     return null;
   };
-  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4 };
+  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4, fraction: 0.25 };
   for (const placement of ["left", "right"] as const) {
     const verticalPane: ExtensionVerticalPane = {
       id: placement,

@@ -291,6 +291,128 @@ describe("extension panes", () => {
     expect(called).toBe(0);
   });
 
+  test("resolves responsive targets from the full body axis before manual overrides", () => {
+    const left: SessionPane = {
+      key: "a:left",
+      placement: "left",
+      title: "left",
+      defaultOpen: true,
+      registered: registeredPane("a", "left", {
+        placement: "left",
+        width: { preferred: 34, min: 22, max: 56, fraction: 0.16 },
+      }),
+    };
+    const top: SessionPane = {
+      key: "a:top",
+      placement: "top",
+      title: "top",
+      defaultOpen: true,
+      registered: registeredPane("a", "top", {
+        placement: "top",
+        height: { preferred: 8, min: 3, max: 12, fraction: 0.25 },
+      }),
+    };
+    const plan = (bodyWidth: number, sizes: Record<string, number> = {}) =>
+      planExtensionPanes({
+        panes: [left, top],
+        openKeys: [left.key, top.key],
+        sizes,
+        bodyWidth,
+        bodyHeight: 40,
+        minReviewWidth: 48,
+        minReviewHeight: 5,
+      });
+
+    expect(plan(100).panes.map(({ bounds }) => [bounds.width, bounds.height])).toEqual([
+      [22, 40],
+      [77, 10],
+    ]);
+    expect(plan(238).panes.map(({ bounds }) => [bounds.width, bounds.height])).toEqual([
+      [38, 40],
+      [199, 10],
+    ]);
+    expect(plan(400).panes[0]?.bounds.width).toBe(56);
+    expect(plan(238, { "a:left": 47 }).panes[0]?.bounds.width).toBe(47);
+  });
+
+  test("rounds fractional cells before bounds and allocates competing panes in order", () => {
+    const pane = (id: string, min: number): SessionPane => ({
+      key: `a:${id}`,
+      placement: "left",
+      title: id,
+      defaultOpen: true,
+      registered: registeredPane("a", id, {
+        placement: "left",
+        width: { preferred: 20, min, max: 80, fraction: 0.6 },
+      }),
+    });
+    const panes = [pane("one", 10), pane("two", 10), pane("three", 20)];
+    const plan = planExtensionPanes({
+      panes,
+      openKeys: panes.map(({ key }) => key),
+      sizes: {},
+      bodyWidth: 100,
+      bodyHeight: 30,
+      minReviewWidth: 20,
+      minReviewHeight: 5,
+    });
+
+    expect(plan.panes.map(({ pane: planned, bounds }) => [planned.key, bounds.width])).toEqual([
+      ["a:one", 60],
+      ["a:two", 18],
+    ]);
+    expect(plan.omittedKeys).toEqual(["a:three"]);
+
+    const halfTie: SessionPane = {
+      key: "a:half",
+      placement: "left",
+      title: "half",
+      defaultOpen: true,
+      registered: registeredPane("a", "half", {
+        placement: "left",
+        width: { preferred: 10, min: 1, max: 50, fraction: 0.1 },
+      }),
+    };
+    expect(
+      planExtensionPanes({
+        panes: [halfTie],
+        openKeys: [halfTie.key],
+        sizes: {},
+        bodyWidth: 225,
+        bodyHeight: 30,
+        minReviewWidth: 20,
+        minReviewHeight: 5,
+      }).panes[0]?.bounds.width,
+    ).toBe(23);
+  });
+
+  test("sizes top and bottom fractional panes from the full body height", () => {
+    const pane = (id: string, placement: "top" | "bottom"): SessionPane => ({
+      key: `a:${id}`,
+      placement,
+      title: id,
+      defaultOpen: true,
+      registered: registeredPane("a", id, {
+        placement,
+        height: { preferred: 8, min: 3, max: 20, fraction: 0.25 },
+      }),
+    });
+    const panes = [pane("top", "top"), pane("bottom", "bottom")];
+    const heights = (bodyHeight: number) =>
+      planExtensionPanes({
+        panes,
+        openKeys: panes.map(({ key }) => key),
+        sizes: {},
+        bodyWidth: 100,
+        bodyHeight,
+        minReviewWidth: 20,
+        minReviewHeight: 5,
+      }).panes.map(({ bounds }) => bounds.height);
+
+    expect(heights(40)).toEqual([10, 10]);
+    expect(heights(60)).toEqual([15, 15]);
+  });
+
   test("uses explicit height overrides and reserves a divider only for resizable panes", () => {
     const registered = registeredPane("a", "top", {
       placement: "top",

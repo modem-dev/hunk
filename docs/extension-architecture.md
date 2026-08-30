@@ -87,7 +87,9 @@ commands never pay OpenTUI's native-library extraction).
 `src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
 plan for panes, dividers, and review bounds. Left/right panes consume columns;
 top/bottom panes consume rows from the central review column, outside review
-stream coordinates.
+stream coordinates. Pane registrations may opt into a body-axis `fraction`;
+the planner resolves it to an integer target before applying bounds and lets a
+session-local divider drag override that automatic size.
 
 `src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions and
 failure containment. `DiffPane` exposes optional current-line paint without

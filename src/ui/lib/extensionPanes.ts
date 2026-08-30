@@ -222,7 +222,18 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     const spec = extensionPaneSize(pane.registered.pane, pane.placement);
     const min = spec.min ?? 1;
     const max = spec.max ?? Number.MAX_SAFE_INTEGER;
-    return { preferred: options.sizes[pane.key] ?? spec.preferred, min, max, fixed: min === max };
+    const axisSize =
+      pane.placement === "left" || pane.placement === "right"
+        ? Math.max(0, options.bodyWidth)
+        : Math.max(0, options.bodyHeight);
+    const automaticSize =
+      spec.fraction === undefined ? spec.preferred : Math.round(axisSize * spec.fraction);
+    return {
+      target: options.sizes[pane.key] ?? automaticSize,
+      min,
+      max,
+      fixed: min === max,
+    };
   };
 
   for (const pane of accepted.filter(
@@ -231,7 +242,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     const spec = sizeSpec(pane);
     const dividerSize = spec.fixed ? 0 : EXTENSION_PANE_DIVIDER_SIZE;
     const remaining = right - left - options.minReviewWidth - dividerSize;
-    const width = Math.min(Math.max(spec.preferred, spec.min), spec.max, remaining);
+    const width = Math.min(Math.max(spec.target, spec.min), spec.max, remaining);
     if (width < spec.min) {
       omittedKeys.push(pane.key);
       continue;
@@ -269,7 +280,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     const spec = sizeSpec(pane);
     const dividerSize = spec.fixed ? 0 : EXTENSION_PANE_DIVIDER_SIZE;
     const remaining = bottom - top - options.minReviewHeight - dividerSize;
-    const height = Math.min(Math.max(spec.preferred, spec.min), spec.max, remaining);
+    const height = Math.min(Math.max(spec.target, spec.min), spec.max, remaining);
     if (height < spec.min) {
       omittedKeys.push(pane.key);
       continue;

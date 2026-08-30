@@ -79,9 +79,15 @@ async function captureResponsiveFrames() {
       setup.resize(159, 24);
       await setup.renderOnce();
     });
+    const narrow = setup.captureCharFrame();
+
+    await act(async () => {
+      setup.resize(119, 24);
+      await setup.renderOnce();
+    });
     const tight = setup.captureCharFrame();
 
-    return { ultraWide, full, medium, tight };
+    return { ultraWide, full, medium, narrow, tight };
   } finally {
     await act(async () => {
       setup.renderer.destroy();
@@ -91,7 +97,7 @@ async function captureResponsiveFrames() {
 
 describe("responsive app", () => {
   test("App adjusts the visible panes and diff layout on live resize", async () => {
-    const { ultraWide, full, medium, tight } = await captureResponsiveFrames();
+    const { ultraWide, full, medium, narrow, tight } = await captureResponsiveFrames();
 
     expect((ultraWide.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(ultraWide).not.toContain("Changeset summary");
@@ -100,11 +106,15 @@ describe("responsive app", () => {
     expect(full).not.toContain("Changeset summary");
     expect(full).toMatch(/▌.*▌/);
 
-    expect(medium).not.toContain("Files");
+    expect((medium.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(medium).not.toContain("Changeset summary");
     expect(medium).toMatch(/▌.*▌/);
 
-    expect(tight).not.toContain("Files");
+    expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
+    expect(narrow).not.toContain("Changeset summary");
+    expect(narrow).toMatch(/▌.*▌/);
+
+    expect((tight.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(tight).not.toContain("Changeset summary");
     expect(tight).not.toMatch(/▌.*▌/);
   });
@@ -141,7 +151,7 @@ describe("responsive app", () => {
       });
 
       const initialFrame = setup.captureCharFrame();
-      expect((initialFrame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+      expect((initialFrame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {
         await setup.mockInput.pressKey("F10");
@@ -157,8 +167,8 @@ describe("responsive app", () => {
       });
 
       const menuFrame = setup.captureCharFrame();
-      expect(menuFrame).toContain("[ ] Files pane");
-      expect(menuFrame).not.toContain("[x] Files pane");
+      expect(menuFrame).toContain("[x] Files pane");
+      expect(menuFrame).not.toContain("[ ] Files pane");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -166,9 +176,9 @@ describe("responsive app", () => {
     }
   });
 
-  test("sidebar shortcut opens the hidden sidebar on medium viewport", async () => {
+  test("sidebar shortcut opens the hidden sidebar on a tight viewport", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
-      width: 180,
+      width: 140,
       height: 24,
     });
 
@@ -212,6 +222,7 @@ describe("responsive app", () => {
   test("pager mode stays responsive while hiding app chrome", async () => {
     const wide = await captureFrameForBootstrap(createBootstrap("auto", true), 220);
     const narrow = await captureFrameForBootstrap(createBootstrap("auto", true), 150);
+    const tight = await captureFrameForBootstrap(createBootstrap("auto", true), 110);
 
     expect(wide).not.toContain("File  View  Navigate  Agent  Help");
     expect(wide).not.toContain("F10 menu");
@@ -221,7 +232,12 @@ describe("responsive app", () => {
     expect(narrow).not.toContain("File  View  Navigate  Agent  Help");
     expect(narrow).not.toContain("F10 menu");
     expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
-    expect(narrow).not.toMatch(/▌.*▌/);
+    expect(narrow).toMatch(/▌.*▌/);
+
+    expect(tight).not.toContain("File  View  Navigate  Agent  Help");
+    expect(tight).not.toContain("F10 menu");
+    expect((tight.match(/alpha\.ts/g) ?? []).length).toBe(1);
+    expect(tight).not.toMatch(/▌.*▌/);
   });
 
   test("filter focus suppresses global shortcut keys like quit", async () => {

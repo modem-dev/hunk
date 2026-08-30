@@ -10,8 +10,8 @@ const { AppHost } = await import("./AppHost");
 
 /** A wide terminal so the responsive layout always shows the resizable sidebar. */
 const WIDE = { width: 240, height: 24 };
-// Default sidebar width (34) plus the body's 1-column left padding puts the divider at column 35.
-const INITIAL_DIVIDER_COLUMN = 35;
+// At 240 columns the 16% responsive pane is 38 cells; body padding puts its divider at 39.
+const INITIAL_DIVIDER_COLUMN = 39;
 // A stable mid-height row that always falls inside the sidebar/divider band.
 const PROBE_ROW = 10;
 
@@ -54,7 +54,7 @@ function createTopPaneResizeBootstrap(): AppBootstrap {
       component: ({ width, height }) => <text content={`TOP PANE ${width}x${height}`} />,
     },
   });
-  return { ...createResizeBootstrap(), extensions };
+  return { ...createResizeBootstrap(), extensions, initialSidebar: false };
 }
 
 /** Drive one or two render passes so pending state commits land before assertions. */
@@ -139,6 +139,24 @@ afterEach(() => {
 });
 
 describe("AppHost sidebar resize", () => {
+  test("resizes the default sidebar with the terminal until the user drags it", async () => {
+    setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
+    await flush(setup);
+    expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
+
+    await act(async () => setup!.resize(300, WIDE.height));
+    await flush(setup);
+    expect(dividerColumn(setup)).toBe(49);
+
+    await act(async () => setup!.resize(220, WIDE.height));
+    await flush(setup);
+    expect(dividerColumn(setup)).toBe(36);
+
+    await act(async () => setup!.resize(360, WIDE.height));
+    await flush(setup);
+    expect(dividerColumn(setup)).toBe(57);
+  });
+
   test("dragging the divider rightward widens the sidebar", async () => {
     setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
     await flush(setup);
@@ -174,12 +192,12 @@ describe("AppHost sidebar resize", () => {
   test("dragging a horizontal divider resizes a top pane on the row axis", async () => {
     setup = await testRender(<AppHost bootstrap={createTopPaneResizeBootstrap()} />, WIDE);
     await flush(setup);
-    expect(setup.captureCharFrame()).toContain("TOP PANE 203x4");
+    expect(setup.captureCharFrame()).toContain("TOP PANE 238x4");
 
     // Menu row 0, four pane rows 1-4, divider row 5.
     await dragHorizontalDivider(setup, 5, 8);
 
-    expect(setup.captureCharFrame()).toContain("TOP PANE 203x7");
+    expect(setup.captureCharFrame()).toContain("TOP PANE 238x7");
   });
 
   test("a mouse release with no active drag leaves the layout unchanged", async () => {

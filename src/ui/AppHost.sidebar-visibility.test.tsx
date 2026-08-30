@@ -12,12 +12,10 @@ const { AppHost } = await import("./AppHost");
 
 /** Wide enough for the responsive layout to show the sidebar on its own. */
 const WIDE = { width: 240, height: 24 };
-/** Narrower than the full viewport, so `auto` hides the sidebar but both panes still fit. */
+/** Uses the compact file projection while keeping split review geometry. */
 const MEDIUM = { width: 180, height: 24 };
-// Default sidebar width (34) plus the body's 1-column left padding puts the divider at column 35.
-const SIDEBAR_DIVIDER_COLUMN = 35;
-// A stable mid-height row that always falls inside the sidebar/divider band.
-const PROBE_ROW = 10;
+/** Hides the sidebar automatically while still leaving enough room to force it open. */
+const TIGHT = { width: 120, height: 24 };
 
 function createSidebarBootstrap(initialSidebar?: SidebarVisibility): AppBootstrap {
   return {
@@ -31,7 +29,7 @@ function createSidebarBootstrap(initialSidebar?: SidebarVisibility): AppBootstra
           before: lines("export const a = 1;"),
           context: 3,
           id: "alpha",
-          path: "src/alpha.ts",
+          path: "src/ui/alpha.ts",
         }),
       ],
     }),
@@ -75,10 +73,18 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-/** Whether the sidebar/diff divider sits at its default column on the probe row. */
+/** Return only the columns before the left pane divider. */
+function sidebarFrame(setup: Awaited<ReturnType<typeof testRender>>) {
+  return setup
+    .captureCharFrame()
+    .split("\n")
+    .map((line) => line.split("│", 1)[0])
+    .join("\n");
+}
+
+/** Whether file navigation duplicates the selected file beside its review header. */
 function sidebarVisible(setup: Awaited<ReturnType<typeof testRender>>) {
-  const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
-  return row.indexOf("│") === SIDEBAR_DIVIDER_COLUMN;
+  return (setup.captureCharFrame().match(/alpha\.ts/g) ?? []).length > 1;
 }
 
 let setup: Awaited<ReturnType<typeof testRender>> | null = null;
@@ -98,17 +104,26 @@ describe("AppHost sidebar visibility preference", () => {
     await flush(setup);
 
     expect(sidebarVisible(setup)).toBe(true);
+    expect(sidebarFrame(setup)).not.toContain("src/ui/");
   });
 
-  test("auto hides the sidebar below the full-width viewport", async () => {
+  test("auto shows the compact sidebar on a medium-width viewport", async () => {
     setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, MEDIUM);
+    await flush(setup);
+
+    expect(sidebarVisible(setup)).toBe(true);
+    expect(sidebarFrame(setup)).toContain("src/ui/");
+  });
+
+  test("auto hides the sidebar on a tight viewport", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, TIGHT);
     await flush(setup);
 
     expect(sidebarVisible(setup)).toBe(false);
   });
 
   test("the toggle forces the sidebar open where auto hides it", async () => {
-    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, MEDIUM);
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, TIGHT);
     await flush(setup);
     expect(sidebarVisible(setup)).toBe(false);
 
@@ -127,7 +142,7 @@ describe("AppHost sidebar visibility preference", () => {
   });
 
   test("true shows the sidebar where auto would hide it", async () => {
-    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(true)} />, MEDIUM);
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(true)} />, TIGHT);
     await flush(setup);
 
     expect(sidebarVisible(setup)).toBe(true);

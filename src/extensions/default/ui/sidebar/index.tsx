@@ -30,7 +30,7 @@ const registerBundledSidebar: ExtensionFactory = (hunk) => {
     id: BUNDLED_SIDEBAR_VIEW_ID,
     title: "Files",
     placement: "left",
-    width: { preferred: 34, min: 22 },
+    width: { preferred: 34, min: 22, max: 56, fraction: 0.16 },
     defaultOpen: true,
     component: FlexFileSidebar,
   });
