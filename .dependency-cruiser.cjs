@@ -20,11 +20,12 @@ const UI_SESSION_ADAPTERS = [
   "^src/ui/lib/reviewState\\.ts$",
 ];
 
-// Every way the shipped product is entered: the CLI, the highlight worker thread, the two
-// published facades, and the skill generator. A module under src/ that no entry reaches,
+// Every way the shipped product is entered: the CLI, browser review, highlight worker thread,
+// the two published facades, and the skill generator. A module under src/ that no entry reaches,
 // directly or transitively, is not in the product.
 const PRODUCTION_ENTRY_POINTS = [
   "^src/main\\.tsx$",
+  "^src/web/main\\.tsx$",
   "^src/highlightWorkerEntry\\.ts$",
   "^src/opentui/index\\.ts$",
   "^src/extension-api/index\\.ts$",

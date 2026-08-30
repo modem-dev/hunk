@@ -5,6 +5,7 @@
       "entry": [
         "src/extension-api/index.ts",
         "src/opentui/index.ts",
+        "src/web/main.tsx",
         "src/**/*.test.{ts,tsx}",
         "scripts/**/*.test.ts",
         "test/**/*.test.{ts,tsx}",

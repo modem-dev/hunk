@@ -16,10 +16,9 @@
  * the other's colors, column layout, or window size.
  *
  * This module classifies. It resolves nothing: reading user config, repo config, and CLI
- * flags is the host's layered chain (`src/core/config.ts`), and a client's own overrides
+ * flags is the host's layered chain (`src/core/run/config.ts`), and a client's own overrides
  * are its own storage.
  */
-import type { PersistedViewPreferences } from "../types";
 
 /**
  * How a surface lays a diff out.
@@ -30,6 +29,22 @@ import type { PersistedViewPreferences } from "../types";
  * own three-word union would be free to drift from the terminal's on what `auto` means.
  */
 export type LayoutMode = "auto" | "split" | "stack";
+
+/** How the terminal marks the row under the cursor. */
+export type CursorLine = "row" | "number" | "off";
+
+/** The view options a session persists back to config when the reader saves them. */
+export interface PersistedViewPreferences {
+  mode: LayoutMode;
+  theme?: string;
+  showLineNumbers: boolean;
+  wrapLines: boolean;
+  showHunkHeaders: boolean;
+  showMenuBar: boolean;
+  showAgentNotes: boolean;
+  copyDecorations: boolean;
+  cursorLine: CursorLine;
+}
 
 /**
  * Where one option's value lives.

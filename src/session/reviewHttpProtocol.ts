@@ -26,10 +26,12 @@
  * wrote it with.
  */
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
-import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
+import type { HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import { isReviewSha256Digest, utf8ByteLength } from "../core/review/validation";
-import { reviewErrorMessage } from "./reviewErrorCatalog";
+import { reviewErrorMessage, type HunkReviewClientErrorCodeV1 } from "./reviewErrorCatalog";
+
+export type { HunkReviewClientErrorCodeV1 } from "./reviewErrorCatalog";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
@@ -226,45 +228,6 @@ export function parseReviewCapabilityFragment(fragment: string): string | undefi
   const capability = params.get(HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY);
   return isReviewCapabilityToken(capability) ? capability : undefined;
 }
-
-/**
- * Why one review request failed at the transport rather than at the review.
- *
- * Beside the producer's vocabulary rather than mixed into it: these are things that go
- * wrong before an action or a read ever reaches the session — the caller was not
- * authorized, addressed a session nobody is serving, or sent something the surface will
- * not carry.
- */
-export type HunkReviewTransportErrorCode =
-  /**
-   * No capability, or one that does not match the session addressed.
-   *
-   * Also the answer for a session nobody is serving: telling a caller that a session does
-   * not exist is telling it which sessions do.
-   */
-  | "unauthorized"
-  /** The session is registered but publishes no review to serve. */
-  | "no-publication"
-  /** The request body is larger than this surface accepts. */
-  | "payload-too-large"
-  /** The route exists but not for this method. */
-  | "method-not-allowed"
-  /** The body was not sent as JSON. */
-  | "unsupported-media-type"
-  /** The Host or Origin does not name this local surface. */
-  | "forbidden-origin"
-  /** The action names a type this build's vocabulary does not contain. */
-  | "unsupported-action"
-  /** The surface is already serving as many event streams as it will. */
-  | "too-many-streams";
-
-/**
- * Every code a review client can be told, from any tier.
- *
- * Composed from the producer's vocabulary and the transport's rather than restated as a
- * third list, which is the same rule `HunkReviewFailureCodeV1` follows one level down.
- */
-export type HunkReviewClientErrorCodeV1 = HunkReviewFailureCodeV1 | HunkReviewTransportErrorCode;
 
 /** One refusal, in the shape every review route answers with. */
 export interface HunkReviewHttpFailureV1 {

@@ -22,7 +22,21 @@
  *   key or a gap id; the catalog stays constant so it can be rendered anywhere,
  *   including where the caller's input must not be echoed back.
  */
-import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
+import type { HunkReviewFailureCodeV1 } from "./reviewProtocol";
+
+/** Failures raised by HTTP transport before a request reaches the review. */
+export type HunkReviewTransportErrorCode =
+  | "unauthorized"
+  | "no-publication"
+  | "payload-too-large"
+  | "method-not-allowed"
+  | "unsupported-media-type"
+  | "forbidden-origin"
+  | "unsupported-action"
+  | "too-many-streams";
+
+/** Every failure code a review client can receive from any tier. */
+export type HunkReviewClientErrorCodeV1 = HunkReviewFailureCodeV1 | HunkReviewTransportErrorCode;
 
 /** One documented failure: what it means, and what the person in front of it can do. */
 export interface ReviewErrorDoc {

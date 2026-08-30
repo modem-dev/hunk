@@ -11,7 +11,7 @@
  * That is why this file is here and not in `src/core/review/`: the audit lists platform
  * hashing (`node:crypto` versus Web Crypto) among the things deliberately *not* unified
  * (`docs/browser-review-seam-audit.md`, § A). The session's edge does the same thing on the
- * other side in `src/lib/reviewDigest.ts`, and `reviewDigest.test.ts` holds this one to
+ * other side in `src/core/reviewDigest.ts`, and `reviewDigest.test.ts` holds this one to
  * that implementation's output.
  *
  * It is used for integrity, never for secrecy: nothing here hashes a capability, and the
