@@ -32,6 +32,7 @@ export function acquireInstallVmRuntimeLock(
   const alive = options.alive ?? processIsAlive;
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Install VM lock needs a valid pid.");
 
+  /** Create the lock and publish its owner atomically with cleanup on failure. */
   const create = () => {
     mkdirSync(lockDirectory);
     try {
@@ -72,6 +73,7 @@ export function acquireInstallVmRuntimeLock(
   }
 
   let released = false;
+  /** Release only the lock that this caller still owns. */
   return () => {
     if (released) return;
     released = true;

@@ -89,6 +89,7 @@ export class InstallVmCommandRunner {
   private readonly handleSigint = () => this.interrupt("SIGINT", 130);
   private readonly handleSigterm = () => this.interrupt("SIGTERM", 143);
 
+  /** Create a runner with injectable process and timer operations for deterministic tests. */
   constructor(dependencies: Partial<HostCommandRunnerDependencies> = {}) {
     this.dependencies = {
       spawn: dependencies.spawn ?? ((command, options) => Bun.spawn(command, options)),
@@ -98,11 +99,13 @@ export class InstallVmCommandRunner {
     };
   }
 
+  /** Begin forwarding host interrupts to the active command. */
   start() {
     process.once("SIGINT", this.handleSigint);
     process.once("SIGTERM", this.handleSigterm);
   }
 
+  /** Stop forwarding interrupts and cancel any pending forced termination. */
   stop() {
     process.off("SIGINT", this.handleSigint);
     process.off("SIGTERM", this.handleSigterm);
@@ -110,6 +113,7 @@ export class InstallVmCommandRunner {
     this.terminationTimer = undefined;
   }
 
+  /** Forward the first interrupt and schedule forced termination when a command is active. */
   private interrupt(signal: NodeJS.Signals, exitCode: number) {
     if (this.interruptedExitCode !== undefined) return;
     this.interruptedExitCode = exitCode;
@@ -125,12 +129,14 @@ export class InstallVmCommandRunner {
     }
   }
 
+  /** Throw the conventional exit code after an interrupt reaches the runner. */
   checkInterrupted() {
     if (this.interruptedExitCode !== undefined) {
       throw new InstallVmCommandError("Install VM suite interrupted.", this.interruptedExitCode);
     }
   }
 
+  /** Run one host command with inherited I/O and a bounded termination sequence. */
   async run(command: string[], options: { cwd?: string; timeoutMs?: number } = {}) {
     this.checkInterrupted();
     const proc = this.dependencies.spawn(command, {
@@ -206,6 +212,7 @@ function controllerImageTag() {
   return `hunk-install-vm:${hash.digest("hex").slice(0, 12)}`;
 }
 
+/** Write explicit skipped evidence when the host cannot run the optional VM suite. */
 function writeSkippedResult(
   outputDir: string,
   runId: string,

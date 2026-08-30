@@ -76,6 +76,7 @@ function sha256(filePath: string) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
+/** Read one NUL-delimited Git path listing without shell interpretation. */
 function readCheckoutGitList(repoRoot: string, args: string[]) {
   const listed = Bun.spawnSync(["git", ...args], {
     cwd: repoRoot,
@@ -230,6 +231,7 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
     throw new Error("Curl latest-release fixture does not match the current version.");
   }
   const archiveName = "hunkdiff-linux-x64.tar.gz";
+  /** Verify one curl fixture's archive and declared checksum. */
   const verifyArchiveChecksum = (version: string, expectedDigest?: string) => {
     const directory = path.join(httpRoot, "download", `v${version}`);
     const archive = path.join(directory, archiveName);
@@ -254,10 +256,12 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
   return manifest;
 }
 
+/** Write stable indented JSON with a trailing newline. */
 function writeJson(filePath: string, value: unknown) {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** Run one fixture-building command with inherited output. */
 async function run(command: string[], cwd?: string) {
   const proc = Bun.spawn(command, {
     cwd,
@@ -270,6 +274,7 @@ async function run(command: string[], cwd?: string) {
   if (exitCode !== 0) throw new Error(`${command.join(" ")} failed with ${exitCode}`);
 }
 
+/** Pack one fixture package without running package lifecycle scripts. */
 async function packPackage(packageDirectory: string, packageOutput: string) {
   await run(
     [npmCommand, "pack", "--pack-destination", packageOutput, "--ignore-scripts"],
@@ -284,6 +289,7 @@ async function packPackage(packageDirectory: string, packageOutput: string) {
   return `${manifest.name.replace(/^@/, "").replaceAll("/", "-")}-${manifest.version}.tgz`;
 }
 
+/** Write an executable fixture binary that reports the requested synthetic version. */
 function writeSyntheticBinary(binaryPath: string, version: string) {
   writeFileSync(
     binaryPath,
@@ -292,6 +298,7 @@ function writeSyntheticBinary(binaryPath: string, version: string) {
   chmodSync(binaryPath, 0o755);
 }
 
+/** Copy bundled skills into a synthetic install fixture. */
 function copyFixtureSkills(repoRoot: string, destination: string) {
   for (const skill of ["hunk-review", "hunk-extensions"]) {
     cpSync(path.join(repoRoot, "skills", skill), path.join(destination, "skills", skill), {
@@ -300,6 +307,7 @@ function copyFixtureSkills(repoRoot: string, destination: string) {
   }
 }
 
+/** Stage coupled meta and platform packages for one synthetic upgrade version. */
 async function stageSyntheticPackage(
   repoRoot: string,
   stageRoot: string,
@@ -342,6 +350,7 @@ async function stageSyntheticPackage(
   ];
 }
 
+/** Stage one synthetic standalone archive and matching checksum manifest. */
 async function stageSyntheticCurlArchive(
   repoRoot: string,
   stageRoot: string,
