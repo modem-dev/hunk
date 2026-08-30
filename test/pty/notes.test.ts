@@ -281,6 +281,7 @@ describe("PTY notes", () => {
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Root review note.");
+      await session.waitForText(/Root review note\./, { timeout: 5_000 });
       await session.type("\x13");
       const root = await session.waitForText(/Root review note\./, { timeout: 5_000 });
       expect(root).not.toContain("r reply");
@@ -313,6 +314,7 @@ describe("PTY notes", () => {
       expect(editing).toContain("Root review note.");
       expect(lineIndexOf(editing, "Root review note.")).toBe(rootRowBeforeEdit);
       await session.type("Updated. ");
+      await session.waitForText(/Updated\. Root review note\./, { timeout: 5_000 });
       await moveMouse(session, 0, 0);
       await session.type("\x13");
       const edited = await session.waitForText(/Updated\. Root review note\./, { timeout: 5_000 });
@@ -325,6 +327,7 @@ describe("PTY notes", () => {
       const replying = await session.waitForText(/╰─╭─ Reply -/, { timeout: 5_000 });
       expect(lineIndexOf(replying, "Updated. Root review note.")).toBe(rootRowBeforeReply);
       await session.type("First reply.");
+      await session.waitForText(/First reply\./, { timeout: 5_000 });
       await session.type("\x13");
       const firstReply = await session.waitForText(/First reply\./, { timeout: 5_000 });
       expect(firstReply).toMatch(/╰─╭─ Your note/);
@@ -333,6 +336,7 @@ describe("PTY notes", () => {
       await session.click(/r reply/);
       await session.waitForText(/╰─╭─ Reply -/, { timeout: 5_000 });
       await session.type("Nested reply.");
+      await session.waitForText(/Nested reply\./, { timeout: 5_000 });
       await session.type("\x13");
 
       const nested = await session.waitForText(/Nested reply\./, { timeout: 5_000 });
