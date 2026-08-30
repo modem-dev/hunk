@@ -27,13 +27,13 @@ function createResizeBootstrap(): AppBootstrap {
     files: [
       createTestDiffFile(
         "alpha",
-        "src/alpha.ts",
+        "src/ui/alpha.ts",
         lines("export const a = 1;", "export const b = 2;"),
         lines("export const a = 10;", "export const b = 2;"),
       ),
       createTestDiffFile(
         "beta",
-        "src/beta.ts",
+        "src/ui/beta.ts",
         lines("export const c = 3;"),
         lines("export const c = 30;"),
       ),
@@ -70,6 +70,16 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 function dividerColumn(setup: Awaited<ReturnType<typeof testRender>>) {
   const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
   return row.indexOf("│");
+}
+
+/** Return only the file-sidebar columns so diff headers cannot satisfy sidebar assertions. */
+function sidebarFrame(setup: Awaited<ReturnType<typeof testRender>>) {
+  const divider = dividerColumn(setup);
+  return setup
+    .captureCharFrame()
+    .split("\n")
+    .map((line) => line.slice(0, divider))
+    .join("\n");
 }
 
 /**
@@ -138,6 +148,17 @@ describe("AppHost sidebar resize", () => {
 
     // The divider follows the new width: startWidth + (currentX - originX).
     expect(dividerColumn(setup)).toBeGreaterThan(INITIAL_DIVIDER_COLUMN);
+  });
+
+  test("resizing across the content-width threshold switches the file projection", async () => {
+    setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
+    await flush(setup);
+    expect(sidebarFrame(setup)).not.toContain("src/ui/");
+
+    // Raw pane width 32 leaves 30 content columns, which selects compact mode.
+    await dragDivider(setup, INITIAL_DIVIDER_COLUMN, 33);
+
+    expect(sidebarFrame(setup)).toContain("src/ui/");
   });
 
   test("dragging the divider far left clamps the sidebar at its minimum width", async () => {

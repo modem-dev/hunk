@@ -1,6 +1,15 @@
 import { useMemo } from "react";
-import { FileGroupHeader, FileListItem } from "../ui/components/panes/FileListItem";
-import { buildSidebarEntries, sidebarEntryStatsWidth } from "../ui/lib/files";
+import {
+  FileDirectoryRow,
+  FileGroupHeader,
+  FileListItem,
+} from "../ui/components/panes/FileListItem";
+import {
+  buildFlatSidebarEntries,
+  buildTreeSidebarEntries,
+  resolveFileSidebarMode,
+  sidebarEntryStatsWidth,
+} from "../ui/lib/files";
 import { resolveTheme } from "../ui/themes";
 import { toInternalDiffFiles } from "./model";
 import type { HunkFileNavProps } from "./types";
@@ -15,23 +24,46 @@ export function HunkFileNav({
 }: HunkFileNavProps) {
   const resolvedTheme = resolveTheme(theme, null);
   const internalFiles = useMemo(() => toInternalDiffFiles(files), [files]);
-  const entries = useMemo(() => buildSidebarEntries(internalFiles), [internalFiles]);
+  const textWidth = Math.max(1, width - 1);
+  const mode = resolveFileSidebarMode(textWidth);
+  const entries = useMemo(
+    () =>
+      mode === "tree"
+        ? buildTreeSidebarEntries(internalFiles)
+        : buildFlatSidebarEntries(internalFiles),
+    [internalFiles, mode],
+  );
   const fileEntries = entries.filter((entry) => entry.kind === "file");
   const statsWidth = Math.max(0, ...fileEntries.map((entry) => sidebarEntryStatsWidth(entry)));
-  const textWidth = Math.max(1, width - 1);
 
   return (
     <box style={{ width: "100%", flexDirection: "column", backgroundColor: resolvedTheme.panel }}>
-      {entries.map((entry) =>
-        entry.kind === "group" ? (
-          <FileGroupHeader
-            key={entry.id}
-            entry={entry}
-            paddingLeft={0}
-            textWidth={Math.max(1, width)}
-            theme={resolvedTheme}
-          />
-        ) : (
+      {entries.map((entry) => {
+        if (entry.kind === "group") {
+          return (
+            <FileGroupHeader
+              key={entry.id}
+              entry={entry}
+              paddingLeft={0}
+              textWidth={Math.max(1, width)}
+              theme={resolvedTheme}
+            />
+          );
+        }
+        if (entry.kind === "directory") {
+          return (
+            <FileDirectoryRow
+              key={entry.id}
+              entry={entry}
+              paddingLeft={0}
+              statsWidth={statsWidth}
+              textWidth={textWidth}
+              theme={resolvedTheme}
+            />
+          );
+        }
+
+        return (
           <FileListItem
             key={entry.id}
             entry={entry}
@@ -42,8 +74,8 @@ export function HunkFileNav({
             theme={resolvedTheme}
             onSelectFile={onSelectFile}
           />
-        ),
-      )}
+        );
+      })}
     </box>
   );
 }

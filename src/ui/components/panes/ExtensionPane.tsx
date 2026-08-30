@@ -9,7 +9,7 @@ import type {
 } from "../../../extension-api/types";
 import type { DiffFile } from "../../../core/changeset/model";
 import { paneKey } from "../../../extensions/apply";
-import { BuiltInSidebarView } from "../../../extensions/default/ui/sidebar";
+import { FlexFileSidebar } from "../../../extensions/default/ui/sidebar";
 import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";
 import type { ExtensionNotifySink, RegisteredPane } from "../../../extensions/types";
 import { createGuardedReviewNavigation } from "../../lib/extensionNavigation";
@@ -155,7 +155,7 @@ function ExtensionPaneHostView({
     ? null
     : filesChrome
       ? box(<text fg={publicTheme.muted}>Files pane unavailable</text>)
-      : box(<BuiltInSidebarView {...viewProps} />);
+      : box(<FlexFileSidebar {...viewProps} />);
   return (
     <ExtensionPaneErrorBoundary
       registered={registered}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { paneKey } from "../../../apply";
-import { BUNDLED_SIDEBAR_EXTENSION_ID, BUNDLED_SIDEBAR_VIEW_ID, BuiltInSidebarView } from ".";
+import { BUNDLED_SIDEBAR_EXTENSION_ID, BUNDLED_SIDEBAR_VIEW_ID, FlexFileSidebar } from ".";
 import { getBundledUIRegistry } from "..";
 
 const getBundledFilesPane = () => getBundledUIRegistry().panes[0]!;
@@ -13,7 +13,7 @@ describe("bundled sidebar extension", () => {
     expect(registered.pane.id).toBe(BUNDLED_SIDEBAR_VIEW_ID);
     // The registration carries the exact component the app renders and the
     // extension pipeline falls back to, so there is one built-in sidebar.
-    expect(registered.pane.component).toBe(BuiltInSidebarView);
+    expect(registered.pane.component).toBe(FlexFileSidebar);
   });
 
   test("owns the reserved vendor id, so no extension can mint its view key", () => {

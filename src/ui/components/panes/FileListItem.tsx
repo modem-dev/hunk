@@ -1,7 +1,12 @@
 import { memo } from "react";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
 import { fileRowId } from "../../lib/ids";
-import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
+import {
+  sidebarEntryStats,
+  type FileDirectoryEntry,
+  type FileGroupEntry,
+  type FileListEntry,
+} from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
 
 /**
@@ -61,6 +66,62 @@ export function FileGroupHeader({
   );
 }
 
+/** Clamp hierarchy indentation so a row always retains space for its visible label. */
+export function fileSidebarIndentWidth(depth: number, textWidth: number, reservedWidth: number) {
+  return Math.min(Math.max(0, depth) * 2, Math.max(0, textWidth - reservedWidth - 1));
+}
+
+/** Render one always-expanded directory row in the navigation sidebar. */
+export function FileDirectoryRow({
+  entry,
+  paddingLeft = 1,
+  statsWidth = 0,
+  textWidth,
+  theme,
+}: {
+  entry: FileDirectoryEntry;
+  paddingLeft?: number;
+  statsWidth?: number;
+  textWidth: number;
+  theme: ExtensionSidebarTheme;
+}) {
+  const statusLaneWidth = 2;
+  const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
+  const indentWidth = fileSidebarIndentWidth(
+    entry.depth,
+    textWidth,
+    statusLaneWidth + statsSectionWidth + 1,
+  );
+  const labelWidth = Math.max(1, textWidth - 1 - statusLaneWidth - statsSectionWidth - indentWidth);
+
+  return (
+    <box
+      style={{
+        width: "100%",
+        height: 1,
+        flexDirection: "row",
+        backgroundColor: theme.panel,
+      }}
+    >
+      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
+      <box
+        style={{
+          flexGrow: 1,
+          height: 1,
+          paddingLeft: paddingLeft + indentWidth,
+          flexDirection: "row",
+          backgroundColor: theme.panel,
+        }}
+      >
+        <text fg={theme.muted}>
+          {"  "}
+          {fitText(entry.label, labelWidth)}
+        </text>
+      </box>
+    </box>
+  );
+}
+
 /** Render one file row in the navigation sidebar. */
 export const FileListItem = memo(function FileListItem({
   entry,
@@ -84,7 +145,12 @@ export const FileListItem = memo(function FileListItem({
   const { icon, color } = getFileStateIcon(entry, theme);
   const iconWidth = icon ? 2 : 0; // icon + space
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
-  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
+  const indentWidth = fileSidebarIndentWidth(
+    entry.depth,
+    textWidth,
+    iconWidth + statsSectionWidth + 1,
+  );
+  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth - indentWidth);
 
   return (
     <box
@@ -108,7 +174,7 @@ export const FileListItem = memo(function FileListItem({
         style={{
           flexGrow: 1,
           height: 1,
-          paddingLeft,
+          paddingLeft: paddingLeft + indentWidth,
           flexDirection: "row",
           backgroundColor: rowBackground,
         }}

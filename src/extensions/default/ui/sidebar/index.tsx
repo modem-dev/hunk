@@ -1,43 +1,14 @@
-import type { ScrollBoxRenderable } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ExtensionPaneProps } from "../../../../extension-api/types";
-import {
-  buildSidebarEntries,
-  sidebarEntryStatsWidth,
-  type SidebarEntry,
-} from "../../../../ui/lib/files";
-import { fileRowId } from "../../../../ui/lib/ids";
-import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
-import { FileGroupHeader, FileListItem } from "../../../../ui/components/panes/FileListItem";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../../extensionIds";
 import type { ExtensionFactory } from "../../../types";
+import { FlexFileSidebar } from "./FileSidebars";
 
 /**
- * Hunk's file-navigation sidebar, shipped as a bundled extension.
+ * Hunk's file-navigation sidebar ships as a bundled extension.
  *
- * Like the Git backend, the built-in sidebar registers through the public API —
- * `registerPane` — and its component consumes exactly the published
- * `ExtensionPaneProps`: the frozen file views for its entries, the theme
- * token slice for its colors, `actions.selectFile` for navigation, and the
- * host-served `@opentui/react` for its hooks. That is what keeps the sidebar
- * contract honest: anything this pane needs that the props cannot express is a
- * real gap in what third-party panes can build.
- *
- * Unlike the VCS tier this module is UI code, so it is deliberately *not* part
- * of `loadBundledExtensions` — that list is imported from VCS adapter
- * resolution, which must stay renderer-free. The pane instead loads through
- * `getBundledUIRegistry` at the one place the app resolves its active panes.
- * Rendering helpers (row components, the render window) are imported from Hunk
- * directly: this is host code, and the dogfooding boundary is the data,
- * actions, and theme crossing the props — not utility code.
- *
- * The scrollbox usage below is itself part of the published contract: the ref
- * reads (`scrollTop`, `viewport.height`), the scrollbar/viewport change
- * events, and `scrollChildIntoView` over child `id` props are documented in
- * docs/extensions.md as the supported way third-party panes scroll and
- * follow the selection. Changing how this component talks to its scrollbox
- * means updating that contract — same honesty mechanism as the props.
+ * The component consumes the public pane props for files, selection, theme,
+ * and navigation while host-owned rendering helpers provide the responsive
+ * terminal presentation. This keeps the extension contract honest without
+ * duplicating review semantics inside the bundled surface.
  */
 
 /**
@@ -46,153 +17,14 @@ import type { ExtensionFactory } from "../../../types";
  * View keys are `<extensionId>:<viewId>`, and extension ids are file stems a
  * user picks, so `sidebar.ts` on disk would otherwise mint `sidebar:files` and
  * collide with this view. `hunk` is reserved at load, so this key cannot be
- * taken. The `sourcePath` below still names the module, since that is what it
- * describes.
+ * taken.
  */
 export const BUNDLED_SIDEBAR_EXTENSION_ID = HUNK_VENDOR_EXTENSION_ID;
 export const BUNDLED_SIDEBAR_VIEW_ID = "files";
 
-type BuiltInSidebarProps = Omit<ExtensionPaneProps, "placement" | "height" | "currentLine"> &
-  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine">>;
+export { FlatFileSidebar, FlexFileSidebar, TreeFileSidebar } from "./FileSidebars";
 
-/** Render the built-in file navigation pane from public pane props. */
-export function BuiltInSidebarView({
-  files,
-  selectedFileId,
-  theme,
-  width,
-  actions,
-}: BuiltInSidebarProps): ReactNode {
-  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
-  const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
-  const terminal = useTerminalDimensions();
-  // Mirrors the host layout: one column of row highlight plus row padding.
-  const textWidth = Math.max(8, width - 2);
-  const entries = useMemo<SidebarEntry[]>(() => buildSidebarEntries(files), [files]);
-  const fileEntries = entries.filter((entry) => entry.kind === "file");
-  const statsWidth = Math.max(0, ...fileEntries.map((entry) => sidebarEntryStatsWidth(entry)));
-  const renderWindow = useMemo(
-    () =>
-      buildSidebarRenderWindow({
-        entries,
-        estimatedViewportRows: terminal.height,
-        overscanRows: 4,
-        scrollTop: scrollViewport.top,
-        selectedFileId: selectedFileId ?? undefined,
-        viewportHeight: scrollViewport.height,
-      }),
-    [entries, terminal.height, scrollViewport.height, scrollViewport.top, selectedFileId],
-  );
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) {
-      return;
-    }
-
-    let cancelled = false;
-    let scheduled = false;
-
-    const readViewport = () => {
-      const nextTop = scrollBox.scrollTop ?? 0;
-      const nextHeight = scrollBox.viewport.height ?? 0;
-      setScrollViewport((current) =>
-        current.top === nextTop && current.height === nextHeight
-          ? current
-          : { top: nextTop, height: nextHeight },
-      );
-    };
-
-    const handleViewportChange = () => {
-      if (scheduled) {
-        return;
-      }
-      scheduled = true;
-      queueMicrotask(() => {
-        if (cancelled) {
-          scheduled = false;
-          return;
-        }
-
-        try {
-          readViewport();
-        } finally {
-          scheduled = false;
-        }
-      });
-    };
-
-    readViewport();
-    scrollBox.verticalScrollBar.on("change", handleViewportChange);
-    scrollBox.viewport.on("layout-changed", handleViewportChange);
-    scrollBox.viewport.on("resized", handleViewportChange);
-
-    return () => {
-      cancelled = true;
-      scrollBox.verticalScrollBar.off("change", handleViewportChange);
-      scrollBox.viewport.off("layout-changed", handleViewportChange);
-      scrollBox.viewport.off("resized", handleViewportChange);
-    };
-  }, [entries.length]);
-
-  // Keep the selected file's row visible as navigation moves the selection —
-  // behavior the sidebar owns, so every sidebar (custom ones included) decides
-  // its own follow policy instead of the host scrolling a pane it cannot see.
-  useEffect(() => {
-    if (!selectedFileId) {
-      return;
-    }
-
-    scrollRef.current?.scrollChildIntoView(fileRowId(selectedFileId));
-  }, [selectedFileId]);
-
-  return (
-    <scrollbox
-      ref={scrollRef}
-      width="100%"
-      height="100%"
-      focused={false}
-      scrollY={true}
-      viewportCulling={true}
-      rootOptions={{ backgroundColor: theme.panel }}
-      wrapperOptions={{ backgroundColor: theme.panel }}
-      viewportOptions={{ backgroundColor: theme.panel }}
-      contentOptions={{ backgroundColor: theme.panel }}
-      verticalScrollbarOptions={{ visible: false }}
-      horizontalScrollbarOptions={{ visible: false }}
-    >
-      <box style={{ width: "100%", flexDirection: "column" }}>
-        {renderWindow.items.map((item) => {
-          if (item.kind === "spacer") {
-            return (
-              <box
-                key={item.key}
-                style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
-              />
-            );
-          }
-
-          const { entry } = item;
-          return entry.kind === "group" ? (
-            <FileGroupHeader key={entry.id} entry={entry} textWidth={textWidth} theme={theme} />
-          ) : (
-            <FileListItem
-              key={entry.id}
-              entry={entry}
-              selected={entry.id === selectedFileId}
-              statsWidth={statsWidth}
-              textWidth={textWidth}
-              theme={theme}
-              onSelectFile={actions.selectFile}
-            />
-          );
-        })}
-      </box>
-    </scrollbox>
-  );
-}
-
-/** The factory the bundled sidebar registers through, same as any extension. */
+/** Register the responsive built-in file navigation pane. */
 const registerBundledSidebar: ExtensionFactory = (hunk) => {
   hunk.registerPane({
     id: BUNDLED_SIDEBAR_VIEW_ID,
@@ -200,7 +32,7 @@ const registerBundledSidebar: ExtensionFactory = (hunk) => {
     placement: "left",
     width: { preferred: 34, min: 22 },
     defaultOpen: true,
-    component: BuiltInSidebarView,
+    component: FlexFileSidebar,
   });
 };
 

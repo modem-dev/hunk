@@ -411,6 +411,52 @@ describe("PTY layout", () => {
     }
   });
 
+  test("dragging the sidebar through 30 content columns switches to compact paths", async () => {
+    const fixture = harness.createNestedSidebarRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const initialSidebar = initial
+        .split("\n")
+        .map((line) => line.slice(0, 34))
+        .join("\n");
+
+      expect(initialSidebar).not.toContain("src/ui/");
+      expect(initialSidebar).toContain("src/");
+      expect(initialSidebar).toContain("ui/");
+
+      await dragMouse(session, 34, 6, 32, 6);
+      const resized = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text
+            .split("\n")
+            .map((line) => line.slice(0, 32))
+            .join("\n")
+            .includes("src/ui/"),
+        5_000,
+      );
+      const resizedSidebar = resized
+        .split("\n")
+        .map((line) => line.slice(0, 32))
+        .join("\n");
+
+      expect(resizedSidebar).toContain("src/ui/");
+      expect(resizedSidebar).toContain("alpha.ts");
+      expect(resizedSidebar).toContain("beta.ts");
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit split mode stays split after a live resize", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

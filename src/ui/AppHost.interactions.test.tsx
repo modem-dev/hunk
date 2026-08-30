@@ -3617,9 +3617,15 @@ describe("App interactions", () => {
         await flush(setup);
       }
 
+      const secondFileY = setup
+        .captureCharFrame()
+        .split("\n")
+        .findIndex((line) => line.slice(0, 34).includes("second.ts"));
+      expect(secondFileY).toBeGreaterThan(0);
+
       await act(async () => {
-        // Click inside the second file row below the repo-root group header.
-        await setup.mockMouse.click(6, 5);
+        // Target the rendered file row so flat and tree projections share this interaction proof.
+        await setup.mockMouse.click(6, secondFileY);
       });
       await flush(setup);
 

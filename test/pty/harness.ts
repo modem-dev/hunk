@@ -726,6 +726,22 @@ end
     ]);
   }
 
+  /** Build nested changed files whose sidebar labels distinguish flat and tree projections. */
+  function createNestedSidebarRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "src/ui/alpha.ts",
+        before: "export const alpha = 1;\n",
+        after: "export const alpha = 2;\nexport const add = true;\n",
+      },
+      {
+        path: "src/ui/beta.ts",
+        before: "export const beta = 1;\n",
+        after: "export const betaValue = 1;\n",
+      },
+    ]);
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1090,6 +1106,7 @@ end
     createLongWrapFilePair,
     createMovedLinesRepoFixture,
     createMultiFilePagerPatchFixture,
+    createNestedSidebarRepoFixture,
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,

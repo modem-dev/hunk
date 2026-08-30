@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts } from "./files";
+import {
+  buildFlatSidebarEntries,
+  buildTreeSidebarEntries,
+  fileLabelParts,
+  resolveFileSidebarMode,
+} from "./files";
 
 describe("files helpers", () => {
-  test("buildSidebarEntries hides zero-value sidebar stats", () => {
+  test("buildFlatSidebarEntries hides zero-value sidebar stats", () => {
     const onlyAdd = createTestDiffFile({
       id: "only-add",
       path: "src/ui/only-add.ts",
@@ -39,9 +44,11 @@ describe("files helpers", () => {
       stats: { additions: 0, deletions: 0 },
     };
 
-    const entries = buildSidebarEntries([onlyAdd, onlyRemove, renamedWithoutContentChanges]).filter(
-      (entry) => entry.kind === "file",
-    );
+    const entries = buildFlatSidebarEntries([
+      onlyAdd,
+      onlyRemove,
+      renamedWithoutContentChanges,
+    ]).filter((entry) => entry.kind === "file");
 
     expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({
@@ -64,7 +71,7 @@ describe("files helpers", () => {
     });
   });
 
-  test("buildSidebarEntries includes compact per-file comment counts before diff stats", () => {
+  test("buildFlatSidebarEntries includes compact per-file comment counts before diff stats", () => {
     const withComments = createTestDiffFile({
       id: "with-comments",
       path: "src/ui/commented.ts",
@@ -80,7 +87,7 @@ describe("files helpers", () => {
       },
     });
 
-    const [entry] = buildSidebarEntries([withComments]).filter((item) => item.kind === "file");
+    const [entry] = buildFlatSidebarEntries([withComments]).filter((item) => item.kind === "file");
 
     expect(entry).toMatchObject({
       name: "commented.ts",
@@ -90,7 +97,7 @@ describe("files helpers", () => {
     });
   });
 
-  test("buildSidebarEntries counts all comments attached to a file, even off-range ones", () => {
+  test("buildFlatSidebarEntries counts all comments attached to a file, even off-range ones", () => {
     const withComments = createTestDiffFile({
       id: "all-comments",
       path: "src/ui/all-comments.ts",
@@ -107,7 +114,7 @@ describe("files helpers", () => {
       },
     });
 
-    const [entry] = buildSidebarEntries([withComments]).filter((item) => item.kind === "file");
+    const [entry] = buildFlatSidebarEntries([withComments]).filter((item) => item.kind === "file");
 
     expect(entry).toMatchObject({
       name: "all-comments.ts",
@@ -117,7 +124,7 @@ describe("files helpers", () => {
     });
   });
 
-  test("buildSidebarEntries marks each root-file run with an in-place ./ group", () => {
+  test("buildFlatSidebarEntries marks each root-file run with an in-place ./ group", () => {
     const files = [
       createTestDiffFile({ id: "nested-a", path: "src/a.ts" }),
       createTestDiffFile({ id: "root-a", path: "README.md" }),
@@ -126,8 +133,8 @@ describe("files helpers", () => {
       createTestDiffFile({ id: "root-c", path: "LICENSE" }),
     ];
 
-    const labels = buildSidebarEntries(files).map((entry) =>
-      entry.kind === "group" ? entry.label : entry.name,
+    const labels = buildFlatSidebarEntries(files).map((entry) =>
+      entry.kind === "file" ? entry.name : entry.label,
     );
 
     expect(labels).toEqual([
@@ -143,6 +150,97 @@ describe("files helpers", () => {
     ]);
   });
 
+  test("resolveFileSidebarMode switches only above 30 content columns", () => {
+    expect(resolveFileSidebarMode(30)).toBe("flat");
+    expect(resolveFileSidebarMode(31)).toBe("tree");
+  });
+
+  test("buildTreeSidebarEntries expands paths without changing file order", () => {
+    const files = [
+      createTestDiffFile({ id: "ui-a", path: "src/ui/a.ts" }),
+      createTestDiffFile({ id: "ui-b", path: "src/ui/b.ts" }),
+      createTestDiffFile({ id: "root", path: "README.md" }),
+      createTestDiffFile({ id: "core", path: "src/core/c.ts" }),
+      createTestDiffFile({ id: "test", path: "test/d.ts" }),
+      createTestDiffFile({ id: "src-root", path: "src/e.ts" }),
+    ];
+
+    const entries = buildTreeSidebarEntries(files);
+    const labels = entries.map((entry) =>
+      entry.kind === "file" ? `${"  ".repeat(entry.depth)}${entry.name}` : entry.label,
+    );
+
+    expect(labels).toEqual([
+      "src/",
+      "ui/",
+      "    a.ts",
+      "    b.ts",
+      "README.md",
+      "src/",
+      "core/",
+      "    c.ts",
+      "test/",
+      "  d.ts",
+      "src/",
+      "  e.ts",
+    ]);
+    expect(entries.filter((entry) => entry.kind === "file").map((entry) => entry.id)).toEqual(
+      files.map((file) => file.id),
+    );
+  });
+
+  test("buildTreeSidebarEntries gives repeated directory branches unique row ids", () => {
+    const directories = buildTreeSidebarEntries([
+      createTestDiffFile({ id: "src-a", path: "src/a.ts" }),
+      createTestDiffFile({ id: "root", path: "README.md" }),
+      createTestDiffFile({ id: "src-b", path: "src/b.ts" }),
+    ]).filter((entry) => entry.kind === "directory");
+
+    expect(directories.map((entry) => entry.label)).toEqual(["src/", "src/"]);
+    expect(new Set(directories.map((entry) => entry.id)).size).toBe(directories.length);
+  });
+
+  test("buildTreeSidebarEntries uses the current rename path and keeps the rename filename", () => {
+    const renamed = createTestDiffFile({
+      id: "renamed",
+      path: "src/new/name.ts",
+      previousPath: "legacy/old.ts",
+    });
+
+    expect(buildTreeSidebarEntries([renamed])).toEqual([
+      expect.objectContaining({ kind: "directory", label: "src/", depth: 0 }),
+      expect.objectContaining({ kind: "directory", label: "new/", depth: 1 }),
+      expect.objectContaining({
+        kind: "file",
+        id: "renamed",
+        name: "old.ts -> name.ts",
+        depth: 2,
+      }),
+    ]);
+  });
+
+  test("buildTreeSidebarEntries preserves absolute and UNC-style path roots", () => {
+    const entries = buildTreeSidebarEntries([
+      createTestDiffFile({ id: "absolute", path: "/tmp/project/a.ts" }),
+      createTestDiffFile({ id: "unc", path: "//server/share/b.ts" }),
+    ]);
+
+    expect(
+      entries.map((entry) =>
+        entry.kind === "file" ? { kind: entry.kind, name: entry.name } : entry.label,
+      ),
+    ).toEqual([
+      "/",
+      "tmp/",
+      "project/",
+      { kind: "file", name: "a.ts" },
+      "//",
+      "server/",
+      "share/",
+      { kind: "file", name: "b.ts" },
+    ]);
+  });
+
   test("file labels and sidebar entries render path tabs as fixed-width escapes", () => {
     const file = createTestDiffFile({ id: "tabbed-path", path: "src/tab\tname.ts" });
 
@@ -150,7 +248,7 @@ describe("files helpers", () => {
       filename: "src/tab\\tname.ts",
       stateLabel: null,
     });
-    expect(buildSidebarEntries([file])).toEqual([
+    expect(buildFlatSidebarEntries([file])).toEqual([
       { kind: "group", id: "group:src:0", label: "src/" },
       expect.objectContaining({ kind: "file", name: "tab\\tname.ts" }),
     ]);

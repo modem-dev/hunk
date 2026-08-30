@@ -11,6 +11,7 @@ function createEntries(ids: string[]): SidebarEntry[] {
           kind: "file",
           id,
           name: `${id}.ts`,
+          depth: 0,
           agentCommentsText: null,
           additionsText: null,
           deletionsText: null,

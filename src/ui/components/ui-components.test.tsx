@@ -25,7 +25,7 @@ import type { LineCursor } from "../lib/lineCursors";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
-const { BuiltInSidebarView } = await import("../../extensions/default/ui/sidebar");
+const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
@@ -459,7 +459,7 @@ describe("UI components", () => {
       ),
     ];
     const frame = await captureFrame(
-      <BuiltInSidebarView
+      <FlexFileSidebar
         // The exact frozen file views the extension pipeline hands any sidebar.
         files={toReadOnlyFileViews(files)}
         selectedFileId="app"
@@ -492,6 +492,36 @@ describe("UI components", () => {
     expect(frame).not.toContain("+0");
     expect(frame).not.toContain("-0");
     expect(frame).not.toContain("M +2 -1 AI");
+  });
+
+  test("the bundled sidebar switches to its expanded tree at 31 content columns", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = toReadOnlyFileViews([
+      createTestDiffFile("alpha", "src/ui/alpha.ts", "a\n", "aa\n"),
+      createTestDiffFile("beta", "src/ui/beta.ts", "b\n", "bb\n"),
+    ]);
+    const sharedProps = {
+      actions: {
+        selectFile: () => {},
+        selectHunk: () => {},
+        revealLine: () => {},
+        notify: () => {},
+      },
+      files,
+      keybindings: { matches: () => false, getKeys: () => [] },
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+      theme,
+    };
+    const flatFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={32} />, 36, 8);
+    const treeFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);
+
+    expect(flatFrame).toContain("src/ui/");
+    expect(treeFrame).not.toContain("src/ui/");
+    expect(treeFrame).toContain("src/");
+    expect(treeFrame).toContain("ui/");
+    expect(treeFrame).toContain("alpha.ts");
+    expect(treeFrame).toContain("beta.ts");
   });
 
   test("DiffPane renders all diff sections in file order", async () => {
