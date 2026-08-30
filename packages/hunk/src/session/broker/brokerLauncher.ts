@@ -19,6 +19,7 @@ const DEFAULT_DAEMON_LOCK_STALE_MS = 15_000;
 const DEFAULT_DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS = 100;
 const MAX_DAEMON_LAUNCH_METADATA_BYTES = 16 * 1024;
+const MAX_DAEMON_HEALTH_RESPONSE_BYTES = 64 * 1024;
 
 export interface DaemonLaunchCommand {
   command: string;
@@ -375,6 +376,100 @@ export interface SessionBrokerHealth {
   staleSessionTtlMs?: number;
 }
 
+type SessionBrokerHealthProbeResult =
+  | { kind: "healthy"; health: SessionBrokerHealth }
+  | { kind: "http-status"; status: number; elapsedMs: number }
+  | { kind: "invalid-json"; elapsedMs: number }
+  | { kind: "invalid-response"; elapsedMs: number }
+  | { kind: "response-too-large"; limitBytes: number; elapsedMs: number }
+  | { kind: "timeout"; timeoutMs: number; elapsedMs: number }
+  | { kind: "request-error"; message: string; elapsedMs: number };
+
+type SessionBrokerHealthProbeFailure = Exclude<SessionBrokerHealthProbeResult, { kind: "healthy" }>;
+
+class SessionBrokerHealthResponseTooLargeError extends Error {}
+class SessionBrokerHealthInvalidJsonError extends Error {}
+
+/** Round one failed probe duration for stable, human-readable diagnostics. */
+function healthProbeElapsedMs(startedAt: number) {
+  return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+/** Bound one runtime-generated transport error before it reaches a terminal. */
+function healthProbeErrorMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message || error.name : String(error);
+  return (
+    raw
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240) || "Unknown request error"
+  );
+}
+
+/** Read one health response body without allowing a foreign listener to stream unbounded data. */
+async function readSessionBrokerHealthJson(response: Response) {
+  const declaredLength = response.headers.get("content-length");
+  if (
+    declaredLength !== null &&
+    /^(?:0|[1-9][0-9]*)$/.test(declaredLength) &&
+    Number(declaredLength) > MAX_DAEMON_HEALTH_RESPONSE_BYTES
+  ) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new SessionBrokerHealthResponseTooLargeError();
+  }
+
+  if (!response.body) throw new SessionBrokerHealthInvalidJsonError();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_DAEMON_HEALTH_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new SessionBrokerHealthResponseTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+  } catch {
+    throw new SessionBrokerHealthInvalidJsonError();
+  }
+}
+
+/** Describe one failed health probe for the final user-facing CLI error. */
+export function describeSessionBrokerHealthProbeFailure(failure: SessionBrokerHealthProbeFailure) {
+  switch (failure.kind) {
+    case "http-status":
+      return `returned HTTP ${failure.status} after ${failure.elapsedMs}ms`;
+    case "invalid-json":
+      return `returned invalid JSON after ${failure.elapsedMs}ms`;
+    case "invalid-response":
+      return `returned an incompatible health payload after ${failure.elapsedMs}ms`;
+    case "response-too-large":
+      return `exceeded ${failure.limitBytes} bytes after ${failure.elapsedMs}ms`;
+    case "timeout":
+      return `timed out after ${failure.timeoutMs}ms (probe elapsed ${failure.elapsedMs}ms)`;
+    case "request-error":
+      return `failed after ${failure.elapsedMs}ms (${failure.message})`;
+  }
+}
+
 /** Parse the minimal or legacy-rich health response without trusting cross-process JSON. */
 export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | null {
   try {
@@ -450,29 +545,86 @@ export function readSessionBrokerLaunchFingerprint(
   }
 }
 
-/** Read the daemon's health payload when one is reachable on the configured loopback port. */
+/** Probe daemon health while retaining bounded failure evidence for a terminal CLI error. */
+export async function probeSessionBrokerHealth(
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
+  timeoutMs = 500,
+): Promise<SessionBrokerHealthProbeResult> {
+  const startedAt = performance.now();
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout>;
+  const timeoutResult = new Promise<SessionBrokerHealthProbeResult>((resolveTimeout) => {
+    // Keep this timer referenced: Bun 1.3.x on Windows can skip unref'ed timeout guards.
+    timeout = setTimeout(() => {
+      resolveTimeout({
+        kind: "timeout",
+        timeoutMs,
+        elapsedMs: healthProbeElapsedMs(startedAt),
+      });
+      controller.abort();
+    }, timeoutMs);
+  });
+  const requestResult = (async (): Promise<SessionBrokerHealthProbeResult> => {
+    try {
+      const response = await fetch(`${config.httpOrigin}/health`, {
+        redirect: "error",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        return {
+          kind: "http-status",
+          status: response.status,
+          elapsedMs: healthProbeElapsedMs(startedAt),
+        };
+      }
+
+      let payload: unknown;
+      try {
+        payload = await readSessionBrokerHealthJson(response);
+      } catch (error) {
+        if (error instanceof SessionBrokerHealthResponseTooLargeError) {
+          return {
+            kind: "response-too-large",
+            limitBytes: MAX_DAEMON_HEALTH_RESPONSE_BYTES,
+            elapsedMs: healthProbeElapsedMs(startedAt),
+          };
+        }
+        if (error instanceof SessionBrokerHealthInvalidJsonError) {
+          return { kind: "invalid-json", elapsedMs: healthProbeElapsedMs(startedAt) };
+        }
+        throw error;
+      }
+
+      const health = parseSessionBrokerHealth(payload);
+      return health
+        ? { kind: "healthy", health }
+        : { kind: "invalid-response", elapsedMs: healthProbeElapsedMs(startedAt) };
+    } catch (error) {
+      return {
+        kind: "request-error",
+        message: healthProbeErrorMessage(error),
+        elapsedMs: healthProbeElapsedMs(startedAt),
+      };
+    }
+  })();
+
+  try {
+    return await Promise.race([requestResult, timeoutResult]);
+  } finally {
+    clearTimeout(timeout!);
+    // A runtime may ignore abort; consume any later rejection after the timeout result wins.
+    requestResult.catch(() => undefined);
+  }
+}
+
+/** Read the daemon's health payload while preserving the nullable compatibility contract. */
 export async function readSessionBrokerHealth(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  timeout.unref?.();
-
-  try {
-    const response = await fetch(`${config.httpOrigin}/health`, {
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return null;
-    }
-
-    return parseSessionBrokerHealth(await response.json());
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const result = await probeSessionBrokerHealth(config, timeoutMs);
+  return result.kind === "healthy" ? result.health : null;
 }
 
 /** Check whether the loopback session broker already answers health probes. */
@@ -480,7 +632,7 @@ export async function isSessionBrokerHealthy(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
-  return (await readSessionBrokerHealth(config, timeoutMs))?.ok === true;
+  return (await probeSessionBrokerHealth(config, timeoutMs)).kind === "healthy";
 }
 
 /** Check whether some local process is already accepting TCP connections on the daemon port. */

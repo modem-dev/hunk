@@ -76,9 +76,17 @@ describe("resolveDaemonAvailability with no daemon listening", () => {
 });
 
 describe("resolveDaemonAvailability with a foreign process on the port", () => {
-  probeTest("throws a port-conflict error when the port is reachable but unhealthy", async () => {
-    // A non-broker server occupies the port: reachable (TCP connects) but not health-OK.
-    const server = Bun.serve({ port: 0, fetch: () => new Response("nope", { status: 404 }) });
+  probeTest("throws a port-conflict error with the terminal health failure", async () => {
+    // The second response proves the diagnostic comes from the probe after TCP reachability,
+    // rather than stale evidence captured before a listener generation could change.
+    let healthRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        healthRequests += 1;
+        return new Response("nope", { status: healthRequests === 1 ? 503 : 404 });
+      },
+    });
     process.env.HUNK_MCP_PORT = String(server.port);
     try {
       await expect(
@@ -87,7 +95,36 @@ describe("resolveDaemonAvailability with a foreign process on the port", () => {
           action: "list",
           output: "json",
         } satisfies SessionCommandInput),
-      ).rejects.toThrow(/already in use/);
+      ).rejects.toThrow(
+        /already in use.*Hunk health probe returned HTTP 404 after \d+ms.*busy Hunk daemon or another process/,
+      );
+      expect(healthRequests).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  probeTest("returns an empty list when the listener disappears during health checks", async () => {
+    let healthRequests = 0;
+    let server!: ReturnType<typeof Bun.serve>;
+    server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        healthRequests += 1;
+        if (healthRequests === 2) queueMicrotask(() => server.stop(true));
+        return new Response("unavailable", { status: 503 });
+      },
+    });
+    process.env.HUNK_MCP_PORT = String(server.port);
+
+    try {
+      const output = await runSessionCommand({
+        kind: "session",
+        action: "list",
+        output: "json",
+      } satisfies SessionCommandInput);
+      expect(JSON.parse(output)).toEqual({ sessions: [] });
+      expect(healthRequests).toBe(2);
     } finally {
       server.stop(true);
     }
