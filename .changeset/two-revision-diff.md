@@ -1,5 +1,5 @@
 ---
-"hunkdiff": minor
+"hunkdiff": major
 ---
 
-Support `hunk diff <from> <to>` as a two-revision review across Git, Jujutsu, and Sapling. Two-revision reviews use backend-native comparison syntax, keep source expansion pinned to both revisions, and exclude working-copy untracked files. Concrete file comparisons now use the explicit `hunk diff --files <left> <right>` form; two positional arguments always mean revisions.
+Support backend-native `hunk diff <from> <to>` reviews across Git, Jujutsu, and Sapling, with pinned source expansion, working-copy isolation, explicit `hunk diff --files <left> <right>` file comparison, and structured `rangeEndpoints` in extension API generation 14.

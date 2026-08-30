@@ -99,9 +99,24 @@ const jjTest = Bun.which("jj") ? test : test.skip;
 
 describe("jj command helpers", () => {
   test("compares named revisions with --from/--to rather than a range revset", () => {
-    expect(buildJjDiffArgs(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }))).toEqual(
-      ["diff", "--git", "--ignore-working-copy", "--from", "main", "--to", "feature"],
-    );
+    const input = diffInput({ rangeEndpoints: { from: "main", to: "feature" } });
+    expect(buildJjDiffArgs(input)).toEqual([
+      "diff",
+      "--git",
+      "--ignore-working-copy",
+      "--from",
+      "main",
+      "--to",
+      "feature",
+    ]);
+    expect(buildJjDiffArgs(input, undefined, true)).toEqual([
+      "diff",
+      "--git",
+      "--from",
+      "main",
+      "--to",
+      "feature",
+    ]);
   });
 
   test("rejects each option-like Jujutsu endpoint before commands or revision probes", () => {

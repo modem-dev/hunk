@@ -168,7 +168,12 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
           };
         },
         watchSignature(input, { cwd }) {
-          return runJjText({ input, args: buildJjDiffArgs(input), cwd, jjExecutable });
+          return runJjText({
+            input,
+            args: buildJjDiffArgs(input, undefined, true),
+            cwd,
+            jjExecutable,
+          });
         },
       },
       "revision-show": {

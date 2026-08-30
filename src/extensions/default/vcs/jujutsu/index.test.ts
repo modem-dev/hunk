@@ -195,6 +195,11 @@ describe("JjVcsAdapter", () => {
       expect(result.patchText).toContain("+two");
       expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("one\ncontext\n");
       expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\ncontext\n");
+
+      writeFileSync(join(repo, "file.txt"), "three\ncontext\n");
+      expect(
+        JjVcsAdapter.operations["working-tree-diff"]!.watchSignature!(input, { cwd: repo }),
+      ).toContain("+three");
     },
     JjAdapterIntegrationTestTimeoutMs,
   );

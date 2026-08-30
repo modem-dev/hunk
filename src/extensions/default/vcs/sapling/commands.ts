@@ -6,7 +6,7 @@ import {
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
 import { normalizePathForOS } from "../../../../lib/osPath";
-import { describeDiffTargets, hasExplicitDiffTarget } from "../diffRange";
+import { describeDiffTargets } from "../diffRange";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -240,7 +240,7 @@ export function runSlText(options: RunSlTextOptions) {
 
 /** Return whether working-copy review should synthesize unknown Sapling files into the patch stream. */
 function shouldIncludeUntrackedFiles(input: ExtensionVcsDiffInput) {
-  return !input.staged && !hasExplicitDiffTarget(input) && input.options.excludeUntracked !== true;
+  return !input.staged && !input.rangeEndpoints && input.options.excludeUntracked !== true;
 }
 
 /** Parse `sl status --unknown --print0` output down to repo-root-relative file paths. */

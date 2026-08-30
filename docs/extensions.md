@@ -280,7 +280,8 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `13`). Branch on it if you want
+The API generation this Hunk speaks (currently `14`). Generation 14 adds structured `rangeEndpoints`
+to two-revision VCS diff requests. Branch on it if you want
 one file to support several Hunk versions. Version 13 adds saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
 the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9

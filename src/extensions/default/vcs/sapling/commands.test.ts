@@ -104,17 +104,17 @@ describe("sl command helpers", () => {
     ]);
   });
 
-  test("does not discover working-copy unknown files for revision comparisons", () => {
+  test("discovers unknown files for single-target reviews but not two-revision comparisons", () => {
     expect(
       listSlUntrackedFiles(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }), {
         slExecutable: "definitely-not-a-real-sl-binary",
       }),
     ).toEqual([]);
-    expect(
-      listSlUntrackedFiles(diffInput({ range: ".^::." }), {
+    expect(() =>
+      listSlUntrackedFiles(diffInput({ range: "." }), {
         slExecutable: "definitely-not-a-real-sl-binary",
       }),
-    ).toEqual([]);
+    ).toThrow("was not found in PATH");
   });
 
   test("reports a friendly error when sl is not installed or not on PATH", () => {

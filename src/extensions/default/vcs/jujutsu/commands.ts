@@ -65,6 +65,7 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
 export function buildJjDiffArgs(
   input: ExtensionVcsDiffInput,
   pinned?: string | ExtensionVcsRangeEndpoints,
+  snapshotWorkingCopy = false,
 ) {
   const args = ["diff", "--git"];
   const endpoints = typeof pinned === "object" ? pinned : input.rangeEndpoints;
@@ -74,7 +75,13 @@ export function buildJjDiffArgs(
     // Pinning resolved endpoints also lets the second command avoid another workspace snapshot.
     const from = requireJjRevisionArg(input, endpoints.from);
     const to = requireJjRevisionArg(input, endpoints.to);
-    args.push("--ignore-working-copy", "--from", from, "--to", to);
+    args.push(
+      ...(snapshotWorkingCopy ? [] : ["--ignore-working-copy"]),
+      "--from",
+      from,
+      "--to",
+      to,
+    );
   } else if (typeof pinned === "string" || input.range) {
     args.push("-r", typeof pinned === "string" ? pinned : input.range!);
   }
