@@ -99,11 +99,13 @@ function fakeDaemon(overrides = {}, behavior = {}) {
     maxHttpResponseBytes: 8 * 1024 * 1024,
     maxInFlightHttpResponseBytes: 64 * 1024 * 1024,
     maxUnauthenticatedSockets: 64,
+    maxHandshakeDurationMs: 15_000,
     ...overrides,
   };
   return {
     limits,
     stopped: new Promise(() => {}),
+    requiresProducerAuthentication: behavior.requiresProducerAuthentication ?? false,
     matchesSocketPath: (pathname) => pathname === "/session",
     handleConnectionMessage: behavior.handleConnectionMessage ?? (() => {}),
     handleConnectionClose() {},
@@ -203,11 +205,15 @@ test("Node adapter waits for active HTTP handlers and preserves bodyless framing
 test("Node adapter consumes the shared text/binary/oversize/pressure corpus", async () => {
   const port = await reservePort();
   const running = await serveSessionBrokerDaemon({
-    daemon: fakeDaemon({
-      maxWsMessageBytes: 8,
-      maxHttpResponseBytes: 8,
-      maxUnauthenticatedSockets: 1,
-    }),
+    daemon: fakeDaemon(
+      {
+        maxWsMessageBytes: 8,
+        maxHttpResponseBytes: 8,
+        maxUnauthenticatedSockets: 1,
+        maxHandshakeDurationMs: 1_000,
+      },
+      { requiresProducerAuthentication: true },
+    ),
     hostname: "127.0.0.1",
     port,
     handleRequest: (request) =>
@@ -216,6 +222,17 @@ test("Node adapter consumes the shared text/binary/oversize/pressure corpus", as
         : undefined,
   });
   try {
+    const malformedUpgrade = await rawHttp(port, [
+      "GET * HTTP/1.1",
+      `Host: 127.0.0.1:${port}`,
+      "Connection: Upgrade",
+      "Upgrade: websocket",
+      "",
+      "",
+    ]);
+    assert.match(malformedUpgrade, /^HTTP\/1\.1 400/);
+
+    // A successful follow-up request proves the malformed upgrade did not escape the listener.
     const boundedResponse = await fetch(`http://127.0.0.1:${port}/large`);
     assert.equal(boundedResponse.status, 503);
     assert.equal(await boundedResponse.text(), "");
@@ -223,7 +240,17 @@ test("Node adapter consumes the shared text/binary/oversize/pressure corpus", as
     exact.send("12345678");
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(exact.readyState, WebSocket.OPEN);
-    await assert.rejects(openSocket(`ws://127.0.0.1:${port}/session`));
+    const fullAdmission = await rawHttp(port, [
+      "GET /session HTTP/1.1",
+      `Host: 127.0.0.1:${port}`,
+      "Connection: Upgrade",
+      "Upgrade: websocket",
+      "Sec-WebSocket-Version: 13",
+      "Sec-WebSocket-Key: dGVzdC1zZXNzaW9uLWtleQ==",
+      "",
+      "",
+    ]);
+    assert.match(fullAdmission, new RegExp(`^HTTP/1.1 ${corpus.inbound.admissionHttpStatus}`));
     const exactClosed = closeCode(exact);
     exact.close();
     await exactClosed;
@@ -264,25 +291,32 @@ test("Node adapter consumes the shared text/binary/oversize/pressure corpus", as
     const outbound = await openSocket(`ws://127.0.0.1:${outboundPort}/session`);
     const outboundClosed = closeCode(outbound);
     outbound.send("trigger");
-    assert.equal(await outboundClosed, 1013);
+    assert.equal(await outboundClosed, corpus.outbound.pressureCloseCode);
   } finally {
     await outboundRunning.stop();
     await outboundRunning.stopped;
   }
 
-  const pressurePort = await reservePort();
-  const pressureRunning = await serveSessionBrokerDaemon({
-    daemon: fakeDaemon({ maxWsMessageBytes: 8, maxInFlightWsBytes: 0 }),
+  const handlerPort = await reservePort();
+  const handlerRunning = await serveSessionBrokerDaemon({
+    daemon: fakeDaemon(
+      {},
+      {
+        handleConnectionMessage: () => {
+          throw new Error("unexpected handler failure");
+        },
+      },
+    ),
     hostname: "127.0.0.1",
-    port: pressurePort,
+    port: handlerPort,
   });
   try {
-    const pressure = await openSocket(`ws://127.0.0.1:${pressurePort}/session`);
-    const pressureClosed = closeCode(pressure);
-    pressure.send("{}");
-    assert.equal(await pressureClosed, corpus.inbound.pressureCloseCode);
+    const handlerFailure = await openSocket(`ws://127.0.0.1:${handlerPort}/session`);
+    const handlerFailureClosed = closeCode(handlerFailure);
+    handlerFailure.send("trigger");
+    assert.equal(await handlerFailureClosed, 1011);
   } finally {
-    await pressureRunning.stop();
-    await pressureRunning.stopped;
+    await handlerRunning.stop();
+    await handlerRunning.stopped;
   }
 });

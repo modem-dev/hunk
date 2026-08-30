@@ -134,7 +134,9 @@ export interface BrokerResponseTranscriptInput {
   readonly appId: string;
   readonly generation: string;
   readonly brokerRevision: typeof SESSION_BROKER_PROTOCOL_REVISION;
+  readonly callerSessionId: string;
   readonly requestId: string;
+  readonly sequence: string;
   readonly httpStatus: number;
   readonly bodyDigest: string;
   readonly appContract?: BrokerAppContract;
@@ -349,10 +351,12 @@ export function buildBrokerResponseTranscript(input: BrokerResponseTranscriptInp
       : {}),
     bodyDigest: input.bodyDigest,
     brokerRevision: input.brokerRevision,
+    callerSessionId: input.callerSessionId,
     domain: `${SESSION_BROKER_AUTH_DOMAIN}/caller-response`,
     generation: input.generation,
     httpStatus: input.httpStatus,
     requestId: input.requestId,
+    sequence: input.sequence,
   });
 }
 

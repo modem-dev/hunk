@@ -207,8 +207,9 @@ Each request carries caller session, caller request ID, and a canonical uint64 d
 `(?:0|[1-9][0-9]{0,19})`, at most `18446744073709551615`, parsed with integer/BigInt rather than JSON
 number. The signature binds generation, caller session, grant/key ID, hello transcript hash, HTTP
 method, canonical path and sorted/encoded query, canonical body digest, request ID, and sequence.
-Authorization precedes execution and cache lookup. Signed target command envelopes and signed
-responses repeat the exact selected application revision/features; producers reject mismatches
+Responses bind the same caller session, request ID, and sequence so signatures cannot cross caller
+sessions. Authorization precedes execution and cache lookup. Signed target command envelopes and
+signed responses repeat the exact selected application revision/features; producers reject mismatches
 before parsing input. Target incompatibility returns a structured error without mutating the caller
 session.
 
@@ -286,9 +287,10 @@ input/result for the exact contract, and cross-process health/capabilities. App 
 revision.
 
 Failures return stable codes without stacks/parser internals, commit no partial mutation or result,
-close producers when stale assumptions would remain, and behave identically on Node/Bun. Reject
-binary WebSocket frames with `1003`, oversized frames with `1009`, and malformed discriminants,
-numbers, and versions rather than casting them.
+and close producers when stale assumptions would remain. Reject binary WebSocket frames with `1003`
+and malformed discriminants, numbers, and versions rather than casting them. Native per-message caps
+reject oversized frames before application decoding: Node's `ws` reports `1009`, while Bun 1.3 may
+surface its non-configurable abnormal `1006` because it does not invoke the application callback.
 
 ## Local security contract
 
@@ -398,10 +400,10 @@ follow their descriptor capacities and per-group FIFO.
 
 | Resource               | Initial default                                                                                                                                                                          |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sessions and commands  | 256 sessions/daemon; 64 queued+in-flight/session; 1,024/daemon; 32 waiting for a missing bridge; one active/session by default                                                           |
+| Sessions and commands  | 256 sessions/daemon; 64 queued+in-flight/session; 1,024/daemon; 32 queued+executing through one producer bridge; one active/session by default                                           |
 | Handshakes             | Per daemon: 64 unauthenticated/challenged sockets, 128 incomplete records, 4 MiB incomplete bytes; 64 KiB/proposal                                                                       |
 | Callers and HTTP       | Per daemon: 256 caller sessions at 8 KiB each/2 MiB total, 32 concurrent controls, 64 MiB in-flight body bytes; 4 MiB maximum decoded request; 8 MiB maximum decoded/aggregated response |
-| WebSocket              | 8 MiB maximum inbound message; 64 MiB decoded/in-flight inbound/daemon; buffered outbound: 8 MiB/peer and 64 MiB/daemon                                                                  |
+| WebSocket              | 8 MiB native inbound message cap; 64 MiB broker-owned delivered-message processing/daemon; 64 socket admissions; buffered outbound: 8 MiB/peer and 64 MiB/daemon                         |
 | Retained session state | 4 MiB metadata+snapshot/session; 256 MiB/daemon                                                                                                                                          |
 | Command data/time      | 1 MiB validated input/entry; 64 MiB queued-command bytes/daemon; 15 s default timeout; 5 min caller maximum                                                                              |
 | Idempotency            | 1,024 entries/session; 65,536 entries/daemon; 10 min TTL; 1 MiB result/entry; 64 MiB/daemon                                                                                              |
@@ -410,10 +412,15 @@ Hosts may lower limits. Raising a public network/body/frame/buffer ceiling requi
 unsafe-limits configuration and is outside supported defaults. App validators add tighter
 collection, string, nesting, state, and command limits.
 
-Overflow returns structured `busy`, `queue-full`, or `capacity-exceeded`. Reserve aggregate inbound
-bytes before read/decode/parse and release in `finally`; unavailable WebSocket capacity or slow-peer
-outbound overflow closes with retryable `1013`. Unwritten work is `not-delivered`; written work
-follows the delivery matrix. Reserve outbound serialized bytes per peer/daemon until flush/close. HTTP readers reserve declared/incremental chunks and return `503` when unavailable.
+Overflow returns structured `busy`, `queue-full`, or `capacity-exceeded`. Native WebSocket frame
+assembly and runtime-owned queues are outside broker byte accounting; adapters bound them per message
+with the native cap and bound peer count at socket admission. Once a message is delivered, reserve its
+bytes before broker decode/parse/handling and release in `finally`. Unavailable socket-count admission
+returns `503`; unavailable delivered-message capacity or slow-peer outbound overflow closes with
+retryable `1013`. Unwritten work is `not-delivered`; written work follows the delivery matrix. Reserve
+outbound serialized bytes per peer/daemon until flush/close. HTTP readers reserve the permitted source
+maximum before the first pull, resize to actual bytes, and require aggregate capacity for the
+source-plus-copy peak before retaining the merged body; unavailable capacity returns `503`.
 Unauthenticated overload allocates no handshake state. Response overflow fails before unbounded
 aggregation. New-session failure never evicts existing state.
 
@@ -540,20 +547,41 @@ resources/cache/assembly, comments/highlights/navigation/reload/intents; HTTP ac
 discovery; and executable launch/upgrade copy. Generic state removes Hunk-shaped projections; Hunk
 builds them from read-only generic entries/events, and the package never imports Hunk types.
 
-| Existing contract                                    | Migration requirement                                                                                                                                  |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `HUNK_MCP_HOST`, `HUNK_MCP_PORT`, `HUNK_MCP_DISABLE` | Preserve in Hunk adapter for at least one documented minor window.                                                                                     |
-| `HUNK_MCP_UNSAFE_ALLOW_REMOTE`                       | Temporary unsupported Hunk-only escape hatch; never generic.                                                                                           |
-| runtime directory `hunk-mcp`                         | Preserve or dual-read so old/new binaries cannot race separate namespaces.                                                                             |
-| default `127.0.0.1:47657`                            | Winning candidate reserves/retains it as guard before coordinator publication; explicit port reserves that endpoint in the same namespace.             |
-| `/session`, `/session-api`                           | Preserve CLI semantics but require new authentication; old clients get actionable upgrade refusal.                                                     |
-| `/mcp` returns `410`                                 | Retain until separately deprecated.                                                                                                                    |
-| exact-version restart                                | Never signal from unverifiable PID; legacy daemon is an actionable manual stop/restart conflict; only authenticated generation may stop automatically. |
-| missing `repoBoundary`                               | Preserve containment fallback; new clients may provide VCS-aware boundary.                                                                             |
+| Existing contract                                    | Migration requirement                                                                                                                                                 |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HUNK_MCP_HOST`, `HUNK_MCP_PORT`, `HUNK_MCP_DISABLE` | Preserve in Hunk adapter for at least one documented minor window.                                                                                                    |
+| `HUNK_MCP_UNSAFE_ALLOW_REMOTE`                       | Temporary unsupported Hunk-only escape hatch; never generic.                                                                                                          |
+| runtime directory `hunk-mcp`                         | Preserve or dual-read so old/new binaries cannot race separate namespaces.                                                                                            |
+| default `127.0.0.1:47657`                            | Winning candidate reserves/retains it as guard before coordinator publication; explicit port reserves that endpoint in the same namespace.                            |
+| `/session`, `/session-api`                           | Preserve CLI semantics but require new authentication; old clients get actionable upgrade refusal.                                                                    |
+| `/mcp` returns `410`                                 | Retain until separately deprecated.                                                                                                                                   |
+| incompatible daemon                                  | Never signal from unverifiable PID. Interactive Hunk waits and retries until the incumbent exits while idle; forced replacement requires an authenticated generation. |
+| missing `repoBoundary`                               | Preserve containment fallback; new clients may provide VCS-aware boundary.                                                                                            |
 
 Security outranks wire compatibility: no migration accepts unauthenticated control/registration.
-Preservation means paths, selectors, outputs, and automatic credential discovery for upgraded
-clients—not interoperability with pre-authentication binaries.
+An interactive Hunk window keeps reviewing locally while an incompatible or pre-authentication
+incumbent owns the endpoint. After the first signed-handshake refusal it polls only minimal health,
+so repeated WebSocket closes cannot postpone the incumbent's idle timeout; once health disappears,
+the same bounded connection object reruns discovery, signed negotiation, and registration. One-shot
+session commands fail promptly with instructions instead
+of becoming a second restart owner. Daemons too old to retire while idle, or hung incumbents, still
+require manual termination. Preservation means paths, selectors, outputs, and automatic credential
+discovery for upgraded clients—not interoperability with pre-authentication binaries.
+
+Hunk's fixed-endpoint Phase-1 credential store uses a home-local `.hunk` parent when
+`XDG_RUNTIME_DIR` is unavailable, rather than a predictable name in a shared temporary directory.
+It inherits the current user's ACL when it creates the `hunk-mcp/security-v1` directory
+on Windows and rejects symbolic-link redirection. Node does not
+provide a portable owner/DACL or general reparse-point inspection API, so this integration cannot
+detect a pre-existing custom permissive DACL or every non-symlink reparse point; completing native
+Windows ACL validation remains a release-gate item before the reusable package is published.
+
+The fixed-endpoint integration authenticates bootstrap reconnects, distinguishes `register` from
+`reconnect` scope, atomically retires the previous socket, and rejects its uncertain work. Retained
+producer authority is rechecked before inbound mutations and before any queued command bytes leave
+the daemon. It does
+not yet claim the durable candidate-key `registered`/`registration-ack` rotation sequence above;
+that sequence remains a publication gate rather than an unauthenticated compatibility fallback.
 
 Before publishing even `initializing`, a Hunk candidate binds and retains the legacy guard endpoint;
 only its holder may enter coordinator election. A contender unable to bind waits a bounded startup

@@ -83,6 +83,8 @@ export interface SessionBrokerHealth {
 export interface SessionBrokerSocketCloseEvent {
   code: number;
   reason: string;
+  /** Whether this socket completed authentication and became the active producer transport. */
+  authenticated?: boolean;
 }
 
 export interface SessionBrokerSocketMessageEvent {
@@ -126,7 +128,7 @@ export interface SessionBrokerAuditEvent {
   readonly principalId?: string;
   readonly keyId?: string;
   readonly sessionId?: string;
-  readonly operation: CallerOperation;
+  readonly operation: CallerOperation | "unknown";
   readonly command?: string;
   readonly commandVersion?: number;
   readonly requestId?: string;

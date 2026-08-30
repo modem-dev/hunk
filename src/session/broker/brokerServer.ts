@@ -495,6 +495,8 @@ function createHunkBrokerController(
     limits: state.limits,
     listSessions: () => state.listSessions(),
     getSession: (selector) => state.getSession(selector),
+    resolveSessionId: (selector) => state.getSession(selector).sessionId,
+    getSessionIds: () => state.listSessions().map((session) => session.sessionId),
     getSessionCount: () => state.getSessionCount(),
     getPendingCommandCount: () => state.getPendingCommandCount(),
     registerSession: (connection, registrationInput, snapshotInput) =>

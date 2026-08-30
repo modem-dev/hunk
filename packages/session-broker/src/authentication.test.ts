@@ -269,10 +269,89 @@ describe("session broker signed authentication", () => {
         "connection-1",
       ),
     ).resolves.toMatchObject({
-      connectionId: "connection-1",
-      daemonKeyId: "daemon-key-1",
-      principal: { kind: "producer", scopes: ["register"] },
+      ack: {
+        connectionId: "connection-1",
+        daemonKeyId: "daemon-key-1",
+        principal: { kind: "producer", scopes: ["register"] },
+      },
+      assertActive: expect.any(Function),
     });
+  });
+
+  test("producer authority rechecks revocation and credential-clear epochs", async () => {
+    let revoked = false;
+    const values = await setup({ revoked: () => revoked });
+    const proof = await signedHelloProof(values, "producer");
+    const authority = await values.authenticator.completeProducerHello(
+      { challengeId: proof.challengeId, signature: proof.signature },
+      "connection-1",
+    );
+    expect(() => authority.assertActive()).not.toThrow();
+    expect(JSON.parse(JSON.stringify(authority.ack))).toMatchObject({
+      connectionId: "connection-1",
+      principal: { kind: "producer" },
+    });
+    expect("assertActive" in authority.ack).toBe(false);
+    revoked = true;
+    expect(() => authority.assertActive()).toThrow(
+      expect.objectContaining({ code: "credential-revoked" }),
+    );
+
+    const cleared = await setup();
+    const clearedProof = await signedHelloProof(cleared, "producer");
+    const clearedAuthority = await cleared.authenticator.completeProducerHello(
+      { challengeId: clearedProof.challengeId, signature: clearedProof.signature },
+      "connection-2",
+    );
+    cleared.authenticator.clear();
+    expect(() => clearedAuthority.assertActive()).toThrow(
+      expect.objectContaining({ code: "invalid-credential" }),
+    );
+  });
+
+  test("rejects producer acknowledgement when revocation races asynchronous signing", async () => {
+    let revoked = false;
+    let revokeAfterSign = false;
+    const cryptoWithRevocation: SessionBrokerCrypto = {
+      ...webSessionBrokerCrypto,
+      async sign(privateKey, value) {
+        const signature = await webSessionBrokerCrypto.sign(privateKey, value);
+        if (revokeAfterSign) revoked = true;
+        return signature;
+      },
+    };
+    const values = await setup({ revoked: () => revoked, crypto: cryptoWithRevocation });
+    const proof = await signedHelloProof(values, "producer");
+    revokeAfterSign = true;
+    await expect(
+      values.authenticator.completeProducerHello(
+        { challengeId: proof.challengeId, signature: proof.signature },
+        "connection-1",
+      ),
+    ).rejects.toMatchObject({ code: "credential-revoked" });
+  });
+
+  test("rechecks producer expiry and revocation after hello completion", async () => {
+    let revoked = false;
+    const values = await setup({ revoked: () => revoked });
+    const request = challengeRequest("producer");
+    const challenge = await values.authenticator.issueChallenge(request, request.endpoint);
+    const transcript = challengeTranscriptForClient(request, challenge, "generation-1");
+    const signature = encodeBase64Url(
+      await webSessionBrokerCrypto.sign(values.producer.privateKey, transcript),
+    );
+    const hello = await values.authenticator.completeProducerHello(
+      { challengeId: challenge.challengeId, signature },
+      "connection-1",
+    );
+
+    expect(hello.ack.principal.kind).toBe("producer");
+    expect(hello.assertActive).not.toThrow();
+    revoked = true;
+    expect(hello.assertActive).toThrow(SessionBrokerAuthenticationError);
+    revoked = false;
+    values.setNow(10_001);
+    expect(hello.assertActive).toThrow(SessionBrokerAuthenticationError);
   });
 
   test("rejects missing, wrong, expired, revoked, and reused credentials with redacted errors", async () => {
@@ -443,7 +522,7 @@ describe("session broker signed authentication", () => {
         { challengeId: next.challengeId, signature: next.signature },
         "connection-2",
       ),
-    ).resolves.toMatchObject({ connectionId: "connection-2" });
+    ).resolves.toMatchObject({ ack: { connectionId: "connection-2" } });
   });
 
   test("clear invalidates response signing across deferred crypto", async () => {
@@ -535,7 +614,9 @@ describe("session broker signed authentication", () => {
       generation: response.generation,
       brokerRevision: 1 as const,
       appContract: { appRevision: 1, features: [] },
+      callerSessionId: response.callerSessionId,
       requestId: response.requestId,
+      sequence: response.sequence,
       httpStatus: response.httpStatus,
       bodyDigest: response.bodyDigest,
     };
@@ -565,6 +646,23 @@ describe("session broker signed authentication", () => {
         values.daemon.publicKey,
         signature,
         buildBrokerResponseTranscript({ ...transcriptInput, bodyDigest: "tampered" }),
+      ),
+    ).toBe(false);
+    expect(
+      await webSessionBrokerCrypto.verify(
+        values.daemon.publicKey,
+        signature,
+        buildBrokerResponseTranscript({
+          ...transcriptInput,
+          callerSessionId: "caller-session-2",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      await webSessionBrokerCrypto.verify(
+        values.daemon.publicKey,
+        signature,
+        buildBrokerResponseTranscript({ ...transcriptInput, sequence: "2" }),
       ),
     ).toBe(false);
   });

@@ -115,6 +115,7 @@ export interface SessionBrokerHelloChallengeRequest {
 
 export interface SessionBrokerHelloChallenge {
   readonly challengeId: string;
+  readonly generation: string;
   readonly responderNonce: string;
   readonly expiresAt: number;
   readonly daemonKeyId: string;
@@ -139,7 +140,7 @@ export interface AuthenticatedCallerSession {
   readonly daemonSignature: string;
 }
 
-export interface AuthenticatedProducerHello {
+export interface SessionBrokerProducerHelloAck {
   readonly principal: ProducerPrincipal;
   readonly connectionId: string;
   readonly brokerRevision: typeof SESSION_BROKER_PROTOCOL_REVISION;
@@ -148,6 +149,13 @@ export interface AuthenticatedProducerHello {
   readonly helloTranscriptHash: string;
   readonly daemonKeyId: string;
   readonly daemonSignature: string;
+}
+
+/** Keep signed wire data separate from server-only authority retained for the live peer. */
+export interface AuthenticatedProducerHello {
+  readonly ack: SessionBrokerProducerHelloAck;
+  /** Reject producer work after credential revocation, expiry, or a clear epoch. */
+  assertActive(): void;
 }
 
 export interface CallerRequestAuthenticationInput {
@@ -159,7 +167,9 @@ export interface SessionBrokerResponseAuthentication {
   readonly generation: string;
   readonly brokerRevision: typeof SESSION_BROKER_PROTOCOL_REVISION;
   readonly appContract?: BrokerAppContract;
+  readonly callerSessionId: string;
   readonly requestId: string;
+  readonly sequence: string;
   readonly httpStatus: number;
   readonly bodyDigest: string;
   readonly daemonKeyId: string;
@@ -541,8 +551,19 @@ export function canonicalHttpTarget(url: URL): string {
   return query ? `${path}?${query}` : path;
 }
 
+export interface SessionBrokerHelloAuthenticator {
+  issueChallenge(request: unknown, listenerEndpoint: string): Promise<SessionBrokerHelloChallenge>;
+  completeCallerHello(proofInput: unknown): Promise<AuthenticatedCallerSession>;
+  completeProducerHello(
+    proofInput: unknown,
+    connectionId: unknown,
+  ): Promise<AuthenticatedProducerHello>;
+}
+
 /** Authenticate bounded producer hellos and generation-bound signed caller request sessions. */
-export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
+export class SessionBrokerAuthenticator
+  implements CallerRequestAuthenticator, SessionBrokerHelloAuthenticator
+{
   private readonly crypto: SessionBrokerCrypto;
   private readonly config: AuthenticatorSnapshot;
   private readonly credentials: Map<string, SessionBrokerCredential>;
@@ -635,6 +656,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       committed = true;
       return Object.freeze({
         challengeId,
+        generation: this.config.generation,
         responderNonce,
         expiresAt,
         daemonKeyId: this.config.daemonIdentity.keyId,
@@ -774,7 +796,12 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
         ),
       );
       this.assertClearEpoch(epoch);
-      return Object.freeze({
+      this.requireActiveGrant(grant);
+      const assertActive = () => {
+        this.assertClearEpoch(epoch);
+        this.requireActiveGrant(grant);
+      };
+      const ack: SessionBrokerProducerHelloAck = Object.freeze({
         principal: principalFromGrant(grant),
         connectionId,
         brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
@@ -784,6 +811,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
         daemonKeyId: this.config.daemonIdentity.keyId,
         daemonSignature,
       });
+      return Object.freeze({ ack, assertActive });
     } finally {
       pending.reservation.release();
     }
@@ -868,7 +896,7 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       requestId,
       assertActive,
       signResponse: (input: CallerResponseSigningInput) =>
-        this.signResponse(requestId, input, assertActive),
+        this.signResponse(callerSessionId, requestId, sequence, input, assertActive),
     });
   }
 
@@ -910,7 +938,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
   }
 
   private async signResponse(
+    callerSessionId: string,
     requestId: string,
+    sequence: string,
     input: CallerResponseSigningInput,
     assertActive: () => void,
   ): Promise<SessionBrokerResponseAuthentication> {
@@ -935,7 +965,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       appId: this.config.appId,
       generation: this.config.generation,
       brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
+      callerSessionId,
       requestId,
+      sequence,
       httpStatus: input.httpStatus,
       bodyDigest,
       ...(appContract ? { appContract } : {}),
@@ -948,7 +980,9 @@ export class SessionBrokerAuthenticator implements CallerRequestAuthenticator {
       generation: this.config.generation,
       brokerRevision: SESSION_BROKER_PROTOCOL_REVISION,
       ...(appContract ? { appContract } : {}),
+      callerSessionId,
       requestId,
+      sequence,
       httpStatus: input.httpStatus,
       bodyDigest,
       daemonKeyId: this.config.daemonIdentity.keyId,

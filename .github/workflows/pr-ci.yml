@@ -187,6 +187,9 @@ jobs:
       - name: Test suite
         run: bun run test
 
+      - name: Real Node broker adapter tests
+        run: bun run test:session-broker-node
+
       - name: PTY integration tests
         run: bun run test:integration
 

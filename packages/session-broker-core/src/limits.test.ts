@@ -36,16 +36,32 @@ function streamingRequest(byteLength: number, chunkSize = 64 * 1024) {
 }
 
 describe("readRequestTextWithLimit", () => {
-  test("rejects an oversized declared Content-Length before reading the body", async () => {
+  test("cancels an oversized declared body without pulling it", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array([1]));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
     const request = new Request("http://broker.test/api", {
       method: "POST",
-      headers: { "content-type": "application/json", "content-length": String(10 * 1024 * 1024) },
-      body: "ignored",
-    });
+      headers: { "content-length": String(10 * 1024 * 1024) },
+      body,
+      duplex: "half",
+    } as RequestInit);
 
     await expect(readRequestTextWithLimit(request, 1024)).rejects.toBeInstanceOf(
       PayloadTooLargeError,
     );
+    expect({ pulls, cancelled }).toEqual({ pulls: 0, cancelled: true });
   });
 
   test("aborts the stream when a missing Content-Length hides an oversized body", async () => {
@@ -56,15 +72,80 @@ describe("readRequestTextWithLimit", () => {
     );
   });
 
-  test("rejects malformed Content-Length instead of treating it as undeclared", async () => {
+  test("cancels a malformed declared body without pulling it", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array([1]));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
     const request = new Request("http://broker.test/api", {
       method: "POST",
       headers: { "content-length": "01" },
-      body: "x",
-    });
+      body,
+      duplex: "half",
+    } as RequestInit);
     await expect(readRequestBytesWithLimit(request, 1024)).rejects.toBeInstanceOf(
       InvalidContentLengthError,
     );
+    expect({ pulls, cancelled }).toEqual({ pulls: 0, cancelled: true });
+  });
+
+  test("rejects a full aggregate budget before pulling and cancels the request body", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array([1]));
+          controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request("http://broker.test/api", {
+      method: "POST",
+      body,
+      duplex: "half",
+    } as RequestInit);
+    const budget = new ResourceBudget(4, "http");
+    const occupied = budget.reserve(4);
+
+    await expect(readRequestBytesWithReservation(request, 4, budget)).rejects.toBeInstanceOf(
+      BrokerCapacityError,
+    );
+    expect({ pulls, cancelled, used: budget.used }).toEqual({
+      pulls: 0,
+      cancelled: true,
+      used: 4,
+    });
+    occupied.release();
+  });
+
+  test("charges the maximum before reading a body whose declared length is dishonest", async () => {
+    const budget = new ResourceBudget(8, "http");
+    const request = new Request("http://broker.test/api", {
+      method: "POST",
+      headers: { "content-length": "1" },
+      body: "1234",
+    });
+    const read = await readRequestBytesWithReservation(request, 4, budget);
+    expect(new TextDecoder().decode(read.bytes)).toBe("1234");
+    expect(budget.used).toBe(4);
+    read.reservation.release();
+    expect(budget.used).toBe(0);
   });
 
   test("accounts source-plus-merged peak and transfers retained body capacity", async () => {
@@ -119,6 +200,34 @@ describe("readRequestTextWithLimit", () => {
 });
 
 describe("boundHttpResponse", () => {
+  test("rejects a full aggregate budget before pulling and cancels the response body", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array([1]));
+          controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const budget = new ResourceBudget(4, "response");
+    const occupied = budget.reserve(4);
+    const response = await boundHttpResponse(new Response(body), 4, budget);
+    expect(response.status).toBe(503);
+    expect({ pulls, cancelled, used: budget.used }).toEqual({
+      pulls: 0,
+      cancelled: true,
+      used: 4,
+    });
+    occupied.release();
+  });
+
   test("accepts an exact-ceiling response and charges it until pull", async () => {
     const budget = new ResourceBudget(8, "response");
     const response = await boundHttpResponse(new Response("1234"), 4, budget);
@@ -162,9 +271,11 @@ describe("boundHttpResponse", () => {
 });
 
 describe("utf8ByteLength", () => {
-  test("counts multi-byte characters by their encoded size", () => {
+  test("counts multi-byte characters and replacement sequences without allocating", () => {
     expect(utf8ByteLength("abc")).toBe(3);
     expect(utf8ByteLength("é")).toBe(2);
     expect(utf8ByteLength("😀")).toBe(4);
+    expect(utf8ByteLength("\ud800")).toBe(3);
+    expect(utf8ByteLength("\udc00")).toBe(3);
   });
 });

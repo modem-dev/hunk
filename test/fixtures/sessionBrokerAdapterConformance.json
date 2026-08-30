@@ -4,7 +4,8 @@
   },
   "inbound": {
     "oversizedCloseCode": 1009,
-    "pressureCloseCode": 1013,
+    "bunNativeOversizedCloseCodes": [1006, 1009],
+    "admissionHttpStatus": 503,
     "maxMessageBytes": 8388608
   },
   "outbound": {
