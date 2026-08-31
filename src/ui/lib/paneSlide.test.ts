@@ -7,7 +7,11 @@ import {
   type ExtensionPaneLayoutPlan,
   type SessionPane,
 } from "./extensionPanes";
-import { interpolatePaneLayout, paneVisibilityTransitionKey } from "./paneSlide";
+import {
+  interpolatePaneLayout,
+  paneLayoutGeometryEqual,
+  paneVisibilityTransitionKey,
+} from "./paneSlide";
 
 /** Build matching open and closed layouts for a pane at one edge. */
 function createPaneLayouts(placement: SessionPane["placement"]): {
@@ -61,10 +65,12 @@ describe("pane slide presentation", () => {
       const openPane = open.panes.find(({ pane }) => pane.key === paneKey)!;
       const middlePane = middle.panes.find(({ pane }) => pane.key === paneKey)!;
 
+      const startPane = start.panes.find(({ pane }) => pane.key === paneKey)!;
       expect(start.reviewBounds).toEqual(closed.reviewBounds);
-      expect(start.panes.find(({ pane }) => pane.key === paneKey)?.bounds.width).toBe(0);
-      expect(middlePane.bounds.width).toBeGreaterThan(0);
-      expect(middlePane.bounds.width).toBeLessThan(openPane.bounds.width);
+      expect(startPane.bounds.width).toBe(openPane.bounds.width);
+      expect(startPane.bounds.x).not.toBe(openPane.bounds.x);
+      expect(middlePane.bounds.width).toBe(openPane.bounds.width);
+      expect(middlePane.bounds.x).not.toBe(openPane.bounds.x);
       expect(middle.reviewBounds.width).toBeGreaterThan(open.reviewBounds.width);
       expect(middle.reviewBounds.width).toBeLessThan(closed.reviewBounds.width);
     }
@@ -78,13 +84,25 @@ describe("pane slide presentation", () => {
       const openPane = open.panes.find(({ pane }) => pane.key === paneKey)!;
       const middlePane = middle.panes.find(({ pane }) => pane.key === paneKey)!;
 
+      const startPane = start.panes.find(({ pane }) => pane.key === paneKey)!;
       expect(start.reviewBounds).toEqual(closed.reviewBounds);
-      expect(start.panes.find(({ pane }) => pane.key === paneKey)?.bounds.height).toBe(0);
-      expect(middlePane.bounds.height).toBeGreaterThan(0);
-      expect(middlePane.bounds.height).toBeLessThan(openPane.bounds.height);
+      expect(startPane.bounds.height).toBe(openPane.bounds.height);
+      expect(startPane.bounds.y).not.toBe(openPane.bounds.y);
+      expect(middlePane.bounds.height).toBe(openPane.bounds.height);
+      expect(middlePane.bounds.y).not.toBe(openPane.bounds.y);
       expect(middle.reviewBounds.height).toBeGreaterThan(open.reviewBounds.height);
       expect(middle.reviewBounds.height).toBeLessThan(closed.reviewBounds.height);
     }
+  });
+
+  test("deduplicates timeline updates that round to the same terminal cells", () => {
+    const { closed, open, paneKey } = createPaneLayouts("top");
+    const first = interpolatePaneLayout(closed, open, paneKey, 0.1);
+    const sameCells = interpolatePaneLayout(closed, open, paneKey, 0.101);
+    const later = interpolatePaneLayout(closed, open, paneKey, 0.5);
+
+    expect(paneLayoutGeometryEqual(first, sameCells)).toBe(true);
+    expect(paneLayoutGeometryEqual(first, later)).toBe(false);
   });
 
   test("retains an exiting pane until the closing frame completes", () => {
@@ -94,7 +112,10 @@ describe("pane slide presentation", () => {
 
     expect(middle.panes.some(({ pane }) => pane.key === paneKey)).toBe(true);
     expect(end.panes.some(({ pane }) => pane.key === paneKey)).toBe(true);
-    expect(end.panes.find(({ pane }) => pane.key === paneKey)?.bounds.height).toBe(0);
+    const openPane = open.panes.find(({ pane }) => pane.key === paneKey)!;
+    const endPane = end.panes.find(({ pane }) => pane.key === paneKey)!;
+    expect(endPane.bounds.height).toBe(openPane.bounds.height);
+    expect(endPane.bounds.y).toBeGreaterThan(openPane.bounds.y);
     expect(end.reviewBounds).toEqual(closed.reviewBounds);
   });
 });
