@@ -24,6 +24,21 @@ export function isEscapeKey(key: KeyEvent) {
   );
 }
 
+/** Match one literal key only when no modifier changes its meaning. */
+export function isUnmodifiedKey(key: KeyEvent, value: string) {
+  return (
+    !key.ctrl &&
+    !key.meta &&
+    !key.option &&
+    !key.shift &&
+    !key.super &&
+    !key.hyper &&
+    !key.capsLock &&
+    !key.numLock &&
+    (key.name === value || key.sequence === value)
+  );
+}
+
 /**
  * Match Ctrl-S across raw, Kitty/CSI-u, and tmux control-mode encodings.
  *

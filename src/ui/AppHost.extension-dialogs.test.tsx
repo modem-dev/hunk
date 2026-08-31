@@ -381,6 +381,54 @@ describe("extension dialogs", () => {
         );
       },
       undefined,
+      { width: 50, height: 20 },
+    );
+  });
+
+  test("withholds copy when a short terminal cannot disclose the complete payload", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-document-short-");
+    const extDir = createTempDir("hunk-ext-dialog-document-short-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.document({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        const copied: string[] = [];
+        setup.renderer.isOsc52Supported = () => true;
+        setup.renderer.copyToClipboardOSC52 = (text: string) => {
+          copied.push(text);
+          return true;
+        };
+
+        await act(async () => {
+          await setup.mockInput.typeText("y");
+        });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Agent setup"),
+          "the constrained document dialog to open",
+        );
+
+        const frame = setup.captureCharFrame();
+        expect(frame).toContain("ext ext");
+        expect(frame).toContain("…");
+        expect(frame).not.toContain("Copy prompt");
+
+        await act(async () => {
+          await setup.mockInput.typeText("c");
+        });
+        await flush(setup);
+        expect(copied).toEqual([]);
+        expect(setup.captureCharFrame()).toContain("Agent setup");
+      },
+      undefined,
       { width: 50, height: 12 },
     );
   });
@@ -433,6 +481,49 @@ describe("extension dialogs", () => {
         () => readProbeLog(logPath).includes("answer undefined"),
         "the unavailable-copy document to close",
       );
+    });
+  });
+
+  test("reports a clipboard write rejected by the renderer as a failure", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-document-copy-failure-");
+    const extDir = createTempDir("hunk-ext-dialog-document-copy-failure-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.document({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      let attempts = 0;
+      setup.renderer.isOsc52Supported = () => true;
+      setup.renderer.copyToClipboardOSC52 = () => {
+        attempts += 1;
+        return false;
+      };
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Copy prompt"),
+        "the copy action to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Clipboard copy failed"),
+        "the copy failure notice",
+      );
+
+      expect(attempts).toBe(1);
+      expect(setup.captureCharFrame()).not.toContain("Copied copy setup prompt to clipboard");
     });
   });
 

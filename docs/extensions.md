@@ -1681,7 +1681,9 @@ lines, and copy text may contain up to 16,384 JavaScript string code units.
 When `copy` is provided, `c` and the clickable copy action send its `text` to
 the terminal clipboard while the host removes terminal control sequences,
 expands tabs to four spaces, and renders the same safe value under `label`
-(default `Content`). Optional `displayLines` can add authored visual breaks;
+(default `Content`). Hunk exposes those actions only while the complete payload
+and any required extension attribution are visible. Optional `displayLines` can
+add authored visual breaks;
 after sanitizing, those lines must rejoin with spaces or newlines to exactly the
 clipboard `text`, so a preview cannot disguise what the action copies:
 

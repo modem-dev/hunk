@@ -89,6 +89,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { planExtensionDocumentDialog } from "./lib/extensionDialogGeometry";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -935,16 +936,42 @@ export function App({
     runExtensionCommand(bundledAgentSkillCommand);
   }, [bundledAgentSkillCommand, runExtensionCommand]);
 
+  const extensionDocumentLayout =
+    extensionDialog?.kind === "document"
+      ? planExtensionDocumentDialog(extensionDialog, terminal.width, terminal.height)
+      : null;
+  const extensionDialogCopySupported =
+    (renderer.isOsc52Supported?.() ?? false) && typeof renderer.copyToClipboardOSC52 === "function";
+  const extensionDocumentCopyExposed = extensionDocumentLayout?.copyActionExposed ?? false;
+
   /** Copy a document dialog's normalized payload through the terminal clipboard integration. */
   const copyExtensionDialogDocument = useCallback(() => {
-    if (extensionDialog?.kind !== "document" || !extensionDialog.copy) return;
-
-    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
-      renderer.copyToClipboardOSC52(extensionDialog.copy.text);
-      showTransientNotice(`Copied ${extensionDialog.copy.label.toLowerCase()} to clipboard`);
+    if (
+      extensionDialog?.kind !== "document" ||
+      !extensionDialog.copy ||
+      !extensionDocumentCopyExposed
+    ) {
       return;
     }
-  }, [extensionDialog, renderer, showTransientNotice]);
+
+    if (extensionDialogCopySupported) {
+      const copied = renderer.copyToClipboardOSC52!(extensionDialog.copy.text);
+      if (!copied) {
+        showTransientNotice("Clipboard copy failed");
+        return;
+      }
+      showTransientNotice(
+        `Copied ${extensionDialog.title.toLowerCase()} ${extensionDialog.copy.label.toLowerCase()} to clipboard`,
+      );
+      return;
+    }
+  }, [
+    extensionDialog,
+    extensionDialogCopySupported,
+    extensionDocumentCopyExposed,
+    renderer,
+    showTransientNotice,
+  ]);
 
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
@@ -1140,6 +1167,7 @@ export function App({
     extensionDialog,
     acceptExtensionDialog,
     cancelExtensionDialog,
+    extensionDocumentCopyEnabled: extensionDocumentCopyExposed && extensionDialogCopySupported,
     copyExtensionDialogDocument,
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
@@ -1456,7 +1484,7 @@ export function App({
 
       {extensionDialog ? (
         <ExtensionDialog
-          copySupported={renderer.isOsc52Supported?.() ?? false}
+          copySupported={extensionDialogCopySupported}
           inputValue={extensionDialogInputValue}
           request={extensionDialog}
           selectedIndex={extensionDialogSelectedIndex}

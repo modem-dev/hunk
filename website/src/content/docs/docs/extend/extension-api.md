@@ -318,7 +318,25 @@ lines, and copy text may contain up to 16,384 JavaScript string code units.
 When `copy` is provided, `c` and the clickable copy action send its `text` to
 the terminal clipboard after Hunk removes terminal control sequences and
 expands tabs to four spaces, and Hunk renders the same safe value under `label`
-(default `Content`).
+(default `Content`). Hunk exposes those actions only while the complete payload
+and any required extension attribution are visible. Optional `displayLines` can
+add authored visual breaks; after sanitizing, those lines must rejoin with
+spaces or newlines to exactly the clipboard `text`, so a preview cannot disguise
+what the action copies:
+
+```ts
+hunk.registerCommand({ id: "agent-setup", title: "Agent setup" }, async (ctx) => {
+  await ctx.dialogs.document({
+    title: "Agent setup",
+    body: "Give this prompt to your coding agent.",
+    copy: {
+      label: "Prompt",
+      text: "Review the current Hunk session. Focus on correctness.",
+      displayLines: ["Review the current Hunk session.", "Focus on correctness."],
+    },
+  });
+});
+```
 
 `select` fits acting on part of the selection — asking which hunk to jump to, then navigating there:
 

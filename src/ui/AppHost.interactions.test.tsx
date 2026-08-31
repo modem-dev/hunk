@@ -1932,6 +1932,12 @@ describe("App interactions", () => {
       width: 120,
       height: 24,
     });
+    const copied: string[] = [];
+    setup.renderer.isOsc52Supported = () => true;
+    setup.renderer.copyToClipboardOSC52 = (text: string) => {
+      copied.push(text);
+      return true;
+    };
 
     try {
       await flush(setup);
@@ -1974,6 +1980,17 @@ describe("App interactions", () => {
       expect(AGENT_SKILL_PROMPT).toContain(AGENT_SKILL_COMMAND);
       expect(frame).toContain(AGENT_SKILL_COMMAND);
       expect(frame).toContain("Copy");
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      frame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("Copied agent skill prompt to clipboard"),
+        12,
+      );
+      expect(copied).toEqual([AGENT_SKILL_PROMPT]);
+      expect(frame).toContain("Copied agent skill prompt to clipboard");
 
       await act(async () => {
         await setup.mockInput.pressEscape();

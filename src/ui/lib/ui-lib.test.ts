@@ -13,7 +13,7 @@ import {
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
-import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
+import { isEscapeKey, isSaveDraftNoteKey, isUnmodifiedKey } from "./keyboard";
 import {
   BoundedClusterWidthCache,
   CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
@@ -192,6 +192,19 @@ describe("ui helpers", () => {
     expect(isEscapeKey(createKeyEvent({ name: "escape" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "esc" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "q" }))).toBe(false);
+  });
+
+  test("literal modal keys reject every modified form", () => {
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c" }), "c")).toBe(true);
+    expect(isUnmodifiedKey(createKeyEvent({ sequence: "c" }), "c")).toBe(true);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", ctrl: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", meta: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", option: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", shift: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", super: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", hyper: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", capsLock: true }), "c")).toBe(false);
+    expect(isUnmodifiedKey(createKeyEvent({ name: "c", numLock: true }), "c")).toBe(false);
   });
 
   test("save-draft-note shortcut matches Ctrl-S across raw, CSI-u, and tmux encodings", () => {

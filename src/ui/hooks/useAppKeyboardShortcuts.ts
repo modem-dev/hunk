@@ -15,7 +15,7 @@ import {
 } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
-import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
+import { isEscapeKey, isSaveDraftNoteKey, isUnmodifiedKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 
 type FocusArea = "files" | "filter" | "note";
@@ -39,6 +39,8 @@ export interface UseAppKeyboardShortcutsOptions {
   extensionDialog: ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
+  /** Whether the visible document's fully disclosed copy action is usable. */
+  extensionDocumentCopyEnabled: boolean;
   copyExtensionDialogDocument: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
   extensionTrustPromptOpen: boolean;
@@ -108,6 +110,7 @@ export function useAppKeyboardShortcuts({
   extensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
+  extensionDocumentCopyEnabled,
   copyExtensionDialogDocument,
   moveExtensionDialogSelection,
   extensionTrustPromptOpen,
@@ -141,6 +144,7 @@ export function useAppKeyboardShortcuts({
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
   const extensionDialogRef = useRef(extensionDialog);
+  const extensionDocumentCopyEnabledRef = useRef(extensionDocumentCopyEnabled);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
@@ -164,6 +168,7 @@ export function useAppKeyboardShortcuts({
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
   extensionDialogRef.current = extensionDialog;
+  extensionDocumentCopyEnabledRef.current = extensionDocumentCopyEnabled;
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
@@ -337,7 +342,12 @@ export function useAppKeyboardShortcuts({
       return "mine";
     }
 
-    if (dialog.kind === "document" && dialog.copy && (key.name === "c" || key.sequence === "c")) {
+    if (
+      dialog.kind === "document" &&
+      dialog.copy &&
+      extensionDocumentCopyEnabledRef.current &&
+      isUnmodifiedKey(key, "c")
+    ) {
       copyExtensionDialogDocumentRef.current();
       return "mine";
     }
