@@ -65,6 +65,8 @@ export interface EnsureSessionBrokerAvailableOptions {
   lockStaleMs?: number;
   timeoutMessage?: string;
   lifecycleClock?: SessionBrokerLifecycleClock;
+  /** Fence commits when the caller's exact lifecycle attempt no longer owns the result. */
+  isCommitAuthorized?: () => boolean;
   isHealthy?: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
   isPortReachable?: (
     config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
@@ -231,7 +233,12 @@ function tryAcquireDaemonLaunchLock({
         const stat = statSync(paths.lockPath);
         if (lifecycleClock.now() - stat.mtimeMs > staleAfterMs) {
           removeFileIfPresent(paths.lockPath);
-          return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs, lifecycleClock });
+          return tryAcquireDaemonLaunchLock({
+            config,
+            env,
+            staleAfterMs,
+            lifecycleClock,
+          });
         }
       } catch {
         // Ignore racing readers while another process still owns the lock.
@@ -245,7 +252,12 @@ function tryAcquireDaemonLaunchLock({
 
   if (!ownerAlive) {
     removeFileIfPresent(paths.lockPath);
-    return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs, lifecycleClock });
+    return tryAcquireDaemonLaunchLock({
+      config,
+      env,
+      staleAfterMs,
+      lifecycleClock,
+    });
   }
 
   return null;
@@ -279,30 +291,66 @@ function daemonStartupTimeoutError(
   );
 }
 
+type ForeignSettlement<T> = { current: true; value: T } | { current: false };
+
+/** Invoke synchronous foreign work and refuse values or errors after commit authority changes. */
+function settleForeignCall<T>(
+  work: () => T,
+  isCommitAuthorized: () => boolean,
+): ForeignSettlement<T> {
+  try {
+    const value = work();
+    return isCommitAuthorized() ? { current: true, value } : { current: false };
+  } catch (error) {
+    if (!isCommitAuthorized()) return { current: false };
+    throw error;
+  }
+}
+
+/** Invoke asynchronous foreign work and refuse both late values and errors after authority changes. */
+async function settleForeignWork<T>(
+  work: () => Promise<T>,
+  isCommitAuthorized: () => boolean,
+): Promise<ForeignSettlement<T>> {
+  try {
+    const value = await work();
+    return isCommitAuthorized() ? { current: true, value } : { current: false };
+  } catch (error) {
+    if (!isCommitAuthorized()) return { current: false };
+    throw error;
+  }
+}
+
 async function waitForDaemonHealthWithCheck({
   config,
   timeoutMs,
   intervalMs,
   lifecycleClock,
   isHealthy,
+  isCommitAuthorized,
 }: {
   config: ResolvedSessionBrokerConfig;
   timeoutMs: number;
   intervalMs: number;
   lifecycleClock: SessionBrokerLifecycleClock;
   isHealthy: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
-}) {
+  isCommitAuthorized: () => boolean;
+}): Promise<"ready" | "timeout" | "stale"> {
   const deadline = lifecycleClock.now() + timeoutMs;
 
-  while (lifecycleClock.now() < deadline) {
-    if (await isHealthy(config)) {
-      return true;
-    }
+  while (isCommitAuthorized() && lifecycleClock.now() < deadline) {
+    const health = await settleForeignWork(() => isHealthy(config), isCommitAuthorized);
+    if (!health.current) return "stale";
+    if (health.value) return "ready";
 
-    await lifecycleClock.delay(intervalMs);
+    const delay = await settleForeignWork(
+      () => lifecycleClock.delay(intervalMs),
+      isCommitAuthorized,
+    );
+    if (!delay.current) return "stale";
   }
 
-  return false;
+  return isCommitAuthorized() ? "timeout" : "stale";
 }
 
 /** Resolve how the current process should launch a sibling `daemon serve` process. */
@@ -545,20 +593,21 @@ export async function ensureSessionBrokerAvailable({
   lockStaleMs = DEFAULT_DAEMON_LOCK_STALE_MS,
   timeoutMessage,
   lifecycleClock = createNativeSessionBrokerLifecycleClock(),
+  isCommitAuthorized = () => true,
   isHealthy = (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
   isPortReachable = isLoopbackPortReachable,
   launchDaemon = launchSessionBrokerDaemon,
 }: EnsureSessionBrokerAvailableOptions = {}) {
+  if (!isCommitAuthorized()) return;
   const paths = resolveSessionBrokerRuntimePaths(config, env);
   cleanStaleDaemonMetadata(paths);
 
-  if (await isHealthy(config)) {
-    return;
-  }
+  const initialHealth = await settleForeignWork(() => isHealthy(config), isCommitAuthorized);
+  if (!initialHealth.current || initialHealth.value) return;
 
   const deadline = lifecycleClock.now() + timeoutMs;
 
-  while (lifecycleClock.now() < deadline) {
+  while (isCommitAuthorized() && lifecycleClock.now() < deadline) {
     const lock = tryAcquireDaemonLaunchLock({
       config,
       env,
@@ -568,15 +617,25 @@ export async function ensureSessionBrokerAvailable({
 
     if (lock) {
       try {
+        if (!isCommitAuthorized()) return;
         cleanStaleDaemonMetadata(paths);
-        if (await isHealthy(config)) {
-          return;
-        }
+        const protectedHealth = await settleForeignWork(
+          () => isHealthy(config),
+          isCommitAuthorized,
+        );
+        if (!protectedHealth.current || protectedHealth.value) return;
 
+        if (!isCommitAuthorized()) return;
         const launchCommand = resolveDaemonLaunchCommand(argv, execPath);
-        const child = launchDaemon({ cwd, env, argv, execPath });
+        const launched = settleForeignCall(
+          () => launchDaemon({ cwd, env, argv, execPath }),
+          isCommitAuthorized,
+        );
+        // A callback may have already spawned a detached child before revoking authority. That
+        // process cannot be recalled; fencing suppresses only metadata and later lifecycle commits.
+        if (!launched.current) return;
         writeDaemonLaunchMetadata(paths, {
-          pid: child.pid ?? 0,
+          pid: launched.value.pid ?? 0,
           host: config.host,
           port: config.port,
           command: launchCommand.command,
@@ -592,19 +651,18 @@ export async function ensureSessionBrokerAvailable({
           intervalMs,
           lifecycleClock,
           isHealthy,
+          isCommitAuthorized,
         });
-        if (ready) {
-          return;
-        }
+        if (ready === "ready" || ready === "stale") return;
       } finally {
+        // Lock ownership is synchronous and must be released even when foreign work settles stale.
         lock.release();
       }
     }
 
+    if (!isCommitAuthorized()) return;
     const remainingMs = deadline - lifecycleClock.now();
-    if (remainingMs <= 0) {
-      break;
-    }
+    if (remainingMs <= 0) break;
 
     const ready = await waitForDaemonHealthWithCheck({
       config,
@@ -612,17 +670,19 @@ export async function ensureSessionBrokerAvailable({
       intervalMs,
       lifecycleClock,
       isHealthy,
+      isCommitAuthorized,
     });
-    if (ready) {
-      return;
-    }
+    if (ready === "ready" || ready === "stale") return;
 
+    if (!isCommitAuthorized()) return;
     cleanStaleDaemonMetadata(paths);
   }
 
-  if (await isPortReachable(config)) {
-    throw daemonPortConflictError(config);
-  }
+  if (!isCommitAuthorized()) return;
+  const portReachable = await settleForeignWork(() => isPortReachable(config), isCommitAuthorized);
+  if (!portReachable.current) return;
+  if (portReachable.value) throw daemonPortConflictError(config);
 
+  if (!isCommitAuthorized()) return;
   throw daemonStartupTimeoutError(config, timeoutMessage);
 }

@@ -24,6 +24,7 @@ import {
 } from "./credentials";
 import { serveSessionBrokerDaemon as serveHunkSessionBrokerDaemon } from "./brokerServer";
 import { createHttpHunkSessionCliClient } from "../agent/cliClient";
+import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../client/capabilities";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../test/helpers/lifecycleClockTest";
 
@@ -55,8 +56,9 @@ interface SessionBrokerClientTestAccess {
   waitingForIncumbentExit: boolean;
   restartIncompatibleDaemon?: unknown;
   connect(config: ResolvedSessionBrokerConfig): void;
-  ensureDaemonAndConnect(): Promise<void>;
+  ensureDaemonAndConnect(attempt?: unknown): Promise<void>;
   ensureDaemonAvailable(config: ResolvedSessionBrokerConfig): Promise<void>;
+  loadCredentials(): Promise<HunkSessionBrokerCredentials>;
   scheduleReconnect(delayMs?: number): void;
 }
 
@@ -150,7 +152,11 @@ function installWebSocketObserverTest(
     throw new Error("A WebSocket observer is already installed.");
   }
   const OriginalWebSocket = globalThis.WebSocket;
-  const sockets: Array<{ sent: string[] }> = [];
+  const sockets: Array<{
+    sent: string[];
+    emitOpen: () => void;
+    emitClose: (code?: number, reason?: string) => void;
+  }> = [];
   let constructionAttempts = 0;
 
   class ObservedWebSocketTest implements SessionBrokerSocketLike {
@@ -173,6 +179,15 @@ function installWebSocketObserverTest(
     }
 
     close(code = 1000, reason = "") {
+      this.emitClose(code, reason);
+    }
+
+    emitOpen() {
+      this.readyState = 1;
+      this.onopen?.();
+    }
+
+    emitClose(code = 1000, reason = "") {
       this.readyState = 3;
       this.onclose?.({ code, reason });
     }
@@ -988,6 +1003,66 @@ describe("Hunk session daemon client", () => {
   });
 
   for (const outcome of ["resolve", "reject"] as const) {
+    test(`stop fences late credential ${outcome} without assignment, warning, or retry`, async () => {
+      delete process.env.HUNK_MCP_DISABLE;
+      const clock = new DeterministicLifecycleClockTest();
+      const messages: string[] = [];
+      console.error = (...args: unknown[]) => {
+        messages.push(args.map((value) => String(value)).join(" "));
+      };
+      const credentials = createDeferredTest<any>();
+      const credentialLoadStarted = createDeferredTest();
+      const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+        reconnectDelayMs: 30,
+        lifecycleClock: clock,
+      });
+      clientTestAccess(client).ensureDaemonAvailable = async () => {};
+      clientTestAccess(client).loadCredentials = async () => {
+        credentialLoadStarted.resolve();
+        return credentials.promise;
+      };
+
+      const startup = client.start();
+      await settleWithinTestTimeout(credentialLoadStarted.promise);
+      client.stop();
+      if (outcome === "resolve") {
+        credentials.resolve({ source: "late credentials" });
+      } else {
+        credentials.reject(new Error("late credential failure"));
+      }
+      await settleWithinTestTimeout(startup);
+
+      expect(clientTestAccess(client).credentials).toBeNull();
+      expect(messages).toEqual([]);
+      expect(clock.pendingCountTest()).toBe(0);
+    });
+  }
+
+  test("a reentrant stop during initial health remains terminal after settlement", async () => {
+    delete process.env.HUNK_MCP_DISABLE;
+    const nativeFetch = globalThis.fetch;
+    const webSockets = installWebSocketObserverTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    let healthChecks = 0;
+    globalThis.fetch = (async () => {
+      healthChecks += 1;
+      client.stop();
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+
+    try {
+      await settleWithinTestTimeout(client.start());
+      await settleWithinTestTimeout(client.start());
+      expect(healthChecks).toBe(1);
+      expect(webSockets.constructionAttemptsTest()).toBe(0);
+    } finally {
+      client.stop();
+      globalThis.fetch = nativeFetch;
+      webSockets.restoreTest();
+    }
+  });
+
+  for (const outcome of ["resolve", "reject"] as const) {
     test(`stop fences a late startup ${outcome} without warning, retry, or socket mutation`, async () => {
       delete process.env.HUNK_MCP_DISABLE;
       const clock = new DeterministicLifecycleClockTest();
@@ -1018,6 +1093,62 @@ describe("Hunk session daemon client", () => {
         webSockets.restoreTest();
       }
     });
+  }
+
+  for (const authority of ["stop", "replacement"] as const) {
+    for (const outcome of ["resolve", "reject"] as const) {
+      test(`${authority} fences late incumbent health ${outcome} before reconnect mutation`, async () => {
+        const nativeFetch = globalThis.fetch;
+        const clock = new DeterministicLifecycleClockTest();
+        const webSockets = installWebSocketObserverTest();
+        const fetchStarted = createDeferredTest();
+        const fetchGate = createDeferredTest();
+        const messages: string[] = [];
+        console.error = (...args: unknown[]) => {
+          messages.push(args.map((value) => String(value)).join(" "));
+        };
+        globalThis.fetch = (async () => {
+          fetchStarted.resolve();
+          await fetchGate.promise;
+          if (outcome === "reject") throw new Error("late health failure");
+          return new Response("unavailable", { status: 503 });
+        }) as unknown as typeof fetch;
+        const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+          reconnectDelayMs: 10,
+          lifecycleClock: clock,
+        });
+        const config = prepareDirectConnectTest(client);
+
+        try {
+          clientTestAccess(client).connect(config);
+          webSockets.sockets[0]!.emitClose(
+            1008,
+            "Session broker authentication required; upgrade Hunk.",
+          );
+          expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
+          clock.advanceByTest(10);
+          await settleWithinTestTimeout(fetchStarted.promise);
+
+          if (authority === "stop") {
+            client.stop();
+          } else {
+            clientTestAccess(client).connection!.start!();
+            expect(webSockets.sockets).toHaveLength(2);
+          }
+          fetchGate.resolve();
+          await clock.flushMicrotasksTest();
+          clock.advanceByTest(20);
+
+          expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
+          expect(messages).toEqual([`[session:broker] ${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}`]);
+          expect(webSockets.sockets).toHaveLength(authority === "stop" ? 1 : 2);
+        } finally {
+          client.stop();
+          globalThis.fetch = nativeFetch;
+          webSockets.restoreTest();
+        }
+      });
+    }
   }
 
   test("retries the complete startup cycle and recovers without restarting the client", async () => {

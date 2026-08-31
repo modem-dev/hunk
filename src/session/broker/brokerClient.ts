@@ -3,6 +3,7 @@ import {
   createSessionBrokerConnection,
   type SessionBrokerConnection as GenericSessionBrokerConnection,
   type SessionBrokerConnectionBridge,
+  type SessionBrokerConnectionGeneration,
   type SessionBrokerLifecycleClock,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
@@ -55,10 +56,19 @@ interface ScheduledStartupRetry {
   dispose: () => void;
 }
 
+interface StartupAttempt {
+  readonly id: symbol;
+}
+
+interface ClientConnectionGeneration {
+  readonly id: symbol;
+}
+
 type StartupLifecycleState =
   | { status: "idle" }
   | {
       status: "attempting";
+      attempt: StartupAttempt;
       promise: Promise<void>;
       retry: ScheduledStartupRetry | null;
     }
@@ -97,6 +107,7 @@ export class SessionBrokerClient {
   > | null = null;
   private bridge: SessionAppBridge | null = null;
   private startupState: StartupLifecycleState = { status: "idle" };
+  private connectionGeneration: ClientConnectionGeneration | null = null;
   private lastConnectionWarning: string | null = null;
   private credentials: HunkSessionBrokerCredentials | null = null;
   private waitingForIncumbentExit = false;
@@ -149,6 +160,7 @@ export class SessionBrokerClient {
     }
 
     this.startupState = { status: "stopped" };
+    this.connectionGeneration = null;
     this.connection?.stop();
     this.connection = null;
   }
@@ -172,19 +184,51 @@ export class SessionBrokerClient {
     return resolveSessionBrokerConfig();
   }
 
-  private async ensureDaemonAndConnect() {
+  /** Return whether one startup attempt still owns commits for this live client. */
+  private isStartupAttemptCurrent(attempt: StartupAttempt) {
+    const state = this.startupState;
+    switch (state.status) {
+      case "attempting":
+        return state.attempt === attempt;
+      case "idle":
+      case "waiting":
+      case "stopped":
+        return false;
+      default:
+        return assertNeverStartupState(state);
+    }
+  }
+
+  /** Load credentials as foreign work so tests can hold its settlement deterministically. */
+  private loadCredentials() {
+    return loadOrCreateHunkSessionBrokerCredentials();
+  }
+
+  private async ensureDaemonAndConnect(attempt: StartupAttempt) {
+    const isCommitAuthorized = () => this.isStartupAttemptCurrent(attempt);
     const config = this.resolveConfig();
-    await this.ensureDaemonAvailable(config);
-    this.credentials ??= await loadOrCreateHunkSessionBrokerCredentials();
+    await this.ensureDaemonAvailable(config, isCommitAuthorized);
+    if (!isCommitAuthorized()) return;
+    if (!this.credentials) {
+      const credentials = await this.loadCredentials();
+      if (!isCommitAuthorized()) return;
+      this.credentials = credentials;
+    }
+    if (!isCommitAuthorized()) return;
     this.connect(config);
   }
 
-  private async ensureDaemonAvailable(config: ResolvedSessionBrokerConfig) {
+  private async ensureDaemonAvailable(
+    config: ResolvedSessionBrokerConfig,
+    isCommitAuthorized: () => boolean = () => true,
+  ) {
     await ensureSessionBrokerAvailable({
       config,
       timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
       lifecycleClock: this.lifecycleClock,
+      isCommitAuthorized,
     });
+    if (!isCommitAuthorized()) return;
 
     // Minimal health proves only liveness. Compatibility and identity are established by the
     // signed websocket hello; an unverifiable incumbent is never signalled or replaced by PID.
@@ -201,12 +245,26 @@ export class SessionBrokerClient {
   }
 
   private connect(config: ResolvedSessionBrokerConfig) {
-    if (this.startupState.status === "stopped" || this.connection) {
-      return;
-    }
-
+    if (this.startupState.status === "stopped" || this.connection) return;
     if (!this.credentials) return;
-    const connection = createSessionBrokerConnection<
+
+    const clientGeneration: ClientConnectionGeneration = {
+      id: Symbol("broker-connection"),
+    };
+    let connection!: GenericSessionBrokerConnection<
+      HunkSessionInfo,
+      HunkSessionState,
+      SessionBrokerSocketLike,
+      HunkSessionServerMessage,
+      HunkSessionCommandResult
+    >;
+    const isConnectionCurrent = (brokerGeneration?: SessionBrokerConnectionGeneration) =>
+      this.startupState.status !== "stopped" &&
+      this.connectionGeneration === clientGeneration &&
+      this.connection === connection &&
+      (!brokerGeneration || connection.isGenerationCurrent(brokerGeneration));
+
+    connection = createSessionBrokerConnection<
       HunkSessionInfo,
       HunkSessionState,
       SessionBrokerSocketLike,
@@ -231,11 +289,15 @@ export class SessionBrokerClient {
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
       lifecycleClock: this.lifecycleClock,
-      prepareReconnect: async () => {
+      prepareReconnect: async (brokerGeneration) => {
+        const isCommitAuthorized = () => isConnectionCurrent(brokerGeneration);
+        if (!isCommitAuthorized()) return;
         if (this.waitingForIncumbentExit) {
           const healthy = await isSessionBrokerHealthy(config);
+          if (!isCommitAuthorized()) return;
           if (healthy) {
             const currentFingerprint = readSessionBrokerLaunchFingerprint(config);
+            if (!isCommitAuthorized()) return;
             // Owner-private metadata is only a generation-change hint. The signed hello remains the
             // sole compatibility and identity authority, and unchanged/malformed metadata causes
             // health-only polling so skewed waiters cannot keep the incumbent active.
@@ -243,11 +305,14 @@ export class SessionBrokerClient {
               throw new Error(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE);
             }
           }
+          if (!isCommitAuthorized()) return;
           this.waitingForIncumbentExit = false;
         }
-        await this.ensureDaemonAvailable(config);
+        await this.ensureDaemonAvailable(config, isCommitAuthorized);
+        if (!isCommitAuthorized()) return;
       },
-      resolveClose: (event) => {
+      resolveClose: (event, brokerGeneration) => {
+        if (!isConnectionCurrent(brokerGeneration)) return { reconnect: false };
         const preAuthenticationRefusal = isQuiescentUpgradeRefusal(event);
         if (preAuthenticationRefusal) {
           this.waitingForIncumbentExit = true;
@@ -258,14 +323,18 @@ export class SessionBrokerClient {
           ...(preAuthenticationRefusal ? { warning: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } : {}),
         };
       },
-      onConnected: () => {
+      onConnected: (brokerGeneration) => {
+        if (!isConnectionCurrent(brokerGeneration)) return;
         this.waitingForIncumbentExit = false;
         this.incumbentLaunchFingerprint = null;
         this.lastConnectionWarning = null;
       },
-      onWarning: (message) => this.warnUnavailable(message),
+      onWarning: (message, brokerGeneration) => {
+        if (isConnectionCurrent(brokerGeneration)) this.warnUnavailable(message);
+      },
     });
 
+    this.connectionGeneration = clientGeneration;
     this.connection = connection;
     try {
       connection.start();
@@ -275,8 +344,9 @@ export class SessionBrokerClient {
       } catch {
         // Preserve the synchronous startup failure even when best-effort cleanup also fails.
       }
-      if (this.connection === connection) {
+      if (this.connection === connection && this.connectionGeneration === clientGeneration) {
         this.connection = null;
+        this.connectionGeneration = null;
       }
       throw error;
     }
@@ -284,25 +354,39 @@ export class SessionBrokerClient {
 
   /** Begin one startup attempt while preserving any automatic retry already in flight. */
   private beginStartupAttempt(retry?: ScheduledStartupRetry) {
+    const attempt: StartupAttempt = { id: Symbol("broker-startup") };
+    let resolveWork!: () => void;
+    let rejectWork!: (error: unknown) => void;
+    const work = new Promise<void>((resolve, reject) => {
+      resolveWork = resolve;
+      rejectWork = reject;
+    });
     let promise: Promise<void>;
-    promise = this.ensureDaemonAndConnect()
-      .catch((error) => this.handleStartupFailure(promise, error))
-      .finally(() => this.handleStartupSettlement(promise));
-    this.startupState = { status: "attempting", promise, retry: retry ?? null };
+    promise = work
+      .catch((error) => this.handleStartupFailure(promise, attempt, error))
+      .finally(() => this.handleStartupSettlement(promise, attempt));
+    // Publish the complete authoritative state before foreign startup work can synchronously stop
+    // or otherwise invalidate this attempt.
+    this.startupState = { status: "attempting", attempt, promise, retry: retry ?? null };
+    try {
+      void Promise.resolve(this.ensureDaemonAndConnect(attempt)).then(resolveWork, rejectWork);
+    } catch (error) {
+      rejectWork(error);
+    }
     return promise;
   }
 
   /** Warn for the current failed attempt and retain or schedule exactly one retry. */
-  private handleStartupFailure(promise: Promise<void>, error: unknown) {
+  private handleStartupFailure(promise: Promise<void>, attempt: StartupAttempt, error: unknown) {
     const state = this.startupState;
     switch (state.status) {
       case "attempting":
-        if (state.promise !== promise) return;
+        if (state.promise !== promise || state.attempt !== attempt) return;
         if (!state.retry) {
           const retry = this.createStartupRetry();
           // Publish retry ownership before the warning side effect so a reentrant stop clears the
           // exact handle and cannot be overwritten when the callback returns.
-          this.startupState = { status: "attempting", promise, retry };
+          this.startupState = { status: "attempting", attempt, promise, retry };
         }
         this.warnUnavailable(error);
         return;
@@ -316,11 +400,11 @@ export class SessionBrokerClient {
   }
 
   /** Move the current settled attempt to idle or back to its retained retry wait. */
-  private handleStartupSettlement(promise: Promise<void>) {
+  private handleStartupSettlement(promise: Promise<void>, attempt: StartupAttempt) {
     const state = this.startupState;
     switch (state.status) {
       case "attempting":
-        if (state.promise === promise) {
+        if (state.promise === promise && state.attempt === attempt) {
           this.startupState = state.retry
             ? { status: "waiting", retry: state.retry }
             : { status: "idle" };
@@ -357,7 +441,12 @@ export class SessionBrokerClient {
         return;
       case "attempting":
         if (state.retry !== retry) return;
-        this.startupState = { status: "attempting", promise: state.promise, retry: null };
+        this.startupState = {
+          status: "attempting",
+          attempt: state.attempt,
+          promise: state.promise,
+          retry: null,
+        };
         return;
       case "idle":
       case "stopped":

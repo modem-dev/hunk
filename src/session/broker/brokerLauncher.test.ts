@@ -21,6 +21,37 @@ const testConfig = {
   wsOrigin: "ws://127.0.0.1:47657",
 };
 
+/** Create manually settled foreign work for launcher commit-fence tests. */
+function createDeferredTest<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Await one launcher result while turning a lost settlement into a bounded failure. */
+async function settleWithinTestTimeout<T>(promise: Promise<T>, timeoutMs = 500) {
+  return Promise.race([
+    promise,
+    Bun.sleep(timeoutMs).then(() => {
+      throw new Error(`Launcher work did not settle within ${timeoutMs}ms.`);
+    }),
+  ]);
+}
+
+/** Wait for one asynchronous test condition with an actionable bounded failure. */
+async function waitUntilTest(label: string, predicate: () => boolean, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(0);
+  }
+  throw new Error(`Timed out waiting for ${label}.`);
+}
+
 function createRuntimeDir() {
   const dir = mkdtempSync(join(tmpdir(), "hunk-session-daemon-launcher-test-"));
   tempDirs.push(dir);
@@ -285,6 +316,193 @@ describe("session daemon launcher", () => {
     expect(clock.now()).toBe(30);
     expect(clock.pendingCountTest()).toBe(0);
     expect(existsSync(resolveSessionBrokerRuntimePaths(testConfig, env).lockPath)).toBe(false);
+  });
+
+  for (const outcome of ["resolve", "reject"] as const) {
+    test(`lost authority fences protected health ${outcome} and still releases the launch lock`, async () => {
+      const runtimeDir = createRuntimeDir();
+      const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+      const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+      const protectedHealth = createDeferredTest<boolean>();
+      let healthCalls = 0;
+      let authorized = true;
+      let launchCount = 0;
+      const ensuring = ensureSessionBrokerAvailable({
+        config: testConfig,
+        env,
+        timeoutMs: 100,
+        isCommitAuthorized: () => authorized,
+        isHealthy: async () => {
+          healthCalls += 1;
+          if (healthCalls === 1) return false;
+          return protectedHealth.promise;
+        },
+        isPortReachable: async () => false,
+        launchDaemon: () => {
+          launchCount += 1;
+          return { pid: process.pid } as ChildProcess;
+        },
+      });
+
+      await waitUntilTest("protected health probe", () => healthCalls >= 2);
+      expect(existsSync(paths.lockPath)).toBe(true);
+      authorized = false;
+      if (outcome === "resolve") protectedHealth.resolve(false);
+      else protectedHealth.reject(new Error("late protected health failure"));
+      await ensuring;
+
+      expect(launchCount).toBe(0);
+      expect(existsSync(paths.lockPath)).toBe(false);
+      expect(existsSync(paths.metadataPath)).toBe(false);
+    });
+
+    test(`lost authority fences final port ${outcome} without a late conflict or timeout`, async () => {
+      const runtimeDir = createRuntimeDir();
+      const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+      const portProbe = createDeferredTest<boolean>();
+      let portStarted = false;
+      let authorized = true;
+      const ensuring = ensureSessionBrokerAvailable({
+        config: testConfig,
+        env,
+        timeoutMs: 0,
+        isCommitAuthorized: () => authorized,
+        isHealthy: async () => false,
+        isPortReachable: async () => {
+          portStarted = true;
+          return portProbe.promise;
+        },
+      });
+
+      await waitUntilTest("final port probe", () => portStarted);
+      authorized = false;
+      if (outcome === "resolve") portProbe.resolve(true);
+      else portProbe.reject(new Error("late port failure"));
+      await ensuring;
+    });
+  }
+
+  test("fences a synchronous foreign throw after authority changes", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    let authorized = true;
+    let launchCount = 0;
+    let portCalls = 0;
+    const ensuring = ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      isCommitAuthorized: () => authorized,
+      isHealthy: () => {
+        mkdirSync(paths.runtimeDir, { recursive: true });
+        writeFileSync(
+          paths.metadataPath,
+          JSON.stringify({
+            pid: process.pid,
+            host: testConfig.host,
+            port: testConfig.port,
+            command: "/fixture/hunk",
+            args: ["daemon", "serve"],
+            launchedAt: new Date(0).toISOString(),
+            launchedByPid: process.pid,
+            launchCwd: "/fixture",
+          }),
+        );
+        authorized = false;
+        throw new Error("late synchronous health failure");
+      },
+      isPortReachable: async () => {
+        portCalls += 1;
+        return false;
+      },
+      launchDaemon: () => {
+        launchCount += 1;
+        return { pid: process.pid } as ChildProcess;
+      },
+    });
+
+    await settleWithinTestTimeout(ensuring);
+    expect(launchCount).toBe(0);
+    expect(portCalls).toBe(0);
+    expect(existsSync(paths.lockPath)).toBe(false);
+    expect(existsSync(paths.metadataPath)).toBe(true);
+  });
+
+  test("suppresses a synchronous launch error after the callback revokes authority", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    let authorized = true;
+    let healthCalls = 0;
+    const ensuring = ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      timeoutMs: 100,
+      isCommitAuthorized: () => authorized,
+      isHealthy: async () => {
+        healthCalls += 1;
+        return false;
+      },
+      isPortReachable: async () => false,
+      launchDaemon: () => {
+        authorized = false;
+        throw new Error("stale synchronous launch failure");
+      },
+    });
+
+    await settleWithinTestTimeout(ensuring);
+    expect(healthCalls).toBe(2);
+    expect(existsSync(paths.lockPath)).toBe(false);
+    expect(existsSync(paths.metadataPath)).toBe(false);
+  });
+
+  test("preserves a synchronous launch error while authority remains current", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    const launchFailure = new Error("current synchronous launch failure");
+    const ensuring = ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      timeoutMs: 100,
+      isCommitAuthorized: () => true,
+      isHealthy: async () => false,
+      isPortReachable: async () => false,
+      launchDaemon: () => {
+        throw launchFailure;
+      },
+    });
+
+    await expect(settleWithinTestTimeout(ensuring)).rejects.toBe(launchFailure);
+    expect(existsSync(paths.lockPath)).toBe(false);
+    expect(existsSync(paths.metadataPath)).toBe(false);
+  });
+
+  test("does not clean stale metadata after authority is already lost", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    mkdirSync(paths.runtimeDir, { recursive: true });
+    writeFileSync(
+      paths.metadataPath,
+      JSON.stringify({
+        pid: 999999,
+        host: testConfig.host,
+        port: testConfig.port,
+        command: "/fixture/hunk",
+        args: ["daemon", "serve"],
+        launchedAt: new Date(0).toISOString(),
+        launchedByPid: 999999,
+        launchCwd: "/fixture",
+      }),
+    );
+
+    await ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      isCommitAuthorized: () => false,
+    });
+    expect(existsSync(paths.metadataPath)).toBe(true);
   });
 
   test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {

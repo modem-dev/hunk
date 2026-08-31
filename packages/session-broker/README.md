@@ -203,6 +203,13 @@ fixed-rate interval scheduling, and awaitable delay. Scheduled callbacks return 
 disposers. `createNativeSessionBrokerLifecycleClock()` uses unref'd native timers so pending
 handshake, heartbeat, reconnect, and polling work does not retain the process.
 
+`createSocket` must return a fresh socket object for every generation because the helper installs
+property callbacks that cannot distinguish queued events after object reuse. Reconnect and close
+callbacks receive a frozen opaque generation token; after foreign work settles, use
+`connection.isGenerationCurrent(token)` before committing app-owned state. These checks fence
+commits only: they do not cancel foreign promises, cryptography, probes, or other work already in
+progress.
+
 The helper owns:
 
 - initial `register`
