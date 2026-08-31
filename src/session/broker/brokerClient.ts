@@ -48,6 +48,26 @@ interface SessionBrokerClientTiming {
   reconnectDelayMs?: number;
 }
 
+interface ScheduledStartupRetry {
+  handle: ReturnType<typeof setTimeout>;
+}
+
+type StartupLifecycleState =
+  | { status: "idle" }
+  | { status: "attempting"; promise: Promise<void> }
+  | {
+      status: "attempting-with-retry";
+      promise: Promise<void>;
+      retry: ScheduledStartupRetry;
+    }
+  | { status: "waiting"; retry: ScheduledStartupRetry }
+  | { status: "stopped" };
+
+/** Reject an unhandled startup lifecycle state at compile time. */
+function assertNeverStartupState(_state: never): never {
+  throw new Error("Unhandled startup lifecycle state.");
+}
+
 /** Identify only known compatibility refusals before producer activation. */
 export function isQuiescentUpgradeRefusal(event: {
   code: number;
@@ -74,9 +94,7 @@ export class SessionBrokerClient {
     HunkSessionCommandResult
   > | null = null;
   private bridge: SessionAppBridge | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private stopped = false;
-  private startupPromise: Promise<void> | null = null;
+  private startupState: StartupLifecycleState = { status: "idle" };
   private lastConnectionWarning: string | null = null;
   private credentials: HunkSessionBrokerCredentials | null = null;
   private waitingForIncumbentExit = false;
@@ -89,37 +107,43 @@ export class SessionBrokerClient {
   ) {}
 
   start() {
-    if (this.stopped || process.env.HUNK_MCP_DISABLE === "1") {
+    if (process.env.HUNK_MCP_DISABLE === "1") {
       return;
     }
 
-    if (this.startupPromise) {
-      return this.startupPromise;
+    const state = this.startupState;
+    switch (state.status) {
+      case "idle":
+        return this.beginStartupAttempt();
+      case "attempting":
+      case "attempting-with-retry":
+        return state.promise;
+      case "waiting":
+        return this.beginStartupAttempt(state.retry);
+      case "stopped":
+        return;
+      default:
+        return assertNeverStartupState(state);
     }
-
-    this.startupPromise = this.ensureDaemonAndConnect()
-      .catch((error) => {
-        if (this.stopped) {
-          return;
-        }
-
-        this.warnUnavailable(error);
-        this.scheduleReconnect();
-      })
-      .finally(() => {
-        this.startupPromise = null;
-      });
-
-    return this.startupPromise;
   }
 
   stop() {
-    this.stopped = true;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+    const state = this.startupState;
+    switch (state.status) {
+      case "idle":
+      case "attempting":
+        break;
+      case "attempting-with-retry":
+      case "waiting":
+        clearTimeout(state.retry.handle);
+        break;
+      case "stopped":
+        break;
+      default:
+        assertNeverStartupState(state);
     }
 
+    this.startupState = { status: "stopped" };
     this.connection?.stop();
     this.connection = null;
   }
@@ -171,7 +195,7 @@ export class SessionBrokerClient {
   }
 
   private connect(config: ResolvedSessionBrokerConfig) {
-    if (this.stopped || this.connection) {
+    if (this.startupState.status === "stopped" || this.connection) {
       return;
     }
 
@@ -251,16 +275,95 @@ export class SessionBrokerClient {
     }
   }
 
-  private scheduleReconnect(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
-    if (this.reconnectTimer || this.stopped) {
-      return;
-    }
+  /** Begin one startup attempt while preserving any automatic retry already in flight. */
+  private beginStartupAttempt(retry?: ScheduledStartupRetry) {
+    let promise: Promise<void>;
+    promise = this.ensureDaemonAndConnect()
+      .catch((error) => this.handleStartupFailure(promise, error))
+      .finally(() => this.handleStartupSettlement(promise));
+    this.startupState = retry
+      ? { status: "attempting-with-retry", promise, retry }
+      : { status: "attempting", promise };
+    return promise;
+  }
 
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.start();
-    }, delayMs);
-    this.reconnectTimer.unref?.();
+  /** Warn for the current failed attempt and retain or schedule exactly one retry. */
+  private handleStartupFailure(promise: Promise<void>, error: unknown) {
+    const state = this.startupState;
+    switch (state.status) {
+      case "attempting": {
+        if (state.promise !== promise) return;
+        const retry = this.createStartupRetry();
+        // Publish retry ownership before the warning side effect so a reentrant stop clears the
+        // exact handle and cannot be overwritten when the callback returns.
+        this.startupState = { status: "attempting-with-retry", promise, retry };
+        this.warnUnavailable(error);
+        return;
+      }
+      case "attempting-with-retry":
+        if (state.promise !== promise) return;
+        this.warnUnavailable(error);
+        return;
+      case "idle":
+      case "waiting":
+      case "stopped":
+        return;
+      default:
+        assertNeverStartupState(state);
+    }
+  }
+
+  /** Move the current settled attempt to idle or back to its retained retry wait. */
+  private handleStartupSettlement(promise: Promise<void>) {
+    const state = this.startupState;
+    switch (state.status) {
+      case "attempting":
+        if (state.promise === promise) this.startupState = { status: "idle" };
+        return;
+      case "attempting-with-retry":
+        if (state.promise === promise) {
+          this.startupState = { status: "waiting", retry: state.retry };
+        }
+        return;
+      case "idle":
+      case "waiting":
+      case "stopped":
+        return;
+      default:
+        assertNeverStartupState(state);
+    }
+  }
+
+  /** Schedule one automatic startup retry and preserve its original deadline and identity. */
+  private createStartupRetry(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
+    let retry: ScheduledStartupRetry;
+    const handle = setTimeout(() => this.handleStartupRetryDeadline(retry), delayMs);
+    retry = { handle };
+    handle.unref?.();
+    return retry;
+  }
+
+  /** Consume only the retry whose deadline fired, then start or join the current attempt. */
+  private handleStartupRetryDeadline(retry: ScheduledStartupRetry) {
+    const state = this.startupState;
+    switch (state.status) {
+      case "waiting":
+        if (state.retry !== retry) return;
+        this.startupState = { status: "idle" };
+        this.start();
+        return;
+      case "attempting-with-retry":
+        if (state.retry !== retry) return;
+        this.startupState = { status: "attempting", promise: state.promise };
+        this.start();
+        return;
+      case "idle":
+      case "attempting":
+      case "stopped":
+        return;
+      default:
+        assertNeverStartupState(state);
+    }
   }
 
   private warnUnavailable(error: unknown) {
