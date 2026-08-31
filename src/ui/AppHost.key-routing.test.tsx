@@ -278,4 +278,68 @@ describe("UI key routing with a focused scroll box", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("an extension pane editor receives typing before app and extension commands", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-key-routing-pane-input-"));
+    const extension = join(root, "prompt-pane");
+    mkdirSync(extension, { recursive: true });
+    writeFileSync(
+      join(extension, "package.json"),
+      JSON.stringify({
+        name: "prompt-pane",
+        private: true,
+        hunk: { extensions: ["./index.tsx"] },
+      }),
+    );
+    writeFileSync(
+      join(extension, "index.tsx"),
+      `import { createElement, useState } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "prompt",
+    placement: "bottom",
+    defaultOpen: true,
+    height: { preferred: 3, min: 3, max: 3 },
+    component: () => {
+      const [value, setValue] = useState("");
+      return createElement("input", { value, focused: true, onInput: setValue });
+    },
+  });
+  hunk.registerCommand({ id: "letter", title: "Letter command", key: "j" }, (ctx) => {
+    ctx.notify("COMMAND FIRED");
+  });
+}
+`,
+    );
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+    });
+    const bootstrap = createScrollableBootstrap();
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await waitForFrame(setup, () => setup.renderer.currentFocusedEditor !== null, 12);
+      expect(setup.renderer.currentFocusedEditor).not.toBeNull();
+
+      await act(async () => setup.mockInput.typeText("j?"));
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("j?");
+      expect(frame).not.toContain("COMMAND FIRED");
+      expect(frame).not.toContain("Controls help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

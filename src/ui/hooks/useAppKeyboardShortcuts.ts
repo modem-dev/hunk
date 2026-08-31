@@ -1,5 +1,5 @@
 import type { KeyEvent } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useRef } from "react";
 import type {
   ExtensionFileViewModeKeyResult,
@@ -135,6 +135,7 @@ export function useAppKeyboardShortcuts({
   toggleFocusArea,
   themeSelectorOpen,
 }: UseAppKeyboardShortcutsOptions) {
+  const renderer = useRenderer();
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
@@ -491,7 +492,10 @@ export function useAppKeyboardShortcuts({
     }
 
     if (focusAreaRef.current !== "note") {
-      return "notMine";
+      // Extension panes can mount the same OpenTUI editors Hunk uses. The
+      // renderer is the live focus authority for those inputs, which do not
+      // participate in App's host-only focus-area state.
+      return renderer.currentFocusedEditor ? "focused" : "notMine";
     }
 
     if (isEscapeKey(key)) {
