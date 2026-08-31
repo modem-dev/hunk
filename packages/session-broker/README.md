@@ -171,14 +171,19 @@ const server = await serveSessionBrokerDaemon({
 Use `SessionBrokerConnection` when an app window or live process needs to stay registered with the broker.
 
 ```ts
-import { createSessionBrokerConnection } from "@hunk/session-broker";
+import {
+  createNativeSessionBrokerLifecycleClock,
+  createSessionBrokerConnection,
+} from "@hunk/session-broker";
 
+const lifecycleClock = createNativeSessionBrokerLifecycleClock();
 const connection = createSessionBrokerConnection({
   url: "ws://127.0.0.1:47657/session",
   createSocket: (url) => new WebSocket(url),
   registration,
   snapshot,
   protocolParsers,
+  lifecycleClock,
   bridge: {
     dispatchCommand: async (message) => {
       if (message.command !== "select") throw new Error("Unsupported command.");
@@ -190,6 +195,13 @@ const connection = createSessionBrokerConnection({
 
 connection.start();
 ```
+
+`lifecycleClock` may be supplied in the connection options when an application needs to share
+lifecycle timing with its launcher or make producer scheduling deterministic. The ordinary
+`SessionBrokerLifecycleClock` contract provides current time, one-shot scheduling, delayed-first
+fixed-rate interval scheduling, and awaitable delay. Scheduled callbacks return idempotent
+disposers. `createNativeSessionBrokerLifecycleClock()` uses unref'd native timers so pending
+handshake, heartbeat, reconnect, and polling work does not retain the process.
 
 The helper owns:
 

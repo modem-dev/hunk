@@ -25,6 +25,7 @@ import {
 import { serveSessionBrokerDaemon as serveHunkSessionBrokerDaemon } from "./brokerServer";
 import { createHttpHunkSessionCliClient } from "../agent/cliClient";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
+import { DeterministicLifecycleClockTest } from "../../../test/helpers/lifecycleClockTest";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -34,7 +35,6 @@ const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
 const originalConsoleError = console.error;
 const nativeSetTimeoutTest = globalThis.setTimeout.bind(globalThis);
 const nativeClearTimeoutTest = globalThis.clearTimeout.bind(globalThis);
-let restoreDeterministicClockTest: (() => void) | null = null;
 let restoreWebSocketObserverTest: (() => void) | null = null;
 
 type DeepPartialTest<T> = T extends object ? { [Key in keyof T]?: DeepPartialTest<T[Key]> } : T;
@@ -141,79 +141,6 @@ function createDeferredTest<T = void>() {
   return { promise, resolve, reject };
 }
 
-/** Replace only timeout scheduling with a deterministic, test-local clock. */
-function installDeterministicClockTest() {
-  if (restoreDeterministicClockTest) {
-    throw new Error("A deterministic test clock is already installed.");
-  }
-  const originalSetTimeout = globalThis.setTimeout;
-  const originalClearTimeout = globalThis.clearTimeout;
-  let now = 0;
-  let nextId = 1;
-  const scheduled = new Map<
-    number,
-    {
-      due: number;
-      callback: () => void;
-      handle: { id: number; unref: () => unknown };
-    }
-  >();
-
-  let restored = false;
-  const restoreTest = () => {
-    if (restored) return;
-    restored = true;
-    globalThis.setTimeout = originalSetTimeout;
-    globalThis.clearTimeout = originalClearTimeout;
-    if (restoreDeterministicClockTest === restoreTest) restoreDeterministicClockTest = null;
-  };
-  // Register cleanup before the first process-wide mutation so setup failures remain recoverable.
-  restoreDeterministicClockTest = restoreTest;
-
-  globalThis.setTimeout = ((callback: TimerHandler, delay = 0, ...args: unknown[]) => {
-    if (typeof callback !== "function") throw new Error("Test clock requires function callbacks.");
-    const id = nextId++;
-    const handle = {
-      id,
-      unref() {
-        return handle;
-      },
-    };
-    scheduled.set(id, {
-      due: now + Number(delay),
-      callback: () => callback(...args),
-      handle,
-    });
-    return handle;
-  }) as unknown as typeof setTimeout;
-  globalThis.clearTimeout = ((handle: { id?: number } | number | undefined) => {
-    const id = typeof handle === "number" ? handle : handle?.id;
-    if (id !== undefined) scheduled.delete(id);
-  }) as typeof clearTimeout;
-
-  return {
-    /** Advance through every callback whose deadline falls in the requested interval. */
-    advanceByTest(ms: number) {
-      const target = now + ms;
-      for (;;) {
-        const next = [...scheduled.entries()]
-          .filter(([, timer]) => timer.due <= target)
-          .sort((left, right) => left[1].due - right[1].due || left[0] - right[0])[0];
-        if (!next) break;
-        const [id, timer] = next;
-        scheduled.delete(id);
-        now = timer.due;
-        timer.callback();
-      }
-      now = target;
-    },
-    pendingCountTest() {
-      return scheduled.size;
-    },
-    restoreTest,
-  };
-}
-
 /** Observe WebSocket construction without opening a network connection. */
 function installWebSocketObserverTest(
   throwOnAttempt?: number,
@@ -285,7 +212,6 @@ function prepareDirectConnectTest(client: SessionBrokerClient) {
 
 afterEach(() => {
   restoreWebSocketObserverTest?.();
-  restoreDeterministicClockTest?.();
 
   if (originalHost === undefined) {
     delete process.env.HUNK_MCP_HOST;
@@ -732,6 +658,27 @@ describe("Hunk session daemon client", () => {
     }
   }, 10_000);
 
+  test("threads its lifecycle clock into the generic connection", () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      lifecycleClock: clock,
+    });
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      expect(webSockets.sockets).toHaveLength(1);
+      expect(clock.pendingCountTest()).toBe(1);
+      client.stop();
+      client.stop();
+      expect(clock.pendingCountTest()).toBe(0);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
   test("repeated start after success settles while retaining one socket generation", async () => {
     delete process.env.HUNK_MCP_DISABLE;
     const webSockets = installWebSocketObserverTest();
@@ -785,9 +732,10 @@ describe("Hunk session daemon client", () => {
 
   test("manual start during automatic retry runs now without moving the retry deadline", async () => {
     delete process.env.HUNK_MCP_DISABLE;
-    const clock = installDeterministicClockTest();
+    const clock = new DeterministicLifecycleClockTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
       reconnectDelayMs: 30,
+      lifecycleClock: clock,
     });
     const messages = captureBrokerWarningsTest();
     let attempts = 0;
@@ -817,15 +765,15 @@ describe("Hunk session daemon client", () => {
       expect(clock.pendingCountTest()).toBe(0);
     } finally {
       client.stop();
-      clock.restoreTest();
     }
   });
 
   test("a retry deadline firing during an active attempt consumes that retry and coalesces", async () => {
     delete process.env.HUNK_MCP_DISABLE;
-    const clock = installDeterministicClockTest();
+    const clock = new DeterministicLifecycleClockTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
       reconnectDelayMs: 30,
+      lifecycleClock: clock,
     });
     const messages = captureBrokerWarningsTest();
     const activeAttempt = createDeferredTest();
@@ -858,15 +806,15 @@ describe("Hunk session daemon client", () => {
       expect(clock.pendingCountTest()).toBe(1);
     } finally {
       client.stop();
-      clock.restoreTest();
     }
   });
 
   test("a failed manual attempt retains the original automatic retry without duplicating it", async () => {
     delete process.env.HUNK_MCP_DISABLE;
-    const clock = installDeterministicClockTest();
+    const clock = new DeterministicLifecycleClockTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
       reconnectDelayMs: 30,
+      lifecycleClock: clock,
     });
     const messages = captureBrokerWarningsTest();
     let attempts = 0;
@@ -898,15 +846,15 @@ describe("Hunk session daemon client", () => {
       expect(clock.pendingCountTest()).toBe(0);
     } finally {
       client.stop();
-      clock.restoreTest();
     }
   });
 
   test("a warning-side stop is terminal and clears the newly owned retry", async () => {
     delete process.env.HUNK_MCP_DISABLE;
-    const clock = installDeterministicClockTest();
+    const clock = new DeterministicLifecycleClockTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
       reconnectDelayMs: 30,
+      lifecycleClock: clock,
     });
     let attempts = 0;
     clientTestAccess(client).ensureDaemonAndConnect = async () => {
@@ -926,15 +874,15 @@ describe("Hunk session daemon client", () => {
       expect(clock.pendingCountTest()).toBe(0);
     } finally {
       client.stop();
-      clock.restoreTest();
     }
   });
 
   test("repeated stop clears a retry retained by an active manual attempt and fences its failure", async () => {
     delete process.env.HUNK_MCP_DISABLE;
-    const clock = installDeterministicClockTest();
+    const clock = new DeterministicLifecycleClockTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
       reconnectDelayMs: 30,
+      lifecycleClock: clock,
     });
     const messages = captureBrokerWarningsTest();
     const activeAttempt = createDeferredTest();
@@ -966,7 +914,6 @@ describe("Hunk session daemon client", () => {
       expect(attempts).toBe(2);
     } finally {
       client.stop();
-      clock.restoreTest();
     }
   });
 
@@ -1043,11 +990,12 @@ describe("Hunk session daemon client", () => {
   for (const outcome of ["resolve", "reject"] as const) {
     test(`stop fences a late startup ${outcome} without warning, retry, or socket mutation`, async () => {
       delete process.env.HUNK_MCP_DISABLE;
-      const clock = installDeterministicClockTest();
+      const clock = new DeterministicLifecycleClockTest();
       const webSockets = installWebSocketObserverTest();
       const messages = captureBrokerWarningsTest();
       const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
         reconnectDelayMs: 30,
+        lifecycleClock: clock,
       });
       const config = prepareDirectConnectTest(client);
       const gate = createDeferredTest();
@@ -1068,7 +1016,6 @@ describe("Hunk session daemon client", () => {
       } finally {
         client.stop();
         webSockets.restoreTest();
-        clock.restoreTest();
       }
     });
   }

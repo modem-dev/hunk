@@ -11,6 +11,7 @@ import {
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
 } from "./brokerLauncher";
+import { DeterministicLifecycleClockTest } from "../../../test/helpers/lifecycleClockTest";
 
 const tempDirs: string[] = [];
 const testConfig = {
@@ -203,6 +204,84 @@ describe("session daemon launcher", () => {
       command: "/usr/bin/bun",
       args: ["src/main.tsx", "daemon", "serve"],
     });
+  });
+
+  test("polls daemon health on the injected lifecycle clock", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const clock = new DeterministicLifecycleClockTest();
+    let launchCount = 0;
+    let settled = false;
+    const ensuring = ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      cwd: "/repo",
+      argv: ["bun", "src/main.tsx", "diff"],
+      execPath: "/usr/bin/bun",
+      timeoutMs: 100,
+      intervalMs: 10,
+      lifecycleClock: clock,
+      isHealthy: async () => clock.now() >= 20,
+      isPortReachable: async () => false,
+      launchDaemon: () => {
+        launchCount += 1;
+        return { pid: process.pid } as ChildProcess;
+      },
+    });
+    void ensuring.then(() => {
+      settled = true;
+    });
+
+    await clock.flushMicrotasksTest();
+    expect({ launchCount, settled, pending: clock.pendingCountTest() }).toEqual({
+      launchCount: 1,
+      settled: false,
+      pending: 1,
+    });
+    await clock.advanceByTestAsync(19);
+    expect(settled).toBe(false);
+    await clock.advanceByTestAsync(1);
+    await ensuring;
+    expect(settled).toBe(true);
+    expect(clock.pendingCountTest()).toBe(0);
+    expect(existsSync(resolveSessionBrokerRuntimePaths(testConfig, env).lockPath)).toBe(false);
+  });
+
+  test("uses the injected polling deadline without wall-clock waits", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const clock = new DeterministicLifecycleClockTest();
+    let settled = false;
+    const outcome = ensureSessionBrokerAvailable({
+      config: testConfig,
+      env,
+      cwd: "/repo",
+      argv: ["bun", "src/main.tsx", "diff"],
+      execPath: "/usr/bin/bun",
+      timeoutMs: 25,
+      intervalMs: 10,
+      lifecycleClock: clock,
+      isHealthy: async () => false,
+      isPortReachable: async () => false,
+      launchDaemon: () => ({ pid: process.pid }) as ChildProcess,
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    void outcome.then(() => {
+      settled = true;
+    });
+
+    await clock.flushMicrotasksTest();
+    await clock.advanceByTestAsync(29);
+    expect(settled).toBe(false);
+    await clock.advanceByTestAsync(1);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("Timed out waiting for the session broker daemon");
+    expect(clock.now()).toBe(30);
+    expect(clock.pendingCountTest()).toBe(0);
+    expect(existsSync(resolveSessionBrokerRuntimePaths(testConfig, env).lockPath)).toBe(false);
   });
 
   test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {

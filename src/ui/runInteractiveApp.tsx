@@ -1,3 +1,4 @@
+import { createNativeSessionBrokerLifecycleClock } from "@hunk/session-broker";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import {
@@ -50,9 +51,11 @@ export async function runInteractiveApp({
     sourceLabel: bootstrap.changeset.sourceLabel,
   });
   const publication = reviewProducer.getPublication();
+  const lifecycleClock = createNativeSessionBrokerLifecycleClock();
   const hostClient = new SessionBrokerClient(
     createSessionRegistration(bootstrap, publication),
     createInitialSessionSnapshot(bootstrap, publication),
+    { lifecycleClock },
   );
   hostClient.start();
 

@@ -17,6 +17,10 @@ import {
 import type { SessionBrokerProtocolParsers } from "./protocolParsers";
 import { parseSessionBrokerJsonText } from "./protocolParsers";
 import {
+  createNativeSessionBrokerLifecycleClock,
+  type SessionBrokerLifecycleClock,
+} from "./lifecycleClock";
+import {
   answerSessionBrokerHelloChallenge,
   createSessionBrokerHelloRequest,
   verifyProducerHelloAck,
@@ -89,6 +93,8 @@ export interface SessionBrokerConnectionOptions<
   };
   heartbeatIntervalMs?: number;
   reconnectDelayMs?: number;
+  /** Supply lifecycle timing for authentication, heartbeats, and reconnect attempts. */
+  lifecycleClock?: SessionBrokerLifecycleClock;
   openState?: number;
   resolveClose?: (event: SessionBrokerSocketCloseEvent) => SessionBrokerConnectionCloseDirective;
   /** Prepare application-owned discovery before one reconnect attempt opens a new socket. */
@@ -120,12 +126,13 @@ export class SessionBrokerConnection<
   private readonly queuedCommandCountBudget: ResourceBudget;
   private readonly queuedCommandByteBudget: ResourceBudget;
   private draining = false;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: (() => void) | null = null;
+  private heartbeatTimer: (() => void) | null = null;
   private stopped = false;
   private registration: SessionRegistration<Info>;
   private snapshot: SessionSnapshot<State>;
-  private readonly handshakeTimers = new WeakMap<Socket, ReturnType<typeof setTimeout>>();
+  private readonly lifecycleClock: SessionBrokerLifecycleClock;
+  private readonly handshakeTimers = new WeakMap<Socket, () => void>();
   private readonly producerHellos = new WeakMap<
     Socket,
     {
@@ -143,6 +150,7 @@ export class SessionBrokerConnection<
       Result
     >,
   ) {
+    this.lifecycleClock = options.lifecycleClock ?? createNativeSessionBrokerLifecycleClock();
     this.limits = resolveSessionBrokerLimits({
       ...(options.limits ? { limits: options.limits } : {}),
       ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
@@ -176,14 +184,14 @@ export class SessionBrokerConnection<
     for (const entry of this.executingMessages) entry.reservation.release();
     this.executingMessages.clear();
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer();
       this.reconnectTimer = null;
     }
 
     this.stopHeartbeat();
     if (this.socket) {
-      const handshakeTimer = this.handshakeTimers.get(this.socket);
-      if (handshakeTimer) clearTimeout(handshakeTimer);
+      const disposeHandshake = this.handshakeTimers.get(this.socket);
+      disposeHandshake?.();
       this.handshakeTimers.delete(this.socket);
       this.socket.close();
     }
@@ -236,11 +244,10 @@ export class SessionBrokerConnection<
     const socket = this.options.createSocket(this.options.url);
     this.socket = socket;
     if (this.options.producerAuthentication) {
-      const timer = setTimeout(() => {
+      const disposeHandshake = this.lifecycleClock.schedule(() => {
         socket.close(1008, "Session broker authentication timed out.");
       }, this.limits.maxHandshakeDurationMs);
-      timer.unref?.();
-      this.handshakeTimers.set(socket, timer);
+      this.handshakeTimers.set(socket, disposeHandshake);
     }
 
     socket.onopen = () => {
@@ -293,8 +300,8 @@ export class SessionBrokerConnection<
 
     socket.onclose = (event) => {
       const wasAuthenticated = this.activeSocket === socket;
-      const handshakeTimer = this.handshakeTimers.get(socket);
-      if (handshakeTimer) clearTimeout(handshakeTimer);
+      const disposeHandshake = this.handshakeTimers.get(socket);
+      disposeHandshake?.();
       this.handshakeTimers.delete(socket);
       if (this.socket === socket) {
         this.socket = null;
@@ -337,8 +344,8 @@ export class SessionBrokerConnection<
   private activateSocket(socket: Socket) {
     if (this.socket !== socket || this.activeSocket === socket) return;
     this.activeSocket = socket;
-    const handshakeTimer = this.handshakeTimers.get(socket);
-    if (handshakeTimer) clearTimeout(handshakeTimer);
+    const disposeHandshake = this.handshakeTimers.get(socket);
+    disposeHandshake?.();
     this.handshakeTimers.delete(socket);
     this.startHeartbeat();
     this.options.onConnected?.();
@@ -391,11 +398,10 @@ export class SessionBrokerConnection<
   private scheduleReconnect(delayMs = this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS) {
     if (this.reconnectTimer || this.stopped) return;
 
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = this.lifecycleClock.schedule(() => {
       this.reconnectTimer = null;
       void this.prepareAndReconnect();
     }, delayMs);
-    this.reconnectTimer.unref?.();
   }
 
   /** Run app discovery once per retry while retaining this connection's aggregate budgets. */
@@ -418,14 +424,12 @@ export class SessionBrokerConnection<
       return;
     }
 
-    this.heartbeatTimer = setInterval(() => {
+    this.heartbeatTimer = this.lifecycleClock.scheduleInterval(() => {
       this.send({
         type: "heartbeat",
         sessionId: this.registration.sessionId,
       });
     }, this.options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS);
-
-    this.heartbeatTimer.unref?.();
   }
 
   private stopHeartbeat() {
@@ -433,7 +437,7 @@ export class SessionBrokerConnection<
       return;
     }
 
-    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer();
     this.heartbeatTimer = null;
   }
 

@@ -9,9 +9,11 @@ import {
   SESSION_BROKER_REGISTRATION_VERSION,
   SESSION_BROKER_SIGNATURE_ALGORITHM,
 } from "@hunk/session-broker-core";
+import { SessionBrokerAuthenticator } from "./authentication";
 import { createSessionBrokerConnection } from "./connection";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type { SessionBrokerSocketLike } from "./types";
+import { DeterministicLifecycleClockTest } from "../../../test/helpers/lifecycleClockTest";
 
 interface TestSessionInfo {
   title: string;
@@ -95,6 +97,15 @@ async function settleWithinTestTimeout<T>(promise: PromiseLike<T> | T, timeoutMs
   }
 }
 
+/** Wait for one asynchronous socket send without leaving a lost wakeup unbounded. */
+async function waitForSentMessagesTest(socket: TestSocket, count: number) {
+  await settleWithinTestTimeout(
+    (async () => {
+      while (socket.sent.length < count) await Bun.sleep(0);
+    })(),
+  );
+}
+
 /** Create a manually released promise for reconnect race characterization. */
 function createDeferredTest<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -139,6 +150,180 @@ const protocolParsers = createSessionBrokerProtocolParsers<
 });
 
 describe("session broker connection", () => {
+  test("times out and disposes authenticated producer handshakes deterministically", async () => {
+    const pair = (await crypto.subtle.generateKey("Ed25519", false, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const grant: ProducerGrant = {
+      kind: "producer",
+      appId: "dev.example",
+      principalId: "producer-1",
+      keyId: "producer-key-1",
+      grantId: "producer-grant-1",
+      algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
+      issuedAt: Date.now() - 1_000,
+      expiresAt: Date.now() + 60_000,
+      revocationId: "producer-revocation-1",
+      mayDelegate: false,
+      operations: ["register"],
+    };
+    const createConnectionTest = (clock: DeterministicLifecycleClockTest, socket: TestSocket) =>
+      createSessionBrokerConnection({
+        url: "ws://broker.test/session",
+        createSocket: () => socket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers,
+        producerAuthentication: {
+          appId: "dev.example",
+          appRevision: 1,
+          credential: { grant, privateKey: pair.privateKey },
+          daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
+        },
+        lifecycleClock: clock,
+        resolveClose: () => ({ reconnect: false }),
+      });
+
+    const timeoutClock = new DeterministicLifecycleClockTest();
+    const timeoutSocket = new TestSocket();
+    const timedConnection = createConnectionTest(timeoutClock, timeoutSocket);
+    timedConnection.start();
+    expect(timeoutClock.pendingCountTest()).toBe(1);
+    timeoutClock.advanceByTest(timedConnection.limits.maxHandshakeDurationMs - 1);
+    expect(timeoutSocket.lastClose).toBeNull();
+    timeoutClock.advanceByTest(1);
+    expect(timeoutSocket.lastClose).toEqual({
+      code: 1008,
+      reason: "Session broker authentication timed out.",
+    });
+    expect(timeoutClock.pendingCountTest()).toBe(0);
+
+    const disposalClock = new DeterministicLifecycleClockTest();
+    const disposalSocket = new TestSocket();
+    const disposedConnection = createConnectionTest(disposalClock, disposalSocket);
+    disposedConnection.start();
+    disposalSocket.emitClose();
+    expect(disposalClock.pendingCountTest()).toBe(0);
+    disposedConnection.stop();
+    disposedConnection.stop();
+    disposalClock.advanceByTest(disposedConnection.limits.maxHandshakeDurationMs);
+    expect(disposalSocket.lastClose).toBeNull();
+  });
+
+  test("disposes an old heartbeat before reconnect and starts one replacement cadence", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const sockets: TestSocket[] = [];
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      heartbeatIntervalMs: 10,
+      reconnectDelayMs: 30,
+      lifecycleClock: clock,
+    });
+    const heartbeatCountTest = (socket: TestSocket) =>
+      socket.sent.filter((message) => JSON.parse(message).type === "heartbeat").length;
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    expect(clock.pendingCountTest()).toBe(1);
+    sockets[0]!.emitClose();
+    expect(clock.pendingCountTest()).toBe(1);
+
+    clock.advanceByTest(10);
+    expect(heartbeatCountTest(sockets[0]!)).toBe(0);
+    clock.advanceByTest(20);
+    await clock.flushMicrotasksTest();
+    expect(sockets).toHaveLength(2);
+    expect(clock.pendingCountTest()).toBe(0);
+
+    sockets[1]!.emitOpen();
+    expect(clock.pendingCountTest()).toBe(1);
+    clock.advanceByTest(20);
+    expect(heartbeatCountTest(sockets[0]!)).toBe(0);
+    expect(heartbeatCountTest(sockets[1]!)).toBe(2);
+    expect(clock.pendingCountTest()).toBe(1);
+
+    connection.stop();
+    expect(clock.pendingCountTest()).toBe(0);
+  });
+
+  test("uses a delayed fixed-rate heartbeat and disposes it on stop", () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const socket = new TestSocket();
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      heartbeatIntervalMs: 10,
+      lifecycleClock: clock,
+    });
+
+    connection.start();
+    socket.emitOpen();
+    const heartbeatCountTest = () =>
+      socket.sent.filter((message) => JSON.parse(message).type === "heartbeat").length;
+    expect(heartbeatCountTest()).toBe(0);
+    expect(clock.pendingCountTest()).toBe(1);
+
+    clock.advanceByTest(9);
+    expect(heartbeatCountTest()).toBe(0);
+    clock.advanceByTest(1);
+    expect(heartbeatCountTest()).toBe(1);
+    clock.advanceByTest(20);
+    expect(heartbeatCountTest()).toBe(3);
+
+    connection.stop();
+    connection.stop();
+    expect(clock.pendingCountTest()).toBe(0);
+    clock.advanceByTest(20);
+    expect(heartbeatCountTest()).toBe(3);
+  });
+
+  test("uses and disposes the injected reconnect delay", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const sockets: TestSocket[] = [];
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      reconnectDelayMs: 30,
+      lifecycleClock: clock,
+    });
+
+    connection.start();
+    sockets[0]!.emitClose();
+    expect(clock.pendingCountTest()).toBe(1);
+    clock.advanceByTest(29);
+    expect(sockets).toHaveLength(1);
+    clock.advanceByTest(1);
+    await clock.flushMicrotasksTest();
+    expect(sockets).toHaveLength(2);
+
+    sockets[1]!.emitClose();
+    expect(clock.pendingCountTest()).toBe(1);
+    connection.stop();
+    connection.stop();
+    expect(clock.pendingCountTest()).toBe(0);
+    clock.advanceByTest(30);
+    expect(sockets).toHaveLength(2);
+  });
+
   test("registers on open and sends later snapshot updates", () => {
     const sockets: TestSocket[] = [];
     const connection = createSessionBrokerConnection<
@@ -225,7 +410,8 @@ describe("session broker connection", () => {
     connection.stop();
   });
 
-  test("withholds registration and replacement updates until producer authentication completes", async () => {
+  test("withholds registration until signed authentication disposes its handshake timer", async () => {
+    const clock = new DeterministicLifecycleClockTest();
     const socket = new TestSocket();
     const pair = (await crypto.subtle.generateKey("Ed25519", false, [
       "sign",
@@ -244,6 +430,13 @@ describe("session broker connection", () => {
       mayDelegate: false,
       operations: ["register", "reconnect"],
     };
+    const authenticator = new SessionBrokerAuthenticator({
+      appId: "dev.example",
+      appRevision: 1,
+      generation: "generation-1",
+      daemonIdentity: { keyId: "daemon-key-1", privateKey: pair.privateKey },
+      credentials: [{ grant, publicKey: pair.publicKey }],
+    });
     const connection = createSessionBrokerConnection<
       TestSessionInfo,
       TestSessionState,
@@ -262,9 +455,12 @@ describe("session broker connection", () => {
         credential: { grant, privateKey: pair.privateKey },
         daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
       },
+      heartbeatIntervalMs: 60_000,
+      lifecycleClock: clock,
     });
 
     connection.start();
+    expect(clock.pendingCountTest()).toBe(1);
     socket.emitOpen();
     connection.updateSnapshot({
       ...createSnapshot(),
@@ -273,8 +469,31 @@ describe("session broker connection", () => {
     connection.replaceSession(createRegistration(), createSnapshot());
 
     expect(socket.sent).toHaveLength(1);
-    expect(JSON.parse(socket.sent[0]!)).toMatchObject({ type: "hello-init" });
+    const helloInit = JSON.parse(socket.sent[0]!) as { type: string; hello: unknown };
+    expect(helloInit.type).toBe("hello-init");
+    const challenge = await authenticator.issueChallenge(
+      helloInit.hello,
+      "ws://broker.test/session",
+    );
+    socket.emitMessage(JSON.stringify({ type: "hello-challenge", challenge }));
+    await waitForSentMessagesTest(socket, 2);
+    const helloProof = JSON.parse(socket.sent[1]!) as { type: string; proof: unknown };
+    expect(helloProof.type).toBe("hello-proof");
+    const authenticated = await authenticator.completeProducerHello(
+      helloProof.proof,
+      "connection-1",
+    );
+    socket.emitMessage(JSON.stringify({ type: "hello-ack", ack: authenticated.ack }));
+    await waitForSentMessagesTest(socket, 3);
+
+    expect(JSON.parse(socket.sent[2]!)).toMatchObject({ type: "register" });
+    expect(clock.pendingCountTest()).toBe(1);
+    clock.advanceByTest(connection.limits.maxHandshakeDurationMs);
+    expect(socket.lastClose).toBeNull();
+    expect(clock.pendingCountTest()).toBe(1);
+
     connection.stop();
+    expect(clock.pendingCountTest()).toBe(0);
   });
 
   test("keeps the previous registration when replacement send throws", () => {

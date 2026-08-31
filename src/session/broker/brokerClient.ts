@@ -1,7 +1,9 @@
 import {
+  createNativeSessionBrokerLifecycleClock,
   createSessionBrokerConnection,
   type SessionBrokerConnection as GenericSessionBrokerConnection,
   type SessionBrokerConnectionBridge,
+  type SessionBrokerLifecycleClock,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
 import type { SessionRegistration, SessionSnapshot } from "@hunk/session-broker-core";
@@ -46,10 +48,11 @@ type SessionAppBridge = SessionBrokerConnectionBridge<
 interface SessionBrokerClientTiming {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
+  lifecycleClock?: SessionBrokerLifecycleClock;
 }
 
 interface ScheduledStartupRetry {
-  handle: ReturnType<typeof setTimeout>;
+  dispose: () => void;
 }
 
 type StartupLifecycleState =
@@ -98,12 +101,15 @@ export class SessionBrokerClient {
   private credentials: HunkSessionBrokerCredentials | null = null;
   private waitingForIncumbentExit = false;
   private incumbentLaunchFingerprint: string | null = null;
+  private readonly lifecycleClock: SessionBrokerLifecycleClock;
 
   constructor(
     private registration: SessionRegistration<HunkSessionInfo>,
     private snapshot: SessionSnapshot<HunkSessionState>,
     private timing: SessionBrokerClientTiming = {},
-  ) {}
+  ) {
+    this.lifecycleClock = timing.lifecycleClock ?? createNativeSessionBrokerLifecycleClock();
+  }
 
   start() {
     if (process.env.HUNK_MCP_DISABLE === "1") {
@@ -131,10 +137,10 @@ export class SessionBrokerClient {
       case "idle":
         break;
       case "attempting":
-        if (state.retry) clearTimeout(state.retry.handle);
+        state.retry?.dispose();
         break;
       case "waiting":
-        clearTimeout(state.retry.handle);
+        state.retry.dispose();
         break;
       case "stopped":
         break;
@@ -177,6 +183,7 @@ export class SessionBrokerClient {
     await ensureSessionBrokerAvailable({
       config,
       timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
+      lifecycleClock: this.lifecycleClock,
     });
 
     // Minimal health proves only liveness. Compatibility and identity are established by the
@@ -223,6 +230,7 @@ export class SessionBrokerClient {
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
+      lifecycleClock: this.lifecycleClock,
       prepareReconnect: async () => {
         if (this.waitingForIncumbentExit) {
           const healthy = await isSessionBrokerHealthy(config);
@@ -330,9 +338,11 @@ export class SessionBrokerClient {
   /** Schedule one automatic startup retry and preserve its original deadline and identity. */
   private createStartupRetry(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
     let retry: ScheduledStartupRetry;
-    const handle = setTimeout(() => this.handleStartupRetryDeadline(retry), delayMs);
-    retry = { handle };
-    handle.unref?.();
+    const dispose = this.lifecycleClock.schedule(
+      () => this.handleStartupRetryDeadline(retry),
+      delayMs,
+    );
+    retry = { dispose };
     return retry;
   }
 

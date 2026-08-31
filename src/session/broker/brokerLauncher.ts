@@ -5,6 +5,10 @@ import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createNativeSessionBrokerLifecycleClock,
+  type SessionBrokerLifecycleClock,
+} from "@hunk/session-broker";
+import {
   parseBrokerSafeInteger,
   parseBrokerString,
   parseExactBrokerRecord,
@@ -60,6 +64,7 @@ export interface EnsureSessionBrokerAvailableOptions {
   intervalMs?: number;
   lockStaleMs?: number;
   timeoutMessage?: string;
+  lifecycleClock?: SessionBrokerLifecycleClock;
   isHealthy?: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
   isPortReachable?: (
     config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
@@ -180,10 +185,12 @@ function tryAcquireDaemonLaunchLock({
   config,
   env,
   staleAfterMs,
+  lifecycleClock,
 }: {
   config: ResolvedSessionBrokerConfig;
   env: NodeJS.ProcessEnv;
   staleAfterMs: number;
+  lifecycleClock: SessionBrokerLifecycleClock;
 }): SessionBrokerLaunchLock | null {
   const paths = resolveSessionBrokerRuntimePaths(config, env);
   mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
@@ -222,9 +229,9 @@ function tryAcquireDaemonLaunchLock({
     if (existsSync(paths.lockPath)) {
       try {
         const stat = statSync(paths.lockPath);
-        if (Date.now() - stat.mtimeMs > staleAfterMs) {
+        if (lifecycleClock.now() - stat.mtimeMs > staleAfterMs) {
           removeFileIfPresent(paths.lockPath);
-          return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs });
+          return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs, lifecycleClock });
         }
       } catch {
         // Ignore racing readers while another process still owns the lock.
@@ -238,7 +245,7 @@ function tryAcquireDaemonLaunchLock({
 
   if (!ownerAlive) {
     removeFileIfPresent(paths.lockPath);
-    return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs });
+    return tryAcquireDaemonLaunchLock({ config, env, staleAfterMs, lifecycleClock });
   }
 
   return null;
@@ -276,21 +283,23 @@ async function waitForDaemonHealthWithCheck({
   config,
   timeoutMs,
   intervalMs,
+  lifecycleClock,
   isHealthy,
 }: {
   config: ResolvedSessionBrokerConfig;
   timeoutMs: number;
   intervalMs: number;
+  lifecycleClock: SessionBrokerLifecycleClock;
   isHealthy: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
 }) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = lifecycleClock.now() + timeoutMs;
 
-  while (Date.now() < deadline) {
+  while (lifecycleClock.now() < deadline) {
     if (await isHealthy(config)) {
       return true;
     }
 
-    await Bun.sleep(intervalMs);
+    await lifecycleClock.delay(intervalMs);
   }
 
   return false;
@@ -535,6 +544,7 @@ export async function ensureSessionBrokerAvailable({
   intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
   lockStaleMs = DEFAULT_DAEMON_LOCK_STALE_MS,
   timeoutMessage,
+  lifecycleClock = createNativeSessionBrokerLifecycleClock(),
   isHealthy = (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
   isPortReachable = isLoopbackPortReachable,
   launchDaemon = launchSessionBrokerDaemon,
@@ -546,13 +556,14 @@ export async function ensureSessionBrokerAvailable({
     return;
   }
 
-  const deadline = Date.now() + timeoutMs;
+  const deadline = lifecycleClock.now() + timeoutMs;
 
-  while (Date.now() < deadline) {
+  while (lifecycleClock.now() < deadline) {
     const lock = tryAcquireDaemonLaunchLock({
       config,
       env,
       staleAfterMs: lockStaleMs,
+      lifecycleClock,
     });
 
     if (lock) {
@@ -579,6 +590,7 @@ export async function ensureSessionBrokerAvailable({
           config,
           timeoutMs,
           intervalMs,
+          lifecycleClock,
           isHealthy,
         });
         if (ready) {
@@ -589,7 +601,7 @@ export async function ensureSessionBrokerAvailable({
       }
     }
 
-    const remainingMs = deadline - Date.now();
+    const remainingMs = deadline - lifecycleClock.now();
     if (remainingMs <= 0) {
       break;
     }
@@ -598,6 +610,7 @@ export async function ensureSessionBrokerAvailable({
       config,
       timeoutMs: Math.min(remainingMs, intervalMs),
       intervalMs,
+      lifecycleClock,
       isHealthy,
     });
     if (ready) {
