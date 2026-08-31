@@ -1705,27 +1705,23 @@ export type ExtensionWorkspaceWriteResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
 
-/** One reviewed source line an editor should reveal. */
-export interface ExtensionWorkspaceEditorLine {
-  side: ExtensionFileSide;
-  /** One-based source line number on `side`. */
-  line: number;
-}
-
-/** A reviewed file and optional source location an extension asks Hunk to open. */
-export interface ExtensionWorkspaceOpenInEditorRequest {
-  /** The reviewed file to open, by its `ExtensionDiffFile.id`. */
+/** A reviewed source address an extension wants to pass to an application. */
+export interface ExtensionWorkspaceLocationRequest {
+  /** The reviewed file, by its `ExtensionDiffFile.id`. */
   fileId: string;
-  /** Hunk index used to map an old-side line onto the working-tree file. */
+  /** Hunk used to map an old-side line onto the corresponding on-disk file. */
   hunkIndex?: number;
   /** Exact source line to prefer over the hunk's first line. */
-  line?: ExtensionWorkspaceEditorLine;
+  line?: { side: ExtensionFileSide; line: number };
 }
 
-/** How a host-mediated editor launch settled. */
-export type ExtensionWorkspaceOpenInEditorResult =
-  | { ok: true }
-  | { ok: false; reason: "unavailable" | "failed"; detail: string };
+/** The on-disk path and line represented by a reviewed source address. */
+export interface ExtensionWorkspaceLocation {
+  /** Absolute on-disk path corresponding to the reviewed source. */
+  path: string;
+  /** One-based line in the file on disk. */
+  line: number;
+}
 
 /**
  * The reviewed files as whole documents, read and written through the host.
@@ -1782,18 +1778,12 @@ export interface ExtensionWorkspace {
    */
   readDocument(fileId: string, side: ExtensionFileSide): Promise<string | null>;
   /**
-   * Open a reviewed file in the user's `$EDITOR` through Hunk's terminal lifecycle.
+   * Resolve review metadata into the corresponding path and line on disk.
    *
-   * The extension names a reviewed file id and source location, never a filesystem
-   * path or process. Hunk resolves the working-tree path, maps old-side lines onto
-   * the file on disk, suspends and resumes terminal editors, and reloads a reloadable
-   * review after a successful launch. Missing files or editor configuration resolve
-   * `"unavailable"`; launch and non-zero-exit failures resolve `"failed"`. Malformed
-   * ids, hunk indexes, sides, or line numbers reject as programming errors.
+   * Returns `null` when the input has no attested path, the file or hunk is
+   * unavailable, or the review generation expires. Malformed source addresses reject.
    */
-  openInEditor(
-    request: ExtensionWorkspaceOpenInEditorRequest,
-  ): Promise<ExtensionWorkspaceOpenInEditorResult>;
+  resolveLocation(request: ExtensionWorkspaceLocationRequest): ExtensionWorkspaceLocation | null;
   /**
    * Whether `writeDocument` could currently succeed for this reviewed file.
    *
@@ -1865,6 +1855,15 @@ export interface ExtensionSessionOptions {
 export interface ExtensionCommandContext extends ExtensionContext {
   /** Live access to the public built-in command table. */
   readonly commands: ExtensionCommandControls;
+  /**
+   * Temporarily hand Hunk's terminal to an application run by this extension.
+   *
+   * Hunk suspends its renderer before calling `run` and restores the review in
+   * `finally` after `run` settles. The extension owns execution, metadata,
+   * arguments, environment, and exit handling. Calls reject after this review
+   * generation expires or while another application already owns the terminal.
+   */
+  openInApp<Result>(run: () => Result | PromiseLike<Result>): Promise<Result>;
   /** Session keyboard modes registered by this command's owning extension. */
   readonly keyboardModes: ExtensionKeyboardModeControls;
   /** Session panes registered by this command's owning extension. */

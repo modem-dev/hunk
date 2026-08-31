@@ -31,6 +31,7 @@ const selection = Object.freeze({
   hunkIndex: null,
   currentLine: null,
 }) as ExtensionReviewSelection;
+const openInApp = async <Result,>(run: () => Result | PromiseLike<Result>) => await run();
 
 /** Mount the command runner and expose its stable invocation callback. */
 async function renderRunner({
@@ -50,6 +51,7 @@ async function renderRunner({
       createKeyboardModeControls: () => keyboardModes,
       createLineHighlightControls: () => highlights,
       createNavigation: () => navigation,
+      createOpenInApp: () => openInApp,
       createPaneControls: createPanes,
       createReviewControls: () => review,
       createWorkspaceControls: () => workspace,
@@ -92,6 +94,7 @@ describe("useExtensionCommandRunner", () => {
         highlights,
         keyboardModes,
         navigation,
+        openInApp,
         panes,
         review,
         selection,

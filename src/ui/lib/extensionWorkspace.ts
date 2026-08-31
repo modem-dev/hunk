@@ -23,6 +23,7 @@ import type { FileSourceSide } from "../../core/changeset/fileSource";
 import { canReloadInput } from "../../core/run/inputReload";
 import type { CliInput } from "../../core/run/commandInputs";
 import { readMetadataChangeType } from "../../extensions/events";
+import type { ExtensionWorkspaceLocation } from "../../extension-api/types";
 
 /**
  * The slice of one reviewed file the workspace policy inspects.
@@ -66,42 +67,147 @@ export interface WorkspaceWriteRequestFields {
   text: string;
 }
 
-/** A normalized editor request, once its source address is known to be well-formed. */
-export interface WorkspaceOpenInEditorRequestFields {
+/** A validated reviewed source address ready for workspace resolution. */
+export interface WorkspaceLocationRequestFields {
   fileId: string;
   hunkIndex?: number;
   line?: { side: FileSourceSide; line: number };
 }
 
-/** Reject malformed editor requests before they reach renderer or process ownership. */
-export function normalizeWorkspaceOpenInEditorRequest(
+interface WorkspaceLocationHunk {
+  deletionStart: number;
+  deletionCount: number;
+  additionStart: number;
+  additionCount: number;
+  hunkContent: Array<
+    { type: "context"; lines: number } | { type: "change"; deletions: number; additions: number }
+  >;
+}
+
+interface WorkspaceLocationMetadata {
+  type: string;
+  hunks: WorkspaceLocationHunk[];
+}
+
+/** Reject malformed app-location metadata before it reaches workspace state. */
+export function normalizeWorkspaceLocationRequest(
   request: unknown,
-): WorkspaceOpenInEditorRequestFields {
-  const fields = request as Partial<WorkspaceOpenInEditorRequestFields> | null | undefined;
+): WorkspaceLocationRequestFields {
+  const fields = request as Partial<WorkspaceLocationRequestFields> | null | undefined;
   if (typeof fields?.fileId !== "string" || fields.fileId.length === 0) {
-    throw new Error("workspace.openInEditor requires a non-empty fileId.");
+    throw new Error("workspace.resolveLocation requires a non-empty fileId.");
   }
   if (
     fields.hunkIndex !== undefined &&
     (!Number.isInteger(fields.hunkIndex) || fields.hunkIndex < 0)
   ) {
-    throw new Error("workspace.openInEditor hunkIndex must be a non-negative integer.");
+    throw new Error("workspace.resolveLocation hunkIndex must be a non-negative integer.");
   }
   if (fields.line !== undefined) {
     if (fields.line.side !== "old" && fields.line.side !== "new") {
-      throw new Error('workspace.openInEditor line.side must be "old" or "new".');
+      throw new Error('workspace.resolveLocation line.side must be "old" or "new".');
     }
     if (!Number.isInteger(fields.line.line) || fields.line.line < 1) {
-      throw new Error("workspace.openInEditor line.line must be a positive integer.");
+      throw new Error("workspace.resolveLocation line.line must be a positive integer.");
     }
   }
-
   return {
     fileId: fields.fileId,
     ...(fields.hunkIndex === undefined ? {} : { hunkIndex: fields.hunkIndex }),
     ...(fields.line === undefined
       ? {}
       : { line: { side: fields.line.side, line: fields.line.line } }),
+  };
+}
+
+/** Translate one old-side line to its corresponding working-tree line. */
+function lineOnDisk(hunk: WorkspaceLocationHunk, deletionLine: number) {
+  let deletionCursor = hunk.deletionStart;
+  let additionCursor = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      if (deletionLine < deletionCursor + content.lines) {
+        return additionCursor + (deletionLine - deletionCursor);
+      }
+      deletionCursor += content.lines;
+      additionCursor += content.lines;
+      continue;
+    }
+    if (deletionLine < deletionCursor + content.deletions) {
+      const offset = Math.min(deletionLine - deletionCursor, Math.max(content.additions - 1, 0));
+      return additionCursor + offset;
+    }
+    deletionCursor += content.deletions;
+    additionCursor += content.additions;
+  }
+  return additionCursor;
+}
+
+/** Resolve a reviewed source address against the authoritative parsed diff. */
+export function resolveExtensionWorkspaceLocation({
+  files,
+  input,
+  request,
+  root,
+}: {
+  files: readonly WorkspaceFileSource[];
+  input: CliInput;
+  request: WorkspaceLocationRequestFields;
+  root: string;
+}): ExtensionWorkspaceLocation | null {
+  const file = files.find((candidate) => candidate.id === request.fileId);
+  if (!file) return null;
+  const metadata = file.metadata as Partial<WorkspaceLocationMetadata> | undefined;
+  if (!metadata || typeof metadata.type !== "string" || !Array.isArray(metadata.hunks)) return null;
+
+  let hunkIndex = request.hunkIndex;
+  if (request.line?.side === "old" && metadata.type !== "deleted") {
+    hunkIndex ??= metadata.hunks.findIndex(
+      (hunk) =>
+        request.line!.line >= hunk.deletionStart &&
+        request.line!.line < hunk.deletionStart + hunk.deletionCount,
+    );
+    if (hunkIndex < 0) hunkIndex = undefined;
+  }
+  const hunk = hunkIndex === undefined ? undefined : metadata.hunks[hunkIndex];
+  if (hunkIndex !== undefined && !hunk) return null;
+
+  const deleted = metadata.type === "deleted";
+  let line: number;
+  if (request.line?.side === (deleted ? "old" : "new")) {
+    line = request.line.line;
+  } else if (request.line && !deleted) {
+    if (
+      !hunk ||
+      request.line.line < hunk.deletionStart ||
+      request.line.line >= hunk.deletionStart + hunk.deletionCount
+    ) {
+      return null;
+    }
+    line = lineOnDisk(hunk, request.line.line);
+  } else {
+    line = deleted ? (hunk?.deletionStart ?? 1) : (hunk?.additionStart ?? 1);
+  }
+
+  let filePath: string;
+  if (input.kind === "patch") {
+    return null;
+  } else if (input.kind === "diff") {
+    const sourcePath = deleted ? input.left : input.right;
+    if (sourcePath === "/dev/null") return null;
+    filePath = resolve(root, sourcePath);
+  } else if (input.kind === "difftool") {
+    const sourcePath = input.path ?? (deleted ? input.left : input.right);
+    if (sourcePath === "/dev/null") return null;
+    filePath = resolve(root, sourcePath);
+  } else {
+    filePath = resolve(root, normalizeDiffPath(file.path) ?? file.path);
+  }
+
+  return {
+    path: filePath,
+    line: Math.max(1, line),
   };
 }
 

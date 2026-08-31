@@ -124,7 +124,7 @@ describe("AppHost edit-selected-file shortcut", () => {
 
     await pressKeys(setup, "e");
 
-    // The bundled editor extension reports the host capability's refusal.
+    // The bundled editor extension owns editor configuration and reports its refusal.
     expect(setup.captureCharFrame()).toContain("EDITOR is not set");
   });
 

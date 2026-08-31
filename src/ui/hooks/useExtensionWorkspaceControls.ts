@@ -10,25 +10,19 @@ import type {
   ExtensionDialogs,
   ExtensionFileSide,
   ExtensionWorkspace,
-  ExtensionWorkspaceOpenInEditorRequest,
-  ExtensionWorkspaceOpenInEditorResult,
+  ExtensionWorkspaceLocationRequest,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
 } from "../../extension-api/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import {
+  normalizeWorkspaceLocationRequest,
   normalizeWorkspaceWriteRequest,
-  normalizeWorkspaceOpenInEditorRequest,
   resolveExtensionWorkspaceRead,
+  resolveExtensionWorkspaceLocation,
   resolveExtensionWorkspaceWriteTarget,
   type WorkspaceFileSource,
 } from "../lib/extensionWorkspace";
-import {
-  openSelectedFileInEditor,
-  type EditorDiffFile,
-  type EditorDiffHunk,
-} from "../lib/openInEditor";
-import type { CliRenderer } from "@opentui/core";
 import { verifyWorkspaceWriteTarget } from "../lib/workspaceWriteGuard";
 
 /** Filesystem write implementation used by the host-mediated extension workspace. */
@@ -57,22 +51,11 @@ function expiredWorkspaceWrite(): ExtensionWorkspaceWriteResult {
   };
 }
 
-/** Describe an editor request retired before Hunk starts its host operation. */
-function expiredWorkspaceEditor(): ExtensionWorkspaceOpenInEditorResult {
-  return {
-    ok: false,
-    reason: "unavailable",
-    detail: "The review reloaded before this extension operation could finish.",
-  };
-}
-
 /** Own live reviewed-document inputs and host-mediated extension workspace operations. */
 export function useExtensionWorkspaceControls({
   createExtensionDialogs,
   createReviewCapabilityLease,
   files,
-  editorBasePath,
-  editorRenderer,
   input,
   onWorkspaceWriteCompleted,
   root,
@@ -85,10 +68,6 @@ export function useExtensionWorkspaceControls({
   createReviewCapabilityLease: () => ExtensionCapabilityLease;
   /** Every current reviewed file, including files hidden by filtering. */
   files: readonly WorkspaceFileSource[];
-  /** Base path used to resolve reviewed paths to their working-tree counterparts. */
-  editorBasePath?: string;
-  /** Renderer lifecycle retained by the host while terminal editors run. */
-  editorRenderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
   /** The current CLI review input that decides whether writes are meaningful. */
   input: CliInput;
   /** Reconcile the review currently mounted by the host after a successful write. */
@@ -99,8 +78,8 @@ export function useExtensionWorkspaceControls({
   runWorkspaceWrite: WorkspaceWriteRunner;
   workspaceFileWriter?: WorkspaceFileWriter;
 }): ExtensionWorkspaceControlsController {
-  const liveInputsRef = useRef({ editorBasePath, files, input, root });
-  liveInputsRef.current = { editorBasePath, files, input, root };
+  const liveInputsRef = useRef({ files, input, root });
+  liveInputsRef.current = { files, input, root };
 
   const createWorkspaceControls = useCallback(
     (extensionId: string): ExtensionWorkspace => {
@@ -122,80 +101,15 @@ export function useExtensionWorkspaceControls({
           const document = read ? await read().catch(() => null) : null;
           return lease.isLive() ? document : null;
         },
-        async openInEditor(
-          request: ExtensionWorkspaceOpenInEditorRequest,
-        ): Promise<ExtensionWorkspaceOpenInEditorResult> {
-          const { fileId, hunkIndex, line } = normalizeWorkspaceOpenInEditorRequest(request);
-          if (!lease.isLive()) return expiredWorkspaceEditor();
-
-          const file = liveInputsRef.current.files.find((candidate) => candidate.id === fileId);
-          if (!file) {
-            return {
-              ok: false,
-              reason: "unavailable",
-              detail: `No reviewed file has the id "${fileId}".`,
-            };
-          }
-
-          const metadata = file.metadata as Partial<EditorDiffFile["metadata"]> | undefined;
-          if (!metadata || !Array.isArray(metadata.hunks) || typeof metadata.type !== "string") {
-            return {
-              ok: false,
-              reason: "unavailable",
-              detail: `${file.path} has no editable diff metadata.`,
-            };
-          }
-          const editorFile = file as WorkspaceFileSource & EditorDiffFile;
-          let resolvedHunkIndex = hunkIndex;
-          if (line?.side === "old" && editorFile.metadata.type !== "deleted") {
-            resolvedHunkIndex ??= editorFile.metadata.hunks.findIndex(
-              (hunk) =>
-                hunk.deletionCount > 0 &&
-                line.line >= hunk.deletionStart &&
-                line.line < hunk.deletionStart + hunk.deletionCount,
-            );
-            if (resolvedHunkIndex < 0) resolvedHunkIndex = undefined;
-          }
-          const selectedHunk =
-            resolvedHunkIndex === undefined
-              ? undefined
-              : editorFile.metadata.hunks[resolvedHunkIndex];
-          if (resolvedHunkIndex !== undefined && !selectedHunk) {
-            return {
-              ok: false,
-              reason: "unavailable",
-              detail: `${file.path} has no hunk at index ${resolvedHunkIndex}.`,
-            };
-          }
-          if (
-            line?.side === "old" &&
-            editorFile.metadata.type !== "deleted" &&
-            (!selectedHunk ||
-              line.line < selectedHunk.deletionStart ||
-              line.line >= selectedHunk.deletionStart + selectedHunk.deletionCount)
-          ) {
-            return {
-              ok: false,
-              reason: "unavailable",
-              detail: `${file.path} old line ${line.line} does not belong to the requested hunk.`,
-            };
-          }
-
-          const result = openSelectedFileInEditor({
-            basePath: liveInputsRef.current.editorBasePath,
-            file: editorFile,
-            lineCursor: line
-              ? {
-                  fileId,
-                  hunkIndex: resolvedHunkIndex ?? 0,
-                  target: line,
-                }
-              : undefined,
-            renderer: editorRenderer,
-            selectedHunk: selectedHunk as EditorDiffHunk | undefined,
+        resolveLocation(request: ExtensionWorkspaceLocationRequest) {
+          const normalized = normalizeWorkspaceLocationRequest(request);
+          if (!lease.isLive()) return null;
+          return resolveExtensionWorkspaceLocation({
+            files: liveInputsRef.current.files,
+            input: liveInputsRef.current.input,
+            request: normalized,
+            root: liveInputsRef.current.root,
           });
-          if (result.ok) onWorkspaceWriteCompleted();
-          return result;
         },
         canWriteDocument(fileId: string) {
           // An affordance probe answers false rather than throwing for malformed ids.
@@ -273,7 +187,6 @@ export function useExtensionWorkspaceControls({
     [
       createExtensionDialogs,
       createReviewCapabilityLease,
-      editorRenderer,
       onWorkspaceWriteCompleted,
       runWorkspaceWrite,
       workspaceFileWriter,

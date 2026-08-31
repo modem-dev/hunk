@@ -22,6 +22,7 @@ import type {
   ExtensionWorkspace,
 } from "../../extension-api/types";
 import type { ExtensionLoadResult, RegisteredCommand } from "../../extensions/types";
+import type { ExtensionOpenInApp } from "./useExtensionAppController";
 
 /** Describe an extension command failure without assuming an Error instance. */
 function commandFailureMessage(registered: RegisteredCommand, error: unknown) {
@@ -39,6 +40,7 @@ export function useExtensionCommandRunner({
   createKeyboardModeControls,
   createLineHighlightControls,
   createNavigation,
+  createOpenInApp,
   createPaneControls,
   createReviewControls,
   createWorkspaceControls,
@@ -54,6 +56,7 @@ export function useExtensionCommandRunner({
   ) => ExtensionKeyboardModeControls;
   createLineHighlightControls: (extensionId: string) => ExtensionLineHighlightControls;
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
+  createOpenInApp: () => ExtensionOpenInApp;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
   createReviewControls: () => ExtensionReviewControls;
   createWorkspaceControls: (extensionId: string) => ExtensionWorkspace;
@@ -74,6 +77,7 @@ export function useExtensionCommandRunner({
           commands: commandControls,
           keyboardModes: createKeyboardModeControls(registered.extensionId, extensions?.registry),
           notify: (message, type) => extensions?.context.notify(message, type),
+          openInApp: createOpenInApp(),
           panes,
           sidebars: panes,
           fileViews: createFileViewControls(registered.extensionId),
@@ -101,6 +105,7 @@ export function useExtensionCommandRunner({
       createKeyboardModeControls,
       createLineHighlightControls,
       createNavigation,
+      createOpenInApp,
       createPaneControls,
       createReviewControls,
       createWorkspaceControls,
