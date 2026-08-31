@@ -10,7 +10,7 @@ import type { DiffRow } from "./diffRows";
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();
 
-type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type DiffLineRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 interface InlineVisibleNotePlacement {
   anchorKey: string;
@@ -58,7 +58,7 @@ export type PlannedReviewRow =
 
 function lineRows(rows: DiffRow[]) {
   return rows.filter(
-    (row): row is DiffLineRow => row.type === "split-line" || row.type === "stack-line",
+    (row): row is DiffLineRow => row.type === "split-line" || row.type === "unified-line",
   );
 }
 
@@ -159,7 +159,7 @@ export function contextLineStableKeySides(
   };
 }
 
-/** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
+/** Resolve the stable anchor keys for one rendered diff row across split and unified layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {
     return [`meta:collapsed:${row.position}:${row.hunkIndex}`];
@@ -184,7 +184,7 @@ function diffRowStableKeys(row: DiffRow) {
       ]);
     }
 
-    // Prefer the old-side line so split→stack toggles stay near the same vertical position even
+    // Prefer the old-side line so split→unified toggles stay near the same vertical position even
     // when one large change block expands into many deletions followed by many additions.
     return uniqueStableKeys([
       oldLineStableKey(row.hunkIndex, row.left.lineNumber),

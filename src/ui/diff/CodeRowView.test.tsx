@@ -4,7 +4,7 @@ import { act } from "react";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import { resolveTheme } from "../themes";
 import { CodeRowView, type PlannedCodeReviewRow } from "./CodeRowView";
-import { cursorLineHighlightBg, selectionHighlightBg, stackCellPalette } from "./rowStyle";
+import { cursorLineHighlightBg, selectionHighlightBg, unifiedCellPalette } from "./rowStyle";
 
 /** Return the normalized background painted behind matching captured text. */
 function backgroundForText(
@@ -26,7 +26,7 @@ test("CodeRowView gives copy selection precedence over cursor paint", async () =
     fileId: "paint",
     hunkIndex: 0,
     row: {
-      type: "stack-line",
+      type: "unified-line",
       key: "precedence",
       fileId: "paint",
       hunkIndex: 0,
@@ -59,7 +59,7 @@ test("CodeRowView gives copy selection precedence over cursor paint", async () =
       await setup.renderOnce();
     });
     const background = backgroundForText(setup.captureSpans(), "selected");
-    const baseBackground = stackCellPalette("addition", theme).contentBg;
+    const baseBackground = unifiedCellPalette("addition", theme).contentBg;
 
     expect(background).toBe(selectionHighlightBg(baseBackground, theme).toLowerCase());
     expect(background).not.toBe(cursorLineHighlightBg(baseBackground, theme).toLowerCase());

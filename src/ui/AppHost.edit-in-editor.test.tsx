@@ -49,7 +49,7 @@ function mockSpawnSync(implementation: typeof Bun.spawnSync) {
 function createEditorBootstrap(sourceLabel: string): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:edit-in-editor",
-    initialMode: "stack",
+    initialMode: "unified",
     sourceLabel,
     files: [
       createTestDiffFile({

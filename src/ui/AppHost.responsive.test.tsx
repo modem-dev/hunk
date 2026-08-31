@@ -206,17 +206,17 @@ describe("responsive app", () => {
     }
   });
 
-  test("explicit split and stack modes override responsive auto switching", async () => {
+  test("explicit split and unified modes override responsive auto switching", async () => {
     const forcedSplit = await captureFrameForBootstrap(createBootstrap("split"), 140);
-    const forcedStack = await captureFrameForBootstrap(createBootstrap("stack"), 240);
+    const forcedUnified = await captureFrameForBootstrap(createBootstrap("unified"), 240);
 
     expect(forcedSplit).not.toContain("Files");
     expect(forcedSplit).not.toContain("Changeset summary");
     expect(forcedSplit).toMatch(/▌.*▌/);
 
-    expect((forcedStack.match(/alpha\.ts/g) ?? []).length).toBe(2);
-    expect(forcedStack).not.toContain("Changeset summary");
-    expect(forcedStack).not.toMatch(/▌.*▌/);
+    expect((forcedUnified.match(/alpha\.ts/g) ?? []).length).toBe(2);
+    expect(forcedUnified).not.toContain("Changeset summary");
+    expect(forcedUnified).not.toMatch(/▌.*▌/);
   });
 
   test("pager mode stays responsive while hiding app chrome", async () => {

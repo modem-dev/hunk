@@ -421,7 +421,7 @@ async function driveTtySmoke(options: {
 }
 
 async function runTtySmoke(options: {
-  mode?: "split" | "stack";
+  mode?: "split" | "unified" | "stack";
   pager?: boolean;
   agentContext?: boolean;
   interaction?: TtyInteraction;
@@ -519,9 +519,9 @@ describe("TTY render smoke", () => {
   });
 
   ttyTest(
-    "stack mode keeps the terminal-native stacked rows without split separators",
+    "unified mode keeps the terminal-native unified rows without split separators",
     async () => {
-      const output = await runTtySmoke({ mode: "stack" });
+      const output = await runTtySmoke({ mode: "unified" });
 
       expect(output).toContain("View  Navigate  Agent  Help");
       expect(output).toContain("▌1   -  export const answer = 41;");
@@ -529,6 +529,14 @@ describe("TTY render smoke", () => {
       expect(output).not.toContain("│1 + export const answer = 42;");
     },
   );
+
+  ttyTest("deprecated stack input renders canonical unified rows", async () => {
+    const output = await runTtySmoke({ mode: "stack" });
+
+    expect(output).toContain("▌1   -  export const answer = 41;");
+    expect(output).toContain("▌  1 +  export const answer = 42;");
+    expect(output).not.toContain("│1 + export const answer = 42;");
+  });
 
   ttyTest("pager mode hides chrome while still rendering the diff transcript", async () => {
     const output = await runTtySmoke({ pager: true });

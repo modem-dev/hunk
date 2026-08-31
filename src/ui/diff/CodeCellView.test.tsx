@@ -7,7 +7,7 @@ import {
   cursorLineHighlightBg,
   lineHighlightToneStyle,
   selectionHighlightBg,
-  stackCellPalette,
+  unifiedCellPalette,
 } from "./rowStyle";
 import { legacyPlannedDiffRow, planCodeRowLayout } from "./codeRowLayout";
 import type { DiffRow } from "./diffRows";
@@ -52,9 +52,9 @@ function backgroundForText(
   return colorsForText(capture, text).bg;
 }
 
-const stackRow: Extract<DiffRow, { type: "stack-line" }> = {
-  type: "stack-line",
-  key: "paint:stack",
+const unifiedRow: Extract<DiffRow, { type: "unified-line" }> = {
+  type: "unified-line",
+  key: "paint:unified",
   fileId: "paint",
   hunkIndex: 0,
   cell: {
@@ -85,21 +85,21 @@ function codeRowView(row: DiffRow, options: Partial<Parameters<typeof DiffRowVie
 }
 
 describe("CodeCellView painting", () => {
-  test("keeps partial copy selections exact in nowrap and wrapped stack cells", async () => {
+  test("keeps partial copy selections exact in nowrap and wrapped unified cells", async () => {
     const theme = resolveTheme("github-dark-default", null);
 
     for (const wrapLines of [false, true]) {
-      const plannedRow = legacyPlannedDiffRow(stackRow);
+      const plannedRow = legacyPlannedDiffRow(unifiedRow);
       const layout = planCodeRowLayout(plannedRow, {
         width: 12,
         lineNumberDigits: 1,
         showLineNumbers: false,
         wrapLines,
       });
-      if (!layout || layout.kind !== "stack") throw new Error("Expected stack layout");
+      if (!layout || layout.kind !== "unified") throw new Error("Expected unified layout");
       const contentStart = layout.cell.prefixWidth + layout.cell.gutterWidth;
       const capture = await captureCodeRow(
-        codeRowView(stackRow, {
+        codeRowView(unifiedRow, {
           copySelectedRowRange: {
             startCol: contentStart + 1,
             endCol: contentStart + 2,
@@ -109,7 +109,7 @@ describe("CodeCellView painting", () => {
       );
 
       expect(backgroundForText(capture.spans, "bc")).toBe(
-        selectionHighlightBg(stackCellPalette("addition", theme).contentBg, theme).toLowerCase(),
+        selectionHighlightBg(unifiedCellPalette("addition", theme).contentBg, theme).toLowerCase(),
       );
       expect(capture.frame).toContain("abcd");
     }
@@ -117,11 +117,11 @@ describe("CodeCellView painting", () => {
 
   test("keeps extension highlights geometry-neutral for wide and combining text", async () => {
     const theme = resolveTheme("github-dark-default", null);
-    const row: Extract<DiffRow, { type: "stack-line" }> = {
-      ...stackRow,
+    const row: Extract<DiffRow, { type: "unified-line" }> = {
+      ...unifiedRow,
       key: "paint:wide",
       cell: {
-        ...stackRow.cell,
+        ...unifiedRow.cell,
         spans: [{ text: "a\u0301日bc" }],
       },
     };
@@ -139,7 +139,7 @@ describe("CodeCellView painting", () => {
       expect(backgroundForText(marked.spans, "\u0301")).toBe(
         lineHighlightToneStyle(
           "match",
-          stackCellPalette("addition", theme).contentBg,
+          unifiedCellPalette("addition", theme).contentBg,
           theme,
         )!.bg.toLowerCase(),
       );
@@ -148,11 +148,11 @@ describe("CodeCellView painting", () => {
 
   test("resolves dim foregrounds against the final cursor background", async () => {
     const theme = resolveTheme("ayu-light", null);
-    const row: Extract<DiffRow, { type: "stack-line" }> = {
-      ...stackRow,
+    const row: Extract<DiffRow, { type: "unified-line" }> = {
+      ...unifiedRow,
       key: "paint:dim-cursor",
       cell: {
-        ...stackRow.cell,
+        ...unifiedRow.cell,
         spans: [{ text: "dimtext", fg: theme.syntaxColors.default }],
       },
     };
@@ -179,11 +179,11 @@ describe("CodeCellView painting", () => {
 
   test("resolves selected and unselected pieces of one dim span against their own backgrounds", async () => {
     const theme = resolveTheme("ayu-light", null);
-    const row: Extract<DiffRow, { type: "stack-line" }> = {
-      ...stackRow,
+    const row: Extract<DiffRow, { type: "unified-line" }> = {
+      ...unifiedRow,
       key: "paint:dim-copy-selection",
       cell: {
-        ...stackRow.cell,
+        ...unifiedRow.cell,
         spans: [{ text: "dimtext", fg: theme.syntaxColors.default }],
       },
     };
@@ -199,7 +199,7 @@ describe("CodeCellView painting", () => {
         showLineNumbers: false,
         wrapLines,
       });
-      if (!layout || layout.kind !== "stack") throw new Error("Expected stack layout");
+      if (!layout || layout.kind !== "unified") throw new Error("Expected unified layout");
       const contentStart = layout.cell.prefixWidth + layout.cell.gutterWidth;
       const capture = await captureCodeRow(
         codeRowView(row, {
@@ -226,7 +226,7 @@ describe("CodeCellView painting", () => {
     }
   });
 
-  test("paints transparent-theme cursors while retaining split and stack note guides", async () => {
+  test("paints transparent-theme cursors while retaining split and unified note guides", async () => {
     const theme = withTransparentSurfaces(resolveTheme("github-dark-default", null));
     const rows: DiffRow[] = [
       {
@@ -238,8 +238,8 @@ describe("CodeCellView painting", () => {
         right: { kind: "context", sign: " ", lineNumber: 1, spans: [{ text: "shared" }] },
       },
       {
-        type: "stack-line",
-        key: "paint:stack-context",
+        type: "unified-line",
+        key: "paint:unified-context",
         fileId: "paint",
         hunkIndex: 0,
         cell: {
@@ -266,7 +266,10 @@ describe("CodeCellView painting", () => {
 
         expect(capture.frame).toContain("│");
         expect(backgroundForText(capture.spans, "shared")).toBe(
-          cursorLineHighlightBg(stackCellPalette("context", theme).contentBg, theme).toLowerCase(),
+          cursorLineHighlightBg(
+            unifiedCellPalette("context", theme).contentBg,
+            theme,
+          ).toLowerCase(),
         );
       }
     }

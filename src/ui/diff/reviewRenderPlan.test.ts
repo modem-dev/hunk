@@ -11,7 +11,7 @@ import {
 } from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
-const { buildSplitRows, buildStackRows } = await import("./diffRows");
+const { buildSplitRows, buildUnifiedRows } = await import("./diffRows");
 const { buildReviewRenderPlan } = await import("./reviewRenderPlan");
 
 function lines(...values: string[]) {
@@ -204,12 +204,12 @@ describe("review render plan", () => {
   test("anchors range-less notes to the shared default line without guide rows", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
-      "stack",
-      "stack.ts",
+      "unified",
+      "unified.ts",
       "export const value = 1;\n",
       "export const value = 2;\nexport const added = true;\n",
     );
-    const rows = buildStackRows(file, null, theme);
+    const rows = buildUnifiedRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
       rows,
@@ -217,7 +217,7 @@ describe("review render plan", () => {
       showHunkHeaders: true,
       visibleAgentNotes: [
         createVisibleAgentNote(file.metadata.hunks, {
-          id: "annotation:stack:0:0",
+          id: "annotation:unified:0:0",
           annotation: {
             summary: "General hunk note",
             rationale: "No explicit line range is attached yet.",
@@ -240,8 +240,8 @@ describe("review render plan", () => {
     const anchoredRow = inlineNoteAnchorRow(plannedRows);
     expect(anchoredRow?.kind).toBe("diff-row");
     if (anchoredRow?.kind === "diff-row") {
-      expect(anchoredRow.row.type).toBe("stack-line");
-      if (anchoredRow.row.type === "stack-line") {
+      expect(anchoredRow.row.type).toBe("unified-line");
+      if (anchoredRow.row.type === "unified-line") {
         expect(anchoredRow.row.cell.newLineNumber).toBe(1);
       }
     }
@@ -403,11 +403,11 @@ describe("review render plan", () => {
 });
 
 describe("hunk-gap rows", () => {
-  test("inserts a spacer before each hunk after the first in split and stack plans", () => {
+  test("inserts a spacer before each hunk after the first in split and unified plans", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile("multi", "multi.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
 
-    for (const rows of [buildSplitRows(file, null, theme), buildStackRows(file, null, theme)]) {
+    for (const rows of [buildSplitRows(file, null, theme), buildUnifiedRows(file, null, theme)]) {
       expect(
         buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true }).some(
           (row) => row.kind === "hunk-gap",

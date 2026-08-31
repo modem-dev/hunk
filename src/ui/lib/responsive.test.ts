@@ -8,10 +8,10 @@ const MEDIUM_WIDTH = 180;
 const FULL_WIDTH = 240;
 
 describe("resolveResponsiveLayout — auto", () => {
-  test("chooses stack with no sidebar on tight terminals", () => {
+  test("chooses unified with no sidebar on tight terminals", () => {
     expect(resolveResponsiveLayout("auto", TIGHT_WIDTH)).toEqual({
       viewport: "tight",
-      layout: "stack",
+      layout: "unified",
       showSidebar: false,
     });
   });
@@ -50,17 +50,17 @@ describe("resolveResponsiveLayout — explicit overrides", () => {
     });
   });
 
-  test("keeps stack even on a full-width terminal and still shows the sidebar there", () => {
-    expect(resolveResponsiveLayout("stack", FULL_WIDTH)).toEqual({
+  test("keeps unified even on a full-width terminal and still shows the sidebar there", () => {
+    expect(resolveResponsiveLayout("unified", FULL_WIDTH)).toEqual({
       viewport: "full",
-      layout: "stack",
+      layout: "unified",
       showSidebar: true,
     });
   });
 
   test("shows the sidebar at medium and full widths for explicit modes", () => {
     expect(resolveResponsiveLayout("split", MEDIUM_WIDTH).showSidebar).toBe(true);
-    expect(resolveResponsiveLayout("stack", MEDIUM_WIDTH).showSidebar).toBe(true);
+    expect(resolveResponsiveLayout("unified", MEDIUM_WIDTH).showSidebar).toBe(true);
     expect(resolveResponsiveLayout("split", FULL_WIDTH).showSidebar).toBe(true);
   });
 });
@@ -85,9 +85,9 @@ describe("resolveResponsiveLayout — viewport bucket boundaries", () => {
     });
   });
 
-  test("auto switches from stack to split at its narrower independent cutoff", () => {
+  test("auto switches from unified to split at its narrower independent cutoff", () => {
     expect(resolveResponsiveLayout("auto", 119)).toMatchObject({
-      layout: "stack",
+      layout: "unified",
       showSidebar: false,
     });
     expect(resolveResponsiveLayout("auto", 120)).toMatchObject({

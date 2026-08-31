@@ -115,6 +115,7 @@ export type {
   ExtensionVerticalPane,
   ExtensionCurrentLinePaint,
   ExtensionLayoutMode,
+  ExtensionLegacyLayout,
   ExtensionResolvedLayout,
   ExtensionReviewNavigation,
   ExtensionReviewNote,

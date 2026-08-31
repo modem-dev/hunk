@@ -225,7 +225,7 @@ function builtinCommandHandlers(
     "hunk.view.cursorLineNumber": { run: () => options.selectCursorLine("number") },
     "hunk.view.cursorLineOff": { run: () => options.selectCursorLine("off") },
     "hunk.view.layoutSplit": { run: () => options.selectLayoutMode("split") },
-    "hunk.view.layoutStack": { run: () => options.selectLayoutMode("stack") },
+    "hunk.view.layoutUnified": { run: () => options.selectLayoutMode("unified") },
     "hunk.view.layoutAuto": { run: () => options.selectLayoutMode("auto") },
     "hunk.view.applyFilePresentationToAllMatching": {
       isEnabled: () => options.canApplyFilePresentationToAllMatching,

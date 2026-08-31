@@ -34,13 +34,15 @@ import type {
   CustomSyntaxScopesConfig,
   NamedCustomThemeConfig,
 } from "../../extension-api/types";
-import type {
-  CliInput,
-  CommonOptions,
-  CursorLine,
-  LayoutMode,
-  SidebarVisibility,
-  VcsMode,
+import {
+  isLayoutModeInput,
+  normalizeLayoutModeInput,
+  type CliInput,
+  type CommonOptions,
+  type CursorLine,
+  type LayoutMode,
+  type SidebarVisibility,
+  type VcsMode,
 } from "./commandInputs";
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
@@ -213,11 +215,6 @@ function upsertTopLevelTomlValue(source: string, key: string, value: string | bo
   return `${lines.join("\n").replace(/\n*$/, "")}\n`;
 }
 
-/** Accept only the layout names Hunk already supports. */
-function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
-  return value === "auto" || value === "split" || value === "stack" ? value : undefined;
-}
-
 /** Accept only the current-line styles the review stream can draw. */
 function normalizeCursorLine(value: unknown): CursorLine | undefined {
   return value === "row" || value === "number" || value === "off" ? value : undefined;
@@ -308,9 +305,9 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     key: "mode",
     property: "mode",
     type: "string",
-    accepted: "`auto`, `split`, or `stack`",
+    accepted: "`auto`, `split`, or `unified`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
-    description: "Choose responsive, side-by-side, or stacked diff layout.",
+    description: "Choose responsive, side-by-side, or unified diff layout.",
   },
   {
     key: "cursor_line",
@@ -951,7 +948,7 @@ function resolveExtensionsConfig(
 function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
   switch (property) {
     case "mode":
-      return normalizeLayoutMode(value);
+      return isLayoutModeInput(value) ? normalizeLayoutModeInput(value) : undefined;
     case "cursorLine":
       return normalizeCursorLine(value);
     case "vcs":

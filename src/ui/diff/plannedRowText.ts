@@ -15,8 +15,8 @@ import {
   type CodeCellLayoutPlan,
   type CodeRowLayoutPlan,
 } from "./codeRowLayout";
-import type { RenderSpan, SplitLineCell, StackLineCell } from "./diffRowModel";
-import { diffRailMarker, splitGutterText, stackGutterText } from "./rowStyle";
+import type { RenderSpan, SplitLineCell, UnifiedLineCell } from "./diffRowModel";
+import { diffRailMarker, splitGutterText, unifiedGutterText } from "./rowStyle";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { wrapSpans } from "./styledSpanLayout";
 
@@ -30,7 +30,7 @@ export interface PlannedRowTextOptions {
   codeHorizontalOffset: number;
   reserveAddNoteColumn?: boolean;
   showAddNoteBadge?: boolean;
-  /** Limits split rows to one pane; stack rows ignore this filter. */
+  /** Limits split rows to one pane; unified rows ignore this filter. */
   side?: "left" | "right";
 }
 
@@ -122,16 +122,16 @@ export function buildPlainSplitCellLines(
   }));
 }
 
-/** Build stack-cell lines from an existing code layout plan. */
-export function buildPlainStackCellLines(
-  cell: StackLineCell,
+/** Build unified-cell lines from an existing code layout plan. */
+export function buildPlainUnifiedCellLines(
+  cell: UnifiedLineCell,
   geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   wrapLines: boolean,
   codeHorizontalOffset = 0,
 ): PlainCellLine[] {
-  const gutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+  const gutterText = unifiedGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
     geometry.gutterWidth,
   );
   if (!wrapLines) {
@@ -261,18 +261,18 @@ export function renderDecoratedPlannedRowText(
     });
   }
 
-  if (preparedRow.type !== "stack-line") {
+  if (preparedRow.type !== "unified-line") {
     return [];
   }
 
   const codeLayout = planCodeRowLayout(row, options) as Extract<
     CodeRowLayoutPlan,
-    { kind: "stack" }
+    { kind: "unified" }
   >;
   const guideOnOldSide = codeLayout.noteGuideSide === "old";
   const guideOnNewSide = codeLayout.noteGuideSide === "new";
   const prefix = guideOnOldSide ? "│" : diffRailMarker();
-  const cellLines = buildPlainStackCellLines(
+  const cellLines = buildPlainUnifiedCellLines(
     preparedRow.cell,
     codeLayout.cell,
     lineNumberDigits,
@@ -309,14 +309,14 @@ export function renderCodeOnlyPlannedRowText(
     return [];
   }
 
-  if (preparedRow.type === "stack-line") {
+  if (preparedRow.type === "unified-line") {
     if (!wrapLines) {
       return [cellCodeText(preparedRow.cell.spans, codeHorizontalOffset)].filter(Boolean);
     }
 
     const codeLayout = planCodeRowLayout(row, options) as Extract<
       CodeRowLayoutPlan,
-      { kind: "stack" }
+      { kind: "unified" }
     >;
     return wrapSpans(preparedRow.cell.spans, codeLayout.cell.contentWidth)
       .map((spans) => spansText(spans))

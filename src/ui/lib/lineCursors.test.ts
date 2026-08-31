@@ -66,7 +66,7 @@ function createCollapsedGapFile() {
 
 describe("buildLineCursors", () => {
   test("walks context and changed lines in rendered order", () => {
-    const cursors = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const cursors = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "unified");
 
     expect(cursors).toEqual([
       {
@@ -97,7 +97,7 @@ describe("buildLineCursors", () => {
   });
 
   test("keeps old and new line numbering independent across hunks", () => {
-    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "unified");
 
     expect(cursors.map((cursor) => ({ hunkIndex: cursor.hunkIndex, ...cursor.target }))).toEqual([
       { hunkIndex: 0, side: "old", line: 1 },
@@ -126,7 +126,7 @@ describe("buildLineCursors", () => {
     ]);
   });
 
-  test("walks a change block one column at a time in stack layout", () => {
+  test("walks a change block one column at a time in unified layout", () => {
     const file = createTestDiffFile({
       id: "alpha",
       path: "alpha.ts",
@@ -135,7 +135,7 @@ describe("buildLineCursors", () => {
       context: 0,
     });
 
-    expect(cursorsFor([file], "stack").map((cursor) => cursor.target)).toEqual([
+    expect(cursorsFor([file], "unified").map((cursor) => cursor.target)).toEqual([
       { side: "old", line: 1 },
       { side: "old", line: 2 },
       { side: "old", line: 3 },
@@ -148,10 +148,10 @@ describe("buildLineCursors", () => {
   test("stops on the lines an expanded gap reveals", () => {
     const file = createCollapsedGapFile();
     const source = lines("one", "two", "three", "four", "five", "SIX");
-    const collapsed = measureDiffSectionGeometry(file, "stack", true, theme);
+    const collapsed = measureDiffSectionGeometry(file, "unified", true, theme);
     const expanded = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       [],
@@ -175,7 +175,7 @@ describe("buildLineCursors", () => {
   test("flattens every visible file into one review stream", () => {
     const cursors = cursorsFor(
       [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
-      "stack",
+      "unified",
     );
 
     expect(cursors).toHaveLength(8);
@@ -185,7 +185,7 @@ describe("buildLineCursors", () => {
 
   test("gives no stops to a file the stream renders no source lines for", () => {
     const empty = createTestHeaderOnlyDiffFile();
-    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts"), empty], "stack");
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts"), empty], "unified");
 
     expect(cursors.some((cursor) => cursor.fileId === "alpha")).toBe(true);
     expect(cursors.some((cursor) => cursor.fileId === empty.id)).toBe(false);
@@ -199,14 +199,14 @@ describe("buildLineCursors", () => {
 
 describe("reuseEquivalentLineCursors", () => {
   test("keeps list identity when remeasurement preserves every cursor", () => {
-    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "unified");
     const next = previous.map((cursor) => ({ ...cursor, target: { ...cursor.target } }));
 
     expect(reuseEquivalentLineCursors(previous, next)).toBe(previous);
   });
 
   test("keeps a changed cursor list", () => {
-    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const previous = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "unified");
     const next = previous.map((cursor, index) =>
       index === 0
         ? { ...cursor, target: { ...cursor.target, line: cursor.target.line + 1 } }
@@ -230,7 +230,7 @@ describe("findLineCursorAt", () => {
   }
 
   test("finds a changed line by the side the patch numbers it on", () => {
-    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "unified");
 
     expect(findLineCursorAt(cursors, "alpha", "new", 10)?.target).toEqual({
       side: "new",
@@ -244,7 +244,7 @@ describe("findLineCursorAt", () => {
 
   test("answers a context row to either side's number, even once they diverge", () => {
     // "three" is old line 3 and new line 4 after the insertion; both address the same row.
-    const cursors = cursorsFor([createShiftedContextFile()], "stack");
+    const cursors = cursorsFor([createShiftedContextFile()], "unified");
     const byNew = findLineCursorAt(cursors, "alpha", "new", 4);
     const byOld = findLineCursorAt(cursors, "alpha", "old", 3);
 
@@ -255,7 +255,7 @@ describe("findLineCursorAt", () => {
   test("stays inside the requested file when two files number the same line", () => {
     const cursors = cursorsFor(
       [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
-      "stack",
+      "unified",
     );
 
     expect(findLineCursorAt(cursors, "beta", "new", 1)?.fileId).toBe("beta");
@@ -263,7 +263,7 @@ describe("findLineCursorAt", () => {
 
   test("finds no cursor for a line the stream draws no row for", () => {
     // Line 3 is inside the collapsed gap above the only hunk, so nothing measures it.
-    const cursors = cursorsFor([createCollapsedGapFile()], "stack");
+    const cursors = cursorsFor([createCollapsedGapFile()], "unified");
 
     expect(findLineCursorAt(cursors, "alpha", "new", 3)).toBeNull();
     expect(findLineCursorAt(cursors, "alpha", "new", 900)).toBeNull();
@@ -274,7 +274,7 @@ describe("findLineCursorAt", () => {
 describe("findNextLineCursor", () => {
   const cursors = cursorsFor(
     [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
-    "stack",
+    "unified",
   );
 
   test("steps forward and backward one line at a time", () => {
@@ -319,7 +319,7 @@ describe("findNextLineCursor", () => {
 describe("firstLineCursorInHunk", () => {
   const cursors = cursorsFor(
     [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
-    "stack",
+    "unified",
   );
 
   test("seeds at the first line of the requested hunk", () => {
@@ -349,7 +349,7 @@ describe("firstLineCursorInHunk", () => {
 });
 
 describe("resolveLineCursor", () => {
-  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "unified");
 
   test("keeps a cursor that still points at a real line", () => {
     expect(resolveLineCursor(cursors, cursors[2]!)).toEqual(cursors[2]!);
@@ -399,7 +399,7 @@ describe("resolveLineCursor", () => {
 });
 
 describe("clampLineCursorToViewport", () => {
-  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "unified");
   const boundsOf = (cursor: LineCursor) => {
     const index = cursors.findIndex((candidate) => candidate.stableKey === cursor.stableKey);
     return index < 0 ? undefined : { top: index, height: 1 };

@@ -76,9 +76,9 @@ function ExampleApp({ title, subtitle, diff, layout = "split" }: ExampleProps) {
         />
         <box style={{ width: 1, height: 1 }} />
         <LayoutButton
-          active={activeLayout === "stack"}
-          label="Stack"
-          onPress={() => setActiveLayout("stack")}
+          active={activeLayout === "unified"}
+          label="Unified"
+          onPress={() => setActiveLayout("unified")}
         />
       </box>
       <box style={{ height: 1 }} />

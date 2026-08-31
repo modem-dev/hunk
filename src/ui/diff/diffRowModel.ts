@@ -25,7 +25,7 @@ export interface SplitLineCell {
   spans: RenderSpan[];
 }
 
-export interface StackLineCell {
+export interface UnifiedLineCell {
   kind: "context" | "addition" | "deletion";
   sign: string;
   oldLineNumber?: number;
@@ -74,11 +74,11 @@ export type DiffRow =
       expandedGapKey?: string;
     }
   | {
-      type: "stack-line";
+      type: "unified-line";
       key: string;
       fileId: string;
       hunkIndex: number;
-      cell: StackLineCell;
+      cell: UnifiedLineCell;
       isExpansionRow?: true;
       /** Exact collapsed gap this synthesized row reveals. */
       expandedGapKey?: string;

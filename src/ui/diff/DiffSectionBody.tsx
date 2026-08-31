@@ -39,11 +39,11 @@ export interface ActiveAddNoteAffordance {
   target?: UserNoteLineTarget;
 }
 
-type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 /** Return whether a diff row can be used as an inline user-note target. */
 function isAddNoteTargetRow(row: DiffRow): row is AddNoteTargetRow {
-  return row.type === "split-line" || row.type === "stack-line";
+  return row.type === "split-line" || row.type === "unified-line";
 }
 
 /** Resolve the note insertion target represented by a visible add-note affordance. */
@@ -71,7 +71,7 @@ function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance
   };
 }
 
-/** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
+/** Render a file diff in split or unified mode, with inline agent notes inserted between diff rows. */
 export function DiffSectionBody({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,

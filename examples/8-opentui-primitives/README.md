@@ -17,6 +17,6 @@ bun run examples/8-opentui-primitives/primitives-demo.tsx
 - `HunkReviewStream` for a multi-file review stream without Hunk's menu bar or global shortcuts
 - `HunkDiffFileHeader` and `HunkDiffBody` for a single-file view assembled by the host app
 - Host-owned window borders/chrome around each primitive so you can inspect component boundaries
-- Host-owned state for selected file and split/stack layout
+- Host-owned state for selected file and split/unified layout
 
 The in-repo demo imports from `../../src/opentui` so it runs from source. Published consumers should import from `hunkdiff/opentui` instead.

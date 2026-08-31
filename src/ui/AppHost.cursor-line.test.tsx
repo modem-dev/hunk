@@ -31,7 +31,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 
 function createCursorLineBootstrap(
   cursorLine: CursorLine,
-  initialMode: "split" | "stack" = "stack",
+  initialMode: "split" | "unified" = "unified",
 ) {
   return {
     ...createTestVcsAppBootstrap({
@@ -91,7 +91,7 @@ function gutterBackground(setup: Awaited<ReturnType<typeof testRender>>, needle:
 
 async function renderCursorLineApp(
   cursorLine: CursorLine,
-  initialMode: "split" | "stack" = "stack",
+  initialMode: "split" | "unified" = "unified",
 ) {
   const setup = await testRender(
     <AppHost bootstrap={createCursorLineBootstrap(cursorLine, initialMode) as never} />,

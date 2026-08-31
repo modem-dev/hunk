@@ -78,7 +78,7 @@ describe("OpenTUI public components", () => {
     const frame = await captureFrame(
       <HunkDiffBody
         file={createExampleDiff()}
-        layout="stack"
+        layout="unified"
         theme="github-dark-default"
         width={88}
         highlight={false}
@@ -92,6 +92,22 @@ describe("OpenTUI public components", () => {
     expect(frame).toContain("  1 +  export const value = 2;");
   });
 
+  test("normalizes the deprecated stack layout prop to unified", async () => {
+    const file = createExampleDiff();
+    const canonical = await captureFrame(
+      <HunkDiffBody file={file} layout="unified" width={88} highlight={false} />,
+      92,
+      12,
+    );
+    const legacy = await captureFrame(
+      <HunkDiffBody file={file} layout="stack" width={88} highlight={false} />,
+      92,
+      12,
+    );
+
+    expect(legacy).toBe(canonical);
+  });
+
   test("accepts a custom tab width through the public body primitive", async () => {
     const metadata = parseDiffFromFile(
       { cacheKey: "tabs-before", contents: "a\tb\n", name: "tabs.txt" },
@@ -101,7 +117,7 @@ describe("OpenTUI public components", () => {
     );
     const file = createHunkDiffFile({ id: "tabs", metadata, path: "tabs.txt" });
     const frame = await captureFrame(
-      <HunkDiffBody file={file} layout="stack" width={88} tabWidth={8} highlight={false} />,
+      <HunkDiffBody file={file} layout="unified" width={88} tabWidth={8} highlight={false} />,
       92,
       8,
     );
@@ -126,7 +142,7 @@ describe("OpenTUI public components", () => {
     );
     const file = createHunkDiffFile({ id: "multi", metadata, path: "multi.ts" });
     const frame = await captureFrame(
-      <HunkDiffBody file={file} layout="stack" width={88} hunkGap={2} highlight={false} />,
+      <HunkDiffBody file={file} layout="unified" width={88} hunkGap={2} highlight={false} />,
       92,
       24,
     );

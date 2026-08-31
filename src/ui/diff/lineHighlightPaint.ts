@@ -44,7 +44,7 @@ export interface LineHighlightColRange {
  * Column ranges per rendered line, keyed by `lineHighlightPaintKey`.
  *
  * A context line is registered under both its old and new key with one shared
- * range list, so split view mirrors the mark onto both halves and stack view
+ * range list, so split view mirrors the mark onto both halves and unified view
  * finds it through either line number.
  */
 export type LineHighlightPaintIndex = ReadonlyMap<string, readonly LineHighlightColRange[]>;
@@ -276,7 +276,7 @@ export function buildLineHighlightPaintIndex({
 
   const index = new Map<string, LineHighlightColRange[]>();
   // One shared array per physical line: context and gap marks register the
-  // same bucket under both side keys, so split view mirrors them and stack
+  // same bucket under both side keys, so split view mirrors them and unified
   // view finds one list through either line number without double-counting.
   const bucketFor = (key: string, counterpartKey: string | undefined) => {
     let bucket = index.get(key) ?? (counterpartKey ? index.get(counterpartKey) : undefined);

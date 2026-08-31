@@ -75,7 +75,7 @@ async function launchWithConfig(repo: string, configToml: string): Promise<AppBo
   const input = {
     kind: "vcs" as const,
     staged: false,
-    options: { mode: "stack" as const, promptSaveViewPreferences: false },
+    options: { mode: "unified" as const, promptSaveViewPreferences: false },
   };
   const vcsCatalog = getBundledVcsCatalog();
   const configured = resolveConfiguredCliInput(input, { cwd: repo, vcsCatalog });

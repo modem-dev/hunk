@@ -13,7 +13,7 @@ function createBootstrap(pendingTrustRepoRoot?: string): AppBootstrap {
   const bootstrap = createTestVcsAppBootstrap({
     changesetId: "changeset:trust",
     files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-    initialMode: "stack",
+    initialMode: "unified",
   });
   const extensions = createEmptyExtensionLoadResult("/repo");
 

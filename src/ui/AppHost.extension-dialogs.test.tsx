@@ -101,7 +101,7 @@ async function flushUntil(
 /** Launch a bootstrap whose extensions come from one `--extension` fixture path. */
 async function launchWithExtension(repo: string, extPath: string): Promise<AppBootstrap> {
   const bootstrap = await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+    { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
     { cwd: repo },
   );
   bootstrap.extensions = await loadStartupExtensions({

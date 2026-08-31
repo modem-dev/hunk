@@ -132,7 +132,7 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
     }
 
     if (key.name === "2") {
-      setLayout("stack");
+      setLayout("unified");
       return;
     }
 
@@ -159,7 +159,7 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
         <text fg="#eef4ff">
           {padText(
             fitText(
-              " Hunk primitives as app windows — q quit · Tab next file · 1 split · 2 stack ",
+              " Hunk primitives as app windows — q quit · Tab next file · 1 split · 2 unified ",
               Math.max(1, terminal.width - 2),
             ),
             Math.max(1, terminal.width - 2),

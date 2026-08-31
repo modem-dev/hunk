@@ -35,10 +35,10 @@ Some terminals do not answer background-color queries. `theme = "auto"` then fal
 
 ## Layout or text is hard to read
 
-Try stack mode and wrapping in a narrow terminal:
+Try unified mode and wrapping in a narrow terminal:
 
 ```bash
-hunk diff --mode stack --wrap
+hunk diff --mode unified --wrap
 ```
 
 Press `?` for shortcuts, `t` for themes, and `l` for line numbers. See [terminal compatibility](/docs/help/compatibility/) for mouse, color, and clipboard limits.

@@ -128,7 +128,7 @@ describe("PTY session attention marks", () => {
     const fixture = createTallFilePair();
     const port = await reserveLoopbackPort();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cwd: fixture.dir,
       cols: 140,
       rows: 24,

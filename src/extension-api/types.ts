@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 15;
+export const HUNK_EXTENSION_API_VERSION = 16;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -472,7 +472,7 @@ export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning
  * One marked character range inside one diff line.
  *
  * Addressed by source coordinates — `(side, line, range)` — rather than by
- * rendered rows, so a mark survives split vs stack layout, line wrapping,
+ * rendered rows, so a mark survives split vs unified layout, line wrapping,
  * horizontal scrolling, and collapsed-context expansion without the extension
  * ever learning Hunk's row model.
  */
@@ -1897,8 +1897,11 @@ export interface ExtensionEventContext extends ExtensionContext {
  */
 export type SessionReloadReason = "watch" | "daemon" | "manual";
 
-/** Payload delivered with each lifecycle event, keyed by event name. */
-export type ExtensionLayoutMode = "auto" | "split" | "stack";
+/** @deprecated Hunk accepts this legacy vocabulary only for source compatibility. */
+export type ExtensionLegacyLayout = "stack";
+/** Layout mode vocabulary exposed to extensions; new code should use `unified`. */
+export type ExtensionLayoutMode = "auto" | "split" | "unified" | ExtensionLegacyLayout;
+/** Concrete layout vocabulary exposed to extensions; emitted events use canonical values. */
 export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
@@ -1938,7 +1941,12 @@ export interface ExtensionEventPayloads {
   filter_changed: { filter: string };
   /** The user committed a different active theme. Selector previews do not emit this event. */
   theme_changed: { themeId: string };
-  /** The configured layout mode or responsive resolved layout changed. */
+  /**
+   * The configured layout mode or responsive resolved layout changed.
+   *
+   * Hunk emits only `auto`, `split`, and `unified`; the deprecated `stack`
+   * literal remains in the public aliases solely so existing source compiles.
+   */
   layout_changed: { mode: ExtensionLayoutMode; layout: ExtensionResolvedLayout };
   /** A watch source observed a change and is waiting to check/reload it. */
   watch_reload_pending: Record<string, never>;

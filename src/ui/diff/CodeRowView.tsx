@@ -1,4 +1,4 @@
-/** Mounts split and stack code rows from the canonical code-row layout and paint plans. */
+/** Mounts split and unified code rows from the canonical code-row layout and paint plans. */
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
@@ -18,13 +18,13 @@ import {
   selectionHighlightBg,
   splitLeftRailColor,
   splitRightRailColor,
-  stackRailColor,
+  unifiedRailColor,
 } from "./rowStyle";
 import { markNestedRowMouseAction } from "./rowMouseActions";
 
-type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
-/** Planned review row carrying split or stack code cells. */
+/** Planned review row carrying split or unified code cells. */
 export type PlannedCodeReviewRow = Omit<PlannedDiffReviewRow, "row"> & {
   row: CodeDiffRow;
 };
@@ -95,7 +95,7 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   );
 }
 
-/** Mount one split or stack code row with selection, cursor, guide, and affordance paint. */
+/** Mount one split or unified code row with selection, cursor, guide, and affordance paint. */
 export function CodeRowView({
   plannedRow,
   width,
@@ -288,21 +288,21 @@ export function CodeRowView({
   }
 
   // The planner and row type are derived from the same complete planned row.
-  const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
-  const guideOnOldSide = stackLayout.noteGuideSide === "old";
-  const guideOnNewSide = stackLayout.noteGuideSide === "new";
+  const unifiedLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "unified" }>;
+  const guideOnOldSide = unifiedLayout.noteGuideSide === "old";
+  const guideOnNewSide = unifiedLayout.noteGuideSide === "new";
   const addNoteTarget: UserNoteLineTarget | undefined =
     row.cell.newLineNumber !== undefined
       ? { side: "new", line: row.cell.newLineNumber }
       : row.cell.oldLineNumber !== undefined
         ? { side: "old", line: row.cell.oldLineNumber }
         : undefined;
-  const addBadgeWidth = stackLayout.addNoteBadgeWidth;
+  const addBadgeWidth = unifiedLayout.addNoteBadgeWidth;
   const prefix = {
     text: guideOnOldSide ? "│" : diffRailMarker(),
     fg: guideOnOldSide
       ? theme.noteBorder
-      : stackRailColor(row.cell.kind, theme, selected || hasCopySelection),
+      : unifiedRailColor(row.cell.kind, theme, selected || hasCopySelection),
     bg: theme.panel,
   };
 
@@ -319,9 +319,9 @@ export function CodeRowView({
             height: 1,
           }}
         >
-          {codeCellView.renderNowrapStack({
+          {codeCellView.renderNowrapUnified({
             row,
-            layout: stackLayout,
+            layout: unifiedLayout,
             lineNumberDigits,
             showLineNumbers,
             theme,
@@ -344,9 +344,9 @@ export function CodeRowView({
     );
   }
 
-  const wrapped = codeCellView.createWrappedStack({
+  const wrapped = codeCellView.createWrappedUnified({
     row,
-    layout: stackLayout,
+    layout: unifiedLayout,
     lineNumberDigits,
     showLineNumbers,
     theme,

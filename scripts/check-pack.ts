@@ -33,6 +33,7 @@ import type {
   ExtensionKeyboardModeKeyResult,
   ExtensionLineHighlight,
   ExtensionLineHighlightTone,
+  ExtensionLayoutMode,
   ExtensionPaintTheme,
   ExtensionHorizontalPane,
   ExtensionPaneProps,
@@ -50,6 +51,10 @@ import type {
 } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
+  const canonicalLayout: ExtensionLayoutMode = "unified";
+  const legacyLayout: ExtensionLayoutMode = "stack";
+  void canonicalLayout;
+  void legacyLayout;
   const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
   hunk.configureSession(sessionOptions);
   const noSelection: ExtensionReviewSelection = {

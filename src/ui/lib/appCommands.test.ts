@@ -328,11 +328,12 @@ describe("executeAppCommand", () => {
     expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
   });
 
-  test("executes a compatibility alias through the canonical command", () => {
+  test("executes compatibility aliases through their canonical commands", () => {
     const { commands, ran } = createTestCommands();
 
     expect(executeAppCommand(commands, "hunk.view.toggleSidebar")).toBe(true);
-    expect(ran).toEqual(["toggleFilesPane"]);
+    expect(executeAppCommand(commands, "hunk.view.layoutStack")).toBe(true);
+    expect(ran).toEqual(["toggleFilesPane", "selectLayoutMode:unified"]);
   });
 
   test("uses shipped semantics rather than a remapped chord for programmatic execution", () => {
@@ -380,14 +381,15 @@ describe("executeAppCommand", () => {
 });
 
 describe("observeAppCommandDispatch", () => {
-  test("observes successful terminal dispatch exactly once with the command id", () => {
+  test("observes successful terminal dispatch exactly once with the canonical command id", () => {
     const { commands, ran } = createTestCommands();
     const observed: string[] = [];
     const wrapped = observeAppCommandDispatch(commands, (id) => observed.push(id));
 
     expect(dispatchAppCommand(wrapped, keyEvent({ name: "q" }))?.id).toBe("hunk.app.quit");
-    expect(ran).toEqual(["requestQuit"]);
-    expect(observed).toEqual(["hunk.app.quit"]);
+    expect(executeAppCommand(wrapped, "hunk.view.layoutStack")).toBe(true);
+    expect(ran).toEqual(["requestQuit", "selectLayoutMode:unified"]);
+    expect(observed).toEqual(["hunk.app.quit", "hunk.view.layoutUnified"]);
   });
 
   test("does not observe disabled or throwing commands", () => {

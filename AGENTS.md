@@ -80,7 +80,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Keep the app review-first: the main pane is a single top-to-bottom stream of all visible file diffs.
 - The sidebar is for navigation. Selecting a file jumps to that file in the main review stream; it should not collapse the main pane to one file.
 - Keep Pierre as the diff engine and renderer foundation. Do not switch the main renderer back to OpenTUI's built-in `<diff>` widget.
-- Keep split and stack views terminal-native and driven from the same normalized diff model.
+- Keep split and unified views terminal-native and driven from the same normalized diff model.
 - Preserve mouse + keyboard parity for primary actions.
 - Keep the chrome restrained: top menu bar, minimal borders, no redundant metadata headers.
 
@@ -139,7 +139,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 ## review behavior
 
 - Default behavior is a multi-file review stream in sidebar order.
-- Layout modes are `auto`, `split`, and `stack`. `auto` chooses split on wide terminals and stack
+- Layout modes are `auto`, `split`, and `unified`. `auto` chooses split on wide terminals and unified
   on narrow ones; explicit modes override it.
 - `[` and `]` navigate hunks across the full review stream. Do not reintroduce `j`/`k` hunk navigation unless the user asks.
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.

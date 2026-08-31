@@ -261,7 +261,7 @@ describe("PTY extensions", () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack"],
+      args: ["diff", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 140,
       rows: 24,
@@ -300,7 +300,7 @@ describe("PTY extensions", () => {
     const fixture = harness.createRepoExtensionFixture(INTERRUPT_SHUTDOWN_EXTENSION_SOURCE);
     const shutdownLog = join(fixture.dir, ".hunk-shutdown.log");
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack"],
+      args: ["diff", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -327,7 +327,7 @@ describe("PTY extensions", () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack"],
+      args: ["diff", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 140,
       rows: 24,
@@ -358,7 +358,7 @@ describe("PTY extensions", () => {
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
     const launch = async () =>
       await harness.launchHunk({
-        args: ["diff", "--mode", "stack"],
+        args: ["diff", "--mode", "unified"],
         cwd: fixture.dir,
         cols: 140,
         rows: 24,
@@ -407,7 +407,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -448,7 +448,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         // Load the fixture through the dev flag so it is trusted without a prompt.
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
@@ -494,7 +494,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -543,7 +543,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -587,7 +587,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         // Load the fixture through the dev flag so it is trusted without a prompt.
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
@@ -636,7 +636,7 @@ describe("PTY extensions", () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createBottomClampedRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--extension", REVIEW_NOTE_NAVIGATOR_EXTENSION],
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_NOTE_NAVIGATOR_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
       rows: 22,
@@ -694,7 +694,7 @@ describe("PTY extensions", () => {
     const fixture = harness.createTwoFileRepoFixture();
     const outputPath = join(fixture.dir, "review-snapshot.json");
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--extension", REVIEW_SNAPSHOT_EXPORT_EXTENSION],
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_SNAPSHOT_EXPORT_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
       rows: 30,
@@ -741,7 +741,7 @@ describe("PTY extensions", () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--extension", REVIEW_TRIAGE_EXTENSION],
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_TRIAGE_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
       rows: 30,
@@ -789,7 +789,7 @@ describe("PTY extensions", () => {
     // Enough changed rows that top/bottom navigation has an observable viewport effect.
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--extension", VIM_NAVIGATION_EXTENSION],
+      args: ["diff", "--mode", "unified", "--extension", VIM_NAVIGATION_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
       rows: 24,
@@ -936,7 +936,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -985,7 +985,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -1038,7 +1038,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
       ],
@@ -1078,7 +1078,7 @@ describe("PTY extensions", () => {
       args: [
         "diff",
         "--mode",
-        "stack",
+        "unified",
         // Load the fixture through the dev flag so it is trusted without a prompt.
         "--extension",
         join(fixture.dir, ".hunk", "extensions", "fixture.ts"),

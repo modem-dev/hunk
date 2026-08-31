@@ -599,7 +599,7 @@ describe("UI components", () => {
     const setup = await testRender(
       <DiffRowView
         row={{
-          type: "stack-line",
+          type: "unified-line",
           key: "alpha:line:1",
           fileId: "alpha",
           hunkIndex: 0,
@@ -754,7 +754,7 @@ describe("UI components", () => {
   test("DiffRowView keeps wrapped text stable when showing the add-note affordance", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:hover-wrap",
       fileId: "alpha",
       hunkIndex: 0,
@@ -801,7 +801,7 @@ describe("UI components", () => {
     const setup = await testRender(
       <DiffRowView
         row={{
-          type: "stack-line",
+          type: "unified-line",
           key: "alpha:line:hover-wrap-bg",
           fileId: "alpha",
           hunkIndex: 0,
@@ -890,7 +890,7 @@ describe("UI components", () => {
   test("DiffRowView preserves zero-width combining spans in nowrap and wrapped rows", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:combining",
       fileId: "alpha",
       hunkIndex: 0,
@@ -935,7 +935,7 @@ describe("UI components", () => {
   test("DiffRowView height matches geometry for repeated composing scalars", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:repeated-composition",
       fileId: "alpha",
       hunkIndex: 0,
@@ -983,7 +983,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffRowView matches planned split and stack geometry at guide and add-note wrap boundaries", async () => {
+  test("DiffRowView matches planned split and unified geometry at guide and add-note wrap boundaries", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const plannedRows = [
       {
@@ -1010,14 +1010,14 @@ describe("UI components", () => {
       },
       {
         kind: "diff-row" as const,
-        key: "alpha:stack:guide-boundary",
-        stableKey: "alpha:stack:guide-boundary",
+        key: "alpha:unified:guide-boundary",
+        stableKey: "alpha:unified:guide-boundary",
         fileId: "alpha",
         hunkIndex: 0,
         noteGuideSide: "new" as const,
         row: {
-          type: "stack-line" as const,
-          key: "alpha:stack:guide-boundary",
+          type: "unified-line" as const,
+          key: "alpha:unified:guide-boundary",
           fileId: "alpha",
           hunkIndex: 0,
           cell: {
@@ -1129,7 +1129,7 @@ describe("UI components", () => {
       { spans: [{ text: "日" }, { text: "áá" }], expectedHeight: 2 },
     ]) {
       const row = {
-        type: "stack-line" as const,
+        type: "unified-line" as const,
         key: "alpha:line:zero-before-wide",
         fileId: "alpha",
         hunkIndex: 0,
@@ -2774,7 +2774,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
       actions,
       threadDepth: thread.depth,
@@ -2783,7 +2783,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         actions={actions}
@@ -2880,7 +2880,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
       threadDepth: thread.depth,
     });
@@ -2888,7 +2888,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         thread={thread}
@@ -2919,7 +2919,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
     });
     const onSave = mock(() => {});
@@ -2928,7 +2928,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         draft={{
@@ -2987,14 +2987,14 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
     });
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         onClose={() => {}}
@@ -3028,7 +3028,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         onClose={() => {}}
@@ -3108,7 +3108,7 @@ describe("UI components", () => {
         }}
         file={file}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
       />,
@@ -3142,7 +3142,7 @@ describe("UI components", () => {
         }}
         anchorSide="new"
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         thread={{ noteId: "note", depth: 0 }}
@@ -3477,7 +3477,7 @@ describe("UI components", () => {
         activeMenuId="view"
         activeMenuEntries={[
           { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
-          { kind: "item", label: "Stacked view", hint: "2", checked: false, action: () => {} },
+          { kind: "item", label: "Unified view", hint: "2", checked: false, action: () => {} },
           { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
           { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
           { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
@@ -3495,7 +3495,7 @@ describe("UI components", () => {
     );
 
     expect(frame).toContain("[x] Split view");
-    expect(frame).toContain("[ ] Stacked view");
+    expect(frame).toContain("[ ] Unified view");
     expect(frame).toContain("[x] Line numbers");
     expect(frame).toContain("[ ] Line wrapping");
     expect(frame).toContain("[x] Hunk metadata");
@@ -3720,7 +3720,7 @@ describe("UI components", () => {
       "Wheel                    scroll vertically",
       "Shift+Wheel              scroll code horizontally",
       "View",
-      "1 / 2 / 0                split / stack / auto",
+      "1 / 2 / 0                split / unified / auto",
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
@@ -3901,13 +3901,13 @@ describe("UI components", () => {
     expect(frame).toContain("1 + export const alpha = 2;");
   });
 
-  test("DiffSectionBody renders stack-mode wrapped continuation rows", async () => {
+  test("DiffSectionBody renders unified-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -3939,7 +3939,7 @@ describe("UI components", () => {
     const baseFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -3952,7 +3952,7 @@ describe("UI components", () => {
     const shiftedFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -3970,7 +3970,7 @@ describe("UI components", () => {
     expect(shiftedFrame).not.toContain("this is a very");
   });
 
-  test("split view wraps the same long diff line across more rows than stack view at the same width", async () => {
+  test("split view wraps the same long diff line across more rows than unified view at the same width", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const width = 64;
@@ -3988,10 +3988,10 @@ describe("UI components", () => {
       width + 4,
       18,
     );
-    const stackFrame = await captureFrame(
+    const unifiedFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={width}
         selectedHunkIndex={0}
@@ -4003,11 +4003,13 @@ describe("UI components", () => {
     );
 
     const splitContinuationRows = splitFrame.split("\n").filter((line) => /^▌\s+▌\s+\S/.test(line));
-    const stackContinuationRows = stackFrame.split("\n").filter((line) => /^▌\s{6,}\S/.test(line));
+    const unifiedContinuationRows = unifiedFrame
+      .split("\n")
+      .filter((line) => /^▌\s{6,}\S/.test(line));
 
     expect(splitFrame).toContain("1 + export const message = 't");
-    expect(stackFrame).toContain("1 +  export const message = 'this is a very long wrapped line");
-    expect(splitContinuationRows.length).toBeGreaterThan(stackContinuationRows.length);
+    expect(unifiedFrame).toContain("1 +  export const message = 'this is a very long wrapped line");
+    expect(splitContinuationRows.length).toBeGreaterThan(unifiedContinuationRows.length);
   });
 
   test("DiffSectionBody anchors range-less notes to the first visible row when hunk headers are hidden", async () => {

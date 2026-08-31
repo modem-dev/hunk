@@ -359,8 +359,8 @@ function createRapidViewportLoopBootstrap(): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:rapid-viewport",
     files,
-    vcsOptions: { mode: "stack", agentNotes: true },
-    initialMode: "stack",
+    vcsOptions: { mode: "unified", agentNotes: true },
+    initialMode: "unified",
     initialShowAgentNotes: true,
   });
 }
@@ -615,7 +615,7 @@ describe("App interactions", () => {
           },
         },
       ],
-      initialMode: "stack",
+      initialMode: "unified",
     });
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 240, height: 24 });
@@ -661,7 +661,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       // Regression coverage for issue #233 / PR #242. This intentionally combines the inputs
-      // that made the old React/OpenTUI feedback loop reproducible: stack layout, many hunks,
+      // that made the old React/OpenTUI feedback loop reproducible: unified layout, many hunks,
       // visible agent notes, repeated next-hunk jumps, and bursty wheel scrolling.
       for (let batch = 0; batch < 2; batch += 1) {
         await act(async () => {
@@ -2271,7 +2271,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("layout toggles preserve the current viewport anchor across split and stack", async () => {
+  test("layout toggles preserve the current viewport anchor across split and unified", async () => {
     const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
       width: 220,
       height: 12,
@@ -2957,7 +2957,7 @@ describe("App interactions", () => {
 
   test("coalesced line movement opens a draft at the latest cursor without moving its row", async () => {
     const setup = await testRender(
-      <AppHost bootstrap={createLineScrollBootstrap(false, "stack")} />,
+      <AppHost bootstrap={createLineScrollBootstrap(false, "unified")} />,
       { width: 120, height: 26 },
     );
 

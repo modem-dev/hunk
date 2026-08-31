@@ -97,19 +97,19 @@ describe("PTY key routing", () => {
         5_000,
       );
 
-      // Open the menu bar and pick "Stacked view" from the View menu with Enter.
+      // Open the menu bar and pick "Unified view" from the View menu with Enter.
       await session.press("f10");
       await session.waitForText(/Reload/, { timeout: 5_000 });
       await session.press("right");
       await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Split view") && text.includes("Stacked view"),
+        (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
       await session.press("down");
       await session.press("enter");
 
-      // The menu item must run (layout switches to stacked) and the Enter must
+      // The menu item must run (layout switches to unified) and the Enter must
       // stop there: the filter keeps focus and its text instead of submitting.
       const afterEnter = await harness.waitForSnapshot(
         session,

@@ -12,6 +12,7 @@ export type {
   HunkDiffFileHeaderProps,
   HunkDiffFileInput,
   HunkDiffLayout,
+  LegacyHunkDiffLayout,
   HunkDiffSelection,
   HunkDiffStats,
   HunkDiffViewProps,

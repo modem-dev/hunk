@@ -36,7 +36,7 @@ function binarySearchRowBounds(sectionRowBounds: DiffSectionRowBounds[], relativ
  * Capture a stable top-row anchor from the current review stream.
  *
  * `preferredStableKey` lets callers preserve the exact logical side they were already following
- * when a split row can map to multiple stacked rows and vice versa.
+ * when a split row can map to multiple unified rows and vice versa.
  */
 export function findViewportRowAnchor(
   files: DiffFile[],
