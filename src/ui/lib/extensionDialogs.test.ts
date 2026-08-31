@@ -128,7 +128,7 @@ describe("createExtensionDialogQueue", () => {
     void dialogs.document({
       title: "Setup",
       body: "one\n\u001b[31mtwo\u001b[0m",
-      copy: { label: "Prompt", text: "copy \u001b[31mexactly\u001b[0m" },
+      copy: { label: "Prompt", text: "copy\t\u001b[31mexactly\u001b[0m" },
     });
 
     expect(queue.current()).toMatchObject({
@@ -136,8 +136,8 @@ describe("createExtensionDialogQueue", () => {
       bodyLines: ["one", "two"],
       copy: {
         label: "Prompt",
-        text: "copy exactly",
-        displayLines: ["copy exactly"],
+        text: "copy    exactly",
+        displayLines: ["copy    exactly"],
       },
     });
   });
@@ -252,6 +252,15 @@ describe("createExtensionDialogQueue", () => {
     await expect(dialogs.document({ title: "Bad copy", copy: { text: "" } })).rejects.toThrow(
       /non-empty string/,
     );
+    await expect(
+      dialogs.document({ title: "Long body", body: Array(101).fill("line").join("\n") }),
+    ).rejects.toThrow(/at most 100 lines/);
+    await expect(
+      dialogs.document({ title: "Long copy", copy: { text: "x".repeat(16_385) } }),
+    ).rejects.toThrow(/at most 16384 characters/);
+    await expect(
+      dialogs.document({ title: "Expanded copy", copy: { text: "\t".repeat(4_097) } }),
+    ).rejects.toThrow(/normalized copy.text.*at most 16384 characters/);
     await expect(
       dialogs.select({ title: "Which?", options: [1 as unknown as string] }),
     ).rejects.toThrow(/must all be strings/);

@@ -204,8 +204,13 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const activeReviewGenerationRef = useRef(bootstrap);
+  const bundledDialogsLiveRef = useRef(false);
   useLayoutEffect(() => {
     activeReviewGenerationRef.current = bootstrap;
+    bundledDialogsLiveRef.current = true;
+    return () => {
+      bundledDialogsLiveRef.current = false;
+    };
   }, [bootstrap]);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
@@ -505,7 +510,9 @@ export function App({
         // Bundled registrations are process-static rather than owned by the
         // reloadable user-extension registry, but their review-scoped controls
         // still retire when the mounted review changes.
-        isLive: bundled ? () => activeReviewGenerationRef.current === bootstrap : lease.isLive,
+        isLive: bundled
+          ? () => bundledDialogsLiveRef.current && activeReviewGenerationRef.current === bootstrap
+          : lease.isLive,
         showAttribution: !bundled,
       });
     },
@@ -931,8 +938,6 @@ export function App({
       showTransientNotice(`Copied ${extensionDialog.copy.label.toLowerCase()} to clipboard`);
       return;
     }
-
-    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
   }, [extensionDialog, renderer, showTransientNotice]);
 
   /** Toggle the modal keyboard help overlay. */

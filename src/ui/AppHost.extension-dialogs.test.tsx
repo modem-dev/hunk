@@ -343,6 +343,57 @@ describe("extension dialogs", () => {
     );
   });
 
+  test("an unavailable document copy action is visible but inert", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-document-unavailable-");
+    const extDir = createTempDir("hunk-ext-dialog-document-unavailable-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.document({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      const copied: string[] = [];
+      setup.renderer.isOsc52Supported = () => false;
+      setup.renderer.copyToClipboardOSC52 = (text: string) => {
+        copied.push(text);
+        return true;
+      };
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Copy unavailable"),
+        "the unavailable copy state to render",
+      );
+
+      const unavailable = findTextPosition(setup.captureCharFrame(), "Copy unavailable");
+      expect(unavailable).not.toBeNull();
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+        await setup.mockMouse.click(unavailable!.x, unavailable!.y);
+      });
+      await flush(setup);
+
+      expect(copied).toEqual([]);
+      expect(setup.captureCharFrame()).toContain("Copy setup");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("answer undefined"),
+        "the unavailable-copy document to close",
+      );
+    });
+  });
+
   test("keeps confirm actions visible when wrapped prose exceeds a short terminal", async () => {
     const repo = createTestRepo("hunk-ext-dialog-short-confirm-");
     const extDir = createTempDir("hunk-ext-dialog-short-confirm-ext-");

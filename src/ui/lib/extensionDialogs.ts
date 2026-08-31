@@ -180,6 +180,16 @@ function normalizeBodyLines(body: unknown, maxLines = MAX_CONFIRM_BODY_LINES) {
     .map((line) => sanitizeTerminalLine(line));
 }
 
+/** Normalize a document body while rejecting content the host would have to discard. */
+function normalizeDocumentBodyLines(body: unknown) {
+  if (typeof body !== "string" || body.length === 0) return [];
+  const lines = body.split("\n");
+  if (lines.length > MAX_DOCUMENT_BODY_LINES) {
+    invalid("document", `body must contain at most ${MAX_DOCUMENT_BODY_LINES} lines.`);
+  }
+  return lines.map((line) => sanitizeTerminalLine(line));
+}
+
 /** Validate and normalize a document's optional clipboard card. */
 function normalizeDocumentCopy(
   copy: ExtensionDocumentOptions["copy"],
@@ -192,7 +202,13 @@ function normalizeDocumentCopy(
     invalid("document", `copy.text must be at most ${MAX_DOCUMENT_COPY_TEXT_LENGTH} characters.`);
   }
 
-  const text = sanitizeTerminalText(copy.text);
+  const text = sanitizeTerminalText(copy.text).replaceAll("\t", "    ");
+  if (text.length > MAX_DOCUMENT_COPY_TEXT_LENGTH) {
+    invalid(
+      "document",
+      `normalized copy.text must be at most ${MAX_DOCUMENT_COPY_TEXT_LENGTH} characters.`,
+    );
+  }
   if (text.length === 0) {
     invalid("document", "copy.text must contain visible or whitespace content.");
   }
@@ -362,7 +378,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
         },
         async document(options: ExtensionDocumentOptions) {
           const title = normalizeTitle("document", options?.title);
-          const bodyLines = normalizeBodyLines(options.body, MAX_DOCUMENT_BODY_LINES);
+          const bodyLines = normalizeDocumentBodyLines(options.body);
           const copy = normalizeDocumentCopy(options.copy);
           if (bodyLines.length === 0 && copy === null) {
             invalid("document", "requires body or copy content.");

@@ -7,7 +7,7 @@ import type {
   ExtensionSelectDialogRequest,
 } from "../../lib/extensionDialogs";
 import { extensionToastPrefix } from "../../lib/extensionNotifications";
-import { windowDialogText } from "../../lib/extensionDialogGeometry";
+import { windowDialogLiteralText, windowDialogText } from "../../lib/extensionDialogGeometry";
 import { listWindowStart } from "../../lib/listWindow";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
 import { fitText, padText } from "../../lib/text";
@@ -196,7 +196,8 @@ function ExtensionDocumentDialog({
     .lines.length;
   const copy = request.copy;
   const idealCopyRows = copy
-    ? windowDialogText(copy.displayLines, cardTextWidth, Number.MAX_SAFE_INTEGER).lines.length
+    ? windowDialogLiteralText(copy.displayLines, cardTextWidth, Number.MAX_SAFE_INTEGER).lines
+        .length
     : 0;
   const hasBody = idealBodyRows > 0;
   const hasCopy = copy !== null;
@@ -239,7 +240,7 @@ function ExtensionDocumentDialog({
   const copyCardRows = hasCopy ? remainingRows : 0;
   const visibleBody = windowDocumentText(request.bodyLines, bodyWidth, bodyRows);
   const visibleCopy = copy
-    ? windowDocumentText(
+    ? windowDialogLiteralText(
         copy.displayLines,
         cardTextWidth,
         copyCardRows >= 3 ? copyCardRows - 2 : copyCardRows,
@@ -297,14 +298,18 @@ function ExtensionDocumentDialog({
         </box>
       ) : null}
       {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {actionRows > 0 ? (
+      {actionRows > 0 && copy && !copySupported ? (
+        <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
+          <text fg={theme.muted}>Copy unavailable</text>
+        </box>
+      ) : actionRows > 0 ? (
         <DialogActionRow
           actions={
             copy
               ? [
                   {
                     keyLabel: "c",
-                    label: copySupported ? "Copy" : "unavailable",
+                    label: "Copy",
                     run: () => onCopyDocument(copy),
                   },
                 ]

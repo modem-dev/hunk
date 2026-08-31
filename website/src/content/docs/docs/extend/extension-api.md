@@ -311,7 +311,13 @@ hunk.registerCommand(
 );
 ```
 
-`document` presents read-only guidance rather than asking for an answer. At least `body` or `copy` must be present. When `copy` is provided, `c` and the clickable copy action send its `text` to the terminal clipboard after Hunk removes terminal control sequences, and Hunk renders the same safe value under `label` (default `Content`).
+`document` presents read-only guidance rather than asking for an answer. At
+least `body` or `copy` must be present. A body may contain up to 100 source
+lines, and copy text may contain up to 16,384 JavaScript string code units.
+When `copy` is provided, `c` and the clickable copy action send its `text` to
+the terminal clipboard after Hunk removes terminal control sequences and
+expands tabs to four spaces, and Hunk renders the same safe value under `label`
+(default `Content`).
 
 `select` fits acting on part of the selection — asking which hunk to jump to, then navigating there:
 

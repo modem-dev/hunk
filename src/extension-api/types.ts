@@ -1625,14 +1625,17 @@ export interface ExtensionInputOptions {
 export interface ExtensionDocumentCopyOptions {
   /** Short heading shown above the copyable text. Defaults to "Content". */
   label?: string;
-  /** Text copied to the terminal clipboard after Hunk removes terminal control sequences. */
+  /**
+   * Text copied after Hunk removes terminal control sequences and expands tabs
+   * to four spaces. Limited to 16,384 JavaScript string code units.
+   */
   text: string;
 }
 
 /** Read-only guidance shown to the user as a modal document. */
 export interface ExtensionDocumentOptions {
   title: string;
-  /** Optional prose shown above the copyable text. */
+  /** Optional prose shown above the copyable text. Limited to 100 source lines. */
   body?: string;
   /** Optional text card the user can copy with `c` or the mouse. */
   copy?: ExtensionDocumentCopyOptions;
@@ -1658,8 +1661,9 @@ export interface ExtensionDocumentOptions {
  * never left hanging.
  *
  * Bad arguments are a programming error rather than a user answer, so they
- * reject instead of resolving: a missing or blank `title`, or a `select` with
- * no options. Because a dialog call is only useful awaited, the rejection
+ * reject instead of resolving: a missing or blank `title`, a `select` with no
+ * options, or document content outside its documented bounds. Because a dialog
+ * call is only useful awaited, the rejection
  * surfaces through the same path as any other handler failure — a warning toast
  * naming the extension.
  */

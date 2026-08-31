@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { windowDialogText } from "./extensionDialogGeometry";
+import { windowDialogLiteralText, windowDialogText } from "./extensionDialogGeometry";
 
 describe("windowDialogText", () => {
   test("wraps prose within the available terminal-cell rows", () => {
@@ -15,5 +15,21 @@ describe("windowDialogText", () => {
       truncated: true,
     });
     expect(windowDialogText(["overflow"], 3, 0)).toEqual({ lines: [], truncated: true });
+  });
+});
+
+describe("windowDialogLiteralText", () => {
+  test("wraps copyable text without collapsing whitespace", () => {
+    expect(windowDialogLiteralText(["  one  two", "    three"], 7, 4)).toEqual({
+      lines: ["  one  ", "two", "    thr", "ee"],
+      truncated: false,
+    });
+  });
+
+  test("keeps meaningful literal text in a one-row window", () => {
+    expect(windowDialogLiteralText(["one  two"], 5, 1)).toEqual({
+      lines: ["one …"],
+      truncated: true,
+    });
   });
 });

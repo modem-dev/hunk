@@ -1661,10 +1661,12 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 ```
 
 `document` presents read-only guidance rather than asking for an answer. At
-least `body` or `copy` must be present. When `copy` is provided, `c` and the
-clickable copy action send its `text` to the terminal clipboard while the host
-removes terminal control sequences and renders the same safe value under
-`label` (default `Content`):
+least `body` or `copy` must be present. A body may contain up to 100 source
+lines, and copy text may contain up to 16,384 JavaScript string code units.
+When `copy` is provided, `c` and the clickable copy action send its `text` to
+the terminal clipboard while the host removes terminal control sequences,
+expands tabs to four spaces, and renders the same safe value under `label`
+(default `Content`):
 
 ```ts
 hunk.registerCommand({ id: "agent-setup", title: "Agent setup" }, async (ctx) => {
