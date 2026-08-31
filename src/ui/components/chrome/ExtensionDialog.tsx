@@ -183,7 +183,7 @@ function ExtensionDocumentDialog({
   terminalWidth: number;
   theme: AppTheme;
 }) {
-  const width = Math.min(84, Math.max(40, terminalWidth - 8));
+  const width = Math.min(84, Math.max(58, terminalWidth - 8));
   const measuredFrame = resolveModalGeometry({
     width,
     height: Number.MAX_SAFE_INTEGER,
