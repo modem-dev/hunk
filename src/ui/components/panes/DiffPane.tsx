@@ -30,7 +30,7 @@ import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
 import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import { setMouseCapture } from "../../lib/mouseCapture";
-import type { DraftReviewNote } from "../../lib/reviewNoteMapping";
+import type { DraftReviewNote, StoredReviewNoteRenderMetadata } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
   reviewNoteSource,
@@ -51,9 +51,9 @@ import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  createLineCursorStabilizer,
   EMPTY_LINE_CURSORS,
   firstLineCursorInHunk,
-  reuseEquivalentLineCursors,
   type LineCursor,
   type LineCursorBoundsLookup,
 } from "../../lib/lineCursors";
@@ -122,6 +122,53 @@ import {
 } from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+
+/** Read terminal-only semantic note metadata without granting it to static sidecars. */
+function storedReviewNoteMetadata(
+  annotation: AgentAnnotation,
+): StoredReviewNoteRenderMetadata | undefined {
+  const candidate = annotation as AgentAnnotation & Partial<StoredReviewNoteRenderMetadata>;
+  return candidate.semanticallyStored === true && typeof candidate.reviewNoteId === "string"
+    ? (candidate as AgentAnnotation & StoredReviewNoteRenderMetadata)
+    : undefined;
+}
+
+/** Grant saved-note card actions from semantic ownership rather than presentation labels. */
+export function storedReviewNoteActions({
+  editable,
+  hasReplies,
+  noteId,
+  onEditUserNote,
+  onRemoveLiveNote,
+  onRemoveUserNote,
+  onReplyToNote,
+  source,
+}: {
+  editable: boolean;
+  hasReplies: boolean;
+  noteId: string;
+  onEditUserNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  onRemoveLiveNote?: (noteId: string) => void;
+  onRemoveUserNote?: (noteId: string) => void;
+  onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  source: "agent" | "ai" | "user";
+}): VisibleAgentNote["actions"] {
+  const actions: NonNullable<VisibleAgentNote["actions"]> = {};
+  if (source === "user" && editable && onEditUserNote) {
+    actions.onEdit = () => onEditUserNote(noteId, { preserveViewport: true });
+  }
+  if (onReplyToNote) {
+    actions.onReply = () => onReplyToNote(noteId, { preserveViewport: true });
+  }
+  if (!hasReplies) {
+    if (source === "user" && onRemoveUserNote) {
+      actions.onDelete = () => onRemoveUserNote(noteId);
+    } else if (source !== "user" && onRemoveLiveNote) {
+      actions.onDelete = () => onRemoveLiveNote(noteId);
+    }
+  }
+  return Object.keys(actions).length > 0 ? actions : undefined;
+}
 
 /**
  * Resets OpenTUI's wheel remainder after Hunk reroutes a shifted wheel event.
@@ -293,6 +340,9 @@ export function DiffPane({
   height,
   cancelCopySelectionRef,
   onActiveAddNoteAffordanceChange,
+  onEditUserNote,
+  onReplyToNote,
+  onRemoveLiveNote,
   onRemoveUserNote,
   onSaveDraftNote,
   onStartUserNoteAtHunk,
@@ -361,6 +411,9 @@ export function DiffPane({
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
+  onEditUserNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
+  onRemoveLiveNote?: (noteId: string) => void;
   onRemoveUserNote?: (noteId: string) => void;
   onSaveDraftNote?: () => void;
   onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void;
@@ -522,7 +575,8 @@ export function DiffPane({
     const next = new Map<string, VisibleAgentNote[]>();
 
     files.forEach((file) => {
-      const annotations = (file.agent?.annotations ?? []).filter(
+      const allAnnotations = file.agent?.annotations ?? [];
+      const annotations = allAnnotations.filter(
         // One shared visibility rule over the normalized note source, so the terminal and
         // any other surface hide the same notes when the layer is off.
         (annotation) =>
@@ -532,56 +586,162 @@ export function DiffPane({
       // render plan places sidecar annotations, agent comments, reviewer notes, and the open
       // draft from one decision about where each of them hangs.
       const hunks = file.metadata.hunks;
-      const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
+      const notes: VisibleAgentNote[] = annotations.flatMap((annotation, index) => {
         const source = reviewNoteSource(annotation);
+        const metadata = storedReviewNoteMetadata(annotation);
+        if (
+          metadata &&
+          draftNote?.kind === "edit" &&
+          draftNote.targetNoteId === metadata.reviewNoteId
+        ) {
+          return [];
+        }
         // Explicit ids and synthesized index ids live in disjoint namespaces so an
         // annotation named "3" can never collide with an id-less annotation at index 3 —
         // reveal resolves rows by this id, and a collision would aim it at the wrong note.
         const id = annotation.id
           ? `annotation:${file.id}:id:${annotation.id}`
           : `annotation:${file.id}:at:${index}`;
-        if (source !== "user") {
-          return createVisibleAgentNote(hunks, { id, annotation });
-        }
+        const actions =
+          metadata && !draftNote
+            ? storedReviewNoteActions({
+                editable: annotation.editable === true,
+                hasReplies: metadata.hasReplies === true,
+                noteId: metadata.reviewNoteId,
+                onEditUserNote,
+                onRemoveLiveNote,
+                onRemoveUserNote,
+                onReplyToNote,
+                source,
+              })
+            : undefined;
 
-        return createVisibleAgentNote(hunks, {
-          id,
-          annotation,
-          source,
-          editable: true,
-          onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
-        });
+        return [
+          createVisibleAgentNote(hunks, {
+            id,
+            annotation,
+            source,
+            editable: source === "user" && annotation.editable === true,
+            ...(metadata
+              ? {
+                  thread: {
+                    noteId: metadata.reviewNoteId,
+                    ...(metadata.parentId ? { parentId: metadata.parentId } : {}),
+                    depth: metadata.threadDepth,
+                    hasNextSibling: metadata.hasNextSibling,
+                    ancestorHasNextSibling: metadata.ancestorHasNextSibling,
+                  },
+                }
+              : {}),
+            ...(actions ? { actions } : {}),
+          }),
+        ];
       });
 
       if (draftNote?.fileId === file.id) {
+        const parentMetadata = allAnnotations
+          .map(storedReviewNoteMetadata)
+          .find(
+            (metadata) => metadata?.reviewNoteId === (draftNote.parentId ?? draftNote.targetNoteId),
+          );
+        const threadDepth =
+          draftNote.kind === "reply"
+            ? (parentMetadata?.threadDepth ?? 0) + 1
+            : (parentMetadata?.threadDepth ?? 0);
         const draftAnnotation: AgentAnnotation = {
           id: draftNote.id,
           source: "user-draft",
+          title:
+            draftNote.kind === "edit"
+              ? "Edit note"
+              : draftNote.kind === "reply"
+                ? "Reply"
+                : undefined,
           summary: draftNote.body || " ",
           oldRange: draftNote.oldRange,
           newRange: draftNote.newRange,
           editable: true,
         };
-        notes.push(
-          createVisibleAgentNote(hunks, {
-            id: draftNote.id,
-            annotation: draftAnnotation,
-            // The draft knows exactly where the reviewer opened it, including on an expanded
-            // gap line no hunk contains.
-            target: { hunkIndex: draftNote.hunkIndex, side: draftNote.side, line: draftNote.line },
-            source: "draft",
-            editable: true,
-            draft: {
-              body: draftNote.body,
-              focused: draftNoteFocused,
-              onBlur: onBlurDraftNote,
-              onCancel: onCancelDraftNote ?? (() => {}),
-              onFocus: onFocusDraftNote,
-              onInput: onUpdateDraftNote ?? (() => {}),
-              onSave: onSaveDraftNote ?? (() => {}),
-            },
-          }),
-        );
+        const visibleDraft = createVisibleAgentNote(hunks, {
+          id:
+            draftNote.kind === "edit" && draftNote.targetNoteId
+              ? `annotation:${file.id}:id:${draftNote.targetNoteId}`
+              : draftNote.id,
+          annotation: draftAnnotation,
+          // The draft knows exactly where the reviewer opened it, including on an expanded
+          // gap line no hunk contains.
+          target: { hunkIndex: draftNote.hunkIndex, side: draftNote.side, line: draftNote.line },
+          source: "draft",
+          editable: true,
+          thread: {
+            noteId: draftNote.id,
+            ...(draftNote.parentId ? { parentId: draftNote.parentId } : {}),
+            depth: threadDepth,
+            hasNextSibling: draftNote.kind === "edit" ? parentMetadata?.hasNextSibling : false,
+            ancestorHasNextSibling:
+              draftNote.kind === "reply"
+                ? [
+                    ...(parentMetadata?.ancestorHasNextSibling ?? []),
+                    parentMetadata?.hasNextSibling ?? false,
+                  ]
+                : parentMetadata?.ancestorHasNextSibling,
+          },
+          draft: {
+            body: draftNote.body,
+            focused: draftNoteFocused,
+            onBlur: onBlurDraftNote,
+            onCancel: onCancelDraftNote ?? (() => {}),
+            onFocus: onFocusDraftNote,
+            onInput: onUpdateDraftNote ?? (() => {}),
+            onSave: onSaveDraftNote ?? (() => {}),
+          },
+        });
+        if (draftNote.kind === "edit" && draftNote.targetNoteId) {
+          const targetIndex = annotations.findIndex(
+            (annotation) =>
+              storedReviewNoteMetadata(annotation)?.reviewNoteId === draftNote.targetNoteId,
+          );
+          notes.splice(targetIndex < 0 ? notes.length : targetIndex, 0, visibleDraft);
+        } else if (draftNote.kind === "reply" && draftNote.parentId) {
+          const parentIndex = notes.findIndex((note) => note.thread?.noteId === draftNote.parentId);
+          let insertIndex = parentIndex < 0 ? notes.length : parentIndex + 1;
+          const parentDepth = notes[parentIndex]?.thread?.depth ?? 0;
+          while ((notes[insertIndex]?.thread?.depth ?? -1) > parentDepth) {
+            insertIndex += 1;
+          }
+
+          // The unsaved reply is the new last sibling. Extend the previous sibling's rail
+          // through its whole subtree so the draft joins the same visible thread immediately.
+          let previousSiblingIndex = -1;
+          for (let index = parentIndex + 1; index < insertIndex; index += 1) {
+            const candidate = notes[index]?.thread;
+            if (candidate?.parentId === draftNote.parentId && candidate.depth === threadDepth) {
+              previousSiblingIndex = index;
+            }
+          }
+          if (previousSiblingIndex >= 0) {
+            const previousSibling = notes[previousSiblingIndex]!;
+            notes[previousSiblingIndex] = {
+              ...previousSibling,
+              thread: { ...previousSibling.thread!, hasNextSibling: true },
+            };
+            for (let index = previousSiblingIndex + 1; index < insertIndex; index += 1) {
+              const descendant = notes[index]!;
+              if (!descendant.thread || descendant.thread.depth <= threadDepth) {
+                break;
+              }
+              const ancestorHasNextSibling = [...(descendant.thread.ancestorHasNextSibling ?? [])];
+              ancestorHasNextSibling[threadDepth] = true;
+              notes[index] = {
+                ...descendant,
+                thread: { ...descendant.thread, ancestorHasNextSibling },
+              };
+            }
+          }
+          notes.splice(insertIndex, 0, visibleDraft);
+        } else {
+          notes.push(visibleDraft);
+        }
       }
 
       if (notes.length > 0) {
@@ -597,6 +757,9 @@ export function DiffPane({
     onBlurDraftNote,
     onCancelDraftNote,
     onFocusDraftNote,
+    onEditUserNote,
+    onReplyToNote,
+    onRemoveLiveNote,
     onRemoveUserNote,
     onSaveDraftNote,
     onUpdateDraftNote,
@@ -663,6 +826,30 @@ export function DiffPane({
   // is required before passive viewport-follow selection can trigger.
   const lastViewportSelectionTopRef = useRef<number | null>(null);
   const lastViewportRowAnchorRef = useRef<ViewportRowAnchor | null>(null);
+  // Track the previous selected anchor to detect actual selection changes.
+  const prevSelectedAnchorIdRef = useRef<string | null>(null);
+  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
+  const pendingSelectionSettleRef = useRef(false);
+  const pendingSelectionRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  /** Clear scheduled selection-reveal retries without changing the resettle policy. */
+  const clearPendingSelectionRevealTimers = useCallback(() => {
+    for (const timeout of pendingSelectionRevealTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    pendingSelectionRevealTimeoutsRef.current = [];
+  }, []);
+
+  /** Retire selection reveal work once another explicit scroll policy becomes authoritative. */
+  const supersedePendingSelectionReveal = useCallback(() => {
+    clearPendingSelectionRevealTimers();
+    pendingSelectionSettleRef.current = false;
+  }, [clearPendingSelectionRevealTimers]);
+
+  /** Clear any pending "selected file to top" follow-up. */
+  const clearPendingFileTopAlign = useCallback(() => {
+    pendingFileTopAlignFileIdRef.current = null;
+  }, []);
 
   /** Track the currently hover-owned file without making scroll handlers depend on render state. */
   const setHoveredFileForRowActions = useCallback((fileId: string) => {
@@ -775,6 +962,27 @@ export function DiffPane({
 
     // OpenTUI emits viewport events from its own layout and slider work. Keep React state updates
     // timer-deferred so wheel/key bursts collapse into bounded review-stream renders.
+    /** Schedule at most one deferred read for the current viewport event burst. */
+    const scheduleViewportRead = (delay: number) => {
+      if (scheduled) {
+        return;
+      }
+      scheduled = true;
+      scheduledViewportRead = setTimeout(() => {
+        scheduledViewportRead = null;
+        if (cancelled) {
+          scheduled = false;
+          return;
+        }
+
+        try {
+          readViewport();
+        } finally {
+          scheduled = false;
+        }
+      }, delay);
+    };
+
     const handleViewportChange = () => {
       if (
         (scrollBox.scrollTop ?? 0) === lastReadTop &&
@@ -782,24 +990,7 @@ export function DiffPane({
       ) {
         return;
       }
-      if (scheduled) {
-        return;
-      }
-      scheduled = true;
-      scheduledViewportRead = setTimeout(
-        () => {
-          scheduledViewportRead = null;
-          if (cancelled) {
-            scheduled = false;
-            return;
-          }
-
-          try {
-            readViewport();
-          } finally {
-            scheduled = false;
-          }
-        },
+      scheduleViewportRead(
         wrapLines ? Math.floor(VIEWPORT_READ_COALESCE_MS / 2) : VIEWPORT_READ_COALESCE_MS,
       );
     };
@@ -812,11 +1003,17 @@ export function DiffPane({
         return;
       }
       scrollBox.viewport.off("resize", handleViewportResize);
-      queueMicrotask(() => {
-        if (!cancelled) {
-          readViewport();
-        }
-      });
+      if (wrapLines) {
+        queueMicrotask(() => {
+          if (!cancelled) {
+            readViewport();
+          }
+        });
+        return;
+      }
+      // The exact nowrap estimate already fills the first paint. Publish Yoga's measured height on
+      // the next frame so later input shares the authoritative window without rendering twice.
+      scheduleViewportRead(VIEWPORT_READ_COALESCE_MS);
     };
 
     readViewport();
@@ -976,6 +1173,8 @@ export function DiffPane({
       return;
     }
 
+    supersedePendingSelectionReveal();
+    clearPendingFileTopAlign();
     previousScrollEdgeRequestIdRef.current = pendingScrollEdgeRequest.id;
     const viewportHeight = scrollBox.viewport.height || scrollEdgeViewportHeight;
     const nextTop = clampVerticalScrollTop(
@@ -986,10 +1185,12 @@ export function DiffPane({
     setScrollViewport({ top: nextTop, height: viewportHeight });
     scrollBox.scrollTo(nextTop);
   }, [
+    clearPendingFileTopAlign,
     pendingScrollEdgeRequest,
     requestedScrollEdgeTop,
     scrollEdgeViewportHeight,
     scrollRef,
+    supersedePendingSelectionReveal,
     totalContentHeight,
   ]);
   const fileSectionIndexById = useMemo(
@@ -1003,12 +1204,11 @@ export function DiffPane({
     () => (cursorLine === "off" ? EMPTY_LINE_CURSORS : buildLineCursors(files, sectionGeometry)),
     [cursorLine, files, sectionGeometry],
   );
-  const previousLineCursorsRef = useRef<LineCursor[]>(EMPTY_LINE_CURSORS);
-  const lineCursors = reuseEquivalentLineCursors(
-    previousLineCursorsRef.current,
-    measuredLineCursors,
+  const lineCursorStabilizerRef = useRef<ReturnType<typeof createLineCursorStabilizer> | null>(
+    null,
   );
-  previousLineCursorsRef.current = lineCursors;
+  lineCursorStabilizerRef.current ??= createLineCursorStabilizer();
+  const lineCursors = lineCursorStabilizerRef.current(measuredLineCursors);
   /** Locate one measured row in whole-stream rows, addressed by its file and plan anchor. */
   const rowBoundsInStream = useCallback(
     (fileId: string, stableKey: string) => {
@@ -1882,31 +2082,6 @@ export function DiffPane({
   /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
   const selectedFileBodyTop =
     selectedFileIndex >= 0 ? (fileSectionLayouts[selectedFileIndex]?.bodyTop ?? 0) : 0;
-
-  // Track the previous selected anchor to detect actual selection changes.
-  const prevSelectedAnchorIdRef = useRef<string | null>(null);
-  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
-  const pendingSelectionSettleRef = useRef(false);
-  const pendingSelectionRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  /** Clear scheduled selection-reveal retries without changing the resettle policy. */
-  const clearPendingSelectionRevealTimers = useCallback(() => {
-    for (const timeout of pendingSelectionRevealTimeoutsRef.current) {
-      clearTimeout(timeout);
-    }
-    pendingSelectionRevealTimeoutsRef.current = [];
-  }, []);
-
-  /** Retire selection reveal work once an explicit line alignment becomes authoritative. */
-  const supersedePendingSelectionReveal = useCallback(() => {
-    clearPendingSelectionRevealTimers();
-    pendingSelectionSettleRef.current = false;
-  }, [clearPendingSelectionRevealTimers]);
-
-  /** Clear any pending "selected file to top" follow-up. */
-  const clearPendingFileTopAlign = useCallback(() => {
-    pendingFileTopAlignFileIdRef.current = null;
-  }, []);
 
   /**
    * Report whether the align has landed as far as the rest of this pane can observe it.

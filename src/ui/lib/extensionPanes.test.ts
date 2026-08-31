@@ -211,7 +211,7 @@ describe("extension panes", () => {
     expect(availabilityCalls).toBe(1);
 
     available = true;
-    const paint = { render: () => null };
+    const paint = { side: "new" as const, line: 1, render: () => null };
     const restored = probeExtensionPaneAvailability({ panes, context, currentLine: paint });
     expect(restored.available.has(registered)).toBeTrue();
     expect(planExtensionPanes({ ...geometry, openKeys: ["a:detail"] }).panes).toHaveLength(1);

@@ -468,7 +468,7 @@ export const CONFIG_COMMAND_SECTIONS = {
   vcs: "working-tree and target reviews (`hunk diff`)",
   show: "commit and target display reviews (`hunk show`)",
   "stash-show": "stash reviews (`hunk stash show`)",
-  diff: "two-file comparisons (`hunk diff <left> <right>`)",
+  diff: "two-file comparisons (`hunk diff --files <left> <right>`)",
   patch: "patch-file reviews (`hunk patch`)",
   difftool: "Git difftool pair reviews (`hunk difftool`)",
 } as const satisfies Record<CliInput["kind"], string>;

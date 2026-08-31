@@ -20,6 +20,20 @@ export interface VisibleAgentNote {
   anchor: ReviewRangeAnchorV1;
   source?: ReviewNoteSource | "draft";
   editable?: boolean;
+  /** Shared semantic relationship metadata; static sidecars omit it. */
+  thread?: {
+    noteId: string;
+    parentId?: string;
+    depth: number;
+    hasNextSibling?: boolean;
+    ancestorHasNextSibling?: readonly boolean[];
+  };
+  /** Explicit capabilities for this card; source labels do not grant authority. */
+  actions?: {
+    onEdit?: () => void;
+    onReply?: () => void;
+    onDelete?: () => void;
+  };
   draft?: {
     body: string;
     focused: boolean;
@@ -29,7 +43,6 @@ export interface VisibleAgentNote {
     onInput: (value: string) => void;
     onSave: () => void;
   };
-  onRemove?: () => void;
 }
 
 export interface AnnotationAnchor {
@@ -40,7 +53,7 @@ export interface AnnotationAnchor {
 /** Build the source and author label shown for one inline note. */
 export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
   if (annotation.source === "user-draft") {
-    return "Draft note";
+    return sanitizeTerminalLine(annotation.title?.trim() ?? "") || "Draft note";
   }
 
   const source = reviewNoteSource(annotation);

@@ -106,7 +106,7 @@ describe("PTY scrolling", () => {
   test("clicking and dragging the live scrollbar scrolls the review pane", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 10,
     });
@@ -240,7 +240,7 @@ describe("PTY scrolling", () => {
   test("mouse wheel scrolling moves the review pane", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 220,
       rows: 12,
     });
@@ -283,7 +283,7 @@ describe("PTY scrolling", () => {
   test("repeated mouse-wheel input remains stable at the end of the review stream", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 220,
       rows: 12,
     });

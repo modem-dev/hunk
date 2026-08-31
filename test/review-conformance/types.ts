@@ -110,6 +110,7 @@ export interface ReviewSnapshotProjection {
   files: Array<{ fileKey: string; contentIdentity: string }>;
   notes: Array<{
     id: string;
+    parentId?: string;
     fileKey: string;
     resolution: "active" | "stale" | "orphaned";
     preferred?: ConformanceLineAddress;

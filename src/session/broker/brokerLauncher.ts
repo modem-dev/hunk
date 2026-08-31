@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseBrokerSafeInteger,
@@ -15,6 +15,7 @@ const SCRIPT_ENTRYPOINT_PATTERN = /[\\/]|\.(?:[cm]?js|tsx?)$/;
 const DEFAULT_DAEMON_LOCK_STALE_MS = 15_000;
 const DEFAULT_DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS = 100;
+const MAX_DAEMON_LAUNCH_METADATA_BYTES = 16 * 1024;
 
 export interface DaemonLaunchCommand {
   command: string;
@@ -93,7 +94,11 @@ function safeRuntimeToken(value: string) {
 }
 
 function resolveRuntimeBaseDir(env: NodeJS.ProcessEnv = process.env) {
-  return env.XDG_RUNTIME_DIR?.trim() || tmpdir();
+  const configured = env.XDG_RUNTIME_DIR?.trim();
+  if (configured) return configured;
+  // Unix temporary directories are commonly shared across users. Keep the fallback beneath the
+  // current home directory instead of a predictable shared-/tmp name another account can pre-own.
+  return typeof process.getuid === "function" ? join(homedir(), ".hunk") : tmpdir();
 }
 
 function isRunningPid(pid: number) {
@@ -112,6 +117,41 @@ function isRunningPid(pid: number) {
 function readJsonFile<T>(path: string) {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse exact launch metadata used only as a change-detection hint across daemon generations. */
+function parseSessionBrokerLaunchMetadata(value: unknown): SessionBrokerLaunchMetadata | null {
+  try {
+    const record = parseExactBrokerRecord(value, [
+      "pid",
+      "host",
+      "port",
+      "command",
+      "args",
+      "launchedAt",
+      "launchedByPid",
+      "launchCwd",
+    ] as const);
+    if (!Array.isArray(record.args)) return null;
+    const args = record.args.map((argument) => parseBrokerString(argument));
+    return {
+      pid: parseBrokerSafeInteger(record.pid, { minimum: 1 }),
+      host: parseBrokerString(record.host),
+      port: parseBrokerSafeInteger(record.port, {
+        minimum: 1,
+        maximum: 65_535,
+      }),
+      command: parseBrokerString(record.command),
+      args,
+      launchedAt: parseBrokerString(record.launchedAt),
+      launchedByPid: parseBrokerSafeInteger(record.launchedByPid, {
+        minimum: 1,
+      }),
+      launchCwd: parseBrokerString(record.launchCwd),
+    };
   } catch {
     return null;
   }
@@ -146,7 +186,7 @@ function tryAcquireDaemonLaunchLock({
   staleAfterMs: number;
 }): SessionBrokerLaunchLock | null {
   const paths = resolveSessionBrokerRuntimePaths(config, env);
-  mkdirSync(paths.runtimeDir, { recursive: true });
+  mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
 
   const payload: SessionBrokerLaunchLockFile = {
     ownerPid: process.pid,
@@ -376,6 +416,27 @@ export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | 
   }
 }
 
+/** Read a bounded exact metadata fingerprint as a reconnect hint, never process authority. */
+export function readSessionBrokerLaunchFingerprint(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const { metadataPath } = resolveSessionBrokerRuntimePaths(config, env);
+  try {
+    const stat = statSync(metadataPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_DAEMON_LAUNCH_METADATA_BYTES)
+      return null;
+    const bytes = readFileSync(metadataPath);
+    if (bytes.byteLength !== stat.size || bytes.byteLength > MAX_DAEMON_LAUNCH_METADATA_BYTES) {
+      return null;
+    }
+    const metadata = parseSessionBrokerLaunchMetadata(JSON.parse(bytes.toString("utf8")));
+    return metadata ? JSON.stringify(metadata) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Read the daemon's health payload when one is reachable on the configured loopback port. */
 export async function readSessionBrokerHealth(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
@@ -437,29 +498,6 @@ export function isLoopbackPortReachable(
     socket.once("timeout", () => finish(false));
     socket.once("error", () => finish(false));
   });
-}
-
-/** Wait for the running daemon to stop responding on its health endpoint. */
-export async function waitForSessionBrokerShutdown({
-  config = resolveSessionBrokerConfig(),
-  timeoutMs = 3_000,
-  intervalMs = 100,
-}: {
-  config?: ResolvedSessionBrokerConfig;
-  timeoutMs?: number;
-  intervalMs?: number;
-} = {}) {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (!(await isSessionBrokerHealthy(config))) {
-      return true;
-    }
-
-    await Bun.sleep(intervalMs);
-  }
-
-  return false;
 }
 
 /** Launch the broker daemon in the background without tying it to the current TTY session. */

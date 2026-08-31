@@ -61,6 +61,7 @@ describe("PTY current line", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -109,7 +110,7 @@ describe("PTY current line", () => {
   test("multi-row copy drag keeps extending after highlighted rows repaint", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -149,6 +150,7 @@ describe("PTY current line", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -184,6 +186,7 @@ describe("PTY current line", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -252,7 +255,7 @@ describe("PTY current line", () => {
   test("stepping reaches the lines an expanded gap reveals", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
       cols: 140,
       rows: 16,
     });
@@ -278,7 +281,7 @@ describe("PTY current line", () => {
   test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
       cols: 140,
       rows: 16,
     });

@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildJjDiffArgs, buildJjShowArgs, resolveJjDiffEndpoints, runJjText } from "./commands";
+import {
+  buildJjDiffArgs,
+  buildJjShowArgs,
+  resolveJjDiffEndpoints,
+  resolveJjRangeEndpoints,
+  runJjText,
+} from "./commands";
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
@@ -92,6 +98,58 @@ afterEach(() => {
 const jjTest = Bun.which("jj") ? test : test.skip;
 
 describe("jj command helpers", () => {
+  test("compares named revisions with --from/--to rather than a range revset", () => {
+    const input = diffInput({ rangeEndpoints: { from: "main", to: "feature" } });
+    expect(buildJjDiffArgs(input)).toEqual([
+      "diff",
+      "--git",
+      "--ignore-working-copy",
+      "--from",
+      "main",
+      "--to",
+      "feature",
+    ]);
+    expect(buildJjDiffArgs(input, undefined, true)).toEqual([
+      "diff",
+      "--git",
+      "--from",
+      "main",
+      "--to",
+      "feature",
+    ]);
+  });
+
+  test("rejects each option-like Jujutsu endpoint before commands or revision probes", () => {
+    for (const rangeEndpoints of [
+      { from: "--from-file", to: "feature" },
+      { from: "main", to: "--to-file" },
+    ]) {
+      const input = diffInput({ rangeEndpoints });
+      expect(() => buildJjDiffArgs(input)).toThrow("looks like a Jujutsu option");
+      expect(() => resolveJjRangeEndpoints(input, rangeEndpoints)).toThrow(
+        "looks like a Jujutsu option",
+      );
+    }
+
+    for (const rangeEndpoints of [
+      { from: "", to: "feature" },
+      { from: "main", to: "" },
+    ]) {
+      const input = diffInput({ rangeEndpoints });
+      expect(() => buildJjDiffArgs(input)).toThrow("empty revision");
+      expect(() => resolveJjRangeEndpoints(input, rangeEndpoints)).toThrow("empty revision");
+    }
+  });
+
+  test("passes an explicitly written revset through to -r", () => {
+    expect(buildJjDiffArgs(diffInput({ range: "trunk()..@" }))).toEqual([
+      "diff",
+      "--git",
+      "-r",
+      "trunk()..@",
+    ]);
+  });
+
   test("uses an immutable revision override without changing fileset arguments", () => {
     expect(buildJjDiffArgs(diffInput({ pathspecs: ["src/a b.ts"] }), "abc123")).toEqual([
       "diff",
@@ -156,7 +214,7 @@ describe("jj command helpers", () => {
 
     expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
       newCommitId: secondCommitId,
-      parentCommitIds: [firstCommitId],
+      oldCommitIds: [firstCommitId],
     });
   });
 
@@ -176,7 +234,22 @@ describe("jj command helpers", () => {
 
     expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
       newCommitId: thirdCommitId,
-      parentCommitIds: [secondCommitId],
+      oldCommitIds: [secondCommitId],
+    });
+  });
+
+  jjTest("resolves two revisions to immutable source-expansion endpoints", () => {
+    const dir = createTempJjRepo("hunk-jj-two-endpoints-");
+    writeFileSync(join(dir, "file.txt"), "one\n");
+    jj(dir, "commit", "-m", "first");
+    const from = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+    writeFileSync(join(dir, "file.txt"), "two\n");
+    const to = jj(dir, "log", "--no-graph", "-r", "@", "-T", "commit_id");
+    const input = diffInput({ rangeEndpoints: { from: "@-", to: "@" } });
+
+    expect(resolveJjRangeEndpoints(input, input.rangeEndpoints!, { cwd: dir })).toEqual({
+      newCommitId: to,
+      oldCommitIds: [from],
     });
   });
 
@@ -212,7 +285,7 @@ describe("jj command helpers", () => {
 
     expect(endpoints).toEqual({
       newCommitId: mergeCommitId,
-      parentCommitIds: [leftCommitId, rightCommitId].sort(),
+      oldCommitIds: [leftCommitId, rightCommitId].sort(),
     });
   });
 

@@ -1,19 +1,28 @@
 import { sanitizeTerminalText } from "../../lib/terminalText";
 import { resolveSessionBrokerConfig } from "../broker/brokerConfig";
+import {
+  SessionBrokerCallerClient,
+  type SessionBrokerSignedRequestInit,
+} from "@hunk/session-broker";
 import type { SessionTerminalLocation, SessionTerminalMetadata } from "@hunk/session-broker-core";
-import { readHunkSessionDaemonCapabilities } from "../client/capabilities";
 import {
   HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS,
-  requestSessionDaemonHttp,
+  withSessionDaemonHttpTimeout,
 } from "../client/daemonHttp";
+import { loadOrCreateHunkSessionBrokerCredentials } from "../broker/credentials";
+import {
+  HUNK_SESSION_BROKER_APP_ID,
+  HUNK_SESSION_BROKER_APP_REVISION,
+} from "../broker/appContract";
 import {
   HUNK_SESSION_API_PATH,
+  HUNK_SESSION_CAPABILITIES_PATH,
   type SessionDaemonAction,
   type SessionDaemonCapabilities,
   type SessionDaemonRequest,
   type SessionDaemonResponses,
 } from "../protocol";
-import { parseSessionDaemonResponse } from "../protocolSchemas";
+import { parseSessionDaemonCapabilities, parseSessionDaemonResponse } from "../protocolSchemas";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -76,31 +85,60 @@ async function extractResponseError(response: Response) {
   return response.statusText || "Unknown Hunk session daemon error.";
 }
 
+interface HunkCallerTransport {
+  request(
+    path: string,
+    init?: SessionBrokerSignedRequestInit,
+    options?: { readonly targetSpecific?: boolean },
+  ): Promise<Response>;
+}
+
 class HttpHunkSessionCliClient implements HunkSessionCliClient {
   private readonly config = resolveSessionBrokerConfig();
+  private callerPromise: Promise<HunkCallerTransport> | null = null;
 
-  constructor(private readonly timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS) {}
+  constructor(
+    private readonly timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS,
+    private readonly injectedCaller?: HunkCallerTransport,
+  ) {}
+
+  private caller() {
+    if (this.injectedCaller) return Promise.resolve(this.injectedCaller);
+    this.callerPromise ??= loadOrCreateHunkSessionBrokerCredentials().then(
+      (credentials) =>
+        new SessionBrokerCallerClient({
+          appId: HUNK_SESSION_BROKER_APP_ID,
+          appRevision: HUNK_SESSION_BROKER_APP_REVISION,
+          origin: this.config.httpOrigin,
+          credential: credentials.caller,
+          daemon: {
+            keyId: credentials.daemonIdentity.keyId,
+            publicKey: credentials.daemonPublicKey,
+          },
+        }),
+    );
+    return this.callerPromise;
+  }
 
   private async request<Action extends SessionDaemonAction>(
     input: Extract<SessionDaemonRequest, { action: Action }>,
   ): Promise<SessionDaemonResponses[Action]> {
-    return requestSessionDaemonHttp({
-      config: this.config,
-      path: HUNK_SESSION_API_PATH,
+    return withSessionDaemonHttpTimeout({
       operation: `complete session ${input.action}`,
       timeoutMs: this.timeoutMs,
-      init: {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(input),
-      },
-      parse: async (response) => {
-        if (!response.ok) {
-          throw new Error(await extractResponseError(response));
-        }
-
+      task: async (signal) => {
+        const caller = await this.caller();
+        const response = await caller.request(
+          HUNK_SESSION_API_PATH,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(input),
+            signal,
+          },
+          { targetSpecific: input.action !== "list" },
+        );
+        if (!response.ok) throw new Error(await extractResponseError(response));
         let value: unknown;
         try {
           value = await response.json();
@@ -113,7 +151,20 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
   }
 
   async getCapabilities() {
-    return readHunkSessionDaemonCapabilities(this.config, this.timeoutMs);
+    return withSessionDaemonHttpTimeout({
+      operation: "report capabilities",
+      timeoutMs: this.timeoutMs,
+      task: async (signal) => {
+        const response = await (
+          await this.caller()
+        ).request(HUNK_SESSION_CAPABILITIES_PATH, {
+          method: "GET",
+          signal,
+        });
+        if (!response.ok) return null;
+        return parseSessionDaemonCapabilities(await response.json());
+      },
+    });
   }
 
   async listSessions() {
@@ -255,8 +306,9 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 /** Create the concrete Hunk session CLI client that speaks to the broker-backed HTTP API. */
 export function createHttpHunkSessionCliClient({
   timeoutMs,
-}: { timeoutMs?: number } = {}): HunkSessionCliClient {
-  return new HttpHunkSessionCliClient(timeoutMs);
+  caller,
+}: { timeoutMs?: number; caller?: HunkCallerTransport } = {}): HunkSessionCliClient {
+  return new HttpHunkSessionCliClient(timeoutMs, caller);
 }
 
 export function stringifyJson(value: unknown) {

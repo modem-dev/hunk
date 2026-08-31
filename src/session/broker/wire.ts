@@ -199,7 +199,7 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
   const record = exactRecord(
     value,
     ["noteId", "source", "filePath", "body", "createdAt"],
-    ["hunkIndex", "oldRange", "newRange", "title", "author", "updatedAt", "editable"],
+    ["parentId", "hunkIndex", "oldRange", "newRange", "title", "author", "updatedAt", "editable"],
   );
 
   const noteId = brokerWireParsers.parseRequiredString(record.noteId);
@@ -229,6 +229,7 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
 
   return {
     noteId,
+    parentId: brokerWireParsers.parseOptionalString(record.parentId),
     source,
     filePath,
     hunkIndex: hunkIndex ?? undefined,

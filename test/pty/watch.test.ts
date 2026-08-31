@@ -16,7 +16,7 @@ describe("PTY watch mode", () => {
   test("passively refreshes direct files after an atomic save", async () => {
     const fixture = harness.createWatchFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--watch", "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--watch", "--mode", "stack"],
       cwd: fixture.dir,
       cols: 120,
       rows: 16,

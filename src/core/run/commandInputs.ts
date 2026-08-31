@@ -60,9 +60,9 @@ export interface CommonOptions {
  * Hunk's commands produce. `options` is the internal half: resolved CLI and
  * config state that no adapter — bundled or third-party — needs to see.
  */
-export interface VcsDiffCommandInput extends ExtensionVcsDiffInput {
+export type VcsDiffCommandInput = ExtensionVcsDiffInput & {
   options: CommonOptions;
-}
+};
 
 export interface VcsShowCommandInput extends ExtensionVcsShowInput {
   options: CommonOptions;

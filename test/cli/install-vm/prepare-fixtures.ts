@@ -5,6 +5,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readlinkSync,
   renameSync,
@@ -13,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   assertNoMandatoryBunDependency,
@@ -23,6 +25,13 @@ import {
 } from "../../../scripts/prebuilt-package-helpers";
 import { stagePrebuiltArtifact } from "../../../scripts/build-prebuilt-artifact";
 import { npmCommand } from "../../../scripts/script-helpers";
+import {
+  DAEMON_UPGRADE_VERSION_A,
+  DAEMON_UPGRADE_VERSION_B,
+  computeDaemonUpgradeBuildInputIdentity,
+  prepareDaemonUpgradeBinaries,
+  readDaemonRevision,
+} from "./prepare-daemon-upgrade-fixtures";
 
 export const FIXTURE_VERSION_A = "900.0.0";
 export const FIXTURE_VERSION_B = "900.0.1";
@@ -38,11 +47,20 @@ export interface FixturePackage {
 }
 
 export interface InstallVmFixtureManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   sourceIdentity: string;
+  daemonUpgradeBuildInputIdentity: string;
   currentVersion: string;
   versionA: string;
   versionB: string;
+  daemonUpgrade: {
+    versionA: string;
+    versionB: string;
+    revisionA: number;
+    revisionB: number;
+    binarySha256A: string;
+    binarySha256B: string;
+  };
   packages: FixturePackage[];
 }
 
@@ -156,12 +174,29 @@ export function computeInstallVmFixtureSourceIdentity(repoRoot: string) {
   return hash.digest("hex");
 }
 
+/** Resolve one fixture file without allowing symlink components or output-root escape. */
+function containedFixtureFile(outputRoot: string, relativePath: string) {
+  const root = path.resolve(outputRoot);
+  let current = root;
+  for (const segment of relativePath.split("/")) {
+    current = path.join(current, segment);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink())
+      throw new Error(`Fixture path may not be a symlink: ${relativePath}`);
+  }
+  const resolved = path.resolve(current);
+  if (!resolved.startsWith(`${root}${path.sep}`) || !lstatSync(resolved).isFile()) {
+    throw new Error(`Fixture path is not a contained regular file: ${relativePath}`);
+  }
+  return resolved;
+}
+
 /** Verify reusable fixtures still match this checkout and every declared tarball digest. */
 export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
   const manifestPath = path.join(outputRoot, "fixture-manifest.json");
   const manifestBytes = readFileSync(manifestPath, "utf8");
   const manifest = JSON.parse(manifestBytes) as InstallVmFixtureManifest;
-  if (manifest.schemaVersion !== 1) throw new Error("Fixture manifest must use schemaVersion 1.");
+  if (manifest.schemaVersion !== 2) throw new Error("Fixture manifest must use schemaVersion 2.");
   const expectedIdentity = computeInstallVmFixtureSourceIdentity(repoRoot);
   if (manifest.sourceIdentity !== expectedIdentity) {
     throw new Error("Install VM fixtures do not match the current checkout identity.");
@@ -178,14 +213,45 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
   if (manifest.versionA !== FIXTURE_VERSION_A || manifest.versionB !== FIXTURE_VERSION_B) {
     throw new Error("Fixture upgrade versions do not match the harness contract.");
   }
+  if (
+    manifest.daemonUpgradeBuildInputIdentity !== computeDaemonUpgradeBuildInputIdentity(repoRoot)
+  ) {
+    throw new Error(
+      "Fixture daemon upgrade build inputs do not match current dependencies and Bun.",
+    );
+  }
+  const expectedRevisionB = readDaemonRevision(
+    readFileSync(path.join(repoRoot, "src", "session", "protocol.ts"), "utf8"),
+  );
+  const daemonUpgrade = manifest.daemonUpgrade;
+  if (
+    !daemonUpgrade ||
+    typeof daemonUpgrade !== "object" ||
+    Object.keys(daemonUpgrade).sort().join("\0") !==
+      ["binarySha256A", "binarySha256B", "revisionA", "revisionB", "versionA", "versionB"].join(
+        "\0",
+      ) ||
+    daemonUpgrade.versionA !== DAEMON_UPGRADE_VERSION_A ||
+    daemonUpgrade.versionB !== DAEMON_UPGRADE_VERSION_B ||
+    daemonUpgrade.revisionB !== expectedRevisionB ||
+    daemonUpgrade.revisionA !== expectedRevisionB - 1 ||
+    !/^[0-9a-f]{64}$/.test(daemonUpgrade.binarySha256A) ||
+    !/^[0-9a-f]{64}$/.test(daemonUpgrade.binarySha256B) ||
+    daemonUpgrade.binarySha256A === daemonUpgrade.binarySha256B
+  ) {
+    throw new Error("Fixture daemon upgrade contract is malformed or stale.");
+  }
   const expectedIdentities = new Set(
-    [manifest.currentVersion, manifest.versionA, manifest.versionB].flatMap((version) => [
-      `hunkdiff-linux-x64@${version}`,
-      `hunkdiff@${version}`,
-    ]),
+    [
+      manifest.currentVersion,
+      daemonUpgrade.versionA,
+      daemonUpgrade.versionB,
+      manifest.versionA,
+      manifest.versionB,
+    ].flatMap((version) => [`hunkdiff-linux-x64@${version}`, `hunkdiff@${version}`]),
   );
   if (!Array.isArray(manifest.packages) || manifest.packages.length !== expectedIdentities.size) {
-    throw new Error("Fixture manifest must contain exactly six coupled packages.");
+    throw new Error("Fixture manifest must contain exactly ten coupled packages.");
   }
 
   const identities = new Set<string>();
@@ -202,8 +268,16 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
     if (!expectedIdentities.has(identity))
       throw new Error(`Unexpected fixture package: ${identity}`);
     identities.add(identity);
-    const tarballPath = path.join(outputRoot, "packages", fixturePackage.tarball);
-    if (!existsSync(tarballPath) || sha256(tarballPath) !== fixturePackage.sha256) {
+    let tarballPath: string;
+    try {
+      tarballPath = containedFixtureFile(
+        outputRoot,
+        path.posix.join("packages", fixturePackage.tarball),
+      );
+    } catch {
+      throw new Error(`Fixture tarball checksum mismatch: ${fixturePackage.tarball}`);
+    }
+    if (sha256(tarballPath) !== fixturePackage.sha256) {
       throw new Error(`Fixture tarball checksum mismatch: ${fixturePackage.tarball}`);
     }
   }
@@ -257,6 +331,71 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
     throw new Error("Unavailable curl fixture unexpectedly contains an archive.");
   }
   return manifest;
+}
+
+const MAX_DAEMON_FIXTURE_BINARY_BYTES = 512 * 1024 * 1024;
+
+/** Hash the actual daemon binaries stored in a checksum-verified local fixture set. */
+export async function deriveVerifiedDaemonUpgradeBinaryDigests(
+  outputRoot: string,
+  manifest: InstallVmFixtureManifest,
+) {
+  const digestForVersion = async (version: string) => {
+    const fixturePackage = manifest.packages.find(
+      (entry) => entry.name === "hunkdiff-linux-x64" && entry.version === version,
+    );
+    if (!fixturePackage) {
+      throw new Error(`Trusted fixture set is missing the Linux x64 package for ${version}.`);
+    }
+    const tarball = containedFixtureFile(
+      outputRoot,
+      path.posix.join("packages", fixturePackage.tarball),
+    );
+    const extractionRoot = mkdtempSync(path.join(tmpdir(), "hunk-daemon-fixture-binary-"));
+    try {
+      const extraction = Bun.spawn(
+        [
+          "tar",
+          "-xzf",
+          tarball,
+          "--no-same-owner",
+          "--no-same-permissions",
+          "-C",
+          extractionRoot,
+          "package/bin/hunk",
+        ],
+        { stdin: "ignore", stdout: "ignore", stderr: "pipe" },
+      );
+      const timeout = setTimeout(() => extraction.kill(), 30_000);
+      timeout.unref?.();
+      const exitCode = await extraction.exited;
+      clearTimeout(timeout);
+      const stderr = await new Response(extraction.stderr).text();
+      if (exitCode !== 0) {
+        throw new Error(
+          `Unable to extract trusted daemon fixture ${version}: ${stderr.trim() || `tar exited ${exitCode}`}`,
+        );
+      }
+      const binary = containedFixtureFile(extractionRoot, "package/bin/hunk");
+      const stat = lstatSync(binary);
+      if (stat.size <= 0 || stat.size > MAX_DAEMON_FIXTURE_BINARY_BYTES) {
+        throw new Error(`Trusted daemon fixture ${version} has an invalid binary size.`);
+      }
+      return sha256(binary);
+    } finally {
+      rmSync(extractionRoot, { recursive: true, force: true });
+    }
+  };
+
+  const binarySha256A = await digestForVersion(manifest.daemonUpgrade.versionA);
+  const binarySha256B = await digestForVersion(manifest.daemonUpgrade.versionB);
+  if (
+    binarySha256A !== manifest.daemonUpgrade.binarySha256A ||
+    binarySha256B !== manifest.daemonUpgrade.binarySha256B
+  ) {
+    throw new Error("Trusted daemon fixture package binaries do not match their manifest digests.");
+  }
+  return { binarySha256A, binarySha256B };
 }
 
 /** Write stable indented JSON with a trailing newline. */
@@ -354,6 +493,52 @@ async function stageSyntheticPackage(
   ];
 }
 
+/** Stage a full compiled Hunk binary behind the same coupled npm package topology. */
+async function stageDaemonUpgradePackage(
+  repoRoot: string,
+  stageRoot: string,
+  version: string,
+  binary: string,
+  engines: Readonly<Record<string, string>>,
+  packageOutput: string,
+) {
+  const { meta, platform } = buildSyntheticPackageManifests(version, engines);
+  const platformDir = path.join(stageRoot, `${platform.name}-daemon-${version}`);
+  mkdirSync(path.join(platformDir, "bin"), { recursive: true });
+  writeJson(path.join(platformDir, "package.json"), platform);
+  copyFileSync(binary, path.join(platformDir, "bin", "hunk"));
+  chmodSync(path.join(platformDir, "bin", "hunk"), 0o755);
+
+  const metaDir = path.join(stageRoot, `hunkdiff-daemon-${version}`);
+  mkdirSync(path.join(metaDir, "bin"), { recursive: true });
+  mkdirSync(path.join(metaDir, "dist", "npm"), { recursive: true });
+  copyFileSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
+  chmodSync(path.join(metaDir, "bin", "hunk.cjs"), 0o755);
+  copyFixtureSkills(repoRoot, metaDir);
+  writeFileSync(
+    path.join(metaDir, "dist", "npm", "main.js"),
+    `console.error('Full daemon upgrade fixture ${version} requires its Linux x64 platform package.');\nprocess.exitCode = 1;\n`,
+  );
+  writeJson(path.join(metaDir, "package.json"), meta);
+
+  const platformTarball = await packPackage(platformDir, packageOutput);
+  const metaTarball = await packPackage(metaDir, packageOutput);
+  return [
+    {
+      name: platform.name,
+      version,
+      tarball: platformTarball,
+      sha256: sha256(path.join(packageOutput, platformTarball)),
+    },
+    {
+      name: meta.name,
+      version,
+      tarball: metaTarball,
+      sha256: sha256(path.join(packageOutput, metaTarball)),
+    },
+  ];
+}
+
 /** Stage one synthetic standalone archive and matching checksum manifest. */
 async function stageSyntheticCurlArchive(
   repoRoot: string,
@@ -407,9 +592,11 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
   try {
     const packageOutput = path.join(temporaryRoot, "packages");
     const stageRoot = path.join(temporaryRoot, "stage");
+    const daemonBuildRoot = path.join(temporaryRoot, "daemon-builds");
     mkdirSync(packageOutput, { recursive: true });
     mkdirSync(stageRoot, { recursive: true });
 
+    const daemonUpgrade = await prepareDaemonUpgradeBinaries(repoRoot, daemonBuildRoot);
     const currentPlatform = path.join(releaseRoot, "hunkdiff-linux-x64");
     if (!existsSync(currentPlatform)) {
       throw new Error("Install VM fixtures require a Linux x64 prebuilt package.");
@@ -427,6 +614,28 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
         sha256: sha256(path.join(packageOutput, tarball)),
       });
     }
+    packages.push(
+      ...(await stageDaemonUpgradePackage(
+        repoRoot,
+        stageRoot,
+        daemonUpgrade.versionA,
+        daemonUpgrade.binaryA,
+        currentManifest.engines,
+        packageOutput,
+      )),
+    );
+    packages.push(
+      ...(await stageDaemonUpgradePackage(
+        repoRoot,
+        stageRoot,
+        daemonUpgrade.versionB,
+        daemonUpgrade.binaryB,
+        currentManifest.engines,
+        packageOutput,
+      )),
+    );
+    // Remove isolated source/build trees before fixtures become atomically visible.
+    rmSync(daemonBuildRoot, { recursive: true, force: true });
     packages.push(
       ...(await stageSyntheticPackage(
         repoRoot,
@@ -454,7 +663,10 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
       `${JSON.stringify({ tag_name: `v${currentVersion}` })}\n`,
     );
     const artifactRoot = path.join(stageRoot, "artifacts");
-    const artifactDir = stagePrebuiltArtifact({ repoRoot, outputRoot: artifactRoot });
+    const artifactDir = stagePrebuiltArtifact({
+      repoRoot,
+      outputRoot: artifactRoot,
+    });
     const archiveName = "hunkdiff-linux-x64.tar.gz";
     const goodDownloadDir = path.join(downloads, `v${currentVersion}`);
     mkdirSync(goodDownloadDir, { recursive: true });
@@ -494,11 +706,20 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
     writeFileSync(path.join(httpRoot, "install.sh"), installer);
 
     const fixtureManifest: InstallVmFixtureManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       sourceIdentity,
+      daemonUpgradeBuildInputIdentity: daemonUpgrade.daemonUpgradeBuildInputIdentity,
       currentVersion,
       versionA: FIXTURE_VERSION_A,
       versionB: FIXTURE_VERSION_B,
+      daemonUpgrade: {
+        versionA: daemonUpgrade.versionA,
+        versionB: daemonUpgrade.versionB,
+        revisionA: daemonUpgrade.revisionA,
+        revisionB: daemonUpgrade.revisionB,
+        binarySha256A: daemonUpgrade.binarySha256A,
+        binarySha256B: daemonUpgrade.binarySha256B,
+      },
       packages,
     };
     writeJson(path.join(temporaryRoot, "fixture-manifest.json"), fixtureManifest);
@@ -510,6 +731,9 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
     };
     writeJson(path.join(temporaryRoot, "curl-versions.json"), curlVersions);
     writeJson(path.join(httpRoot, "curl-versions.json"), curlVersions);
+    // Staging inputs are not release fixtures; discard their duplicate archives and source trees
+    // before the atomically published directory becomes visible to reusable VM runs.
+    rmSync(stageRoot, { recursive: true, force: true });
     verifyInstallVmFixtures(repoRoot, temporaryRoot);
 
     if (existsSync(outputRoot)) renameSync(outputRoot, backupRoot);

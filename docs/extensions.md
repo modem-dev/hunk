@@ -280,10 +280,12 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `12`). Branch on it if you want
-one file to support several Hunk versions. Version 12 adds responsive fractional
-pane sizing; version 11 added the `"dim"` line-highlight tone; version 10 added
-generic top-level CLI commands; version 9
+The API generation this Hunk speaks (currently `15`). Branch on it if you want
+one file to support several Hunk versions. Version 15 adds `{ side, line }` to
+opted-in pane `currentLine` paint; version 14 added structured `rangeEndpoints`
+to two-revision VCS diff requests; version 13 added saved-note parent identities and
+committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
+the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
 added authoritative review snapshots to command handlers; version 7 added the
 current source line to command selection snapshots. Version 6 added session behavior,
@@ -752,10 +754,13 @@ panes keep their own open state. User remaps and unbindings of
 `hunk.view.toggleFilesPane` apply to the resolved slot in the usual way. The
 former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
-`currentLine: true` opts into the opaque `currentLine.render(side, width)`
-painter. The installable [Hunk Lens](https://github.com/modem-dev/hunk-lens)
-extension uses this API; it is not bundled Hunk UI. Install it with
-`hunk extension install modem-dev/hunk-lens`.
+`currentLine: true` opts into the selected-row painter. `currentLine.render(side, width)`
+paints one side as a clipped row; `currentLine.side` and `currentLine.line` are
+the same public source address command handlers see on `ctx.selection.currentLine`
+(context rows use Hunk's canonical new-side). The installable
+[Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses the painter; a
+blame or diagnostic pane can use the address without waiting for a keypress.
+Install the lens with `hunk extension install modem-dev/hunk-lens`.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -774,7 +779,7 @@ The component receives fresh props as the app changes:
 | `placement`         | the accepted terminal edge                                                                                                                                                |
 | `width`             | exact terminal columns in the host-owned rectangle                                                                                                                        |
 | `height`            | exact terminal rows in the host-owned rectangle                                                                                                                           |
-| `currentLine`       | opaque selected-row painter when the registration opts in, otherwise `null`                                                                                               |
+| `currentLine`       | selected-row painter plus `{ side, line }` when the registration opts in, otherwise `null`                                                                                |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
 | `actions`           | navigation and notifications the pane may trigger                                                                                                                         |
@@ -1513,8 +1518,8 @@ ReviewStore, or `null` after this command's review generation has been retired.
 It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
-paths, stats, and flags; notes carry their complete resolved old/new anchor and
-`active`/`stale`/`orphaned` reconciliation status.
+paths, stats, and flags; notes carry their complete resolved old/new anchor,
+optional direct `parentId`, and `active`/`stale`/`orphaned` reconciliation status.
 
 This is the command-time source for exporters, publishers, and audit tools. Drafts
 are excluded because they are not saved. Static sidecar annotations that never
@@ -1799,12 +1804,14 @@ the review then active.
 | `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
+| `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk                |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
 | `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
 | `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
 | `note_created`         | `{ note }`              | a user saves an inline review note                        |
-| `note_edited`          | `{ note }`              | an in-progress inline note's body changes                 |
+| `note_edited`          | `{ note }`              | a draft body changes or an existing note is saved         |
+| `note_changed`         | `{ kind, note }`        | a saved ReviewStore note is created, updated, or removed  |
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
 | `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
@@ -1815,6 +1822,12 @@ A newly mounted extension instance receives `startup` before its first
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
+
+`hunk_viewed` is the hunk-grain sibling of `file_viewed`. It fires when the
+settled `(file, hunk)` pair changes — including `[`/`]` inside one file — and
+does not fire for current-line movement within a hunk. `file_viewed` still fires
+only when the selected file object changes, so a soft reload can report a fresh
+file without counting as a new hunk read.
 
 `command_executed` reports the stable canonical command id after the terminal dispatcher invokes
 it, whether the user reached it through a key, a menu, an old command alias, or
@@ -1830,11 +1843,20 @@ and F10 menu navigation are also not commands.
 refresh key, or the reload after granting extension trust).
 
 `note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
-session. Review notes are session-local state, so there is no backlog to replay
+session. `note_edited` carries `note.draft: true` for composer changes and
+`note.draft: false` for an identity-preserving saved-note edit. Replies include their direct
+`parentId`. Review notes are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
-either. Use them for incremental UI reactions only. A command that needs the
-complete current saved-note record uses `ctx.review.snapshot()` instead.
+either. Use them for incremental UI reactions only.
+
+`note_changed` is the store-backed path: `kind` is `"created"`, `"updated"`, or
+`"removed"`, and `note` is the same snapshot shape `ctx.review.snapshot()`
+returns. It fires for user saves and deletes and for agent session comments.
+Drafts never appear. A TUI save therefore emits both `note_created` (or
+`note_edited`) and `note_changed`. Reloads that remap or drop notes do not emit
+`note_changed`; listen for `session_reload` and read `ctx.review.snapshot()`
+when a command needs the complete current saved-note record.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.

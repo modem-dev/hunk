@@ -313,7 +313,7 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
       current: fileId !== null && hunkIndex !== null ? { fileId, hunkIndex } : null,
     }));
   });
-  hunk.on("file_viewed", ({ file, hunkIndex }) => markViewed(file, hunkIndex));
+  hunk.on("hunk_viewed", ({ file, hunkIndex }) => markViewed(file, hunkIndex));
   hunk.on("note_created", ({ note }) => recordNote(note));
   hunk.on("filter_changed", ({ filter }) => {
     updateSnapshot((current) => ({ ...current, filter }));

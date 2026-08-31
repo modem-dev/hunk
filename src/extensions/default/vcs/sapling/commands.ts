@@ -6,6 +6,7 @@ import {
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
 import { normalizePathForOS } from "../../../../lib/osPath";
+import { describeDiffTargets } from "../diffRange";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -14,6 +15,32 @@ export interface RunSlTextOptions {
   args: string[];
   cwd?: string;
   slExecutable?: string;
+}
+
+/** Reject a Sapling revision that could be interpreted as a command option. */
+export function requireSlRevisionArg(input: SlBackedInput, value: string) {
+  if (value.length === 0) {
+    throw new HunkExtensionUserError(
+      `\`${formatSlCommandLabel(input)}\` refused an empty revision.`,
+      {
+        suggestions: ["Pass a non-empty revision or revset and try again."],
+      },
+    );
+  }
+  if (value.startsWith("-")) {
+    throw new HunkExtensionUserError(
+      `\`${formatSlCommandLabel(input)}\` refused revision \`${value}\` because it looks like a Sapling option.`,
+      { suggestions: ["Pass a plain revision or revset and try again."] },
+    );
+  }
+  return value;
+}
+
+/** Validate both structured endpoints before any Sapling probe or diff command handles them. */
+function validateSlDiffEndpoints(input: ExtensionVcsDiffInput) {
+  if (!input.rangeEndpoints) return;
+  requireSlRevisionArg(input, input.rangeEndpoints.from);
+  requireSlRevisionArg(input, input.rangeEndpoints.to);
 }
 
 /** Append Sapling pathspec arguments only when the caller requested path filtering. */
@@ -27,9 +54,13 @@ function appendSlPathspecs(args: string[], pathspecs?: string[]) {
 
 /** Build the `sl diff --git` arguments for working-copy and revset reviews. */
 export function buildSlDiffArgs(input: ExtensionVcsDiffInput) {
+  validateSlDiffEndpoints(input);
   const args = ["diff", "--git"];
 
-  if (input.range) {
+  if (input.rangeEndpoints) {
+    // Sapling's `..` is a revset range, while a `-r` per side compares the two trees.
+    args.push("-r", input.rangeEndpoints.from, "-r", input.rangeEndpoints.to);
+  } else if (input.range) {
     args.push("-r", input.range);
   }
 
@@ -60,7 +91,8 @@ export function formatSlCommandLabel(input: SlBackedInput) {
       return "hunk diff --staged";
     }
 
-    return input.range ? `hunk diff ${input.range}` : "hunk diff";
+    const targets = describeDiffTargets(input);
+    return targets ? `hunk diff ${targets}` : "hunk diff";
   }
 
   return input.ref ? `hunk show ${input.ref}` : "hunk show";
@@ -123,6 +155,14 @@ export function createSlStagedError(input: ExtensionVcsDiffInput) {
 }
 
 function createInvalidRevsetError(input: SlBackedInput) {
+  if (input.kind === "vcs" && input.rangeEndpoints) {
+    const { from, to } = input.rangeEndpoints;
+    return new HunkExtensionUserError(
+      `\`${formatSlCommandLabel(input)}\` could not resolve Sapling revisions \`${from}\` and \`${to}\`.`,
+      { suggestions: ["Check both revisions and try again."] },
+    );
+  }
+
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? ".");
   return new HunkExtensionUserError(
     `\`${formatSlCommandLabel(input)}\` could not resolve Sapling revset \`${revset}\`.`,
@@ -200,7 +240,7 @@ export function runSlText(options: RunSlTextOptions) {
 
 /** Return whether working-copy review should synthesize unknown Sapling files into the patch stream. */
 function shouldIncludeUntrackedFiles(input: ExtensionVcsDiffInput) {
-  return !input.staged && input.options.excludeUntracked !== true;
+  return !input.staged && !input.rangeEndpoints && input.options.excludeUntracked !== true;
 }
 
 /** Parse `sl status --unknown --print0` output down to repo-root-relative file paths. */
@@ -246,6 +286,7 @@ export function listSlUntrackedFiles(
     slExecutable = "sl",
   }: Omit<RunSlTextOptions, "input" | "args"> & { repoRoot?: string } = {},
 ) {
+  validateSlDiffEndpoints(input);
   if (!shouldIncludeUntrackedFiles(input)) {
     return [];
   }

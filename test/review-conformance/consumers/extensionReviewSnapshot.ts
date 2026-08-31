@@ -16,6 +16,7 @@ export const extensionReviewSnapshotConsumer: ReviewSnapshotConsumer = {
       })),
       notes: snapshot.notes.map((note) => ({
         id: note.id,
+        ...(note.parentId ? { parentId: note.parentId } : {}),
         fileKey: note.fileKey,
         resolution: note.resolution,
         ...(note.anchor.preferred ? { preferred: { ...note.anchor.preferred } } : {}),

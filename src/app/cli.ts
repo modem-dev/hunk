@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import type {
@@ -80,6 +80,8 @@ export interface CliReferenceCommand {
   readonly summary: string;
   readonly synopsis: readonly string[];
   readonly aliases?: readonly string[];
+  /** Additional prose rendered after this command's generated usage block. */
+  readonly details?: readonly string[];
   readonly options?: readonly CliReferenceOption[];
   readonly commonReviewOptions?: boolean;
   readonly watch?: boolean;
@@ -146,6 +148,10 @@ export const WATCH_OPTION = {
 } as const satisfies CliReferenceOption;
 
 const DIFF_OPTIONS = [
+  {
+    flag: "--files <paths...>",
+    description: "compare exactly two concrete files: --files <left> <right>",
+  },
   { flag: "--staged", description: "show staged changes instead of the working tree" },
   { flag: "--cached", description: "alias for --staged" },
   AUXILIARY_AGENT_OPTIONS.excludeUntracked,
@@ -163,8 +169,13 @@ export const CLI_REFERENCE_COMMANDS = {
     summary: "review diffs or compare two concrete files",
     synopsis: [
       "hunk diff [target] [-- <pathspec...>]",
+      "hunk diff <from> <to> [-- <pathspec...>]",
       "hunk diff --staged [-- <pathspec...>]",
-      "hunk diff <left> <right>",
+      "hunk diff --files <left> <right>",
+    ],
+    details: [
+      "Two positional arguments always name revision endpoints, even when matching files exist on disk.",
+      "Use `--files <left> <right>` for concrete-file comparison; this replaces the former filesystem-existence disambiguation.",
     ],
     options: DIFF_OPTIONS,
     commonReviewOptions: true,
@@ -497,8 +508,9 @@ function renderCliHelp() {
     "",
     "Commands:",
     "  hunk diff [target] [-- <pathspec...>]   review working tree changes or compare against a target",
+    "  hunk diff <from> <to>                   compare two revisions",
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
-    "  hunk diff <left> <right>                compare two concrete files",
+    "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
@@ -558,11 +570,6 @@ function splitPathspecArgs(tokens: string[]) {
     commandTokens: tokens.slice(0, separatorIndex),
     pathspecs: tokens.slice(separatorIndex + 1),
   };
-}
-
-/** Return whether both diff operands are concrete files on disk. */
-function areExistingFiles(left: string, right: string) {
-  return [left, right].every((path) => existsSync(path) && statSync(path).isFile());
 }
 
 /** Parse one standalone command while letting us capture `--help` as plain text. */
@@ -773,6 +780,18 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   const staged = Boolean(parsedOptions.staged) || Boolean(parsedOptions.cached);
   const options = buildCommonOptions(parsedOptions, argv);
   const normalizedPathspecs = pathspecs.length > 0 ? pathspecs : undefined;
+  const files = Array.isArray(parsedOptions.files)
+    ? parsedOptions.files.filter((value): value is string => typeof value === "string")
+    : undefined;
+
+  if (files) {
+    if (files.length !== 2 || parsedTargets.length > 0 || staged || normalizedPathspecs) {
+      throw new Error(
+        "Use `hunk diff --files <left> <right>` with exactly two file paths and no revision, staged, or pathspec arguments.",
+      );
+    }
+    return { kind: "diff", left: files[0]!, right: files[1]!, options };
+  }
 
   if (parsedTargets.length === 0) {
     return {
@@ -793,16 +812,22 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
     };
   }
 
-  if (!staged && !normalizedPathspecs) {
-    if (parsedTargets.length === 2 && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
-      return {
-        kind: "diff",
-        left: parsedTargets[0]!,
-        right: parsedTargets[1]!,
-        options,
-      };
-    }
+  if (!staged && parsedTargets.length === 2) {
+    const left = parsedTargets[0]!;
+    const right = parsedTargets[1]!;
 
+    // Two positionals always name revisions. Paths use `--`, while concrete file comparison uses
+    // `--files`, so parsing never depends on the current filesystem or backend syntax.
+    return {
+      kind: "vcs",
+      rangeEndpoints: { from: left, to: right },
+      staged,
+      pathspecs: normalizedPathspecs,
+      options,
+    };
+  }
+
+  if (!staged && !normalizedPathspecs) {
     return {
       kind: "vcs",
       range: parsedTargets[0]!,
@@ -813,7 +838,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   }
 
   throw new Error(
-    "Use `hunk diff [target] [-- pathspec...]`, `hunk diff <left> <right>` for file comparison.",
+    "Use `hunk diff [target] [-- pathspec...]`, `hunk diff <from> <to>`, or `hunk diff --files <left> <right>` for file comparison.",
   );
 }
 

@@ -13,7 +13,6 @@ import {
   createSessionBrokerDaemon,
   createSessionBrokerProtocolParsers,
 } from "@hunk/session-broker";
-import SESSION_BROKER_ADAPTER_CONFORMANCE from "../../../test/fixtures/sessionBrokerAdapterConformance.json" with { type: "json" };
 import { serveSessionBrokerDaemon } from "./serve";
 
 interface TestSessionInfo {
@@ -116,13 +115,6 @@ async function waitUntil<T>(
 }
 
 describe("session broker node adapter", () => {
-  test("uses the shared binary, oversize, and pressure close corpus", () => {
-    expect(SESSION_BROKER_ADAPTER_CONFORMANCE).toMatchObject({
-      textOnly: { binaryCloseCode: 1003 },
-      inbound: { oversizedCloseCode: 1009, pressureCloseCode: 1013 },
-    });
-  });
-
   test("serves the generic daemon API and websocket path through Node", async () => {
     const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
@@ -148,7 +140,9 @@ describe("session broker node adapter", () => {
             generation: "generation-1",
             brokerRevision: 1 as const,
             ...(appContract ? { appContract } : {}),
+            callerSessionId: "caller-session-1",
             requestId: "request-1",
+            sequence: "1",
             httpStatus,
             bodyDigest: "test-digest",
             daemonKeyId: "daemon-key-1",

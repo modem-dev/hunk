@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSlDiffArgs, runSlText } from "./commands";
+import { buildSlDiffArgs, listSlUntrackedFiles, runSlText } from "./commands";
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const slAvailable = (() => {
@@ -65,6 +65,58 @@ afterEach(() => {
 });
 
 describe("sl command helpers", () => {
+  test("compares named revisions with one -r argument per endpoint", () => {
+    expect(buildSlDiffArgs(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }))).toEqual(
+      ["diff", "--git", "-r", "main", "-r", "feature"],
+    );
+  });
+
+  test("rejects each option-like Sapling endpoint before commands or untracked probes", () => {
+    for (const rangeEndpoints of [
+      { from: "--from-file", to: "feature" },
+      { from: "main", to: "--to-file" },
+    ]) {
+      const input = diffInput({ rangeEndpoints });
+      expect(() => buildSlDiffArgs(input)).toThrow("looks like a Sapling option");
+      expect(() =>
+        listSlUntrackedFiles(input, { slExecutable: "definitely-not-a-real-sl-binary" }),
+      ).toThrow("looks like a Sapling option");
+    }
+
+    for (const rangeEndpoints of [
+      { from: "", to: "feature" },
+      { from: "main", to: "" },
+    ]) {
+      const input = diffInput({ rangeEndpoints });
+      expect(() => buildSlDiffArgs(input)).toThrow("empty revision");
+      expect(() =>
+        listSlUntrackedFiles(input, { slExecutable: "definitely-not-a-real-sl-binary" }),
+      ).toThrow("empty revision");
+    }
+  });
+
+  test("passes an explicitly written revset through to -r", () => {
+    expect(buildSlDiffArgs(diffInput({ range: ".^::." }))).toEqual([
+      "diff",
+      "--git",
+      "-r",
+      ".^::.",
+    ]);
+  });
+
+  test("discovers unknown files for single-target reviews but not two-revision comparisons", () => {
+    expect(
+      listSlUntrackedFiles(diffInput({ rangeEndpoints: { from: "main", to: "feature" } }), {
+        slExecutable: "definitely-not-a-real-sl-binary",
+      }),
+    ).toEqual([]);
+    expect(() =>
+      listSlUntrackedFiles(diffInput({ range: "." }), {
+        slExecutable: "definitely-not-a-real-sl-binary",
+      }),
+    ).toThrow("was not found in PATH");
+  });
+
   test("reports a friendly error when sl is not installed or not on PATH", () => {
     expect(() =>
       runSlText({

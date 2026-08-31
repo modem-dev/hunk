@@ -5,11 +5,13 @@ import {
   buildJjShowArgs,
   createJjStagedError,
   resolveJjDiffEndpoints,
+  resolveJjRangeEndpoints,
   resolveJjRepoRoot,
   runJjText,
   type JjDiffEndpoints,
 } from "./commands";
 import { readJjFileSource } from "./source";
+import { describeDiffRange } from "../diffRange";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -56,11 +58,11 @@ interface JjSourceCapability {
   sourceCacheKey: string;
 }
 
-/** Include every resolved parent in the identity Hunk uses to retain cached source text. */
-function jjParentCacheKey(parentCommitIds: string[]) {
-  return parentCommitIds.length === 1
-    ? `commit:${parentCommitIds[0]}`
-    : `merged-parents:${parentCommitIds.join(",")}`;
+/** Include every resolved old-side commit in retained source identity. */
+function jjOldSideCacheKey(oldCommitIds: string[]) {
+  return oldCommitIds.length === 1
+    ? `commit:${oldCommitIds[0]}`
+    : `merged-parents:${oldCommitIds.join(",")}`;
 }
 
 /**
@@ -86,13 +88,12 @@ function createJjSourceCapability(
   endpoints: JjDiffEndpoints,
   jjExecutable: string,
 ): JjSourceCapability {
-  const oldCommitId =
-    endpoints.parentCommitIds.length === 1 ? endpoints.parentCommitIds[0] : undefined;
+  const oldCommitId = endpoints.oldCommitIds.length === 1 ? endpoints.oldCommitIds[0] : undefined;
 
   return {
     sourceCacheKey: [
       "jj-source-v1",
-      jjParentCacheKey(endpoints.parentCommitIds),
+      jjOldSideCacheKey(endpoints.oldCommitIds),
       `commit:${endpoints.newCommitId}`,
     ].join(":"),
     readFileSource: ({ path, previousPath, changeType, side }) => {
@@ -138,20 +139,28 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
           }
           const repoRoot = resolveJjRepoRoot(input, { cwd, jjExecutable });
           const repoName = basename(repoRoot);
-          const sourceEndpoints = resolveJjDiffEndpoints(input, input.range ?? "@", {
-            cwd,
-            jjExecutable,
-          });
+          const sourceEndpoints = input.rangeEndpoints
+            ? resolveJjRangeEndpoints(input, input.rangeEndpoints, { cwd, jjExecutable })
+            : resolveJjDiffEndpoints(input, input.range ?? "@", { cwd, jjExecutable });
           const sourceCapability = sourceEndpoints
             ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
             : undefined;
+          const pinnedInput = input.rangeEndpoints
+            ? sourceEndpoints?.oldCommitIds.length === 1
+              ? {
+                  from: sourceEndpoints.oldCommitIds[0]!,
+                  to: sourceEndpoints.newCommitId,
+                }
+              : undefined
+            : sourceEndpoints?.newCommitId;
+          const range = describeDiffRange(input);
           return {
             repoRoot,
             sourceLabel: repoRoot,
-            title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
+            title: range ? `${repoName} ${range}` : `${repoName} working copy`,
             patchText: runJjText({
               input,
-              args: buildJjDiffArgs(input, sourceEndpoints?.newCommitId),
+              args: buildJjDiffArgs(input, pinnedInput),
               cwd,
               jjExecutable,
             }),
@@ -159,7 +168,12 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
           };
         },
         watchSignature(input, { cwd }) {
-          return runJjText({ input, args: buildJjDiffArgs(input), cwd, jjExecutable });
+          return runJjText({
+            input,
+            args: buildJjDiffArgs(input, undefined, true),
+            cwd,
+            jjExecutable,
+          });
         },
       },
       "revision-show": {

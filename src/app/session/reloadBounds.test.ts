@@ -80,6 +80,22 @@ describe("session reload filesystem bounds", () => {
       ).toThrow("diff range that looks like a VCS option");
       expect(() =>
         validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          rangeEndpoints: { from: "main", to: "--output=/tmp/hunk-poc" },
+          staged: false,
+          options: {},
+        }),
+      ).toThrow("diff to revision that looks like a VCS option");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          rangeEndpoints: { from: "-R", to: "feature" },
+          staged: false,
+          options: {},
+        }),
+      ).toThrow("diff from revision that looks like a VCS option");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
           kind: "show",
           ref: "--output=/tmp/hunk-poc",
           options: {},
@@ -101,6 +117,14 @@ describe("session reload filesystem bounds", () => {
           range: "main..feature",
           staged: false,
           pathspecs: ["--help"],
+          options: {},
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          rangeEndpoints: { from: "main", to: "feature" },
+          staged: false,
           options: {},
         }),
       ).not.toThrow();

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createTestReviewState } from "../../../test/helpers/review-store-helpers";
+import {
+  createTestReviewState,
+  createTestStoredNote,
+} from "../../../test/helpers/review-store-helpers";
 import {
   APP_COMMAND_CATALOG,
   appCommandCatalogEntry,
@@ -148,6 +151,29 @@ describe("app command catalog", () => {
       hunkIndex: 1,
       target: { side: "new", line: 21 },
     });
+  });
+
+  test("lowers edit and reply commands through the active-note policies", () => {
+    const state = {
+      ...createTestReviewState(["alpha"]),
+      liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({
+          id: "user-1",
+          parentId: "live-1",
+          fileKey: "alpha",
+          source: "user",
+          editable: true,
+        }),
+      ],
+    };
+
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.editActiveNote"), { count: 1, state }),
+    ).toEqual({ type: "notes/start-edit", noteId: "user-1" });
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.replyToActiveNote"), { count: 1, state }),
+    ).toEqual({ type: "notes/start-reply", noteId: "user-1" });
   });
 
   test("lowers the gap toggle to the gap the shared policy reaches", () => {

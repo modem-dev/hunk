@@ -162,6 +162,39 @@ describe("SaplingVcsAdapter", () => {
 
 // These branches run before any `sl` invocation, so they need no external binary.
 describe("SaplingVcsAdapter without the sl binary", () => {
+  test("adapter range loads do not probe working-copy unknown files", async () => {
+    const repo = createTempDir("hunk-sl-adapter-range-untracked-");
+    const commands: string[][] = [];
+    const mutableBun = Bun as unknown as { spawnSync: typeof Bun.spawnSync };
+    const originalSpawnSync = mutableBun.spawnSync;
+    mutableBun.spawnSync = ((command: string[]) => {
+      commands.push(command);
+      const operation = command.slice(4);
+      const stdout = operation[0] === "root" ? `${repo}\n` : "";
+      return { exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.from("") };
+    }) as typeof Bun.spawnSync;
+
+    try {
+      const input = {
+        kind: "vcs",
+        rangeEndpoints: { from: "main", to: "feature" },
+        staged: false,
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
+      const result = await SaplingVcsAdapter.operations["working-tree-diff"]!.load(input, {
+        cwd: repo,
+      });
+
+      expect(result.untrackedPaths).toEqual([]);
+      expect(commands.some((command) => command.includes("status"))).toBe(false);
+      expect(
+        commands.some((command) => command.includes("main") && command.includes("feature")),
+      ).toBe(true);
+    } finally {
+      mutableBun.spawnSync = originalSpawnSync;
+    }
+  });
+
   test("treats a .hg directory with no requires file as non-Sapling", () => {
     const repo = createTempDir("hunk-sl-hg-no-requires-");
     mkdirSync(join(repo, ".hg"));
@@ -171,6 +204,18 @@ describe("SaplingVcsAdapter without the sl binary", () => {
 
   test("returns null when no Sapling marker exists up to the filesystem root", () => {
     expect(SaplingVcsAdapter.detect(createTempDir("hunk-sl-detect-none-"))).toBeNull();
+  });
+
+  test("rejects option-like endpoints from direct adapter callers before spawning sl", async () => {
+    const input = {
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "--config=unsafe" },
+      staged: false,
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
+    await expect(
+      SaplingVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: tmpdir() }),
+    ).rejects.toThrow("looks like a Sapling option");
   });
 
   test("rejects staged working-tree diffs before spawning sl", async () => {

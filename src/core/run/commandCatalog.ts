@@ -27,7 +27,12 @@
  */
 import type { ReviewIntent } from "../review/intents";
 import type { ReviewSelectionScope } from "../review/navigation";
-import { selectNormalizedSelection, selectReviewGapForSelection } from "../review/selectors";
+import {
+  selectActiveEditableReviewNoteId,
+  selectActiveReplyableReviewNoteId,
+  selectNormalizedSelection,
+  selectReviewGapForSelection,
+} from "../review/selectors";
 import type { ReviewState } from "../review/state";
 import type { ReviewLineAddressV1 } from "../review/types";
 
@@ -52,6 +57,10 @@ export type AppCommandReviewEffect =
   | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
   | { kind: "notes/start-draft" }
+  /** Edit the selected hunk's first editable reviewer note. */
+  | { kind: "notes/start-edit-active" }
+  /** Reply to the selected hunk's first stored note. */
+  | { kind: "notes/start-reply-active" }
   /** Flip the gap the shared policy says this selection reaches. */
   | { kind: "expansion/toggle-selected-gap" };
 
@@ -156,6 +165,26 @@ const BUILTIN_COMMANDS = [
     defaultKeys: ["c"],
     locus: "semantic",
     review: { kind: "notes/start-draft" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.editActiveNote",
+    title: "Edit active review note",
+    category: "review",
+    defaultKeys: ["E"],
+    locus: "semantic",
+    review: { kind: "notes/start-edit-active" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.replyToActiveNote",
+    title: "Reply to active review note",
+    category: "review",
+    defaultKeys: ["R"],
+    locus: "semantic",
+    review: { kind: "notes/start-reply-active" },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -597,6 +626,14 @@ export function lowerAppCommandToReviewIntent(
             hunkIndex,
             ...(noteTarget ? { target: noteTarget } : {}),
           };
+    }
+    case "notes/start-edit-active": {
+      const noteId = selectActiveEditableReviewNoteId(state);
+      return noteId ? { type: "notes/start-edit", noteId } : undefined;
+    }
+    case "notes/start-reply-active": {
+      const noteId = selectActiveReplyableReviewNoteId(state);
+      return noteId ? { type: "notes/start-reply", noteId } : undefined;
     }
     case "expansion/toggle-selected-gap": {
       const target = selectReviewGapForSelection(state);

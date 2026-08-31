@@ -198,6 +198,7 @@ describe("hunk session wire parsing", () => {
         reviewNotes: [
           {
             noteId: "note-1",
+            parentId: "note-root",
             source: "user",
             filePath: "new-file.ts",
             oldRange: [0, 0],
@@ -212,7 +213,7 @@ describe("hunk session wire parsing", () => {
     expect(snapshot?.state).toMatchObject({
       selectedHunkOldRange: [0, 0],
       selectedHunkNewRange: [0, 3],
-      reviewNotes: [{ oldRange: [0, 0], newRange: [0, 3] }],
+      reviewNotes: [{ parentId: "note-root", oldRange: [0, 0], newRange: [0, 3] }],
     });
   });
 

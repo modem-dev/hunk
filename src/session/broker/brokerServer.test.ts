@@ -7,8 +7,19 @@ import {
   createTestSessionSnapshot,
 } from "../../../test/helpers/session-daemon-fixtures";
 import { SessionBrokerState } from "@hunk/session-broker-core";
+import {
+  SessionBrokerCallerClient,
+  answerSessionBrokerHelloChallenge,
+  createSessionBrokerHelloRequest,
+  verifyProducerHelloAck,
+  type SessionBrokerHelloChallenge,
+  type SessionBrokerProducerHelloAck,
+  type SessionBrokerSignedRequestInit,
+} from "@hunk/session-broker";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
 import { serveSessionBrokerDaemon } from "./brokerServer";
+import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
+import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./appContract";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -16,9 +27,9 @@ const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 
 interface HealthResponse {
   ok: boolean;
-  pid: number;
-  sessions: number;
-  pendingCommands: number;
+  pid?: number;
+  sessions?: number;
+  pendingCommands?: number;
   paths?: Record<string, string>;
   sessionApi?: string;
   sessionCapabilities?: string;
@@ -85,10 +96,41 @@ async function waitForShutdown(port: number, timeoutMs = 1_500) {
   );
 }
 
+async function authenticatedFetch(
+  port: number,
+  path: string,
+  init: SessionBrokerSignedRequestInit = {},
+) {
+  const credentials = await loadOrCreateHunkSessionBrokerCredentials();
+  const caller = new SessionBrokerCallerClient({
+    appId: HUNK_SESSION_BROKER_APP_ID,
+    appRevision: HUNK_SESSION_BROKER_APP_REVISION,
+    origin: `http://127.0.0.1:${port}`,
+    credential: credentials.caller,
+    daemon: { keyId: credentials.daemonIdentity.keyId, publicKey: credentials.daemonPublicKey },
+  });
+  const action =
+    typeof init.body === "string"
+      ? ((JSON.parse(init.body) as { action?: string }).action ?? "")
+      : "";
+  return caller.request(path, init, {
+    targetSpecific: path === "/session-api" && action !== "list",
+  });
+}
+
 async function waitForSessionCount(port: number, count: number) {
   await waitUntil("session registration", async () => {
-    const health = await readHealth(port);
-    return health?.sessions === count ? health : null;
+    try {
+      const response = await authenticatedFetch(port, "/session-api", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      });
+      const body = (await response.json()) as { sessions?: unknown[] };
+      return body.sessions?.length === count ? body : null;
+    } catch {
+      return null;
+    }
   });
 }
 
@@ -169,6 +211,49 @@ async function openRegisteredSession(
   snapshotOverrides: Parameters<typeof createTestSessionSnapshot>[0] = {},
 ) {
   const socket = await openSessionSocket(port);
+  const credentials = await loadOrCreateHunkSessionBrokerCredentials();
+  const options = {
+    appId: HUNK_SESSION_BROKER_APP_ID,
+    appRevision: HUNK_SESSION_BROKER_APP_REVISION,
+    endpoint: `ws://127.0.0.1:${port}/session`,
+    credential: credentials.producer,
+    daemon: { keyId: credentials.daemonIdentity.keyId, publicKey: credentials.daemonPublicKey },
+  };
+  const hello = createSessionBrokerHelloRequest(options);
+  socket.send(JSON.stringify({ type: "hello-init", hello }));
+  const challenge = await new Promise<SessionBrokerHelloChallenge>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for producer challenge.")),
+      1_000,
+    );
+    socket.addEventListener(
+      "message",
+      (event) => {
+        clearTimeout(timeout);
+        resolve(
+          (JSON.parse(String(event.data)) as { challenge: SessionBrokerHelloChallenge }).challenge,
+        );
+      },
+      { once: true },
+    );
+  });
+  const pending = await answerSessionBrokerHelloChallenge(options, hello, challenge);
+  socket.send(JSON.stringify({ type: "hello-proof", proof: pending.proof }));
+  const ack = await new Promise<SessionBrokerProducerHelloAck>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for producer acknowledgement.")),
+      1_000,
+    );
+    socket.addEventListener(
+      "message",
+      (event) => {
+        clearTimeout(timeout);
+        resolve((JSON.parse(String(event.data)) as { ack: SessionBrokerProducerHelloAck }).ack);
+      },
+      { once: true },
+    );
+  });
+  await verifyProducerHelloAck(pending, ack);
 
   socket.send(
     JSON.stringify({
@@ -228,12 +313,12 @@ afterEach(() => {
 });
 
 describe("Hunk session daemon server", () => {
-  test("refuses non-loopback binding unless explicitly allowed", () => {
+  test("refuses non-loopback binding unless explicitly allowed", async () => {
     process.env.HUNK_MCP_HOST = "0.0.0.0";
     process.env.HUNK_MCP_PORT = "47657";
     delete process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 
-    expect(() => serveSessionBrokerDaemon()).toThrow("local-only by default");
+    await expect(serveSessionBrokerDaemon()).rejects.toThrow("local-only by default");
   });
 
   test("reports a clear error when the daemon port is already in use", async () => {
@@ -249,7 +334,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_PORT = String(port);
 
     try {
-      expect(() => serveSessionBrokerDaemon()).toThrow("port is already in use");
+      await expect(serveSessionBrokerDaemon()).rejects.toThrow("port is already in use");
     } finally {
       await new Promise<void>((resolve) => listener.close(() => resolve()));
     }
@@ -260,21 +345,13 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
       const health = await fetch(`http://127.0.0.1:${port}/health`);
       expect(health.status).toBe(200);
       const healthPayload = (await health.json()) as HealthResponse;
-      expect(healthPayload.paths).toEqual({
-        health: "/health",
-        socket: "/session",
-      });
-      expect(healthPayload).toMatchObject({
-        sessionApi: `http://127.0.0.1:${port}/session-api`,
-        sessionCapabilities: `http://127.0.0.1:${port}/session-api/capabilities`,
-        sessionSocket: `ws://127.0.0.1:${port}/session`,
-      });
+      expect(healthPayload).toEqual({ ok: true });
 
       const genericCapabilities = await fetch(`http://127.0.0.1:${port}/broker/capabilities`);
       expect(genericCapabilities.status).toBe(404);
@@ -288,7 +365,7 @@ describe("Hunk session daemon server", () => {
       });
       expect(genericBroker.status).toBe(404);
 
-      const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
+      const capabilities = await authenticatedFetch(port, "/session-api/capabilities");
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
         version: HUNK_SESSION_API_VERSION,
@@ -326,12 +403,41 @@ describe("Hunk session daemon server", () => {
     }
   });
 
+  test("keeps generic caller and browser-review authority independent", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    const server = await serveSessionBrokerDaemon();
+    try {
+      await expect(authenticatedFetch(port, "/review-api/missing/publication")).rejects.toThrow(
+        "daemon identity could not be verified",
+      );
+      const genericHeadersWithoutReviewCapability = await fetch(
+        `http://127.0.0.1:${port}/review-api/missing/publication`,
+        { headers: { "x-session-broker-caller-session": "generic-only" } },
+      );
+      expect(genericHeadersWithoutReviewCapability.status).toBe(401);
+
+      const reviewCapabilityOnSession = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "hunk-review-capability": "review-only-capability",
+        },
+        body: JSON.stringify({ action: "list" }),
+      });
+      expect(reviewCapabilityOnSession.status).toBe(401);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("rejects HTTP requests with non-loopback or wrong-port Host headers", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
       const attackerHostResponse = await fetch(`http://127.0.0.1:${port}/health`, {
@@ -361,7 +467,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`, {
@@ -379,15 +485,35 @@ describe("Hunk session daemon server", () => {
     }
   });
 
+  test("requires GET with an empty body for authenticated Hunk capabilities", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    const server = await serveSessionBrokerDaemon();
+    try {
+      const wrongMethod = await authenticatedFetch(port, "/session-api/capabilities", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(wrongMethod.status).toBe(405);
+      await expect(wrongMethod.json()).resolves.toEqual({
+        error: "Capabilities require GET with an empty body.",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("requires JSON content type for session API posts", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const response = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: { "content-type": "text/plain" },
         body: JSON.stringify({ action: "list" }),
@@ -407,18 +533,22 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-session-broker-caller-session": "oversized-test-session",
+        },
         body: JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) }),
       });
 
       expect(response.status).toBe(413);
       await expect(response.json()).resolves.toMatchObject({
-        error: expect.stringContaining("session broker limit"),
+        error: "capacity-exceeded",
+        resource: "maxHttpBodyBytes",
       });
     } finally {
       server.stop(true);
@@ -436,7 +566,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon({
+    const server = await serveSessionBrokerDaemon({
       idleTimeoutMs: 250,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -455,7 +585,7 @@ describe("Hunk session daemon server", () => {
 
       await expect(closed).resolves.toEqual({
         code: 1008,
-        reason: "Session ownership rejected.",
+        reason: "Session broker authentication required; upgrade Hunk.",
       });
     } finally {
       socket.close();
@@ -468,7 +598,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon({
+    const server = await serveSessionBrokerDaemon({
       idleTimeoutMs: 250,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -498,7 +628,7 @@ describe("Hunk session daemon server", () => {
         1_000,
       );
 
-      const emptyList = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const emptyList = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -510,7 +640,7 @@ describe("Hunk session daemon server", () => {
 
       const goodSocket = await openRegisteredSession(port, "session-good");
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        const response = await authenticatedFetch(port, "/session-api", {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -536,7 +666,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon({
+    const server = await serveSessionBrokerDaemon({
       idleTimeoutMs: 60,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -545,10 +675,7 @@ describe("Hunk session daemon server", () => {
 
     try {
       await Bun.sleep(150);
-      await expect(waitForHealth(port)).resolves.toMatchObject({
-        ok: true,
-        sessions: 1,
-      });
+      await expect(waitForHealth(port)).resolves.toEqual({ ok: true });
     } finally {
       socket.close();
       server.stop(true);
@@ -560,7 +687,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon({
+    const server = await serveSessionBrokerDaemon({
       idleTimeoutMs: 75,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -582,7 +709,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon({
+    const server = await serveSessionBrokerDaemon({
       idleTimeoutMs: 75,
       staleSessionTtlMs: 80,
       staleSessionSweepIntervalMs: 20,
@@ -658,10 +785,10 @@ describe("Hunk session daemon server", () => {
       };
     };
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const response = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -691,7 +818,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("forwards reload sourcePath through the session API", async () => {
+  test("forwards reload sourcePath and structured endpoints through the session API", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -700,10 +827,11 @@ describe("Hunk session daemon server", () => {
     SessionBrokerState.prototype.dispatchCommand = (({ command, input }: any) => {
       expect(command).toBe("reload_session");
       expect(input).toMatchObject({
-        sessionPath: "/tmp/live-session",
+        sessionId: "session-1",
         sourcePath: "/tmp/source-repo",
         nextInput: {
           kind: "vcs",
+          rangeEndpoints: { from: "main", to: "feature" },
           staged: false,
           options: {},
         },
@@ -719,20 +847,21 @@ describe("Hunk session daemon server", () => {
       });
     }) as SessionBrokerState["dispatchCommand"];
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const response = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
           action: "reload",
-          selector: { sessionPath: "/tmp/live-session" },
+          selector: { sessionId: "session-1" },
           sourcePath: "/tmp/source-repo",
           nextInput: {
             kind: "vcs",
+            rangeEndpoints: { from: "main", to: "feature" },
             staged: false,
             options: {},
           },
@@ -758,7 +887,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
     const socket = await openRegisteredSession(port, "session-1", {
       reviewNoteCount: 2,
       reviewNotes: [
@@ -783,7 +912,7 @@ describe("Hunk session daemon server", () => {
     });
 
     try {
-      const listResponse = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const listResponse = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -853,10 +982,10 @@ describe("Hunk session daemon server", () => {
       });
     }) as SessionBrokerState["dispatchCommand"];
 
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+      const response = await authenticatedFetch(port, "/session-api", {
         method: "POST",
         headers: {
           "content-type": "application/json",

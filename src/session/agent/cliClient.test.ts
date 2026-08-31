@@ -34,6 +34,9 @@ import {
 
 const selector = { sessionId: "session-1" } satisfies SessionSelectorInput;
 const originalFetch = globalThis.fetch;
+const injectedCaller = {
+  request: (path: string, init?: RequestInit) => globalThis.fetch(path, init),
+};
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -134,7 +137,7 @@ describe("HTTP Hunk session CLI client", () => {
       return Response.json(responses[request.action as keyof typeof responses]);
     }) as typeof fetch;
 
-    const client = createHttpHunkSessionCliClient();
+    const client = createHttpHunkSessionCliClient({ caller: injectedCaller });
 
     expect(await client.getCapabilities()).toMatchObject({ version: HUNK_SESSION_API_VERSION });
     expect(await client.listSessions()).toEqual([session]);
@@ -327,7 +330,7 @@ describe("HTTP Hunk session CLI client", () => {
       });
     }) as typeof fetch;
 
-    const client = createHttpHunkSessionCliClient({ timeoutMs: 10 });
+    const client = createHttpHunkSessionCliClient({ timeoutMs: 10, caller: injectedCaller });
 
     await expect(client.listSessions()).rejects.toThrow(
       "Timed out waiting for the Hunk session daemon to complete session list.",
@@ -340,7 +343,7 @@ describe("HTTP Hunk session CLI client", () => {
         sessions: [{ sessionId: "partial", unknown: true }],
       })) as unknown as typeof fetch;
 
-    const client = createHttpHunkSessionCliClient();
+    const client = createHttpHunkSessionCliClient({ caller: injectedCaller });
     await expect(client.listSessions()).rejects.toThrow(
       "Invalid Hunk session daemon response for list.",
     );
@@ -356,7 +359,7 @@ describe("HTTP Hunk session CLI client", () => {
     globalThis.fetch = (async () =>
       Response.json({ sessions: [session] })) as unknown as typeof fetch;
 
-    const client = createHttpHunkSessionCliClient();
+    const client = createHttpHunkSessionCliClient({ caller: injectedCaller });
     const result = await client.listSessions();
     expect(result).toEqual([session]);
     expect(result[0]).not.toBe(session);
@@ -369,7 +372,7 @@ describe("HTTP Hunk session CLI client", () => {
         { status: 404, statusText: "Not Found" },
       )) as unknown as typeof fetch;
 
-    const client = createHttpHunkSessionCliClient();
+    const client = createHttpHunkSessionCliClient({ caller: injectedCaller });
     await expect(client.listSessions()).rejects.toThrow("No matching session.");
 
     globalThis.fetch = (async () =>

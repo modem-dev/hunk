@@ -1,9 +1,11 @@
 import {
   HunkExtensionUserError,
   type ExtensionVcsDiffInput,
+  type ExtensionVcsRangeEndpoints,
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
 import { normalizePathForOS } from "../../../../lib/osPath";
+import { describeDiffTargets } from "../diffRange";
 
 export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -14,10 +16,10 @@ export interface RunJjTextOptions {
   jjExecutable?: string;
 }
 
-/** Identifies the reviewed commit and every parent JJ used to build the old side. */
+/** Identifies the reviewed new commit and every commit JJ used to build the old side. */
 export interface JjDiffEndpoints {
   newCommitId: string;
-  parentCommitIds: string[];
+  oldCommitIds: string[];
 }
 
 /** Bypass user template aliases while rendering full commit IDs. */
@@ -31,6 +33,25 @@ function parseJjCommitIds(output: string) {
     .filter((line) => /^[0-9a-f]+$/i.test(line));
 }
 
+/** Reject a Jujutsu revision that could be interpreted as a command option. */
+export function requireJjRevisionArg(input: JjBackedInput, value: string) {
+  if (value.length === 0) {
+    throw new HunkExtensionUserError(
+      `\`${formatJjCommandLabel(input)}\` refused an empty revision.`,
+      {
+        suggestions: ["Pass a non-empty revision or revset and try again."],
+      },
+    );
+  }
+  if (value.startsWith("-")) {
+    throw new HunkExtensionUserError(
+      `\`${formatJjCommandLabel(input)}\` refused revision \`${value}\` because it looks like a Jujutsu option.`,
+      { suggestions: ["Pass a plain revision or revset and try again."] },
+    );
+  }
+  return value;
+}
+
 /** Append Jujutsu filesets only when the caller requested path filtering. */
 function appendJjFilesets(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
@@ -40,12 +61,29 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
   args.push("--", ...pathspecs);
 }
 
-/** Build the `jj diff --git` arguments for working-copy and revset reviews. */
-export function buildJjDiffArgs(input: ExtensionVcsDiffInput, pinnedRevision?: string) {
+/** Build the `jj diff --git` arguments for working-copy, revset, and two-revision reviews. */
+export function buildJjDiffArgs(
+  input: ExtensionVcsDiffInput,
+  pinned?: string | ExtensionVcsRangeEndpoints,
+  snapshotWorkingCopy = false,
+) {
   const args = ["diff", "--git"];
+  const endpoints = typeof pinned === "object" ? pinned : input.rangeEndpoints;
 
-  if (pinnedRevision || input.range) {
-    args.push("-r", pinnedRevision ?? input.range!);
+  if (endpoints) {
+    // A `from..to` revset selects commits between two points; it does not compare their trees.
+    // Pinning resolved endpoints also lets the second command avoid another workspace snapshot.
+    const from = requireJjRevisionArg(input, endpoints.from);
+    const to = requireJjRevisionArg(input, endpoints.to);
+    args.push(
+      ...(snapshotWorkingCopy ? [] : ["--ignore-working-copy"]),
+      "--from",
+      from,
+      "--to",
+      to,
+    );
+  } else if (typeof pinned === "string" || input.range) {
+    args.push("-r", typeof pinned === "string" ? pinned : input.range!);
   }
 
   appendJjFilesets(args, input.pathspecs);
@@ -66,7 +104,8 @@ export function formatJjCommandLabel(input: JjBackedInput) {
       return "hunk diff --staged";
     }
 
-    return input.range ? `hunk diff ${input.range}` : "hunk diff";
+    const targets = describeDiffTargets(input);
+    return targets ? `hunk diff ${targets}` : "hunk diff";
   }
 
   return input.ref ? `hunk show ${input.ref}` : "hunk show";
@@ -128,6 +167,14 @@ export function createJjStagedError(input: ExtensionVcsDiffInput) {
 }
 
 function createInvalidRevsetError(input: JjBackedInput) {
+  if (input.kind === "vcs" && input.rangeEndpoints) {
+    const { from, to } = input.rangeEndpoints;
+    return new HunkExtensionUserError(
+      `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revisions \`${from}\` and \`${to}\`.`,
+      { suggestions: ["Check both revisions and try again."] },
+    );
+  }
+
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? "@");
   return new HunkExtensionUserError(
     `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revset \`${revset}\`.`,
@@ -256,8 +303,33 @@ export function resolveJjDiffEndpoints(
 
   return {
     newCommitId: commitId,
-    parentCommitIds: parentCommitIds.sort(),
+    oldCommitIds: parentCommitIds.sort(),
   };
+}
+
+/** Resolve two named JJ revisions to the immutable trees used by diff and source expansion. */
+export function resolveJjRangeEndpoints(
+  input: ExtensionVcsDiffInput,
+  endpoints: ExtensionVcsRangeEndpoints,
+  options: Omit<RunJjTextOptions, "input" | "args"> = {},
+): JjDiffEndpoints | undefined {
+  const from = requireJjRevisionArg(input, endpoints.from);
+  const to = requireJjRevisionArg(input, endpoints.to);
+  const resolveOne = (revset: string) =>
+    parseJjCommitIds(
+      runJjText({
+        input,
+        args: ["log", "--no-graph", "-r", revset, "-T", JjCommitIdTemplate],
+        ...options,
+      }),
+    );
+  const fromCommitIds = resolveOne(from);
+  const toCommitIds = resolveOne(to);
+  if (fromCommitIds.length !== 1 || toCommitIds.length !== 1) {
+    return undefined;
+  }
+
+  return { newCommitId: toCommitIds[0]!, oldCommitIds: [fromCommitIds[0]!] };
 }
 
 export function resolveJjRepoRoot(

@@ -365,7 +365,7 @@ describe("useExtensionPaneController", () => {
         harness.current().paneLayout.panes.some(({ pane }) => pane.key === "meta:line"),
       ).toBeFalse();
 
-      const paint = { render: () => null };
+      const paint = { side: "new" as const, line: 1, render: () => null };
       await act(async () => {
         harness.setCurrentLineCursor({ fileId: "file", stableKey: "cursor" });
         harness.current().onCurrentLinePaintChange({

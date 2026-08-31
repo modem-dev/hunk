@@ -13,6 +13,7 @@ import type { ReviewAction } from "./actions";
 import { reviewLineAnchor } from "./anchors";
 import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
 import { reviewDefaultHunkLineTarget } from "./geometry";
+import { reviewNoteWithinSizeLimit } from "./noteSize";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
   planReviewSelectionMove,
@@ -24,9 +25,13 @@ import {
 import {
   isReviewGapExpanded,
   isReviewNoteWithinClearScope,
+  reviewNoteCurrentOwnerHunkIndex,
+  reviewNoteHasDescendants,
   selectNormalizedSelection,
   selectReviewFileByKey,
   selectReviewNavigationFiles,
+  selectStoredReviewNoteById,
+  selectStoredReviewNotes,
 } from "./selectors";
 import {
   REVIEW_VIEWPORT_ANCHOR_REVEAL,
@@ -89,8 +94,18 @@ export type ReviewIntent =
       target?: ReviewLineAddressV1;
       reveal?: ReviewRevealRequest;
     }
-  /** Persist the active draft; a blank body retires the draft instead. */
+  /** Open an editable reviewer note in the shared composer. */
+  | { type: "notes/start-edit"; noteId: string; reveal?: ReviewRevealRequest }
+  /** Open a reply composer beneath one semantically stored note. */
+  | { type: "notes/start-reply"; noteId: string; reveal?: ReviewRevealRequest }
+  /** Replace the active composer's body. */
+  | { type: "notes/update-draft"; body: string }
+  /** Retire the active composer without persisting it. */
+  | { type: "notes/cancel-draft" }
+  /** Persist an active create/reply draft; a blank body retires the draft instead. */
   | { type: "notes/create-user"; consumeDraft: true }
+  /** Commit an active edit draft against the same saved user note. */
+  | { type: "notes/update-user"; noteId: string; consumeDraft: true }
   /** Delete one reviewer-authored note by id. */
   | { type: "notes/remove-user"; noteId: string }
   /** Dismiss one live agent note by id, leaving reviewer notes untouched. */
@@ -116,7 +131,12 @@ export const REVIEW_INTENT_TYPES = [
   "filter/set",
   "notes/set-visibility",
   "notes/start-draft",
+  "notes/start-edit",
+  "notes/start-reply",
+  "notes/update-draft",
+  "notes/cancel-draft",
   "notes/create-user",
+  "notes/update-user",
   "notes/remove-user",
   "notes/remove-live",
   "notes/clear",
@@ -142,6 +162,11 @@ export interface ReviewSelectionChangedOutcome {
 
 export interface ReviewNoteCreatedOutcome {
   type: "notes/created";
+  note: ReviewStoredNote;
+}
+
+export interface ReviewNoteUpdatedOutcome {
+  type: "notes/updated";
   note: ReviewStoredNote;
 }
 
@@ -189,6 +214,7 @@ export type ReviewIntentOutcome =
   | ReviewSelectionChangedOutcome
   | ReviewDraftStartedOutcome
   | ReviewNoteCreatedOutcome
+  | ReviewNoteUpdatedOutcome
   | ReviewNoteRemovedOutcome
   | ReviewNotesClearedOutcome
   | ReviewExpansionToggledOutcome;
@@ -209,7 +235,12 @@ export interface ReviewIntentOutcomeByType {
   "filter/set": undefined;
   "notes/set-visibility": undefined;
   "notes/start-draft": ReviewDraftStartedOutcome;
+  "notes/start-edit": ReviewDraftStartedOutcome;
+  "notes/start-reply": ReviewDraftStartedOutcome;
+  "notes/update-draft": undefined;
+  "notes/cancel-draft": undefined;
   "notes/create-user": ReviewNoteCreatedOutcome | undefined;
+  "notes/update-user": ReviewNoteUpdatedOutcome;
   "notes/remove-user": ReviewNoteRemovedOutcome;
   "notes/remove-live": ReviewNoteRemovedOutcome;
   "notes/clear": ReviewNotesClearedOutcome;
@@ -227,7 +258,15 @@ export type ReviewIntentPlanningErrorCode =
   | "hunk-not-found"
   | "gap-not-found"
   | "draft-missing"
+  | "draft-active"
+  | "draft-mode-mismatch"
   | "note-not-found"
+  | "note-not-editable"
+  | "note-has-replies"
+  | "note-id-conflict"
+  | "invalid-note-parent"
+  | "blank-note"
+  | "note-too-large"
   | "missing-fact";
 
 /** Typed semantic rejection raised before any review state is reduced or published. */
@@ -357,7 +396,11 @@ function planDraftStart(
   // Where a note about the whole hunk belongs is one shared answer; a caller that
   // measured a specific line the reviewer put a cursor on overrides it.
   const target = intent.target ?? reviewDefaultHunkLineTarget(hunk);
+  if (state.draftNote) {
+    throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
+  }
   const draft: ReviewDraftNote = {
+    kind: "create",
     id: requireFact(facts.draftId, "draftId"),
     fileKey: file.key,
     hunkIndex: intent.hunkIndex,
@@ -372,6 +415,97 @@ function planDraftStart(
         type: "selection/select",
         fileKey: file.key,
         hunkIndex: intent.hunkIndex,
+        reveal: intent.reveal ?? REVIEW_DRAFT_START_REVEAL,
+      },
+    ],
+    outcome: { type: "notes/draft-started", draft },
+  };
+}
+
+/** Build a composer transaction at one stored note's authoritative anchor. */
+function draftForStoredNote(
+  state: ReviewState,
+  entry: ReviewStoredNote,
+  facts: ReviewIntentFacts,
+  mode: "edit" | "reply",
+): ReviewDraftNote {
+  const file = requireReviewFile(state, entry.note.fileKey);
+  const hunkIndex = reviewNoteCurrentOwnerHunkIndex(entry.note, file);
+  requireHunk(file, hunkIndex);
+  const target = entry.note.anchor.preferred ?? { side: "new" as const, line: 1 };
+  const common = {
+    id: requireFact(facts.draftId, "draftId"),
+    fileKey: file.key,
+    hunkIndex,
+    side: target.side,
+    line: target.line,
+  };
+  return mode === "edit"
+    ? { ...common, kind: "edit", targetNoteId: entry.note.id, body: entry.note.summary }
+    : { ...common, kind: "reply", parentId: entry.note.id, body: "" };
+}
+
+/** Plan opening an existing reviewer note for identity-preserving editing. */
+function planDraftEditStart(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/start-edit" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  if (state.draftNote) {
+    throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
+  }
+  const entry = state.userNotes.find(({ note }) => note.id === intent.noteId);
+  if (!entry) {
+    throw new ReviewIntentPlanningError(
+      "note-not-found",
+      `No user review note matches id ${intent.noteId}.`,
+    );
+  }
+  if (!entry.note.editable) {
+    throw new ReviewIntentPlanningError(
+      "note-not-editable",
+      `Review note ${intent.noteId} is not editable.`,
+    );
+  }
+  const draft = draftForStoredNote(state, entry, facts, "edit");
+  return {
+    actions: [
+      { type: "draft/start", draft },
+      {
+        type: "selection/select",
+        fileKey: draft.fileKey,
+        hunkIndex: draft.hunkIndex,
+        reveal: intent.reveal ?? REVIEW_DRAFT_START_REVEAL,
+      },
+    ],
+    outcome: { type: "notes/draft-started", draft },
+  };
+}
+
+/** Plan opening a reply composer under one semantically stored note. */
+function planDraftReplyStart(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/start-reply" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  if (state.draftNote) {
+    throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
+  }
+  const entry = selectStoredReviewNoteById(state, intent.noteId);
+  if (!entry || entry.resolution === "orphaned") {
+    throw new ReviewIntentPlanningError(
+      "note-not-found",
+      `No replyable review note matches id ${intent.noteId}.`,
+    );
+  }
+  const draft = draftForStoredNote(state, entry, facts, "reply");
+  return {
+    actions: [
+      { type: "draft/start", draft },
+      {
+        type: "selection/select",
+        fileKey: draft.fileKey,
+        hunkIndex: draft.hunkIndex,
         reveal: intent.reveal ?? REVIEW_DRAFT_START_REVEAL,
       },
     ],
@@ -412,11 +546,17 @@ function planExpansionToggle(
   };
 }
 
-/** Plan persistence of the active draft as one user note. */
+/** Plan persistence of an active create/reply draft as one user note. */
 function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): ReviewIntentPlan {
   const draft = state.draftNote;
   if (!draft) {
     throw new ReviewIntentPlanningError("draft-missing", "No user note draft is active.");
+  }
+  if (draft.kind === "edit") {
+    throw new ReviewIntentPlanningError(
+      "draft-mode-mismatch",
+      "The active review note draft must be committed as an edit.",
+    );
   }
   const file = requireReviewFile(state, draft.fileKey);
   requireHunk(file, draft.hunkIndex);
@@ -424,23 +564,108 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
     return { actions: [{ type: "draft/cancel" }] };
   }
 
+  const noteId = requireFact(facts.noteId, "noteId");
+  if (selectStoredReviewNoteById(state, noteId)) {
+    throw new ReviewIntentPlanningError(
+      "note-id-conflict",
+      `Review note id ${noteId} is already in use.`,
+    );
+  }
+
+  const parent =
+    draft.kind === "reply" ? selectStoredReviewNoteById(state, draft.parentId) : undefined;
+  if (draft.kind === "reply" && (!parent || parent.resolution === "orphaned")) {
+    throw new ReviewIntentPlanningError(
+      "invalid-note-parent",
+      `Review note ${draft.parentId} is no longer available as a reply parent.`,
+    );
+  }
+  if (parent && parent.note.fileKey !== file.key) {
+    throw new ReviewIntentPlanningError(
+      "invalid-note-parent",
+      `Review note ${parent.note.id} belongs to a different file.`,
+    );
+  }
+
   const note: ReviewStoredNote = {
     note: {
-      id: requireFact(facts.noteId, "noteId"),
+      id: noteId,
+      ...(parent ? { parentId: parent.note.id } : {}),
       source: "user",
       originalSource: "user",
       fileKey: file.key,
-      anchor: reviewLineAnchor(file.hunks, draft),
+      anchor: parent ? parent.note.anchor : reviewLineAnchor(file.hunks, draft),
       summary: draft.body.trim(),
       author: "user",
       createdAt: requireFact(facts.timestamp, "timestamp"),
       editable: true,
     },
-    resolution: "active",
+    resolution: parent?.resolution ?? "active",
   };
+  if (!reviewNoteWithinSizeLimit(note.note)) {
+    throw new ReviewIntentPlanningError(
+      "note-too-large",
+      "The review note exceeds the shared note size limit.",
+    );
+  }
   return {
     actions: [{ type: "draft/save", note }],
     outcome: { type: "notes/created", note },
+  };
+}
+
+/** Plan an identity-preserving update of one editable user note. */
+function planUserNoteUpdate(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/update-user" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const draft = state.draftNote;
+  if (!draft) {
+    throw new ReviewIntentPlanningError("draft-missing", "No user note draft is active.");
+  }
+  if (draft.kind !== "edit" || draft.targetNoteId !== intent.noteId) {
+    throw new ReviewIntentPlanningError(
+      "draft-mode-mismatch",
+      `The active draft is not editing review note ${intent.noteId}.`,
+    );
+  }
+  const current = state.userNotes.find(({ note }) => note.id === intent.noteId);
+  if (!current) {
+    throw new ReviewIntentPlanningError(
+      "note-not-found",
+      `No user review note matches id ${intent.noteId}.`,
+    );
+  }
+  if (!current.note.editable) {
+    throw new ReviewIntentPlanningError(
+      "note-not-editable",
+      `Review note ${intent.noteId} is not editable.`,
+    );
+  }
+  if (isBlankReviewNoteBody(draft.body)) {
+    throw new ReviewIntentPlanningError(
+      "blank-note",
+      "An edited review note cannot be blank; cancel or delete it instead.",
+    );
+  }
+  const note: ReviewStoredNote = {
+    ...current,
+    note: {
+      ...current.note,
+      summary: draft.body.trim(),
+      updatedAt: requireFact(facts.timestamp, "timestamp"),
+    },
+  };
+  if (!reviewNoteWithinSizeLimit(note.note)) {
+    throw new ReviewIntentPlanningError(
+      "note-too-large",
+      "The review note exceeds the shared note size limit.",
+    );
+  }
+  return {
+    actions: [{ type: "draft/save-edit", note }],
+    outcome: { type: "notes/updated", note },
   };
 }
 
@@ -455,6 +680,12 @@ function planNoteRemoval(
     throw new ReviewIntentPlanningError(
       "note-not-found",
       `No ${source} review note matches id ${intent.noteId}.`,
+    );
+  }
+  if (reviewNoteHasDescendants(state, intent.noteId)) {
+    throw new ReviewIntentPlanningError(
+      "note-has-replies",
+      `Review note ${intent.noteId} cannot be removed while it has replies.`,
     );
   }
   return {
@@ -473,8 +704,21 @@ function planNotesClear(
   intent: Extract<ReviewIntent, { type: "notes/clear" }>,
 ): ReviewIntentPlan {
   const cleared = (entry: ReviewStoredNote) => isReviewNoteWithinClearScope(entry, intent.fileKey);
-  const removedLiveCount = state.liveNotes.filter(cleared).length;
-  const removedUserCount = intent.includeUser ? state.userNotes.filter(cleared).length : 0;
+  const removedLive = state.liveNotes.filter(cleared);
+  const removedUser = intent.includeUser ? state.userNotes.filter(cleared) : [];
+  const removedLiveCount = removedLive.length;
+  const removedUserCount = removedUser.length;
+  const removedIds = new Set([...removedLive, ...removedUser].map(({ note }) => note.id));
+  const leavesDanglingReply = selectStoredReviewNotes(state).some(
+    ({ note }) =>
+      !removedIds.has(note.id) && note.parentId !== undefined && removedIds.has(note.parentId),
+  );
+  if (leavesDanglingReply) {
+    throw new ReviewIntentPlanningError(
+      "note-has-replies",
+      "Review notes cannot be cleared while replies to them would remain.",
+    );
+  }
   return {
     actions: [
       {
@@ -546,10 +790,26 @@ export function planReviewIntent(
       return { actions: [{ type: "notes/set-visibility", visible: intent.visible }] };
     case "notes/start-draft":
       return planDraftStart(state, intent, facts);
+    case "notes/start-edit":
+      return planDraftEditStart(state, intent, facts);
+    case "notes/start-reply":
+      return planDraftReplyStart(state, intent, facts);
+    case "notes/update-draft":
+      if (!state.draftNote) {
+        throw new ReviewIntentPlanningError("draft-missing", "No user note draft is active.");
+      }
+      return { actions: [{ type: "draft/update", body: intent.body }] };
+    case "notes/cancel-draft":
+      if (!state.draftNote) {
+        throw new ReviewIntentPlanningError("draft-missing", "No user note draft is active.");
+      }
+      return { actions: [{ type: "draft/cancel" }] };
     case "expansion/toggle":
       return planExpansionToggle(state, intent);
     case "notes/create-user":
       return planUserNoteCreation(state, facts);
+    case "notes/update-user":
+      return planUserNoteUpdate(state, intent, facts);
     case "notes/remove-user":
     case "notes/remove-live":
       return planNoteRemoval(state, intent);

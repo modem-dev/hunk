@@ -13,7 +13,7 @@ type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 type UserNoteEventPayloads = Pick<ExtensionEventPayloads, "note_created" | "note_edited">;
 type ProjectableReviewNote = Pick<
   DraftReviewNote,
-  "id" | "fileId" | "filePath" | "hunkIndex" | "side" | "line"
+  "id" | "fileId" | "filePath" | "hunkIndex" | "side" | "line" | "parentId"
 > & {
   body?: string;
   summary?: string;
@@ -32,6 +32,7 @@ export function projectExtensionReviewNote(
 ): ExtensionReviewNote {
   return {
     id: note.id,
+    ...(note.parentId ? { parentId: note.parentId } : {}),
     fileId: note.fileId,
     filePath: note.filePath,
     hunkIndex: note.hunkIndex,
@@ -53,6 +54,8 @@ export interface UseUserNoteComposerOptions {
     target?: UserNoteLineTarget,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
+  startEdit?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
+  startReply?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
   updateDraft: (body: string) => void;
   saveDraft: () => UserReviewNote | null;
   cancelDraft: () => void;
@@ -73,6 +76,8 @@ export function useUserNoteComposer({
   keyboardCursorEnabled,
   getLineCursor,
   startDraft,
+  startEdit = () => null,
+  startReply = () => null,
   updateDraft,
   saveDraft,
   cancelDraft,
@@ -107,6 +112,32 @@ export function useUserNoteComposer({
     [activeAddNoteTarget, focusDraft, getLineCursor, keyboardCursorEnabled, startDraft],
   );
 
+  /** Open one saved user note for editing and transfer keyboard ownership. */
+  const startUserNoteEdit = useCallback(
+    (noteId: string, options?: { preserveViewport?: boolean }) => {
+      const draft = startEdit(noteId, options);
+      if (draft) {
+        setActiveAddNoteTarget(null);
+        focusDraft();
+      }
+      return draft;
+    },
+    [focusDraft, startEdit],
+  );
+
+  /** Open a reply composer and transfer keyboard ownership. */
+  const startUserNoteReply = useCallback(
+    (noteId: string, options?: { preserveViewport?: boolean }) => {
+      const draft = startReply(noteId, options);
+      if (draft) {
+        setActiveAddNoteTarget(null);
+        focusDraft();
+      }
+      return draft;
+    },
+    [focusDraft, startReply],
+  );
+
   /** Mark the mounted draft editor as the active keyboard input. */
   const focusDraftNote = useCallback(() => {
     focusDraft();
@@ -124,9 +155,8 @@ export function useUserNoteComposer({
     const priorDraft = draftNote;
     const saved = saveDraft();
     if (saved && priorDraft) {
-      publishEvent("note_created", {
-        note: projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false),
-      });
+      const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
+      publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
     }
     focusReview();
   }, [draftNote, focusReview, publishEvent, saveDraft]);
@@ -138,7 +168,17 @@ export function useUserNoteComposer({
       updateDraft(body);
       if (priorDraft) {
         publishEvent("note_edited", {
-          note: projectExtensionReviewNote({ ...priorDraft, body }, true),
+          note: projectExtensionReviewNote(
+            {
+              ...priorDraft,
+              id:
+                priorDraft.kind === "edit" && priorDraft.targetNoteId
+                  ? priorDraft.targetNoteId
+                  : priorDraft.id,
+              body,
+            },
+            true,
+          ),
         });
       }
     },
@@ -158,6 +198,8 @@ export function useUserNoteComposer({
     onActiveAddNoteAffordanceChange: setActiveAddNoteTarget,
     saveDraftNote,
     startUserNote,
+    startUserNoteEdit,
+    startUserNoteReply,
     updateDraftNote,
   };
 }

@@ -8,6 +8,7 @@
 import { selectStoredReviewNotes } from "../core/review/selectors";
 import type { ReviewStoredNote, ReviewState } from "../core/review/state";
 import type {
+  ExtensionEventPayloads,
   ExtensionReviewSnapshot,
   ExtensionReviewSnapshotFile,
   ExtensionReviewSnapshotNote,
@@ -38,11 +39,51 @@ function projectAnchor(note: ReviewStoredNote): ExtensionReviewSnapshotNoteAncho
   });
 }
 
+/** Project every saved store note into the public snapshot shape, including stale and orphaned entries. */
+export function projectExtensionReviewNotes(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+): readonly ExtensionReviewSnapshotNote[] {
+  return Object.freeze(selectStoredReviewNotes(state).map(projectNote));
+}
+
+/**
+ * Diff two snapshot note lists into created, updated, and removed changes.
+ *
+ * Removals keep previous-list order; updates and creates keep next-list order. Equality is
+ * JSON identity of the public snapshot shape.
+ */
+export function diffExtensionReviewNotes(
+  previous: readonly ExtensionReviewSnapshotNote[],
+  next: readonly ExtensionReviewSnapshotNote[],
+): Array<ExtensionEventPayloads["note_changed"]> {
+  const previousById = new Map(previous.map((note) => [note.id, note] as const));
+  const nextById = new Map(next.map((note) => [note.id, note] as const));
+  const changes: Array<ExtensionEventPayloads["note_changed"]> = [];
+
+  for (const note of previous) {
+    if (!nextById.has(note.id)) {
+      changes.push({ kind: "removed", note });
+    }
+  }
+  for (const note of next) {
+    const prior = previousById.get(note.id);
+    if (!prior) {
+      changes.push({ kind: "created", note });
+      continue;
+    }
+    if (JSON.stringify(prior) !== JSON.stringify(note)) {
+      changes.push({ kind: "updated", note });
+    }
+  }
+  return changes;
+}
+
 /** Copy one stored note and its reconciliation verdict into the public contract. */
 function projectNote(entry: ReviewStoredNote): ExtensionReviewSnapshotNote {
   const note = entry.note;
   return Object.freeze({
     id: note.id,
+    ...(note.parentId !== undefined ? { parentId: note.parentId } : {}),
     source: note.source,
     ...(note.originalSource !== undefined ? { originalSource: note.originalSource } : {}),
     fileKey: note.fileKey,
@@ -86,6 +127,6 @@ export function buildExtensionReviewSnapshot(
     generation,
     stateRevision: state.stateRevision,
     files: Object.freeze(state.document.files.map(projectFile)),
-    notes: Object.freeze(selectStoredReviewNotes(state).map(projectNote)),
+    notes: projectExtensionReviewNotes(state),
   });
 }

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -110,7 +110,7 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
 }
 
 function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -214,20 +214,24 @@ async function quitHunkSession(
 
 const ownedDaemonPids = new Map<number, number>();
 
-/** Poll daemon health directly before exercising the CLI boundary once. */
+/** Poll through the authenticated CLI because public health intentionally exposes no session facts. */
 async function waitForRegisteredSessions(port: number) {
-  await waitUntil("registered live session", async () => {
-    const health = await readDaemonHealth(port);
-    if (!health || (health.sessions ?? 0) === 0) return null;
-    ownedDaemonPids.set(port, health.pid);
-    return true;
+  return waitUntil("registered live session", () => {
+    const { proc, stdout } = runSessionCli(["list", "--json"], port);
+    if (proc.exitCode !== 0) return null;
+    const sessions = (JSON.parse(stdout) as SessionListJson).sessions;
+    if (sessions.length === 0) return null;
+    try {
+      const metadata = JSON.parse(
+        readFileSync(join(testRuntimeDir, "hunk-mcp", `daemon-127-0-0-1-${port}.json`), "utf8"),
+      ) as { pid?: unknown };
+      if (typeof metadata.pid === "number" && metadata.pid > 0)
+        ownedDaemonPids.set(port, metadata.pid);
+    } catch {
+      // Teardown can still rely on daemon idleness if metadata publication raced this read.
+    }
+    return sessions;
   });
-
-  const { proc, stdout, stderr } = runSessionCli(["list", "--json"], port);
-  if (proc.exitCode !== 0) {
-    throw new Error(stderr.trim() || "Failed to list the registered Hunk session.");
-  }
-  return (JSON.parse(stdout) as SessionListJson).sessions;
 }
 
 /** Read one test daemon's health without leaking connection failures into teardown. */
@@ -235,7 +239,7 @@ async function readDaemonHealth(port: number) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
     if (!response.ok) return null;
-    return (await response.json()) as { pid: number; sessions?: number };
+    return (await response.json()) as { ok: boolean };
   } catch {
     return null;
   }
@@ -267,9 +271,6 @@ async function waitForDaemonExit(port: number, pid: number, label: string) {
     label,
     async () => {
       const health = await readDaemonHealth(port);
-      if (health && health.pid !== pid) {
-        throw new Error(`Refusing to manage unexpected daemon ${health.pid} on port ${port}.`);
-      }
       return !isProcessRunning(pid) && health === null ? true : null;
     },
     1_500,
@@ -283,17 +284,10 @@ async function stopTestDaemon(port: number) {
   ownedDaemonPids.delete(port);
   if (pid === undefined) return;
 
-  const health = await readDaemonHealth(port);
-  if (health && health.pid !== pid) {
-    throw new Error(`Refusing to stop unexpected daemon ${health.pid} on port ${port}.`);
-  }
-
   signalProcess(pid, "SIGTERM");
   try {
     await waitForDaemonExit(port, pid, "session daemon exit");
-  } catch (error) {
-    const remaining = await readDaemonHealth(port);
-    if (remaining && remaining.pid !== pid) throw error;
+  } catch {
     signalProcess(pid, "SIGKILL");
     await waitForDaemonExit(port, pid, "killed session daemon exit");
   }
@@ -402,7 +396,7 @@ sessionDescribe("session CLI integration", () => {
       writeFileSync(fixture.after, "export const after = 20;\nexport const extra = 'yes';\n");
 
       const reload = runSessionCli(
-        ["reload", sessionId, "--json", "--", "diff", fixture.before, fixture.after],
+        ["reload", sessionId, "--json", "--", "diff", "--files", fixture.before, fixture.after],
         port,
       );
       expect(reload.proc.exitCode).toBe(0);
@@ -471,6 +465,7 @@ sessionDescribe("session CLI integration", () => {
           outside.dir,
           "--",
           "diff",
+          "--files",
           outside.before,
           outside.after,
         ],
@@ -491,7 +486,7 @@ sessionDescribe("session CLI integration", () => {
     }
   }, 20_000);
 
-  test("reload refuses option-like VCS ranges sent directly to the session API", async () => {
+  test("raw session API callers cannot present option-like VCS ranges", async () => {
     const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
       "reload-injection",
@@ -505,8 +500,7 @@ sessionDescribe("session CLI integration", () => {
       const listed = await waitForRegisteredSessions(port);
 
       const sessionId = listed[0]!.sessionId;
-      // Bypass the CLI parser on purpose: the raw daemon surface is the attacker-controlled
-      // path, so reproduce the injected flag exactly as a hostile /session-api caller would.
+      // Raw callers never reach app parsing without the owner-private signed caller session.
       const sentinel = join(fixture.dir, "hunk-poc");
       const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
         method: "POST",
@@ -523,9 +517,10 @@ sessionDescribe("session CLI integration", () => {
         }),
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(401);
       await expect(response.json()).resolves.toMatchObject({
-        error: expect.stringContaining("looks like a VCS option"),
+        error: "authentication-required",
+        message: expect.stringContaining("upgraded"),
       });
       expect(existsSync(sentinel)).toBe(false);
 

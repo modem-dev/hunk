@@ -127,6 +127,18 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return state.draftNote
         ? { ...state, draftNote: null, userNotes: [...state.userNotes, action.note] }
         : state;
+    case "draft/save-edit": {
+      if (!state.draftNote) {
+        return state;
+      }
+      const index = state.userNotes.findIndex((entry) => entry.note.id === action.note.note.id);
+      if (index < 0) {
+        return state;
+      }
+      const userNotes = [...state.userNotes];
+      userNotes[index] = action.note;
+      return { ...state, draftNote: null, userNotes };
+    }
     case "expansion/toggle": {
       const index = state.expandedGaps.findIndex(
         (gap) => gap.fileKey === action.fileKey && gap.gapId === action.gapId,

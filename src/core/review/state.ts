@@ -139,7 +139,7 @@ export function reviewRevealIntentsEqual(left: ReviewRevealIntent, right: Review
   );
 }
 
-export interface ReviewDraftNote {
+interface ReviewDraftNoteBase {
   id: string;
   fileKey: string;
   hunkIndex: number;
@@ -147,6 +147,12 @@ export interface ReviewDraftNote {
   line: number;
   body: string;
 }
+
+/** One composer transaction, distinguished by what saving it will do. */
+export type ReviewDraftNote =
+  | (ReviewDraftNoteBase & { kind?: "create" })
+  | (ReviewDraftNoteBase & { kind: "edit"; targetNoteId: string })
+  | (ReviewDraftNoteBase & { kind: "reply"; parentId: string });
 
 export type ReviewSourceStatus =
   | { kind: "loading" }

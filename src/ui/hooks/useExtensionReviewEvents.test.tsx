@@ -6,6 +6,7 @@ import type {
   ExtensionEventPayloads,
   ExtensionLayoutMode,
   ExtensionResolvedLayout,
+  ExtensionReviewSnapshotNote,
 } from "../../extension-api/types";
 import {
   createEmptyExtensionLoadResult,
@@ -69,6 +70,12 @@ function observeReviewEvents(extensions: ExtensionLoadResult, seen: SeenEvent[])
       seen.push({ event: "file_viewed", payload });
     },
   });
+  extensions.registry.eventHandlers.hunk_viewed.push({
+    extensionId: "test",
+    handler: (payload) => {
+      seen.push({ event: "hunk_viewed", payload });
+    },
+  });
   extensions.registry.eventHandlers.filter_changed.push({
     extensionId: "test",
     handler: (payload) => {
@@ -105,6 +112,12 @@ function observeReviewEvents(extensions: ExtensionLoadResult, seen: SeenEvent[])
       seen.push({ event: "note_edited", payload });
     },
   });
+  extensions.registry.eventHandlers.note_changed.push({
+    extensionId: "test",
+    handler: (payload) => {
+      seen.push({ event: "note_changed", payload });
+    },
+  });
   extensions.registry.eventHandlers.command_executed.push({
     extensionId: "test",
     handler: (payload) => {
@@ -118,6 +131,8 @@ interface ReviewEventFacts {
   filter: string;
   layoutMode: ExtensionLayoutMode;
   resolvedLayout: ExtensionResolvedLayout;
+  reviewGeneration?: string;
+  reviewNotes?: readonly ExtensionReviewSnapshotNote[];
   selectedFile: ExtensionDiffFile | null;
   selectedFileId: string | null;
   selectedHunkIndex: number;
@@ -173,6 +188,19 @@ async function destroy(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => setup.renderer.destroy());
 }
 
+/** Build one public snapshot note for store-backed note_changed tests. */
+function createTestSnapshotNote(id: string, summary = "Explain this"): ExtensionReviewSnapshotNote {
+  return {
+    id,
+    source: "user",
+    fileKey: "alpha",
+    anchor: { intersectingHunkIndices: [0], ownerHunkIndex: 0 },
+    summary,
+    editable: true,
+    resolution: "active",
+  };
+}
+
 /** Build the default mounted-review facts for publisher tests. */
 function createFacts(extensions: ExtensionLoadResult, selectedFile: ExtensionDiffFile) {
   return {
@@ -202,7 +230,11 @@ describe("useExtensionReviewEvents", () => {
       expect(harness.scheduler.tasks.get(timerId!)?.durationMs).toBe(SELECTION_CHANGED_DEBOUNCE_MS);
 
       await act(async () => harness.scheduler.run(timerId!));
-      expect(seen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(seen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
       expect(seen[0]?.payload).toEqual({ fileId: "alpha", hunkIndex: 0 });
       expect((seen[1]!.payload as ExtensionEventPayloads["file_viewed"]).file.id).toBe("alpha");
     } finally {
@@ -229,7 +261,11 @@ describe("useExtensionReviewEvents", () => {
       await act(async () => harness.scheduler.run(oldTimer!, true));
       expect(seen).toEqual([]);
       await act(async () => harness.scheduler.run(newTimer!));
-      expect(seen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(seen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
       expect(seen[0]?.payload).toEqual({ fileId: "beta", hunkIndex: 2 });
     } finally {
       await destroy(harness.setup);
@@ -259,6 +295,51 @@ describe("useExtensionReviewEvents", () => {
       expect(seen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
       expect((seen[1]!.payload as ExtensionEventPayloads["file_viewed"]).file).toBeDefined();
       expect((seen[1]!.payload as ExtensionEventPayloads["file_viewed"]).file.id).toBe("alpha");
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("emits hunk_viewed when hunkIndex changes on the same file without re-emitting file_viewed", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const seen: SeenEvent[] = [];
+    observeReviewEvents(extensions, seen);
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const harness = await renderReviewEvents({ initialFacts: createFacts(extensions, file) });
+
+    try {
+      harness.scheduler.run(harness.scheduler.activeIds()[0]!);
+      seen.length = 0;
+
+      await act(async () => harness.updateFacts({ selectedHunkIndex: 2 }));
+      await harness.settle();
+      harness.scheduler.run(harness.scheduler.activeIds()[0]!);
+
+      expect(seen.map(({ event }) => event)).toEqual(["selection_changed", "hunk_viewed"]);
+      expect(seen[0]?.payload).toEqual({ fileId: "alpha", hunkIndex: 2 });
+      expect((seen[1]!.payload as ExtensionEventPayloads["hunk_viewed"]).hunkIndex).toBe(2);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("does not emit hunk_viewed when the settled selection has no hunk", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const seen: SeenEvent[] = [];
+    observeReviewEvents(extensions, seen);
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const harness = await renderReviewEvents({ initialFacts: createFacts(extensions, file) });
+
+    try {
+      harness.scheduler.run(harness.scheduler.activeIds()[0]!);
+      seen.length = 0;
+
+      await act(async () => harness.updateFacts({ selectedFile: null, selectedFileId: null }));
+      await harness.settle();
+      harness.scheduler.run(harness.scheduler.activeIds()[0]!);
+
+      expect(seen.map(({ event }) => event)).toEqual(["selection_changed"]);
+      expect(seen[0]?.payload).toEqual({ fileId: null, hunkIndex: null });
     } finally {
       await destroy(harness.setup);
     }
@@ -335,7 +416,11 @@ describe("useExtensionReviewEvents", () => {
       const [currentTimer] = scheduler.activeIds();
       expect(currentTimer).toBeDefined();
       scheduler.run(currentTimer!);
-      expect(secondSeen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(secondSeen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
     } finally {
       await destroy(harness.setup);
     }
@@ -353,14 +438,26 @@ describe("useExtensionReviewEvents", () => {
 
     try {
       harness.scheduler.run(harness.scheduler.activeIds()[0]!);
-      expect(firstSeen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(firstSeen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
 
       await act(async () => harness.updateFacts({ extensions: secondExtensions }));
       await harness.settle();
       harness.scheduler.run(harness.scheduler.activeIds()[0]!);
 
-      expect(firstSeen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
-      expect(secondSeen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(firstSeen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
+      expect(secondSeen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
     } finally {
       await destroy(harness.setup);
     }
@@ -391,7 +488,11 @@ describe("useExtensionReviewEvents", () => {
 
       expect(secondSeen).toEqual([]);
       harness.scheduler.run(harness.scheduler.activeIds()[0]!);
-      expect(secondSeen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(secondSeen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
 
       await act(async () =>
         harness.updateFacts({
@@ -405,11 +506,12 @@ describe("useExtensionReviewEvents", () => {
       expect(secondSeen.map(({ event }) => event)).toEqual([
         "selection_changed",
         "file_viewed",
+        "hunk_viewed",
         "filter_changed",
         "layout_changed",
         "theme_changed",
       ]);
-      expect(secondSeen.slice(2)).toEqual([
+      expect(secondSeen.slice(3)).toEqual([
         { event: "filter_changed", payload: { filter: "test/" } },
         { event: "layout_changed", payload: { mode: "auto", layout: "split" } },
         { event: "theme_changed", payload: { themeId: "github-dark-default" } },
@@ -451,6 +553,7 @@ describe("useExtensionReviewEvents", () => {
         "watch_reload_pending",
         "selection_changed",
         "file_viewed",
+        "hunk_viewed",
       ]);
     } finally {
       await destroy(harness.setup);
@@ -485,6 +588,94 @@ describe("useExtensionReviewEvents", () => {
         "command_executed",
       ]);
       expect(seen[0]?.payload).toEqual({ note });
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("does not emit note_changed for the initial saved-note list", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const seen: SeenEvent[] = [];
+    observeReviewEvents(extensions, seen);
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const harness = await renderReviewEvents({
+      initialFacts: {
+        ...createFacts(extensions, file),
+        reviewGeneration: "gen-1",
+        reviewNotes: [createTestSnapshotNote("user:1")],
+      },
+    });
+
+    try {
+      await harness.settle();
+      expect(seen.filter(({ event }) => event === "note_changed")).toEqual([]);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("emits note_changed for saved-note mutations within one review generation", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const seen: SeenEvent[] = [];
+    observeReviewEvents(extensions, seen);
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const first = createTestSnapshotNote("user:1", "before");
+    const harness = await renderReviewEvents({
+      initialFacts: {
+        ...createFacts(extensions, file),
+        reviewGeneration: "gen-1",
+        reviewNotes: [first],
+      },
+    });
+
+    try {
+      await harness.settle();
+      const updated = createTestSnapshotNote("user:1", "after");
+      const created = createTestSnapshotNote("live:1", "agent");
+      await act(async () => harness.updateFacts({ reviewNotes: [updated, created] }));
+      await harness.settle();
+
+      expect(
+        seen.filter(({ event }) => event === "note_changed").map(({ payload }) => payload),
+      ).toEqual([
+        { kind: "updated", note: updated },
+        { kind: "created", note: created },
+      ]);
+
+      await act(async () => harness.updateFacts({ reviewNotes: [created] }));
+      await harness.settle();
+      expect(seen.filter(({ event }) => event === "note_changed").at(-1)?.payload).toEqual({
+        kind: "removed",
+        note: updated,
+      });
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("does not emit note_changed when a reload replaces the note list", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const seen: SeenEvent[] = [];
+    observeReviewEvents(extensions, seen);
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const harness = await renderReviewEvents({
+      initialFacts: {
+        ...createFacts(extensions, file),
+        reviewGeneration: "gen-1",
+        reviewNotes: [createTestSnapshotNote("user:1")],
+      },
+    });
+
+    try {
+      await harness.settle();
+      await act(async () =>
+        harness.updateFacts({
+          reviewGeneration: "gen-2",
+          reviewNotes: [createTestSnapshotNote("live:1", "agent")],
+        }),
+      );
+      await harness.settle();
+      expect(seen.filter(({ event }) => event === "note_changed")).toEqual([]);
     } finally {
       await destroy(harness.setup);
     }
@@ -573,7 +764,11 @@ describe("useExtensionReviewEvents", () => {
       scheduler.run(initialTimer!, true);
       expect(seen).toEqual([]);
       scheduler.run(currentTimer!);
-      expect(seen.map(({ event }) => event)).toEqual(["selection_changed", "file_viewed"]);
+      expect(seen.map(({ event }) => event)).toEqual([
+        "selection_changed",
+        "file_viewed",
+        "hunk_viewed",
+      ]);
     } finally {
       await destroy(setup);
     }

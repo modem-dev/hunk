@@ -69,7 +69,7 @@ function stackRow(row: SplitLineRow, cell: SplitLineCell, side: "old" | "new"): 
   };
 }
 
-/** Build an opaque public painter from the exact accepted private row plan. */
+/** Build the public current-line painter and source address from the accepted row plan. */
 export function createExtensionCurrentLinePaint({
   cursor,
   rowPlan,
@@ -100,6 +100,8 @@ export function createExtensionCurrentLinePaint({
     new: stackRow(splitRow, splitRow.right, "new"),
   };
   return Object.freeze({
+    side: cursor.target.side,
+    line: cursor.target.line,
     render(side: "old" | "new", width: number) {
       return (
         <DiffRowView

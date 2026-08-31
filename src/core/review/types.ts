@@ -33,6 +33,8 @@ export interface ReviewRangeAnchorV1 {
 
 export interface ReviewNoteV1 {
   id: string;
+  /** Direct parent note identity. Roots omit this field; ancestry is derived by selectors. */
+  parentId?: string;
   /**
    * Normalized note source. Producers classify a note once, at the boundary where it
    * enters the review, so no consumer re-interprets a raw source label.

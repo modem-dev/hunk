@@ -52,13 +52,32 @@ export class InvalidContentLengthError extends Error {
   }
 }
 
-// Reused across every websocket message, HTTP body, and patch check to avoid a per-call alloc.
-const sharedTextEncoder = new TextEncoder();
 const fatalTextDecoder = new TextDecoder("utf-8", { fatal: true });
 
-/** UTF-8 byte length of a string without allocating a Buffer in non-Node runtimes. */
+/** Count UTF-8 bytes without allocating an encoded copy before resource admission. */
 export function utf8ByteLength(value: string): number {
-  return sharedTextEncoder.encode(value).length;
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7f) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      codeUnit >= 0xd800 &&
+      codeUnit <= 0xdbff &&
+      index + 1 < value.length &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else {
+      // TextEncoder replaces every unpaired surrogate with the three-byte U+FFFD sequence.
+      bytes += 3;
+    }
+  }
+  return bytes;
 }
 
 /**
@@ -73,24 +92,26 @@ export async function readRequestBytesWithReservation(
   maxBytes: number,
   aggregateBudget?: ResourceBudget,
 ): Promise<{ bytes: Uint8Array; reservation: BudgetReservation }> {
+  const body = request.body;
   const declaredHeader = request.headers.get("content-length");
   if (declaredHeader !== null && !/^(?:0|[1-9][0-9]*)$/.test(declaredHeader)) {
+    await body?.cancel().catch(() => {});
     throw new InvalidContentLengthError();
   }
   const declared = declaredHeader === null ? null : Number(declaredHeader);
   if (declared !== null && (!Number.isSafeInteger(declared) || declared > maxBytes)) {
+    await body?.cancel().catch(() => {});
     throw new PayloadTooLargeError(maxBytes);
   }
 
-  const sourceReservations = new ReservationGroup();
   const retainedReservation = new ReservationGroup();
-  try {
-    if (aggregateBudget && declared !== null) {
-      sourceReservations.add(aggregateBudget.reserve(declared));
-    }
-    const body = request.body;
-    if (!body) return { bytes: new Uint8Array(), reservation: sourceReservations };
+  if (!body) return { bytes: new Uint8Array(), reservation: retainedReservation };
 
+  let sourceReservation: BudgetReservation | null = null;
+  try {
+    // Stream APIs expose bytes only after pulling them. Reserve the full permitted source before
+    // the first pull so an unknown or dishonest length cannot create an uncharged transient chunk.
+    if (aggregateBudget) sourceReservation = aggregateBudget.reserve(maxBytes);
     const reader = body.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
@@ -105,11 +126,6 @@ export async function readRequestBytesWithReservation(
           await reader.cancel().catch(() => {});
           throw new PayloadTooLargeError(maxBytes);
         }
-        if (aggregateBudget && nextTotal > (declared ?? 0)) {
-          sourceReservations.add(
-            aggregateBudget.reserve(nextTotal - Math.max(total, declared ?? 0)),
-          );
-        }
         total = nextTotal;
         chunks.push(value);
       }
@@ -117,20 +133,23 @@ export async function readRequestBytesWithReservation(
       reader.releaseLock();
     }
 
-    // Retain capacity for the merged copy before allocating it; source chunks stay charged until
-    // copying completes so aggregate accounting covers the real peak.
-    if (aggregateBudget) retainedReservation.add(aggregateBudget.reserve(total));
+    if (aggregateBudget && sourceReservation) {
+      sourceReservation = aggregateBudget.resize(sourceReservation, total);
+      retainedReservation.add(aggregateBudget.reserve(total));
+    }
     const merged = new Uint8Array(total);
     let offset = 0;
     for (const chunk of chunks) {
       merged.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    sourceReservations.release();
+    sourceReservation?.release();
+    sourceReservation = null;
     return { bytes: merged, reservation: retainedReservation };
   } catch (error) {
-    sourceReservations.release();
+    sourceReservation?.release();
     retainedReservation.release();
+    if (!body.locked) await body.cancel().catch(() => {});
     throw error;
   }
 }
@@ -157,13 +176,16 @@ export async function boundHttpResponse(
   }
   if (!response.body) return response;
 
-  const reader = response.body.getReader();
-  const sourceReservations = new ReservationGroup();
+  let sourceReservation: BudgetReservation | null = null;
   const retainedReservation = new ReservationGroup();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   const chunks: Uint8Array[] = [];
   let total = 0;
   let transferred = false;
   try {
+    // Reserve before the first pull because WHATWG streams do not expose chunk size beforehand.
+    if (aggregateBudget) sourceReservation = aggregateBudget.reserve(maxBytes);
+    reader = response.body.getReader();
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -173,19 +195,20 @@ export async function boundHttpResponse(
         await reader.cancel().catch(() => {});
         return new Response(null, { status: 503 });
       }
-      if (aggregateBudget) sourceReservations.add(aggregateBudget.reserve(value.byteLength));
       chunks.push(value);
     }
-    // Charge both the source chunks and their merged replacement during the copy peak, then retain
-    // only the replacement body until the downstream transport first pulls or cancels it.
-    if (aggregateBudget) retainedReservation.add(aggregateBudget.reserve(total));
+    if (aggregateBudget && sourceReservation) {
+      sourceReservation = aggregateBudget.resize(sourceReservation, total);
+      retainedReservation.add(aggregateBudget.reserve(total));
+    }
     const body = new Uint8Array(total);
     let offset = 0;
     for (const chunk of chunks) {
       body.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    sourceReservations.release();
+    sourceReservation?.release();
+    sourceReservation = null;
     const headers = new Headers(response.headers);
     headers.set("content-length", String(total));
     let delivered = false;
@@ -213,14 +236,15 @@ export async function boundHttpResponse(
     });
   } catch (error) {
     if (error instanceof BrokerCapacityError) {
-      await reader.cancel().catch(() => {});
+      if (reader) await reader.cancel().catch(() => {});
+      else await response.body.cancel().catch(() => {});
       return new Response(null, { status: 503 });
     }
     throw error;
   } finally {
-    sourceReservations.release();
+    sourceReservation?.release();
     if (!transferred) retainedReservation.release();
-    reader.releaseLock();
+    reader?.releaseLock();
   }
 }
 

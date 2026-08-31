@@ -110,10 +110,14 @@ interface BuiltinCommandHandler {
 export interface BuildAppCommandsOptions {
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
+  canEditActiveNote?: boolean;
+  canReplyToActiveNote?: boolean;
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
+  editActiveNote?: () => void;
+  replyToActiveNote?: () => void;
   /** Step the review selection through one scope, as the catalog entry declares it. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   openAgentSkill: () => void;
@@ -179,6 +183,14 @@ function builtinCommandHandlers(
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
     "hunk.review.startNote": { run: () => options.startUserNote() },
+    "hunk.review.editActiveNote": {
+      isEnabled: () => Boolean(options.canEditActiveNote),
+      run: () => options.editActiveNote?.(),
+    },
+    "hunk.review.replyToActiveNote": {
+      isEnabled: () => Boolean(options.canReplyToActiveNote),
+      run: () => options.replyToActiveNote?.(),
+    },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
     "hunk.review.halfPageDown": { run: (_key, count) => options.scrollDiff(count, "half") },

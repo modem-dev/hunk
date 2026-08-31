@@ -53,6 +53,27 @@ describe("session broker wire parsing", () => {
     ).toBeNull();
   });
 
+  test("accepts terminal-native session identifiers without treating them as broker ids", () => {
+    const registration = parseSessionRegistrationEnvelope(
+      {
+        registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
+        sessionId: "session-1",
+        pid: 123,
+        cwd: "/repo",
+        launchedAt: "2026-03-22T00:00:00.000Z",
+        terminal: {
+          locations: [{ source: "iterm2", sessionId: "w1t2p3:ABCDEF" }],
+        },
+        info: { ok: true },
+      },
+      (value) => (value && typeof value === "object" ? value : null),
+    );
+
+    expect(registration?.terminal?.locations).toEqual([
+      { source: "iterm2", sessionId: "w1t2p3:ABCDEF" },
+    ]);
+  });
+
   test("rejects prototype-shaped registration and terminal metadata extras", () => {
     const parseInfo = (value: unknown) => (value && typeof value === "object" ? value : null);
     const registration = {

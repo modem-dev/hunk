@@ -29,7 +29,7 @@ const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
-const { DiffPane } = await import("./panes/DiffPane");
+const { DiffPane, storedReviewNoteActions } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
@@ -2756,6 +2756,226 @@ describe("UI components", () => {
     expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
   });
 
+  test("AgentInlineNote connects threads and overlays actions on the hovered bottom border", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const annotation = {
+      source: "user" as const,
+      newRange: [2, 2] as [number, number],
+      summary: "Reviewer note",
+    };
+    const actions = { onEdit: () => {}, onReply: () => {}, onDelete: () => {} };
+    const thread = {
+      noteId: "child",
+      parentId: "parent",
+      depth: 2,
+      hasNextSibling: true,
+      ancestorHasNextSibling: [false, true],
+    };
+    const measured = measureAgentInlineNoteHeight({
+      annotation,
+      anchorSide: "new",
+      layout: "stack",
+      width: 60,
+      actions,
+      threadDepth: thread.depth,
+    });
+    const setup = await testRender(
+      <AgentInlineNote
+        annotation={annotation}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={60}
+        actions={actions}
+        thread={thread}
+      />,
+      { width: 64, height: measured + 1 },
+    );
+
+    try {
+      await act(async () => setup.renderOnce());
+      const restingFrame = setup.captureCharFrame();
+      const restingLines = restingFrame.split("\n");
+      expect(restingLines[0]).toContain("│ ├─╭─ Your note");
+      expect(restingLines[0]).toContain("R2");
+      expect(restingFrame).not.toContain("r reply");
+      expect(restingLines[measured - 1]).toContain("│ ╰");
+      const topSpans = setup.captureSpans().lines[0]?.spans ?? [];
+      expect(capturedTestColorToHex(topSpans.find((span) => span.text.includes("├─"))?.fg)).toBe(
+        theme.muted.toLowerCase(),
+      );
+      expect(capturedTestColorToHex(topSpans.find((span) => span.text.includes("╭─"))?.fg)).toBe(
+        theme.noteBorder.toLowerCase(),
+      );
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(63, measured);
+        await setup.mockMouse.moveTo(63, 2);
+      });
+      await act(async () => {
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("r reply");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(20, 0);
+      });
+      await act(async () => {
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      const hoveredFrame = setup.captureCharFrame();
+      const hoveredLines = hoveredFrame.split("\n");
+      expect(hoveredFrame).toContain("r reply e edit d delete");
+      expect(hoveredLines[measured - 1]).toContain("╰");
+      expect(hoveredLines[measured - 1]).toContain("╯");
+
+      const replyColumn = hoveredLines[measured - 1]!.indexOf("reply") + 1;
+      await act(async () => {
+        await setup.mockMouse.moveTo(replyColumn, measured - 1);
+      });
+      await act(async () => {
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      const actionSpans = setup.captureSpans().lines[measured - 1]?.spans ?? [];
+      const replyBackground = capturedTestColorToHex(
+        actionSpans.find((span) => span.text.includes("reply"))?.bg,
+      );
+      const editBackground = capturedTestColorToHex(
+        actionSpans.find((span) => span.text.includes("edit"))?.bg,
+      );
+      expect(replyBackground).toBe(theme.accentMuted.toLowerCase());
+      expect(editBackground).not.toBe(replyBackground);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(63, measured);
+      });
+      await act(async () => {
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("r reply");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("AgentInlineNote keeps reply composers attached to their thread rails", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const annotation = {
+      source: "user-draft" as const,
+      title: "Reply",
+      newRange: [2, 2] as [number, number],
+      summary: "Draft reply",
+    };
+    const thread = {
+      noteId: "draft",
+      parentId: "parent",
+      depth: 2,
+      hasNextSibling: false,
+      ancestorHasNextSibling: [false, true],
+    };
+    const measured = measureAgentInlineNoteHeight({
+      annotation,
+      anchorSide: "new",
+      layout: "stack",
+      width: 60,
+      threadDepth: thread.depth,
+    });
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={annotation}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={60}
+        thread={thread}
+        draft={{
+          body: "Draft reply",
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+      />,
+      64,
+      measured + 1,
+    );
+
+    const cardLines = frame.split("\n").slice(0, measured);
+    expect(cardLines[0]).toContain("│ ╰─╭─ Reply - R2");
+    expect(cardLines.every((line) => line.includes("│"))).toBe(true);
+  });
+
+  test("AgentInlineNote highlights Save and Cancel independently on mouse hover", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const annotation = {
+      source: "user-draft" as const,
+      newRange: [2, 2] as [number, number],
+      summary: "Draft reply",
+    };
+    const measured = measureAgentInlineNoteHeight({
+      annotation,
+      anchorSide: "new",
+      layout: "stack",
+      width: 60,
+    });
+    const onSave = mock(() => {});
+    const onCancel = mock(() => {});
+    const setup = await testRender(
+      <AgentInlineNote
+        annotation={annotation}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={60}
+        draft={{
+          body: "Draft reply",
+          focused: true,
+          onCancel,
+          onInput: () => {},
+          onSave,
+        }}
+      />,
+      { width: 64, height: measured + 1 },
+    );
+
+    try {
+      await act(async () => setup.renderOnce());
+      const restingLines = setup.captureCharFrame().split("\n");
+      expect(restingLines[measured - 1]).toContain("^S save Esc cancel");
+      expect(restingLines[measured - 1]?.trimStart().startsWith("╰")).toBe(true);
+
+      const saveColumn = restingLines[measured - 1]!.indexOf("save") + 1;
+      await act(async () => {
+        await setup.mockMouse.moveTo(saveColumn, measured - 1);
+      });
+      await act(async () => {
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      const actionSpans = setup.captureSpans().lines[measured - 1]?.spans ?? [];
+      const saveBackground = capturedTestColorToHex(
+        actionSpans.find((span) => span.text.includes("save"))?.bg,
+      );
+      const cancelBackground = capturedTestColorToHex(
+        actionSpans.find((span) => span.text.includes("cancel"))?.bg,
+      );
+      expect(saveBackground).toBe(theme.accentMuted.toLowerCase());
+      expect(cancelBackground).not.toBe(saveBackground);
+
+      await act(async () => setup.mockMouse.click(saveColumn, measured - 1));
+      const cancelColumn = restingLines[measured - 1]!.indexOf("cancel") + 1;
+      await act(async () => setup.mockMouse.click(cancelColumn, measured - 1));
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("AgentInlineNote renders STML markup as the note body at its measured height", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const annotation = {
@@ -2856,14 +3076,14 @@ describe("UI components", () => {
     expect(lines[0]).toContain("╭─ Draft note - src/core/cli.ts R611 ");
     expect(lines[1]).toContain("│                                              │");
     expect(lines[2]).toContain("│ Here's my comment. I think we should think");
-    expect(lines[3]).toContain("│                                              │");
-    const saveLine = lines.find(
-      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
-    );
+    expect(lines[3]).toContain("^S save Esc cancel");
+    const saveLine = lines.find((line) => line.includes("^S save") && line.includes("Esc cancel"));
     expect(saveLine).toBeDefined();
-    expect(saveLine!.indexOf("Save")).toBeGreaterThan(lines[2]!.indexOf("Here's"));
-    expect(frame).toContain("┬───────────┬──────────────┤");
-    expect(frame).toContain("╰───────────┴──────────────╯");
+    expect(saveLine!.indexOf("save")).toBeGreaterThan(lines[2]!.indexOf("Here's"));
+    expect(saveLine?.trimStart().startsWith("╰")).toBe(true);
+    expect(saveLine?.trimEnd().endsWith("╯")).toBe(true);
+    expect(frame).not.toContain("┬");
+    expect(frame).not.toContain("┴");
   });
 
   test("AgentInlineNote grows draft composer for soft-wrapped text", async () => {
@@ -2898,11 +3118,44 @@ describe("UI components", () => {
 
     const lines = frame.split("\n");
     const saveLineIndex = lines.findIndex(
-      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+      (line) => line.includes("^S save") && line.includes("Esc cancel"),
     );
     expect(lines.some((line) => line.includes(body.slice(0, 10)))).toBe(true);
     expect(lines.some((line) => line.includes(body.slice(-10)))).toBe(true);
-    expect(saveLineIndex).toBeGreaterThan(5);
+    expect(saveLineIndex).toBeGreaterThan(4);
+  });
+
+  test("AgentInlineNote keeps the filename and range visible in compact thread titles", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile(
+      "long-title",
+      "src/a/very/long/review/path/that/must/be/truncated.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          source: "user",
+          newRange: [20, 24],
+          summary: "Summary line",
+        }}
+        anchorSide="new"
+        file={file}
+        layout="stack"
+        theme={theme}
+        width={60}
+        thread={{ noteId: "note", depth: 0 }}
+      />,
+      64,
+      6,
+    );
+
+    const title = frame.split("\n")[0] ?? "";
+    expect(title).toContain("Your note");
+    expect(title).toContain("...");
+    expect(title).toContain("truncated.ts");
+    expect(title).toContain("R20–R24");
   });
 
   test("AgentInlineNote shows author name in title when author is set", async () => {
@@ -3099,6 +3352,30 @@ describe("UI components", () => {
     expect(frame).not.toContain("alpha.ts note");
     expect(frame).not.toContain("review");
     expect(frame).not.toContain("confidence");
+  });
+
+  test("DiffPane lets reviewers delete stored agent notes but not parents with replies", () => {
+    const onRemoveLiveNote = mock(() => {});
+    const leafActions = storedReviewNoteActions({
+      editable: false,
+      hasReplies: false,
+      noteId: "agent:leaf",
+      onRemoveLiveNote,
+      source: "agent",
+    });
+
+    expect(leafActions?.onEdit).toBeUndefined();
+    leafActions?.onDelete?.();
+    expect(onRemoveLiveNote).toHaveBeenCalledWith("agent:leaf");
+
+    const parentActions = storedReviewNoteActions({
+      editable: false,
+      hasReplies: true,
+      noteId: "agent:parent",
+      onRemoveLiveNote,
+      source: "agent",
+    });
+    expect(parentActions?.onDelete).toBeUndefined();
   });
 
   test("DiffPane split inline notes hand off directly from the anchored row without shifting it", async () => {

@@ -91,6 +91,7 @@ export default function (hunk: HunkExtensionAPI) {
   const pane = (props: ExtensionPaneProps) => {
     hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);
     props.currentLine?.render("new", props.width);
+    hunk.log(props.currentLine ? props.currentLine.side + ":" + props.currentLine.line : "no line");
     return null;
   };
   const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4, fraction: 0.25 };
@@ -337,6 +338,12 @@ export default function (hunk: HunkExtensionAPI) {
   });
   hunk.on("selection_changed", (event) => {
     hunk.log(\`selected \${event.fileId ?? "nothing"} #\${event.hunkIndex ?? -1}\`);
+  });
+  hunk.on("hunk_viewed", (event) => {
+    hunk.log(\`viewed hunk \${event.hunkIndex} in \${event.file.path}\`);
+  });
+  hunk.on("note_changed", (event) => {
+    hunk.log(\`note \${event.kind} \${event.note.id}\`);
   });
   hunk.on("session_reload", (event) => {
     hunk.log(\`reloaded because \${event.reason}\`);

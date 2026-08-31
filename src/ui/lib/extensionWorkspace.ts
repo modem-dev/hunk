@@ -77,7 +77,7 @@ export interface WorkspaceWriteRequestFields {
 function nonWorkingTreeReview(input: CliInput): string | null {
   switch (input.kind) {
     case "vcs":
-      if (input.range) {
+      if (input.range || input.rangeEndpoints) {
         return "a revision range";
       }
 

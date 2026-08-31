@@ -41,7 +41,7 @@ function splitPlanFixture() {
 }
 
 describe("extension current-line paint", () => {
-  test("exposes only an opaque painter backed by the accepted row plan", () => {
+  test("exposes a painter and the cursor's public source address", () => {
     const fixture = splitPlanFixture();
     const paint = createExtensionCurrentLinePaint({
       ...fixture,
@@ -50,7 +50,9 @@ describe("extension current-line paint", () => {
     });
 
     expect(paint).not.toBeNull();
-    expect(Object.keys(paint!)).toEqual(["render"]);
+    expect(Object.keys(paint!)).toEqual(["side", "line", "render"]);
+    expect(paint!.side).toBe(fixture.cursor.target.side);
+    expect(paint!.line).toBe(fixture.cursor.target.line);
     const oldPaint = paint!.render("old", 60) as {
       props: {
         row: { cell: Record<string, unknown> };
@@ -110,7 +112,7 @@ describe("extension current-line paint", () => {
   });
 
   test("withholds stale paint while a new plan is pending", () => {
-    const paint = { render: () => null };
+    const paint = { side: "new" as const, line: 1, render: () => null };
     const ready = applyExtensionCurrentLinePaintUpdate(
       { status: "unavailable", fileId: null, cursorKey: null, paint: null },
       { status: "ready", fileId: "alpha", cursorKey: "row:1", paint },
@@ -134,7 +136,7 @@ describe("extension current-line paint", () => {
   });
 
   test("clears accepted paint when the current-line capability becomes unavailable", () => {
-    const paint = { render: () => null };
+    const paint = { side: "new" as const, line: 1, render: () => null };
     const unavailable = applyExtensionCurrentLinePaintUpdate(
       { status: "ready", fileId: "alpha", cursorKey: "row:1", paint },
       { status: "unavailable" },

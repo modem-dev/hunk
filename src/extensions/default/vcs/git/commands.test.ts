@@ -104,6 +104,63 @@ describe("git command helpers", () => {
     expect(buildGitDiffArgs(makeGitInput())).toContain("core.quotePath=true");
   });
 
+  test("spells two named revisions as exact Git A..B command arguments", () => {
+    const input = makeGitInput({ rangeEndpoints: { from: "main", to: "feature" } });
+    const prefix = [
+      "-c",
+      "core.quotePath=true",
+      "-c",
+      "diff.noprefix=false",
+      "-c",
+      "diff.mnemonicPrefix=false",
+      "-c",
+      "diff.srcPrefix=a/",
+      "-c",
+      "diff.dstPrefix=b/",
+    ];
+
+    expect(buildGitDiffArgs(input)).toEqual([
+      ...prefix,
+      "diff",
+      "--no-ext-diff",
+      "--find-renames",
+      "--no-color",
+      "main..feature",
+    ]);
+    expect(buildGitDiffNumstatArgs(input)).toEqual([
+      ...prefix,
+      "diff",
+      "--no-ext-diff",
+      "--find-renames",
+      "--no-color",
+      "--numstat",
+      "-z",
+      "main..feature",
+    ]);
+  });
+
+  test("rejects each option-like Git endpoint before commands, probes, or source resolution", () => {
+    for (const rangeEndpoints of [
+      { from: "--output=/tmp/from", to: "feature" },
+      { from: "main", to: "--output=/tmp/to" },
+    ]) {
+      const input = makeGitInput({ rangeEndpoints });
+      expect(() => buildGitDiffArgs(input)).toThrow("looks like a Git option");
+      expect(() => listGitUntrackedFiles(input)).toThrow("looks like a Git option");
+      expect(() => resolveGitDiffEndpoints(input)).toThrow("looks like a Git option");
+    }
+
+    for (const rangeEndpoints of [
+      { from: "", to: "feature" },
+      { from: "main", to: "" },
+    ]) {
+      const input = makeGitInput({ rangeEndpoints });
+      expect(() => buildGitDiffArgs(input)).toThrow("empty revision");
+      expect(() => listGitUntrackedFiles(input)).toThrow("empty revision");
+      expect(() => resolveGitDiffEndpoints(input)).toThrow("empty revision");
+    }
+  });
+
   test("refuses option-like revision values before spawning Git", () => {
     expect(() => buildGitDiffArgs(makeGitInput({ range: "--output=/tmp/hunk-poc" }))).toThrow(
       "looks like a Git option",
@@ -293,6 +350,28 @@ describe("resolveGitMetadata", () => {
 });
 
 describe("resolveGitDiffEndpoints", () => {
+  test("resolves two named revisions for exact source expansion", () => {
+    const repoRoot = createTempRepo("hunk-endpoints-two-revisions-");
+    writeFileSync(join(repoRoot, "x.txt"), "first\n");
+    git(repoRoot, "add", "x.txt");
+    git(repoRoot, "commit", "-m", "first");
+    const from = git(repoRoot, "rev-parse", "HEAD").trim();
+    writeFileSync(join(repoRoot, "x.txt"), "second\n");
+    git(repoRoot, "add", "x.txt");
+    git(repoRoot, "commit", "-m", "second");
+    const to = git(repoRoot, "rev-parse", "HEAD").trim();
+
+    expect(
+      resolveGitDiffEndpoints(makeGitInput({ rangeEndpoints: { from, to } }), {
+        cwd: repoRoot,
+        repoRoot,
+      }),
+    ).toEqual({
+      old: { kind: "git-ref", ref: from },
+      new: { kind: "git-ref", ref: to },
+    });
+  });
+
   test("staged diffs compare HEAD against the index", () => {
     const repoRoot = createTempRepo("hunk-endpoints-staged-");
     writeFileSync(join(repoRoot, "x.txt"), "x\n");

@@ -96,8 +96,8 @@ Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hu
 ### Working with raw files and patches
 
 ```bash
-hunk diff before.ts after.ts                # compare two files directly
-hunk diff before.ts after.ts --watch        # auto-reload when either file changes
+hunk diff --files before.ts after.ts        # compare two files directly
+hunk diff --files before.ts after.ts --watch # auto-reload when either file changes
 git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 

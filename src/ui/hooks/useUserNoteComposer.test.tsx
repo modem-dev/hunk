@@ -206,6 +206,46 @@ describe("useUserNoteComposer", () => {
     }
   });
 
+  test("forwards mouse viewport policy through edit and reply composer wrappers", async () => {
+    const editStarts: unknown[][] = [];
+    const replyStarts: unknown[][] = [];
+    let draftFocusCount = 0;
+    const harness = await renderComposer(
+      baseOptions({
+        startEdit: (...args) => {
+          editStarts.push(args);
+          return draftNote;
+        },
+        startReply: (...args) => {
+          replyStarts.push(args);
+          return draftNote;
+        },
+        focus: {
+          draft: () => {
+            draftFocusCount += 1;
+          },
+          review: () => {},
+          blurDraft: () => {},
+        },
+      }),
+    );
+
+    try {
+      await act(async () =>
+        harness.composer().startUserNoteEdit("edit-note", { preserveViewport: true }),
+      );
+      await act(async () =>
+        harness.composer().startUserNoteReply("reply-note", { preserveViewport: true }),
+      );
+
+      expect(editStarts).toEqual([["edit-note", { preserveViewport: true }]]);
+      expect(replyStarts).toEqual([["reply-note", { preserveViewport: true }]]);
+      expect(draftFocusCount).toBe(2);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
   test("coordinates focus, cancel, and blur transitions through narrow actions", async () => {
     const transitions: string[] = [];
     let cancelCount = 0;
@@ -279,6 +319,46 @@ describe("useUserNoteComposer", () => {
         },
       ]);
       expect(reviewFocusCount).toBe(2);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("publishes a committed edit distinctly from note creation", async () => {
+    const events: Array<{ event: string; payload: unknown }> = [];
+    const editDraft: DraftReviewNote = {
+      ...draftNote,
+      kind: "edit",
+      targetNoteId: savedNote.id,
+      body: savedNote.summary,
+    };
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote: editDraft,
+        saveDraft: () => savedNote,
+        publishEvent: (event, payload) => events.push({ event, payload }),
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote());
+      expect(events).toEqual([
+        {
+          event: "note_edited",
+          payload: {
+            note: {
+              id: savedNote.id,
+              fileId: draftNote.fileId,
+              filePath: savedNote.filePath,
+              hunkIndex: savedNote.hunkIndex,
+              side: savedNote.side,
+              line: savedNote.line,
+              body: savedNote.summary,
+              draft: false,
+            },
+          },
+        },
+      ]);
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
@@ -463,8 +543,14 @@ describe("projectExtensionReviewNote", () => {
       body: draftNote.body,
       draft: true,
     });
-    expect(projectExtensionReviewNote({ ...savedNote, fileId: "runtime-alpha" }, false)).toEqual({
+    expect(
+      projectExtensionReviewNote(
+        { ...savedNote, parentId: "user:parent", fileId: "runtime-alpha" },
+        false,
+      ),
+    ).toEqual({
       id: savedNote.id,
+      parentId: "user:parent",
       fileId: "runtime-alpha",
       filePath: savedNote.filePath,
       hunkIndex: savedNote.hunkIndex,

@@ -12,6 +12,7 @@ import { resolveTheme } from "../themes";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  createLineCursorStabilizer,
   findLineCursorAt,
   findNextLineCursor,
   firstLineCursorInHunk,
@@ -214,6 +215,25 @@ describe("reuseEquivalentLineCursors", () => {
     );
 
     expect(reuseEquivalentLineCursors(previous, next)).toBe(next);
+  });
+});
+
+describe("createLineCursorStabilizer", () => {
+  test("does not rescan an unchanged measurement during unrelated renders", () => {
+    const stabilize = createLineCursorStabilizer();
+    const measured = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+
+    expect(stabilize(measured)).toBe(measured);
+    expect(stabilize(measured)).toBe(measured);
+  });
+
+  test("preserves stable cursor identity across equivalent remeasurement", () => {
+    const stabilize = createLineCursorStabilizer();
+    const stable = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const measured = stable.map((cursor) => ({ ...cursor, target: { ...cursor.target } }));
+
+    expect(stabilize(stable)).toBe(stable);
+    expect(stabilize(measured)).toBe(stable);
   });
 });
 

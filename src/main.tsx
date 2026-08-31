@@ -21,7 +21,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "daemon-serve") {
-    const server = serveSessionBrokerDaemon();
+    const server = await serveSessionBrokerDaemon();
     await server.stopped;
     return;
   }

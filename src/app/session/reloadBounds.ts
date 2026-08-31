@@ -11,9 +11,9 @@ import type { VcsCatalog } from "../../core/vcs/types";
  * | Initial session | Reload roots | Rejected reload filesystem reads |
  * | --- | --- | --- |
  * | `hunk diff` / `hunk show` / `hunk stash show` | Initial repo root | Anything outside that repo root. |
- * | `hunk diff fileA fileB` inside a repo, both files in repo | The repo root | Anything outside that repo root. |
+ * | `hunk diff --files fileA fileB` inside a repo, both files in repo | The repo root | Anything outside that repo root. |
  * | `hunk difftool fileA fileB` inside a repo, both files in repo | The repo root | Anything outside that repo root. |
- * | `hunk diff fileA fileB` outside a repo | None | All session reloads. |
+ * | `hunk diff --files fileA fileB` outside a repo | None | All session reloads. |
  * | `hunk difftool fileA fileB` outside a repo | None | All session reloads. |
  * | `hunk patch patchfile` inside a repo | The repo root | Anything outside that repo root. |
  * | `hunk patch patchfile` outside a repo | Exact initial patch file | Other files and every repository-backed reload. |
@@ -23,8 +23,8 @@ import type { VcsCatalog } from "../../core/vcs/types";
  * All candidate paths are realpath-normalized through existing ancestors so symlinks cannot escape
  * the roots, including paths whose final file does not exist yet.
  *
- * Revision-shaped fields (`vcs` `range`, `show`/`stash-show` `ref`) must name revisions, not
- * command options: a value beginning with `-` would let a daemon caller inject flags such as
+ * Revision-shaped fields (`vcs` `range`/`rangeEndpoints`, `show`/`stash-show` `ref`) must name
+ * revisions, not command options: a value beginning with `-` would let a daemon caller inject flags such as
  * `--output=<path>` into the VCS backend's spawned command. Pathspecs are exempt because every
  * bundled backend appends them after `--`, where the VCS treats them as paths.
  */
@@ -227,6 +227,10 @@ export function validateSessionReloadWithinBounds(
       }
       if (nextInput.range) {
         assertReloadRevisionNotOptionLike("diff range", nextInput.range);
+      }
+      if (nextInput.rangeEndpoints) {
+        assertReloadRevisionNotOptionLike("diff from revision", nextInput.rangeEndpoints.from);
+        assertReloadRevisionNotOptionLike("diff to revision", nextInput.rangeEndpoints.to);
       }
       break;
     case "show":

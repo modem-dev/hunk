@@ -92,8 +92,9 @@ the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
 `src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions and
-failure containment. `DiffPane` exposes optional current-line paint without
-publishing Pierre rows, plans, cursor keys, or caches. Deprecated sidebar APIs
+failure containment. `DiffPane` exposes optional current-line paint — the row
+painter plus the public `{ side, line }` address — without publishing Pierre
+rows, plans, cursor keys, or caches. Deprecated sidebar APIs
 normalize into this same registry and layout path.
 
 ## File-view system

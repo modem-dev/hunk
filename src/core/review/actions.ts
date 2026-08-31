@@ -34,7 +34,9 @@ export type ReviewAction =
   | { type: "draft/start"; draft: ReviewDraftNote }
   | { type: "draft/update"; body: string }
   | { type: "draft/cancel" }
-  /** Persist the active draft as one user note and retire the draft in one revision. */
+  /** Persist an active create/reply draft and retire it in one revision. */
   | { type: "draft/save"; note: ReviewStoredNote }
+  /** Replace one saved user note in place and retire its edit draft in one revision. */
+  | { type: "draft/save-edit"; note: ReviewStoredNote }
   | { type: "expansion/toggle"; fileKey: string; gapId: string; expanded: boolean }
   | { type: "expansion/set-source-status"; fileKey: string; status: ReviewSourceStatus };

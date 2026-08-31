@@ -19,6 +19,7 @@ import {
   isRenderableStoredReviewNote,
   reviewNoteAnchorLine,
   reviewNoteOwnerHunkIndex,
+  reviewNoteVisibleByPolicy,
   type ReviewSemanticSelection,
   type ReviewState,
   type ReviewStoredNote,
@@ -31,6 +32,12 @@ export function selectReviewFileByKey(
   fileKey: string | null,
 ): ReviewFileV1 | undefined {
   return fileKey === null ? undefined : state.document.files.find((file) => file.key === fileKey);
+}
+
+/** Resolve stored note ownership against the hunk geometry that exists now. */
+export function reviewNoteCurrentOwnerHunkIndex(note: ReviewNoteV1, file: ReviewFileV1) {
+  const stored = reviewNoteOwnerHunkIndex(note);
+  return Math.min(Math.max(stored, 0), Math.max(0, file.hunks.length - 1));
 }
 
 /**
@@ -182,9 +189,189 @@ export function selectStoredReviewNotes(
   return [...state.liveNotes, ...state.userNotes];
 }
 
-/** Every mutable note currently safe to render, live notes before the reviewer's own. */
+/** Find one semantically stored note by its stable identity. */
+export function selectStoredReviewNoteById(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+  noteId: string,
+): ReviewStoredNote | undefined {
+  return selectStoredReviewNotes(state).find((entry) => entry.note.id === noteId);
+}
+
+/** One stored note annotated with its derived place in a reply tree. */
+export interface ReviewThreadedStoredNote {
+  entry: ReviewStoredNote;
+  rootId: string;
+  depth: number;
+  parentId?: string;
+}
+
+/**
+ * Flatten stored note trees depth-first while retaining stable root and sibling order.
+ *
+ * Legacy roots omit `parentId`. Malformed missing-parent or cyclic entries are retained as
+ * roots rather than disappearing; intent planning prevents new malformed relationships.
+ */
+export function selectThreadedStoredReviewNotes(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+): ReviewThreadedStoredNote[] {
+  const entries = selectStoredReviewNotes(state);
+  const byId = new Map(entries.map((entry) => [entry.note.id, entry] as const));
+  const children = new Map<string, ReviewStoredNote[]>();
+  const roots: ReviewStoredNote[] = [];
+
+  for (const entry of entries) {
+    const parentId = entry.note.parentId;
+    if (!parentId || parentId === entry.note.id || !byId.has(parentId)) {
+      roots.push(entry);
+      continue;
+    }
+    const siblings = children.get(parentId) ?? [];
+    siblings.push(entry);
+    children.set(parentId, siblings);
+  }
+
+  const result: ReviewThreadedStoredNote[] = [];
+  const visited = new Set<string>();
+  const appendTree = (root: ReviewStoredNote, rootId: string) => {
+    const pending = [{ entry: root, depth: 0 }];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (visited.has(current.entry.note.id)) {
+        continue;
+      }
+      visited.add(current.entry.note.id);
+      result.push({
+        entry: current.entry,
+        rootId,
+        depth: current.depth,
+        ...(current.entry.note.parentId ? { parentId: current.entry.note.parentId } : {}),
+      });
+      const descendants = children.get(current.entry.note.id) ?? [];
+      for (let index = descendants.length - 1; index >= 0; index -= 1) {
+        pending.push({ entry: descendants[index]!, depth: current.depth + 1 });
+      }
+    }
+  };
+
+  for (const root of roots) {
+    appendTree(root, root.note.id);
+  }
+  // A pre-existing cycle has no root. Retain its entries without recursing forever so an
+  // authoritative export can still report and repair them.
+  for (const entry of entries) {
+    if (!visited.has(entry.note.id)) {
+      appendTree(entry, entry.note.id);
+    }
+  }
+  return result;
+}
+
+/** One renderable threaded note with depth and connector facts collapsed across hidden ancestors. */
+export interface ReviewVisibleThreadedStoredNote extends ReviewThreadedStoredNote {
+  visibleDepth: number;
+  visibleParentId?: string;
+  hasNextVisibleSibling: boolean;
+  /** Whether each visible ancestor has another sibling after its subtree. */
+  visibleAncestorHasNextSibling: readonly boolean[];
+}
+
+/** Apply shared resolution and agent-note visibility policies to one threaded stream. */
+export function selectVisibleThreadedStoredReviewNotes(
+  state: Pick<ReviewState, "liveNotes" | "showAgentNotes" | "userNotes">,
+): ReviewVisibleThreadedStoredNote[] {
+  const threaded = selectThreadedStoredReviewNotes(state);
+  const nearestVisibleDepth = new Map<string, number>();
+  const nearestVisibleId = new Map<string, string>();
+  const visible: Array<
+    ReviewThreadedStoredNote & { visibleDepth: number; visibleParentId?: string }
+  > = [];
+
+  for (const item of threaded) {
+    const { entry } = item;
+    const parentDepth = entry.note.parentId
+      ? nearestVisibleDepth.get(entry.note.parentId)
+      : undefined;
+    const visibleParentId = entry.note.parentId
+      ? nearestVisibleId.get(entry.note.parentId)
+      : undefined;
+    if (
+      isRenderableStoredReviewNote(entry) &&
+      reviewNoteVisibleByPolicy(entry.note, state.showAgentNotes)
+    ) {
+      const visibleDepth = parentDepth === undefined ? 0 : parentDepth + 1;
+      nearestVisibleDepth.set(entry.note.id, visibleDepth);
+      nearestVisibleId.set(entry.note.id, entry.note.id);
+      visible.push({
+        ...item,
+        visibleDepth,
+        ...(visibleParentId ? { visibleParentId } : {}),
+      });
+    } else if (parentDepth !== undefined && visibleParentId !== undefined) {
+      nearestVisibleDepth.set(entry.note.id, parentDepth);
+      nearestVisibleId.set(entry.note.id, visibleParentId);
+    }
+  }
+
+  const hasNextVisibleSibling = visible.map((item, index) =>
+    item.visibleParentId
+      ? visible.slice(index + 1).some((candidate) => {
+          if (candidate.visibleDepth < item.visibleDepth) {
+            return false;
+          }
+          return candidate.visibleParentId === item.visibleParentId;
+        })
+      : false,
+  );
+  const decoratedById = new Map<string, ReviewVisibleThreadedStoredNote>();
+
+  return visible.map((item, index) => {
+    const parent = item.visibleParentId ? decoratedById.get(item.visibleParentId) : undefined;
+    const decorated: ReviewVisibleThreadedStoredNote = {
+      ...item,
+      hasNextVisibleSibling: hasNextVisibleSibling[index] ?? false,
+      visibleAncestorHasNextSibling: parent
+        ? [...parent.visibleAncestorHasNextSibling, parent.hasNextVisibleSibling]
+        : [],
+    };
+    decoratedById.set(item.entry.note.id, decorated);
+    return decorated;
+  });
+}
+
+/** Whether one note owns any direct or transitive replies. */
+export function reviewNoteHasDescendants(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+  noteId: string,
+) {
+  const children = new Map<string, string[]>();
+  for (const { note } of selectStoredReviewNotes(state)) {
+    if (!note.parentId) {
+      continue;
+    }
+    const ids = children.get(note.parentId) ?? [];
+    ids.push(note.id);
+    children.set(note.parentId, ids);
+  }
+  const pending = [...(children.get(noteId) ?? [])];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const childId = pending.pop()!;
+    if (visited.has(childId)) {
+      continue;
+    }
+    visited.add(childId);
+    if (childId !== noteId) {
+      return true;
+    }
+    pending.push(...(children.get(childId) ?? []));
+  }
+  return false;
+}
+
+/** Every mutable note currently safe to render, in shared threaded order. */
 function renderableNotes(state: Pick<ReviewState, "liveNotes" | "userNotes">): ReviewNoteV1[] {
-  return selectStoredReviewNotes(state)
+  return selectThreadedStoredReviewNotes(state)
+    .map(({ entry }) => entry)
     .filter(isRenderableStoredReviewNote)
     .map((entry) => entry.note);
 }
@@ -249,6 +436,44 @@ export function resolveReviewRevealNoteId(
     .sort(
       (left, right) => left.candidate.line - right.candidate.line || left.arrival - right.arrival,
     )[0]?.candidate.id;
+}
+
+/** Pick the first stored note in the selection that satisfies one card capability. */
+function selectActiveStoredNoteId(
+  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
+  accepts: (entry: ReviewStoredNote) => boolean,
+): string | undefined {
+  const { fileKey, hunkIndex } = state.selection;
+  const file = selectReviewFileByKey(state, fileKey);
+  if (!file) {
+    return undefined;
+  }
+  return selectVisibleThreadedStoredReviewNotes(state)
+    .map(({ entry }) => entry)
+    .filter(
+      (entry) =>
+        isRenderableStoredReviewNote(entry) &&
+        entry.note.fileKey === fileKey &&
+        reviewNoteCurrentOwnerHunkIndex(entry.note, file) === hunkIndex &&
+        accepts(entry),
+    )
+    .sort(
+      (left, right) => reviewNoteAnchorLine(left.note).line - reviewNoteAnchorLine(right.note).line,
+    )[0]?.note.id;
+}
+
+/** Editable reviewer note the keyboard acts on in the selected hunk. */
+export function selectActiveEditableReviewNoteId(
+  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
+) {
+  return selectActiveStoredNoteId(state, ({ note }) => note.source === "user" && note.editable);
+}
+
+/** Replyable semantic note the keyboard acts on in the selected hunk. */
+export function selectActiveReplyableReviewNoteId(
+  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
+) {
+  return selectActiveStoredNoteId(state, () => true);
 }
 
 /** Which note a "jump to the note" reveal targets among the notes the store holds. */

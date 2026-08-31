@@ -317,6 +317,26 @@ describe("drafts", () => {
     expect(saved.draftNote).toBeNull();
     expect(saved.userNotes.map((entry) => entry.note.id)).toEqual(["user-1"]);
   });
+
+  test("saving an edit replaces the note in place", () => {
+    const original = createTestStoredNote({ id: "user-1", fileKey: "alpha", source: "user" });
+    const state = {
+      ...createTestReviewState(),
+      userNotes: [
+        original,
+        createTestStoredNote({ id: "user-2", fileKey: "alpha", source: "user" }),
+      ],
+      draftNote: { ...draft, kind: "edit" as const, targetNoteId: "user-1" },
+    };
+    const replacement = { ...original, note: { ...original.note, summary: "updated" } };
+    const saved = reduceReviewState(state, { type: "draft/save-edit", note: replacement });
+
+    expect(saved.draftNote).toBeNull();
+    expect(saved.userNotes.map(({ note }) => [note.id, note.summary])).toEqual([
+      ["user-1", "updated"],
+      ["user-2", "note user-2"],
+    ]);
+  });
 });
 
 describe("expansion", () => {

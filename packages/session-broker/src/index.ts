@@ -5,4 +5,5 @@ export * from "./daemon";
 export * from "./connection";
 export * from "./crypto";
 export * from "./authentication";
+export * from "./clientAuthentication";
 export * from "./protocolParsers";

@@ -20,6 +20,7 @@ describe("PTY chrome", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -123,7 +124,7 @@ describe("PTY chrome", () => {
     const configHome = mkdtempSync(join(tmpdir(), "hunk-tuistory-save-view-"));
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after],
+      args: ["diff", "--files", fixture.before, fixture.after],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

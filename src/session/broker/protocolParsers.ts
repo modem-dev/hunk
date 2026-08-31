@@ -113,7 +113,7 @@ const commandInputs = {
     line: positive,
     start: nonnegative,
     end: positive,
-    tone: z.enum(["match", "current", "info", "warning", "error"]).optional(),
+    tone: z.enum(["match", "current", "info", "warning", "error", "dim"]).optional(),
     reveal: z.boolean().optional(),
   }),
   clear_highlights: z.strictObject({

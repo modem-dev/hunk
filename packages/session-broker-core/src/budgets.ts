@@ -5,6 +5,7 @@ export interface SessionBrokerLimits {
   readonly maxSessions: number;
   readonly maxCommandsPerSession: number;
   readonly maxCommandsTotal: number;
+  /** Bound producer commands retained while queued or executing through one bridge. */
   readonly maxPreBridgeCommands: number;
   readonly maxCommandInputBytes: number;
   readonly maxCommandResultBytes: number;
@@ -19,10 +20,12 @@ export interface SessionBrokerLimits {
   readonly maxHttpResponseBytes: number;
   readonly maxInFlightHttpResponseBytes: number;
   readonly maxWsMessageBytes: number;
+  /** Bound broker-owned processing after native WebSocket delivery, excluding runtime queues. */
   readonly maxInFlightWsBytes: number;
   readonly maxOutboundBytesPerPeer: number;
   readonly maxOutboundBytesTotal: number;
   readonly maxUnauthenticatedSockets: number;
+  readonly maxHandshakeDurationMs: number;
   readonly maxIncompleteHandshakes: number;
   readonly maxIncompleteHandshakeBytes: number;
   readonly maxHandshakeProposalBytes: number;
@@ -56,6 +59,7 @@ export const DEFAULT_SESSION_BROKER_LIMITS: Readonly<SessionBrokerLimits> = Obje
   maxOutboundBytesPerPeer: 8 * 1024 * 1024,
   maxOutboundBytesTotal: 64 * 1024 * 1024,
   maxUnauthenticatedSockets: 64,
+  maxHandshakeDurationMs: 15_000,
   maxIncompleteHandshakes: 128,
   maxIncompleteHandshakeBytes: 4 * 1024 * 1024,
   maxHandshakeProposalBytes: 64 * 1024,
@@ -138,6 +142,19 @@ export function mergeSessionBrokerLimits(
   }
   if (resolved.maxCallerSessionBytes > resolved.maxCallerSessionsBytes) {
     throw new TypeError("Session broker per-caller retained bytes must not exceed daemon bytes.");
+  }
+  if (resolved.maxHttpBodyBytes > Math.floor(resolved.maxInFlightHttpBodyBytes / 2)) {
+    throw new TypeError(
+      "Session broker in-flight HTTP body bytes must cover the source-plus-copy peak.",
+    );
+  }
+  if (resolved.maxHttpResponseBytes > Math.floor(resolved.maxInFlightHttpResponseBytes / 2)) {
+    throw new TypeError(
+      "Session broker in-flight HTTP response bytes must cover the source-plus-copy peak.",
+    );
+  }
+  if (resolved.maxWsMessageBytes > resolved.maxInFlightWsBytes) {
+    throw new TypeError("Session broker WebSocket message bytes must not exceed in-flight bytes.");
   }
   return Object.freeze(resolved);
 }
@@ -230,6 +247,50 @@ export class ResourceBudget {
     };
     previousState.released = true;
     this.reservationStates.delete(previous);
+    this.reservationStates.set(replacement, replacementState);
+    return replacement;
+  }
+
+  /** Atomically resize one reservation while retiring a second reservation from this budget. */
+  resizeWithCredit(
+    previous: BudgetReservation,
+    amount: number,
+    credit: BudgetReservation,
+  ): BudgetReservation {
+    assertLimit(amount, this.resource);
+    const previousState = this.reservationStates.get(previous);
+    const creditState = this.reservationStates.get(credit);
+    if (
+      previous === credit ||
+      !previousState ||
+      previousState.released ||
+      !creditState ||
+      creditState.released
+    ) {
+      throw new TypeError(`Cannot combine inactive ${this.resource} reservations.`);
+    }
+    const delta = amount - previousState.amount - creditState.amount;
+    if (delta > this.capacity - this.reserved) {
+      throw new BrokerCapacityError(this.code, this.resource);
+    }
+    this.reserved += delta;
+    const replacementState = { amount, released: false };
+    const replacement: BudgetReservation = {
+      amount,
+      get released() {
+        return replacementState.released;
+      },
+      release: () => {
+        if (replacementState.released) return;
+        replacementState.released = true;
+        this.reservationStates.delete(replacement);
+        this.reserved -= replacementState.amount;
+      },
+    };
+    previousState.released = true;
+    creditState.released = true;
+    this.reservationStates.delete(previous);
+    this.reservationStates.delete(credit);
     this.reservationStates.set(replacement, replacementState);
     return replacement;
   }

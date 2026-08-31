@@ -130,6 +130,12 @@ export function renderCliReference() {
         renderUsage(command.synopsis),
       ];
 
+      if (command.details && command.details.length > 0) {
+        pieces.push(
+          "",
+          ...command.details.flatMap((detail, index) => (index > 0 ? ["", detail] : [detail])),
+        );
+      }
       if (command.aliases && command.aliases.length > 0) {
         pieces.push(
           "",

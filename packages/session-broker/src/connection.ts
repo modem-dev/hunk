@@ -3,6 +3,7 @@ import {
   BrokerProtocolError,
   ReservationGroup,
   ResourceBudget,
+  parseExactBrokerRecord,
   resolveSessionBrokerLimits,
   utf8ByteLength,
   type BudgetReservation,
@@ -15,6 +16,20 @@ import {
 } from "@hunk/session-broker-core";
 import type { SessionBrokerProtocolParsers } from "./protocolParsers";
 import { parseSessionBrokerJsonText } from "./protocolParsers";
+import {
+  answerSessionBrokerHelloChallenge,
+  createSessionBrokerHelloRequest,
+  verifyProducerHelloAck,
+  type PendingSessionBrokerHello,
+  type SessionBrokerClientCredential,
+  type SessionBrokerDaemonVerifier,
+} from "./clientAuthentication";
+import type {
+  SessionBrokerProducerHelloAck,
+  SessionBrokerHelloChallenge,
+  SessionBrokerHelloChallengeRequest,
+} from "./authentication";
+import type { ProducerGrant } from "@hunk/session-broker-core";
 import type {
   SessionBrokerConnectionCloseDirective,
   SessionBrokerSocketCloseEvent,
@@ -39,6 +54,13 @@ function commandValueBytes(value: unknown): number {
   return utf8ByteLength(serialized);
 }
 
+/** Parse one exact handshake wrapper before its payload reaches the authentication parser. */
+function exactHelloEnvelope(value: unknown, type: string, payloadKey: "challenge" | "ack") {
+  const record = parseExactBrokerRecord(value, ["type", payloadKey] as const, [] as const);
+  if (record.type !== type) throw new BrokerProtocolError("invalid-discriminant");
+  return record;
+}
+
 export interface SessionBrokerConnectionBridge<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   Result = unknown,
@@ -59,10 +81,19 @@ export interface SessionBrokerConnectionOptions<
   snapshot: SessionSnapshot<State>;
   bridge?: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
   protocolParsers: SessionBrokerProtocolParsers<Info, State, ServerMessage, Result>;
+  producerAuthentication?: {
+    readonly appId: string;
+    readonly appRevision: number;
+    readonly credential: SessionBrokerClientCredential<ProducerGrant>;
+    readonly daemon: SessionBrokerDaemonVerifier;
+  };
   heartbeatIntervalMs?: number;
   reconnectDelayMs?: number;
   openState?: number;
   resolveClose?: (event: SessionBrokerSocketCloseEvent) => SessionBrokerConnectionCloseDirective;
+  /** Prepare application-owned discovery before one reconnect attempt opens a new socket. */
+  prepareReconnect?: () => Promise<void>;
+  onConnected?: () => void;
   onWarning?: (message: string) => void;
   limits?: SessionBrokerLimitOptions["limits"];
   unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
@@ -80,6 +111,7 @@ export class SessionBrokerConnection<
   Result = unknown,
 > {
   private socket: Socket | null = null;
+  private activeSocket: Socket | null = null;
   private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
   readonly limits: Readonly<SessionBrokerLimits>;
 
@@ -93,6 +125,14 @@ export class SessionBrokerConnection<
   private stopped = false;
   private registration: SessionRegistration<Info>;
   private snapshot: SessionSnapshot<State>;
+  private readonly handshakeTimers = new WeakMap<Socket, ReturnType<typeof setTimeout>>();
+  private readonly producerHellos = new WeakMap<
+    Socket,
+    {
+      request: SessionBrokerHelloChallengeRequest;
+      pending?: PendingSessionBrokerHello<ProducerGrant> | null;
+    }
+  >();
 
   constructor(
     private readonly options: SessionBrokerConnectionOptions<
@@ -141,8 +181,14 @@ export class SessionBrokerConnection<
     }
 
     this.stopHeartbeat();
-    this.socket?.close();
+    if (this.socket) {
+      const handshakeTimer = this.handshakeTimers.get(this.socket);
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+      this.handshakeTimers.delete(this.socket);
+      this.socket.close();
+    }
     this.socket = null;
+    this.activeSocket = null;
   }
 
   getRegistration() {
@@ -155,6 +201,12 @@ export class SessionBrokerConnection<
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
+    if (
+      this.options.producerAuthentication &&
+      registration.sessionId !== this.registration.sessionId
+    ) {
+      throw new BrokerProtocolError("invalid-app-payload");
+    }
     // Re-register instead of sending only a snapshot because selectors like cwd, repoRoot, and the
     // session id itself live in the registration envelope. Send before committing local state so
     // a throwing socket keeps the previous registration and snapshot coherent.
@@ -183,16 +235,26 @@ export class SessionBrokerConnection<
 
     const socket = this.options.createSocket(this.options.url);
     this.socket = socket;
+    if (this.options.producerAuthentication) {
+      const timer = setTimeout(() => {
+        socket.close(1008, "Session broker authentication timed out.");
+      }, this.limits.maxHandshakeDurationMs);
+      timer.unref?.();
+      this.handshakeTimers.set(socket, timer);
+    }
 
     socket.onopen = () => {
-      this.startHeartbeat();
-      // Register on every fresh socket after the prior close retired its broker-side ownership.
-      this.sendToSocket(socket, {
-        type: "register",
-        registration: this.registration,
-        snapshot: this.snapshot,
-      });
-      void this.flushQueuedMessages(socket);
+      if (this.options.producerAuthentication) {
+        const authentication = this.options.producerAuthentication;
+        const request = createSessionBrokerHelloRequest({
+          ...authentication,
+          endpoint: this.options.url,
+        });
+        this.producerHellos.set(socket, { request });
+        socket.send(JSON.stringify({ type: "hello-init", hello: request }));
+        return;
+      }
+      this.activateSocket(socket);
     };
 
     socket.onmessage = (event) => {
@@ -205,7 +267,10 @@ export class SessionBrokerConnection<
         socket.close(1009, "Message exceeds the session broker size limit.");
         return;
       }
-
+      if (this.options.producerAuthentication && this.activeSocket !== socket) {
+        void this.handleProducerHello(socket, event.data);
+        return;
+      }
       let parsed: ServerMessage;
       try {
         const raw = parseSessionBrokerJsonText(event.data) as { input?: unknown };
@@ -227,8 +292,13 @@ export class SessionBrokerConnection<
     };
 
     socket.onclose = (event) => {
+      const wasAuthenticated = this.activeSocket === socket;
+      const handshakeTimer = this.handshakeTimers.get(socket);
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+      this.handshakeTimers.delete(socket);
       if (this.socket === socket) {
         this.socket = null;
+        this.activeSocket = null;
         this.stopHeartbeat();
       }
 
@@ -243,7 +313,11 @@ export class SessionBrokerConnection<
         return;
       }
 
-      const directive = this.options.resolveClose?.(event) ?? { reconnect: true };
+      const directive = this.options.resolveClose?.({
+        code: event.code,
+        reason: event.reason,
+        authenticated: wasAuthenticated,
+      }) ?? { reconnect: true };
       if (directive.warning) {
         this.options.onWarning?.(directive.warning);
       }
@@ -260,17 +334,83 @@ export class SessionBrokerConnection<
     };
   }
 
-  private scheduleReconnect(delayMs = this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS) {
-    if (this.reconnectTimer || this.stopped) {
-      return;
+  private activateSocket(socket: Socket) {
+    if (this.socket !== socket || this.activeSocket === socket) return;
+    this.activeSocket = socket;
+    const handshakeTimer = this.handshakeTimers.get(socket);
+    if (handshakeTimer) clearTimeout(handshakeTimer);
+    this.handshakeTimers.delete(socket);
+    this.startHeartbeat();
+    this.options.onConnected?.();
+    this.sendToSocket(socket, {
+      type: "register",
+      registration: this.registration,
+      snapshot: this.snapshot,
+    });
+    void this.flushQueuedMessages(socket);
+  }
+
+  /** Verify the daemon challenge and acknowledgement before registration leaves this process. */
+  private async handleProducerHello(socket: Socket, message: unknown) {
+    try {
+      if (typeof message === "string" && utf8ByteLength(message) > this.limits.maxWsMessageBytes) {
+        socket.close(1009, "Session broker authentication message exceeded its limit.");
+        return;
+      }
+      const value = parseSessionBrokerJsonText(message);
+      const authentication = this.options.producerAuthentication!;
+      const hello = this.producerHellos.get(socket);
+      if (!hello) throw new Error();
+      if (hello.pending === undefined) {
+        const envelope = exactHelloEnvelope(value, "hello-challenge", "challenge");
+        hello.pending = null;
+        const pending = await answerSessionBrokerHelloChallenge(
+          { ...authentication, endpoint: this.options.url },
+          hello.request,
+          envelope.challenge as SessionBrokerHelloChallenge,
+        );
+        if (
+          this.socket !== socket ||
+          socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
+        ) {
+          return;
+        }
+        hello.pending = pending;
+        socket.send(JSON.stringify({ type: "hello-proof", proof: pending.proof }));
+        return;
+      }
+      if (!hello.pending) throw new Error();
+      const envelope = exactHelloEnvelope(value, "hello-ack", "ack");
+      await verifyProducerHelloAck(hello.pending, envelope.ack as SessionBrokerProducerHelloAck);
+      this.activateSocket(socket);
+    } catch {
+      socket.close(1008, "Session broker authentication failed.");
     }
+  }
+
+  private scheduleReconnect(delayMs = this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS) {
+    if (this.reconnectTimer || this.stopped) return;
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.connect();
+      void this.prepareAndReconnect();
     }, delayMs);
-
     this.reconnectTimer.unref?.();
+  }
+
+  /** Run app discovery once per retry while retaining this connection's aggregate budgets. */
+  private async prepareAndReconnect() {
+    try {
+      await this.options.prepareReconnect?.();
+    } catch (error) {
+      if (this.stopped) return;
+      this.options.onWarning?.(
+        error instanceof Error ? error.message : "Session broker reconnect preparation failed.",
+      );
+      this.scheduleReconnect();
+      return;
+    }
+    if (!this.stopped) this.connect();
   }
 
   private startHeartbeat() {
@@ -298,17 +438,18 @@ export class SessionBrokerConnection<
   }
 
   private send(message: SessionClientMessage<Info, State, Result>) {
-    if (!this.socket) {
+    if (!this.activeSocket) {
       return;
     }
 
-    this.sendToSocket(this.socket, message);
+    this.sendToSocket(this.activeSocket, message);
   }
 
   /** Send a response only through the still-active socket that received its command. */
   private sendToSocket(socket: Socket, message: SessionClientMessage<Info, State, Result>) {
     if (
       this.socket !== socket ||
+      this.activeSocket !== socket ||
       socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
     ) {
       return;

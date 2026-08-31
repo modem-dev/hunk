@@ -125,7 +125,7 @@ describe("applySessionReviewAction", () => {
   // hunk that ends up owning it is core's answer through the shared anchor path, never one
   // this tier recomputed (D3).
   test("accepts a draft on an expanded-gap line and anchors it through the shared path", () => {
-    const { producer, publication, store, file } = createTestProducer();
+    const { producer, publication, file } = createTestProducer();
     const gapId = reviewGapId("before", 1);
     const gap = producer.applyIntent({ type: "expansion/toggle", fileKey: file.key, gapId });
     const line = gap.newRange[0];
@@ -157,9 +157,16 @@ describe("applySessionReviewAction", () => {
       hunkIndex: 1,
     });
 
-    // Composing the body is still whichever surface owns the editor: the intent vocabulary
-    // has no draft-body intent yet, so a remote composer sets it the way the terminal does.
-    store.dispatch({ type: "draft/update", body: "About this restored line" });
+    // Remote composition travels through the same semantic body-update intent as the terminal.
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/update-draft", body: "About this restored line" },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
 
     // Saving with the same target as a precondition persists the note; its owner hunk is
     // the fallback the anchor resolver chose, which is the hunk the reviewer was reading.
@@ -183,6 +190,74 @@ describe("applySessionReviewAction", () => {
     // declared — the branch the prototype's broker copy dropped (D3).
     expect(note.anchor.intersectingHunkIndices).toEqual([]);
     expect(note.anchor.ownerHunkIndex).toBe(1);
+  });
+
+  test("edits a saved note in place and creates a nested reply", () => {
+    const { producer, publication, file } = createTestProducer();
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0 },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope({ type: "notes/update-draft", body: "original" }, publication.generation),
+      ).ok,
+    ).toBe(true);
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope({ type: "notes/create-user", consumeDraft: true }, publication.generation),
+      ).ok,
+    ).toBe(true);
+    const root = producer.getReviewState()!.userNotes[0]!.note;
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope({ type: "notes/start-edit", noteId: root.id }, publication.generation),
+      ).ok,
+    ).toBe(true);
+    applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/update-draft", body: "edited" }, publication.generation),
+    );
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/update-user", noteId: root.id, consumeDraft: true },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    expect(producer.getReviewState()!.userNotes[0]!.note).toMatchObject({
+      id: root.id,
+      summary: "edited",
+      createdAt: root.createdAt,
+    });
+
+    applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/start-reply", noteId: root.id }, publication.generation),
+    );
+    applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/update-draft", body: "reply" }, publication.generation),
+    );
+    applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/create-user", consumeDraft: true }, publication.generation),
+    );
+    expect(producer.getReviewState()!.userNotes[1]!.note).toMatchObject({
+      parentId: root.id,
+      summary: "reply",
+    });
   });
 
   test("refuses a proof whose gap no longer contains the line it names", () => {

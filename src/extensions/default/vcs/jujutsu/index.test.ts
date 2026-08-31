@@ -87,6 +87,20 @@ describe("JjVcsAdapter", () => {
     JjAdapterIntegrationTestTimeoutMs,
   );
 
+  jjTest("rejects option-like endpoints from direct adapter callers", async () => {
+    const repo = createTempJjRepo("hunk-jj-adapter-endpoint-trust-");
+    const input = {
+      kind: "vcs",
+      rangeEndpoints: { from: "main", to: "--at-operation" },
+      staged: false,
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
+
+    await expect(
+      JjVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo }),
+    ).rejects.toThrow("looks like a Jujutsu option");
+  });
+
   jjTest(
     "loads working-copy and revision patches through neutral operations",
     async () => {
@@ -156,6 +170,36 @@ describe("JjVcsAdapter", () => {
       expect(
         JjVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: repo }),
       ).toContain("diff --git");
+    },
+    JjAdapterIntegrationTestTimeoutMs,
+  );
+
+  jjTest(
+    "expands source from both explicit revision endpoints",
+    async () => {
+      const repo = createTempJjRepo("hunk-jj-adapter-two-revisions-");
+      writeFileSync(join(repo, "file.txt"), "one\ncontext\n");
+      jj(repo, "commit", "-m", "first");
+      const from = jj(repo, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+      writeFileSync(join(repo, "file.txt"), "two\ncontext\n");
+      const input = {
+        kind: "vcs",
+        staged: false,
+        rangeEndpoints: { from, to: "@" },
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
+
+      const result = await JjVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
+      const file = { path: "file.txt", changeType: "change", isUntracked: false } as const;
+      expect(result.title).toContain(`${from}..@`);
+      expect(result.patchText).toContain("+two");
+      expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("one\ncontext\n");
+      expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\ncontext\n");
+
+      writeFileSync(join(repo, "file.txt"), "three\ncontext\n");
+      expect(
+        JjVcsAdapter.operations["working-tree-diff"]!.watchSignature!(input, { cwd: repo }),
+      ).toContain("+three");
     },
     JjAdapterIntegrationTestTimeoutMs,
   );

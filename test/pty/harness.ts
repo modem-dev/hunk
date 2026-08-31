@@ -8,6 +8,8 @@ import type { Key, Session } from "tuistory";
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+// Hunk renders atomically and tests wait on concrete UI predicates, so the safer 200ms default is unnecessary.
+const tuistoryIdleDelayMs = 60;
 
 function resolveBunExecutable() {
   const envCandidate = process.env.BUN_BIN ?? process.env.BUN;
@@ -982,6 +984,7 @@ end
 
     return launchTerminal({
       command: explicitHunkExecutable ?? bunExecutable,
+      idleDelayMs: tuistoryIdleDelayMs,
       args: explicitHunkExecutable
         ? options.args
         : ["run", sourceEntrypoint, "--", ...options.args],
@@ -1010,6 +1013,7 @@ end
 
     return launchTerminal({
       command: "/bin/bash",
+      idleDelayMs: tuistoryIdleDelayMs,
       args: ["-c", options.command],
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,

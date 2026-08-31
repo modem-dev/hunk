@@ -46,13 +46,14 @@ import {
   reviewFileKeysWithRetiredContent,
   selectExpandedGapIdsByFileKey,
   selectNormalizedSelection,
+  selectThreadedStoredReviewNotes,
+  selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
-import type { AgentAnnotation } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -94,6 +95,7 @@ import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   groupStoredNotesByFileId,
+  groupThreadedStoredNotesByFileId,
   liveCommentToStoredNote,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
@@ -111,21 +113,6 @@ import {
 
 const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
   new Map();
-
-/** Merge file-id keyed annotation maps without losing their concrete item types. */
-function mergeAnnotationMaps<T extends AgentAnnotation, U extends AgentAnnotation>(
-  first: Record<string, T[]>,
-  second: Record<string, U[]>,
-): Record<string, Array<T | U>> {
-  const next: Record<string, Array<T | U>> = {};
-  for (const [fileId, annotations] of Object.entries(first)) {
-    next[fileId] = [...annotations];
-  }
-  for (const [fileId, annotations] of Object.entries(second)) {
-    next[fileId] = [...(next[fileId] ?? []), ...annotations];
-  }
-  return next;
-}
 
 /**
  * Observe the review store as ordinary React state.
@@ -275,6 +262,14 @@ export interface TerminalReview {
   setShowAgentNotes: (visible: boolean) => void;
   /** Flip the note layer the way the catalogued toggle command declares it. */
   toggleAgentNotes: () => void;
+  startUserNoteEdit: (
+    noteId: string,
+    options?: { preserveViewport?: boolean },
+  ) => DraftReviewNote | null;
+  startUserNoteReply: (
+    noteId: string,
+    options?: { preserveViewport?: boolean },
+  ) => DraftReviewNote | null;
   startUserNote: (
     fileId?: string,
     hunkIndex?: number,
@@ -391,6 +386,8 @@ export function useTerminalReview({
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
+  const lineCursorsRef = useRef(lineCursors);
+  lineCursorsRef.current = lineCursors;
   /** Read the latest cursor without waiting for React to publish a render. */
   const getLineCursor = useCallback(() => lineCursorRef.current, []);
   const [lineCursorRevealRequest, setLineCursorRevealRequest] = useState<LineCursorRevealRequest>({
@@ -428,6 +425,36 @@ export function useTerminalReview({
     () => groupStoredNotesByFileId(state.userNotes, fileByKey, storedNoteToUserNote),
     [fileByKey, state.userNotes],
   );
+  const threadedStoredNotes = useMemo(
+    () => selectThreadedStoredReviewNotes(state),
+    [state.liveNotes, state.userNotes],
+  );
+  const visibleThreadById = useMemo(
+    () =>
+      new Map(
+        selectVisibleThreadedStoredReviewNotes(state).map((item) => [item.entry.note.id, item]),
+      ),
+    [state.liveNotes, state.showAgentNotes, state.userNotes],
+  );
+  const storedNotesByFileId = useMemo(
+    () =>
+      groupThreadedStoredNotesByFileId(
+        threadedStoredNotes,
+        fileByKey,
+        (note, filePath, depth, hasReplies) => {
+          const visibleThread = visibleThreadById.get(note.id);
+          const renderDepth = visibleThread?.visibleDepth ?? depth;
+          const threadGuide = {
+            hasNextSibling: visibleThread?.hasNextVisibleSibling ?? false,
+            ancestorHasNextSibling: visibleThread?.visibleAncestorHasNextSibling ?? [],
+          };
+          return note.source === "user"
+            ? storedNoteToUserNote(note, filePath, renderDepth, hasReplies, threadGuide)
+            : storedNoteToLiveComment(note, filePath, renderDepth, hasReplies, threadGuide);
+        },
+      ),
+    [fileByKey, threadedStoredNotes, visibleThreadById],
+  );
   const draftNote = useMemo(() => {
     const draft = state.draftNote;
     const file = draft ? fileByKey.get(draft.fileKey) : undefined;
@@ -462,10 +489,10 @@ export function useTerminalReview({
     () =>
       buildReviewStreamState({
         files,
-        liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
+        liveCommentsByFileId: storedNotesByFileId,
         filterQuery: deferredFilter,
       }),
-    [deferredFilter, files, liveCommentsByFileId, userNotesByFileId],
+    [deferredFilter, files, storedNotesByFileId],
   );
   // Which files and hunks carry notes, for the shared annotated-navigation planner. Built
   // from the merged stream, so a live comment that just arrived is navigable immediately.
@@ -1310,18 +1337,74 @@ export function useTerminalReview({
     ],
   );
 
-  /** Update the body of the active draft note. */
-  const updateDraftNote = useCallback(
-    (body: string) => {
-      store.dispatch({ type: "draft/update", body });
+  /** Open one saved reviewer note in the shared composer. */
+  const startUserNoteEdit = useCallback(
+    (noteId: string, options?: { preserveViewport?: boolean }): DraftReviewNote | null => {
+      const { draft } = runIntent(
+        {
+          type: "notes/start-edit",
+          noteId,
+          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
+        },
+        { draftId: `draft:edit:${noteId}:${Date.now()}` },
+      );
+      const file = fileByKey.get(draft.fileKey);
+      if (!file) {
+        return null;
+      }
+      if (!options?.preserveViewport) {
+        applyLineCursor(
+          lineCursorAt(lineCursorsRef.current, file.id, draft.hunkIndex, {
+            side: draft.side,
+            line: draft.line,
+          }),
+        );
+      }
+      return storedDraftToDraftNote(draft, file);
     },
-    [store],
+    [applyLineCursor, fileByKey, runIntent],
   );
 
-  /** Discard the active human note draft. */
+  /** Open a reply composer under one semantically stored note. */
+  const startUserNoteReply = useCallback(
+    (noteId: string, options?: { preserveViewport?: boolean }): DraftReviewNote | null => {
+      const { draft } = runIntent(
+        {
+          type: "notes/start-reply",
+          noteId,
+          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
+        },
+        { draftId: `draft:reply:${noteId}:${Date.now()}` },
+      );
+      const file = fileByKey.get(draft.fileKey);
+      if (!file) {
+        return null;
+      }
+      if (!options?.preserveViewport) {
+        applyLineCursor(
+          lineCursorAt(lineCursorsRef.current, file.id, draft.hunkIndex, {
+            side: draft.side,
+            line: draft.line,
+          }),
+        );
+      }
+      return storedDraftToDraftNote(draft, file);
+    },
+    [applyLineCursor, fileByKey, runIntent],
+  );
+
+  /** Update the body of the active draft note through the shared intent path. */
+  const updateDraftNote = useCallback(
+    (body: string) => {
+      runIntent({ type: "notes/update-draft", body });
+    },
+    [runIntent],
+  );
+
+  /** Discard the active human note draft through the shared intent path. */
   const cancelDraftNote = useCallback(() => {
-    store.dispatch({ type: "draft/cancel" });
-  }, [store]);
+    runIntent({ type: "notes/cancel-draft" });
+  }, [runIntent]);
 
   /**
    * Persist the active draft into the review's user notes exactly once.
@@ -1336,14 +1419,21 @@ export function useTerminalReview({
       return null;
     }
 
-    const created = runIntent(
-      { type: "notes/create-user", consumeDraft: true },
-      {
-        noteId: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
-        timestamp: new Date().toISOString(),
-      },
-    );
-    return created ? storedNoteToUserNote(created.note.note, file.path) : null;
+    const timestamp = new Date().toISOString();
+    const saved =
+      draft.kind === "edit"
+        ? runIntent(
+            { type: "notes/update-user", noteId: draft.targetNoteId, consumeDraft: true },
+            { timestamp },
+          )
+        : runIntent(
+            { type: "notes/create-user", consumeDraft: true },
+            {
+              noteId: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
+              timestamp,
+            },
+          );
+    return saved ? storedNoteToUserNote(saved.note.note, file.path) : null;
   }, [fileByKey, runIntent, store]);
 
   /** Remove one in-memory user note by id. */
@@ -1379,39 +1469,27 @@ export function useTerminalReview({
         });
       });
 
-      (liveCommentsByFileId[file.id] ?? []).forEach((comment) => {
+      (storedNotesByFileId[file.id] ?? []).forEach((note) => {
+        const source = reviewNoteSource(note);
         noteSummaries.push({
-          noteId: comment.id,
-          source: "agent",
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          oldRange: comment.oldRange,
-          newRange: comment.newRange,
-          body: [comment.summary, comment.rationale].filter(Boolean).join("\n\n"),
-          author: comment.author,
-          createdAt: comment.createdAt,
-          editable: false,
-        });
-      });
-
-      (userNotesByFileId[file.id] ?? []).forEach((note) => {
-        noteSummaries.push({
-          noteId: note.id,
-          source: "user",
+          noteId: note.reviewNoteId ?? note.id,
+          ...(note.parentId ? { parentId: note.parentId } : {}),
+          source,
           filePath: file.path,
           hunkIndex: note.hunkIndex,
           oldRange: note.oldRange,
           newRange: note.newRange,
-          body: note.summary,
+          body: [note.summary, note.rationale].filter(Boolean).join("\n\n"),
           author: note.author,
           createdAt: note.createdAt,
-          editable: true,
+          updatedAt: note.updatedAt,
+          editable: source === "user",
         });
       });
     });
 
     return noteSummaries;
-  }, [files, liveCommentsByFileId, userNotesByFileId]);
+  }, [files, storedNotesByFileId]);
 
   /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
@@ -1484,6 +1562,8 @@ export function useTerminalReview({
     setShowAgentNotes,
     toggleAgentNotes,
     startUserNote,
+    startUserNoteEdit,
+    startUserNoteReply,
     setFilter,
     updateDraftNote,
   };

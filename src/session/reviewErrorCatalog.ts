@@ -67,9 +67,41 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
     message: "There is no open note draft at that line.",
     remedy: "Start the note again; another surface may have saved or cancelled this draft.",
   },
+  "draft-active": {
+    message: "Another note draft is already open.",
+    remedy: "Save or cancel the open draft before starting another one.",
+  },
+  "draft-mode-mismatch": {
+    message: "The open composer is for a different note action.",
+    remedy: "Reload the review, then reopen the note action you want.",
+  },
   "note-not-found": {
     message: "That note is no longer on the review.",
     remedy: "Reload the review; someone else may have removed it.",
+  },
+  "note-not-editable": {
+    message: "That note cannot be edited.",
+    remedy: "Only editable notes written by the reviewer can be changed.",
+  },
+  "note-has-replies": {
+    message: "That note still has replies attached to it.",
+    remedy: "Remove its replies first, then remove the note.",
+  },
+  "note-id-conflict": {
+    message: "That note identity is already in use.",
+    remedy: "Retry the action so the client allocates a new identity.",
+  },
+  "invalid-note-parent": {
+    message: "The note being replied to is no longer a valid parent.",
+    remedy: "Reload the review and choose the comment again.",
+  },
+  "blank-note": {
+    message: "An edited note cannot be blank.",
+    remedy: "Enter some text, cancel the edit, or delete the note explicitly.",
+  },
+  "note-too-large": {
+    message: "That note is larger than Hunk can store or publish.",
+    remedy: "Shorten the note and try again.",
   },
   "missing-fact": {
     message: "The action arrived without something only its caller can supply.",

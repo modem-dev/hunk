@@ -5,7 +5,7 @@ A screenshot-friendly TSX diff with copy edits, prop renames, and a small layout
 ## Run
 
 ```bash
-hunk diff examples/4-ui-polish/before.tsx examples/4-ui-polish/after.tsx
+hunk diff --files examples/4-ui-polish/before.tsx examples/4-ui-polish/after.tsx
 ```
 
 ## What to look for

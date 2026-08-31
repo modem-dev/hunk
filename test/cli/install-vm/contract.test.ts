@@ -117,6 +117,46 @@ describe("install VM contract", () => {
         scenarios: [{ ...manifest.scenarios[0], script: "../escape.sh" }],
       }),
     ).toThrow("unsafe script path");
+    expect(
+      validateScenarioManifest({
+        schemaVersion: 1,
+        scenarios: [
+          {
+            ...manifest.scenarios[0],
+            requiredEvidence: {
+              commands: ["run-upgrade"],
+              commandExpectations: { "run-upgrade": "exit 0" },
+              assertions: ["daemon-preserved"],
+              observations: ["oldDaemonPid", "transcriptPath"],
+            },
+          },
+        ],
+      }).scenarios[0]?.requiredEvidence,
+    ).toEqual({
+      commands: ["run-upgrade"],
+      commandExpectations: { "run-upgrade": "exit 0" },
+      assertions: ["daemon-preserved"],
+      observations: ["oldDaemonPid", "transcriptPath"],
+    });
+    for (const requiredEvidence of [
+      { commands: ["duplicate", "duplicate"] },
+      { commands: ["run-upgrade"], commandExpectations: {} },
+      { commands: ["run-upgrade"], commandExpectations: { other: "exit 0" } },
+      {
+        commands: ["run-upgrade"],
+        commandExpectations: { "run-upgrade": "anything passed" },
+      },
+      { assertions: ["Uppercase"] },
+      { observations: ["not-kebab-case"] },
+      { unknown: ["value"] },
+    ]) {
+      expect(() =>
+        validateScenarioManifest({
+          schemaVersion: 1,
+          scenarios: [{ ...manifest.scenarios[0], requiredEvidence }],
+        }),
+      ).toThrow();
+    }
   });
 
   test("treats expected nonzero commands as passes only when diagnostics match", () => {

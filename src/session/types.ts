@@ -180,6 +180,7 @@ export interface SessionLiveCommentSummary {
 
 export interface SessionReviewNoteSummary {
   noteId: string;
+  parentId?: string;
   source: ReviewNoteSource;
   filePath: string;
   hunkIndex?: number;

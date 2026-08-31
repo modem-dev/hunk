@@ -239,6 +239,10 @@ function unmanagedInstallGuidance(installSource: InstallSource) {
     return ["Hunk was installed with mise.", "Run `mise up hunk` to update it."];
   }
 
+  if (installSource === "pacman") {
+    return ["Hunk was installed with pacman.", "Update it through pacman or your AUR helper."];
+  }
+
   return [
     "Hunk is running from a local source build.",
     "Run `bun run install:bin` in your Hunk checkout to update it.",

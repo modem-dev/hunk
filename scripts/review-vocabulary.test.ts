@@ -91,7 +91,7 @@ describe("review wire vocabulary derivation", () => {
   });
 
   test("reports a type outside the vocabulary as unsupported", () => {
-    expect(parseHunkReviewAction({ type: "notes/update-user", noteId: "n" })).toEqual({
+    expect(parseHunkReviewAction({ type: "notes/archive-user", noteId: "n" })).toEqual({
       ok: false,
       reason: "unsupported",
     });

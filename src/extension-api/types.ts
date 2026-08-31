@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 12;
+export const HUNK_EXTENSION_API_VERSION = 15;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -690,14 +690,34 @@ export interface ExtensionVcsReviewOptions {
   colorMoved?: boolean;
 }
 
-/** Working-tree review request, as extension adapters receive it. */
-export interface ExtensionVcsDiffInput {
-  kind: "vcs";
-  range?: string;
-  staged: boolean;
-  pathspecs?: string[];
-  options: ExtensionVcsReviewOptions;
+/** The two revisions named by `hunk diff <from> <to>`, kept backend-neutral. */
+export interface ExtensionVcsRangeEndpoints {
+  /** Revision supplying the old side of the comparison. */
+  from: string;
+  /** Revision supplying the new side of the comparison. */
+  to: string;
 }
+
+/** Working-tree review request, as extension adapters receive it. */
+export type ExtensionVcsDiffInput =
+  | {
+      kind: "vcs";
+      /** One revision or range expression in the selected backend's language. */
+      range?: string;
+      rangeEndpoints?: never;
+      staged: boolean;
+      pathspecs?: string[];
+      options: ExtensionVcsReviewOptions;
+    }
+  | {
+      kind: "vcs";
+      range?: never;
+      /** Two explicit revisions, kept separate so each backend can spell the comparison correctly. */
+      rangeEndpoints: ExtensionVcsRangeEndpoints;
+      staged: boolean;
+      pathspecs?: string[];
+      options: ExtensionVcsReviewOptions;
+    };
 
 /** Single-revision review request, as extension adapters receive it. */
 export interface ExtensionVcsShowInput {
@@ -1098,8 +1118,25 @@ export interface ExtensionPaneSize {
   fraction?: number;
 }
 
-/** Opaque host renderer for the selected split row. */
+/**
+ * Host renderer for the selected split row, plus the source address that row
+ * occupies.
+ *
+ * `render` is still the only way to paint the row: it does not publish Pierre
+ * rows, plans, or cursor keys. `side` and `line` are the same public address
+ * command handlers already see on `ctx.selection.currentLine`, so a pane can
+ * look up blame, diagnostics, or notes without waiting for a keypress.
+ */
 export interface ExtensionCurrentLinePaint {
+  /**
+   * Which side the current-line marker addresses.
+   *
+   * Context rows use Hunk's canonical new-side address, matching
+   * `ctx.selection.currentLine` and `navigation.revealLine`.
+   */
+  readonly side: ExtensionFileSide;
+  /** 1-based source line number on `side`. */
+  readonly line: number;
   /** Paint one side as a clipped, no-wrap terminal row. */
   render(side: "old" | "new", width: number): unknown;
 }
@@ -1125,7 +1162,10 @@ export interface ExtensionPaneProps {
   readonly theme: ExtensionPaneTheme;
   readonly keybindings: ExtensionPaneKeybindings;
   readonly actions: ExtensionPaneActions;
-  /** Non-null only when the registration explicitly requested current-line paint. */
+  /**
+   * Selected-row painter plus `{ side, line }` when the registration opted in
+   * with `currentLine: true`; otherwise `null`.
+   */
   readonly currentLine: ExtensionCurrentLinePaint | null;
 }
 
@@ -1148,7 +1188,7 @@ interface ExtensionPaneBase {
    * pane registered for a named target owns its slot; later claims are skipped.
    */
   replaces?: string;
-  /** Opt into live current-line paint; unrelated panes receive stable null. */
+  /** Opt into live current-line paint and `{ side, line }`; unrelated panes receive stable null. */
   currentLine?: boolean;
   /** Synchronous frame-availability policy. */
   available?(context: ExtensionPaneAvailabilityContext): boolean;
@@ -1512,6 +1552,7 @@ export interface ExtensionReviewSnapshotNoteAnchor {
 /** One complete saved note in an authoritative extension review snapshot. */
 export interface ExtensionReviewSnapshotNote {
   readonly id: string;
+  readonly parentId?: string;
   readonly source: "ai" | "agent" | "user";
   readonly originalSource?: string;
   readonly fileKey: string;
@@ -1863,6 +1904,8 @@ export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 /** A user-authored note as reported by note lifecycle events. */
 export interface ExtensionReviewNote {
   id: string;
+  /** Direct parent identity for a saved reply or reply draft. */
+  parentId?: string;
   fileId: string;
   filePath: string;
   hunkIndex: number;
@@ -1873,6 +1916,9 @@ export interface ExtensionReviewNote {
   draft: boolean;
 }
 
+/** How one saved ReviewStore note changed, as reported by `note_changed`. */
+export type ExtensionNoteChangeKind = "created" | "updated" | "removed";
+
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
@@ -1881,6 +1927,13 @@ export interface ExtensionEventPayloads {
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
+  /**
+   * The review stream settled on a different hunk.
+   *
+   * Fires for `[`/`]` within a file as well as a jump to another file's hunk.
+   * Current-line movement inside the same hunk does not emit this event.
+   */
+  hunk_viewed: { file: ExtensionDiffFile; hunkIndex: number };
   /** The file-filter query changed, including when it was cleared. */
   filter_changed: { filter: string };
   /** The user committed a different active theme. Selector previews do not emit this event. */
@@ -1891,8 +1944,16 @@ export interface ExtensionEventPayloads {
   watch_reload_pending: Record<string, never>;
   /** A user saved a new inline review note. */
   note_created: { note: ExtensionReviewNote };
-  /** The body of an in-progress inline review note changed. */
+  /** A draft body changed (`draft: true`) or an existing note was saved (`draft: false`). */
   note_edited: { note: ExtensionReviewNote };
+  /**
+   * A saved ReviewStore note was created, updated, or removed.
+   *
+   * Covers user saves, user deletes, and agent session comments. Drafts never
+   * appear here. A reload that remaps or drops notes does not emit this event;
+   * `session_reload` plus `ctx.review.snapshot()` cover that.
+   */
+  note_changed: { kind: ExtensionNoteChangeKind; note: ExtensionReviewSnapshotNote };
   session_reload: { changeset: ExtensionChangeset; reason: SessionReloadReason };
   shutdown: Record<string, never>;
 }

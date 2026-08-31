@@ -471,7 +471,7 @@ describe("browser review surface: actions", () => {
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
       generation,
       actor: ACTOR,
-      action: { type: "notes/update-user", noteId: "user:1" },
+      action: { type: "notes/archive-user", noteId: "user:1" },
     });
     const invalid = await postAction(origin, {
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,

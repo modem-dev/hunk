@@ -1,18 +1,24 @@
 /**
  * Publishes review events to the current extension runtime.
  *
- * It debounces selection changes, avoids reporting initial filter, layout, and theme values as
- * changes, and exposes stable publishers for command, note, and watch events.
+ * It debounces selection changes, reports hunk-grain attention separately from file object
+ * replacement, diffs saved store notes within one review generation, avoids reporting initial
+ * filter, layout, and theme values as changes, and exposes stable publishers for command, note,
+ * and watch events.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { emitExtensionEvent } from "../../extensions/events";
+import { diffExtensionReviewNotes } from "../../extensions/reviewSnapshot";
 import type {
   ExtensionEventPayloads,
   ExtensionLayoutMode,
   ExtensionResolvedLayout,
+  ExtensionReviewSnapshotNote,
 } from "../../extension-api/types";
 import type { ExtensionDiffFile, ExtensionLoadResult } from "../../extensions/types";
+
+const EMPTY_REVIEW_NOTES: readonly ExtensionReviewSnapshotNote[] = [];
 
 /** Trailing delay that collapses rapid review navigation into one settled selection event. */
 export const SELECTION_CHANGED_DEBOUNCE_MS = 150;
@@ -50,6 +56,8 @@ export function useExtensionReviewEvents({
   filter,
   layoutMode,
   resolvedLayout,
+  reviewGeneration = "",
+  reviewNotes = EMPTY_REVIEW_NOTES,
   scheduler = defaultScheduler,
   selectedFile,
   selectedFileId,
@@ -60,6 +68,8 @@ export function useExtensionReviewEvents({
   filter: string;
   layoutMode: ExtensionLayoutMode;
   resolvedLayout: ExtensionResolvedLayout;
+  reviewGeneration?: string;
+  reviewNotes?: readonly ExtensionReviewSnapshotNote[];
   scheduler?: ExtensionReviewEventScheduler;
   selectedFile: ExtensionDiffFile | null | undefined;
   selectedFileId: string | null;
@@ -82,6 +92,11 @@ export function useExtensionReviewEvents({
   const lastViewedFileRef = useRef<{
     extensions: ExtensionLoadResult | undefined;
     file: ExtensionDiffFile;
+  } | null>(null);
+  const lastViewedHunkRef = useRef<{
+    extensions: ExtensionLoadResult | undefined;
+    fileId: string;
+    hunkIndex: number;
   } | null>(null);
   useEffect(() => {
     const generation = ++selectionGenerationRef.current;
@@ -110,6 +125,22 @@ export function useExtensionReviewEvents({
         lastViewedFileRef.current = { extensions: targetExtensions, file: selectedFile };
         emitExtensionEvent(targetExtensions, "file_viewed", { file: selectedFile, hunkIndex });
       }
+      if (selectedFile && hunkIndex !== null) {
+        const lastHunk = lastViewedHunkRef.current;
+        if (
+          !lastHunk ||
+          lastHunk.extensions !== targetExtensions ||
+          lastHunk.fileId !== selectedFile.id ||
+          lastHunk.hunkIndex !== hunkIndex
+        ) {
+          lastViewedHunkRef.current = {
+            extensions: targetExtensions,
+            fileId: selectedFile.id,
+            hunkIndex,
+          };
+          emitExtensionEvent(targetExtensions, "hunk_viewed", { file: selectedFile, hunkIndex });
+        }
+      }
     }, SELECTION_CHANGED_DEBOUNCE_MS);
 
     return () => {
@@ -117,6 +148,29 @@ export function useExtensionReviewEvents({
       scheduler.clearTimeout(timer);
     };
   }, [extensions, scheduler, selectedFile, selectedFileId, selectedHunkIndex]);
+
+  // Seed each runtime's notes without reporting the initial list or a reload remap as changes.
+  const reportedNotesRef = useRef<
+    | {
+        extensions: ExtensionLoadResult | undefined;
+        generation: string;
+        notes: readonly ExtensionReviewSnapshotNote[];
+      }
+    | undefined
+  >(undefined);
+  useEffect(() => {
+    const reported = reportedNotesRef.current;
+    if (
+      reported &&
+      reported.extensions === extensions &&
+      reported.generation === reviewGeneration
+    ) {
+      for (const change of diffExtensionReviewNotes(reported.notes, reviewNotes)) {
+        emitExtensionEvent(extensions, "note_changed", change);
+      }
+    }
+    reportedNotesRef.current = { extensions, generation: reviewGeneration, notes: reviewNotes };
+  }, [extensions, reviewGeneration, reviewNotes]);
 
   // Seed each runtime's initial filter without reporting it as a change.
   const reportedFilterRef = useRef<RegistryProjectionBaseline<string> | undefined>(undefined);

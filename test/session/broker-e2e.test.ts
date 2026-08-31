@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,8 +32,6 @@ const ttyToolsAvailable = supportsControllableScript();
 
 interface HealthResponse {
   ok: boolean;
-  pid: number;
-  sessions: number;
 }
 
 interface SessionListJson {
@@ -116,7 +114,7 @@ async function reserveLoopbackPort() {
 
 /** Start one real terminal session whose input the test can control directly. */
 function spawnHunkSession(fixture: FixtureFiles, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -224,6 +222,19 @@ async function waitUntil<T>(
   }
 }
 
+/** Read the PID only from this test's launch metadata for teardown, never from public health. */
+function readLaunchedDaemonPid(port: number) {
+  try {
+    const runtimeBase = process.env.XDG_RUNTIME_DIR?.trim() || tmpdir();
+    const metadata = JSON.parse(
+      readFileSync(join(runtimeBase, "hunk-mcp", `daemon-127-0-0-1-${port}.json`), "utf8"),
+    ) as { pid?: unknown };
+    return typeof metadata.pid === "number" && metadata.pid > 0 ? metadata.pid : null;
+  } catch {
+    return null;
+  }
+}
+
 async function waitForHealth(port: number, timeoutMs = 15_000) {
   return waitUntil(
     "session daemon health endpoint",
@@ -288,7 +299,7 @@ describe("session broker end-to-end", () => {
 
     try {
       const health = await waitForHealth(port);
-      daemonPid = health.pid;
+      daemonPid = readLaunchedDaemonPid(port);
       expect(health.ok).toBe(true);
 
       const listed = await waitUntil("registered Hunk session", async () => {
@@ -394,7 +405,7 @@ describe("session broker end-to-end", () => {
 
     try {
       const health = await waitForHealth(port);
-      daemonPid = health.pid;
+      daemonPid = readLaunchedDaemonPid(port);
       expect(health.ok).toBe(true);
 
       const listed = await waitUntil("registered Hunk session", async () => {
@@ -489,7 +500,7 @@ describe("session broker end-to-end", () => {
 
     try {
       const health = await waitForHealth(port);
-      daemonPid = health.pid;
+      daemonPid = readLaunchedDaemonPid(port);
       expect(health.ok).toBe(true);
 
       const listed = await waitUntil("registered Hunk session", async () => {
@@ -621,7 +632,7 @@ describe("session broker end-to-end", () => {
 
     try {
       const health = await waitForHealth(port, 20_000);
-      daemonPid = health.pid;
+      daemonPid = readLaunchedDaemonPid(port);
       expect(health.ok).toBe(true);
 
       const sessions = await waitUntil("two registered Hunk sessions", async () => {
