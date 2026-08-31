@@ -76,6 +76,36 @@ function createSnapshot(): SessionSnapshot<TestSessionState> {
   };
 }
 
+/** Await one lifecycle signal while turning a lost wakeup into a bounded test failure. */
+async function settleWithinTestTimeout<T>(promise: PromiseLike<T> | T, timeoutMs = 500) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`Promise did not settle within ${timeoutMs}ms.`)),
+          timeoutMs,
+        );
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+/** Create a manually released promise for reconnect race characterization. */
+function createDeferredTest<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 const protocolParsers = createSessionBrokerProtocolParsers<
   TestSessionInfo,
   TestSessionState,
@@ -151,6 +181,41 @@ describe("session broker connection", () => {
       updatedAt: "2026-04-15T00:00:01.000Z",
       state: { selectedIndex: 1 },
     });
+  });
+
+  test("preserves a synchronous socket factory throw and permits a later direct start", () => {
+    const sockets: TestSocket[] = [];
+    let attempts = 0;
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("socket factory exploded");
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+    });
+
+    expect(() => connection.start()).toThrow("socket factory exploded");
+    expect(attempts).toBe(1);
+    expect(sockets).toHaveLength(0);
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    expect(attempts).toBe(2);
+    expect(sockets).toHaveLength(1);
+    expect(JSON.parse(sockets[0]!.sent[0]!)).toMatchObject({ type: "register" });
+    connection.stop();
   });
 
   test("withholds registration and replacement updates until producer authentication completes", async () => {
@@ -1009,6 +1074,92 @@ describe("session broker connection", () => {
     await Bun.sleep(0);
     expect(sockets).toHaveLength(2);
   });
+
+  test("explicitly starts a fresh generation after a natural no-reconnect close", async () => {
+    const sockets: TestSocket[] = [];
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      resolveClose: () => ({ reconnect: false }),
+    });
+
+    connection.start();
+    sockets[0]!.emitOpen();
+    sockets[0]!.emitClose(1000, "complete");
+    await Bun.sleep(0);
+    expect(sockets).toHaveLength(1);
+
+    connection.start();
+    sockets[1]!.emitOpen();
+    expect(sockets).toHaveLength(2);
+    expect(sockets.map((socket) => (JSON.parse(socket.sent[0]!) as { type: string }).type)).toEqual(
+      ["register", "register"],
+    );
+    connection.stop();
+  });
+
+  for (const outcome of ["resolve", "reject"] as const) {
+    test(`stop fences late reconnect preparation ${outcome} without warning or another socket`, async () => {
+      const sockets: TestSocket[] = [];
+      const warnings: string[] = [];
+      const preparationStarted = createDeferredTest();
+      const preparationGate = createDeferredTest();
+      const preparationSettled = createDeferredTest();
+      const connection = createSessionBrokerConnection<
+        TestSessionInfo,
+        TestSessionState,
+        TestSocket,
+        TestServerMessage,
+        { ok: true }
+      >({
+        url: "ws://broker.test/session",
+        createSocket: () => {
+          const socket = new TestSocket();
+          sockets.push(socket);
+          return socket;
+        },
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers,
+        reconnectDelayMs: 1,
+        prepareReconnect: async () => {
+          preparationStarted.resolve();
+          try {
+            await preparationGate.promise;
+            if (outcome === "reject") throw new Error("late preparation failure");
+          } finally {
+            preparationSettled.resolve();
+          }
+        },
+        onWarning: (message) => warnings.push(message),
+      });
+
+      connection.start();
+      sockets[0]!.emitOpen();
+      sockets[0]!.emitClose();
+      await settleWithinTestTimeout(preparationStarted.promise);
+      connection.stop();
+      preparationGate.resolve();
+      await settleWithinTestTimeout(preparationSettled.promise);
+      await Bun.sleep(5);
+
+      expect(warnings).toEqual([]);
+      expect(sockets).toHaveLength(1);
+    });
+  }
 
   test("reconnects after socket close unless a close directive disables it", async () => {
     const sockets: TestSocket[] = [];
