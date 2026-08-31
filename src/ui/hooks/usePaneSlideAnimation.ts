@@ -35,13 +35,18 @@ interface ActiveTransition {
   paneKey: string;
 }
 
-/** Return the presentation pane plan for the current pane slide frame. */
+interface PaneSlidePresentation {
+  animating: boolean;
+  layout: ExtensionPaneLayoutPlan;
+}
+
+/** Return the presentation pane plan and whether its geometry is still moving. */
 export function usePaneSlideAnimation({
   bodyHeight,
   bodyWidth,
   paneLayout,
   resizing,
-}: PaneSlideAnimationOptions): ExtensionPaneLayoutPlan {
+}: PaneSlideAnimationOptions): PaneSlidePresentation {
   const duration = paneSlideAnimationDuration();
   const timeline = useTimeline({
     autoplay: false,
@@ -92,9 +97,12 @@ export function usePaneSlideAnimation({
     const transitionKey = previous
       ? paneVisibilityTransitionKey(previous.paneLayout, paneLayout)
       : null;
+    const interruptedByAnotherPane =
+      activeTransitionRef.current !== null && activeTransitionRef.current.paneKey !== transitionKey;
     const canAnimate =
       previous !== null &&
       transitionKey !== null &&
+      !interruptedByAnotherPane &&
       !resizing &&
       previous.bodyHeight === bodyHeight &&
       previous.bodyWidth === bodyWidth;
@@ -115,5 +123,8 @@ export function usePaneSlideAnimation({
     timeline.restart();
   }, [bodyHeight, bodyWidth, paneLayout, resizing, timeline]);
 
-  return presentedLayout;
+  return {
+    animating: activeTransitionRef.current !== null,
+    layout: presentedLayout,
+  };
 }

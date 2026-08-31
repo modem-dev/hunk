@@ -473,7 +473,7 @@ export function App({
     responsiveShowsSidebar: responsiveLayout.showSidebar,
   });
 
-  const presentedPaneLayout = usePaneSlideAnimation({
+  const { animating: paneLayoutAnimating, layout: presentedPaneLayout } = usePaneSlideAnimation({
     bodyHeight,
     bodyWidth,
     paneLayout,
@@ -1236,7 +1236,7 @@ export function App({
   };
 
   const renderDivider = (planned: PlannedPane) =>
-    planned.divider ? (
+    planned.divider && !paneLayoutAnimating ? (
       <box
         key={`${planned.pane.key}:divider`}
         style={{
