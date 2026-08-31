@@ -62,6 +62,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     selectCursorLine: record("selectCursorLine"),
     stepDiffLine: record("stepDiffLine"),
     selectLayoutMode: record("selectLayoutMode"),
+    saveDraftNote: record("saveDraftNote"),
     startUserNote: record("startUserNote"),
     toggleAgentNotes: record("toggleAgentNotes"),
     toggleCopyDecorations: record("toggleCopyDecorations"),
@@ -281,6 +282,9 @@ describe("builtinCommandKeyDefaults", () => {
     expect(defaults.find((entry) => entry.id === "hunk.review.halfPageUp")?.defaultKeys).toEqual([
       "u",
       "ctrl+u",
+    ]);
+    expect(defaults.find((entry) => entry.id === "hunk.review.saveNote")?.defaultKeys).toEqual([
+      "ctrl+s",
     ]);
     expect(defaults.find((entry) => entry.id === "hunk.view.layoutUnified")?.defaultKeys).toEqual([
       "1",

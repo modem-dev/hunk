@@ -27,7 +27,9 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
  * `useAppKeyboardShortcuts`. Modal navigation (arrow keys inside a dialog,
  * escape closing a prompt) is deliberately not a command: those keys are the
  * structure of the widget that owns them, not shortcuts a user rebinds or an
- * extension extends.
+ * extension extends. The note composer's save shortcut is a command
+ * (`hunk.review.saveNote`); focused-input routing still claims it first so
+ * typing is not stolen, but the chord comes from the resolved keymap.
  */
 export const MAX_APP_COMMAND_COUNT = 10_000;
 
@@ -142,6 +144,7 @@ export interface BuildAppCommandsOptions {
   startVisualSelection?: () => void;
   copySelection?: () => void;
   clearSelection?: () => void;
+  saveDraftNote: () => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
   toggleCopyDecorations: () => void;
@@ -222,6 +225,7 @@ function builtinCommandHandlers(
     "hunk.review.nextNote": {
       run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? 1) * count),
     },
+    "hunk.review.saveNote": { run: () => options.saveDraftNote() },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
     "hunk.review.halfPageDown": { run: (_key, count) => options.scrollDiff(count, "half") },
@@ -371,6 +375,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     startVisualSelection: noop,
     copySelection: noop,
     clearSelection: noop,
+    saveDraftNote: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
     toggleCopyDecorations: noop,

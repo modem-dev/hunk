@@ -36,6 +36,14 @@ interface BorderActionItem {
   onMouseUp: () => void;
 }
 
+/** Cells one action occupies: key, optional space, then label. */
+function actionItemTextWidth(keyLabel: string, label: string) {
+  if (!keyLabel) {
+    return label.length;
+  }
+  return label ? keyLabel.length + 1 + label.length : keyLabel.length;
+}
+
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";
   text: string;
@@ -212,15 +220,7 @@ export function AgentInlineNote({
   noteIndex?: number;
   /** Join the card's top-right corner to the external range rail. */
   rangeGuideConnection?: "terminate" | "continue";
-  draft?: {
-    body: string;
-    focused: boolean;
-    onBlur?: () => void;
-    onCancel: () => void;
-    onFocus?: () => void;
-    onInput: (value: string) => void;
-    onSave: (editorBody?: string) => void;
-  };
+  draft?: VisibleAgentNote["draft"];
   actions?: AgentInlineNoteActions;
   /** Make this saved note the keyboard action target when its card is clicked. */
   onActivate?: () => void;
@@ -523,7 +523,7 @@ export function AgentInlineNote({
                 style={{ width: renderedItemWidth, height: 1, backgroundColor }}
               >
                 <text bg={backgroundColor}>
-                  <span fg={theme.noteTitleText}>{item.keyLabel}</span>
+                  {item.keyLabel ? <span fg={theme.noteTitleText}>{item.keyLabel}</span> : null}
                   {item.displayLabel ? (
                     <span fg={hovered ? theme.text : theme.muted}>
                       {`${item.keyLabel ? " " : ""}${item.displayLabel}`}
@@ -548,7 +548,7 @@ export function AgentInlineNote({
     const draftActionItems: BorderActionItem[] = [
       {
         id: "save",
-        keyLabel: "^S",
+        keyLabel: draft.saveKeyLabel ?? "",
         label: "save",
         onMouseUp: () => draft.onSave(textareaRef.current?.plainText),
       },

@@ -10,12 +10,13 @@ import type { MenuId } from "../components/chrome/menu";
 import {
   dispatchAppCommand,
   executeAppCommand,
+  findAppCommandById,
   type AppCommand,
   verticalCommandDirection,
 } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
-import { isEscapeKey, isSaveDraftNoteKey, printableKeyText } from "../lib/keyboard";
+import { isEscapeKey, noteComposerSaveOwner, printableKeyText } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 
@@ -78,7 +79,6 @@ export interface UseAppKeyboardShortcutsOptions {
   discardViewPreferencesAndQuit: () => void;
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
-  saveDraftNote: (editorBody?: string) => void;
   showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
@@ -143,7 +143,6 @@ export function useAppKeyboardShortcuts({
   discardViewPreferencesAndQuit,
   neverAskToSaveViewPreferencesAndQuit,
   closeSaveConfigPrompt,
-  saveDraftNote,
   showAgentSkill,
   showHelp,
   switchMenu,
@@ -480,9 +479,10 @@ export function useAppKeyboardShortcuts({
    *
    * Both inputs receive their characters through OpenTUI's renderable path,
    * which consuming would cut off — so plain typing is `"focused"`, and only
-   * the inputs' explicit escape hatches (Tab out of the filter, Escape/Ctrl-S
-   * on a draft) are acted on here and owned as `"mine"`. The prompt's own
-   * Escape handling lives on the input, which clears first and closes second.
+   * the inputs' explicit escape hatches (Tab out of the filter, Escape on a
+   * draft, and the resolved save-note chord) are acted on here and owned as
+   * `"mine"`.
+   * The prompt's own Escape handling lives on the input, which clears first and closes second.
    */
   const handleFocusedInputShortcut = (key: KeyEvent): KeyOwner => {
     if (focusAreaRef.current === "filter") {
@@ -540,9 +540,12 @@ export function useAppKeyboardShortcuts({
       return "mine";
     }
 
-    if (isSaveDraftNoteKey(key)) {
-      saveDraftNote(renderer.currentFocusedEditor?.plainText);
-      return "mine";
+    const save = findAppCommandById(commandsRef.current, "hunk.review.saveNote");
+    const saveOwner = noteComposerSaveOwner(save?.keys ?? [], key, () =>
+      executeAppCommand(commandsRef.current, "hunk.review.saveNote"),
+    );
+    if (saveOwner) {
+      return saveOwner;
     }
 
     // Everything else is the note draft's text, including keys that double as

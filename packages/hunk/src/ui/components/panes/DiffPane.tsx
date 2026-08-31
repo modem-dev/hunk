@@ -350,6 +350,7 @@ export function DiffPane({
   onRemoveLiveNote,
   onRemoveUserNote,
   onSaveDraftNote,
+  draftSaveKeyLabel,
   onStartUserNoteAtHunk,
   onUpdateDraftNote,
   onBlurDraftNote,
@@ -442,6 +443,8 @@ export function DiffPane({
   onRemoveLiveNote?: (noteId: string) => void;
   onRemoveUserNote?: (noteId: string) => void;
   onSaveDraftNote?: (editorBody?: string) => void;
+  /** Live chord for the draft save action; omitted when unbound. */
+  draftSaveKeyLabel?: string;
   onStartUserNoteAtHunk?: StartUserNoteAtHunk;
   onUpdateDraftNote?: (body: string) => void;
   onBlurDraftNote?: () => void;
@@ -737,6 +740,7 @@ export function DiffPane({
             onFocus: onFocusDraftNote,
             onInput: onUpdateDraftNote ?? (() => {}),
             onSave: onSaveDraftNote ?? (() => {}),
+            ...(draftSaveKeyLabel ? { saveKeyLabel: draftSaveKeyLabel } : {}),
           },
         });
         if (draftNote.kind === "edit" && draftNote.targetNoteId) {
@@ -807,6 +811,7 @@ export function DiffPane({
     onRemoveLiveNote,
     onRemoveUserNote,
     onSaveDraftNote,
+    draftSaveKeyLabel,
     onUpdateDraftNote,
     noteActionKeyLabels,
     showAgentNotes,
