@@ -218,9 +218,7 @@ export class SessionBrokerConnection<
     this.stopHeartbeat();
     const generation = this.currentGeneration;
     if (generation) {
-      const disposeHandshake = this.handshakeTimers.get(generation);
-      disposeHandshake?.();
-      this.handshakeTimers.delete(generation);
+      this.disposeHandshake(generation);
       if (generation.status !== "closed") {
         this.closeGeneration(generation);
         if (generation.status === "closing") generation.status = "closed";
@@ -396,9 +394,7 @@ export class SessionBrokerConnection<
 
     socket.onclose = (event) => {
       const wasAuthenticated = generation.authenticated;
-      const disposeHandshake = this.handshakeTimers.get(generation);
-      disposeHandshake?.();
-      this.handshakeTimers.delete(generation);
+      this.disposeHandshake(generation);
       const ownsConnection = this.currentGeneration === generation;
       generation.status = "closed";
       if (ownsConnection) {
@@ -484,6 +480,13 @@ export class SessionBrokerConnection<
     }
   }
 
+  /** Dispose and forget only the handshake timer owned by one exact generation. */
+  private disposeHandshake(generation: ConnectionGeneration<Socket>) {
+    const dispose = this.handshakeTimers.get(generation);
+    dispose?.();
+    this.handshakeTimers.delete(generation);
+  }
+
   /** Return whether one exact generation remains the active send authority. */
   private isGenerationActive(generation: ConnectionGeneration<Socket>) {
     return (
@@ -498,9 +501,7 @@ export class SessionBrokerConnection<
     if (!this.canAuthenticate(generation)) return;
     generation.status = "active";
     generation.authenticated = true;
-    const disposeHandshake = this.handshakeTimers.get(generation);
-    disposeHandshake?.();
-    this.handshakeTimers.delete(generation);
+    this.disposeHandshake(generation);
     this.startHeartbeat(generation);
     this.options.onConnected?.(generation.token);
     const replacement = this.pendingSessionReplacement;
@@ -672,17 +673,7 @@ export class SessionBrokerConnection<
     try {
       messageBytes = commandValueBytes(message) + PRODUCER_COMMAND_OVERHEAD_BYTES;
     } catch {
-      if (!this.isGenerationActive(generation)) return;
-      try {
-        this.sendToGeneration(generation, {
-          type: "command-result",
-          requestId: message.requestId,
-          ok: false,
-          error: "queue-full",
-        });
-      } catch {
-        this.closeGeneration(generation, 1013, "Session broker queue pressure exceeded.");
-      }
+      this.rejectQueuePressure(generation, message.requestId);
       return;
     }
 
@@ -695,17 +686,7 @@ export class SessionBrokerConnection<
       reservations.add(this.queuedCommandByteBudget.reserve(messageBytes));
     } catch {
       reservations.release();
-      if (!this.isGenerationActive(generation)) return;
-      try {
-        this.sendToGeneration(generation, {
-          type: "command-result",
-          requestId: message.requestId,
-          ok: false,
-          error: "queue-full",
-        });
-      } catch {
-        this.closeGeneration(generation, 1013, "Session broker queue pressure exceeded.");
-      }
+      this.rejectQueuePressure(generation, message.requestId);
       return;
     }
 
@@ -720,6 +701,21 @@ export class SessionBrokerConnection<
       reservation: reservations,
     });
     if (this.bridge) await this.flushQueuedMessages(generation);
+  }
+
+  /** Reject one over-budget command without admitting it to the producer queue. */
+  private rejectQueuePressure(generation: ConnectionGeneration<Socket>, requestId: string) {
+    if (!this.isGenerationActive(generation)) return;
+    try {
+      this.sendToGeneration(generation, {
+        type: "command-result",
+        requestId,
+        ok: false,
+        error: "queue-full",
+      });
+    } catch {
+      this.closeGeneration(generation, 1013, "Session broker queue pressure exceeded.");
+    }
   }
 
   private async flushQueuedMessages(generation = this.currentGeneration) {
