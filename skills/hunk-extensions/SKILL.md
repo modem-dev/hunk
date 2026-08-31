@@ -258,7 +258,9 @@ Most extension bugs are one of these:
 - **Application execution stays extension-owned.** Extensions are ordinary
   trusted code and may spawn processes; use `ctx.openInApp` when one needs the
   terminal so Hunk suspends and restores its renderer. `ctx.workspace.resolveLocation`
-  maps reviewed ids to app-ready paths and lines. Never write to stdout while
+  maps only filesystem-attested reviewed sides to app-ready paths and lines.
+  Dialogs cancel and writes refuse while an app owns the terminal, so do not
+  await host UI inside the callback. Never write to stdout while
   Hunk owns the terminal; `hunk.log` is collected as diagnostics and `ctx.notify`
   is how a user hears from you.
 - **`HunkExtensionUserError`** (detected structurally by `name`) buys the full

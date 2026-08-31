@@ -483,6 +483,7 @@ export function App({
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
+    cancelAll: cancelAllExtensionDialogs,
     createDialogs: createQueuedExtensionDialogs,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
@@ -492,6 +493,12 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
+  const extensionAppController = useExtensionAppController({
+    createReviewCapabilityLease,
+    onOwnershipStarted: cancelAllExtensionDialogs,
+    renderer,
+  });
+
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
@@ -500,11 +507,11 @@ export function App({
         (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
       );
       return createQueuedExtensionDialogs(extensionId, {
-        isLive: lease.isLive,
+        isLive: () => lease.isLive() && !extensionAppController.isAppActive(),
         showAttribution: !bundled,
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensionAppController, extensions],
   );
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
@@ -512,16 +519,12 @@ export function App({
     createReviewCapabilityLease,
     files: reviewFiles,
     input: bootstrap.input,
+    isAppActive: extensionAppController.isAppActive,
     onWorkspaceWriteCompleted,
     root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
     runWorkspaceWrite,
     workspaceFileWriter,
   });
-  const extensionAppController = useExtensionAppController({
-    createReviewCapabilityLease,
-    renderer,
-  });
-
   useExtensionEventContextProvider({
     createDialogs: createExtensionDialogs,
     createNavigation: createExtensionNavigation,

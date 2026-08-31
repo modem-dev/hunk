@@ -19,7 +19,7 @@ import {
   type GitBackedInput,
   type GitDiffEndpoints,
 } from "./commands";
-import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import { gitEndpointSourceSpec, gitFileSourcePath, readGitFileSource } from "./source";
 import { describeDiffRange } from "../diffRange";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
@@ -28,6 +28,8 @@ import {
   type ExtensionVcsDirectoryTreeWatchTarget,
   type ExtensionVcsExtraFile,
   type ExtensionVcsFileSourceReader,
+  type ExtensionVcsFileSourcePathResolver,
+  type ExtensionVcsFileSourceRequest,
   type ExtensionVcsWatchPlan,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
@@ -83,7 +85,32 @@ export function statSignature(path: string) {
 /** Exact source reader plus a stable identity for its complete old/new snapshot. */
 interface GitSourceCapability {
   readFileSource: ExtensionVcsFileSourceReader;
+  resolveFileSourcePath: ExtensionVcsFileSourcePathResolver;
   sourceCacheKey: string;
+}
+
+/** Resolve one file side to the exact Git source spec used for both reads and paths. */
+function gitFileSourceSpecForRequest(
+  request: ExtensionVcsFileSourceRequest,
+  repoRoot: string,
+  endpoints: GitDiffEndpoints,
+) {
+  const spec =
+    request.side === "old"
+      ? request.changeType === "new"
+        ? ({ kind: "none" } as const)
+        : gitEndpointSourceSpec(endpoints.old, repoRoot, request.previousPath ?? request.path)
+      : request.changeType === "deleted"
+        ? ({ kind: "none" } as const)
+        : gitEndpointSourceSpec(endpoints.new, repoRoot, request.path);
+
+  if (spec.kind !== "fs") return spec;
+  try {
+    fs.lstatSync(spec.absolutePath);
+    return spec;
+  } catch {
+    return { kind: "none" } as const;
+  }
 }
 
 /** Hash semantic index entries so filesystem-stat refreshes do not defeat cache reuse. */
@@ -130,26 +157,12 @@ function createGitSourceCapability(
       gitEndpointCacheKey(endpoints.old, indexCacheKey),
       gitEndpointCacheKey(endpoints.new, indexCacheKey),
     ].join(":"),
-    readFileSource: ({ path, previousPath, changeType, side }) => {
-      // An added file has no old side and a deleted one has no new side; asking
-      // Git for either would just be a failed lookup.
-      if (side === "old") {
-        return changeType === "new"
-          ? Promise.resolve(null)
-          : readGitFileSource(
-              gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path),
-              {
-                gitExecutable,
-              },
-            );
-      }
-
-      return changeType === "deleted"
-        ? Promise.resolve(null)
-        : readGitFileSource(gitEndpointSourceSpec(endpoints.new, repoRoot, path), {
-            gitExecutable,
-          });
-    },
+    readFileSource: (request) =>
+      readGitFileSource(gitFileSourceSpecForRequest(request, repoRoot, endpoints), {
+        gitExecutable,
+      }),
+    resolveFileSourcePath: (request) =>
+      gitFileSourcePath(gitFileSourceSpecForRequest(request, repoRoot, endpoints)),
   };
 }
 

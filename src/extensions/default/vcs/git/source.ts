@@ -32,6 +32,11 @@ export interface GitFileSourceOptions {
   maxSourceBytes?: number;
 }
 
+/** Return the exact path only when one Git source spec names the live filesystem. */
+export function gitFileSourcePath(spec: GitFileSourceSpec) {
+  return spec.kind === "fs" ? spec.absolutePath : null;
+}
+
 /** Convert one Git diff endpoint into the corresponding source lookup. */
 export function gitEndpointSourceSpec(
   endpoint: GitDiffEndpoint,

@@ -11,11 +11,17 @@ const activeAppByRenderer = new WeakMap<object, object>();
 /** Build command-scoped app handoffs around one renderer's terminal ownership. */
 export function useExtensionAppController({
   createReviewCapabilityLease,
+  onOwnershipStarted,
   renderer,
 }: {
   createReviewCapabilityLease: () => ExtensionCapabilityLease;
+  /** Settle host UI before the renderer gives the terminal away. */
+  onOwnershipStarted: () => void;
   renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
 }) {
+  /** Report whether an extension application currently owns this renderer's terminal. */
+  const isAppActive = useCallback(() => activeAppByRenderer.has(renderer), [renderer]);
+
   const createOpenInApp = useCallback((): ExtensionOpenInApp => {
     const lease = createReviewCapabilityLease();
     return async <Result>(run: () => Result | PromiseLike<Result>): Promise<Result> => {
@@ -25,7 +31,7 @@ export function useExtensionAppController({
       if (!lease.isLive()) {
         throw new Error("openInApp is unavailable after the review reloads.");
       }
-      if (activeAppByRenderer.has(renderer)) {
+      if (isAppActive()) {
         throw new Error("openInApp is unavailable while another application owns the terminal.");
       }
 
@@ -33,6 +39,7 @@ export function useExtensionAppController({
       activeAppByRenderer.set(renderer, ownership);
       let suspended = false;
       try {
+        onOwnershipStarted();
         renderer.suspend();
         suspended = true;
         return await run();
@@ -48,7 +55,7 @@ export function useExtensionAppController({
         }
       }
     };
-  }, [createReviewCapabilityLease, renderer]);
+  }, [createReviewCapabilityLease, isAppActive, onOwnershipStarted, renderer]);
 
-  return useMemo(() => ({ createOpenInApp }), [createOpenInApp]);
+  return useMemo(() => ({ createOpenInApp, isAppActive }), [createOpenInApp, isAppActive]);
 }

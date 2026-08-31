@@ -12,6 +12,7 @@ import {
 } from "./commands";
 import { readJjFileSource } from "./source";
 import { describeDiffRange } from "../diffRange";
+import { createWorkingTreeSourcePathResolver } from "../workingTreeSource";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -165,6 +166,9 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
               jjExecutable,
             }),
             ...sourceCapability,
+            ...(!input.range && !input.rangeEndpoints
+              ? { resolveFileSourcePath: createWorkingTreeSourcePathResolver(repoRoot) }
+              : {}),
           };
         },
         watchSignature(input, { cwd }) {

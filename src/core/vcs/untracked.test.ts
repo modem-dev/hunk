@@ -28,6 +28,7 @@ describe("buildFilesystemUntrackedDiffFile", () => {
 
     expect(file.metadata.type).toBe("new");
     expect(file.metadata.hunks).toHaveLength(0);
+    expect(file.sourcePaths).toEqual({ old: null, new: join(repoRoot, "empty.txt") });
     expect(file.patch).toBe(
       [
         "diff --git a/empty.txt b/empty.txt",

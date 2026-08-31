@@ -56,6 +56,8 @@ export interface VcsPatchResult {
   untrackedPaths?: string[];
   /** Exact old/new content lookups, built from the result's `readFileSource`. */
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
+  /** Exact filesystem paths, built from the result's `resolveFileSourcePath`. */
+  sourcePathBuilder?: BuildDiffFileOptions["sourcePathBuilder"];
   /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
 }

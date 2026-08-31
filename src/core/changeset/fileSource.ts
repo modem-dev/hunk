@@ -15,6 +15,18 @@ export type FileSourceSpec = { kind: "none" } | { kind: "fs"; absolutePath: stri
 
 export type FileSourceSide = "old" | "new";
 
+/** Exact filesystem paths for the reviewed sides, or null when a side is not filesystem-backed. */
+export interface FileSourcePaths {
+  readonly old: string | null;
+  readonly new: string | null;
+}
+
+/** Generic source specs for both sides of one reviewed file. */
+export interface FileSourceSpecs {
+  old: FileSourceSpec;
+  new: FileSourceSpec;
+}
+
 export interface FileSourceFetcher {
   /** Stable identity for source state not already represented by the file's patch. */
   readonly cacheKey?: string;
@@ -37,11 +49,6 @@ export class SourceTextTooLargeError extends Error {
 
 export interface FileSourceFetcherOptions {
   maxSourceBytes?: number;
-}
-
-interface ResolvedSpecs {
-  old: FileSourceSpec;
-  new: FileSourceSpec;
 }
 
 async function readFsSpec(
@@ -67,9 +74,17 @@ export async function readFileSourceSpec(
   return readFsSpec(spec, maxSourceBytes);
 }
 
+/** Project source specs to the exact paths of only their filesystem-backed sides. */
+export function fileSourcePathsForSpecs(specs: FileSourceSpecs): FileSourcePaths {
+  return {
+    old: specs.old.kind === "fs" ? specs.old.absolutePath : null,
+    new: specs.new.kind === "fs" ? specs.new.absolutePath : null,
+  };
+}
+
 /** Build a per-file source fetcher that caches each side's resolved text. */
 export function createFileSourceFetcher(
-  specs: ResolvedSpecs,
+  specs: FileSourceSpecs,
   { maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES }: Readonly<FileSourceFetcherOptions> = {},
 ): FileSourceFetcher {
   const cache = new Map<FileSourceSide, string | null>();

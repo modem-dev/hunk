@@ -13,12 +13,6 @@ import {
 
 const ROOT = resolve(sep, "repo");
 const NO_OPTIONS: CommonOptions = {};
-const WORKING_TREE_INPUT = {
-  kind: "vcs",
-  staged: false,
-  options: NO_OPTIONS,
-} satisfies CliInput;
-
 /** One reviewed file as the workspace policy sees it, changed unless told otherwise. */
 function createTestWorkspaceFile(
   overrides: Partial<WorkspaceFileSource> = {},
@@ -250,20 +244,24 @@ describe("extension workspace write requests", () => {
 });
 
 describe("extension workspace locations", () => {
-  test("resolves the repository path and maps old-side lines from parsed hunk metadata", () => {
-    const file = createTestDiffFile({
-      id: "alpha",
-      path: "packages/app/alpha.ts",
-      before: "one\ntwo\nthree\nfour\n",
-      after: "one\nfour\n",
-    });
+  test("uses new-side provenance and maps old-side lines from parsed hunk metadata", () => {
+    const file = {
+      ...createTestDiffFile({
+        id: "alpha",
+        path: "packages/app/alpha.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nfour\n",
+      }),
+      sourcePaths: {
+        old: join(ROOT, "archive", "alpha.ts"),
+        new: join(ROOT, "packages", "app", "alpha.ts"),
+      },
+    };
 
     expect(
       resolveExtensionWorkspaceLocation({
         files: [file],
-        input: WORKING_TREE_INPUT,
         request: { fileId: "alpha", hunkIndex: 0, line: { side: "old", line: 3 } },
-        root: ROOT,
       }),
     ).toEqual({ path: join(ROOT, "packages", "app", "alpha.ts"), line: 2 });
   });
@@ -282,93 +280,126 @@ describe("extension workspace locations", () => {
     expect(
       resolveExtensionWorkspaceLocation({
         files: [createTestWorkspaceFile({ metadata: undefined })],
-        input: WORKING_TREE_INPUT,
         request: { fileId: "alpha" },
-        root: ROOT,
       }),
     ).toBeNull();
   });
 
   test("preserves old-side offsets through context and multi-line replacements", () => {
-    const removed = createTestDiffFile({
-      id: "removed",
-      path: "removed.ts",
-      before: "one\ntwo\nthree\nfour\n",
-      after: "one\nfour\n",
-      context: 1,
-    });
-    const replaced = createTestDiffFile({
-      id: "replaced",
-      path: "replaced.ts",
-      before: "one\ntwo\nthree\nfour\n",
-      after: "one\nTWO\nTHREE\nfour\n",
-    });
+    const removed = {
+      ...createTestDiffFile({
+        id: "removed",
+        path: "removed.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nfour\n",
+        context: 1,
+      }),
+      sourcePaths: { old: null, new: join(ROOT, "removed.ts") },
+    };
+    const replaced = {
+      ...createTestDiffFile({
+        id: "replaced",
+        path: "replaced.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nTWO\nTHREE\nfour\n",
+      }),
+      sourcePaths: { old: null, new: join(ROOT, "replaced.ts") },
+    };
 
     expect(
       resolveExtensionWorkspaceLocation({
         files: [removed],
-        input: WORKING_TREE_INPUT,
         request: { fileId: "removed", hunkIndex: 0, line: { side: "old", line: 3 } },
-        root: ROOT,
       })?.line,
     ).toBe(2);
     expect(
       resolveExtensionWorkspaceLocation({
         files: [replaced],
-        input: WORKING_TREE_INPUT,
         request: { fileId: "replaced", hunkIndex: 0, line: { side: "old", line: 3 } },
-        root: ROOT,
       })?.line,
     ).toBe(3);
   });
 
-  test("uses direct comparison provenance and refuses unattested patch paths", () => {
-    const file = createTestDiffFile({ id: "alpha", path: "after.ts" });
-    const directInput = {
-      kind: "diff",
-      left: "nested/before.ts",
-      right: "nested/after.ts",
-      options: NO_OPTIONS,
-    } satisfies CliInput;
+  test("uses concrete provenance instead of reviewed display paths", () => {
+    const file = {
+      ...createTestDiffFile({ id: "alpha", path: "display/after.ts" }),
+      sourcePaths: {
+        old: join(ROOT, "concrete", "before.ts"),
+        new: join(ROOT, "concrete", "after.ts"),
+      },
+    };
 
     expect(
       resolveExtensionWorkspaceLocation({
         files: [file],
-        input: directInput,
         request: { fileId: "alpha", line: { side: "new", line: 2 } },
-        root: ROOT,
       }),
-    ).toEqual({ path: join(ROOT, "nested", "after.ts"), line: 2 });
+    ).toEqual({ path: join(ROOT, "concrete", "after.ts"), line: 2 });
     expect(
       resolveExtensionWorkspaceLocation({
-        files: [file],
-        input: { kind: "patch", text: file.patch, options: NO_OPTIONS },
+        files: [{ ...file, sourcePaths: undefined }],
         request: { fileId: "alpha" },
-        root: ROOT,
       }),
     ).toBeNull();
   });
 
   test("resolves deleted direct comparisons to their old-side source", () => {
-    const file = createTestDiffFile({
-      id: "deleted",
-      path: "deleted.ts",
-      before: "one\ntwo\n",
-      after: "",
-    });
+    const file = {
+      ...createTestDiffFile({
+        id: "deleted",
+        path: "deleted.ts",
+        before: "one\ntwo\n",
+        after: "",
+      }),
+      sourcePaths: { old: join(ROOT, "archive", "deleted.ts"), new: null },
+    };
 
     expect(
       resolveExtensionWorkspaceLocation({
         files: [file],
-        input: {
-          kind: "diff",
-          left: "archive/deleted.ts",
-          right: "/dev/null",
-          options: NO_OPTIONS,
-        },
         request: { fileId: "deleted", hunkIndex: 0, line: { side: "old", line: 2 } },
-        root: ROOT,
       }),
     ).toEqual({ path: join(ROOT, "archive", "deleted.ts"), line: 2 });
+  });
+
+  test("rejects requested absent sides before considering opposite-side provenance", () => {
+    const added = {
+      ...createTestDiffFile({ id: "added", before: "", after: "new\n" }),
+      sourcePaths: { old: null, new: join(ROOT, "added.ts") },
+    };
+    const deleted = {
+      ...createTestDiffFile({ id: "deleted", before: "old\n", after: "" }),
+      sourcePaths: { old: join(ROOT, "deleted.ts"), new: null },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [added],
+        request: { fileId: "added", line: { side: "old", line: 1 } },
+      }),
+    ).toBeNull();
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [deleted],
+        request: { fileId: "deleted", line: { side: "new", line: 1 } },
+      }),
+    ).toBeNull();
+  });
+
+  test("returns null when the relevant side is virtual or its path is not absolute", () => {
+    const file = createTestDiffFile({ id: "alpha" });
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [{ ...file, sourcePaths: { old: join(ROOT, "old.ts"), new: null } }],
+        request: { fileId: "alpha", hunkIndex: 0, line: { side: "old", line: 1 } },
+      }),
+    ).toBeNull();
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [{ ...file, sourcePaths: { old: null, new: "relative/alpha.ts" } }],
+        request: { fileId: "alpha" },
+      }),
+    ).toBeNull();
   });
 });
