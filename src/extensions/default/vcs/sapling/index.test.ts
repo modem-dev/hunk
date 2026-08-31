@@ -124,9 +124,11 @@ describe("SaplingVcsAdapter", () => {
         isUntracked: false,
       } as const;
       expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "old" })).toBeNull();
-      expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "new" })).toBe(
-        join(repo, "file.txt"),
-      );
+      expect(
+        normalizeComparablePath(
+          diffResult.resolveFileSourcePath!({ ...reviewedFile, side: "new" })!,
+        ),
+      ).toBe(normalizeComparablePath(join(repo, "file.txt")));
 
       const showInput = {
         kind: "show",
