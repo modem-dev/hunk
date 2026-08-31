@@ -131,9 +131,11 @@ describe("JjVcsAdapter", () => {
       expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
       expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
       expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "old" })).toBeNull();
-      expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "new" })).toBe(
-        join(repo, "file.txt"),
-      );
+      expect(
+        normalizeComparablePath(
+          diffResult.resolveFileSourcePath!({ ...reviewedFile, side: "new" })!,
+        ),
+      ).toBe(normalizeComparablePath(join(repo, "file.txt")));
       const equivalentDiffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(
         diffInput,
         { cwd: repo },

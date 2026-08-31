@@ -133,9 +133,9 @@ describe("GitVcsAdapter", () => {
     expect(await readSource?.({ ...trackedFile, side: "old" })).toBe("old\n");
     expect(await readSource?.({ ...trackedFile, side: "new" })).toBe("new\n");
     expect(result.resolveFileSourcePath?.({ ...trackedFile, side: "old" })).toBeNull();
-    expect(result.resolveFileSourcePath?.({ ...trackedFile, side: "new" })).toBe(
-      join(repo, "tracked.txt"),
-    );
+    expect(
+      normalizeComparablePath(result.resolveFileSourcePath!({ ...trackedFile, side: "new" })!),
+    ).toBe(normalizeComparablePath(join(repo, "tracked.txt")));
     expect(
       result.resolveFileSourcePath?.({ ...trackedFile, changeType: "new", side: "old" }),
     ).toBeNull();

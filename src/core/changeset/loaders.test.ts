@@ -515,10 +515,10 @@ describe("loadAppBootstrap", () => {
     });
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
     expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
-    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({
-      old: null,
-      new: join(dir, "large.txt"),
-    });
+    expect(bootstrap.changeset.files[0]?.sourcePaths?.old).toBeNull();
+    expect(normalizeComparablePath(bootstrap.changeset.files[0]!.sourcePaths!.new!)).toBe(
+      normalizeComparablePath(join(dir, "large.txt")),
+    );
   });
 
   test("keeps generated large untracked files as skipped placeholders", async () => {
@@ -545,10 +545,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(false);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
     expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
-    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({
-      old: null,
-      new: join(dir, "large.txt"),
-    });
+    expect(bootstrap.changeset.files[0]?.sourcePaths?.old).toBeNull();
+    expect(normalizeComparablePath(bootstrap.changeset.files[0]!.sourcePaths!.new!)).toBe(
+      normalizeComparablePath(join(dir, "large.txt")),
+    );
   });
 
   test("caps skipped untracked-file stats when byte-size detection would require a full huge read", async () => {
@@ -1934,7 +1934,10 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
-    expect(file?.sourcePaths).toEqual({ old: null, new: join(dir, "value.txt") });
+    expect(file?.sourcePaths?.old).toBeNull();
+    expect(normalizeComparablePath(file!.sourcePaths!.new!)).toBe(
+      normalizeComparablePath(join(dir, "value.txt")),
+    );
   });
 
   test("git source fetchers use the custom git executable from bootstrap loading", async () => {
@@ -2135,7 +2138,10 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(untracked?.sourceFetcher).toBeDefined();
     expect(await untracked?.sourceFetcher?.getFullText("new")).toBe("added contents\n");
     expect(await untracked?.sourceFetcher?.getFullText("old")).toBeNull();
-    expect(untracked?.sourcePaths).toEqual({ old: null, new: join(dir, "added.txt") });
+    expect(untracked?.sourcePaths?.old).toBeNull();
+    expect(normalizeComparablePath(untracked!.sourcePaths!.new!)).toBe(
+      normalizeComparablePath(join(dir, "added.txt")),
+    );
   });
 
   test("deleted Unicode files attach a fetcher with new=null and old source", async () => {
