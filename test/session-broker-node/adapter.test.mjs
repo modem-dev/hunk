@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { connect, createServer } from "node:net";
 import { createRequire } from "node:module";
@@ -19,6 +20,124 @@ const corpus = JSON.parse(
 const bundlePath = process.env.HUNK_NODE_ADAPTER_BUNDLE;
 if (!bundlePath) throw new Error("HUNK_NODE_ADAPTER_BUNDLE must name the built Node adapter.");
 const { serveSessionBrokerDaemon } = await import(pathToFileURL(bundlePath).href);
+const connectionFixture = process.env.HUNK_NODE_CONNECTION_FIXTURE;
+if (!connectionFixture) {
+  throw new Error("HUNK_NODE_CONNECTION_FIXTURE must name the built producer fixture.");
+}
+
+function formatFixtureFailure(mode, exit, stdout, stderr, details = "") {
+  return [
+    `runtime=node mode=${mode} exit=${exit}${details ? ` ${details}` : ""}`,
+    `stdout:\n${stdout || "<empty>"}`,
+    `stderr:\n${stderr || "<empty>"}`,
+  ].join("\n");
+}
+
+/** Run the real Node fixture with bounded termination and wait for process plus stdio closure. */
+function runConnectionFixture(mode) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [connectionFixture, mode], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      // Passing argv directly, rather than through a shell, keeps this portable on Windows.
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let softKill = "not-requested";
+    let forceKill = "not-requested";
+    let timeout;
+    let forceTimeout;
+    let hardTimeout;
+    const onStdout = (chunk) => (stdout += chunk.toString());
+    const onStderr = (chunk) => (stderr += chunk.toString());
+    const cleanup = () => {
+      clearTimeout(timeout);
+      clearTimeout(forceTimeout);
+      clearTimeout(hardTimeout);
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("error", onError);
+      child.off("close", onClose);
+    };
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const requestKill = (signal) => {
+      try {
+        return String(child.kill(signal));
+      } catch (error) {
+        return `failed:${String(error)}`;
+      }
+    };
+    const onError = (error) =>
+      finish(() =>
+        reject(
+          new Error(formatFixtureFailure(mode, "spawn-error", stdout, `${stderr}${error}`), {
+            cause: error,
+          }),
+        ),
+      );
+    const onClose = (exitCode, signal) =>
+      finish(() => {
+        const result = { exitCode, signal, stdout, stderr };
+        if (!timedOut) {
+          resolve(result);
+          return;
+        }
+        reject(
+          new Error(
+            formatFixtureFailure(
+              mode,
+              "timeout",
+              stdout,
+              stderr,
+              `close=${exitCode ?? signal ?? "unknown"} softKill=${softKill} forceKill=${forceKill}`,
+            ),
+          ),
+        );
+      });
+
+    timeout = setTimeout(() => {
+      timedOut = true;
+      softKill = requestKill();
+      forceTimeout = setTimeout(() => {
+        // Node maps forceful termination onto the platform's available child-process primitive.
+        forceKill = requestKill("SIGKILL");
+        hardTimeout = setTimeout(() => {
+          child.stdout.destroy();
+          child.stderr.destroy();
+          child.unref();
+          finish(() =>
+            reject(
+              new Error(
+                formatFixtureFailure(
+                  mode,
+                  "timeout-unreaped",
+                  stdout,
+                  stderr,
+                  `softKill=${softKill} forceKill=${forceKill}`,
+                ),
+              ),
+            ),
+          );
+        }, 500);
+      }, 500);
+    }, 3_000);
+
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.once("error", onError);
+    // `close` follows process exit and stdio closure, so the transcript is complete here.
+    child.once("close", onClose);
+  });
+}
 
 async function reservePort() {
   const server = createServer();
@@ -116,6 +235,35 @@ function fakeDaemon(overrides = {}, behavior = {}) {
     shutdown() {},
   };
 }
+
+test("Node authenticates, registers, and naturally exits with every production timer pending", async () => {
+  const real = await runConnectionFixture("real");
+  if (
+    real.exitCode !== 0 ||
+    real.signal !== null ||
+    real.stdout !== "signed-producer-register-observed\n" ||
+    real.stderr !== ""
+  ) {
+    throw new Error(formatFixtureFailure("real", real.exitCode, real.stdout, real.stderr));
+  }
+
+  for (const mode of [
+    "pending-handshake",
+    "pending-heartbeat",
+    "pending-reconnect",
+    "pending-client-startup-retry",
+  ]) {
+    const result = await runConnectionFixture(mode);
+    if (
+      result.exitCode !== 0 ||
+      result.signal !== null ||
+      result.stdout !== `${mode}\n` ||
+      result.stderr !== ""
+    ) {
+      throw new Error(formatFixtureFailure(mode, result.exitCode, result.stdout, result.stderr));
+    }
+  }
+});
 
 test("Node WebCrypto Ed25519 and base64url work without Bun globals", async () => {
   assert.equal(typeof globalThis.Bun, "undefined");
