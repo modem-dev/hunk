@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import type { InstallSource } from "./installSource";
 import {
   parseUpdateMethod,
@@ -27,6 +28,7 @@ interface UpdateRunOptions {
   latestVersion?: string;
   env?: NodeJS.ProcessEnv;
   commandResult?: SelfUpdateProcessResult;
+  interactive?: boolean;
 }
 
 /** Run one `hunk update` invocation offline, capturing output and the spawned command. */
@@ -35,13 +37,21 @@ async function runUpdate(options: UpdateRunOptions) {
   const stderr: string[] = [];
   const commands: string[][] = [];
   const commandEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+  const commandCaptureModes: Array<boolean | undefined> = [];
   const latestVersion = options.latestVersion ?? "1.1.0";
+  const interactiveOutput = new PassThrough();
+  let renderedOutput = "";
+  interactiveOutput.on("data", (chunk) => {
+    renderedOutput += chunk.toString();
+  });
 
   const exitCode = await runSelfUpdateCommand(
     { check: false, ...options.input },
     {
       stdout: (text) => stdout.push(text),
       stderr: (text) => stderr.push(text),
+      stdoutIsTTY: options.interactive,
+      output: interactiveOutput,
       env: options.env ?? {},
       executablePath: options.executablePath ?? join("/", "usr", "bin", "hunk"),
       platform: options.platform ?? "linux",
@@ -57,6 +67,7 @@ async function runUpdate(options: UpdateRunOptions) {
       runCommand: async (command, commandOptions) => {
         commands.push([...command]);
         commandEnvs.push(commandOptions?.env);
+        commandCaptureModes.push(commandOptions?.captureOutput);
         return options.commandResult ?? { exitCode: 0, stderr: "" };
       },
     },
@@ -68,6 +79,8 @@ async function runUpdate(options: UpdateRunOptions) {
     stderr: stderr.join(""),
     commands,
     commandEnvs,
+    commandCaptureModes,
+    renderedOutput,
   };
 }
 
@@ -151,6 +164,34 @@ describe("hunk update", () => {
     expect(result.commands).toEqual([["npm", "install", "--global", "hunkdiff@1.1.0"]]);
     expect(result.stdout).toContain("Updating hunk 1.0.0 -> 1.1.0");
     expect(result.stdout).toContain("Updated hunk to 1.1.0.");
+  });
+
+  test("renders a guided update and captures noisy child output on a TTY", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      latestVersion: "1.1.0",
+      interactive: true,
+    });
+
+    expect(result.stdout).toBe("");
+    expect(result.renderedOutput).toContain("Hunk update");
+    expect(result.renderedOutput).toContain("Current  1.0.0");
+    expect(result.renderedOutput).toContain("Target   1.1.0");
+    expect(result.renderedOutput).toContain("Updated to 1.1.0");
+    expect(result.renderedOutput).toContain("Done");
+    expect(result.commandCaptureModes).toEqual([true]);
+  });
+
+  test("keeps plain output when color is disabled", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      interactive: true,
+      env: { NO_COLOR: "1" },
+    });
+
+    expect(result.renderedOutput).toBe("");
+    expect(result.stdout).toContain("Updating hunk 1.0.0 -> 1.1.0");
+    expect(result.commandCaptureModes).toEqual([undefined]);
   });
 
   test("names the npm .cmd shim explicitly on Windows", async () => {

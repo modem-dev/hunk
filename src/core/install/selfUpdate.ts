@@ -1,3 +1,5 @@
+import { intro, log, outro, spinner } from "@clack/prompts";
+import type { Writable } from "node:stream";
 import { HunkUserError } from "../run/errors";
 import { detectInstallSource, detectNpmClient, type InstallSource } from "./installSource";
 import { fetchChannelVersions, type FetchImpl } from "./latestRelease";
@@ -54,6 +56,7 @@ export interface SelfUpdateInput {
 /** Outcome of one package-manager invocation. */
 export interface SelfUpdateProcessResult {
   exitCode: number;
+  stdout?: string;
   stderr: string;
 }
 
@@ -61,11 +64,17 @@ export interface SelfUpdateProcessResult {
 export interface SelfUpdateCommandOptions {
   /** Full environment for the child; the parent's own environment when omitted. */
   env?: NodeJS.ProcessEnv;
+  /** Capture child output so an interactive status display remains intact. */
+  captureOutput?: boolean;
 }
 
 export interface SelfUpdateIo {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  /** Enable Clack's transient presentation when stdout is an interactive terminal. */
+  stdoutIsTTY?: boolean;
+  /** Stream Clack writes its interactive presentation to. */
+  output?: Writable;
   env?: NodeJS.ProcessEnv;
   executablePath?: string;
   /** Platform used to pick package-manager executable names; defaults to the running platform. */
@@ -188,7 +197,7 @@ function buildUpdateCommand(
   return npmUpdateCommand(executablePath, targetVersion, platform);
 }
 
-/** Spawn one package-manager command, streaming its output and capturing stderr for failures. */
+/** Spawn one package-manager command, capturing output when a transient status owns stdout. */
 async function spawnUpdateCommand(
   command: readonly string[],
   options: SelfUpdateCommandOptions = {},
@@ -199,12 +208,15 @@ async function spawnUpdateCommand(
       cmd: [...command],
       env: options.env,
       stdin: "ignore",
-      stdout: "inherit",
+      stdout: options.captureOutput ? "pipe" : "inherit",
       stderr: "pipe",
     });
-    const stderr = await new Response(child.stderr).text();
-    const exitCode = await child.exited;
-    return { exitCode, stderr };
+    const [stdout, stderr, exitCode] = await Promise.all([
+      options.captureOutput ? new Response(child.stdout).text() : Promise.resolve(undefined),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { exitCode, stdout, stderr };
   } catch (error) {
     throw new HunkUserError(
       `Could not run ${executable}: ${error instanceof Error ? error.message : String(error)}`,
@@ -343,8 +355,15 @@ export async function runSelfUpdateCommand(
   const alreadyCurrent = input.version
     ? installedVersion === targetVersion
     : !isComparableVersion(installedVersion) || !isNewerVersion(installedVersion, targetVersion);
+  const interactive = Boolean(io.stdoutIsTTY && io.output && !env.NO_COLOR && env.TERM !== "dumb");
   if (alreadyCurrent) {
-    io.stdout(`hunk ${installedVersion} is already up to date.\n`);
+    if (interactive) {
+      intro("Hunk update", { output: io.output });
+      log.success(`hunk ${installedVersion} is already up to date`, { output: io.output });
+      outro("Nothing to do", { output: io.output });
+    } else {
+      io.stdout(`hunk ${installedVersion} is already up to date.\n`);
+    }
     return 0;
   }
 
@@ -356,24 +375,54 @@ export async function runSelfUpdateCommand(
   );
   // Only the curl installer reads a version from its environment; every other channel names the
   // target in its argv, so the child otherwise inherits this process's environment untouched.
-  const commandOptions: SelfUpdateCommandOptions =
-    installSource === "curl" ? { env: { ...env, [CURL_INSTALL_VERSION_ENV]: targetVersion } } : {};
+  const commandOptions: SelfUpdateCommandOptions = {
+    ...(installSource === "curl"
+      ? { env: { ...env, [CURL_INSTALL_VERSION_ENV]: targetVersion } }
+      : {}),
+    ...(interactive ? { captureOutput: true } : {}),
+  };
 
-  io.stdout(
-    `Updating hunk ${installedVersion} -> ${targetVersion} with \`${command.join(" ")}\`\n`,
-  );
+  const progress = interactive ? spinner({ output: io.output }) : undefined;
+  if (interactive) {
+    intro("Hunk update", { output: io.output });
+    log.info(`Current  ${installedVersion}`, { output: io.output });
+    log.info(`Target   ${targetVersion}`, { output: io.output });
+    progress?.start(`Updating with ${describeInstallSource(installSource)}`);
+  } else {
+    io.stdout(
+      `Updating hunk ${installedVersion} -> ${targetVersion} with \`${command.join(" ")}\`\n`,
+    );
+  }
 
   const runCommand = io.runCommand ?? spawnUpdateCommand;
-  const result = await runCommand(command, commandOptions);
+  let result: SelfUpdateProcessResult;
+  try {
+    result = await runCommand(command, commandOptions);
+  } catch (error) {
+    progress?.error("Update failed");
+    throw error;
+  }
   if (result.exitCode !== 0) {
-    const details = result.stderr.trim();
+    progress?.error("Update failed");
+    const details = [result.stdout, result.stderr]
+      .map((text) => text?.trim())
+      .filter(Boolean)
+      .join("\n");
     if (details.length > 0) {
       io.stderr(`${details}\n`);
     }
     io.stderr(`hunk: \`${command.join(" ")}\` failed with exit code ${result.exitCode}.\n`);
+    if (interactive) {
+      outro("Hunk was not updated", { output: io.output });
+    }
     return result.exitCode;
   }
 
-  io.stdout(`Updated hunk to ${targetVersion}.\n`);
+  if (interactive) {
+    progress?.stop(`Updated to ${targetVersion}`);
+    outro("Done", { output: io.output });
+  } else {
+    io.stdout(`Updated hunk to ${targetVersion}.\n`);
+  }
   return 0;
 }
