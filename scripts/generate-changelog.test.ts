@@ -9,6 +9,7 @@ import {
   generateChangelogArtifacts,
   groupIntoSeries,
   isPublished,
+  isStablePublished,
   minorSeriesOf,
   parseChangeEntry,
   parseChangelog,
@@ -337,7 +338,7 @@ describe("series page", () => {
   test("opens with a dateline and suppresses the edit link on generated pages", () => {
     const page = series && renderSeriesPage({ series, notes: undefined, dates });
     expect(page).toContain("editUrl: false");
-    expect(page).toContain("August 16, 2026 · 1 release");
+    expect(page).toContain("August 10, 2026 – August 16, 2026 · 2 releases");
   });
 
   test("does not repeat the lead paragraph inside Highlights", () => {
@@ -371,7 +372,7 @@ describe("index page", () => {
 
   test("counts published releases and changes per series", () => {
     const page = renderIndexPage({ seriesList, notes: {}, dates });
-    expect(page).toContain("Latest · August 16, 2026 · 1 release · 3 changes");
+    expect(page).toContain("Latest · August 16, 2026 · 2 releases · 3 changes");
   });
 
   test("omits a summary paragraph for a series with no editorial summary", () => {
@@ -409,9 +410,33 @@ describe("feed", () => {
     expect(feed).toContain("Sun, 16 Aug 2026 00:00:00 GMT");
   });
 
-  test("skips a series whose only dated release is a prerelease", () => {
+  test("publishes an anchored item for each dated prerelease", () => {
     const feed = renderFeed({ seriesList, notes: {}, dates: { "0.19.0-beta.0": "2026-08-10" } });
-    expect(feed).not.toContain("<item>");
+    expect(feed).toContain("<title>Hunk 0.19.0-beta.0 (Prerelease)</title>");
+    expect(feed).toContain("https://hunk.dev/changelog/0.19/#v0-19-0-beta-0");
+    expect(feed).toContain("Mon, 10 Aug 2026 00:00:00 GMT");
+  });
+
+  test("gives a later stable release a distinct series GUID", () => {
+    const feed = renderFeed({
+      seriesList,
+      notes: {},
+      dates: { "0.19.0": "2026-08-16", "0.19.0-beta.0": "2026-08-10" },
+    });
+    expect(feed).toContain('<guid isPermaLink="true">https://hunk.dev/changelog/0.19/</guid>');
+    expect(feed).toContain(
+      '<guid isPermaLink="true">https://hunk.dev/changelog/0.19/#v0-19-0-beta-0</guid>',
+    );
+  });
+
+  test("orders same-day releases by semantic version", () => {
+    const feed = renderFeed({
+      seriesList,
+      notes: {},
+      dates: { "0.19.0": "2026-08-16", "0.18.0": "2026-08-16", "0.15.3": "2026-08-16" },
+    });
+    const titles = [...feed.matchAll(/<title>Hunk (0\.[^<]+)<\/title>/g)].map((match) => match[1]);
+    expect(titles).toEqual(["0.19", "0.18", "0.15"]);
   });
 
   test("escapes XML in summaries", () => {
@@ -609,10 +634,12 @@ describe("published-release policy", () => {
   const dated = { version: "0.19.0", prerelease: false, sections: [] };
   const prerelease = { version: "0.19.0-beta.0", prerelease: true, sections: [] };
 
-  test("requires a real release with a recorded date", () => {
+  test("publishes every dated release while reserving stable promotion for stable versions", () => {
     expect(isPublished(dated, { "0.19.0": "2026-08-16" })).toBe(true);
     expect(isPublished(dated, {})).toBe(false);
-    expect(isPublished(prerelease, { "0.19.0-beta.0": "2026-08-10" })).toBe(false);
+    expect(isPublished(prerelease, { "0.19.0-beta.0": "2026-08-10" })).toBe(true);
+    expect(isStablePublished(dated, { "0.19.0": "2026-08-16" })).toBe(true);
+    expect(isStablePublished(prerelease, { "0.19.0-beta.0": "2026-08-10" })).toBe(false);
   });
 });
 
@@ -670,9 +697,7 @@ describe("orphan cleanup safety", () => {
   });
 });
 
-describe("prereleases stay on GitHub", () => {
-  // Betas are published as GitHub releases only. Filtering them at the artifact boundary keeps
-  // them out of every surface at once rather than relying on each renderer to skip them.
+describe("prereleases publish without becoming stable", () => {
   const artifacts = generateChangelogArtifacts({
     markdown: SAMPLE,
     notes: {},
@@ -681,29 +706,51 @@ describe("prereleases stay on GitHub", () => {
   });
   const page = Object.entries(artifacts).find(([path]) => path.endsWith("0.19.md"))?.[1] ?? "";
 
-  test("renders no prerelease section on the series page", () => {
-    expect(page).toContain("### 0.19.0");
-    expect(page).not.toContain("0.19.0-beta.0");
-    expect(page).not.toContain("prerelease");
+  test("renders a dated prerelease with an exact anchor", () => {
+    expect(page).toContain("### 0.19.0-beta.0");
+    expect(page).toContain('id="v0-19-0-beta-0"');
+    expect(page).toContain("August 10, 2026");
   });
 
-  test("counts only real releases in the dateline", () => {
-    expect(page).toContain("1 release");
+  test("counts prereleases in the series dateline", () => {
+    expect(page).toContain("2 releases");
   });
 
-  test("prunes prerelease dates from the committed map", () => {
+  test("retains prerelease dates in the committed map", () => {
     const recorded = Object.entries(artifacts).find(([path]) =>
       path.endsWith("dates.json"),
     )?.[1] as string;
-    // 0.15.3 keeps its legacy heading date; only the prerelease is dropped.
-    expect(JSON.parse(recorded)).toEqual({ "0.19.0": "2026-08-16", "0.15.3": "2026-06-13" });
+    expect(JSON.parse(recorded)).toEqual({
+      "0.19.0": "2026-08-16",
+      "0.19.0-beta.0": "2026-08-10",
+      "0.15.3": "2026-06-13",
+    });
   });
 
-  test("publishes no page at all for a series that has only reached beta", () => {
+  test("publishes a beta-only series without promoting it as latest or installable", () => {
     const betaOnly = generateChangelogArtifacts({
       markdown: "# Changelog\n\n## 0.20.0-beta.0\n\n### Patch Changes\n\n- 1234567: Early.\n",
       notes: {},
       recordedDates: { "0.20.0-beta.0": "2026-09-01" },
+      lookupDate: NO_LOOKUP,
+    });
+    const betaPage = Object.entries(betaOnly).find(([path]) => path.endsWith("0.20.md"))?.[1] ?? "";
+    const index = Object.entries(betaOnly).find(([path]) => path.endsWith("index.md"))?.[1] ?? "";
+    const latest = Object.entries(betaOnly).find(([path]) => path.endsWith("latest.json"))?.[1];
+    expect(betaPage).toContain("Prerelease · September 1, 2026 · 1 release");
+    expect(betaPage).toContain("### 0.20.0-beta.0");
+    expect(betaPage).not.toContain("npm i -g");
+    expect(betaPage).not.toContain("hunk update");
+    expect(index).toContain("Prerelease · September 1, 2026");
+    expect(index).not.toContain("Latest");
+    expect(JSON.parse(latest as string)).toBeNull();
+  });
+
+  test("keeps an undated prerelease off every generated surface", () => {
+    const betaOnly = generateChangelogArtifacts({
+      markdown: "# Changelog\n\n## 0.20.0-beta.0\n\n### Patch Changes\n\n- 1234567: Early.\n",
+      notes: {},
+      recordedDates: {},
       lookupDate: NO_LOOKUP,
     });
     expect(Object.keys(betaOnly).some((path) => path.endsWith("0.20.md"))).toBe(false);
@@ -804,6 +851,21 @@ describe("social cards", () => {
     expect(card("0.18").alt).toBe(
       "Hunk 0.18 release notes — August 8, 2026 · 1 release · 1 change",
     );
+  });
+
+  test("labels a beta-only series as a prerelease", () => {
+    const [series] = groupIntoSeries(
+      parseChangelog("## 0.21.0-beta.0\n\n### Patch Changes\n\n- Early.\n"),
+    );
+    expect(
+      series &&
+        buildSeriesCard({
+          series,
+          notes: undefined,
+          dates: { "0.21.0-beta.0": "2026-08-30" },
+          latest: false,
+        }).meta,
+    ).toBe("Prerelease · August 30, 2026 · 1 release · 1 change");
   });
 
   test("summarises the whole history on the index card", () => {

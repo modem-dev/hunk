@@ -26,15 +26,17 @@ all releases are single-bullet patches, and a URL per version would produce most
 rank for nothing. Grouping yields around twenty substantial pages and matches how the question is
 asked — what is in 0.18, not what is in 0.18.2.
 
-Prereleases are not published here at all — betas stay on GitHub. The generator drops them before
-anything renders, so a beta contributes no page, index row, or feed item, and a series that has only
-reached beta has no page until its stable release ships.
+Dated prereleases publish on the same series page as stable releases. A series that has only reached
+beta gets its page, index row, feed item, and social card as soon as the prerelease tag supplies a
+date, while an undated prerelease preparation remains invisible. Prereleases never advance the
+stable `Latest` marker, landing-page ribbon, or default install command.
 
 ```text
 /changelog/                 index over every series
 /changelog/0.18/            series page
 /changelog/0.18/#v0-18-2    stable per-release anchor
-/changelog/rss.xml          feed, one item per published series
+/changelog/0.21/#v0-21-0-beta-0 prerelease anchor
+/changelog/rss.xml          feed, one stable item per series plus one item per prerelease
 /changelog/0.18.md          Markdown twin, via starlight-dot-md
 ```
 
@@ -49,7 +51,7 @@ heading, so each release emits a readable `v0-18-2` anchor beside its heading.
 | `CHANGELOG.md`                 | Changesets    | Every release, in both the Changesets format and the pre-0.16 Keep a Changelog format. Both are parsed. |
 | `website/releases/notes.json`  | Hand-authored | Per-series `summary`, `tagline`, `links`, and `video`. Every field optional.                            |
 | `website/releases/dates.json`  | Generator     | Version to release date. Committed.                                                                     |
-| `website/releases/latest.json` | Generator     | Newest published release, imported by the landing-page ribbon.                                          |
+| `website/releases/latest.json` | Generator     | Newest published stable release, imported by the landing-page ribbon.                                   |
 | `website/releases/cards.json`  | Generator     | Content of each social card, read by the card renderer.                                                 |
 
 The `### Highlights` block in `CHANGELOG.md` is already hand-written for minor releases, so the page
@@ -69,16 +71,19 @@ Two rules handle this without a draft state or an extra publication step:
   version missing from it consults `git log -1 --format=%as v<version>`, and that lookup fails soft.
   Generation is therefore deterministic, and `check:changelog` gates CI on Vercel's shallow, tagless
   checkout without touching Git.
-- **Publication state is derived from dates, not from position.** An undated version renders as
-  `Unreleased`, is skipped by the index's `Latest` marker, is excluded from the feed, and — the part
-  that matters — contributes no install command. The notes are accurate the moment they merge; only
-  the instruction to install a nonexistent version is withheld.
+- **Publication state is derived from dates, not from position.** An undated stable version renders
+  as `Unreleased`; an undated prerelease remains off every surface until its tag exists. Neither can
+  advance the index's `Latest` marker, enter the feed, or contribute an install command. Stable notes
+  are accurate when their preparation branch merges, while beta notes appear only once installable.
 
 `website/releases/dates.json` is rebuilt from the release list rather than merged onto it, so a
-version that leaves `CHANGELOG.md` — or a prerelease — does not linger in the committed map.
+version that leaves `CHANGELOG.md` does not linger in the committed map. Stable and prerelease tag
+dates are both retained.
 
-Step 4 of `skills/hunk-release/SKILL.md` regenerates after the tag exists, which backfills the date,
-adds the install command, and advances the landing-page ribbon.
+Step 4 of `skills/hunk-release/SKILL.md` regenerates after the tag exists. Every tag backfills its
+date and publishes its notes; only a stable tag adds the default install command and advances the
+landing-page ribbon. RSS keeps one mutable item per stable series and gives every prerelease an
+exact-version anchor and GUID, so the later stable release still reaches subscribers as a new item.
 
 ## Surfaces
 
@@ -106,7 +111,8 @@ Every changelog page carries its own OpenGraph image instead of the site-wide `o
 release announcement is the most-shared page the site has.
 
 `bun run generate:changelog` derives what belongs on each card into `website/releases/cards.json`,
-and each page's frontmatter `head` points at `/changelog/og/<slug>.png`. Starlight merges page head
+and each page's frontmatter `head` points at `/changelog/og/<slug>.png`. A beta-only card labels its
+metadata as `Prerelease` instead of receiving the stable `Latest` pill. Starlight merges page head
 entries over the global ones by tag and property, so a changelog page replaces the site-wide image
 while ordinary docs pages keep it.
 
@@ -129,4 +135,4 @@ none), and patch chips appear only when a series has more than one release.
   goodwill and organic links. `CHANGELOG.md` does not carry authors, so this needs a second input.
 - **The in-app update notice.** `src/core/process/updateNotice.ts` tells users a new version exists without
   linking what changed. Appending `hunk.dev/changelog/<minor>` is the highest-intent entry point
-  available and is deliberately left as a separate change.
+  available and is tracked separately.

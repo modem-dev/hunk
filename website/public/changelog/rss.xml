@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.21.0-beta.0 (Prerelease)</title>
+      <link>https://hunk.dev/changelog/0.21/#v0-21-0-beta-0</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.21/#v0-21-0-beta-0</guid>
+      <pubDate>Sun, 30 Aug 2026 00:00:00 GMT</pubDate>
+      <description>Release notes for Hunk 0.21: 1 release, August 30, 2026.</description>
+    </item>
+    <item>
       <title>Hunk 0.20</title>
       <link>https://hunk.dev/changelog/0.20/</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.20/</guid>
@@ -25,6 +32,13 @@
       <link>https://hunk.dev/changelog/0.18/</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.18/</guid>
       <pubDate>Fri, 14 Aug 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories and diverse terminals.</description>
+    </item>
+    <item>
+      <title>Hunk 0.18.0-beta.0 (Prerelease)</title>
+      <link>https://hunk.dev/changelog/0.18/#v0-18-0-beta-0</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.18/#v0-18-0-beta-0</guid>
+      <pubDate>Sat, 01 Aug 2026 00:00:00 GMT</pubDate>
       <description>Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories and diverse terminals.</description>
     </item>
     <item>

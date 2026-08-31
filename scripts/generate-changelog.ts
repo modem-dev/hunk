@@ -427,8 +427,8 @@ export function resolveDates(
       resolved[release.version] = date;
     }
   }
-  // Built from the release list rather than merged onto it, so a version that leaves CHANGELOG.md
-  // — or a prerelease, which the site does not publish — does not linger in the committed map.
+  // Build from the release list rather than merging onto it, so a version that leaves CHANGELOG.md
+  // does not linger in the committed map.
   return Object.fromEntries(
     Object.entries(resolved).sort(([a], [b]) => compareVersionsDescending(a, b)),
   );
@@ -465,20 +465,37 @@ export function versionAnchor(version: string) {
 }
 
 /**
- * Report whether a release is published — a real release with a recorded date.
+ * Report whether a release is published by checking for its recorded tag date.
  *
- * Publication is derived from the recorded date rather than from position in `CHANGELOG.md`,
- * because a version-preparation branch describes a release before its tag and npm publication
- * exist. Every surface that must not advertise an uninstallable version asks this question, so
- * they all ask it here.
+ * A version-preparation branch describes a release before its tag and npm publication exist, so
+ * position in `CHANGELOG.md` is not publication evidence. This includes dated prereleases, whose
+ * notes belong on the website even though they never become the default install target.
  */
 export function isPublished(release: ReleaseEntry, dates: Record<string, string>) {
-  return !release.prerelease && dates[release.version] !== undefined;
+  return dates[release.version] !== undefined;
 }
 
-/** List a series' published releases, newest first. */
+/** Report whether a published release is stable enough to advertise as the default install. */
+export function isStablePublished(release: ReleaseEntry, dates: Record<string, string>) {
+  return !release.prerelease && isPublished(release, dates);
+}
+
+/** List a series' published releases, including prereleases, newest first. */
 function publishedReleases(series: ReleaseSeries, dates: Record<string, string>) {
   return series.releases.filter((release) => isPublished(release, dates));
+}
+
+/** List a series' published stable releases, newest first. */
+function stablePublishedReleases(series: ReleaseSeries, dates: Record<string, string>) {
+  return series.releases.filter((release) => isStablePublished(release, dates));
+}
+
+/** Report whether a published series has only reached prerelease versions. */
+function isPrereleaseOnlySeries(series: ReleaseSeries, dates: Record<string, string>) {
+  return (
+    publishedReleases(series, dates).length > 0 &&
+    stablePublishedReleases(series, dates).length === 0
+  );
 }
 
 /** Render `2026-08-16` as `August 16, 2026`. */
@@ -578,7 +595,7 @@ function seriesSpan(series: ReleaseSeries, dates: Record<string, string>) {
 
 /** Build a factual description for a series with no hand-authored or changelog-authored summary. */
 function factualSummary(series: ReleaseSeries, dates: Record<string, string>) {
-  const count = series.releases.filter((release) => !release.prerelease).length;
+  const count = series.releases.length;
   const span = seriesSpan(series, dates);
   const releases = `${count} release${count === 1 ? "" : "s"}`;
   return span
@@ -700,14 +717,18 @@ export function renderSeriesPage({
   const highlightBullets = newestHighlights ? splitHighlights(newestHighlights).body : undefined;
   // Only offer an install command for a version that is actually published; the page can be
   // generated from a release-preparation branch before its tag and npm publication exist.
-  const installable = publishedReleases(series, dates)[0]?.version;
+  const installable = stablePublishedReleases(series, dates)[0]?.version;
   const isCurrent = latestReleasedVersion !== undefined && installable === latestReleasedVersion;
 
-  const releaseCount = series.releases.filter((release) => !release.prerelease).length;
+  const releaseCount = series.releases.length;
+  const prereleaseOnly = isPrereleaseOnlySeries(series, dates);
   const dateline = [
+    prereleaseOnly ? "Prerelease" : undefined,
     seriesSpan(series, dates) ?? "Unreleased",
     `${releaseCount} release${releaseCount === 1 ? "" : "s"}`,
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const lines: string[] = [
     "---",
@@ -853,15 +874,16 @@ export function renderIndexPage({
   // release-preparation branch adds its section before the tag exists, and that series is
   // unreleased until the tag date lands.
   const latestPublished = seriesList.find(
-    (series) => publishedReleases(series, dates).length > 0,
+    (series) => stablePublishedReleases(series, dates).length > 0,
   )?.minor;
 
   seriesList.forEach((series) => {
     // Only an editorial summary earns a paragraph here; the factual fallback would just restate
     // the release count and date span already shown on the meta line below.
     const summary = seriesSummary(series, notes[series.minor]);
-    const versions = series.releases.filter((release) => !release.prerelease);
+    const versions = series.releases;
     const published = seriesSpan(series, dates) !== undefined;
+    const prereleaseOnly = isPrereleaseOnlySeries(series, dates);
 
     const span = seriesSpan(series, dates);
     const changeCount = series.releases.reduce(
@@ -871,7 +893,7 @@ export function renderIndexPage({
     );
     const meta = [
       series.minor === latestPublished ? "Latest" : undefined,
-      published ? undefined : "Unreleased",
+      prereleaseOnly ? "Prerelease" : published ? undefined : "Unreleased",
       span,
       `${versions.length} release${versions.length === 1 ? "" : "s"}`,
       `${changeCount} change${changeCount === 1 ? "" : "s"}`,
@@ -967,8 +989,9 @@ function xmlEscape(value: string) {
 /**
  * Render the RSS feed.
  *
- * One item per released minor series, dated by its newest published release, so subscribers see
- * one entry per meaningful release rather than one per patch.
+ * Stable releases keep one item per minor series so patches update that series entry. Each
+ * prerelease gets an anchored item of its own, ensuring the eventual stable release has a new GUID
+ * and reaches subscribers instead of silently replacing its beta.
  */
 export function renderFeed({
   seriesList,
@@ -979,32 +1002,48 @@ export function renderFeed({
   notes: Record<string, SeriesNotes>;
   dates: Record<string, string>;
 }) {
-  const items = seriesList
-    .map((series) => {
-      const dated = publishedReleases(series, dates).map((release) => ({
-        release,
-        date: dates[release.version] as string,
+  const entries = seriesList.flatMap((series) => {
+    const summary = truncate(toPlainText(resolveSummary(series, notes[series.minor], dates)), 400);
+    const seriesLink = `${SITE_ORIGIN}/changelog/${series.minor}/`;
+    const stable = stablePublishedReleases(series, dates)[0];
+    const stableEntry = stable
+      ? [
+          {
+            version: stable.version,
+            title: `Hunk ${series.minor}`,
+            link: seriesLink,
+            date: dates[stable.version],
+            summary,
+          },
+        ]
+      : [];
+    const prereleaseEntries = publishedReleases(series, dates)
+      .filter((release) => release.prerelease)
+      .map((release) => ({
+        version: release.version,
+        title: `Hunk ${release.version} (Prerelease)`,
+        link: `${seriesLink}#${versionAnchor(release.version)}`,
+        date: dates[release.version],
+        summary,
       }));
-      const newest = dated[0];
-      if (!newest) {
-        return undefined;
-      }
-      const link = `${SITE_ORIGIN}/changelog/${series.minor}/`;
-      const summary = truncate(
-        toPlainText(resolveSummary(series, notes[series.minor], dates)),
-        400,
-      );
-      return [
-        "    <item>",
-        `      <title>Hunk ${xmlEscape(series.minor)}</title>`,
-        `      <link>${link}</link>`,
-        `      <guid isPermaLink="true">${link}</guid>`,
-        `      <pubDate>${new Date(`${newest.date}T00:00:00Z`).toUTCString()}</pubDate>`,
-        `      <description>${xmlEscape(summary)}</description>`,
-        "    </item>",
-      ].join("\n");
-    })
-    .filter((item): item is string => item !== undefined);
+    return [...stableEntry, ...prereleaseEntries];
+  });
+  entries.sort((a, b) =>
+    a.date === b.date
+      ? compareVersionsDescending(a.version, b.version)
+      : (b.date ?? "").localeCompare(a.date ?? ""),
+  );
+  const items = entries.map(({ title, link, date, summary }) =>
+    [
+      "    <item>",
+      `      <title>${xmlEscape(title)}</title>`,
+      `      <link>${link}</link>`,
+      `      <guid isPermaLink="true">${link}</guid>`,
+      `      <pubDate>${new Date(`${date}T00:00:00Z`).toUTCString()}</pubDate>`,
+      `      <description>${xmlEscape(summary)}</description>`,
+      "    </item>",
+    ].join("\n"),
+  );
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -1047,7 +1086,13 @@ export function buildSeriesCard({
 }): SocialCard {
   const tagline = seriesSummary(series, notes);
   const published = publishedReleases(series, dates);
-  const meta = [seriesSpan(series, dates) ?? "Unreleased", seriesCounts(series)].join(" · ");
+  const meta = [
+    isPrereleaseOnlySeries(series, dates) ? "Prerelease" : undefined,
+    seriesSpan(series, dates) ?? "Unreleased",
+    seriesCounts(series),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return {
     slug: series.minor,
@@ -1113,12 +1158,17 @@ export function generateChangelogArtifacts({
   recordedDates?: Record<string, string>;
   lookupDate?: (version: string) => string | undefined;
 } = {}) {
-  // Prereleases stay on GitHub. Dropping them here rather than in each renderer means a series
-  // that has only reached beta produces no page, no index row, and no feed item at all.
-  const releases = parseChangelog(markdown).filter((release) => !release.prerelease);
-  const dates = resolveDates(releases, recordedDates, lookupDate);
+  const parsedReleases = parseChangelog(markdown);
+  const dates = resolveDates(parsedReleases, recordedDates, lookupDate);
+  // Stable preparation branches keep their existing Unreleased page, while prerelease pages appear
+  // only after the tag date proves that users can actually install that beta.
+  const releases = parsedReleases.filter(
+    (release) => !release.prerelease || isPublished(release, dates),
+  );
   const seriesList = groupIntoSeries(releases);
-  const latestReleasedVersion = releases.find((release) => isPublished(release, dates))?.version;
+  const latestReleasedVersion = releases.find((release) =>
+    isStablePublished(release, dates),
+  )?.version;
 
   // The landing page reads this rather than the pages themselves, so its release ribbon stays a
   // static import instead of a build-time parse of generated Markdown.

@@ -3,9 +3,15 @@
     "slug": "index",
     "title": "Changelog",
     "tagline": "Every Hunk release, grouped by minor series.",
-    "meta": "20 release series · March 2026 – August 2026",
-    "chips": ["0.20", "0.19", "0.18", "0.17", "0.16", "…"],
-    "alt": "Hunk changelog — 20 release series · March 2026 – August 2026"
+    "meta": "21 release series · March 2026 – August 2026",
+    "chips": ["0.21", "0.20", "0.19", "0.18", "0.17", "…"],
+    "alt": "Hunk changelog — 21 release series · March 2026 – August 2026"
+  },
+  {
+    "slug": "0.21",
+    "title": "Hunk 0.21",
+    "meta": "Prerelease · August 30, 2026 · 1 release · 30 changes",
+    "alt": "Hunk 0.21 release notes — Prerelease · August 30, 2026 · 1 release · 30 changes"
   },
   {
     "slug": "0.20",
@@ -28,9 +34,9 @@
     "slug": "0.18",
     "title": "Hunk 0.18",
     "tagline": "Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories…",
-    "meta": "August 8, 2026 – August 14, 2026 · 3 releases · 52 changes",
-    "chips": ["0.18.2", "0.18.1", "0.18.0"],
-    "alt": "Hunk 0.18 release notes — August 8, 2026 – August 14, 2026 · 3 releases · 52 changes"
+    "meta": "August 1, 2026 – August 14, 2026 · 4 releases · 90 changes",
+    "chips": ["0.18.2", "0.18.1", "0.18.0", "0.18.0-beta.0"],
+    "alt": "Hunk 0.18 release notes — August 1, 2026 – August 14, 2026 · 4 releases · 90 changes"
   },
   {
     "slug": "0.17",
