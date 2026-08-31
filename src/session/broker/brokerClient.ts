@@ -46,10 +46,12 @@ type SessionAppBridge = SessionBrokerConnectionBridge<
   HunkSessionCommandResult
 >;
 
-interface SessionBrokerClientTiming {
+export interface SessionBrokerClientOptions {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
   lifecycleClock?: SessionBrokerLifecycleClock;
+  /** Observe a terminal connection lifecycle defect through the broker's fixed message. */
+  onDefect?: (message: string) => void;
 }
 
 interface ScheduledStartupRetry {
@@ -117,7 +119,7 @@ export class SessionBrokerClient {
   constructor(
     private registration: SessionRegistration<HunkSessionInfo>,
     private snapshot: SessionSnapshot<HunkSessionState>,
-    private timing: SessionBrokerClientTiming = {},
+    private timing: SessionBrokerClientOptions = {},
   ) {
     this.lifecycleClock = timing.lifecycleClock ?? createNativeSessionBrokerLifecycleClock();
   }
@@ -332,6 +334,7 @@ export class SessionBrokerClient {
       onWarning: (message, brokerGeneration) => {
         if (isConnectionCurrent(brokerGeneration)) this.warnUnavailable(message);
       },
+      onDefect: this.timing.onDefect,
     });
 
     this.connectionGeneration = clientGeneration;

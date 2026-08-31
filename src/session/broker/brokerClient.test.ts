@@ -10,6 +10,7 @@ import {
 } from "../../../test/helpers/session-daemon-fixtures";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
 import {
+  SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE,
   SessionBroker,
   createSessionBrokerDaemon,
   type SessionBrokerSocketLike,
@@ -41,6 +42,9 @@ let restoreWebSocketObserverTest: (() => void) | null = null;
 type DeepPartialTest<T> = T extends object ? { [Key in keyof T]?: DeepPartialTest<T[Key]> } : T;
 
 interface SessionBrokerConnectionTestDouble {
+  options: {
+    resolveClose?: (...args: unknown[]) => { reconnect?: boolean };
+  };
   start(): void;
   stop(): void;
   updateSnapshot(snapshot: ReturnType<typeof createSnapshot>): void;
@@ -672,6 +676,29 @@ describe("Hunk session daemon client", () => {
       rmSync(runtimeDir, { recursive: true, force: true });
     }
   }, 10_000);
+
+  test("threads only the fixed lifecycle defect message through the generic connection", () => {
+    const webSockets = installWebSocketObserverTest();
+    const defectMessages: string[] = [];
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      onDefect: (message) => defectMessages.push(message),
+    });
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options) throw new Error("Expected a live connection test owner.");
+      connection.options.resolveClose = () => {
+        throw new Error(`credential-${crypto.randomUUID()}`);
+      };
+      expect(() => webSockets.sockets[0]!.emitClose()).not.toThrow();
+      expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
 
   test("threads its lifecycle clock into the generic connection", () => {
     const clock = new DeterministicLifecycleClockTest();

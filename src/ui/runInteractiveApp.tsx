@@ -22,6 +22,7 @@ import {
   createSessionRegistration,
 } from "../app/session/registration";
 import { SessionBrokerClient } from "../session/broker/brokerClient";
+import { reportHunkSessionBrokerLifecycleDefect } from "../session/broker/lifecycleDefect";
 import { AppHost } from "./AppHost";
 import { disposeHighlightWorker } from "./diff/worker";
 import { retireExtensionLoadResult } from "../extensions/events";
@@ -55,7 +56,7 @@ export async function runInteractiveApp({
   const hostClient = new SessionBrokerClient(
     createSessionRegistration(bootstrap, publication),
     createInitialSessionSnapshot(bootstrap, publication),
-    { lifecycleClock },
+    { lifecycleClock, onDefect: reportHunkSessionBrokerLifecycleDefect },
   );
   hostClient.start();
 
