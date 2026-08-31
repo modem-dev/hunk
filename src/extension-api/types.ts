@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 13;
+export const HUNK_EXTENSION_API_VERSION = 14;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1876,6 +1876,9 @@ export interface ExtensionReviewNote {
   draft: boolean;
 }
 
+/** How one saved ReviewStore note changed, as reported by `note_changed`. */
+export type ExtensionNoteChangeKind = "created" | "updated" | "removed";
+
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
@@ -1884,6 +1887,13 @@ export interface ExtensionEventPayloads {
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
+  /**
+   * The review stream settled on a different hunk.
+   *
+   * Fires for `[`/`]` within a file as well as a jump to another file's hunk.
+   * Current-line movement inside the same hunk does not emit this event.
+   */
+  hunk_viewed: { file: ExtensionDiffFile; hunkIndex: number };
   /** The file-filter query changed, including when it was cleared. */
   filter_changed: { filter: string };
   /** The user committed a different active theme. Selector previews do not emit this event. */
@@ -1896,6 +1906,14 @@ export interface ExtensionEventPayloads {
   note_created: { note: ExtensionReviewNote };
   /** A draft body changed (`draft: true`) or an existing note was saved (`draft: false`). */
   note_edited: { note: ExtensionReviewNote };
+  /**
+   * A saved ReviewStore note was created, updated, or removed.
+   *
+   * Covers user saves, user deletes, and agent session comments. Drafts never
+   * appear here. A reload that remaps or drops notes does not emit this event;
+   * `session_reload` plus `ctx.review.snapshot()` cover that.
+   */
+  note_changed: { kind: ExtensionNoteChangeKind; note: ExtensionReviewSnapshotNote };
   session_reload: { changeset: ExtensionChangeset; reason: SessionReloadReason };
   shutdown: Record<string, never>;
 }

@@ -33,6 +33,7 @@ import {
   resolveExtensionLineHighlighters,
   resolveExtensionSessionOptions,
 } from "../extensions/apply";
+import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -623,12 +624,18 @@ export function App({
     );
   }, [keymap, showSessionNotice]);
 
+  const reviewNotes = useMemo(
+    () => projectExtensionReviewNotes(review.store.getSnapshot()),
+    [review.stateRevision, review.store],
+  );
   const { publishCommandExecuted, publishNoteEvent, publishWatchReloadPending } =
     useExtensionReviewEvents({
       extensions,
       filter: review.filter,
       layoutMode,
       resolvedLayout,
+      reviewGeneration: bootstrap.changeset.id,
+      reviewNotes,
       selectedFile,
       selectedFileId,
       selectedHunkIndex,

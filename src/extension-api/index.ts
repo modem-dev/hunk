@@ -73,6 +73,7 @@ export type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionEventPayloads,
+  ExtensionNoteChangeKind,
   ExtensionFactory,
   ExtensionCliCommand,
   ExtensionCliCommandContext,

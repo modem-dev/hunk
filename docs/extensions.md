@@ -1799,12 +1799,14 @@ the review then active.
 | `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
+| `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk                |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
 | `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
 | `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
 | `note_created`         | `{ note }`              | a user saves an inline review note                        |
 | `note_edited`          | `{ note }`              | a draft body changes or an existing note is saved         |
+| `note_changed`         | `{ kind, note }`        | a saved ReviewStore note is created, updated, or removed  |
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
 | `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
 
@@ -1815,6 +1817,12 @@ A newly mounted extension instance receives `startup` before its first
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
+
+`hunk_viewed` is the hunk-grain sibling of `file_viewed`. It fires when the
+settled `(file, hunk)` pair changes — including `[`/`]` inside one file — and
+does not fire for current-line movement within a hunk. `file_viewed` still fires
+only when the selected file object changes, so a soft reload can report a fresh
+file without counting as a new hunk read.
 
 `command_executed` reports the stable canonical command id after the terminal dispatcher invokes
 it, whether the user reached it through a key, a menu, an old command alias, or
@@ -1835,8 +1843,15 @@ session. `note_edited` carries `note.draft: true` for composer changes and
 `parentId`. Review notes are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
-either. Use them for incremental UI reactions only. A command that needs the
-complete current saved-note record uses `ctx.review.snapshot()` instead.
+either. Use them for incremental UI reactions only.
+
+`note_changed` is the store-backed path: `kind` is `"created"`, `"updated"`, or
+`"removed"`, and `note` is the same snapshot shape `ctx.review.snapshot()`
+returns. It fires for user saves and deletes and for agent session comments.
+Drafts never appear. A TUI save therefore emits both `note_created` (or
+`note_edited`) and `note_changed`. Reloads that remap or drop notes do not emit
+`note_changed`; listen for `session_reload` and read `ctx.review.snapshot()`
+when a command needs the complete current saved-note record.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.

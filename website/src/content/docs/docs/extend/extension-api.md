@@ -367,20 +367,24 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 | `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host   |
 | `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)     |
 | `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it |
+| `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk               |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
 | `theme_changed`        | `{ themeId }`           | when the user commits a new theme                        |
 | `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes            |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check        |
 | `note_created`         | `{ note }`              | a user saves an inline review note                       |
 | `note_edited`          | `{ note }`              | an in-progress inline note's body changes                |
+| `note_changed`         | `{ kind, note }`        | a saved ReviewStore note is created, updated, or removed |
 | `session_reload`       | `{ changeset, reason }` | on every session reload                                  |
 | `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
 
 - A newly mounted instance receives `startup` before its first `changeset_loaded`; reloads deliver `changeset_loaded` before `session_reload` after the matching review commits.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
+- `hunk_viewed` fires when the settled `(file, hunk)` pair changes, including `[`/`]` inside one file. Current-line movement within a hunk does not emit it. `file_viewed` still fires only when the selected file object changes.
 - `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
-- `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes. Use them for incremental reactions; use `ctx.review.snapshot()` when a command needs the complete current saved-note record.
+- `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes. Use them for incremental reactions.
+- `note_changed` is store-backed: `kind` is `"created"`, `"updated"`, or `"removed"`, and `note` matches `ctx.review.snapshot()`. It includes agent session comments and user deletes; drafts never appear. Reloads that remap notes do not emit it — use `session_reload` plus `ctx.review.snapshot()` for the complete current record.
 - `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing. UI authority has already been revoked, so shutdown is for releasing extension-owned resources rather than navigation or dialogs.
 
 ## `hunk.events`

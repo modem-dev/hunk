@@ -337,6 +337,12 @@ export default function (hunk: HunkExtensionAPI) {
   hunk.on("selection_changed", (event) => {
     hunk.log(\`selected \${event.fileId ?? "nothing"} #\${event.hunkIndex ?? -1}\`);
   });
+  hunk.on("hunk_viewed", (event) => {
+    hunk.log(\`viewed hunk \${event.hunkIndex} in \${event.file.path}\`);
+  });
+  hunk.on("note_changed", (event) => {
+    hunk.log(\`note \${event.kind} \${event.note.id}\`);
+  });
   hunk.on("session_reload", (event) => {
     hunk.log(\`reloaded because \${event.reason}\`);
   });

@@ -3,7 +3,11 @@ import {
   createTestReviewState,
   createTestStoredNote,
 } from "../../test/helpers/review-store-helpers";
-import { buildExtensionReviewSnapshot } from "./reviewSnapshot";
+import {
+  buildExtensionReviewSnapshot,
+  diffExtensionReviewNotes,
+  projectExtensionReviewNotes,
+} from "./reviewSnapshot";
 
 describe("buildExtensionReviewSnapshot", () => {
   test("projects every saved note and stable file identity without including drafts", () => {
@@ -159,5 +163,44 @@ describe("buildExtensionReviewSnapshot", () => {
     expect(entry.note.anchor.intersectingHunkIndices).toEqual([0]);
     expect(entry.note.tags).toEqual(["one"]);
     expect(Object.isFrozen(entry.note)).toBe(false);
+  });
+});
+
+describe("diffExtensionReviewNotes", () => {
+  test("reports created, updated, and removed notes in a stable kind order", () => {
+    const kept = createTestStoredNote({
+      id: "keep",
+      fileKey: "alpha",
+      summary: "unchanged",
+    });
+    const updated = createTestStoredNote({
+      id: "edit",
+      fileKey: "alpha",
+      summary: "before",
+    });
+    const removed = createTestStoredNote({
+      id: "gone",
+      fileKey: "alpha",
+      summary: "leave",
+    });
+    const created = createTestStoredNote({
+      id: "new",
+      fileKey: "alpha",
+      summary: "arrive",
+    });
+    const previous = projectExtensionReviewNotes({
+      liveNotes: [kept, updated, removed],
+      userNotes: [],
+    });
+    const next = projectExtensionReviewNotes({
+      liveNotes: [kept, { ...updated, note: { ...updated.note, summary: "after" } }, created],
+      userNotes: [],
+    });
+
+    expect(diffExtensionReviewNotes(previous, next)).toEqual([
+      { kind: "removed", note: previous[2]! },
+      { kind: "updated", note: next[1]! },
+      { kind: "created", note: next[2]! },
+    ]);
   });
 });
