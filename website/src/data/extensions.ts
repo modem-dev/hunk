@@ -1,3 +1,22 @@
+import {
+  HUNK_EXTENSION_TOPIC,
+  type ExtensionActivity,
+  githubTopicActivityUrl,
+  indexActivityByRepo,
+  readActivity,
+} from "./extensionActivity";
+
+export {
+  HUNK_EXTENSION_TOPIC,
+  type ExtensionActivity,
+  createExtensionActivityPayload,
+  formatUpdated,
+  githubTopicActivityUrl,
+  indexActivityByRepo,
+  indexPublishedActivity,
+  readActivity,
+} from "./extensionActivity";
+
 /**
  * Curated seed for the hunk.dev extension directory.
  *
@@ -9,9 +28,6 @@
  * a network call; volatile facts (stars, dates) are fetched at build time and
  * simply omitted when the fetch fails.
  */
-
-/** GitHub topic an author adds to be listed. */
-export const HUNK_EXTENSION_TOPIC = "hunk-extension";
 
 /**
  * What an extension registers, in the words the docs use for those surfaces.
@@ -45,13 +61,6 @@ export interface ExtensionListing {
   version: string;
   /** `hunk.apiVersion` from its manifest: the Hunk surface it needs. */
   apiVersion: number;
-}
-
-/** Repository facts fetched at build time, absent when GitHub is unreachable. */
-export interface ExtensionActivity {
-  stars?: number;
-  pushedAt?: string;
-  createdAt?: string;
 }
 
 /** One listing as the page renders it. */
@@ -255,19 +264,6 @@ export function categoryFacets(entries: readonly ExtensionListing[]) {
     .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
 }
 
-/** Phrase one ISO timestamp as the coarse recency a directory card wants. */
-export function formatUpdated(pushedAt: string, now = new Date()) {
-  const days = Math.floor((now.getTime() - new Date(pushedAt).getTime()) / 86_400_000);
-  if (!Number.isFinite(days) || days < 0) return undefined;
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
-  const years = Math.floor(days / 365);
-  return `${years} year${years === 1 ? "" : "s"} ago`;
-}
-
 /** Headers GitHub wants, with the build's token when it has one. */
 function githubHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -277,54 +273,13 @@ function githubHeaders() {
   };
 }
 
-/** Read one repository's volatile facts out of a GitHub API repository object. */
-export function readActivity(value: unknown): ExtensionActivity {
-  if (typeof value !== "object" || value === null) return {};
-  const repository = value as Record<string, unknown>;
-  return {
-    stars:
-      typeof repository.stargazers_count === "number" ? repository.stargazers_count : undefined,
-    pushedAt: typeof repository.pushed_at === "string" ? repository.pushed_at : undefined,
-    createdAt: typeof repository.created_at === "string" ? repository.created_at : undefined,
-  };
-}
-
-/**
- * Index one topic-search response by lowercased `owner/name`.
- *
- * The search is the same query the future indexer runs, so one request covers
- * every tagged repository however long the catalog gets — where a request per
- * listing would exhaust an unauthenticated build's hourly budget well before a
- * hundred listings and lose every star count at once.
- */
-export function indexActivityByRepo(payload: unknown): Map<string, ExtensionActivity> {
-  const items =
-    typeof payload === "object" && payload !== null
-      ? (payload as { items?: unknown }).items
-      : undefined;
-  if (!Array.isArray(items)) return new Map();
-
-  const byRepo = new Map<string, ExtensionActivity>();
-  for (const item of items) {
-    const fullName =
-      typeof item === "object" && item !== null
-        ? (item as { full_name?: unknown }).full_name
-        : undefined;
-    if (typeof fullName !== "string") continue;
-    byRepo.set(fullName.toLowerCase(), readActivity(item));
-  }
-
-  return byRepo;
-}
-
 /** Search the topic for every tagged repository's current metadata. */
 async function fetchTopicActivity(): Promise<Map<string, ExtensionActivity>> {
-  const query = encodeURIComponent(`topic:${HUNK_EXTENSION_TOPIC} is:public`);
   try {
-    const response = await fetch(
-      `https://api.github.com/search/repositories?q=${query}&per_page=100`,
-      { headers: githubHeaders(), signal: AbortSignal.timeout(8000) },
-    );
+    const response = await fetch(githubTopicActivityUrl(), {
+      headers: githubHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
     if (!response.ok) {
       console.warn(
         `Extension directory: GitHub topic search returned ${response.status}; rendering without stars.`,

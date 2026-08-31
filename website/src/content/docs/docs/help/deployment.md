@@ -3,14 +3,16 @@ title: Deployment integration
 description: Publish the Hunk landing page and documentation together from one Astro build.
 ---
 
-The `website/` Astro project owns the complete `hunk.dev` site:
+The `website/` Astro project owns the complete static `hunk.dev` site:
 
 - `/` is the marketing landing page.
 - `/docs/` and `/docs/*` are the Starlight documentation.
 - `/pagefind/` contains the documentation search index.
 - `/docs/hunk-review-skill.md` publishes the generated agent skill.
 
-One static build keeps navigation, metadata, and deployment atomic. Do not copy the docs into the former `hunk-web` repository or operate a second docs origin.
+The repository-root `api/extension-activity.ts` function supplies fresh GitHub activity to the extension directory through Vercel's shared CDN cache. The static page keeps its build-time metadata when that optional refresh is unavailable.
+
+One deployment keeps navigation, metadata, and the cached endpoint atomic. Do not copy the docs into the former `hunk-web` repository or operate a second docs origin.
 
 ## Build the immutable artifact
 
@@ -24,7 +26,7 @@ bun run website:build
 bun run website:links
 ```
 
-Archive `website/dist/` as one deployable artifact. `bun run website:build` checks that generated references and the public agent skill still match their authoritative runtime sources before Astro builds the site.
+Archive `website/dist/` as the static deployable artifact. `bun run website:build` checks that generated references and the public agent skill still match their authoritative runtime sources before Astro builds the site. Vercel additionally packages `api/extension-activity.ts`; deployments that serve only the static artifact retain the extension directory's build-time metadata.
 
 ## Deploy with Vercel
 
@@ -34,7 +36,7 @@ The repository-level `vercel.json` defines the install command, build command, A
 - **Root directory:** repository root
 - **Production branch:** `main`
 - **Domain:** `hunk.dev` and `www.hunk.dev`
-- **Optional environment variable:** `GITHUB_TOKEN` for authenticated build-time star counts
+- **Optional environment variable:** `GITHUB_TOKEN` for authenticated build-time and cached extension star counts
 
 Vercel should deploy pushes to `main` after the website and repository checks pass. Pull requests can use preview deployments from the same project.
 
@@ -55,6 +57,7 @@ curl --fail --location https://hunk.dev/docs/
 curl --fail https://hunk.dev/sitemap-index.xml
 curl --fail https://hunk.dev/pagefind/pagefind.js
 curl --fail https://hunk.dev/docs/hunk-review-skill.md
+curl --fail https://hunk.dev/api/extension-activity
 curl --fail https://hunk.dev/og.png
 ```
 

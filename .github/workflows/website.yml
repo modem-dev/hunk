@@ -33,7 +33,7 @@ jobs:
         run: bun install --cwd website --frozen-lockfile
 
       - name: Test website tooling
-        run: bun test scripts/generate-docs.test.ts scripts/check-website-links.test.ts scripts/check-extension-catalog.test.ts
+        run: bun test api/extension-activity.test.ts scripts/generate-docs.test.ts scripts/check-website-links.test.ts scripts/check-extension-catalog.test.ts
 
       - name: Check generated reference docs
         run: bun run check:docs
