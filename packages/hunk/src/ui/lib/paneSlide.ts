@@ -19,27 +19,23 @@ function interpolateBounds(from: PaneBounds, to: PaneBounds, progress: number): 
   };
 }
 
-/** Collapse a pane against the edge it enters from. */
-function collapsedPane(planned: PlannedPane): PlannedPane {
-  const horizontal = planned.pane.placement === "left" || planned.pane.placement === "right";
-  const trailing = planned.pane.placement === "right" || planned.pane.placement === "bottom";
-  const collapse = (bounds: PaneBounds): PaneBounds =>
-    horizontal
-      ? {
-          ...bounds,
-          x: trailing ? bounds.x + bounds.width : bounds.x,
-          width: 0,
-        }
-      : {
-          ...bounds,
-          y: trailing ? bounds.y + bounds.height : bounds.y,
-          height: 0,
-        };
+/** Move a full-size pane just beyond the edge it enters from. */
+function offscreenPane(planned: PlannedPane): PlannedPane {
+  const { placement } = planned.pane;
+  const offset =
+    placement === "left" || placement === "right"
+      ? { x: placement === "left" ? -planned.bounds.width : planned.bounds.width, y: 0 }
+      : { x: 0, y: placement === "top" ? -planned.bounds.height : planned.bounds.height };
+  const translate = (bounds: PaneBounds): PaneBounds => ({
+    ...bounds,
+    x: bounds.x + offset.x,
+    y: bounds.y + offset.y,
+  });
 
   return {
     ...planned,
-    bounds: collapse(planned.bounds),
-    ...(planned.divider ? { divider: collapse(planned.divider) } : {}),
+    bounds: translate(planned.bounds),
+    ...(planned.divider ? { divider: translate(planned.divider) } : {}),
   };
 }
 
@@ -68,6 +64,32 @@ export function paneVisibilityTransitionKey(
     : null;
 }
 
+/** Return whether two presentation plans occupy the same terminal cells. */
+export function paneLayoutGeometryEqual(
+  left: ExtensionPaneLayoutPlan,
+  right: ExtensionPaneLayoutPlan,
+): boolean {
+  const boundsEqual = (a: PaneBounds, b: PaneBounds) =>
+    a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+  if (
+    !boundsEqual(left.reviewBounds, right.reviewBounds) ||
+    left.panes.length !== right.panes.length
+  ) {
+    return false;
+  }
+  return left.panes.every((planned, index) => {
+    const other = right.panes[index];
+    return (
+      other !== undefined &&
+      planned.pane.key === other.pane.key &&
+      boundsEqual(planned.bounds, other.bounds) &&
+      (planned.divider === undefined
+        ? other.divider === undefined
+        : other.divider !== undefined && boundsEqual(planned.divider, other.divider))
+    );
+  });
+}
+
 /** Project one pane animation frame without changing the authoritative semantic plan. */
 export function interpolatePaneLayout(
   from: ExtensionPaneLayoutPlan,
@@ -87,9 +109,9 @@ export function interpolatePaneLayout(
     if (!fromPane && !toPane) return [];
 
     const start =
-      fromPane ?? (toPane && key === transitioningPaneKey ? collapsedPane(toPane) : toPane);
+      fromPane ?? (toPane && key === transitioningPaneKey ? offscreenPane(toPane) : toPane);
     const end =
-      toPane ?? (fromPane && key === transitioningPaneKey ? collapsedPane(fromPane) : fromPane);
+      toPane ?? (fromPane && key === transitioningPaneKey ? offscreenPane(fromPane) : fromPane);
     if (!start || !end) return [];
 
     const divider =

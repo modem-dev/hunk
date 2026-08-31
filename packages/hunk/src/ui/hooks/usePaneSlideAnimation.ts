@@ -11,6 +11,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { ExtensionPaneLayoutPlan } from "../lib/extensionPanes";
 import {
   interpolatePaneLayout,
+  paneLayoutGeometryEqual,
   paneSlideAnimationDuration,
   paneVisibilityTransitionKey,
 } from "../lib/paneSlide";
@@ -60,7 +61,7 @@ export function usePaneSlideAnimation({
       {
         progress: 1,
         duration,
-        ease: "outCirc",
+        ease: "outQuad",
         onUpdate: (animation) => {
           const transition = activeTransitionRef.current;
           if (!transition) return;
@@ -70,6 +71,7 @@ export function usePaneSlideAnimation({
             transition.paneKey,
             animation.progress,
           );
+          if (paneLayoutGeometryEqual(presentedLayoutRef.current, nextLayout)) return;
           presentedLayoutRef.current = nextLayout;
           setPresentedLayout(nextLayout);
         },
