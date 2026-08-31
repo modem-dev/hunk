@@ -16,9 +16,9 @@ import {
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
+import { isVcsReviewInput } from "../core/vcs";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
-import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import {
   selectActiveEditableReviewNoteId,
@@ -35,6 +35,8 @@ import {
 } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
+import { getBundledUIRegistry } from "../extensions/default/ui";
+import { BUNDLED_EDITOR_COMMAND_FULL_ID } from "../extensions/default/ui/editor";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
@@ -103,7 +105,6 @@ import {
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
-import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
@@ -509,6 +510,10 @@ export function App({
   const extensionWorkspaceController = useExtensionWorkspaceControls({
     createExtensionDialogs,
     createReviewCapabilityLease,
+    editorBasePath: isVcsReviewInput(bootstrap.input)
+      ? (bootstrap.reloadContext.repoRoot ?? bootstrap.changeset.sourceLabel)
+      : undefined,
+    editorRenderer: renderer,
     files: reviewFiles,
     input: bootstrap.input,
     onWorkspaceWriteCompleted,
@@ -537,6 +542,20 @@ export function App({
     extensions,
     getSelection: getExtensionSelection,
   });
+
+  const bundledEditorCommand = useMemo(() => {
+    const command = resolveExtensionCommands(getBundledUIRegistry()).commands.find(
+      ({ extensionId, command: registration }) =>
+        `${extensionId}.${registration.id}` === BUNDLED_EDITOR_COMMAND_FULL_ID,
+    );
+    if (!command) throw new Error("Bundled editor command is not registered.");
+    return command;
+  }, []);
+
+  /** Delegate the shared host command shell to the bundled editor extension. */
+  const triggerEditSelectedFile = useCallback(() => {
+    runExtensionCommand(bundledEditorCommand);
+  }, [bundledEditorCommand, runExtensionCommand]);
 
   const registeredExtensionCommands = useMemo(
     () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
@@ -883,38 +902,6 @@ export function App({
     refreshCurrentInput,
     showNotice: showSessionNotice,
   });
-
-  const triggerEditSelectedFile = useCallback(() => {
-    const basePath = isVcsReviewInput(bootstrap.input)
-      ? bootstrap.changeset.sourceLabel
-      : undefined;
-    const message = openSelectedFileInEditor({
-      basePath,
-      file: selectedFile,
-      lineCursor: activeLineCursor,
-      renderer,
-      selectedHunk: review.selectedHunk,
-    });
-
-    if (message) {
-      showSessionNotice(message);
-      return;
-    }
-
-    if (canRefreshCurrentInput) {
-      triggerRefreshCurrentInput();
-    }
-  }, [
-    activeLineCursor,
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input.kind,
-    canRefreshCurrentInput,
-    renderer,
-    review.selectedHunk,
-    selectedFile,
-    showSessionNotice,
-    triggerRefreshCurrentInput,
-  ]);
 
   /** Close the agent skill setup overlay. */
   const closeAgentSkill = useCallback(() => {

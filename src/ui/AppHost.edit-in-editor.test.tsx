@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
 import type { AppBootstrap } from "../core/bootstrap";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
@@ -46,22 +47,26 @@ function mockSpawnSync(implementation: typeof Bun.spawnSync) {
 }
 
 /** Bootstrap one working-tree review whose file really exists under `sourceLabel`. */
-function createEditorBootstrap(sourceLabel: string): AppBootstrap {
-  return createTestVcsAppBootstrap({
-    changesetId: "changeset:edit-in-editor",
-    initialMode: "stack",
-    sourceLabel,
-    files: [
-      createTestDiffFile({
-        after: AFTER,
-        agent: false,
-        before: BEFORE,
-        context: 3,
-        id: "sample",
-        path: "sample.ts",
-      }),
-    ],
-  });
+function createEditorBootstrap(sourceLabel: string, repoRoot = sourceLabel): AppBootstrap {
+  return {
+    ...createTestVcsAppBootstrap({
+      changesetId: "changeset:edit-in-editor",
+      initialMode: "stack",
+      sourceLabel,
+      files: [
+        createTestDiffFile({
+          after: AFTER,
+          agent: false,
+          before: BEFORE,
+          context: 3,
+          id: "sample",
+          path: "sample.ts",
+        }),
+      ],
+    }),
+    extensions: createEmptyExtensionLoadResult(repoRoot),
+    reloadContext: { cwd: repoRoot, repoRoot },
+  };
 }
 
 async function flush(target: Awaited<ReturnType<typeof testRender>>) {
@@ -119,7 +124,7 @@ describe("AppHost edit-selected-file shortcut", () => {
 
     await pressKeys(setup, "e");
 
-    // openSelectedFileInEditor returns "$EDITOR is not set." which shows as a session notice.
+    // The bundled editor extension reports the host capability's refusal.
     expect(setup.captureCharFrame()).toContain("EDITOR is not set");
   });
 
@@ -133,7 +138,10 @@ describe("AppHost edit-selected-file shortcut", () => {
       return { exitCode: 1 };
     }) as unknown as typeof Bun.spawnSync);
 
-    setup = await testRender(<AppHost bootstrap={createEditorBootstrap(workspace)} />, WIDE);
+    setup = await testRender(
+      <AppHost bootstrap={createEditorBootstrap("Mercurial working copy", workspace)} />,
+      WIDE,
+    );
     await flush(setup);
 
     // The hunk starts at line 1; step down onto the changed line, then one line past it.

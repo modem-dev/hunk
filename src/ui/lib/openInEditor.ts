@@ -3,13 +3,17 @@ import { basename, resolve, win32 } from "node:path";
 import type { CliRenderer } from "@opentui/core";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LineCursor } from "./lineCursors";
+import type { ExtensionWorkspaceOpenInEditorResult } from "../../extension-api/types";
 
 export interface EditorCommand {
   command: string;
   args: string[];
 }
 
-type DiffHunk = DiffFile["metadata"]["hunks"][number];
+export type EditorDiffHunk = DiffFile["metadata"]["hunks"][number];
+export type EditorDiffFile = Pick<DiffFile, "id" | "path"> & {
+  metadata: Pick<DiffFile["metadata"], "hunks" | "type">;
+};
 
 /** The review stream's current line, minus the geometry fields this module never reads. */
 export type EditorLineCursor = Pick<LineCursor, "fileId" | "hunkIndex" | "target">;
@@ -20,7 +24,7 @@ export type EditorLineCursor = Pick<LineCursor, "fileId" | "hunkIndex" | "target
  * Deleted lines have no on-disk counterpart, so they resolve to the position their
  * replacement occupies, which is where the reader expects the editor to land.
  */
-function deletionLineToFileLine(hunk: DiffHunk, deletionLine: number) {
+function deletionLineToFileLine(hunk: EditorDiffHunk, deletionLine: number) {
   let deletionCursor = hunk.deletionStart;
   // A zero-count side names the line before the change, so step past it to land inside the file.
   let additionCursor = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
@@ -51,8 +55,8 @@ function deletionLineToFileLine(hunk: DiffHunk, deletionLine: number) {
 
 /** Prefer the current line over the selected hunk's first line. */
 function selectedLine(
-  file: DiffFile,
-  selectedHunk: DiffHunk | undefined,
+  file: EditorDiffFile,
+  selectedHunk: EditorDiffHunk | undefined,
   lineCursor: EditorLineCursor | null | undefined,
 ) {
   // Deleted files are opened against their pre-change content, every other file against its new one.
@@ -148,23 +152,27 @@ export function openSelectedFileInEditor({
   selectedHunk,
 }: {
   basePath?: string;
-  file: DiffFile | undefined;
+  file: EditorDiffFile | undefined;
   lineCursor?: EditorLineCursor | null;
   renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
-  selectedHunk: DiffHunk | undefined;
-}) {
+  selectedHunk: EditorDiffHunk | undefined;
+}): ExtensionWorkspaceOpenInEditorResult {
   if (!file) {
-    return "No file selected.";
+    return { ok: false, reason: "unavailable", detail: "No file selected." };
   }
 
   const editor = process.env.EDITOR?.trim();
   if (!editor) {
-    return "$EDITOR is not set.";
+    return { ok: false, reason: "unavailable", detail: "$EDITOR is not set." };
   }
 
   const absolutePath = resolveEditableFilePath(file.path, basePath);
   if (!existsSync(absolutePath)) {
-    return `Cannot edit ${file.path}: file does not exist on disk.`;
+    return {
+      ok: false,
+      reason: "unavailable",
+      detail: `Cannot edit ${file.path}: file does not exist on disk.`,
+    };
   }
 
   const line = Math.max(1, selectedLine(file, selectedHunk, lineCursor));
@@ -197,12 +205,12 @@ export function openSelectedFileInEditor({
   }
 
   if (failureMessage) {
-    return `Failed to launch editor: ${failureMessage}`;
+    return { ok: false, reason: "failed", detail: `Failed to launch editor: ${failureMessage}` };
   }
 
   if (exitCode !== 0) {
-    return `Editor exited with status ${exitCode}.`;
+    return { ok: false, reason: "failed", detail: `Editor exited with status ${exitCode}.` };
   }
 
-  return null;
+  return { ok: true };
 }

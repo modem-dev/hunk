@@ -7,6 +7,7 @@ import { act, useState } from "react";
 import type { CliInput } from "../../core/run/commandInputs";
 import type { ExtensionConfirmOptions } from "../../extension-api/types";
 import type { WorkspaceFileSource } from "../lib/extensionWorkspace";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import {
   useExtensionWorkspaceControls,
   type WorkspaceFileWriter,
@@ -20,8 +21,13 @@ const EXPIRED = {
 } as const;
 const WRITABLE_INPUT: CliInput = { kind: "vcs", staged: false, options: {} };
 const tempDirs: string[] = [];
+const originalEditor = process.env.EDITOR;
+const originalSpawnSync = Bun.spawnSync;
 
 afterEach(() => {
+  if (originalEditor === undefined) delete process.env.EDITOR;
+  else process.env.EDITOR = originalEditor;
+  (Bun as unknown as { spawnSync: typeof Bun.spawnSync }).spawnSync = originalSpawnSync;
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -35,10 +41,9 @@ function createTestRoot() {
 
 /** Build one reviewed file carrying an optional full-source reader. */
 function createTestFile(overrides: Partial<WorkspaceFileSource> = {}): WorkspaceFileSource {
+  const diff = createTestDiffFile({ id: "alpha", path: "alpha.txt" });
   return {
-    id: "alpha",
-    path: "alpha.txt",
-    metadata: { type: "change" },
+    ...diff,
     sourceFetcher: { getFullText: async (side) => `${side} alpha` },
     ...overrides,
   };
@@ -56,6 +61,11 @@ async function renderController({
     return true;
   },
   workspaceFileWriter,
+  editorRenderer = {
+    isDestroyed: false,
+    resume: () => {},
+    suspend: () => {},
+  },
 }: {
   confirm?: (options: ExtensionConfirmOptions, extensionId: string) => Promise<boolean>;
   files?: readonly WorkspaceFileSource[];
@@ -64,6 +74,11 @@ async function renderController({
   root?: string;
   runWorkspaceWrite?: WorkspaceWriteRunner;
   workspaceFileWriter?: WorkspaceFileWriter;
+  editorRenderer?: {
+    isDestroyed: boolean;
+    resume(): void;
+    suspend(): void;
+  };
 } = {}) {
   let live = true;
   let controller!: ReturnType<typeof useExtensionWorkspaceControls>;
@@ -86,6 +101,8 @@ async function renderController({
     controller = useExtensionWorkspaceControls({
       createExtensionDialogs,
       createReviewCapabilityLease,
+      editorRenderer,
+      editorBasePath: liveInputs.root,
       ...liveInputs,
       onWorkspaceWriteCompleted,
       runWorkspaceWrite,
@@ -219,6 +236,104 @@ describe("useExtensionWorkspaceControls reads", () => {
 
     try {
       await expect(workspace.readDocument("alpha", "both" as never)).resolves.toBeNull();
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+});
+
+describe("useExtensionWorkspaceControls editor launches", () => {
+  test("opens only a reviewed file and reconciles after success", async () => {
+    const root = createTestRoot();
+    process.env.EDITOR = "code";
+    const spawnCalls: string[][] = [];
+    (Bun as unknown as { spawnSync: typeof Bun.spawnSync }).spawnSync = ((commands: string[]) => {
+      spawnCalls.push(commands);
+      return { exitCode: 0 };
+    }) as unknown as typeof Bun.spawnSync;
+    let reconciliations = 0;
+    const harness = await renderController({
+      root,
+      onWorkspaceWriteCompleted: () => {
+        reconciliations += 1;
+      },
+    });
+    const workspace = harness.controller().createWorkspaceControls("probe");
+
+    try {
+      await expect(
+        workspace.openInEditor({
+          fileId: "alpha",
+          hunkIndex: 0,
+          line: { side: "new", line: 3 },
+        }),
+      ).resolves.toEqual({ ok: true });
+      expect(spawnCalls).toEqual([["code", "--goto", `${join(root, "alpha.txt")}:3`]]);
+      expect(reconciliations).toBe(1);
+
+      await expect(workspace.openInEditor({ fileId: "missing" })).resolves.toMatchObject({
+        ok: false,
+        reason: "unavailable",
+      });
+      expect(spawnCalls).toHaveLength(1);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("keeps retained editor controls inert after their review retires", async () => {
+    process.env.EDITOR = "code";
+    let spawns = 0;
+    (Bun as unknown as { spawnSync: typeof Bun.spawnSync }).spawnSync = (() => {
+      spawns += 1;
+      return { exitCode: 0 };
+    }) as unknown as typeof Bun.spawnSync;
+    const harness = await renderController();
+    const workspace = harness.controller().createWorkspaceControls("probe");
+    harness.retire();
+
+    try {
+      await expect(workspace.openInEditor({ fileId: "alpha" })).resolves.toEqual(EXPIRED);
+      expect(spawns).toBe(0);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("derives the owning hunk for an old-side line and rejects a mismatched hunk", async () => {
+    const root = createTestRoot();
+    process.env.EDITOR = "vim";
+    const spawnCalls: string[][] = [];
+    (Bun as unknown as { spawnSync: typeof Bun.spawnSync }).spawnSync = ((commands: string[]) => {
+      spawnCalls.push(commands);
+      return { exitCode: 1 };
+    }) as unknown as typeof Bun.spawnSync;
+    const diff = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.txt",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+    });
+    const harness = await renderController({
+      root,
+      files: [{ ...diff, sourceFetcher: { getFullText: async () => null } }],
+    });
+    const workspace = harness.controller().createWorkspaceControls("probe");
+
+    try {
+      await expect(
+        workspace.openInEditor({ fileId: "alpha", line: { side: "old", line: 3 } }),
+      ).resolves.toMatchObject({ ok: false, reason: "failed" });
+      expect(spawnCalls).toEqual([["vim", "+2", join(root, "alpha.txt")]]);
+
+      await expect(
+        workspace.openInEditor({
+          fileId: "alpha",
+          hunkIndex: 0,
+          line: { side: "old", line: 99 },
+        }),
+      ).resolves.toMatchObject({ ok: false, reason: "unavailable" });
+      expect(spawnCalls).toHaveLength(1);
     } finally {
       await destroy(harness.setup);
     }

@@ -134,7 +134,7 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: undefined,
       }),
-    ).toBe("No file selected.");
+    ).toEqual({ ok: false, reason: "unavailable", detail: "No file selected." });
 
     expect(spawnCalls).toEqual([]);
     expect(renderer.suspend).not.toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: undefined,
       }),
-    ).toBe("$EDITOR is not set.");
+    ).toEqual({ ok: false, reason: "unavailable", detail: "$EDITOR is not set." });
 
     expect(spawnCalls).toEqual([]);
     expect(renderer.suspend).not.toHaveBeenCalled();
@@ -179,7 +179,11 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: undefined,
       }),
-    ).toBe("Cannot edit missing-on-disk.ts: file does not exist on disk.");
+    ).toEqual({
+      ok: false,
+      reason: "unavailable",
+      detail: "Cannot edit missing-on-disk.ts: file does not exist on disk.",
+    });
 
     expect(spawnCalls).toEqual([]);
     expect(renderer.suspend).not.toHaveBeenCalled();
@@ -210,7 +214,7 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: undefined,
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     expect(spawnCalls).toEqual([
       {
@@ -247,7 +251,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     expect(spawnCalls).toEqual([["vim", "+3", join(basePath, "example.ts")]]);
   });
@@ -281,7 +285,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
   });
@@ -316,7 +320,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     // Old line 3 ("three") was removed, so the editor lands on the line that now follows "one".
     expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
@@ -351,7 +355,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     // Old line 3 ("three") is the second of two replaced lines, so the editor
     // lands on the second replacement line ("THREE") rather than the first.
@@ -383,7 +387,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk: file.metadata.hunks[1],
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     expect(spawnCalls).toEqual([
       ["vim", `+${file.metadata.hunks[1]!.additionStart}`, join(basePath, "example.ts")],
@@ -422,7 +426,7 @@ describe("open in editor helpers", () => {
         renderer: createRenderer(),
         selectedHunk,
       }),
-    ).toBeNull();
+    ).toEqual({ ok: true });
 
     expect(spawnCalls).toEqual([["vim", "+9", join(basePath, "deleted.ts")]]);
   });
@@ -448,7 +452,7 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBe("Editor exited with status 2.");
+    ).toEqual({ ok: false, reason: "failed", detail: "Editor exited with status 2." });
 
     expect(spawnCalls).toEqual([["code", "--wait", "--goto", `${join(basePath, "example.ts")}:1`]]);
     expect(renderer.suspend).not.toHaveBeenCalled();
@@ -474,7 +478,7 @@ describe("open in editor helpers", () => {
         renderer,
         selectedHunk: file.metadata.hunks[0],
       }),
-    ).toBe("Failed to launch editor: boom");
+    ).toEqual({ ok: false, reason: "failed", detail: "Failed to launch editor: boom" });
 
     expect(renderer.suspend).toHaveBeenCalledTimes(1);
     expect(renderer.resume).toHaveBeenCalledTimes(1);

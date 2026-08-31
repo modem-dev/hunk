@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `15`). Branch on it if you want
-one file to support several Hunk versions. Version 15 adds `{ side, line }` to
-opted-in pane `currentLine` paint; version 14 added structured `rangeEndpoints`
+The API generation this Hunk speaks (currently `16`). Branch on it if you want
+one file to support several Hunk versions. Version 16 adds host-mediated editor
+launches for reviewed files; version 15 added `{ side, line }` to opted-in pane
+`currentLine` paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
 the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
@@ -1681,14 +1682,16 @@ failure, that surfaces as a warning naming your extension.
 
 #### Workspace documents
 
-`ctx.workspace` reads full documents from the current review and can replace an
-eligible working-tree file.
+`ctx.workspace` reads full documents from the current review, opens reviewed
+files through Hunk's editor lifecycle, and can replace an eligible working-tree
+file.
 
-| Method                                 | Result                                            |
-| -------------------------------------- | ------------------------------------------------- |
-| `readDocument(fileId, "old" \| "new")` | The reviewed source text, or `null`               |
-| `canWriteDocument(fileId)`             | Whether the review and file allow writes          |
-| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
+| Method                                        | Result                                            |
+| --------------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")`        | The reviewed source text, or `null`               |
+| `openInEditor({ fileId, hunkIndex?, line? })` | `{ ok: true }` or `{ ok: false, reason, detail }` |
+| `canWriteDocument(fileId)`                    | Whether the review and file allow writes          |
+| `writeDocument({ fileId, text })`             | `{ ok: true }` or `{ ok: false, reason, detail }` |
 
 A command can read, transform, and write a selected file:
 
@@ -1710,6 +1713,16 @@ hunk.registerCommand({ id: "shout-headings", title: "Shout headings", key: "f7" 
   }
 });
 ```
+
+`openInEditor` accepts only a reviewed file id, plus an optional zero-based
+`hunkIndex` and one-based `{ side, line }` source address. Hunk resolves the
+working-tree path and editor command itself. It maps old-side lines onto the
+file on disk, suspends and resumes terminal editors, and queues a review reload
+after success when the current input is reloadable. Missing `$EDITOR`
+configuration or a missing reviewed file returns `unavailable`; process
+failures and non-zero exits return `failed`. Malformed source addresses reject.
+No consent prompt is shown because opening the user's configured editor does
+not itself modify a file.
 
 `readDocument` returns the exact source represented by the review, not the
 file's patch. It works for every review kind. For example, the `"new"` side in
@@ -1792,10 +1805,10 @@ showing — no keypress required. Dialog calls made before the mounted app is
 ready resolve to their cancel value with a warning rather than opening later.
 Controls retained across a review or extension-registry replacement expire:
 navigation and pane mutations warn and do nothing, dialogs resolve to their
-normal cancel value, and workspace reads or not-yet-started writes return
-`null`/`unavailable` instead of acting on replacement content. Once a consented
-filesystem write starts, it reports its actual outcome and success reconciles
-the review then active.
+normal cancel value, and workspace reads, editor launches, or not-yet-started
+writes return `null`/`unavailable` instead of acting on replacement content.
+Once a consented filesystem write starts, it reports its actual outcome and
+success reconciles the review then active.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |

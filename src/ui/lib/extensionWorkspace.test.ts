@@ -2,6 +2,7 @@ import { join, resolve, sep } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
 import {
+  normalizeWorkspaceOpenInEditorRequest,
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
   resolveExtensionWorkspaceWriteTarget,
@@ -238,5 +239,40 @@ describe("extension workspace write requests", () => {
     expect(() => normalizeWorkspaceWriteRequest({ fileId: "alpha", text: 12 })).toThrow(
       "text to be a string",
     );
+  });
+});
+
+describe("extension workspace editor requests", () => {
+  test("copies a well-formed reviewed source address", () => {
+    expect(
+      normalizeWorkspaceOpenInEditorRequest({
+        fileId: "alpha",
+        hunkIndex: 2,
+        line: { side: "old", line: 17 },
+      }),
+    ).toEqual({
+      fileId: "alpha",
+      hunkIndex: 2,
+      line: { side: "old", line: 17 },
+    });
+  });
+
+  test("rejects malformed ids, indexes, and source lines", () => {
+    expect(() => normalizeWorkspaceOpenInEditorRequest(undefined)).toThrow("non-empty fileId");
+    expect(() => normalizeWorkspaceOpenInEditorRequest({ fileId: "alpha", hunkIndex: -1 })).toThrow(
+      "non-negative integer",
+    );
+    expect(() =>
+      normalizeWorkspaceOpenInEditorRequest({
+        fileId: "alpha",
+        line: { side: "both", line: 1 },
+      }),
+    ).toThrow('line.side must be "old" or "new"');
+    expect(() =>
+      normalizeWorkspaceOpenInEditorRequest({
+        fileId: "alpha",
+        line: { side: "new", line: 0 },
+      }),
+    ).toThrow("positive integer");
   });
 });

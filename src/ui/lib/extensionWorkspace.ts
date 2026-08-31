@@ -66,6 +66,45 @@ export interface WorkspaceWriteRequestFields {
   text: string;
 }
 
+/** A normalized editor request, once its source address is known to be well-formed. */
+export interface WorkspaceOpenInEditorRequestFields {
+  fileId: string;
+  hunkIndex?: number;
+  line?: { side: FileSourceSide; line: number };
+}
+
+/** Reject malformed editor requests before they reach renderer or process ownership. */
+export function normalizeWorkspaceOpenInEditorRequest(
+  request: unknown,
+): WorkspaceOpenInEditorRequestFields {
+  const fields = request as Partial<WorkspaceOpenInEditorRequestFields> | null | undefined;
+  if (typeof fields?.fileId !== "string" || fields.fileId.length === 0) {
+    throw new Error("workspace.openInEditor requires a non-empty fileId.");
+  }
+  if (
+    fields.hunkIndex !== undefined &&
+    (!Number.isInteger(fields.hunkIndex) || fields.hunkIndex < 0)
+  ) {
+    throw new Error("workspace.openInEditor hunkIndex must be a non-negative integer.");
+  }
+  if (fields.line !== undefined) {
+    if (fields.line.side !== "old" && fields.line.side !== "new") {
+      throw new Error('workspace.openInEditor line.side must be "old" or "new".');
+    }
+    if (!Number.isInteger(fields.line.line) || fields.line.line < 1) {
+      throw new Error("workspace.openInEditor line.line must be a positive integer.");
+    }
+  }
+
+  return {
+    fileId: fields.fileId,
+    ...(fields.hunkIndex === undefined ? {} : { hunkIndex: fields.hunkIndex }),
+    ...(fields.line === undefined
+      ? {}
+      : { line: { side: fields.line.side, line: fields.line.line } }),
+  };
+}
+
 /**
  * Name what this session is reviewing when it is not the working tree.
  *

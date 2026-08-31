@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 15;
+export const HUNK_EXTENSION_API_VERSION = 16;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1675,6 +1675,28 @@ export type ExtensionWorkspaceWriteResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
 
+/** One reviewed source line an editor should reveal. */
+export interface ExtensionWorkspaceEditorLine {
+  side: ExtensionFileSide;
+  /** One-based source line number on `side`. */
+  line: number;
+}
+
+/** A reviewed file and optional source location an extension asks Hunk to open. */
+export interface ExtensionWorkspaceOpenInEditorRequest {
+  /** The reviewed file to open, by its `ExtensionDiffFile.id`. */
+  fileId: string;
+  /** Hunk index used to map an old-side line onto the working-tree file. */
+  hunkIndex?: number;
+  /** Exact source line to prefer over the hunk's first line. */
+  line?: ExtensionWorkspaceEditorLine;
+}
+
+/** How a host-mediated editor launch settled. */
+export type ExtensionWorkspaceOpenInEditorResult =
+  | { ok: true }
+  | { ok: false; reason: "unavailable" | "failed"; detail: string };
+
 /**
  * The reviewed files as whole documents, read and written through the host.
  *
@@ -1729,6 +1751,19 @@ export interface ExtensionWorkspace {
    * the pairing this exists for.
    */
   readDocument(fileId: string, side: ExtensionFileSide): Promise<string | null>;
+  /**
+   * Open a reviewed file in the user's `$EDITOR` through Hunk's terminal lifecycle.
+   *
+   * The extension names a reviewed file id and source location, never a filesystem
+   * path or process. Hunk resolves the working-tree path, maps old-side lines onto
+   * the file on disk, suspends and resumes terminal editors, and reloads a reloadable
+   * review after a successful launch. Missing files or editor configuration resolve
+   * `"unavailable"`; launch and non-zero-exit failures resolve `"failed"`. Malformed
+   * ids, hunk indexes, sides, or line numbers reject as programming errors.
+   */
+  openInEditor(
+    request: ExtensionWorkspaceOpenInEditorRequest,
+  ): Promise<ExtensionWorkspaceOpenInEditorResult>;
   /**
    * Whether `writeDocument` could currently succeed for this reviewed file.
    *

@@ -7,9 +7,10 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `15`). Branch on it if you want
-one file to support several Hunk versions. Version 15 adds `{ side, line }` to
-opted-in pane `currentLine` paint; version 14 added structured two-revision
+The API generation this Hunk speaks (currently `16`). Branch on it if you want
+one file to support several Hunk versions. Version 16 adds host-mediated editor
+launches for reviewed files; version 15 added `{ side, line }` to opted-in pane
+`currentLine` paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
 and committed note-edit events; version 12 added responsive fractional pane
 sizing; version 11 added the `dim` line-highlight tone; version 10 added
@@ -335,13 +336,14 @@ One dialog shows at a time; concurrent requests queue in call order, across exte
 
 ### Workspace documents
 
-`ctx.workspace` reads full documents from the current review and writes eligible working-tree files.
+`ctx.workspace` reads full documents from the current review, opens reviewed files through Hunk's editor lifecycle, and writes eligible working-tree files.
 
-| Method                                 | Result                                            |
-| -------------------------------------- | ------------------------------------------------- |
-| `readDocument(fileId, "old" \| "new")` | Reviewed source text or `null`                    |
-| `canWriteDocument(fileId)`             | Whether review policy allows a write              |
-| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
+| Method                                        | Result                                            |
+| --------------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")`        | Reviewed source text or `null`                    |
+| `openInEditor({ fileId, hunkIndex?, line? })` | `{ ok: true }` or `{ ok: false, reason, detail }` |
+| `canWriteDocument(fileId)`                    | Whether review policy allows a write              |
+| `writeDocument({ fileId, text })`             | `{ ok: true }` or `{ ok: false, reason, detail }` |
 
 ```ts
 const file = ctx.selection.file;
@@ -355,13 +357,15 @@ if (file && ctx.workspace.canWriteDocument(file.id)) {
 
 Reads return the source represented by the review, including historical content in revision and stash reviews. Missing, unreadable, or oversized sources return `null`; reads never prompt.
 
+Editor requests name a reviewed file id and optional source address, never a path or process. Hunk resolves `$EDITOR`, maps old-side lines onto the working-tree file, owns terminal suspension, and reloads reloadable inputs after success. Missing configuration or files return `unavailable`; launch failures return `failed`.
+
 Writes require a reloadable, unstaged working-tree review and a writable reviewed-file id. Hunk verifies the target, asks for attributed consent, verifies it again, writes it, and reloads the review. Other review kinds and deleted, binary, oversized, missing, symlinked, or root-escaping targets return `unavailable`. Cancellation returns `cancelled`; an attempted write failure returns `failed` with a displayable `detail`.
 
 `canWriteDocument` does not inspect the filesystem, so `writeDocument` can still refuse a changed target. See the [full workspace guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#workspace-documents) for lifecycle and error details.
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads and writes that have not started return `null`/`unavailable`. Once a consented filesystem write starts, it reports its actual outcome, graceful shutdown waits for it, and success reconciles the review then active.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads, editor launches, and writes that have not started return `null`/`unavailable`. Once a consented filesystem write starts, it reports its actual outcome, graceful shutdown waits for it, and success reconciles the review then active.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
