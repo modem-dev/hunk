@@ -105,7 +105,7 @@ describe("PTY chrome", () => {
         (text) =>
           text.includes("Teach your agent how to review this Hunk session.") &&
           text.includes("hunk skill path") &&
-          text.includes("c Copy"),
+          text.includes("⧉  Copy prompt"),
         5_000,
       );
       expect(document).not.toContain("ext hunk");

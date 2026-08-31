@@ -1,8 +1,10 @@
 import type { ExtensionFactory } from "hunkdiff/extension";
 
 export const AGENT_SKILL_COMMAND = "hunk skill path";
-export const AGENT_SKILL_PROMPT =
-  "Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.";
+export const AGENT_SKILL_PROMPT = [
+  "Load the Hunk skill and use it for this review.",
+  "Run `hunk skill path` to get the skill path.",
+].join("\n");
 export const BUNDLED_AGENT_SKILL_COMMAND_ID = "app.openAgentSkill";
 export const BUNDLED_AGENT_SKILL_COMMAND_FULL_ID = `hunk.${BUNDLED_AGENT_SKILL_COMMAND_ID}`;
 

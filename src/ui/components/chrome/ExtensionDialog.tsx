@@ -191,7 +191,8 @@ function ExtensionDocumentDialog({
     terminalHeight,
   });
   const bodyWidth = Math.max(1, measuredFrame.width - 4);
-  const cardTextWidth = Math.max(1, bodyWidth - 4);
+  const cardWidth = Math.max(1, bodyWidth - 4);
+  const cardTextWidth = Math.max(1, cardWidth - 4);
   const idealBodyRows = windowDialogText(request.bodyLines, bodyWidth, Number.MAX_SAFE_INTEGER)
     .lines.length;
   const copy = request.copy;
@@ -209,11 +210,13 @@ function ExtensionDocumentDialog({
     2;
   const frame = resolveModalGeometry({
     width,
-    height: idealContentRows + MODAL_FRAME_CHROME_ROWS,
+    // The inner flex column lets the final action use the last
+    // chrome-adjacent row without adding an empty footer row.
+    height: idealContentRows + MODAL_FRAME_CHROME_ROWS - 1,
     terminalWidth,
     terminalHeight,
   });
-  const contentRows = Math.max(0, frame.height - MODAL_FRAME_CHROME_ROWS);
+  const contentRows = Math.max(0, frame.height - MODAL_FRAME_CHROME_ROWS + 1);
   const actionRows = contentRows > 0 ? 1 : 0;
   const minimumCopyRows = hasCopy ? 2 : 0;
   const minimumContentRows =
@@ -257,68 +260,97 @@ function ExtensionDocumentDialog({
       width={frame.width}
       onClose={onCancel}
     >
-      {attributionRows > 0 ? (
-        <box style={{ width: "100%", height: 1 }}>
-          <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
-        </box>
-      ) : null}
-      {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {visibleBody.lines.map((line, index) => (
-        <box key={`body:${index}:${line}`} style={{ width: "100%", height: 1 }}>
-          <text fg={theme.text}>{fitText(line, bodyWidth)}</text>
-        </box>
-      ))}
-      {bodyCopyGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {copy && copyLabelRows > 0 ? (
-        <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
-          <text fg={theme.badgeNeutral}>{fitText(copy.label, bodyWidth - 1)}</text>
-        </box>
-      ) : null}
-      {copy && copyCardRows > 0 ? (
-        <box
-          style={{
-            width: "100%",
-            height: copyCardRows,
-            flexDirection: "column",
-            ...(copyCardRows >= 3
-              ? {
-                  border: true,
-                  borderColor: theme.border,
-                  paddingLeft: 1,
-                  paddingRight: 1,
-                }
-              : {}),
-          }}
-        >
-          {visibleCopy.lines.map((line, index) => (
-            <box key={`copy:${index}:${line}`} style={{ width: "100%", height: 1 }}>
-              <text fg={theme.text}>{fitText(line, cardTextWidth)}</text>
+      <box style={{ width: "100%", height: "100%", flexDirection: "column" }}>
+        {attributionRows > 0 ? (
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
+          </box>
+        ) : null}
+        {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+        {visibleBody.lines.map((line, index) => (
+          <box key={`body:${index}:${line}`} style={{ width: "100%", height: 1 }}>
+            <text fg={theme.text}>{fitText(line, bodyWidth)}</text>
+          </box>
+        ))}
+        {bodyCopyGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+        {copy && copyLabelRows > 0 ? (
+          <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
+            <text fg={theme.badgeNeutral}>{fitText(copy.label, bodyWidth - 1)}</text>
+          </box>
+        ) : null}
+        {copy && copyCardRows > 0 ? (
+          <box style={{ width: "100%", height: copyCardRows, paddingLeft: 1 }}>
+            <box
+              style={{
+                width: cardWidth,
+                height: copyCardRows,
+                flexDirection: "column",
+                ...(copyCardRows >= 3
+                  ? {
+                      border: true,
+                      borderColor: theme.border,
+                      paddingLeft: 1,
+                      paddingRight: 1,
+                    }
+                  : {}),
+              }}
+            >
+              {visibleCopy.lines.map((line, index) => (
+                <box key={`copy:${index}:${line}`} style={{ width: "100%", height: 1 }}>
+                  <text fg={theme.text}>{fitText(line, cardTextWidth)}</text>
+                </box>
+              ))}
             </box>
-          ))}
-        </box>
-      ) : null}
-      {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {actionRows > 0 && copy && !copySupported ? (
-        <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
-          <text fg={theme.muted}>Copy unavailable</text>
-        </box>
-      ) : actionRows > 0 ? (
-        <DialogActionRow
-          actions={
-            copy
-              ? [
-                  {
-                    keyLabel: "c",
-                    label: "Copy",
-                    run: () => onCopyDocument(copy),
-                  },
-                ]
-              : [{ keyLabel: "esc", label: "close", run: onCancel }]
-          }
-          theme={theme}
-        />
-      ) : null}
+          </box>
+        ) : null}
+        {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+        {actionRows > 0 && copy ? (
+          <DocumentCopyAction
+            copy={copy}
+            copySupported={copySupported}
+            onCopyDocument={onCopyDocument}
+            theme={theme}
+            width={bodyWidth}
+          />
+        ) : actionRows > 0 ? (
+          <DialogActionRow
+            actions={[{ keyLabel: "esc", label: "close", run: onCancel }]}
+            theme={theme}
+          />
+        ) : null}
+      </box>
     </ModalFrame>
+  );
+}
+
+/** Render the compact copy affordance beneath a document card. */
+function DocumentCopyAction({
+  copy,
+  copySupported,
+  onCopyDocument,
+  theme,
+  width,
+}: {
+  copy: ExtensionDocumentCopyRequest;
+  copySupported: boolean;
+  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
+  theme: AppTheme;
+  width: number;
+}) {
+  const label = copySupported ? ` ⧉  Copy ${copy.label.toLowerCase()} ` : " Copy unavailable ";
+  return (
+    <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
+      <box
+        style={{ backgroundColor: copySupported ? theme.accentMuted : theme.panelAlt }}
+        onMouseUp={(event: TuiMouseEvent) => {
+          event.stopPropagation();
+          if (copySupported) onCopyDocument(copy);
+        }}
+      >
+        <text fg={copySupported ? theme.text : theme.muted}>{label}</text>
+      </box>
+      <text fg={theme.muted}>{padText("", Math.max(1, width - label.length))}</text>
+    </box>
   );
 }
 

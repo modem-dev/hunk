@@ -322,7 +322,7 @@ describe("extension dialogs", () => {
           "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path.",
         ]);
 
-        const copyAction = findTextPosition(setup.captureCharFrame(), "c Copy");
+        const copyAction = findTextPosition(setup.captureCharFrame(), "Copy prompt");
         expect(copyAction).not.toBeNull();
         await act(async () => {
           await setup.mockMouse.click(copyAction!.x, copyAction!.y);
