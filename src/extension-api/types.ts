@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 14;
+export const HUNK_EXTENSION_API_VERSION = 15;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1118,8 +1118,25 @@ export interface ExtensionPaneSize {
   fraction?: number;
 }
 
-/** Opaque host renderer for the selected split row. */
+/**
+ * Host renderer for the selected split row, plus the source address that row
+ * occupies.
+ *
+ * `render` is still the only way to paint the row: it does not publish Pierre
+ * rows, plans, or cursor keys. `side` and `line` are the same public address
+ * command handlers already see on `ctx.selection.currentLine`, so a pane can
+ * look up blame, diagnostics, or notes without waiting for a keypress.
+ */
 export interface ExtensionCurrentLinePaint {
+  /**
+   * Which side the current-line marker addresses.
+   *
+   * Context rows use Hunk's canonical new-side address, matching
+   * `ctx.selection.currentLine` and `navigation.revealLine`.
+   */
+  readonly side: ExtensionFileSide;
+  /** 1-based source line number on `side`. */
+  readonly line: number;
   /** Paint one side as a clipped, no-wrap terminal row. */
   render(side: "old" | "new", width: number): unknown;
 }
@@ -1145,7 +1162,10 @@ export interface ExtensionPaneProps {
   readonly theme: ExtensionPaneTheme;
   readonly keybindings: ExtensionPaneKeybindings;
   readonly actions: ExtensionPaneActions;
-  /** Non-null only when the registration explicitly requested current-line paint. */
+  /**
+   * Selected-row painter plus `{ side, line }` when the registration opted in
+   * with `currentLine: true`; otherwise `null`.
+   */
   readonly currentLine: ExtensionCurrentLinePaint | null;
 }
 
@@ -1168,7 +1188,7 @@ interface ExtensionPaneBase {
    * pane registered for a named target owns its slot; later claims are skipped.
    */
   replaces?: string;
-  /** Opt into live current-line paint; unrelated panes receive stable null. */
+  /** Opt into live current-line paint and `{ side, line }`; unrelated panes receive stable null. */
   currentLine?: boolean;
   /** Synchronous frame-availability policy. */
   available?(context: ExtensionPaneAvailabilityContext): boolean;

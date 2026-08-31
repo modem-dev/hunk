@@ -7,9 +7,12 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `14`). Branch on it if you want
-one file to support several Hunk versions. Version 14 adds structured two-revision
-VCS diff endpoints; version 12 added responsive fractional pane sizing; version 11 added the `dim` line-highlight tone; version 10 added
+The API generation this Hunk speaks (currently `15`). Branch on it if you want
+one file to support several Hunk versions. Version 15 adds `{ side, line }` to
+opted-in pane `currentLine` paint; version 14 added structured two-revision
+VCS diff endpoints; version 13 added saved-note parent identities
+and committed note-edit events; version 12 added responsive fractional pane
+sizing; version 11 added the `dim` line-highlight tone; version 10 added
 generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
 added authoritative review snapshots to command handlers; version 7 added the
@@ -128,7 +131,7 @@ Full contract: [VCS adapters](/docs/extend/vcs-adapters/).
 
 ## `hunk.registerPane(pane)`
 
-Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint. `registerSidebarView` remains a deprecated alias.
+Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `registerSidebarView` remains a deprecated alias.
 
 Full contract: [Custom panes](/docs/extend/custom-sidebars/).
 

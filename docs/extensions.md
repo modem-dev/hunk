@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `14`). Generation 14 adds structured `rangeEndpoints`
-to two-revision VCS diff requests. Branch on it if you want
-one file to support several Hunk versions. Version 13 adds saved-note parent identities and
+The API generation this Hunk speaks (currently `15`). Branch on it if you want
+one file to support several Hunk versions. Version 15 adds `{ side, line }` to
+opted-in pane `currentLine` paint; version 14 added structured `rangeEndpoints`
+to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
 the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
 added exact-filename and glob selectors to `registerFileLanguage`; version 8
@@ -753,10 +754,13 @@ panes keep their own open state. User remaps and unbindings of
 `hunk.view.toggleFilesPane` apply to the resolved slot in the usual way. The
 former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
-`currentLine: true` opts into the opaque `currentLine.render(side, width)`
-painter. The installable [Hunk Lens](https://github.com/modem-dev/hunk-lens)
-extension uses this API; it is not bundled Hunk UI. Install it with
-`hunk extension install modem-dev/hunk-lens`.
+`currentLine: true` opts into the selected-row painter. `currentLine.render(side, width)`
+paints one side as a clipped row; `currentLine.side` and `currentLine.line` are
+the same public source address command handlers see on `ctx.selection.currentLine`
+(context rows use Hunk's canonical new-side). The installable
+[Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses the painter; a
+blame or diagnostic pane can use the address without waiting for a keypress.
+Install the lens with `hunk extension install modem-dev/hunk-lens`.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -775,7 +779,7 @@ The component receives fresh props as the app changes:
 | `placement`         | the accepted terminal edge                                                                                                                                                |
 | `width`             | exact terminal columns in the host-owned rectangle                                                                                                                        |
 | `height`            | exact terminal rows in the host-owned rectangle                                                                                                                           |
-| `currentLine`       | opaque selected-row painter when the registration opts in, otherwise `null`                                                                                               |
+| `currentLine`       | selected-row painter plus `{ side, line }` when the registration opts in, otherwise `null`                                                                                |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
 | `actions`           | navigation and notifications the pane may trigger                                                                                                                         |

@@ -90,6 +90,7 @@ export default function (hunk: HunkExtensionAPI) {
   const pane = (props: ExtensionPaneProps) => {
     hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);
     props.currentLine?.render("new", props.width);
+    hunk.log(props.currentLine ? props.currentLine.side + ":" + props.currentLine.line : "no line");
     return null;
   };
   const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4, fraction: 0.25 };

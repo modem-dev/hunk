@@ -51,7 +51,7 @@ Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace 
 
 `hunk:files` is a named role, not a left-edge location. The `hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane** follow the resolved owner of that slot on any edge and leave independently registered panes alone. User remaps and unbindings apply to that command normally; the former `hunk.view.toggleSidebar` id remains a compatibility alias. `ctx.panes.toggle("hunk:files")`, by contrast, addresses the literal built-in pane; use `ctx.commands.execute("hunk.view.toggleFilesPane")` when an extension wants the role-aware slot behavior.
 
-Set `currentLine: true` to receive Hunk's opaque selected-row painter. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses it and is not bundled with Hunk. Install it with `hunk extension install modem-dev/hunk-lens`.
+Set `currentLine: true` to receive Hunk's selected-row painter plus the `{ side, line }` source address of the current-line marker — the same address command handlers see on `ctx.selection.currentLine`. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses the painter; a blame or diagnostic pane can use the address. It is not bundled with Hunk. Install the lens with `hunk extension install modem-dev/hunk-lens`.
 
 API-v3 sidebar names remain as deprecated aliases.
 
@@ -69,7 +69,7 @@ The component receives fresh props as the app changes:
 | `placement`         | the accepted terminal edge                                                                                                                                                |
 | `width`             | exact terminal columns in the host-owned rectangle                                                                                                                        |
 | `height`            | exact terminal rows in the host-owned rectangle                                                                                                                           |
-| `currentLine`       | opaque selected-row painter when the registration opts in, otherwise `null`                                                                                               |
+| `currentLine`       | selected-row painter plus `{ side, line }` when the registration opts in, otherwise `null`                                                                                |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
 | `actions`           | guarded navigation and notifications the pane may trigger                                                                                                                 |
