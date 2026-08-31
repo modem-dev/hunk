@@ -1630,6 +1630,12 @@ export interface ExtensionDocumentCopyOptions {
    * to four spaces. Limited to 16,384 JavaScript string code units.
    */
   text: string;
+  /**
+   * Optional authored display rows for `text`. Their sanitized contents must
+   * rejoin with spaces or newlines to the sanitized clipboard text, so they
+   * can control wrapping without presenting different content.
+   */
+  displayLines?: readonly string[];
 }
 
 /** Read-only guidance shown to the user as a modal document. */

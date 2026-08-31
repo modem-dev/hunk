@@ -213,10 +213,26 @@ function normalizeDocumentCopy(
     invalid("document", "copy.text must contain visible or whitespace content.");
   }
 
+  let displayLines = text.split("\n").map((line) => sanitizeTerminalLine(line));
+  if (copy.displayLines !== undefined) {
+    if (!Array.isArray(copy.displayLines) || copy.displayLines.length === 0) {
+      invalid("document", "copy.displayLines must be a non-empty string array.");
+    }
+    displayLines = copy.displayLines.map((line) => {
+      if (typeof line !== "string" || line.includes("\n")) {
+        invalid("document", "copy.displayLines must contain single-line strings.");
+      }
+      return sanitizeTerminalLine(line).replaceAll("\t", "    ");
+    });
+    if (displayLines.join(" ") !== text && displayLines.join("\n") !== text) {
+      invalid("document", "copy.displayLines must contain the same text as copy.text.");
+    }
+  }
+
   return {
     label: normalizeLabel(copy.label, DEFAULT_DOCUMENT_COPY_LABEL),
     text,
-    displayLines: text.split("\n").map((line) => sanitizeTerminalLine(line)),
+    displayLines,
   };
 }
 

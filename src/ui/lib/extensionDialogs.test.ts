@@ -142,6 +142,27 @@ describe("createExtensionDialogQueue", () => {
     });
   });
 
+  test("accepts authored display rows only when they preserve the clipboard text", async () => {
+    const queue = createExtensionDialogQueue();
+    const dialogs = queue.createDialogs("guide");
+
+    void dialogs.document({
+      title: "Setup",
+      copy: { text: "copy this exactly", displayLines: ["copy this", "exactly"] },
+    });
+    expect(queue.current()).toMatchObject({
+      copy: { text: "copy this exactly", displayLines: ["copy this", "exactly"] },
+    });
+    queue.cancelAll();
+
+    await expect(
+      dialogs.document({
+        title: "Setup",
+        copy: { text: "safe text", displayLines: ["different text"] },
+      }),
+    ).rejects.toThrow("copy.displayLines must contain the same text as copy.text");
+  });
+
   test("sanitizes an input dialog's starting text without trimming it", () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("hostile");
