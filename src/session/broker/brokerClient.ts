@@ -54,11 +54,10 @@ interface ScheduledStartupRetry {
 
 type StartupLifecycleState =
   | { status: "idle" }
-  | { status: "attempting"; promise: Promise<void> }
   | {
-      status: "attempting-with-retry";
+      status: "attempting";
       promise: Promise<void>;
-      retry: ScheduledStartupRetry;
+      retry: ScheduledStartupRetry | null;
     }
   | { status: "waiting"; retry: ScheduledStartupRetry }
   | { status: "stopped" };
@@ -116,7 +115,6 @@ export class SessionBrokerClient {
       case "idle":
         return this.beginStartupAttempt();
       case "attempting":
-      case "attempting-with-retry":
         return state.promise;
       case "waiting":
         return this.beginStartupAttempt(state.retry);
@@ -131,9 +129,10 @@ export class SessionBrokerClient {
     const state = this.startupState;
     switch (state.status) {
       case "idle":
-      case "attempting":
         break;
-      case "attempting-with-retry":
+      case "attempting":
+        if (state.retry) clearTimeout(state.retry.handle);
+        break;
       case "waiting":
         clearTimeout(state.retry.handle);
         break;
@@ -281,9 +280,7 @@ export class SessionBrokerClient {
     promise = this.ensureDaemonAndConnect()
       .catch((error) => this.handleStartupFailure(promise, error))
       .finally(() => this.handleStartupSettlement(promise));
-    this.startupState = retry
-      ? { status: "attempting-with-retry", promise, retry }
-      : { status: "attempting", promise };
+    this.startupState = { status: "attempting", promise, retry: retry ?? null };
     return promise;
   }
 
@@ -291,17 +288,14 @@ export class SessionBrokerClient {
   private handleStartupFailure(promise: Promise<void>, error: unknown) {
     const state = this.startupState;
     switch (state.status) {
-      case "attempting": {
+      case "attempting":
         if (state.promise !== promise) return;
-        const retry = this.createStartupRetry();
-        // Publish retry ownership before the warning side effect so a reentrant stop clears the
-        // exact handle and cannot be overwritten when the callback returns.
-        this.startupState = { status: "attempting-with-retry", promise, retry };
-        this.warnUnavailable(error);
-        return;
-      }
-      case "attempting-with-retry":
-        if (state.promise !== promise) return;
+        if (!state.retry) {
+          const retry = this.createStartupRetry();
+          // Publish retry ownership before the warning side effect so a reentrant stop clears the
+          // exact handle and cannot be overwritten when the callback returns.
+          this.startupState = { status: "attempting", promise, retry };
+        }
         this.warnUnavailable(error);
         return;
       case "idle":
@@ -318,11 +312,10 @@ export class SessionBrokerClient {
     const state = this.startupState;
     switch (state.status) {
       case "attempting":
-        if (state.promise === promise) this.startupState = { status: "idle" };
-        return;
-      case "attempting-with-retry":
         if (state.promise === promise) {
-          this.startupState = { status: "waiting", retry: state.retry };
+          this.startupState = state.retry
+            ? { status: "waiting", retry: state.retry }
+            : { status: "idle" };
         }
         return;
       case "idle":
@@ -352,13 +345,11 @@ export class SessionBrokerClient {
         this.startupState = { status: "idle" };
         this.start();
         return;
-      case "attempting-with-retry":
+      case "attempting":
         if (state.retry !== retry) return;
-        this.startupState = { status: "attempting", promise: state.promise };
-        this.start();
+        this.startupState = { status: "attempting", promise: state.promise, retry: null };
         return;
       case "idle":
-      case "attempting":
       case "stopped":
         return;
       default:
