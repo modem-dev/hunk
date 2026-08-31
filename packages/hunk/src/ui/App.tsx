@@ -74,6 +74,7 @@ import {
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { useSidebarSlideAnimation } from "./hooks/useSidebarSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
@@ -462,6 +463,7 @@ export function App({
     currentLinePaint,
     currentLinePaintRequested,
     endPaneResize,
+    filesPaneKey,
     filesPaneVisible,
     onCurrentLinePaintChange,
     paneLayout,
@@ -489,6 +491,14 @@ export function App({
     notifyWarning: showPaneWarning,
     pagerMode,
     responsiveShowsSidebar: responsiveLayout.showSidebar,
+  });
+
+  const presentedPaneLayout = useSidebarSlideAnimation({
+    bodyHeight,
+    bodyWidth,
+    filesPaneKey,
+    paneLayout,
+    resizing: resizingPaneKey !== null,
   });
 
   useEffect(() => {
@@ -668,8 +678,8 @@ export function App({
       selectedHunkIndex,
       themeId,
     });
-  const diffPaneWidth = paneLayout.reviewBounds.width;
-  const diffPaneHeight = paneLayout.reviewBounds.height;
+  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
+  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
@@ -1220,7 +1230,7 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
+  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + presentedPaneLayout.reviewBounds.y;
 
   /** Render one pane from the exact accepted host rectangle. */
   const renderPane = (planned: PlannedPane) => {
@@ -1366,13 +1376,13 @@ export function App({
           cancelCopySelectionRef.current?.();
         }}
       >
-        {paneLayout.panes.map(renderPane)}
-        {paneLayout.panes.map(renderDivider)}
+        {presentedPaneLayout.panes.map(renderPane)}
+        {presentedPaneLayout.panes.map(renderDivider)}
         <box
           style={{
             position: "absolute",
-            left: bodyPadding / 2 + paneLayout.reviewBounds.x,
-            top: paneLayout.reviewBounds.y,
+            left: bodyPadding / 2 + presentedPaneLayout.reviewBounds.x,
+            top: presentedPaneLayout.reviewBounds.y,
             width: diffPaneWidth,
             height: diffPaneHeight,
           }}
