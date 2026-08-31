@@ -470,12 +470,13 @@ instead of a crash.
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:
 
-| Field            | What it adds                                                       |
-| ---------------- | ------------------------------------------------------------------ |
-| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
-| `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
-| `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
-| `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
+| Field                   | What it adds                                                       |
+| ----------------------- | ------------------------------------------------------------------ |
+| `untrackedPaths`        | files your VCS calls unknown, synthesized into added-file diffs    |
+| `readFileSource`        | exact whole-file contents, for context expansion and highlighting  |
+| `resolveFileSourcePath` | exact filesystem provenance for application location handoff       |
+| `sourceCacheKey`        | stable source-snapshot identity for highlight reuse across reloads |
+| `extraFiles`            | files reviewed outside the patch, including skipped placeholders   |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping
@@ -588,6 +589,10 @@ async load(input, ctx) {
       }
       return changeType === "deleted" ? null : hgCat(newRev, path);
     },
+    resolveFileSourcePath: ({ path, changeType, side }) => {
+      if (side !== "new" || changeType === "deleted" || input.range) return null;
+      return join(ctx.cwd, path);
+    },
   };
 }
 ```
@@ -606,6 +611,15 @@ it when source state outside the patch changes. Omit it when the adapter cannot 
 stable identity and Hunk will invalidate conservatively. Leaving
 `readFileSource` off is fine: Hunk falls back to the content the patch itself carries,
 which renders the same diff with less context available.
+
+`resolveFileSourcePath` is separate from source reads because a binary or skipped
+file can still have a real path. Return an absolute path only when that exact
+reviewed side is backed by the filesystem. Return `null` for absent sides and
+for index, revision, stash, patch, merged, or other virtual sources, even when a
+same-named working-tree file exists. Hunk uses this provenance for
+`ctx.workspace.resolveLocation`; it never invents a checkout path for historical
+content. Direct file and difftool comparisons retain their concrete input paths
+independently of their display names.
 
 #### Files outside the patch
 
@@ -1743,7 +1757,10 @@ or extension state through arguments, environment, files, or an application-spec
 protocol. Hunk only owns terminal suspension and restoration. One application
 may own the terminal at a time; concurrent calls and controls retained past a
 review reload reject without invoking the callback. The callback's value and
-error pass through unchanged.
+error pass through unchanged. Host-presented dialogs cancel immediately and
+workspace writes return `unavailable` while the callback owns the terminal, so
+do not await Hunk UI from inside it. Non-interactive workspace reads and location
+resolution remain available.
 
 #### Workspace documents
 
@@ -1786,14 +1803,15 @@ fails, or the document exceeds Hunk's size limit. Reads never prompt. An invalid
 side rejects the promise.
 
 `resolveLocation` turns a reviewed file id and optional `hunkIndex` and
-`{ side, line }` into the corresponding absolute path and one-based line on
-disk. VCS reviews resolve against the repository; direct file comparisons retain
-the concrete compared path, including the old path for a deleted-file comparison.
-Hunk uses parsed hunk metadata to map old-side deletions onto their on-disk
-position, so extensions can pass accurate locations to editors, debuggers,
-browsers, or other applications without interpreting opaque diff metadata. Raw
-patch reviews have no attested filesystem path and return `null`. Missing hunks
-and stale controls also return `null`; malformed source addresses reject.
+`{ side, line }` into an attested absolute path and one-based line on disk. Hunk
+uses parsed hunk metadata to map old-side deletions onto a filesystem-backed new
+side, so extensions can pass accurate locations to editors, debuggers, browsers,
+or other applications without interpreting opaque diff metadata. Direct file
+comparisons retain their concrete input paths, including the old path for a
+deleted-file comparison. Index, revision, stash, patch, merged, absent, and
+other virtual sides return `null` instead of borrowing a same-named checkout
+file. Missing hunks and stale controls also return `null`; malformed source
+addresses reject.
 
 Writes require all of the following:
 

@@ -3,6 +3,7 @@ import {
   createSkippedLargeMetadata,
   type BuildDiffFileOptions,
 } from "../core/changeset/diffFile";
+import { isAbsolute } from "node:path";
 import { parseSingleFilePatch } from "../core/patch/singleFile";
 import {
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
@@ -14,6 +15,8 @@ import type { VcsPatchResult } from "../core/vcs/types";
 import type {
   ExtensionVcsExtraFile,
   ExtensionVcsFileSourceReader,
+  ExtensionVcsFileSourcePathResolver,
+  ExtensionVcsFileSourceRequest,
   ExtensionVcsPatchResult,
 } from "../extension-api/types";
 
@@ -27,6 +30,21 @@ import type {
  */
 
 type SourceFetcherBuilder = NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]>;
+type SourcePathBuilder = NonNullable<BuildDiffFileOptions["sourcePathBuilder"]>;
+
+/** Build one public source request from normalized per-file context. */
+function sourceRequest(
+  file: Parameters<SourceFetcherBuilder>[0],
+  side: FileSourceSide,
+): ExtensionVcsFileSourceRequest {
+  return {
+    path: file.path,
+    previousPath: file.previousPath,
+    changeType: file.type,
+    isUntracked: file.isUntracked,
+    side,
+  };
+}
 
 /**
  * Adapt a published per-file source reader to the internal per-file fetcher.
@@ -61,13 +79,7 @@ function toSourceFetcherBuilder(
           throw new SourceTextTooLargeError(cachedLimit);
         }
 
-        const result = await read({
-          path: file.path,
-          previousPath: file.previousPath,
-          changeType: file.type,
-          isUntracked: file.isUntracked,
-          side,
-        });
+        const result = await read(sourceRequest(file, side));
         if (typeof result === "object" && result !== null) {
           if (result.kind === "too-large") {
             const maxBytes =
@@ -89,6 +101,19 @@ function toSourceFetcherBuilder(
   };
 }
 
+/** Adapt a published path resolver to normalized per-file filesystem provenance. */
+function toSourcePathBuilder(resolvePath: ExtensionVcsFileSourcePathResolver): SourcePathBuilder {
+  return (file) => {
+    const resolveSide = (side: FileSourceSide) => {
+      const path = resolvePath(sourceRequest(file, side));
+      return path !== null && isAbsolute(path) ? path : null;
+    };
+    const old = resolveSide("old");
+    const next = resolveSide("new");
+    return old === null && next === null ? undefined : { old, new: next };
+  };
+}
+
 /**
  * Build the diff model for one file an adapter reported outside its patch text.
  *
@@ -101,6 +126,7 @@ function toInternalExtraFile(
   index: number,
   sourcePrefix: string,
   sourceFetcherBuilder: SourceFetcherBuilder | undefined,
+  sourcePathBuilder: SourcePathBuilder | undefined,
 ): DiffFile {
   if (entry.kind === "skipped") {
     return buildDiffFile(
@@ -115,6 +141,7 @@ function toInternalExtraFile(
         isTooLarge: true,
         stats: entry.stats,
         statsTruncated: entry.statsTruncated,
+        sourcePathBuilder,
       },
     );
   }
@@ -129,6 +156,7 @@ function toInternalExtraFile(
       previousPath: entry.previousPath,
       isUntracked: entry.isUntracked,
       sourceFetcherBuilder,
+      sourcePathBuilder,
     },
   );
 }
@@ -138,6 +166,9 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
   const sourceFetcherBuilder = result.readFileSource
     ? toSourceFetcherBuilder(result.readFileSource, result.sourceCacheKey)
     : undefined;
+  const sourcePathBuilder = result.resolveFileSourcePath
+    ? toSourcePathBuilder(result.resolveFileSourcePath)
+    : undefined;
 
   return {
     repoRoot: result.repoRoot,
@@ -146,8 +177,9 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
     patchText: result.patchText,
     untrackedPaths: result.untrackedPaths,
     sourceFetcherBuilder,
+    sourcePathBuilder,
     extraFiles: result.extraFiles?.map((entry, index) =>
-      toInternalExtraFile(entry, index, result.repoRoot, sourceFetcherBuilder),
+      toInternalExtraFile(entry, index, result.repoRoot, sourceFetcherBuilder, sourcePathBuilder),
     ),
   };
 }

@@ -139,6 +139,7 @@ export type {
   ExtensionVcsFileChangeType,
   ExtensionVcsFileSide,
   ExtensionVcsFileSourceReader,
+  ExtensionVcsFileSourcePathResolver,
   ExtensionVcsFileSourceRequest,
   ExtensionVcsFileSourceResult,
   ExtensionVcsFileSourceTooLarge,

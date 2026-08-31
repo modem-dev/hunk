@@ -14,6 +14,8 @@ export interface ExtensionDialogController {
   inputValue: string;
   accept: (selectedIndexOverride?: number) => void;
   cancel: () => void;
+  /** Cancel the visible request and every queued request with their kind-specific values. */
+  cancelAll: () => void;
   moveSelection: (delta: number) => void;
   pickOption: (index: number) => void;
   updateInput: (value: string) => void;
@@ -87,6 +89,7 @@ export function useExtensionDialogController({
     inputValue,
     accept,
     cancel,
+    cancelAll: queue.cancelAll,
     moveSelection,
     pickOption: setSelectedIndex,
     updateInput: setInputValue,

@@ -32,11 +32,12 @@ The ids Hunk ships with — `git`, `jj`, and `sl` — are reserved. An adapter t
 
 A `load` result is patch text plus how to label it. Everything else on it is optional, and each optional field buys one thing:
 
-| Field            | What it adds                                                      |
-| ---------------- | ----------------------------------------------------------------- |
-| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs   |
-| `readFileSource` | exact whole-file contents, for context expansion and highlighting |
-| `extraFiles`     | files reviewed outside the patch, including skipped placeholders  |
+| Field                   | What it adds                                                      |
+| ----------------------- | ----------------------------------------------------------------- |
+| `untrackedPaths`        | files your VCS calls unknown, synthesized into added-file diffs   |
+| `readFileSource`        | exact whole-file contents, for context expansion and highlighting |
+| `resolveFileSourcePath` | exact filesystem provenance for application location handoff      |
+| `extraFiles`            | files reviewed outside the patch, including skipped placeholders  |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS reports as unknown and Hunk synthesizes the added-file diffs for you, skipping binaries and files too large to render. Honor `input.options.excludeUntracked` when you do, so `--exclude-untracked` still means what it says. The other two are covered below.
 
@@ -114,11 +115,17 @@ async load(input, ctx) {
       }
       return changeType === "deleted" ? null : hgCat(newRev, path);
     },
+    resolveFileSourcePath: ({ path, changeType, side }) => {
+      if (side !== "new" || changeType === "deleted" || input.range) return null;
+      return join(ctx.cwd, path);
+    },
   };
 }
 ```
 
 Return `null` for a side that has no content — the old side of an added file, a path the revision never contained — rather than throwing. Return `{ kind: "too-large", maxBytes }` when fetching the source would exceed your resource limit; Hunk shows expansion as unavailable without treating the result as an extension failure. Hunk calls the reader **at most once per file and side** and caches what it resolves, so you do not need your own cache, and it never calls it for a file the diff reports as binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the patch itself carries, which renders the same diff with less context available.
+
+`resolveFileSourcePath` is independent of source reads because binary and skipped files can still have real paths. Return an absolute path only when that exact reviewed side is filesystem-backed. Return `null` for index, revision, stash, patch, merged, absent, and other virtual sides even if a same-named checkout file exists. Hunk uses this provenance for `ctx.workspace.resolveLocation` and never derives historical paths from display names.
 
 ## Files outside the patch
 

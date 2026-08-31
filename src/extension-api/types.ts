@@ -797,6 +797,11 @@ export type ExtensionVcsFileSourceReader = (
   request: ExtensionVcsFileSourceRequest,
 ) => Promise<ExtensionVcsFileSourceResult>;
 
+/** Resolve one reviewed side to its exact absolute path when it is filesystem-backed. */
+export type ExtensionVcsFileSourcePathResolver = (
+  request: ExtensionVcsFileSourceRequest,
+) => string | null;
+
 /* -------------------------------------------------------------------------- */
 /* Extra reviewed files                                                        */
 /* -------------------------------------------------------------------------- */
@@ -875,6 +880,11 @@ export interface ExtensionVcsPatchResult {
    * carries, which renders the same diff with less context available.
    */
   readFileSource?: ExtensionVcsFileSourceReader;
+  /**
+   * Return the exact absolute path for a filesystem-backed side, or `null` for
+   * absent, index, historical, patch, and other virtual sources.
+   */
+  resolveFileSourcePath?: ExtensionVcsFileSourcePathResolver;
   /**
    * Opaque stable identity for source state not already represented by each file's patch.
    *
@@ -1862,6 +1872,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * `finally` after `run` settles. The extension owns execution, metadata,
    * arguments, environment, and exit handling. Calls reject after this review
    * generation expires or while another application already owns the terminal.
+   * Host-presented dialogs cancel and workspace writes are unavailable while
+   * `run` owns the terminal; document reads and location resolution remain available.
    */
   openInApp<Result>(run: () => Result | PromiseLike<Result>): Promise<Result>;
   /** Session keyboard modes registered by this command's owning extension. */

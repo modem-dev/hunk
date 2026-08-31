@@ -279,13 +279,15 @@ leases refuse stale handoffs, one shared lock prevents overlapping applications,
 and renderer suspension always resumes in `finally` unless the renderer was
 destroyed. The extension owns execution and application-specific metadata;
 Hunk's bundled editor command consumes the same public callback and explicitly
-refreshes after a successful edit.
+refreshes after a successful edit. Dialog admission and workspace writes consult
+the same ownership state so host UI cannot deadlock behind a suspended renderer.
 
 `src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains
 ownership of caching and size limits. Missing or unreadable sources become
 `null`. Location resolution maps reviewed file ids and source addresses onto
-attested on-disk paths and lines using input provenance and the authoritative parsed hunk.
+attested on-disk paths and lines using per-side provenance supplied by loaders
+and VCS adapters plus the authoritative parsed hunk.
 
 Writes are limited to reloadable working-tree reviews and reviewed paths inside
 the review root. App supplies the current input, unfiltered changeset, and root

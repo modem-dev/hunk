@@ -22,6 +22,10 @@ describe("bundled editor app", () => {
       command: "code",
       args: ["--reuse-window", "--wait", "--goto", "/repo/a.ts:9"],
     });
+    expect(buildEditorCommand({ editor: "cursor -w", filePath: "/repo/a.ts", line: 9 })).toEqual({
+      command: "cursor",
+      args: ["-w", "--goto", "/repo/a.ts:9"],
+    });
   });
 
   test("hands terminal editors to Hunk's app lifecycle but leaves GUI editors visible", () => {

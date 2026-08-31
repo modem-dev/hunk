@@ -19,7 +19,7 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeDiffPath } from "../../core/changeset/diffPaths";
-import type { FileSourceSide } from "../../core/changeset/fileSource";
+import type { FileSourcePaths, FileSourceSide } from "../../core/changeset/fileSource";
 import { canReloadInput } from "../../core/run/inputReload";
 import type { CliInput } from "../../core/run/commandInputs";
 import { readMetadataChangeType } from "../../extensions/events";
@@ -41,6 +41,8 @@ export interface WorkspaceFileSource {
   isTooLarge?: boolean;
   /** Absent when the loader had no reachable source for this file. */
   sourceFetcher?: { getFullText(side: FileSourceSide): Promise<string | null> };
+  /** Exact absolute paths for only the sides backed by the live filesystem. */
+  sourcePaths?: FileSourcePaths;
 }
 
 /** One reviewed document side's read, already bound to the file that answers it. */
@@ -120,7 +122,7 @@ export function normalizeWorkspaceLocationRequest(
   };
 }
 
-/** Translate one old-side line to its corresponding working-tree line. */
+/** Translate one old-side line to its corresponding filesystem-backed new-side line. */
 function lineOnDisk(hunk: WorkspaceLocationHunk, deletionLine: number) {
   let deletionCursor = hunk.deletionStart;
   let additionCursor = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
@@ -147,19 +149,23 @@ function lineOnDisk(hunk: WorkspaceLocationHunk, deletionLine: number) {
 /** Resolve a reviewed source address against the authoritative parsed diff. */
 export function resolveExtensionWorkspaceLocation({
   files,
-  input,
   request,
-  root,
 }: {
   files: readonly WorkspaceFileSource[];
-  input: CliInput;
   request: WorkspaceLocationRequestFields;
-  root: string;
 }): ExtensionWorkspaceLocation | null {
   const file = files.find((candidate) => candidate.id === request.fileId);
   if (!file) return null;
   const metadata = file.metadata as Partial<WorkspaceLocationMetadata> | undefined;
   if (!metadata || typeof metadata.type !== "string" || !Array.isArray(metadata.hunks)) return null;
+
+  const deleted = metadata.type === "deleted";
+  if (
+    (metadata.type === "new" && request.line?.side === "old") ||
+    (deleted && request.line?.side === "new")
+  ) {
+    return null;
+  }
 
   let hunkIndex = request.hunkIndex;
   if (request.line?.side === "old" && metadata.type !== "deleted") {
@@ -173,7 +179,6 @@ export function resolveExtensionWorkspaceLocation({
   const hunk = hunkIndex === undefined ? undefined : metadata.hunks[hunkIndex];
   if (hunkIndex !== undefined && !hunk) return null;
 
-  const deleted = metadata.type === "deleted";
   let line: number;
   if (request.line?.side === (deleted ? "old" : "new")) {
     line = request.line.line;
@@ -190,20 +195,8 @@ export function resolveExtensionWorkspaceLocation({
     line = deleted ? (hunk?.deletionStart ?? 1) : (hunk?.additionStart ?? 1);
   }
 
-  let filePath: string;
-  if (input.kind === "patch") {
-    return null;
-  } else if (input.kind === "diff") {
-    const sourcePath = deleted ? input.left : input.right;
-    if (sourcePath === "/dev/null") return null;
-    filePath = resolve(root, sourcePath);
-  } else if (input.kind === "difftool") {
-    const sourcePath = input.path ?? (deleted ? input.left : input.right);
-    if (sourcePath === "/dev/null") return null;
-    filePath = resolve(root, sourcePath);
-  } else {
-    filePath = resolve(root, normalizeDiffPath(file.path) ?? file.path);
-  }
+  const filePath = file.sourcePaths?.[deleted ? "old" : "new"];
+  if (!filePath || !isAbsolute(filePath)) return null;
 
   return {
     path: filePath,

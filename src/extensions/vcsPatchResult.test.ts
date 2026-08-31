@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join, resolve } from "node:path";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import { HunkExtensionUserError } from "../extension-api/types";
 import { HunkUserError, toUserFacingError } from "../core/run/errors";
@@ -148,6 +149,63 @@ describe("published source readers", () => {
   });
 });
 
+describe("published source path resolvers", () => {
+  test("become per-file absolute source paths without requiring a text reader", () => {
+    const requests: ExtensionVcsFileSourceRequest[] = [];
+    const root = resolve("repo");
+    const result = toInternalVcsPatchResult(
+      baseResult({
+        resolveFileSourcePath: (request) => {
+          requests.push(request);
+          return request.side === "new" ? join(root, request.path) : null;
+        },
+      }),
+    );
+    const sourcePaths = result.sourcePathBuilder?.({
+      path: "src/a.ts",
+      previousPath: "src/old.ts",
+      type: "rename-changed",
+      isUntracked: false,
+      isBinary: true,
+    });
+
+    expect(result.sourceFetcherBuilder).toBeUndefined();
+    expect(sourcePaths).toEqual({ old: null, new: join(root, "src/a.ts") });
+    expect(requests).toEqual([
+      {
+        path: "src/a.ts",
+        previousPath: "src/old.ts",
+        changeType: "rename-changed",
+        isUntracked: false,
+        side: "old",
+      },
+      {
+        path: "src/a.ts",
+        previousPath: "src/old.ts",
+        changeType: "rename-changed",
+        isUntracked: false,
+        side: "new",
+      },
+    ]);
+  });
+
+  test("drops relative and wholly unavailable resolver answers", () => {
+    const relative = toInternalVcsPatchResult(
+      baseResult({ resolveFileSourcePath: () => "relative/a.ts" }),
+    );
+    const unavailable = toInternalVcsPatchResult(baseResult({ resolveFileSourcePath: () => null }));
+    const file = {
+      path: "a.ts",
+      type: "change",
+      isUntracked: false,
+      isBinary: false,
+    } as const;
+
+    expect(relative.sourcePathBuilder?.(file)).toBeUndefined();
+    expect(unavailable.sourcePathBuilder?.(file)).toBeUndefined();
+  });
+});
+
 describe("published extra files", () => {
   test("build a diff file from a one-file patch, labeled with the declared path", () => {
     const result = toInternalVcsPatchResult(
@@ -170,6 +228,7 @@ describe("published extra files", () => {
   });
 
   test("build a placeholder for a skipped file with no content to read", () => {
+    const sourcePath = resolve("repo", "generated.txt");
     const result = toInternalVcsPatchResult(
       baseResult({
         extraFiles: [
@@ -184,6 +243,7 @@ describe("published extra files", () => {
           },
         ],
         readFileSource: async () => "unreachable",
+        resolveFileSourcePath: ({ side }) => (side === "new" ? sourcePath : null),
       }),
     );
 
@@ -195,6 +255,7 @@ describe("published extra files", () => {
     expect(file?.statsTruncated).toBe(true);
     expect(file?.metadata.hunks).toHaveLength(0);
     expect(file?.sourceFetcher).toBeUndefined();
+    expect(file?.sourcePaths).toEqual({ old: null, new: sourcePath });
   });
 
   test("defaults a skipped file to a modification with no counted lines", () => {

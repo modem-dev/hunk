@@ -6,6 +6,8 @@ export const BUNDLED_EDITOR_COMMAND_FULL_ID = `hunk.${BUNDLED_EDITOR_COMMAND_ID}
 
 /** Register Hunk's editor workflow through the public app-handoff contract. */
 const registerBundledEditor: ExtensionFactory = (hunk) => {
+  let editorOpen = false;
+
   hunk.registerCommand(
     {
       id: BUNDLED_EDITOR_COMMAND_ID,
@@ -42,29 +44,38 @@ const registerBundledEditor: ExtensionFactory = (hunk) => {
         return;
       }
 
-      let exitCode: number;
+      if (editorOpen) {
+        ctx.notify("An editor is already open.", "warning");
+        return;
+      }
+
+      editorOpen = true;
       try {
-        const runEditor = () =>
-          Bun.spawnSync([selected.command.command, ...selected.command.args], {
+        const runEditor = async () => {
+          const child = Bun.spawn([selected.command.command, ...selected.command.args], {
             stdin: "inherit",
             stdout: "inherit",
             stderr: "inherit",
           });
-        const result = editorUsesTerminal(editor) ? await ctx.openInApp(runEditor) : runEditor();
-        exitCode = result.exitCode;
+          return await child.exited;
+        };
+        const exitCode = editorUsesTerminal(editor)
+          ? await ctx.openInApp(runEditor)
+          : await runEditor();
+
+        if (exitCode !== 0) {
+          ctx.notify(`Editor exited with status ${exitCode}.`, "error");
+          return;
+        }
+        ctx.commands.execute("hunk.app.refresh");
       } catch (error) {
         ctx.notify(
           `Failed to launch editor: ${error instanceof Error ? error.message : String(error)}`,
           "error",
         );
-        return;
+      } finally {
+        editorOpen = false;
       }
-
-      if (exitCode !== 0) {
-        ctx.notify(`Editor exited with status ${exitCode}.`, "error");
-        return;
-      }
-      ctx.commands.execute("hunk.app.refresh");
     },
   );
 };

@@ -29,7 +29,7 @@ const AFTER = lines(
 );
 
 const originalEditor = process.env.EDITOR;
-const originalSpawnSync = Bun.spawnSync;
+const originalSpawn = Bun.spawn;
 const tempDirs: string[] = [];
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -41,9 +41,9 @@ function createTempWorkspace() {
   return dir;
 }
 
-function mockSpawnSync(implementation: typeof Bun.spawnSync) {
-  const mutableBun = Bun as unknown as { spawnSync: typeof Bun.spawnSync };
-  mutableBun.spawnSync = implementation;
+function mockSpawn(implementation: (commands: string[]) => { exited: Promise<number> }) {
+  const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+  mutableBun.spawn = implementation as unknown as typeof Bun.spawn;
 }
 
 /** Bootstrap one working-tree review whose file really exists under `sourceLabel`. */
@@ -54,14 +54,17 @@ function createEditorBootstrap(sourceLabel: string, repoRoot = sourceLabel): App
       initialMode: "stack",
       sourceLabel,
       files: [
-        createTestDiffFile({
-          after: AFTER,
-          agent: false,
-          before: BEFORE,
-          context: 3,
-          id: "sample",
-          path: "sample.ts",
-        }),
+        {
+          ...createTestDiffFile({
+            after: AFTER,
+            agent: false,
+            before: BEFORE,
+            context: 3,
+            id: "sample",
+            path: "sample.ts",
+          }),
+          sourcePaths: { old: null, new: join(repoRoot, "sample.ts") },
+        },
       ],
     }),
     extensions: createEmptyExtensionLoadResult(repoRoot),
@@ -104,7 +107,7 @@ afterEach(async () => {
   } else {
     process.env.EDITOR = originalEditor;
   }
-  mockSpawnSync(originalSpawnSync);
+  (Bun as unknown as { spawn: typeof Bun.spawn }).spawn = originalSpawn;
 
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -133,10 +136,10 @@ describe("AppHost edit-selected-file shortcut", () => {
     process.env.EDITOR = "vim";
 
     const spawnCalls: string[][] = [];
-    mockSpawnSync(((cmds: string[]) => {
+    mockSpawn((cmds) => {
       spawnCalls.push(cmds);
-      return { exitCode: 1 };
-    }) as unknown as typeof Bun.spawnSync);
+      return { exited: Promise.resolve(1) };
+    });
 
     setup = await testRender(
       <AppHost bootstrap={createEditorBootstrap("Mercurial working copy", workspace)} />,

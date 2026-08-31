@@ -12,7 +12,12 @@ import { resolve as resolvePath } from "node:path";
 import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
-import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
+import {
+  createFileSourceFetcher,
+  fileSourcePathsForSpecs,
+  type FileSourceSpec,
+  type FileSourceSpecs,
+} from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../run/reviewGap";
@@ -52,14 +57,9 @@ function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-interface ResolvedFileSourceSpecs {
-  old: FileSourceSpec;
-  new: FileSourceSpec;
-}
-
 /** Build a binary-aware source-fetcher factory from per-file source specs. */
 function createSourceFetcherBuilder(
-  resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
+  resolveSpecs: (file: DiffFileSourceContext) => FileSourceSpecs | undefined,
 ): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
   return (file) => {
     if (file.isBinary) {
@@ -69,6 +69,21 @@ function createSourceFetcherBuilder(
     const specs = resolveSpecs(file);
     return specs ? createFileSourceFetcher(specs) : undefined;
   };
+}
+
+/** Build exact filesystem provenance from per-file source specs. */
+function createSourcePathBuilder(
+  resolveSpecs: (file: DiffFileSourceContext) => FileSourceSpecs | undefined,
+): NonNullable<BuildDiffFileOptions["sourcePathBuilder"]> {
+  return (file) => {
+    const specs = resolveSpecs(file);
+    return specs ? fileSourcePathsForSpecs(specs) : undefined;
+  };
+}
+
+/** Represent `/dev/null` as an absent side and every other resolved path as filesystem-backed. */
+function directFileSourceSpec(absolutePath: string): FileSourceSpec {
+  return absolutePath === "/dev/null" ? { kind: "none" } : { kind: "fs", absolutePath };
 }
 
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
@@ -132,6 +147,7 @@ function buildBinaryFileDiffChangeset(
   leftPath: string,
   rightPath: string,
   sidecar: SidecarContext | null,
+  sourceSpecs: FileSourceSpecs,
 ) {
   return {
     id: `pair:${displayPath}`,
@@ -148,6 +164,7 @@ function buildBinaryFileDiffChangeset(
         {
           previousPath: basename(input.left),
           isBinary: true,
+          sourcePathBuilder: createSourcePathBuilder(() => sourceSpecs),
         },
       ),
     ],
@@ -164,6 +181,10 @@ async function loadFileDiffChangeset(
   const rightPath = resolvePath(cwd, input.right);
   const displayPath =
     input.kind === "difftool" ? (input.path ?? basename(input.right)) : basename(input.right);
+  const sourceSpecs = {
+    old: directFileSourceSpec(leftPath),
+    new: directFileSourceSpec(rightPath),
+  } satisfies FileSourceSpecs;
   const title =
     input.kind === "difftool"
       ? `git difftool: ${displayPath}`
@@ -172,7 +193,15 @@ async function loadFileDiffChangeset(
         : `${basename(input.left)} ↔ ${basename(input.right)}`;
 
   if (isProbablyBinaryFile(leftPath) || isProbablyBinaryFile(rightPath)) {
-    return buildBinaryFileDiffChangeset(input, displayPath, title, leftPath, rightPath, sidecar);
+    return buildBinaryFileDiffChangeset(
+      input,
+      displayPath,
+      title,
+      leftPath,
+      rightPath,
+      sidecar,
+      sourceSpecs,
+    );
   }
 
   const leftText = await Bun.file(leftPath).text();
@@ -201,10 +230,8 @@ async function loadFileDiffChangeset(
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, sidecar, {
         previousPath: basename(input.left),
-        sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
-          old: { kind: "fs", absolutePath: leftPath },
-          new: { kind: "fs", absolutePath: rightPath },
-        })),
+        sourceFetcherBuilder: createSourceFetcherBuilder(() => sourceSpecs),
+        sourcePathBuilder: createSourcePathBuilder(() => sourceSpecs),
       }),
     ],
   } satisfies Changeset;
@@ -225,7 +252,12 @@ async function loadVcsChangeset(
     result.title,
     result.sourceLabel,
     sidecar,
-    result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
+    result.sourceFetcherBuilder || result.sourcePathBuilder
+      ? {
+          sourceFetcherBuilder: result.sourceFetcherBuilder,
+          sourcePathBuilder: result.sourcePathBuilder,
+        }
+      : undefined,
   );
   // Two published ways to review a file the patch does not contain, and both
   // land here: `untrackedPaths`, where an adapter names what its VCS considers

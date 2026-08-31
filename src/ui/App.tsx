@@ -489,6 +489,7 @@ export function App({
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
+    cancelAll: cancelAllExtensionDialogs,
     createDialogs: createQueuedExtensionDialogs,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
@@ -497,6 +498,12 @@ export function App({
     selectedIndex: extensionDialogSelectedIndex,
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
+
+  const extensionAppController = useExtensionAppController({
+    createReviewCapabilityLease,
+    onOwnershipStarted: cancelAllExtensionDialogs,
+    renderer,
+  });
 
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
@@ -510,13 +517,15 @@ export function App({
         // Bundled registrations are process-static rather than owned by the
         // reloadable user-extension registry, but their review-scoped controls
         // still retire when the mounted review changes.
-        isLive: bundled
-          ? () => bundledDialogsLiveRef.current && activeReviewGenerationRef.current === bootstrap
-          : lease.isLive,
+        isLive: () =>
+          !extensionAppController.isAppActive() &&
+          (bundled
+            ? bundledDialogsLiveRef.current && activeReviewGenerationRef.current === bootstrap
+            : lease.isLive()),
         showAttribution: !bundled,
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensionAppController, extensions],
   );
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
@@ -524,16 +533,12 @@ export function App({
     createReviewCapabilityLease,
     files: reviewFiles,
     input: bootstrap.input,
+    isAppActive: extensionAppController.isAppActive,
     onWorkspaceWriteCompleted,
     root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
     runWorkspaceWrite,
     workspaceFileWriter,
   });
-  const extensionAppController = useExtensionAppController({
-    createReviewCapabilityLease,
-    renderer,
-  });
-
   useExtensionEventContextProvider({
     createDialogs: createExtensionDialogs,
     createNavigation: createExtensionNavigation,

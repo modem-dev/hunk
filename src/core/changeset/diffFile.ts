@@ -3,7 +3,7 @@ import { findSidecarFileContext } from "./sidecar";
 import { patchLooksBinary } from "./binary";
 import { fileLanguageForPath } from "./fileLanguageLookup";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
-import type { FileSourceFetcher } from "./fileSource";
+import type { FileSourceFetcher, FileSourcePaths } from "./fileSource";
 import type { DiffFile, DiffLineMoveKinds, SidecarContext } from "./model";
 
 /** Count visible additions and deletions from parsed diff metadata. */
@@ -36,6 +36,7 @@ export interface BuildDiffFileOptions {
   previousPath?: string;
   isBinary?: boolean;
   sourceFetcherBuilder?: (file: DiffFileSourceContext) => FileSourceFetcher | undefined;
+  sourcePathBuilder?: (file: DiffFileSourceContext) => FileSourcePaths | undefined;
   isTooLarge?: boolean;
   stats?: DiffFile["stats"];
   statsTruncated?: boolean;
@@ -55,6 +56,7 @@ export function buildDiffFile(
     previousPath,
     isBinary,
     sourceFetcherBuilder,
+    sourcePathBuilder,
     isTooLarge,
     stats,
     statsTruncated,
@@ -69,13 +71,15 @@ export function buildDiffFile(
     : (normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName);
   const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
   const language = fileLanguageForPath(path);
-  const sourceFetcher = sourceFetcherBuilder?.({
+  const sourceContext = {
     path,
     previousPath: resolvedPreviousPath,
     type: normalizedMetadata.type,
     isUntracked: Boolean(isUntracked),
     isBinary: resolvedIsBinary,
-  });
+  } satisfies DiffFileSourceContext;
+  const sourceFetcher = sourceFetcherBuilder?.(sourceContext);
+  const sourcePaths = sourcePathBuilder?.(sourceContext);
 
   return {
     id: `${sourcePrefix}:${index}:${path}`,
@@ -93,6 +97,7 @@ export function buildDiffFile(
     isTooLarge,
     statsTruncated,
     sourceFetcher,
+    sourcePaths,
   };
 }
 

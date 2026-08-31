@@ -398,6 +398,8 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.previousPath).toBe("before.png");
     expect(bootstrap.changeset.files[0]?.isBinary).toBe(true);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
+    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({ old: left, new: right });
   });
 
   test("marks git binary diffs as skipped binary content", async () => {
@@ -513,6 +515,10 @@ describe("loadAppBootstrap", () => {
     });
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
     expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
+    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({
+      old: null,
+      new: join(dir, "large.txt"),
+    });
   });
 
   test("keeps generated large untracked files as skipped placeholders", async () => {
@@ -539,6 +545,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(false);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
     expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
+    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({
+      old: null,
+      new: join(dir, "large.txt"),
+    });
   });
 
   test("caps skipped untracked-file stats when byte-size detection would require a full huge read", async () => {
@@ -1853,7 +1863,58 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("old\n");
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("new\n");
+    expect(file?.sourcePaths).toEqual({ old: left, new: right });
   });
+
+  test("difftool keeps concrete side paths instead of its display path", async () => {
+    const dir = createTempDir("hunk-source-difftool-");
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "old\n");
+    writeFileSync(right, "new\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "difftool",
+      left,
+      right,
+      path: "display/renamed.ts",
+      options: {},
+    });
+
+    expect(bootstrap.changeset.files[0]?.path).toBe("display/renamed.ts");
+    expect(bootstrap.changeset.files[0]?.sourcePaths).toEqual({ old: left, new: right });
+  });
+
+  test.skipIf(platform() === "win32")(
+    "marks /dev/null as an absent direct-comparison side",
+    async () => {
+      const dir = createTempDir("hunk-source-dev-null-");
+      const right = join(dir, "added.ts");
+      writeFileSync(right, "new\n");
+
+      const bootstrap = await loadAppBootstrap({
+        kind: "diff",
+        left: "/dev/null",
+        right,
+        options: {},
+      });
+      const file = bootstrap.changeset.files[0];
+
+      expect(file?.metadata.type).toBe("new");
+      expect(file?.sourcePaths).toEqual({ old: null, new: right });
+      expect(await file?.sourceFetcher?.getFullText("old")).toBeNull();
+
+      const deleted = await loadAppBootstrap({
+        kind: "diff",
+        left: right,
+        right: "/dev/null",
+        options: {},
+      });
+      expect(deleted.changeset.files[0]?.metadata.type).toBe("deleted");
+      expect(deleted.changeset.files[0]?.sourcePaths).toEqual({ old: right, new: null });
+      expect(await deleted.changeset.files[0]?.sourceFetcher?.getFullText("new")).toBeNull();
+    },
+  );
 
   test("git working-tree diffs read the new side from the working tree and the old side from the index", async () => {
     const dir = createTempRepo("hunk-source-git-wt-");
@@ -1873,6 +1934,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+    expect(file?.sourcePaths).toEqual({ old: null, new: join(dir, "value.txt") });
   });
 
   test("git source fetchers use the custom git executable from bootstrap loading", async () => {
@@ -1979,6 +2041,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+    expect(file?.sourcePaths).toBeUndefined();
   });
 
   test("`hunk show <ref>` refuses to expand source blobs above the source cap", async () => {
@@ -2072,6 +2135,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(untracked?.sourceFetcher).toBeDefined();
     expect(await untracked?.sourceFetcher?.getFullText("new")).toBe("added contents\n");
     expect(await untracked?.sourceFetcher?.getFullText("old")).toBeNull();
+    expect(untracked?.sourcePaths).toEqual({ old: null, new: join(dir, "added.txt") });
   });
 
   test("deleted Unicode files attach a fetcher with new=null and old source", async () => {

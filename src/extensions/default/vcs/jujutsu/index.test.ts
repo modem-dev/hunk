@@ -130,6 +130,10 @@ describe("JjVcsAdapter", () => {
       } as const;
       expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
       expect(await diffResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
+      expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "old" })).toBeNull();
+      expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "new" })).toBe(
+        join(repo, "file.txt"),
+      );
       const equivalentDiffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(
         diffInput,
         { cwd: repo },
@@ -150,6 +154,7 @@ describe("JjVcsAdapter", () => {
       expect(showResult.sourceCacheKey).toContain("jj-source-v1");
       expect(await showResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
       expect(await showResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
+      expect("resolveFileSourcePath" in showResult).toBe(false);
 
       // Lazy source reads stay attached to the revision that produced the patch,
       // even after `@` is resnapshotted with different working-copy contents.
@@ -195,6 +200,7 @@ describe("JjVcsAdapter", () => {
       expect(result.patchText).toContain("+two");
       expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("one\ncontext\n");
       expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\ncontext\n");
+      expect(result.resolveFileSourcePath).toBeUndefined();
 
       writeFileSync(join(repo, "file.txt"), "three\ncontext\n");
       expect(
