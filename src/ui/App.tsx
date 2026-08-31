@@ -70,7 +70,7 @@ import {
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useSidebarSlideAnimation } from "./hooks/useSidebarSlideAnimation";
+import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
@@ -445,7 +445,6 @@ export function App({
     currentLinePaint,
     currentLinePaintRequested,
     endPaneResize,
-    filesPaneKey,
     filesPaneVisible,
     onCurrentLinePaintChange,
     paneLayout,
@@ -474,10 +473,9 @@ export function App({
     responsiveShowsSidebar: responsiveLayout.showSidebar,
   });
 
-  const presentedPaneLayout = useSidebarSlideAnimation({
+  const presentedPaneLayout = usePaneSlideAnimation({
     bodyHeight,
     bodyWidth,
-    filesPaneKey,
     paneLayout,
     resizing: resizingPaneKey !== null,
   });

@@ -1,24 +1,23 @@
 /**
- * Animates explicit files-sidebar visibility changes while semantic pane planning remains immediate.
+ * Animates one pane visibility change while semantic pane planning remains immediate.
  *
- * The hook retains an exiting files pane only in its presentation projection and moves review
- * geometry in the same timeline. Terminal resize, pane resize, registration changes, and the first
- * mounted layout snap directly to the semantic plan.
+ * The hook retains an exiting pane only in its presentation projection and moves the other panes
+ * and review geometry in the same timeline. Terminal resize, pane resize, broader registration
+ * changes, and the first mounted layout snap directly to the semantic plan.
  */
 
 import { useTimeline } from "@opentui/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ExtensionPaneLayoutPlan } from "../lib/extensionPanes";
 import {
-  interpolateSidebarLayout,
-  isSidebarVisibilityTransition,
-  sidebarSlideAnimationDuration,
-} from "../lib/sidebarSlide";
+  interpolatePaneLayout,
+  paneSlideAnimationDuration,
+  paneVisibilityTransitionKey,
+} from "../lib/paneSlide";
 
-interface SidebarSlideAnimationOptions {
+interface PaneSlideAnimationOptions {
   bodyHeight: number;
   bodyWidth: number;
-  filesPaneKey: string;
   paneLayout: ExtensionPaneLayoutPlan;
   resizing: boolean;
 }
@@ -26,25 +25,23 @@ interface SidebarSlideAnimationOptions {
 interface LayoutSnapshot {
   bodyHeight: number;
   bodyWidth: number;
-  filesPaneKey: string;
   paneLayout: ExtensionPaneLayoutPlan;
 }
 
 interface ActiveTransition {
   from: ExtensionPaneLayoutPlan;
   to: ExtensionPaneLayoutPlan;
-  filesPaneKey: string;
+  paneKey: string;
 }
 
-/** Return the presentation pane plan for the current sidebar slide frame. */
-export function useSidebarSlideAnimation({
+/** Return the presentation pane plan for the current pane slide frame. */
+export function usePaneSlideAnimation({
   bodyHeight,
   bodyWidth,
-  filesPaneKey,
   paneLayout,
   resizing,
-}: SidebarSlideAnimationOptions): ExtensionPaneLayoutPlan {
-  const duration = sidebarSlideAnimationDuration();
+}: PaneSlideAnimationOptions): ExtensionPaneLayoutPlan {
+  const duration = paneSlideAnimationDuration();
   const timeline = useTimeline({
     autoplay: false,
     duration: Math.max(1, duration),
@@ -67,10 +64,10 @@ export function useSidebarSlideAnimation({
         onUpdate: (animation) => {
           const transition = activeTransitionRef.current;
           if (!transition) return;
-          const nextLayout = interpolateSidebarLayout(
+          const nextLayout = interpolatePaneLayout(
             transition.from,
             transition.to,
-            transition.filesPaneKey,
+            transition.paneKey,
             animation.progress,
           );
           presentedLayoutRef.current = nextLayout;
@@ -89,15 +86,16 @@ export function useSidebarSlideAnimation({
 
   useLayoutEffect(() => {
     const previous = semanticSnapshotRef.current;
-    semanticSnapshotRef.current = { bodyHeight, bodyWidth, filesPaneKey, paneLayout };
-
+    semanticSnapshotRef.current = { bodyHeight, bodyWidth, paneLayout };
+    const transitionKey = previous
+      ? paneVisibilityTransitionKey(previous.paneLayout, paneLayout)
+      : null;
     const canAnimate =
       previous !== null &&
+      transitionKey !== null &&
       !resizing &&
       previous.bodyHeight === bodyHeight &&
-      previous.bodyWidth === bodyWidth &&
-      previous.filesPaneKey === filesPaneKey &&
-      isSidebarVisibilityTransition(previous.paneLayout, paneLayout, filesPaneKey);
+      previous.bodyWidth === bodyWidth;
 
     if (!canAnimate) {
       activeTransitionRef.current = null;
@@ -110,10 +108,10 @@ export function useSidebarSlideAnimation({
     activeTransitionRef.current = {
       from: presentedLayoutRef.current,
       to: paneLayout,
-      filesPaneKey,
+      paneKey: transitionKey,
     };
     timeline.restart();
-  }, [bodyHeight, bodyWidth, filesPaneKey, paneLayout, resizing, timeline]);
+  }, [bodyHeight, bodyWidth, paneLayout, resizing, timeline]);
 
   return presentedLayout;
 }

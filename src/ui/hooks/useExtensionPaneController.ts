@@ -80,7 +80,6 @@ export interface ExtensionPaneController {
   currentLinePaint: ExtensionCurrentLinePaint | null;
   currentLinePaintRequested: boolean;
   endPaneResize: (event?: TuiMouseEvent) => void;
-  filesPaneKey: string;
   filesPaneVisible: boolean;
   onCurrentLinePaintChange: (update: ExtensionCurrentLinePaintUpdate) => void;
   paneLayout: ExtensionPaneLayoutPlan;
@@ -638,7 +637,6 @@ export function useExtensionPaneController({
     currentLinePaint,
     currentLinePaintRequested,
     endPaneResize,
-    filesPaneKey: visibleFilesPaneKey,
     filesPaneVisible: visiblePaneKeys.includes(visibleFilesPaneKey),
     onCurrentLinePaintChange,
     paneLayout,
