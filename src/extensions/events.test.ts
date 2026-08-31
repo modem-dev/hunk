@@ -195,6 +195,7 @@ describe("extension event dispatch", () => {
           confirm: async () => false,
           select: async () => null,
           input: async () => null,
+          document: async () => {},
         },
         events: { emit: () => {} },
       };

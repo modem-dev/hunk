@@ -95,6 +95,8 @@ export type {
   ExtensionReviewSnapshotNote,
   ExtensionReviewSnapshotNoteAnchor,
   ExtensionConfirmOptions,
+  ExtensionDocumentCopyOptions,
+  ExtensionDocumentOptions,
   ExtensionDialogs,
   ExtensionInputOptions,
   ExtensionSelectOptions,

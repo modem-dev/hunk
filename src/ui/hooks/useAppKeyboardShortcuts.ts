@@ -23,7 +23,6 @@ type FocusArea = "files" | "filter" | "note";
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
-  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -40,6 +39,7 @@ export interface UseAppKeyboardShortcutsOptions {
   extensionDialog: ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
+  copyExtensionDialogDocument: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
   extensionTrustPromptOpen: boolean;
   trustRepoExtensions: () => void;
@@ -69,7 +69,6 @@ export interface UseAppKeyboardShortcutsOptions {
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
   saveDraftNote: () => void;
-  showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
   toggleFocusArea: () => void;
@@ -98,7 +97,6 @@ export interface UseAppKeyboardShortcutsOptions {
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
-  closeAgentSkill,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -110,6 +108,7 @@ export function useAppKeyboardShortcuts({
   extensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
+  copyExtensionDialogDocument,
   moveExtensionDialogSelection,
   extensionTrustPromptOpen,
   trustRepoExtensions,
@@ -129,7 +128,6 @@ export function useAppKeyboardShortcuts({
   neverAskToSaveViewPreferencesAndQuit,
   closeSaveConfigPrompt,
   saveDraftNote,
-  showAgentSkill,
   showHelp,
   switchMenu,
   toggleFocusArea,
@@ -138,7 +136,6 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
-  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
@@ -152,16 +149,16 @@ export function useAppKeyboardShortcuts({
   const isKeyboardModeActiveRef = useRef(isKeyboardModeActive);
   const exitKeyboardModeRef = useRef(exitKeyboardMode);
   const sendKeyboardModeKeyRef = useRef(sendKeyboardModeKey);
-  // These three close over live dialog state (the highlighted option, the typed
+  // These callbacks close over live dialog state (the highlighted option, the typed
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
   const cancelExtensionDialogRef = useRef(cancelExtensionDialog);
+  const copyExtensionDialogDocumentRef = useRef(copyExtensionDialogDocument);
   const moveExtensionDialogSelectionRef = useRef(moveExtensionDialogSelection);
 
   activeMenuIdRef.current = activeMenuId;
   commandsRef.current = commands;
   focusAreaRef.current = focusArea;
-  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
@@ -175,6 +172,7 @@ export function useAppKeyboardShortcuts({
   sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
   cancelExtensionDialogRef.current = cancelExtensionDialog;
+  copyExtensionDialogDocumentRef.current = copyExtensionDialogDocument;
   moveExtensionDialogSelectionRef.current = moveExtensionDialogSelection;
 
   /**
@@ -229,15 +227,10 @@ export function useAppKeyboardShortcuts({
     return "mine";
   };
 
-  /** Escape closes the topmost open overlay (agent skill, then help). */
+  /** Escape closes Hunk's help overlay. */
   const handleDialogShortcut = (key: KeyEvent): KeyOwner => {
     if (!isEscapeKey(key)) {
       return "notMine";
-    }
-
-    if (showAgentSkillRef.current) {
-      closeAgentSkill();
-      return "mine";
     }
 
     if (showHelpRef.current) {
@@ -338,7 +331,14 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "return" || key.name === "enter") {
-      acceptExtensionDialogRef.current();
+      if (dialog.kind !== "document") {
+        acceptExtensionDialogRef.current();
+      }
+      return "mine";
+    }
+
+    if (dialog.kind === "document" && dialog.copy && (key.name === "c" || key.sequence === "c")) {
+      copyExtensionDialogDocumentRef.current();
       return "mine";
     }
 

@@ -241,7 +241,7 @@ text into a request the host draws, and answering by request id so a duplicated
 Enter cannot spill onto whatever was queued behind. App subscribes with
 `useSyncExternalStore`, renders the current request through
 `src/ui/components/chrome/ExtensionDialog.tsx` (confirm reuses `ConfirmDialog`;
-select and input are `ModalFrame` surfaces), and unmount calls `shutdown()` so
+select, input, and read-only copyable documents are `ModalFrame` surfaces), and unmount calls `shutdown()` so
 every pending and queued dialog resolves its cancel value instead of leaving a
 handler awaiting forever. Key precedence in `useAppKeyboardShortcuts` places
 dialogs below Hunk's own app-critical prompts (repo trust, save-on-quit) and

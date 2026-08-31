@@ -44,6 +44,8 @@ export type {
   ExtensionContext,
   ExtensionCustomEventHandler,
   ExtensionDiffFile,
+  ExtensionDocumentCopyOptions,
+  ExtensionDocumentOptions,
   ExtensionEventBus,
   ExtensionEventContext,
   ExtensionEventHandler,

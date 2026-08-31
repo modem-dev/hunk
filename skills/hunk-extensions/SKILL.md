@@ -110,7 +110,7 @@ bad or duplicate id is skipped with a startup notice.
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `16`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `17`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -160,7 +160,7 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.review`
   (deeply immutable snapshots of stable files and complete saved store notes),
-  `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed), and
+  `ctx.dialogs` (`confirm`/`select`/`input`/`document`, queued and attributed), and
   `ctx.workspace` (`readDocument`, host-mediated `openInEditor`,
   `canWriteDocument`, `writeDocument` with consent).
 - **Pane components** get frozen `files`, selection, placement, exact dimensions,

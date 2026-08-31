@@ -50,6 +50,12 @@ describe("createExtensionDialogQueue", () => {
     const valueless = dialogs.select({ title: "Which?", options: ["a"] });
     queue.accept(queue.current()!.id);
     expect(await valueless).toBeNull();
+
+    const document = dialogs.document({ title: "Guide", body: "Read this." });
+    queue.accept(queue.current()!.id);
+    expect(queue.current()).toMatchObject({ kind: "document", title: "Guide" });
+    queue.cancel(queue.current()!.id);
+    expect(await document).toBeUndefined();
   });
 
   test("ignores an answer aimed at a dialog that is no longer current", async () => {
@@ -113,6 +119,27 @@ describe("createExtensionDialogQueue", () => {
       options: ["\u001b]0;pwned\u0007opt"],
     });
     expect(queue.current()).toMatchObject({ title: "Pick", options: ["opt"] });
+  });
+
+  test("uses the same terminal-safe text for document display and clipboard payloads", () => {
+    const queue = createExtensionDialogQueue();
+    const dialogs = queue.createDialogs("guide");
+
+    void dialogs.document({
+      title: "Setup",
+      body: "one\n\u001b[31mtwo\u001b[0m",
+      copy: { label: "Prompt", text: "copy \u001b[31mexactly\u001b[0m" },
+    });
+
+    expect(queue.current()).toMatchObject({
+      kind: "document",
+      bodyLines: ["one", "two"],
+      copy: {
+        label: "Prompt",
+        text: "copy exactly",
+        displayLines: ["copy exactly"],
+      },
+    });
   });
 
   test("sanitizes an input dialog's starting text without trimming it", () => {
@@ -220,6 +247,10 @@ describe("createExtensionDialogQueue", () => {
     );
     await expect(dialogs.select({ title: "Which?", options: [] })).rejects.toThrow(
       /at least one option/,
+    );
+    await expect(dialogs.document({ title: "Empty" })).rejects.toThrow(/body or copy content/);
+    await expect(dialogs.document({ title: "Bad copy", copy: { text: "" } })).rejects.toThrow(
+      /non-empty string/,
     );
     await expect(
       dialogs.select({ title: "Which?", options: [1 as unknown as string] }),

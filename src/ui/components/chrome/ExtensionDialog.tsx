@@ -1,6 +1,8 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type {
   ExtensionDialogRequest,
+  ExtensionDocumentCopyRequest,
+  ExtensionDocumentDialogRequest,
   ExtensionInputDialogRequest,
   ExtensionSelectDialogRequest,
 } from "../../lib/extensionDialogs";
@@ -36,11 +38,22 @@ function attributionText(extensionId: string, width: number) {
   return fitText(`${extensionToastPrefix()} ${extensionId}`, width);
 }
 
+/** Preserve meaningful text when a constrained document has only one row. */
+function windowDocumentText(sourceLines: readonly string[], width: number, maxRows: number) {
+  const windowed = windowDialogText(sourceLines, width, maxRows);
+  if (maxRows !== 1 || !windowed.truncated) return windowed;
+
+  const firstLine = windowDialogText(sourceLines, width, Number.MAX_SAFE_INTEGER).lines[0] ?? "";
+  return { lines: [fitText(`${firstLine}…`, width, "…")], truncated: true };
+}
+
 export function ExtensionDialog({
+  copySupported,
   inputValue,
   onAccept,
   onCancel,
   onChangeInput,
+  onCopyDocument,
   onPickOption,
   request,
   selectedIndex,
@@ -48,11 +61,13 @@ export function ExtensionDialog({
   terminalWidth,
   theme,
 }: {
+  copySupported: boolean;
   /** Live text of an input dialog's field; ignored by the other kinds. */
   inputValue: string;
   onAccept: (selectedIndexOverride?: number) => void;
   onCancel: () => void;
   onChangeInput: (value: string) => void;
+  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
   /** Highlight one option row without accepting it, mirroring the theme selector. */
   onPickOption: (index: number) => void;
   request: ExtensionDialogRequest;
@@ -61,6 +76,20 @@ export function ExtensionDialog({
   terminalWidth: number;
   theme: AppTheme;
 }) {
+  if (request.kind === "document") {
+    return (
+      <ExtensionDocumentDialog
+        copySupported={copySupported}
+        onCancel={onCancel}
+        onCopyDocument={onCopyDocument}
+        request={request}
+        terminalHeight={terminalHeight}
+        terminalWidth={terminalWidth}
+        theme={theme}
+      />
+    );
+  }
+
   if (request.kind === "select") {
     return (
       <ExtensionSelectDialog
@@ -133,6 +162,158 @@ export function ExtensionDialog({
         </box>
       ))}
     </ConfirmDialog>
+  );
+}
+
+/** Render read-only guidance with an optional host-mediated clipboard card. */
+function ExtensionDocumentDialog({
+  copySupported,
+  onCancel,
+  onCopyDocument,
+  request,
+  terminalHeight,
+  terminalWidth,
+  theme,
+}: {
+  copySupported: boolean;
+  onCancel: () => void;
+  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
+  request: ExtensionDocumentDialogRequest;
+  terminalHeight: number;
+  terminalWidth: number;
+  theme: AppTheme;
+}) {
+  const width = Math.min(84, Math.max(40, terminalWidth - 8));
+  const measuredFrame = resolveModalGeometry({
+    width,
+    height: Number.MAX_SAFE_INTEGER,
+    terminalWidth,
+    terminalHeight,
+  });
+  const bodyWidth = Math.max(1, measuredFrame.width - 4);
+  const cardTextWidth = Math.max(1, bodyWidth - 4);
+  const idealBodyRows = windowDialogText(request.bodyLines, bodyWidth, Number.MAX_SAFE_INTEGER)
+    .lines.length;
+  const copy = request.copy;
+  const idealCopyRows = copy
+    ? windowDialogText(copy.displayLines, cardTextWidth, Number.MAX_SAFE_INTEGER).lines.length
+    : 0;
+  const hasBody = idealBodyRows > 0;
+  const hasCopy = copy !== null;
+  const idealContentRows =
+    (request.showAttribution ? 2 : 0) +
+    idealBodyRows +
+    (hasBody && hasCopy ? 1 : 0) +
+    (hasCopy ? 1 + idealCopyRows + 2 : 0) +
+    2;
+  const frame = resolveModalGeometry({
+    width,
+    height: idealContentRows + MODAL_FRAME_CHROME_ROWS,
+    terminalWidth,
+    terminalHeight,
+  });
+  const contentRows = Math.max(0, frame.height - MODAL_FRAME_CHROME_ROWS);
+  const actionRows = contentRows > 0 ? 1 : 0;
+  const minimumCopyRows = hasCopy ? 2 : 0;
+  const minimumContentRows =
+    (request.showAttribution ? 1 : 0) + (hasBody ? 1 : 0) + minimumCopyRows + actionRows;
+  const actionGapRows = contentRows > minimumContentRows ? 1 : 0;
+  let remainingRows = Math.max(0, contentRows - actionRows - actionGapRows);
+  const attributionRows = request.showAttribution && remainingRows > 0 ? 1 : 0;
+  remainingRows -= attributionRows;
+  const minimumVisibleDocumentRows = (hasBody ? 1 : 0) + minimumCopyRows;
+  const attributionGapRows =
+    attributionRows > 0 && remainingRows > minimumVisibleDocumentRows ? 1 : 0;
+  remainingRows -= attributionGapRows;
+  const copyReserve = hasCopy ? Math.min(minimumCopyRows, remainingRows) : 0;
+  const bodyCopyGapReserve = hasBody && hasCopy && remainingRows > copyReserve + 1 ? 1 : 0;
+  const bodyRows = Math.min(
+    idealBodyRows,
+    Math.max(0, remainingRows - copyReserve - bodyCopyGapReserve),
+  );
+  remainingRows -= bodyRows;
+  const bodyCopyGapRows = bodyRows > 0 && hasCopy && remainingRows > 3 ? 1 : 0;
+  remainingRows -= bodyCopyGapRows;
+  const copyLabelRows = hasCopy && remainingRows > 1 ? 1 : 0;
+  remainingRows -= copyLabelRows;
+  const copyCardRows = hasCopy ? remainingRows : 0;
+  const visibleBody = windowDocumentText(request.bodyLines, bodyWidth, bodyRows);
+  const visibleCopy = copy
+    ? windowDocumentText(
+        copy.displayLines,
+        cardTextWidth,
+        copyCardRows >= 3 ? copyCardRows - 2 : copyCardRows,
+      )
+    : { lines: [], truncated: false };
+
+  return (
+    <ModalFrame
+      height={frame.height}
+      terminalHeight={terminalHeight}
+      terminalWidth={terminalWidth}
+      theme={theme}
+      title={request.title}
+      width={frame.width}
+      onClose={onCancel}
+    >
+      {attributionRows > 0 ? (
+        <box style={{ width: "100%", height: 1 }}>
+          <text fg={theme.badgeNeutral}>{attributionText(request.extensionId, bodyWidth)}</text>
+        </box>
+      ) : null}
+      {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {visibleBody.lines.map((line, index) => (
+        <box key={`body:${index}:${line}`} style={{ width: "100%", height: 1 }}>
+          <text fg={theme.text}>{fitText(line, bodyWidth)}</text>
+        </box>
+      ))}
+      {bodyCopyGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {copy && copyLabelRows > 0 ? (
+        <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
+          <text fg={theme.badgeNeutral}>{fitText(copy.label, bodyWidth - 1)}</text>
+        </box>
+      ) : null}
+      {copy && copyCardRows > 0 ? (
+        <box
+          style={{
+            width: "100%",
+            height: copyCardRows,
+            flexDirection: "column",
+            ...(copyCardRows >= 3
+              ? {
+                  border: true,
+                  borderColor: theme.border,
+                  paddingLeft: 1,
+                  paddingRight: 1,
+                }
+              : {}),
+          }}
+        >
+          {visibleCopy.lines.map((line, index) => (
+            <box key={`copy:${index}:${line}`} style={{ width: "100%", height: 1 }}>
+              <text fg={theme.text}>{fitText(line, cardTextWidth)}</text>
+            </box>
+          ))}
+        </box>
+      ) : null}
+      {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {actionRows > 0 ? (
+        <DialogActionRow
+          actions={
+            copy
+              ? [
+                  {
+                    keyLabel: "c",
+                    label: copySupported ? "Copy" : "unavailable",
+                    run: () => onCopyDocument(copy),
+                  },
+                ]
+              : [{ keyLabel: "esc", label: "close", run: onCancel }]
+          }
+          theme={theme}
+        />
+      ) : null}
+    </ModalFrame>
   );
 }
 

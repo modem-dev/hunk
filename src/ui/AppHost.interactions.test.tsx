@@ -18,7 +18,7 @@ import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
-import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
+import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "../extensions/default/ui/agentSkill";
 import { App } from "./App";
 import { availableThemes, resolveTheme } from "./themes";
 

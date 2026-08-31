@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds host-mediated editor
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds read-only document
+dialogs with optional clipboard actions; version 16 added host-mediated editor
 launches for reviewed files; version 15 added `{ side, line }` to opted-in pane
 `currentLine` paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
@@ -1609,12 +1610,13 @@ your extension.
 
 #### Asking the user
 
-`ctx.dialogs` puts a question on screen and waits for the answer. Three shapes,
-all promise-returning:
+`ctx.dialogs` puts a modal surface on screen and waits for it to settle. Four
+shapes, all promise-returning:
 
 - `confirm({ title, body?, confirmLabel?, cancelLabel? })` → `true` or `false`
 - `select({ title, options })` → the chosen string, or `null`
 - `input({ title, placeholder?, initial? })` → the typed string, or `null`
+- `document({ title, body?, copy?: { label?, text } })` → `void` when closed
 
 ```ts
 hunk.registerCommand(
@@ -1658,18 +1660,34 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 });
 ```
 
+`document` presents read-only guidance rather than asking for an answer. At
+least `body` or `copy` must be present. When `copy` is provided, `c` and the
+clickable copy action send its `text` to the terminal clipboard while the host
+removes terminal control sequences and renders the same safe value under
+`label` (default `Content`):
+
+```ts
+hunk.registerCommand({ id: "agent-setup", title: "Agent setup" }, async (ctx) => {
+  await ctx.dialogs.document({
+    title: "Agent setup",
+    body: "Give this prompt to your coding agent.",
+    copy: { label: "Prompt", text: "Review the current Hunk session." },
+  });
+});
+```
+
 Hunk draws the dialog, not you: your text fills the title, body, and choices,
 and dialogs from installed extensions carry an `ext <your-id>` attribution line
 — the same marker `notify` toasts use — so a third-party prompt can never present
 itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
 One dialog is on screen at a time. Concurrent requests queue in call order,
-across extensions too, so a second question waits its turn instead of replacing
-the first. While a dialog is up it owns the keyboard: Escape cancels (`false`,
-or `null`), Enter accepts — the confirm action, the highlighted option, or the
-typed text — and review shortcuts stay suppressed underneath. Confirm dialogs
-also answer to `y`/`n`, select dialogs to `↑`/`↓`, and every dialog's actions
-and rows are clickable.
+across extensions too, so a second modal waits its turn instead of replacing
+the first. While a dialog is up it owns the keyboard: Escape cancels (`false`
+or `null`) or closes a document, Enter accepts the confirm action, highlighted
+option, or typed text, and review shortcuts stay suppressed underneath.
+Documents ignore Enter and remain open. Confirm dialogs also answer to `y`/`n`,
+select dialogs to `↑`/`↓`, and every dialog's actions and rows are clickable.
 
 Two things resolve a dialog without the user: the session moving on, and bad
 arguments. A session reload — the refresh key, a watch-triggered reload, an

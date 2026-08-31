@@ -1,7 +1,7 @@
 /**
  * The queue behind `ctx.dialogs`, kept free of React on purpose.
  *
- * Extensions ask questions from async handlers, so the interesting behavior is
+ * Extensions open modal surfaces from async handlers, so the interesting behavior is
  * ordering and settlement — one dialog on screen at a time, later requests
  * waiting their turn, everything still waiting resolving its cancel value when
  * the session goes away. None of that is rendering, so it lives here as plain
@@ -12,10 +12,11 @@
 import type {
   ExtensionConfirmOptions,
   ExtensionDialogs,
+  ExtensionDocumentOptions,
   ExtensionInputOptions,
   ExtensionSelectOptions,
 } from "../../extension-api/types";
-import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "../../lib/terminalText";
 
 /** Default label for the accepting action of a confirm dialog. */
 const DEFAULT_CONFIRM_LABEL = "ok";
@@ -25,6 +26,15 @@ const DEFAULT_CANCEL_LABEL = "cancel";
 
 /** Body lines one confirm dialog may show; beyond this the modal stops being a prompt. */
 const MAX_CONFIRM_BODY_LINES = 6;
+
+/** Body lines one read-only document may retain before host-side windowing. */
+const MAX_DOCUMENT_BODY_LINES = 100;
+
+/** Clipboard text is bounded before it reaches the terminal's OSC 52 channel. */
+const MAX_DOCUMENT_COPY_TEXT_LENGTH = 16_384;
+
+/** Default heading for a document's copyable text card. */
+const DEFAULT_DOCUMENT_COPY_LABEL = "Content";
 
 /** What every queued dialog carries, whatever kind it is. */
 interface ExtensionDialogRequestBase {
@@ -61,14 +71,29 @@ export interface ExtensionInputDialogRequest extends ExtensionDialogRequestBase 
   initial: string;
 }
 
+/** Clipboard and display forms of one document's normalized copyable text. */
+export interface ExtensionDocumentCopyRequest {
+  label: string;
+  text: string;
+  displayLines: string[];
+}
+
+/** One normalized read-only document the host should draw. */
+export interface ExtensionDocumentDialogRequest extends ExtensionDialogRequestBase {
+  kind: "document";
+  bodyLines: string[];
+  copy: ExtensionDocumentCopyRequest | null;
+}
+
 /** One dialog the host should draw, normalized from what an extension asked for. */
 export type ExtensionDialogRequest =
   | ExtensionConfirmDialogRequest
   | ExtensionSelectDialogRequest
-  | ExtensionInputDialogRequest;
+  | ExtensionInputDialogRequest
+  | ExtensionDocumentDialogRequest;
 
 /** What a dialog hands back to the awaiting handler. */
-type ExtensionDialogResult = boolean | string | null;
+type ExtensionDialogResult = boolean | string | null | undefined;
 
 /** The host-side controller for every extension dialog in one session. */
 export interface ExtensionDialogQueue {
@@ -83,7 +108,8 @@ export interface ExtensionDialogQueue {
    * Accept the dialog with this id.
    *
    * A confirm resolves `true`. A select or input resolves `value`; without one
-   * there is nothing to hand back, so it settles as a cancel instead.
+   * there is nothing to hand back, so it settles as a cancel instead. Documents
+   * ignore acceptance and remain visible until cancelled.
    *
    * Answering anything but the current dialog is ignored: an answer computed
    * for a dialog the queue has already moved past — a repeated key, a late
@@ -143,15 +169,39 @@ function normalizeLabel(label: unknown, fallback: string) {
  * dialog text is third-party and routinely carries repo-controlled fragments,
  * exactly like toast text.
  */
-function normalizeBodyLines(body: unknown) {
+function normalizeBodyLines(body: unknown, maxLines = MAX_CONFIRM_BODY_LINES) {
   if (typeof body !== "string" || body.length === 0) {
     return [];
   }
 
   return body
     .split("\n")
-    .slice(0, MAX_CONFIRM_BODY_LINES)
+    .slice(0, maxLines)
     .map((line) => sanitizeTerminalLine(line));
+}
+
+/** Validate and normalize a document's optional clipboard card. */
+function normalizeDocumentCopy(
+  copy: ExtensionDocumentOptions["copy"],
+): ExtensionDocumentCopyRequest | null {
+  if (copy === undefined) return null;
+  if (!copy || typeof copy.text !== "string" || copy.text.length === 0) {
+    invalid("document", "copy.text must be a non-empty string.");
+  }
+  if (copy.text.length > MAX_DOCUMENT_COPY_TEXT_LENGTH) {
+    invalid("document", `copy.text must be at most ${MAX_DOCUMENT_COPY_TEXT_LENGTH} characters.`);
+  }
+
+  const text = sanitizeTerminalText(copy.text);
+  if (text.length === 0) {
+    invalid("document", "copy.text must contain visible or whitespace content.");
+  }
+
+  return {
+    label: normalizeLabel(copy.label, DEFAULT_DOCUMENT_COPY_LABEL),
+    text,
+    displayLines: text.split("\n").map((line) => sanitizeTerminalLine(line)),
+  };
 }
 
 /** Normalize the choices of a select dialog, or reject them. */
@@ -194,9 +244,9 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
     }
   };
 
-  /** The cancel value one request resolves with: `false` for confirm, `null` otherwise. */
+  /** The cancel value one request resolves with. */
   const cancelValueFor = (request: ExtensionDialogRequest): ExtensionDialogResult =>
-    request.kind === "confirm" ? false : null;
+    request.kind === "confirm" ? false : request.kind === "document" ? undefined : null;
 
   /**
    * Queue one request and hand back the promise its handler awaits.
@@ -310,6 +360,27 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
             isLive,
           );
         },
+        async document(options: ExtensionDocumentOptions) {
+          const title = normalizeTitle("document", options?.title);
+          const bodyLines = normalizeBodyLines(options.body, MAX_DOCUMENT_BODY_LINES);
+          const copy = normalizeDocumentCopy(options.copy);
+          if (bodyLines.length === 0 && copy === null) {
+            invalid("document", "requires body or copy content.");
+          }
+          await enqueue<undefined>(
+            (id) => ({
+              kind: "document",
+              id,
+              extensionId,
+              showAttribution,
+              title,
+              bodyLines,
+              copy,
+            }),
+            undefined,
+            isLive,
+          );
+        },
       };
     },
 
@@ -330,6 +401,10 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
 
       if (active.request.kind === "confirm") {
         settleCurrent(true);
+        return;
+      }
+
+      if (active.request.kind === "document") {
         return;
       }
 

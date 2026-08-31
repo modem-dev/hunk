@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds host-mediated editor
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds read-only document
+dialogs with optional clipboard actions; version 16 added host-mediated editor
 launches for reviewed files; version 15 added `{ side, line }` to opted-in pane
 `currentLine` paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
@@ -283,11 +284,12 @@ A handler may be async; a failure becomes a warning naming your extension.
 
 ### Asking the user
 
-`ctx.dialogs` puts a question on screen and waits for the answer. Three methods, all return promises:
+`ctx.dialogs` puts a modal surface on screen and waits for it to settle. Four methods return promises:
 
 - `confirm({ title, body?, confirmLabel?, cancelLabel? })` → `true` or `false`
 - `select({ title, options })` → the chosen string, or `null`
 - `input({ title, placeholder?, initial? })` → the typed string, or `null`
+- `document({ title, body?, copy?: { label?, text } })` → `void` when closed
 
 ```ts
 hunk.registerCommand(
@@ -308,6 +310,8 @@ hunk.registerCommand(
   },
 );
 ```
+
+`document` presents read-only guidance rather than asking for an answer. At least `body` or `copy` must be present. When `copy` is provided, `c` and the clickable copy action send its `text` to the terminal clipboard after Hunk removes terminal control sequences, and Hunk renders the same safe value under `label` (default `Content`).
 
 `select` fits acting on part of the selection — asking which hunk to jump to, then navigating there:
 
@@ -332,7 +336,7 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 
 Hunk draws the dialog; your text fills the title, body, and choices. Dialogs from installed extensions carry an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a third-party prompt cannot present itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 
-One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
+One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`) or closes a document. Enter accepts interactive dialogs but leaves read-only documents open; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
 ### Workspace documents
 

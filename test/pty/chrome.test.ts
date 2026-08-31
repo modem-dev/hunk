@@ -84,6 +84,48 @@ describe("PTY chrome", () => {
     }
   });
 
+  test("the Agent menu opens bundled skill guidance as a modal document", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.click(/Agent/, { first: true });
+      const menu = await session.waitForText(/Agent skill/, { timeout: 5_000 });
+      expect(menu).toContain("Next annotated file");
+
+      await session.click(/Agent skill/);
+      const document = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("Teach your agent how to review this Hunk session.") &&
+          text.includes("hunk skill path") &&
+          text.includes("c Copy"),
+        5_000,
+      );
+      expect(document).not.toContain("ext hunk");
+
+      await session.press("enter");
+      const stillOpen = await session.text({ immediate: true });
+      expect(stillOpen).toContain("Teach your agent how to review this Hunk session.");
+
+      await session.press("escape");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Teach your agent how to review this Hunk session."),
+        5_000,
+      );
+      expect(closed).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+
   test("rapid theme preview key repeats keep the selector responsive", async () => {
     const initialThemeId = "github-dark-default";
     const themes = availableThemes();

@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 16;
+export const HUNK_EXTENSION_API_VERSION = 17;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1621,8 +1621,25 @@ export interface ExtensionInputOptions {
   initial?: string;
 }
 
+/** Copyable text shown inside a document dialog. */
+export interface ExtensionDocumentCopyOptions {
+  /** Short heading shown above the copyable text. Defaults to "Content". */
+  label?: string;
+  /** Text copied to the terminal clipboard after Hunk removes terminal control sequences. */
+  text: string;
+}
+
+/** Read-only guidance shown to the user as a modal document. */
+export interface ExtensionDocumentOptions {
+  title: string;
+  /** Optional prose shown above the copyable text. */
+  body?: string;
+  /** Optional text card the user can copy with `c` or the mouse. */
+  copy?: ExtensionDocumentCopyOptions;
+}
+
 /**
- * Ask the user questions from a command handler, one modal at a time.
+ * Present modal interactions from a command handler, one at a time.
  *
  * Every dialog is drawn by Hunk, not by the extension. Dialogs from installed
  * extensions carry an attribution line naming their source, so a third-party
@@ -1631,8 +1648,9 @@ export interface ExtensionInputOptions {
  * concurrent requests queue in call order (FIFO), including across extensions,
  * so a second question waits for the first to be answered rather than replacing it.
  *
- * Escape always cancels, resolving the cancel value (`false`, or `null`).
- * Enter accepts: the confirm action, the highlighted option, or the typed text.
+ * Escape always dismisses, resolving the cancel value (`false`, `null`, or
+ * `undefined`). Enter accepts: the confirm action, the highlighted option, or
+ * the typed text. Documents are read-only and remain open until dismissed.
  * A session reload — the refresh key, a watch-triggered reload, an agent
  * command — cancels open and queued dialogs the same way: the review they
  * asked about is being replaced. A dialog raised while the app is tearing
@@ -1652,6 +1670,8 @@ export interface ExtensionDialogs {
   select(options: ExtensionSelectOptions): Promise<string | null>;
   /** Resolves the submitted text, or null on cancel/escape. */
   input(options: ExtensionInputOptions): Promise<string | null>;
+  /** Show read-only guidance until the user dismisses it. */
+  document(options: ExtensionDocumentOptions): Promise<void>;
 }
 
 /** One whole-document replacement an extension asks the host to write. */

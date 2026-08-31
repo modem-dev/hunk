@@ -275,6 +275,74 @@ describe("extension dialogs", () => {
     });
   });
 
+  test("a document dialog renders copyable guidance and closes only on escape", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-document-");
+    const extDir = createTempDir("hunk-ext-dialog-document-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.document({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        const copied: string[] = [];
+        setup.renderer.isOsc52Supported = () => true;
+        setup.renderer.copyToClipboardOSC52 = (text: string) => {
+          copied.push(text);
+          return true;
+        };
+
+        await act(async () => {
+          await setup.mockInput.typeText("y");
+        });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("Agent setup"),
+          "the document dialog to open",
+        );
+
+        const frame = setup.captureCharFrame();
+        expect(frame).toContain("Teach your agent");
+        expect(frame).toContain("Prompt");
+        expect(frame).toContain("Load the Hunk skill");
+        expect(frame).toContain("ext ext");
+
+        await act(async () => {
+          await setup.mockInput.pressEnter();
+          await setup.mockInput.typeText("c");
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).toContain("Agent setup");
+        expect(copied).toEqual([
+          "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path.",
+        ]);
+
+        const copyAction = findTextPosition(setup.captureCharFrame(), "c Copy");
+        expect(copyAction).not.toBeNull();
+        await act(async () => {
+          await setup.mockMouse.click(copyAction!.x, copyAction!.y);
+        });
+        expect(copied).toHaveLength(2);
+
+        await act(async () => {
+          await setup.mockInput.pressEscape();
+        });
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("answer undefined"),
+          "the document handler to finish",
+        );
+      },
+      undefined,
+      { width: 50, height: 12 },
+    );
+  });
+
   test("keeps confirm actions visible when wrapped prose exceeds a short terminal", async () => {
     const repo = createTestRepo("hunk-ext-dialog-short-confirm-");
     const extDir = createTempDir("hunk-ext-dialog-short-confirm-ext-");

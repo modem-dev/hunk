@@ -36,6 +36,7 @@ import {
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import { getBundledUIRegistry } from "../extensions/default/ui";
+import { BUNDLED_AGENT_SKILL_COMMAND_FULL_ID } from "../extensions/default/ui/agentSkill";
 import { BUNDLED_EDITOR_COMMAND_FULL_ID } from "../extensions/default/ui/editor";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -112,9 +113,6 @@ type FocusArea = "files" | "filter" | "note";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
-const LazyAgentSkillDialog = lazy(async () => ({
-  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
-}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
@@ -205,6 +203,10 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
+  const activeReviewGenerationRef = useRef(bootstrap);
+  useLayoutEffect(() => {
+    activeReviewGenerationRef.current = bootstrap;
+  }, [bootstrap]);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
     id: number;
@@ -224,7 +226,6 @@ export function App({
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
-  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
@@ -496,11 +497,15 @@ export function App({
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
-      const bundled = extensions?.registry.extensions.some(
-        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
-      );
+      const bundled = [
+        ...getBundledUIRegistry().extensions,
+        ...(extensions?.registry.extensions ?? []),
+      ].some((metadata) => metadata.id === extensionId && metadata.origin === "bundled");
       return createQueuedExtensionDialogs(extensionId, {
-        isLive: lease.isLive,
+        // Bundled registrations are process-static rather than owned by the
+        // reloadable user-extension registry, but their review-scoped controls
+        // still retire when the mounted review changes.
+        isLive: bundled ? () => activeReviewGenerationRef.current === bootstrap : lease.isLive,
         showAttribution: !bundled,
       });
     },
@@ -549,6 +554,15 @@ export function App({
         `${extensionId}.${registration.id}` === BUNDLED_EDITOR_COMMAND_FULL_ID,
     );
     if (!command) throw new Error("Bundled editor command is not registered.");
+    return command;
+  }, []);
+
+  const bundledAgentSkillCommand = useMemo(() => {
+    const command = resolveExtensionCommands(getBundledUIRegistry()).commands.find(
+      ({ extensionId, command: registration }) =>
+        `${extensionId}.${registration.id}` === BUNDLED_AGENT_SKILL_COMMAND_FULL_ID,
+    );
+    if (!command) throw new Error("Bundled agent skill command is not registered.");
     return command;
   }, []);
 
@@ -903,27 +917,23 @@ export function App({
     showNotice: showSessionNotice,
   });
 
-  /** Close the agent skill setup overlay. */
-  const closeAgentSkill = useCallback(() => {
-    setShowAgentSkill(false);
-  }, []);
-
-  /** Open the agent skill setup overlay. */
+  /** Delegate the shared host command shell to the bundled agent skill extension. */
   const openAgentSkill = useCallback(() => {
-    setShowAgentSkill(true);
-  }, []);
+    runExtensionCommand(bundledAgentSkillCommand);
+  }, [bundledAgentSkillCommand, runExtensionCommand]);
 
-  /** Copy the agent skill prompt through the terminal clipboard integration. */
-  const copyAgentSkillPrompt = useCallback(async () => {
-    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
+  /** Copy a document dialog's normalized payload through the terminal clipboard integration. */
+  const copyExtensionDialogDocument = useCallback(() => {
+    if (extensionDialog?.kind !== "document" || !extensionDialog.copy) return;
+
     if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
-      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
-      showTransientNotice("Copied agent skill prompt to clipboard");
+      renderer.copyToClipboardOSC52(extensionDialog.copy.text);
+      showTransientNotice(`Copied ${extensionDialog.copy.label.toLowerCase()} to clipboard`);
       return;
     }
 
     showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
-  }, [renderer, showTransientNotice]);
+  }, [extensionDialog, renderer, showTransientNotice]);
 
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
@@ -1108,7 +1118,6 @@ export function App({
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
-    closeAgentSkill,
     closeHelp,
     closeMenu,
     acceptThemeSelector,
@@ -1120,6 +1129,7 @@ export function App({
     extensionDialog,
     acceptExtensionDialog,
     cancelExtensionDialog,
+    copyExtensionDialogDocument,
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
     trustRepoExtensions,
@@ -1139,7 +1149,6 @@ export function App({
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
     saveDraftNote,
-    showAgentSkill,
     showHelp,
     switchMenu,
     toggleFocusArea,
@@ -1422,19 +1431,6 @@ export function App({
         </Suspense>
       ) : null}
 
-      {showAgentSkill ? (
-        <Suspense fallback={null}>
-          <LazyAgentSkillDialog
-            copySupported={renderer.isOsc52Supported?.() ?? false}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeAgentSkill}
-            onCopyPrompt={copyAgentSkillPrompt}
-          />
-        </Suspense>
-      ) : null}
-
       {showHelp ? (
         <Suspense fallback={null}>
           <LazyHelpDialog
@@ -1449,6 +1445,7 @@ export function App({
 
       {extensionDialog ? (
         <ExtensionDialog
+          copySupported={renderer.isOsc52Supported?.() ?? false}
           inputValue={extensionDialogInputValue}
           request={extensionDialog}
           selectedIndex={extensionDialogSelectedIndex}
@@ -1458,6 +1455,7 @@ export function App({
           onAccept={acceptExtensionDialog}
           onCancel={cancelExtensionDialog}
           onChangeInput={setExtensionDialogInputValue}
+          onCopyDocument={() => copyExtensionDialogDocument()}
           onPickOption={setExtensionDialogSelectedIndex}
         />
       ) : null}
