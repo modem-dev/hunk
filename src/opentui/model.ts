@@ -1,8 +1,7 @@
 import { parsePatchFiles } from "@pierre/diffs";
 import { patchLooksBinary } from "../core/changeset/binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/changeset/diffPaths";
-import { countDiffStats } from "../core/changeset/diffFile";
-import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
+import { buildDiffFile, countDiffStats } from "../core/changeset/diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
 import { sanitizePatch } from "../core/patch/sanitize";
 import type { DiffFile } from "../core/changeset/model";
@@ -83,14 +82,25 @@ export function createHunkDiffFilesFromPatch(patchText: string, sourceId = "patc
         ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
         : metadata;
 
+      const file = buildDiffFile(
+        normalizedMetadata,
+        findPatchChunk(metadata, chunks, index),
+        index,
+        sourceId,
+        null,
+        { pathsAreExact: Boolean(decodedPaths) },
+      );
       return buildHunkDiffFile(
         {
-          id: `${sourceId}:${index}:${normalizedMetadata.name}`,
-          language: fileLanguageForPath(normalizedMetadata.name),
-          metadata: normalizedMetadata,
-          patch: findPatchChunk(metadata, chunks, index),
+          id: file.id,
+          language: file.language,
+          metadata: file.metadata,
+          patch: file.patch,
+          path: file.path,
+          previousPath: file.previousPath,
+          stats: file.stats,
         },
-        Boolean(decodedPaths),
+        true,
       );
     });
 }

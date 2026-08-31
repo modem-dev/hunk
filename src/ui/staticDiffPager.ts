@@ -15,7 +15,7 @@
  * text so pager pipelines keep working.
  */
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
-import { changesetFromPatch } from "../core/changeset/fromPatch";
+import { loadPatchChangeset } from "../core/changeset/loaders";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
@@ -429,7 +429,6 @@ async function renderStaticFiles(
 
 /** Render a unified patch as ANSI text without starting Hunk's interactive application. */
 export async function renderStaticDiff(text: string, options: StaticDiffOptions = {}) {
-  const changeset = changesetFromPatch(text, "Static diff", "static", null);
   const commonOptions: CommonOptions = {
     hunkHeaders: options.hunkHeaders,
     lineNumbers: options.lineNumbers,
@@ -438,6 +437,7 @@ export async function renderStaticDiff(text: string, options: StaticDiffOptions 
     theme: options.theme,
     transparentBackground: options.transparentBackground,
   };
+  const changeset = await loadPatchChangeset({ kind: "patch", text, options: commonOptions }, null);
   const theme = commonOptions.transparentBackground
     ? withTransparentSurfaces(resolveTheme(commonOptions.theme, null))
     : resolveTheme(commonOptions.theme, null);
