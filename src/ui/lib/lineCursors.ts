@@ -127,6 +127,20 @@ export function reuseEquivalentLineCursors(previous: LineCursor[], next: LineCur
   return next;
 }
 
+/** Create a cursor stabilizer that only compares newly measured lists. */
+export function createLineCursorStabilizer() {
+  let measured = EMPTY_LINE_CURSORS;
+  let stable = EMPTY_LINE_CURSORS;
+
+  return (next: LineCursor[]) => {
+    if (measured !== next) {
+      measured = next;
+      stable = reuseEquivalentLineCursors(stable, next);
+    }
+    return stable;
+  };
+}
+
 /** Find the first cursor in one hunk, then anywhere in its file. */
 function nearestCursorInFile(cursors: LineCursor[], fileId: string, hunkIndex: number) {
   return (

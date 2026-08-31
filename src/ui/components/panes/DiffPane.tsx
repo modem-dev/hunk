@@ -51,9 +51,9 @@ import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  createLineCursorStabilizer,
   EMPTY_LINE_CURSORS,
   firstLineCursorInHunk,
-  reuseEquivalentLineCursors,
   type LineCursor,
   type LineCursorBoundsLookup,
 } from "../../lib/lineCursors";
@@ -962,6 +962,27 @@ export function DiffPane({
 
     // OpenTUI emits viewport events from its own layout and slider work. Keep React state updates
     // timer-deferred so wheel/key bursts collapse into bounded review-stream renders.
+    /** Schedule at most one deferred read for the current viewport event burst. */
+    const scheduleViewportRead = (delay: number) => {
+      if (scheduled) {
+        return;
+      }
+      scheduled = true;
+      scheduledViewportRead = setTimeout(() => {
+        scheduledViewportRead = null;
+        if (cancelled) {
+          scheduled = false;
+          return;
+        }
+
+        try {
+          readViewport();
+        } finally {
+          scheduled = false;
+        }
+      }, delay);
+    };
+
     const handleViewportChange = () => {
       if (
         (scrollBox.scrollTop ?? 0) === lastReadTop &&
@@ -969,24 +990,7 @@ export function DiffPane({
       ) {
         return;
       }
-      if (scheduled) {
-        return;
-      }
-      scheduled = true;
-      scheduledViewportRead = setTimeout(
-        () => {
-          scheduledViewportRead = null;
-          if (cancelled) {
-            scheduled = false;
-            return;
-          }
-
-          try {
-            readViewport();
-          } finally {
-            scheduled = false;
-          }
-        },
+      scheduleViewportRead(
         wrapLines ? Math.floor(VIEWPORT_READ_COALESCE_MS / 2) : VIEWPORT_READ_COALESCE_MS,
       );
     };
@@ -999,11 +1003,17 @@ export function DiffPane({
         return;
       }
       scrollBox.viewport.off("resize", handleViewportResize);
-      queueMicrotask(() => {
-        if (!cancelled) {
-          readViewport();
-        }
-      });
+      if (wrapLines) {
+        queueMicrotask(() => {
+          if (!cancelled) {
+            readViewport();
+          }
+        });
+        return;
+      }
+      // The exact nowrap estimate already fills the first paint. Publish Yoga's measured height on
+      // the next frame so later input shares the authoritative window without rendering twice.
+      scheduleViewportRead(VIEWPORT_READ_COALESCE_MS);
     };
 
     readViewport();
@@ -1194,12 +1204,11 @@ export function DiffPane({
     () => (cursorLine === "off" ? EMPTY_LINE_CURSORS : buildLineCursors(files, sectionGeometry)),
     [cursorLine, files, sectionGeometry],
   );
-  const previousLineCursorsRef = useRef<LineCursor[]>(EMPTY_LINE_CURSORS);
-  const lineCursors = reuseEquivalentLineCursors(
-    previousLineCursorsRef.current,
-    measuredLineCursors,
+  const lineCursorStabilizerRef = useRef<ReturnType<typeof createLineCursorStabilizer> | null>(
+    null,
   );
-  previousLineCursorsRef.current = lineCursors;
+  lineCursorStabilizerRef.current ??= createLineCursorStabilizer();
+  const lineCursors = lineCursorStabilizerRef.current(measuredLineCursors);
   /** Locate one measured row in whole-stream rows, addressed by its file and plan anchor. */
   const rowBoundsInStream = useCallback(
     (fileId: string, stableKey: string) => {
