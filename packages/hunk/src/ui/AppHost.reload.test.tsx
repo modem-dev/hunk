@@ -120,7 +120,7 @@ describe("reload watch runtime compatibility", () => {
     writeFileSync(file, "original line\nfirst change\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
     const { dispatchCommand, hostClient } = createTestHostClient();
@@ -142,7 +142,7 @@ describe("reload watch runtime compatibility", () => {
             nextInput: {
               kind: "vcs",
               staged: false,
-              options: { mode: "stack", excludeUntracked: true, watch: true },
+              options: { mode: "unified", excludeUntracked: true, watch: true },
             },
           },
         }),
@@ -172,7 +172,7 @@ describe("reload stale highlight cache", () => {
       kind: "diff",
       left,
       right,
-      options: { mode: "stack" },
+      options: { mode: "unified" },
     });
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -227,7 +227,7 @@ describe("reload stale highlight cache", () => {
     writeFileSync(file, "original line\nfirst change\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
 
@@ -282,7 +282,7 @@ describe("reload agent attention marks", () => {
       kind: "diff",
       left,
       right,
-      options: { mode: "stack" },
+      options: { mode: "unified" },
     });
     const { dispatchCommand, hostClient } = createTestHostClient();
     const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
@@ -373,7 +373,7 @@ describe("reload agent attention marks", () => {
     writeFileSync(bravo, "export const bravo = 2;\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
     const { dispatchCommand, hostClient } = createTestHostClient();

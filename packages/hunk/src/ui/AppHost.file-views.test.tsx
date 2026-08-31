@@ -249,8 +249,8 @@ describe("AppHost file views", () => {
     const bootstrap = createTestVcsAppBootstrap({
       changesetId: "changeset:broken-row",
       files: [createTwoHunkFile()],
-      initialMode: "stack",
-      inputMode: "stack",
+      initialMode: "unified",
+      inputMode: "unified",
       vcsOptions: { extensionPaths: [extension] },
     });
     bootstrap.extensions = extensions;
@@ -292,8 +292,8 @@ describe("AppHost file views", () => {
     const bootstrap = createTestVcsAppBootstrap({
       changesetId: "changeset:stateful-view",
       files: [createTestDiffFile({ id: "stateful", path: "stateful.ts" })],
-      initialMode: "stack",
-      inputMode: "stack",
+      initialMode: "unified",
+      inputMode: "unified",
       vcsOptions: { extensionPaths: [extension] },
     });
     bootstrap.extensions = extensions;
@@ -410,8 +410,8 @@ describe("AppHost file views", () => {
     const bootstrap = createTestVcsAppBootstrap({
       changesetId: "changeset:bulk-view",
       files,
-      initialMode: "stack",
-      inputMode: "stack",
+      initialMode: "unified",
+      inputMode: "unified",
       vcsOptions: { extensionPaths: [extension] },
     });
     bootstrap.extensions = extensions;
@@ -477,8 +477,8 @@ describe("AppHost file views", () => {
     const bootstrap = createTestVcsAppBootstrap({
       changesetId: "changeset:jsx-runtime-proof",
       files: [createTwoHunkFile()],
-      initialMode: "stack",
-      inputMode: "stack",
+      initialMode: "unified",
+      inputMode: "unified",
       vcsOptions: { extensionPaths: [extension] },
     });
     bootstrap.extensions = extensions;
@@ -555,8 +555,8 @@ describe("AppHost file views", () => {
     const bootstrap = createTestVcsAppBootstrap({
       changesetId: "changeset:jsx-runtime-proof",
       files: [createTwoHunkFile()],
-      initialMode: "stack",
-      inputMode: "stack",
+      initialMode: "unified",
+      inputMode: "unified",
       vcsOptions: { extensionPaths: [extension] },
     });
     bootstrap.extensions = extensions;

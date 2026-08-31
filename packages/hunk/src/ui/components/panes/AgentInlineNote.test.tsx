@@ -31,7 +31,7 @@ test("AgentInlineNote connects a ranged card to the external annotation rail", a
     <AgentInlineNote
       annotation={{ source: "user", newRange: [2, 4], summary: "Connected range" }}
       anchorSide="new"
-      layout="stack"
+      layout="unified"
       rangeGuideConnection="terminate"
       theme={theme}
       width={60}
@@ -59,7 +59,7 @@ test("AgentInlineNote continues an aggregate rail through the card", async () =>
     <AgentInlineNote
       annotation={{ source: "user", newRange: [2, 4], summary: "Continuing range" }}
       anchorSide="new"
-      layout="stack"
+      layout="unified"
       rangeGuideConnection="continue"
       theme={theme}
       width={60}
@@ -221,7 +221,7 @@ function renderedCardRowCount(frame: string) {
   return bottom - top + 1;
 }
 
-function plannedCardHeight(body: string, width: number, layout: "split" | "stack" = "split") {
+function plannedCardHeight(body: string, width: number, layout: "split" | "unified" = "split") {
   return measureAgentInlineNoteHeight({
     annotation: draftAnnotation(body),
     anchorSide: "new",
@@ -301,7 +301,7 @@ describe("AgentInlineNote draft composer", () => {
       <AgentInlineNote
         annotation={draftAnnotation(body)}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={34}
         draft={{
@@ -320,7 +320,7 @@ describe("AgentInlineNote draft composer", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("HEAD-");
       expect(frame).toContain("TAIL");
-      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "stack"));
+      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "unified"));
     } finally {
       await act(async () => {
         setup.renderer.destroy();

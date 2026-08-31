@@ -127,7 +127,7 @@ describe("PTY notes", () => {
   test("opening a draft keeps the active line fixed while pushing following code down", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 120,
       rows: 26,
     });
@@ -188,7 +188,7 @@ describe("PTY notes", () => {
         fixture.before,
         fixture.after,
         "--mode",
-        "stack",
+        "unified",
         "--cursor-line",
         "off",
       ],
@@ -283,7 +283,7 @@ describe("PTY notes", () => {
   test("saved notes can be edited and replied to through clickable threaded actions", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 100,
       rows: 30,
     });
@@ -612,10 +612,10 @@ describe("PTY notes", () => {
     }
   });
 
-  test("clicking stack-mode add-note affordances can save draft notes", async () => {
+  test("clicking unified-mode add-note affordances can save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 100,
       rows: 20,
     });
@@ -630,11 +630,11 @@ describe("PTY notes", () => {
       await revealAddNoteNear(session, targetRow);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
-      await session.type("Save this stack draft.");
+      await session.type("Save this unified draft.");
       await session.press(["ctrl", "s"]);
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
 
-      expect(saved).toContain("Save this stack draft.");
+      expect(saved).toContain("Save this unified draft.");
     } finally {
       session.close();
     }

@@ -184,7 +184,7 @@ describe("PTY lifecycle", () => {
     async () => {
       const fixture = harness.createTabbedFilePair();
       const session = await harness.launchHunk({
-        args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+        args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
         cwd: fixture.dir,
       });
 
@@ -214,7 +214,7 @@ describe("PTY lifecycle", () => {
         fixture.before,
         fixture.after,
         "--mode",
-        "stack",
+        "unified",
       ]);
       const session = await harness.launchShellCommand({
         command: "exec /bin/bash --noprofile --norc -i",

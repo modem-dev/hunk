@@ -76,7 +76,7 @@ Use it when you just want a drop-in diff viewer.
 
 ```tsx
 <scrollbox width="100%" height="100%" scrollY>
-  <HunkDiffBody file={file} width={88} layout="stack" selectedHunkIndex={2} />
+  <HunkDiffBody file={file} width={88} layout="unified" selectedHunkIndex={2} />
 </scrollbox>
 ```
 
@@ -192,7 +192,7 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 
 | Prop                 | Type                                                                                                                                                       | Default      | Notes                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
-| `layout`             | `"split" \| "stack"`                                                                                                                                       | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
+| `layout`             | `"split" \| "unified" \| "stack"`                                                                                                                          | `"split"`    | Chooses side-by-side or unified rendering; `stack` is a deprecated input alias.     |
 | `width`              | `number`                                                                                                                                                   | —            | Required content width in terminal columns.                                         |
 | `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember" \| "catppuccin-latte" \| "catppuccin-frappe" \| "catppuccin-macchiato" \| "catppuccin-mocha" \| "zenburn"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
 | `showLineNumbers`    | `boolean`                                                                                                                                                  | `true`       | Toggles line-number columns.                                                        |

@@ -1,4 +1,4 @@
-/** Mounts split and stack code rows from the canonical code-row layout and paint plans. */
+/** Mounts split and unified code rows from the canonical code-row layout and paint plans. */
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import { copySelectedRangeAtVisualLine, type CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
@@ -18,7 +18,7 @@ import {
   selectionHighlightBg,
   splitLeftRailColor,
   splitRightRailColor,
-  stackRailColor,
+  unifiedRailColor,
 } from "./rowStyle";
 import { markNestedRowMouseAction } from "./rowMouseActions";
 
@@ -106,7 +106,7 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   );
 }
 
-/** Mount one split or stack code row with selection, cursor, guide, and affordance paint. */
+/** Mount one split or unified code row with selection, cursor, guide, and affordance paint. */
 export function CodeRowView({
   plannedRow,
   width,
@@ -175,7 +175,7 @@ export function CodeRowView({
         lineHasSelection && copySelectedSide !== "left",
         onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
       ),
-      stack: pickRowHighlight(
+      unified: pickRowHighlight(
         lineSelectionHighlight,
         cursorRowHighlight,
         lineHasSelection,
@@ -186,7 +186,7 @@ export function CodeRowView({
   const firstLineHighlights = highlightsAtVisualLine(0);
   const leftHighlight = firstLineHighlights.left;
   const rightHighlight = firstLineHighlights.right;
-  const cellHighlight = firstLineHighlights.stack;
+  const cellHighlight = firstLineHighlights.unified;
 
   if (row.type === "split-line") {
     // The planner and row type are derived from the same complete planned row.
@@ -311,13 +311,13 @@ export function CodeRowView({
   }
 
   // The planner and row type are derived from the same complete planned row.
-  const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
-  const hasRangeGuide = stackLayout.noteGuideSide !== undefined;
+  const unifiedLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "unified" }>;
+  const hasRangeGuide = unifiedLayout.noteGuideSide !== undefined;
   const addNoteTarget = resolveCodeRowNoteTarget(row);
-  const addBadgeWidth = stackLayout.addNoteBadgeWidth;
+  const addBadgeWidth = unifiedLayout.addNoteBadgeWidth;
   const prefix = {
     text: diffRailMarker(),
-    fg: stackRailColor(row.cell.kind, theme, selected),
+    fg: unifiedRailColor(row.cell.kind, theme, selected),
     bg: theme.panel,
   };
 
@@ -335,9 +335,9 @@ export function CodeRowView({
         onMouseMove={() => onHoverRow?.(row.key)}
       >
         <box style={{ width: "100%", height: 1 }}>
-          {codeCellView.renderNowrapStack({
+          {codeCellView.renderNowrapUnified({
             row,
-            layout: stackLayout,
+            layout: unifiedLayout,
             lineNumberDigits,
             showLineNumbers,
             theme,
@@ -362,9 +362,9 @@ export function CodeRowView({
     );
   }
 
-  const wrapped = codeCellView.createWrappedStack({
+  const wrapped = codeCellView.createWrappedUnified({
     row,
-    layout: stackLayout,
+    layout: unifiedLayout,
     lineNumberDigits,
     showLineNumbers,
     theme,

@@ -128,7 +128,7 @@ export const COMPARISONS: Comparison[] = [
     summary:
       "delta restyles the text Git already printed. Hunk turns the same changeset into a review UI. Most people keep both.",
     answer:
-      "delta is a pager. It restyles the text `git diff` already printed and hands it to `less`. Hunk is a review UI. It turns the same changeset into one scrollable stream with a file sidebar, split and stack layouts, mouse support, watch mode, and agent notes beside the hunks they explain. Keep delta for everyday diffs. Open Hunk when you sit down to review.",
+      "delta is a pager. It restyles the text `git diff` already printed and hands it to `less`. Hunk is a review UI. It turns the same changeset into one scrollable stream with a file sidebar, split and unified layouts, mouse support, watch mode, and agent notes beside the hunks they explain. Keep delta for everyday diffs. Open Hunk when you sit down to review.",
     pick: {
       hunk: [
         "You review whole changesets and want a sidebar and per-hunk navigation.",
@@ -156,7 +156,7 @@ export const COMPARISONS: Comparison[] = [
         capability: "Side-by-side / split view",
         hunk: "yes",
         rival: "yes",
-        note: "delta opts in with `--side-by-side`. Hunk's `auto` layout picks split on wide terminals and stack on narrow ones.",
+        note: "delta opts in with `--side-by-side`. Hunk's `auto` layout picks split on wide terminals and unified on narrow ones.",
       },
       { capability: "Word-level highlighting inside a changed line", hunk: "yes", rival: "yes" },
       {
@@ -232,7 +232,7 @@ export const COMPARISONS: Comparison[] = [
         heading: "What Hunk does differently",
         body: [
           "Hunk parses the changeset into a document, then draws a UI over it. Every visible file becomes one continuous review stream, and the sidebar indexes that stream instead of hiding the rest of the change. `[` and `]` walk hunks across the whole changeset, `,` and `.` walk files, and the selection is real state that the sidebar, note cards, and context expansion all follow.",
-          "Holding the model in memory makes things easy that a pager cannot do at all. Press `z` to expand unchanged context around a hunk without re-running the diff. Press `1`, `2`, or `0` for split, stack, or responsive layout. Press `w` for wrapping or `t` for another theme, mid-review. `hunk diff --watch` reloads as you keep editing.",
+          "Holding the model in memory makes things easy that a pager cannot do at all. Press `z` to expand unchanged context around a hunk without re-running the diff. Press `1`, `2`, or `0` for split, unified, or responsive layout. Press `w` for wrapping or `t` for another theme, mid-review. `hunk diff --watch` reloads as you keep editing.",
           "The part with no delta equivalent is agent context. An agent that wrote the change can attach its reasoning to specific hunks through `hunk session`, and Hunk renders those notes inline, next to the code, instead of in a pane you correlate by hand.",
         ],
       },
@@ -272,7 +272,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Does Hunk support side-by-side diffs like `delta --side-by-side`?",
         answer:
-          "Yes, and it is the default on wide terminals. Hunk's `auto` layout picks split on wide terminals and stack on narrow ones. `1` forces split and `2` forces stack, at any point in the review.",
+          "Yes, and it is the default on wide terminals. Hunk's `auto` layout picks split on wide terminals and unified on narrow ones. `1` forces split and `2` forces unified, at any point in the review.",
       },
       {
         question: "Which is faster, Hunk or delta?",
@@ -353,7 +353,7 @@ export const COMPARISONS: Comparison[] = [
         note: "difftastic prints to the terminal, so scrolling is your pager's job.",
       },
       { capability: "Multi-file review stream with a sidebar", hunk: "yes", rival: "no" },
-      { capability: "Split and stack layouts switchable mid-review", hunk: "yes", rival: "no" },
+      { capability: "Split and unified layouts switchable mid-review", hunk: "yes", rival: "no" },
       {
         capability: "Themes",
         hunk: "yes",
@@ -496,7 +496,7 @@ export const COMPARISONS: Comparison[] = [
     summary:
       "diff-so-fancy tidies Git's diff output. Hunk replaces the reading experience. The gap is bigger than it looks.",
     answer:
-      "diff-so-fancy is a Perl script that tidies Git's diff output before your pager shows it: simpler file headers, `+` and `-` out of the gutter, colored empty lines, rulers between files. It adds no syntax highlighting and has no side-by-side view. Hunk is a review UI rather than a filter: a multi-file stream with a file sidebar, split and stack layouts, syntax highlighting, mouse support, watch mode, and inline agent annotations.",
+      "diff-so-fancy is a Perl script that tidies Git's diff output before your pager shows it: simpler file headers, `+` and `-` out of the gutter, colored empty lines, rulers between files. It adds no syntax highlighting and has no side-by-side view. Hunk is a review UI rather than a filter: a multi-file stream with a file sidebar, split and unified layouts, syntax highlighting, mouse support, watch mode, and inline agent annotations.",
     pick: {
       hunk: [
         "You want syntax highlighting, which diff-so-fancy does not do.",
@@ -577,7 +577,7 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "What you get by moving to Hunk",
         body: [
-          "The two usual reasons people leave are the two things diff-so-fancy does not do: syntax highlighting and side-by-side. Hunk has both, with a responsive `auto` layout that picks split on wide terminals and stack on narrow ones, plus theme selection you change from inside the review.",
+          "The two usual reasons people leave are the two things diff-so-fancy does not do: syntax highlighting and side-by-side. Hunk has both, with a responsive `auto` layout that picks split on wide terminals and unified on narrow ones, plus theme selection you change from inside the review.",
           "Past that it is a different category of tool. Every visible file forms one review stream with a sidebar indexing it, `[` and `]` walk hunks across the whole changeset, `z` expands unchanged context without re-running the diff, and the mouse works for scrolling, menus, and jumping to a file. `hunk diff --watch` keeps the review current while you edit, and agent notes render inline beside the hunks they explain.",
           "The trade is real. Hunk is a bigger program than a Perl script, and it takes over the screen instead of printing into your scrollback. If tidy output in `less` is what you want, diff-so-fancy is still fine.",
         ],
@@ -646,7 +646,7 @@ export const COMPARISONS: Comparison[] = [
     summary:
       "git diff prints the patch. Hunk renders the same patch as something you can navigate. Git stays the source of truth.",
     answer:
-      "`git diff` prints a unified patch to standard output. One long stream, one file after another, with no navigation past your pager's search. Hunk reads the same data and draws a review UI: one multi-file stream, a file sidebar, split or stacked layouts, syntax highlighting, mouse support, expandable context, watch mode, and agent annotations on hunks. Git still computes the diff. Hunk replaces the reading. Run `hunk diff` where you would run `git diff`, or point `core.pager` at `hunk pager`.",
+      "`git diff` prints a unified patch to standard output. One long stream, one file after another, with no navigation past your pager's search. Hunk reads the same data and draws a review UI: one multi-file stream, a file sidebar, split or unified layouts, syntax highlighting, mouse support, expandable context, watch mode, and agent annotations on hunks. Git still computes the diff. Hunk replaces the reading. Run `hunk diff` where you would run `git diff`, or point `core.pager` at `hunk pager`.",
     pick: {
       hunk: [
         "The changeset spans more than a couple of files and scrolling stopped working as navigation.",
@@ -776,7 +776,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "How do I get a side-by-side git diff in the terminal?",
         answer:
-          "`git diff` has no side-by-side mode. Run `hunk diff` instead, where split view is the default on wide terminals, or configure a difftool. Press `1` for split, `2` for stack, and `0` for the responsive layout at any point.",
+          "`git diff` has no side-by-side mode. Run `hunk diff` instead, where split view is the default on wide terminals, or configure a difftool. Press `1` for split, `2` for unified, and `0` for the responsive layout at any point.",
       },
       {
         question: "Can I make `git diff` itself open Hunk?",
@@ -947,7 +947,7 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "What Hunk does",
         body: [
-          "Hunk stays in the terminal. Run `hunk diff` in a second pane and it renders every visible file as one continuous review stream with a sidebar, split or stacked layouts, syntax highlighting, mouse support, and `--watch` to reload as the agent keeps working.",
+          "Hunk stays in the terminal. Run `hunk diff` in a second pane and it renders every visible file as one continuous review stream with a sidebar, split or unified layouts, syntax highlighting, mouse support, and `--watch` to reload as the agent keeps working.",
           "The agent-facing part runs the other direction from a comment box. Each session registers with a local loopback daemon, and the agent uses non-interactive `hunk session` commands to inspect the review you are looking at, navigate it, and leave notes. `hunk session review --json` gives it the structure of the changeset without pushing the whole patch into its context. Its reasoning then renders inline as note cards on specific hunks, so the explanation sits next to the code instead of in a separate transcript.",
           "Hunk is also an ordinary diff viewer. The same binary is your Git pager, difftool, patch reader, and two-file comparison tool, which matters if you would rather not install a second thing for non-agent work.",
         ],

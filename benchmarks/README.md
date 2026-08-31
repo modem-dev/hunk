@@ -58,7 +58,7 @@ bun run bench:competitors
 - `bootstrap-load.ts` — measures bootstrap and git-loader cost on a synthetic large repo, including file-pair bootstrap.
 - `working-tree-load.ts` — measures git working-tree loads across small, medium, large, many-untracked, and few-large-untracked repos.
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
-- `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
+- `render-layout.ts` — measures pure split/unified row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
 - `worker-highlight-cache.ts` — measures a cold worker highlight against an immediate compact-result cache hit.
 - `highlight-cache-layers.ts` — measures a resident terminal-cache hit against a worker-cache revisit after the terminal cache evicts the diff.

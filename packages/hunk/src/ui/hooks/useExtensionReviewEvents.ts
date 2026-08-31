@@ -10,10 +10,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { emitExtensionEvent } from "../../extensions/events";
 import { diffExtensionReviewNotes } from "../../extensions/reviewSnapshot";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import type {
   ExtensionEventPayloads,
-  ExtensionLayoutMode,
-  ExtensionResolvedLayout,
   ExtensionReviewSnapshotNote,
 } from "../../extension-api/types";
 import type { ExtensionDiffFile, ExtensionLoadResult } from "../../extensions/types";
@@ -66,8 +65,8 @@ export function useExtensionReviewEvents({
 }: {
   extensions?: ExtensionLoadResult;
   filter: string;
-  layoutMode: ExtensionLayoutMode;
-  resolvedLayout: ExtensionResolvedLayout;
+  layoutMode: LayoutMode;
+  resolvedLayout: Exclude<LayoutMode, "auto">;
   reviewGeneration?: string;
   reviewNotes?: readonly ExtensionReviewSnapshotNote[];
   scheduler?: ExtensionReviewEventScheduler;

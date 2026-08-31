@@ -129,7 +129,7 @@ describe("watched input lifecycle", () => {
       options: {
         agentContext: sidecar,
         agentNotes: true,
-        mode: "stack",
+        mode: "unified",
         watch: true,
       },
     });
@@ -179,7 +179,7 @@ describe("watched input lifecycle", () => {
       kind: "diff",
       left,
       right,
-      options: { mode: "stack", watch: true },
+      options: { mode: "unified", watch: true },
     });
     const watch = createWatchTestRuntime();
     const setup = await testRender(<AppHost bootstrap={bootstrap} watchRuntime={watch.runtime} />, {

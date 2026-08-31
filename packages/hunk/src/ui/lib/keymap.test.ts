@@ -15,6 +15,11 @@ const DEFAULTS: CommandKeyDefaults[] = [
     aliases: ["hunk.view.toggleSidebar"],
     defaultKeys: ["s"],
   },
+  {
+    id: "hunk.view.layoutUnified",
+    aliases: ["hunk.view.layoutStack"],
+    defaultKeys: ["2"],
+  },
   // A loaded extension's command, under that extension's own id.
   { id: "meta.toggle", defaultKeys: ["y"] },
 ];
@@ -52,6 +57,14 @@ describe("resolveCommandKeys", () => {
     expect(issues).toEqual([]);
     expect(keys.get("hunk.view.toggleFilesPane")).toEqual(["ctrl+b"]);
     expect(keys.get("hunk.view.toggleSidebar")).toEqual(["ctrl+b"]);
+  });
+
+  test("the deprecated layout alias remaps the canonical unified command", () => {
+    const { keys, issues } = resolve({ "hunk.view.layoutStack": "ctrl+2" });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.view.layoutUnified")).toEqual(["ctrl+2"]);
+    expect(keys.get("hunk.view.layoutStack")).toEqual(["ctrl+2"]);
   });
 
   test("the first config entry wins when an alias and canonical id both appear", () => {

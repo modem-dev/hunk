@@ -380,7 +380,7 @@ async function withAppHost(
  */
 async function launchInSubdirectory(repo: string, options: Record<string, unknown>) {
   return await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack", ...options } },
+    { kind: "vcs", staged: false, options: { mode: "unified", ...options } },
     { cwd: join(repo, "sub") },
   );
 }
@@ -876,7 +876,7 @@ describe("mounted lifecycle ordering", () => {
       {
         kind: "patch",
         text: "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-before\n+after\n",
-        options: { mode: "stack", extensionPaths: [extPath] },
+        options: { mode: "unified", extensionPaths: [extPath] },
       },
       { cwd: root },
     );
@@ -902,7 +902,7 @@ describe("mounted lifecycle ordering", () => {
     useTempConfigHome();
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
       { cwd: repo },
     );
     bootstrap.extensions = await loadStartupExtensions({
@@ -946,7 +946,7 @@ describe("mounted lifecycle ordering", () => {
     useTempConfigHome();
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
       { cwd: repo },
     );
     bootstrap.extensions = await loadStartupExtensions({
@@ -1028,7 +1028,7 @@ describe("mounted lifecycle ordering", () => {
     useTempConfigHome();
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
       { cwd: repo },
     );
     bootstrap.extensions = await loadStartupExtensions({
@@ -1084,7 +1084,7 @@ describe("mounted lifecycle ordering", () => {
     useTempConfigHome();
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
       { cwd: repo },
     );
     bootstrap.extensions = await loadStartupExtensions({
@@ -1132,7 +1132,7 @@ export default function (hunk) {
     useTempConfigHome();
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
       { cwd: repo },
     );
     bootstrap.extensions = await loadStartupExtensions({
@@ -1180,7 +1180,7 @@ async function grantTrustAndCollectProbeEvents(repo: string) {
   useTempConfigHome();
 
   const bootstrap = await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack" } },
+    { kind: "vcs", staged: false, options: { mode: "unified" } },
     { cwd: repo },
   );
   bootstrap.extensions = await loadStartupExtensions({
@@ -1491,7 +1491,7 @@ describe("reload re-runs extension VCS detection", () => {
         kind: "vcs",
         staged: false,
         options: {
-          mode: "stack",
+          mode: "unified",
           extensionPaths: [extPath],
           vcs: resolveDetectedVcsIdWithExtensions(repo, vcsCatalog),
         },
@@ -1552,7 +1552,7 @@ describe("reload re-runs extension VCS detection", () => {
         kind: "vcs",
         staged: false,
         options: {
-          mode: "stack",
+          mode: "unified",
           extensionPaths: [extPath],
           vcs: resolveDetectedVcsIdWithExtensions(inner, vcsCatalog),
         },

@@ -169,22 +169,22 @@ describe("expandCollapsedRows", () => {
     expect(third.right.spans[0]?.text).toBe("gamma");
   });
 
-  test("inserts stack-line context rows when layout is stack", () => {
+  test("inserts unified-line context rows when layout is unified", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [2, 3], [2, 3]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
     const inserted = result.slice(1, 3);
-    expect(inserted.every((row) => row.type === "stack-line")).toBe(true);
+    expect(inserted.every((row) => row.type === "unified-line")).toBe(true);
 
     const first = inserted[0];
-    if (!first || first.type !== "stack-line") {
-      throw new Error("expected stack-line context rows");
+    if (!first || first.type !== "unified-line") {
+      throw new Error("expected unified-line context rows");
     }
     expect(first.cell.kind).toBe("context");
     expect(first.cell.oldLineNumber).toBe(2);
@@ -214,7 +214,7 @@ describe("expandCollapsedRows", () => {
     const rows: DiffRow[] = [makeHunkHeader(0), makeCollapsedRow("trailing", 0, [4, 6], [4, 6])];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("trailing", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
@@ -222,8 +222,8 @@ describe("expandCollapsedRows", () => {
 
     expect(result.length).toBe(rows.length + 3);
     const last = result[result.length - 1];
-    if (!last || last.type !== "stack-line") {
-      throw new Error("expected synthesized stack-line rows after the trailing collapsed row");
+    if (!last || last.type !== "unified-line") {
+      throw new Error("expected synthesized unified-line rows after the trailing collapsed row");
     }
     expect(last.cell.spans[0]?.text).toBe("zeta");
     expect(last.cell.newLineNumber).toBe(6);
@@ -255,15 +255,15 @@ describe("expandCollapsedRows", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithCrlf },
       side: "new",
     });
 
     const inserted = result[1];
-    if (!inserted || inserted.type !== "stack-line") {
-      throw new Error("expected stack-line context row");
+    if (!inserted || inserted.type !== "unified-line") {
+      throw new Error("expected unified-line context row");
     }
     expect(inserted.cell.spans[0]?.text).toBe("alpha");
   });
@@ -273,15 +273,15 @@ describe("expandCollapsedRows", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 1], [1, 1]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithControls },
       side: "new",
     });
 
     const inserted = result[1];
-    if (!inserted || inserted.type !== "stack-line") {
-      throw new Error("expected one stack-line row");
+    if (!inserted || inserted.type !== "unified-line") {
+      throw new Error("expected one unified-line row");
     }
 
     const text = inserted.cell.spans.map((span) => span.text).join("");
@@ -296,7 +296,7 @@ describe("expandCollapsedRows", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 1], [1, 1]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
       tabWidth: 4,
@@ -304,8 +304,8 @@ describe("expandCollapsedRows", () => {
     });
 
     const inserted = result[1];
-    if (!inserted || inserted.type !== "stack-line") {
-      throw new Error("expected one stack-line row");
+    if (!inserted || inserted.type !== "unified-line") {
+      throw new Error("expected one unified-line row");
     }
     expect(inserted.cell.spans[0]?.text).toBe("a   b");
   });
@@ -315,7 +315,7 @@ describe("expandCollapsedRows", () => {
     const calls: Array<{ line: string | undefined; sourceLineNumber: number }> = [];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       sourceLineSpans: (line, sourceLineNumber) => {
@@ -331,8 +331,8 @@ describe("expandCollapsedRows", () => {
     ]);
 
     const inserted = result[1];
-    if (!inserted || inserted.type !== "stack-line") {
-      throw new Error("expected stack-line context row");
+    if (!inserted || inserted.type !== "unified-line") {
+      throw new Error("expected unified-line context row");
     }
     expect(inserted.cell.spans).toEqual([{ text: "highlighted:beta", fg: "#abcdef" }]);
   });
@@ -341,7 +341,7 @@ describe("expandCollapsedRows", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "stack",
+      layout: "unified",
       expandedKeys: new Set([reviewGapId("before", 0)]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "new",

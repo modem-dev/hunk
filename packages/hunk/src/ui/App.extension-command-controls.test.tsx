@@ -14,7 +14,7 @@ function createBootstrap(extensions = createEmptyExtensionLoadResult("/repo")): 
     ...createTestVcsAppBootstrap({
       changesetId: "changeset:command-controls",
       files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-      initialMode: "stack",
+      initialMode: "unified",
     }),
     extensions,
   };

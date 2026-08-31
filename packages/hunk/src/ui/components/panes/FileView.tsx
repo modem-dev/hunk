@@ -170,7 +170,7 @@ function FileViewComponent({
                 annotation={plannedRow.annotation}
                 anchorSide={plannedRow.anchorSide}
                 file={file}
-                layout="stack"
+                layout="unified"
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
                 draft={plannedRow.note.draft}

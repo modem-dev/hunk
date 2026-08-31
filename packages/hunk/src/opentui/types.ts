@@ -1,7 +1,10 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { HunkDiffThemeName } from "./themes";
 
-export type HunkDiffLayout = "split" | "stack";
+/** @deprecated Use the canonical `unified` layout. */
+export type LegacyHunkDiffLayout = "stack";
+/** Public layout input; Hunk normalizes the deprecated alias before rendering. */
+export type HunkDiffLayout = "split" | "unified" | LegacyHunkDiffLayout;
 
 /** Line stats shown by public Hunk OpenTUI primitives. */
 export interface HunkDiffStats {

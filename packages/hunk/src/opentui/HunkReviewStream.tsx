@@ -1,6 +1,7 @@
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { resolveTheme } from "../ui/themes";
 import { HunkDiffBody } from "./HunkDiffBody";
+import { normalizeHunkDiffLayout } from "./layout";
 import { HunkDiffFileHeader } from "./HunkDiffFileHeader";
 import type { HunkDiffFileInput, HunkDiffSelection, HunkReviewStreamProps } from "./types";
 
@@ -33,6 +34,7 @@ export function HunkReviewStream({
   highlight = true,
   onSelectionChange,
 }: HunkReviewStreamProps) {
+  const resolvedLayout = normalizeHunkDiffLayout(layout);
   const resolvedTheme = resolveTheme(theme, null);
   const activeSelection = resolveSelection(files, selection);
 
@@ -83,7 +85,7 @@ export function HunkReviewStream({
             ) : null}
             <HunkDiffBody
               file={file}
-              layout={layout}
+              layout={resolvedLayout}
               width={width}
               theme={theme}
               showLineNumbers={showLineNumbers}

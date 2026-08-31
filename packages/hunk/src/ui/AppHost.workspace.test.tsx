@@ -326,7 +326,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     let markReadStarted!: () => void;
     const readStarted = new Promise<void>((resolve) => {
@@ -379,7 +379,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -417,7 +417,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "show",
       ref: "HEAD",
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -455,7 +455,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -488,7 +488,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -533,7 +533,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -590,7 +590,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     const deferredWriter = createDeferredWorkspaceWriter();
     const broker = createTestBrokerClient();
@@ -645,7 +645,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     const deferredWriter = createDeferredWorkspaceWriter();
     const quitController = new AbortController();
@@ -696,7 +696,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -744,7 +744,7 @@ describe("extension workspace writes", () => {
       const bootstrap = await launchWithExtension(repo, extPath, {
         kind: "vcs",
         staged: false,
-        options: { mode: "stack", extensionPaths: [extPath] },
+        options: { mode: "unified", extensionPaths: [extPath] },
       });
       await withAppHost(bootstrap, async (setup) => {
         await flushUntil(
@@ -788,7 +788,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -832,7 +832,7 @@ describe("extension workspace writes", () => {
       const bootstrap = await launchWithExtension(repo, extPath, {
         kind: "vcs",
         staged: false,
-        options: { mode: "stack", extensionPaths: [extPath] },
+        options: { mode: "unified", extensionPaths: [extPath] },
       });
       await withAppHost(bootstrap, async (setup) => {
         await flushUntil(
@@ -873,7 +873,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "show",
       ref: "HEAD",
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(

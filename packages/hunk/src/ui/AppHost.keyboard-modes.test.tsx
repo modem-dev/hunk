@@ -99,8 +99,8 @@ async function renderWithExtension() {
   const bootstrap = createTestVcsAppBootstrap({
     changesetId: "keyboard-mode",
     files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-    initialMode: "stack",
-    inputMode: "stack",
+    initialMode: "unified",
+    inputMode: "unified",
   });
   bootstrap.extensions = extensions;
   const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {

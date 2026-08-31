@@ -79,8 +79,8 @@ const _mixedBatchItemIsNotACommand: SessionCommentApplyItemInput = {
 void _mixedBatchItemIsNotACommand;
 
 describe("session daemon request validation", () => {
-  test("uses the daemon revision for structured two-endpoint reload payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(14);
+  test("uses the daemon revision for structured reloads with canonical layout payloads", () => {
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(15);
   });
 
   test("strictly parses cross-process capabilities", () => {
@@ -113,6 +113,23 @@ describe("session daemon request validation", () => {
       expect(parseSessionDaemonCapabilities(value)).toBeNull();
     }
   });
+
+  test("normalizes deprecated stack layout values in reload payloads", () => {
+    expect(
+      parseSessionDaemonRequest({
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "show",
+          ref: "HEAD",
+          options: { mode: "stack" },
+        },
+      }),
+    ).toMatchObject({
+      nextInput: { options: { mode: "unified" } },
+    });
+  });
+
   test("accepts every wire-shaped action payload", () => {
     const requests: unknown[] = [
       { action: "list" },

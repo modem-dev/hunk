@@ -115,7 +115,7 @@ function createDemoRepo() {
 async function captureReviewScene() {
   console.log("scene: review");
   const repoDir = createDemoRepo();
-  const session = await launchHunk(["diff", "--mode", "stack"], { cwd: repoDir });
+  const session = await launchHunk(["diff", "--mode", "unified"], { cwd: repoDir });
   try {
     await session.waitForText(/src\//, { timeout: 60_000 });
     await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
@@ -165,7 +165,7 @@ async function captureStmlScene() {
     join(repoRoot, "examples/9-agent-markup-notes/agent-context.json"),
     "--experimental",
     "--mode",
-    "stack",
+    "unified",
   ]);
   try {
     await session.waitForText(/retry\.ts/, { timeout: 60_000 });
@@ -270,7 +270,13 @@ async function captureTriageScene() {
   const repoDir = createDemoRepo();
 
   const session = await launchHunk(
-    ["diff", "--extension", join(repoRoot, "examples/extensions/review-triage"), "--mode", "stack"],
+    [
+      "diff",
+      "--extension",
+      join(repoRoot, "examples/extensions/review-triage"),
+      "--mode",
+      "unified",
+    ],
     { cwd: repoDir },
   );
   try {
@@ -333,7 +339,7 @@ async function captureFileViewScene(
     "--extension",
     join(repoRoot, "examples/extensions/jsx-file-view-gallery"),
     "--mode",
-    "stack",
+    "unified",
     before,
     after,
   ]);

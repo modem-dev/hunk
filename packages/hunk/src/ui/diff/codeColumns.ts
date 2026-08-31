@@ -101,7 +101,7 @@ export function findMaxLineNumberInRows(rows: Iterable<DiffRow>, fallback = 1) {
       continue;
     }
 
-    if (row.type === "stack-line") {
+    if (row.type === "unified-line") {
       highest = Math.max(highest, row.cell.oldLineNumber ?? 0, row.cell.newLineNumber ?? 0);
     }
   }
@@ -137,8 +137,8 @@ export function resolveSplitCellGeometry(
   };
 }
 
-/** Resolve the stack-cell gutter and code viewport after the left rail prefix. */
-export function resolveStackCellGeometry(
+/** Resolve the unified-cell gutter and code viewport after the left rail prefix. */
+export function resolveUnifiedCellGeometry(
   width: number,
   lineNumberDigits: number,
   showLineNumbers: boolean,
@@ -168,5 +168,5 @@ export function resolveCodeViewportWidth(
     );
   }
 
-  return resolveStackCellGeometry(width, lineNumberDigits, showLineNumbers).contentWidth;
+  return resolveUnifiedCellGeometry(width, lineNumberDigits, showLineNumbers).contentWidth;
 }

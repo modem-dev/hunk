@@ -474,7 +474,7 @@ export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning
  * One marked character range inside one diff line.
  *
  * Addressed by source coordinates — `(side, line, range)` — rather than by
- * rendered rows, so a mark survives split vs stack layout, line wrapping,
+ * rendered rows, so a mark survives split vs unified layout, line wrapping,
  * horizontal scrolling, and collapsed-context expansion without the extension
  * ever learning Hunk's row model.
  */
@@ -2152,9 +2152,14 @@ export interface ExtensionEventContext extends ExtensionContext {
  */
 export type SessionReloadReason = "watch" | "daemon" | "extension" | "manual";
 
-/** Payload delivered with each lifecycle event, keyed by event name. */
-export type ExtensionLayoutMode = "auto" | "split" | "stack";
-export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
+/** @deprecated Hunk accepts this legacy vocabulary only for source compatibility. */
+export type ExtensionLegacyLayout = "stack";
+/** Canonical layout mode vocabulary emitted to extensions. */
+export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
+/** Layout vocabulary exposed for source compatibility; new code should use `unified`. */
+export type ExtensionLayoutMode = ExtensionCanonicalLayoutMode | ExtensionLegacyLayout;
+/** Concrete canonical layout emitted to extensions. */
+export type ExtensionResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
 export interface ExtensionReviewNote {
@@ -2197,8 +2202,13 @@ export interface ExtensionEventPayloads {
   filter_changed: { filter: string };
   /** The user committed a different active theme. Selector previews do not emit this event. */
   theme_changed: { themeId: string };
-  /** The configured layout mode or responsive resolved layout changed. */
-  layout_changed: { mode: ExtensionLayoutMode; layout: ExtensionResolvedLayout };
+  /**
+   * The configured layout mode or responsive resolved layout changed.
+   *
+   * Hunk emits only `auto`, `split`, and `unified`; the deprecated `stack`
+   * literal remains in the public aliases solely so existing source compiles.
+   */
+  layout_changed: { mode: ExtensionCanonicalLayoutMode; layout: ExtensionResolvedLayout };
   /** A watch source observed a change and is waiting to check/reload it. */
   watch_reload_pending: Record<string, never>;
   /** A user saved a new inline review note. */

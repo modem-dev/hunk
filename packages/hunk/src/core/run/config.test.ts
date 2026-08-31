@@ -67,6 +67,7 @@ describe("config persistence", () => {
       [
         "# personal defaults",
         'theme = "github-dark-default"',
+        'mode = "stack"',
         "wrap_lines = false",
         "",
         "[custom_theme]",
@@ -76,7 +77,7 @@ describe("config persistence", () => {
 
     const savedPath = saveGlobalViewPreferences(
       {
-        mode: "split",
+        mode: "unified",
         theme: "dracula",
         showLineNumbers: false,
         wrapLines: true,
@@ -94,8 +95,8 @@ describe("config persistence", () => {
       [
         "# personal defaults",
         'theme = "dracula"',
+        'mode = "unified"',
         "wrap_lines = true",
-        'mode = "split"',
         "line_numbers = false",
         "hunk_headers = false",
         "menu_bar = false",
@@ -213,7 +214,7 @@ describe("config resolution", () => {
     expect(resolved.viewPreferencesConfigPath).toBe(join(repo, ".hunk", "config.toml"));
     expect(resolved.input.options).toMatchObject({
       pager: true,
-      mode: "stack",
+      mode: "unified",
       theme: "github-light-default",
       lineNumbers: false,
       tabWidth: 6,
@@ -819,7 +820,7 @@ describe("config resolution", () => {
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
     writeFileSync(
       join(home, ".config", "hunk", "config.toml"),
-      ["[show]", 'mode = "stack"', "line_numbers = false"].join("\n"),
+      ["[show]", 'mode = "unified"', "line_numbers = false"].join("\n"),
     );
 
     const resolved = resolveConfiguredCliInput(
@@ -831,7 +832,7 @@ describe("config resolution", () => {
       { cwd: createTempDir("hunk-config-cwd-"), env: { HOME: home } },
     );
 
-    expect(resolved.input.options.mode).toBe("stack");
+    expect(resolved.input.options.mode).toBe("unified");
     expect(resolved.input.options.lineNumbers).toBe(false);
   });
 

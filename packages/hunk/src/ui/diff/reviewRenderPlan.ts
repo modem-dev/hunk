@@ -10,7 +10,7 @@ import type { DiffRow } from "./diffRows";
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();
 
-type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type DiffLineRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 interface InlineVisibleNotePlacement {
   anchorKey: string;
@@ -82,18 +82,18 @@ export function createPlannedDiffReviewRow(
       return { kind: "diff-row", ...fields, row };
     case "split-line":
       return { kind: "diff-row", ...fields, row };
-    case "stack-line":
+    case "unified-line":
       return { kind: "diff-row", ...fields, row };
   }
 }
 
-/** Split or stack code row accepted by code-row rendering and interaction policy. */
-export type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+/** Split or unified code row accepted by code-row rendering and interaction policy. */
+export type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 /** Collapsed gap or hunk-header row accepted by metadata rendering. */
 export type DiffMetaRow = Extract<DiffRow, { type: "collapsed" | "hunk-header" }>;
 
-/** Planned review row carrying split or stack code cells. */
+/** Planned review row carrying split or unified code cells. */
 export type PlannedCodeReviewRow = PlannedDiffReviewRow<CodeDiffRow>;
 
 /** Planned review row carrying metadata rather than code cells. */
@@ -103,7 +103,7 @@ export type PlannedDiffMetaReviewRow = PlannedDiffReviewRow<DiffMetaRow>;
 export function isPlannedCodeReviewRow(
   plannedRow: PlannedDiffReviewRow,
 ): plannedRow is PlannedCodeReviewRow {
-  return plannedRow.row.type === "split-line" || plannedRow.row.type === "stack-line";
+  return plannedRow.row.type === "split-line" || plannedRow.row.type === "unified-line";
 }
 
 /** Return whether a planned diff row carries a gap or hunk header. */
@@ -115,7 +115,7 @@ export function isPlannedDiffMetaReviewRow(
 
 function lineRows(rows: DiffRow[]) {
   return rows.filter(
-    (row): row is DiffLineRow => row.type === "split-line" || row.type === "stack-line",
+    (row): row is DiffLineRow => row.type === "split-line" || row.type === "unified-line",
   );
 }
 
@@ -216,7 +216,7 @@ export function contextLineStableKeySides(
   };
 }
 
-/** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
+/** Resolve the stable anchor keys for one rendered diff row across split and unified layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {
     return [`meta:collapsed:${row.position}:${row.hunkIndex}`];
@@ -241,7 +241,7 @@ function diffRowStableKeys(row: DiffRow) {
       ]);
     }
 
-    // Prefer the old-side line so split→stack toggles stay near the same vertical position even
+    // Prefer the old-side line so split→unified toggles stay near the same vertical position even
     // when one large change block expands into many deletions followed by many additions.
     return uniqueStableKeys([
       oldLineStableKey(row.hunkIndex, row.left.lineNumber),

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { contrastRatio, hexColorDistance } from "../lib/color";
 import { THEMES, TRANSPARENT_BACKGROUND, withTransparentSurfaces } from "../themes";
-import { cursorLineHighlightBg, lineHighlightToneStyle, stackCellPalette } from "./rowStyle";
+import { cursorLineHighlightBg, lineHighlightToneStyle, unifiedCellPalette } from "./rowStyle";
 
 const DARK = THEMES.find((theme) => theme.id === "github-dark-dimmed")!;
 const LIGHT = THEMES.find((theme) => theme.id === "github-light-default")!;
@@ -10,7 +10,7 @@ describe("cursorLineHighlightBg", () => {
   test("marks context rows on transparent surfaces", () => {
     for (const base of [DARK, LIGHT]) {
       const theme = withTransparentSurfaces(base);
-      const context = stackCellPalette("context", theme);
+      const context = unifiedCellPalette("context", theme);
 
       expect(context.contentBg).toBe(TRANSPARENT_BACKGROUND);
       expect(cursorLineHighlightBg(context.contentBg, theme)).not.toBe(TRANSPARENT_BACKGROUND);
@@ -21,7 +21,7 @@ describe("cursorLineHighlightBg", () => {
     for (const base of THEMES) {
       for (const theme of [base, withTransparentSurfaces(base)]) {
         for (const kind of ["context", "addition", "deletion"] as const) {
-          const marked = cursorLineHighlightBg(stackCellPalette(kind, theme).contentBg, theme);
+          const marked = cursorLineHighlightBg(unifiedCellPalette(kind, theme).contentBg, theme);
           expect(contrastRatio(theme.text, marked)).toBeGreaterThan(3);
         }
       }
@@ -29,8 +29,8 @@ describe("cursorLineHighlightBg", () => {
   });
 
   test("moves added and removed rows as far as it moves context rows", () => {
-    const context = stackCellPalette("context", DARK).contentBg;
-    const added = stackCellPalette("addition", DARK).contentBg;
+    const context = unifiedCellPalette("context", DARK).contentBg;
+    const added = unifiedCellPalette("addition", DARK).contentBg;
 
     const shift = (from: string) => {
       const to = cursorLineHighlightBg(from, DARK);
@@ -48,7 +48,7 @@ describe("lineHighlightToneStyle", () => {
   test("clears a strong visible distance on every line kind of every built-in theme", () => {
     for (const theme of THEMES) {
       for (const kind of ["context", "addition", "deletion"] as const) {
-        const baseBg = stackCellPalette(kind, theme).contentBg;
+        const baseBg = unifiedCellPalette(kind, theme).contentBg;
         for (const tone of TINTED_TONES) {
           const resolved = lineHighlightToneStyle(tone, baseBg, theme);
           expect(resolved).toBeDefined();
@@ -65,7 +65,7 @@ describe("lineHighlightToneStyle", () => {
   test("paints the current mark as reverse video, unmistakable on every theme", () => {
     for (const theme of THEMES) {
       for (const kind of ["context", "addition", "deletion"] as const) {
-        const baseBg = stackCellPalette(kind, theme).contentBg;
+        const baseBg = unifiedCellPalette(kind, theme).contentBg;
         const match = lineHighlightToneStyle("match", baseBg, theme)!;
         const current = lineHighlightToneStyle("current", baseBg, theme)!;
         // Inversion: theme text becomes the block, theme background the glyphs.
@@ -85,7 +85,7 @@ describe("lineHighlightToneStyle", () => {
     // this case silently painted nothing in the common case.
     for (const base of THEMES) {
       const theme = withTransparentSurfaces(base);
-      const contextBg = stackCellPalette("context", theme).contentBg;
+      const contextBg = unifiedCellPalette("context", theme).contentBg;
       expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
       const assumed = theme.appearance === "dark" ? "#000000" : "#ffffff";
 
@@ -113,7 +113,7 @@ describe("lineHighlightToneStyle", () => {
 
   test("keeps code readable over every resolved tinted background", () => {
     for (const theme of THEMES) {
-      const baseBg = stackCellPalette("context", theme).contentBg;
+      const baseBg = unifiedCellPalette("context", theme).contentBg;
       for (const tone of TINTED_TONES) {
         const resolved = lineHighlightToneStyle(tone, baseBg, theme);
         expect(contrastRatio(theme.text, resolved!.bg)).toBeGreaterThan(3);
@@ -124,7 +124,7 @@ describe("lineHighlightToneStyle", () => {
   test("resolves dim tone to transform foreground toward background with readable contrast", () => {
     for (const theme of THEMES) {
       for (const kind of ["context", "addition", "deletion"] as const) {
-        const baseBg = stackCellPalette(kind, theme).contentBg;
+        const baseBg = unifiedCellPalette(kind, theme).contentBg;
         const resolved = lineHighlightToneStyle("dim", baseBg, theme);
         expect(resolved).toBeDefined();
         expect(resolved!.transformFg).toBeDefined();
@@ -149,7 +149,7 @@ describe("lineHighlightToneStyle", () => {
   test("resolves dim tone on transparent surfaces to readable contrast", () => {
     for (const base of THEMES) {
       const theme = withTransparentSurfaces(base);
-      const contextBg = stackCellPalette("context", theme).contentBg;
+      const contextBg = unifiedCellPalette("context", theme).contentBg;
       expect(contextBg).toBe(TRANSPARENT_BACKGROUND);
       const assumedBg = theme.appearance === "dark" ? "#000000" : "#ffffff";
 

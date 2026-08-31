@@ -396,7 +396,7 @@ async function captureAgent() {
   }
 }
 
-/** Video: one diff flipping between split and stack layouts. */
+/** Video: one diff flipping between split and unified layouts. */
 async function captureLayout() {
   // No sidebar and a single pretty file: the layout change is the whole story,
   // and fewer columns keep both split panes readable at page width.

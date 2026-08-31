@@ -17,7 +17,7 @@ import { resolveCommandKeys } from "./keymap";
 const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> = {
   copyDecorations: true,
   cursorLine: "row" as const,
-  layoutMode: "stack",
+  layoutMode: "unified",
   filesPaneVisible: false,
   showAgentNotes: true,
   showHelp: false,
@@ -132,7 +132,7 @@ describe("buildAppMenus", () => {
         .filter((item) => item.checked)
         .map((item) => item.label),
     ).toEqual([
-      "Stacked view",
+      "Unified view",
       "Menu bar",
       "Agent notes",
       "Line numbers",

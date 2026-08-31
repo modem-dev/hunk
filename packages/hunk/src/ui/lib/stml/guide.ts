@@ -34,7 +34,7 @@ Preview from a file or stdin:
   that frame around the whole body. Sibling and nested boxes are supported.
 - Confirm \`hunk session context --json\` lists \`stml\` in
   \`experimentalFeatures\` before authoring markup. Width follows the live
-  session: stack ≈ full pane, split ≈ half. The context reports
+  session: unified ≈ full pane, split ≈ half. The context reports
   \`noteMarkupWidth\`; comment responses echo \`markupWidth\`. Preview with
   \`hunk markup render - --width <that>\`. Unknown? Design for ~${STML_REFERENCE_WIDTH} cols —
   it holds up wider, and users resize/switch layouts anytime.

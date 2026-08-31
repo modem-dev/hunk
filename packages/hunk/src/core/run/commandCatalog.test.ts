@@ -45,6 +45,7 @@ describe("app command catalog", () => {
       }
     }
     expect(appCommandCatalogEntry("hunk.view.toggleSidebar")?.id).toBe("hunk.view.toggleFilesPane");
+    expect(appCommandCatalogEntry("hunk.view.layoutStack")?.id).toBe("hunk.view.layoutUnified");
   });
 
   test("declares a review effect for semantic commands and nothing else", () => {

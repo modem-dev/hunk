@@ -32,7 +32,7 @@ function createSelectionBootstrap(): AppBootstrap {
         context: 1,
       }),
     ],
-    initialMode: "stack",
+    initialMode: "unified",
     initialCopyDecorations: true,
   });
 }
@@ -56,7 +56,7 @@ function createWideCharSelectionBootstrap(): AppBootstrap {
         context: 1,
       }),
     ],
-    initialMode: "stack",
+    initialMode: "unified",
     initialCopyDecorations: true,
   });
 }

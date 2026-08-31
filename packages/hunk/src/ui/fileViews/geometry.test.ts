@@ -114,7 +114,7 @@ describe("file-view geometry", () => {
     const noteHeight = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 80,
     });
     const geometry = measureFileViewGeometry({

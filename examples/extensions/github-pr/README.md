@@ -27,7 +27,7 @@ hunk gh https://github.com/modem-dev/hunk/pull/123
 Quote the `owner/repo#number` form because an unquoted `#` starts a comment in some shells. Use `--` to pass options to the delegated `hunk patch` command:
 
 ```bash
-hunk gh 123 --repo modem-dev/hunk -- --pager --mode stack
+hunk gh 123 --repo modem-dev/hunk -- --pager --mode unified
 ```
 
 Run `hunk gh --help` for the extension-owned help text.

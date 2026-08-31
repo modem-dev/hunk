@@ -9,8 +9,8 @@ import type { PlannedCodeReviewRow } from "./reviewRenderPlan";
 import {
   cursorLineHighlightBg,
   selectionHighlightBg,
-  stackCellPalette,
-  stackRailColor,
+  unifiedCellPalette,
+  unifiedRailColor,
 } from "./rowStyle";
 
 /** Return the normalized background painted behind matching captured text. */
@@ -44,7 +44,7 @@ test("CodeRowView limits character selections to source text instead of cell chr
     fileId: "paint",
     hunkIndex: 0,
     row: {
-      type: "stack-line",
+      type: "unified-line",
       key: "character-range",
       fileId: "paint",
       hunkIndex: 0,
@@ -76,7 +76,7 @@ test("CodeRowView limits character selections to source text instead of cell chr
       await setup.renderOnce();
     });
     const spans = setup.captureSpans();
-    const palette = stackCellPalette("addition", theme);
+    const palette = unifiedCellPalette("addition", theme);
 
     expect(backgroundForText(spans, "lec")).toBe(
       selectionHighlightBg(palette.contentBg, theme).toLowerCase(),
@@ -86,7 +86,7 @@ test("CodeRowView limits character selections to source text instead of cell chr
     expect(backgroundForText(spans, "▌")).toBe(theme.panel.toLowerCase());
     expect(foregroundForText(spans, "+ ")).toBe(palette.numberColor.toLowerCase());
     expect(foregroundForText(spans, "▌")).toBe(
-      stackRailColor("addition", theme, false).toLowerCase(),
+      unifiedRailColor("addition", theme, false).toLowerCase(),
     );
   } finally {
     await act(async () => {
@@ -104,7 +104,7 @@ test("CodeRowView paints wrapped selection boundaries per visual line", async ()
     fileId: "paint",
     hunkIndex: 0,
     row: {
-      type: "stack-line",
+      type: "unified-line",
       key: "wrapped-selection",
       fileId: "paint",
       hunkIndex: 0,
@@ -123,7 +123,7 @@ test("CodeRowView paints wrapped selection boundaries per visual line", async ()
     showLineNumbers: false,
     wrapLines: true,
   });
-  if (!layout || layout.kind !== "stack") throw new Error("Expected stack layout");
+  if (!layout || layout.kind !== "unified") throw new Error("Expected unified layout");
   const contentStart = layout.cell.prefixWidth + layout.cell.gutterWidth;
   const setup = await testRender(
     <CodeRowView
@@ -154,7 +154,7 @@ test("CodeRowView paints wrapped selection boundaries per visual line", async ()
     });
     const lines = setup.captureSpans().lines;
     const selectedBg = selectionHighlightBg(
-      stackCellPalette("addition", theme).contentBg,
+      unifiedCellPalette("addition", theme).contentBg,
       theme,
     ).toLowerCase();
     const backgroundInLine = (line: (typeof lines)[number], text: string) =>
@@ -163,13 +163,13 @@ test("CodeRowView paints wrapped selection boundaries per visual line", async ()
       )?.toLowerCase();
 
     expect(backgroundInLine(lines[0]!, "ab")).toBe(
-      stackCellPalette("addition", theme).contentBg.toLowerCase(),
+      unifiedCellPalette("addition", theme).contentBg.toLowerCase(),
     );
     expect(backgroundInLine(lines[0]!, "c")).toBe(selectedBg);
     expect(backgroundInLine(lines[1]!, "j")).toBe(selectedBg);
     expect(backgroundInLine(lines[2]!, "s")).toBe(selectedBg);
     expect(backgroundInLine(lines[2]!, "u")).toBe(
-      stackCellPalette("addition", theme).contentBg.toLowerCase(),
+      unifiedCellPalette("addition", theme).contentBg.toLowerCase(),
     );
   } finally {
     await act(async () => setup.renderer.destroy());
@@ -185,7 +185,7 @@ test("CodeRowView gives copy selection precedence over cursor paint", async () =
     fileId: "paint",
     hunkIndex: 0,
     row: {
-      type: "stack-line",
+      type: "unified-line",
       key: "precedence",
       fileId: "paint",
       hunkIndex: 0,
@@ -218,7 +218,7 @@ test("CodeRowView gives copy selection precedence over cursor paint", async () =
       await setup.renderOnce();
     });
     const background = backgroundForText(setup.captureSpans(), "selected");
-    const baseBackground = stackCellPalette("addition", theme).contentBg;
+    const baseBackground = unifiedCellPalette("addition", theme).contentBg;
 
     expect(background).toBe(selectionHighlightBg(baseBackground, theme).toLowerCase());
     expect(background).not.toBe(cursorLineHighlightBg(baseBackground, theme).toLowerCase());
@@ -240,7 +240,7 @@ test("CodeRowView overlays the nowrap add-note badge instead of shifting the not
     anchorId: "note-guide",
     noteGuideSide: "new",
     row: {
-      type: "stack-line",
+      type: "unified-line",
       key: "note-guide-hover",
       fileId: "paint",
       hunkIndex: 0,

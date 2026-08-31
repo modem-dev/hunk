@@ -46,7 +46,7 @@ function RefreshHarness({
     reloadContext: { cwd: "/repo" },
     sourceLabel: "/repo",
     view: {
-      layoutMode: "stack",
+      layoutMode: "unified",
       themeId,
       showAgentNotes: true,
       showHunkHeaders: true,

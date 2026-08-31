@@ -149,9 +149,9 @@ export function buildAppMenus({
     view: [
       { commandId: "hunk.view.layoutSplit", label: "Split view", checked: layoutMode === "split" },
       {
-        commandId: "hunk.view.layoutStack",
-        label: "Stacked view",
-        checked: layoutMode === "stack",
+        commandId: "hunk.view.layoutUnified",
+        label: "Unified view",
+        checked: layoutMode === "unified",
       },
       { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
       SEPARATOR,

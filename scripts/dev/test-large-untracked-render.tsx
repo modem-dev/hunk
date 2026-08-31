@@ -60,7 +60,7 @@ try {
   writeFileSync(join(repo, largePath), createLargeFileBody(lineCount));
 
   const bootstrap = await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack" } },
+    { kind: "vcs", staged: false, options: { mode: "unified" } },
     { cwd: repo, vcsCatalog: getBundledVcsCatalog() },
   );
   const extensionSession = createExtensionSession(

@@ -11,16 +11,16 @@ import {
 describe("measureDiffSectionGeometry", () => {
   const theme = resolveTheme("github-dark-default", null);
 
-  test("measures split and stack layouts from the render plan", () => {
+  test("measures split and unified layouts from the render plan", () => {
     const file = createTestDiffFile();
 
     const split = measureDiffSectionGeometry(file, "split", true, theme);
-    const stack = measureDiffSectionGeometry(file, "stack", true, theme);
+    const unified = measureDiffSectionGeometry(file, "unified", true, theme);
 
     expect(split.bodyHeight).toBeGreaterThan(0);
-    expect(stack.bodyHeight).toBeGreaterThan(split.bodyHeight);
+    expect(unified.bodyHeight).toBeGreaterThan(split.bodyHeight);
     expect(split.hunkBounds.get(0)?.height).toBeGreaterThan(0);
-    expect(stack.hunkBounds.get(0)?.height).toBeGreaterThan(split.hunkBounds.get(0)?.height ?? 0);
+    expect(unified.hunkBounds.get(0)?.height).toBeGreaterThan(split.hunkBounds.get(0)?.height ?? 0);
   });
 
   test("reuses no-note geometry for the same file and layout inputs", () => {
@@ -269,7 +269,7 @@ describe("measureDiffSectionGeometry", () => {
 
     const nowrapGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       [],
@@ -279,7 +279,7 @@ describe("measureDiffSectionGeometry", () => {
     );
     const wrappedGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       [],
@@ -437,7 +437,7 @@ describe("measureDiffSectionGeometry", () => {
 
     const nowrapGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       [],
@@ -449,7 +449,7 @@ describe("measureDiffSectionGeometry", () => {
     );
     const wrappedGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       [],
@@ -498,7 +498,7 @@ describe("measureDiffSectionGeometry", () => {
 
     const shortGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       visibleAgentNotes,
@@ -510,7 +510,7 @@ describe("measureDiffSectionGeometry", () => {
     );
     const longGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       true,
       theme,
       visibleAgentNotes,

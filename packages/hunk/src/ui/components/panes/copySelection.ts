@@ -38,7 +38,7 @@ export type CopySelectionPoint =
     };
 
 // In split layout the drag is anchored to one side of the diff (left = old / A, right = new / B)
-// based on the anchor column. In stack layout there is only one column, so side is undefined.
+// based on the anchor column. In unified layout there is only one column, so side is undefined.
 export type CopySelectionSide = "left" | "right";
 
 export interface CopySelectionDrag {
@@ -312,7 +312,7 @@ function resolveCopyVisualLineOffset({
     width,
     wrapLines: context.wrapLines,
   });
-  if (codeLayout?.kind === "stack") {
+  if (codeLayout?.kind === "unified") {
     return codeLayout.cell.prefixWidth + codeLayout.cell.gutterWidth;
   }
   if (codeLayout?.kind !== "split" || !copySide) {
@@ -658,7 +658,7 @@ export function expandSelectionPoint(
       const cell = side === "left" ? codeLayout.left : codeLayout.right;
       globalContentStart =
         (side === "left" ? 0 : codeLayout.leftPaneWidth) + cell.prefixWidth + cell.gutterWidth;
-    } else if (codeLayout?.kind === "stack") {
+    } else if (codeLayout?.kind === "unified") {
       globalContentStart = codeLayout.cell.prefixWidth + codeLayout.cell.gutterWidth;
     }
 

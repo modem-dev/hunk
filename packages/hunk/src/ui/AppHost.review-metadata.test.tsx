@@ -75,7 +75,7 @@ async function createTestBootstrap({ watch = false }: { watch?: boolean } = {}) 
   writeTestPatch(firstPatch, "first");
   writeTestPatch(secondPatch, "second");
   const bootstrap = await loadAppBootstrap(
-    { kind: "patch", file: firstPatch, options: { mode: "stack", watch } },
+    { kind: "patch", file: firstPatch, options: { mode: "unified", watch } },
     { cwd: directory },
   );
   bootstrap.review = Object.freeze({
@@ -129,7 +129,7 @@ async function createHistoryCommitBootstrap() {
   const nested = join(directory, "nested");
   mkdirSync(nested);
   const bootstrap = await loadAppBootstrap(
-    { kind: "show", ref: "HEAD", options: { mode: "stack", vcs: "git" } },
+    { kind: "show", ref: "HEAD", options: { mode: "unified", vcs: "git" } },
     { cwd: nested, vcsCatalog: getBundledVcsCatalog() },
   );
   bootstrap.review = Object.freeze({
@@ -231,7 +231,7 @@ describe("review metadata reloads", () => {
             nextInput: {
               kind: "patch",
               file: fixture.secondPatch,
-              options: { mode: "stack" },
+              options: { mode: "unified" },
             },
           },
         });
@@ -251,7 +251,7 @@ describe("review metadata reloads", () => {
             nextInput: {
               kind: "patch",
               file: fixture.firstPatch,
-              options: { mode: "stack" },
+              options: { mode: "unified" },
             },
           },
         });
