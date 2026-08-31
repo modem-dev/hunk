@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PLATFORM_PACKAGE_MATRIX } from "./prebuilt-package-helpers";
@@ -29,7 +37,9 @@ function writeFakeHunk(path: string, version: string) {
 }
 
 /** Run the installer against an already-current managed target without downloading anything. */
-function runConflictCheck(options: { force?: boolean; targetFirst?: boolean } = {}) {
+function runConflictCheck(
+  options: { force?: boolean; targetFirst?: boolean; aliasOnly?: boolean } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "hunk-install-conflict-"));
   const home = join(root, "home");
   const targetDir = join(home, ".hunk", "bin");
@@ -39,13 +49,18 @@ function runConflictCheck(options: { force?: boolean; targetFirst?: boolean } = 
   mkdirSync(foreignDir, { recursive: true });
   mkdirSync(inactiveNvmDir, { recursive: true });
   writeFakeHunk(join(targetDir, "hunk"), "1.2.3");
-  writeFakeHunk(join(foreignDir, "hunk"), "0.9.0");
-  writeFakeHunk(join(inactiveNvmDir, "hunk"), "0.8.0");
+  if (options.aliasOnly) {
+    symlinkSync(join(targetDir, "hunk"), join(foreignDir, "hunk"));
+  } else {
+    writeFakeHunk(join(foreignDir, "hunk"), "0.9.0");
+  }
+  if (!options.aliasOnly) writeFakeHunk(join(inactiveNvmDir, "hunk"), "0.8.0");
 
   try {
+    const systemPath = "/usr/local/bin:/usr/bin:/bin";
     const pathEntries = options.targetFirst
-      ? [targetDir, foreignDir, process.env.PATH ?? ""]
-      : [foreignDir, targetDir, process.env.PATH ?? ""];
+      ? [targetDir, foreignDir, systemPath]
+      : [foreignDir, targetDir, systemPath];
     const result = Bun.spawnSync(
       ["sh", INSTALL_SCRIPT_PATH, ...(options.force ? ["--force"] : [])],
       {
@@ -187,6 +202,16 @@ describe("hunk.dev install script", () => {
       expect(result.stderr).toContain(
         `${result.foreign} (another package manager; version 0.9.0; is shadowed by ${result.target})`,
       );
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "does not treat a PATH symlink to the managed binary as another install",
+    () => {
+      const result = runConflictCheck({ aliasOnly: true });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("hunk 1.2.3 is already installed.");
     },
   );
 

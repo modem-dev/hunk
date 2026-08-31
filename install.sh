@@ -154,11 +154,33 @@ installed_version() {
 # Competing-install and PATH helpers
 # --------------------------------------------------------------------------------------
 
+# Resolve directory aliases and one executable symlink without requiring non-POSIX `readlink -f`.
+canonical_executable_path() {
+	canonical_input="$1"
+	canonical_depth="${2:-0}"
+	canonical_dir="$(dirname "$canonical_input")"
+	canonical_name="$(basename "$canonical_input")"
+	physical_dir="$(CDPATH='' cd "$canonical_dir" 2>/dev/null && pwd -P)" || return 1
+	canonical_path="${physical_dir%/}/${canonical_name}"
+	if command -v readlink >/dev/null 2>&1; then
+		link_target="$(readlink "$canonical_path" 2>/dev/null)" || link_target=""
+		if [ -n "$link_target" ] && [ "$canonical_depth" -lt 8 ]; then
+			canonical_depth=$((canonical_depth + 1))
+			case "$link_target" in
+			/*) canonical_executable_path "$link_target" "$canonical_depth"; return ;;
+			*) canonical_executable_path "${physical_dir}/${link_target}" "$canonical_depth"; return ;;
+			esac
+		fi
+	fi
+	printf '%s\n' "$canonical_path"
+}
+
 # Add one executable path to the newline-delimited conflict list exactly once.
 add_hunk_candidate() {
 	candidate="$1"
 	[ -x "$candidate" ] || return 0
-	[ "$candidate" = "$target_binary" ] && return 0
+	candidate_identity="$(canonical_executable_path "$candidate")" || candidate_identity="$candidate"
+	[ "$candidate_identity" = "$target_identity" ] && return 0
 	if [ -n "$hunk_candidates" ] && printf '%s\n' "$hunk_candidates" | grep -Fqx "$candidate"; then
 		return 0
 	fi
@@ -220,8 +242,14 @@ competing_install_remediation() {
 	*/mise/installs/*/hunk)
 		printf 'mise uninstall hunk'
 		;;
-	*/node_modules/* | */.npm/* | */.bun/bin/hunk | */pnpm/*)
-		printf 'npm uninstall -g hunkdiff (using the package manager and runtime that own this path)'
+	*/.bun/bin/hunk)
+		printf 'bun remove --global hunkdiff'
+		;;
+	*/pnpm/*)
+		printf 'pnpm remove --global hunkdiff'
+		;;
+	*/node_modules/* | */.npm/*)
+		printf 'npm uninstall -g hunkdiff (using the npm runtime that owns this path)'
 		;;
 	*)
 		printf 'remove this Hunk with the package manager that installed it'
@@ -372,7 +400,12 @@ main() {
 		bin_dir="${payload_dir}/bin"
 	fi
 
-	target_binary="${bin_dir}/hunk"
+	if [ "$bin_dir" = "/" ]; then
+		target_binary="/hunk"
+	else
+		target_binary="${bin_dir}/hunk"
+	fi
+	target_identity="$(canonical_executable_path "$target_binary")" || target_identity="$target_binary"
 	check_competing_installs
 
 	current="$(installed_version "$target_binary")"
