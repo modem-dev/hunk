@@ -16,7 +16,6 @@ import {
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
-import { isVcsReviewInput } from "../core/vcs";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { AppBootstrap } from "../core/bootstrap";
@@ -56,6 +55,7 @@ import {
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionCommandRunner } from "./hooks/useExtensionCommandRunner";
+import { useExtensionAppController } from "./hooks/useExtensionAppController";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionEventContextProvider } from "./hooks/useExtensionEventContextProvider";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
@@ -510,16 +510,16 @@ export function App({
   const extensionWorkspaceController = useExtensionWorkspaceControls({
     createExtensionDialogs,
     createReviewCapabilityLease,
-    editorBasePath: isVcsReviewInput(bootstrap.input)
-      ? (bootstrap.reloadContext.repoRoot ?? bootstrap.changeset.sourceLabel)
-      : undefined,
-    editorRenderer: renderer,
     files: reviewFiles,
     input: bootstrap.input,
     onWorkspaceWriteCompleted,
     root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
     runWorkspaceWrite,
     workspaceFileWriter,
+  });
+  const extensionAppController = useExtensionAppController({
+    createReviewCapabilityLease,
+    renderer,
   });
 
   useExtensionEventContextProvider({
@@ -536,6 +536,7 @@ export function App({
     createKeyboardModeControls,
     createLineHighlightControls,
     createNavigation: createExtensionNavigation,
+    createOpenInApp: extensionAppController.createOpenInApp,
     createPaneControls,
     createReviewControls: createExtensionReviewControls,
     createWorkspaceControls: extensionWorkspaceController.createWorkspaceControls,

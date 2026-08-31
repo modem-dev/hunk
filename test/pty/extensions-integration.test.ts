@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
@@ -252,6 +252,27 @@ const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
       confirmLabel: "reformat",
     });
     ctx.notify(proceed ? "DIALOG ANSWERED YES" : "DIALOG ANSWERED NO");
+  });
+}
+`;
+
+const APP_HANDOFF_CHILD_SOURCE = `
+process.stdout.write("\\x1b[2J\\x1b[HCHILD APP ACTIVE\\nreturning to Hunk\\n");
+while (!(await Bun.file(".hunk-child-release").exists())) await Bun.sleep(25);
+`;
+
+/** An extension that gives a child process exclusive use of the real terminal. */
+const APP_HANDOFF_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "open-child", title: "Open child app", key: "y" }, async (ctx) => {
+    const exitCode = await ctx.openInApp(() => {
+      const child = Bun.spawnSync([process.execPath, "-e", ${JSON.stringify(APP_HANDOFF_CHILD_SOURCE)}], {
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      return child.exitCode;
+    });
+    ctx.notify("CHILD APP EXITED " + exitCode);
   });
 }
 `;
@@ -627,6 +648,47 @@ describe("PTY extensions", () => {
         20_000,
       );
       expect(answered).not.toContain("Reformat the changeset?");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("an extension app takes over the terminal and returns to the review", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(APP_HANDOFF_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 80,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(session, (text) => text.includes("alpha.ts"), 20_000);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("y");
+      const childFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("CHILD APP ACTIVE") && text.includes("returning to Hunk"),
+        20_000,
+      );
+      expect(childFrame).not.toContain("alpha.ts");
+      writeFileSync(join(fixture.dir, ".hunk-child-release"), "release");
+
+      const restoredFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && text.includes("CHILD APP EXITED 0"),
+        20_000,
+      );
+      expect(restoredFrame).not.toContain("CHILD APP ACTIVE");
     } finally {
       session.close();
     }

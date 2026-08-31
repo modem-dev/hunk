@@ -1,16 +1,23 @@
 import { join, resolve, sep } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
 import {
-  normalizeWorkspaceOpenInEditorRequest,
+  normalizeWorkspaceLocationRequest,
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
+  resolveExtensionWorkspaceLocation,
   resolveExtensionWorkspaceWriteTarget,
   type WorkspaceFileSource,
 } from "./extensionWorkspace";
 
 const ROOT = resolve(sep, "repo");
 const NO_OPTIONS: CommonOptions = {};
+const WORKING_TREE_INPUT = {
+  kind: "vcs",
+  staged: false,
+  options: NO_OPTIONS,
+} satisfies CliInput;
 
 /** One reviewed file as the workspace policy sees it, changed unless told otherwise. */
 function createTestWorkspaceFile(
@@ -242,37 +249,126 @@ describe("extension workspace write requests", () => {
   });
 });
 
-describe("extension workspace editor requests", () => {
-  test("copies a well-formed reviewed source address", () => {
-    expect(
-      normalizeWorkspaceOpenInEditorRequest({
-        fileId: "alpha",
-        hunkIndex: 2,
-        line: { side: "old", line: 17 },
-      }),
-    ).toEqual({
-      fileId: "alpha",
-      hunkIndex: 2,
-      line: { side: "old", line: 17 },
+describe("extension workspace locations", () => {
+  test("resolves the repository path and maps old-side lines from parsed hunk metadata", () => {
+    const file = createTestDiffFile({
+      id: "alpha",
+      path: "packages/app/alpha.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
     });
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        input: WORKING_TREE_INPUT,
+        request: { fileId: "alpha", hunkIndex: 0, line: { side: "old", line: 3 } },
+        root: ROOT,
+      }),
+    ).toEqual({ path: join(ROOT, "packages", "app", "alpha.ts"), line: 2 });
   });
 
-  test("rejects malformed ids, indexes, and source lines", () => {
-    expect(() => normalizeWorkspaceOpenInEditorRequest(undefined)).toThrow("non-empty fileId");
-    expect(() => normalizeWorkspaceOpenInEditorRequest({ fileId: "alpha", hunkIndex: -1 })).toThrow(
+  test("rejects malformed source addresses and returns null for unavailable metadata", () => {
+    expect(() => normalizeWorkspaceLocationRequest(undefined)).toThrow("non-empty fileId");
+    expect(() => normalizeWorkspaceLocationRequest({ fileId: "alpha", hunkIndex: -1 })).toThrow(
       "non-negative integer",
     );
     expect(() =>
-      normalizeWorkspaceOpenInEditorRequest({
+      normalizeWorkspaceLocationRequest({
         fileId: "alpha",
         line: { side: "both", line: 1 },
       }),
     ).toThrow('line.side must be "old" or "new"');
-    expect(() =>
-      normalizeWorkspaceOpenInEditorRequest({
-        fileId: "alpha",
-        line: { side: "new", line: 0 },
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [createTestWorkspaceFile({ metadata: undefined })],
+        input: WORKING_TREE_INPUT,
+        request: { fileId: "alpha" },
+        root: ROOT,
       }),
-    ).toThrow("positive integer");
+    ).toBeNull();
+  });
+
+  test("preserves old-side offsets through context and multi-line replacements", () => {
+    const removed = createTestDiffFile({
+      id: "removed",
+      path: "removed.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+      context: 1,
+    });
+    const replaced = createTestDiffFile({
+      id: "replaced",
+      path: "replaced.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nTWO\nTHREE\nfour\n",
+    });
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [removed],
+        input: WORKING_TREE_INPUT,
+        request: { fileId: "removed", hunkIndex: 0, line: { side: "old", line: 3 } },
+        root: ROOT,
+      })?.line,
+    ).toBe(2);
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [replaced],
+        input: WORKING_TREE_INPUT,
+        request: { fileId: "replaced", hunkIndex: 0, line: { side: "old", line: 3 } },
+        root: ROOT,
+      })?.line,
+    ).toBe(3);
+  });
+
+  test("uses direct comparison provenance and refuses unattested patch paths", () => {
+    const file = createTestDiffFile({ id: "alpha", path: "after.ts" });
+    const directInput = {
+      kind: "diff",
+      left: "nested/before.ts",
+      right: "nested/after.ts",
+      options: NO_OPTIONS,
+    } satisfies CliInput;
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        input: directInput,
+        request: { fileId: "alpha", line: { side: "new", line: 2 } },
+        root: ROOT,
+      }),
+    ).toEqual({ path: join(ROOT, "nested", "after.ts"), line: 2 });
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        input: { kind: "patch", text: file.patch, options: NO_OPTIONS },
+        request: { fileId: "alpha" },
+        root: ROOT,
+      }),
+    ).toBeNull();
+  });
+
+  test("resolves deleted direct comparisons to their old-side source", () => {
+    const file = createTestDiffFile({
+      id: "deleted",
+      path: "deleted.ts",
+      before: "one\ntwo\n",
+      after: "",
+    });
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        input: {
+          kind: "diff",
+          left: "archive/deleted.ts",
+          right: "/dev/null",
+          options: NO_OPTIONS,
+        },
+        request: { fileId: "deleted", hunkIndex: 0, line: { side: "old", line: 2 } },
+        root: ROOT,
+      }),
+    ).toEqual({ path: join(ROOT, "archive", "deleted.ts"), line: 2 });
   });
 });

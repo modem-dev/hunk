@@ -281,8 +281,8 @@ new instances and run that shutdown/startup pair around the replacement.
 ### `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds host-mediated editor
-launches for reviewed files; version 15 added `{ side, line }` to opted-in pane
+one file to support several Hunk versions. Version 16 adds temporary application
+handoffs from command handlers; version 15 added `{ side, line }` to opted-in pane
 `currentLine` paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
@@ -1680,18 +1680,55 @@ the same way, and a request made after that point cancels immediately. A blank
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
 
+#### Temporary applications
+
+`ctx.openInApp(callback)` temporarily replaces Hunk with an application your
+extension runs. Hunk suspends its renderer before calling you and restores the
+review in `finally` after your callback returns or throws:
+
+```ts
+async function runProjectTool(metadata: { file: string | undefined; line: number | undefined }) {
+  // Spawn an interactive process with inherited stdio and encode metadata however the app expects.
+  return { exitCode: 0, metadata };
+}
+
+hunk.registerCommand({ id: "open-tool", title: "Open project tool", key: "f8" }, async (ctx) => {
+  const file = ctx.selection.file;
+  const location = file
+    ? ctx.workspace.resolveLocation({
+        fileId: file.id,
+        ...(ctx.selection.hunkIndex === null ? {} : { hunkIndex: ctx.selection.hunkIndex }),
+        ...(ctx.selection.currentLine === null ? {} : { line: ctx.selection.currentLine }),
+      })
+    : null;
+  const result = await ctx.openInApp(() =>
+    runProjectTool({
+      file: location?.path,
+      line: location?.line,
+    }),
+  );
+  if (result.exitCode !== 0) ctx.notify(`Tool exited with status ${result.exitCode}`, "error");
+});
+```
+
+The extension owns process execution and decides how to pass file, line, hunk,
+or extension state through arguments, environment, files, or an application-specific
+protocol. Hunk only owns terminal suspension and restoration. One application
+may own the terminal at a time; concurrent calls and controls retained past a
+review reload reject without invoking the callback. The callback's value and
+error pass through unchanged.
+
 #### Workspace documents
 
-`ctx.workspace` reads full documents from the current review, opens reviewed
-files through Hunk's editor lifecycle, and can replace an eligible working-tree
-file.
+`ctx.workspace` reads full documents from the current review and can replace an
+eligible working-tree file.
 
-| Method                                        | Result                                            |
-| --------------------------------------------- | ------------------------------------------------- |
-| `readDocument(fileId, "old" \| "new")`        | The reviewed source text, or `null`               |
-| `openInEditor({ fileId, hunkIndex?, line? })` | `{ ok: true }` or `{ ok: false, reason, detail }` |
-| `canWriteDocument(fileId)`                    | Whether the review and file allow writes          |
-| `writeDocument({ fileId, text })`             | `{ ok: true }` or `{ ok: false, reason, detail }` |
+| Method                                 | Result                                            |
+| -------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")` | The reviewed source text, or `null`               |
+| `resolveLocation({ fileId, ... })`     | Absolute on-disk `{ path, line }`, or `null`      |
+| `canWriteDocument(fileId)`             | Whether the review and file allow writes          |
+| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
 
 A command can read, transform, and write a selected file:
 
@@ -1714,22 +1751,22 @@ hunk.registerCommand({ id: "shout-headings", title: "Shout headings", key: "f7" 
 });
 ```
 
-`openInEditor` accepts only a reviewed file id, plus an optional zero-based
-`hunkIndex` and one-based `{ side, line }` source address. Hunk resolves the
-working-tree path and editor command itself. It maps old-side lines onto the
-file on disk, suspends and resumes terminal editors, and queues a review reload
-after success when the current input is reloadable. Missing `$EDITOR`
-configuration or a missing reviewed file returns `unavailable`; process
-failures and non-zero exits return `failed`. Malformed source addresses reject.
-No consent prompt is shown because opening the user's configured editor does
-not itself modify a file.
-
 `readDocument` returns the exact source represented by the review, not the
 file's patch. It works for every review kind. For example, the `"new"` side in
 `hunk show HEAD` is the file at that commit, not the working-tree file. It
 returns `null` when the file or side is absent, no source is available, reading
 fails, or the document exceeds Hunk's size limit. Reads never prompt. An invalid
 side rejects the promise.
+
+`resolveLocation` turns a reviewed file id and optional `hunkIndex` and
+`{ side, line }` into the corresponding absolute path and one-based line on
+disk. VCS reviews resolve against the repository; direct file comparisons retain
+the concrete compared path, including the old path for a deleted-file comparison.
+Hunk uses parsed hunk metadata to map old-side deletions onto their on-disk
+position, so extensions can pass accurate locations to editors, debuggers,
+browsers, or other applications without interpreting opaque diff metadata. Raw
+patch reviews have no attested filesystem path and return `null`. Missing hunks
+and stale controls also return `null`; malformed source addresses reject.
 
 Writes require all of the following:
 
@@ -1805,8 +1842,9 @@ showing — no keypress required. Dialog calls made before the mounted app is
 ready resolve to their cancel value with a warning rather than opening later.
 Controls retained across a review or extension-registry replacement expire:
 navigation and pane mutations warn and do nothing, dialogs resolve to their
-normal cancel value, and workspace reads, editor launches, or not-yet-started
-writes return `null`/`unavailable` instead of acting on replacement content.
+normal cancel value, and workspace reads or not-yet-started writes return
+`null`/`unavailable` instead of acting on replacement content. A stale
+`openInApp` callback rejects before taking terminal ownership.
 Once a consented filesystem write starts, it reports its actual outcome and
 success reconciles the review then active.
 

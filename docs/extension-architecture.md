@@ -273,16 +273,18 @@ inert before shutdown begins. Session behavior requests are registry data too:
 presentation view changes ephemeral without teaching `App` about an extension
 id.
 
+`src/ui/hooks/useExtensionAppController.ts` owns `ctx.openInApp`. Command-scoped
+leases refuse stale handoffs, one shared lock prevents overlapping applications,
+and renderer suspension always resumes in `finally` unless the renderer was
+destroyed. The extension owns execution and application-specific metadata;
+Hunk's bundled editor command consumes the same public callback and explicitly
+refreshes after a successful edit.
+
 `src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains
 ownership of caching and size limits. Missing or unreadable sources become
-`null`.
-
-Editor requests also name reviewed file ids. The host resolves the current
-working-tree path and source line and retains renderer suspend/resume and
-process ownership in `openInEditor.ts`; reloadable inputs reconcile the review
-after success. Hunk's own editor command is a bundled extension handler over
-that same capability.
+`null`. Location resolution maps reviewed file ids and source addresses onto
+attested on-disk paths and lines using input provenance and the authoritative parsed hunk.
 
 Writes are limited to reloadable working-tree reviews and reviewed paths inside
 the review root. App supplies the current input, unfiltered changeset, and root

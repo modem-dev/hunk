@@ -1,8 +1,8 @@
 /**
  * Describes how the currently mounted review can be rebuilt from its original input.
  *
- * Manual refresh, watch mode, editor return, extension trust reloads, and completed workspace
- * writes all reuse this descriptor. It reapplies live view options so a soft reload does not
+ * Manual refresh, watch mode, extension trust reloads, and completed workspace writes all reuse
+ * this descriptor. It reapplies live view options so a soft reload does not
  * fall back to launch-time settings, and it supplies a source path only for VCS-backed reviews.
  *
  * Stdin-backed inputs remain non-reloadable because refreshing must not attempt to reread
