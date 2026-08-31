@@ -13,23 +13,33 @@ import {
   paneVisibilityTransitionKey,
 } from "./paneSlide";
 
+/** Build one test pane from the bundled pane's valid registration shell. */
+function createTestPane(
+  placement: SessionPane["placement"],
+  suffix: string = placement,
+): SessionPane {
+  const bundled = buildSessionPanes(undefined)[0]!;
+  const paneKey =
+    placement === "left" && suffix === placement ? HUNK_FILES_PANE_KEY : `test:${suffix}`;
+  return {
+    ...bundled,
+    key: paneKey,
+    placement,
+    registered: {
+      ...bundled.registered,
+      pane: { ...bundled.registered.pane, id: suffix, placement } as ExtensionPane,
+    },
+  };
+}
+
 /** Build matching open and closed layouts for a pane at one edge. */
 function createPaneLayouts(placement: SessionPane["placement"]): {
   closed: ExtensionPaneLayoutPlan;
   open: ExtensionPaneLayoutPlan;
   paneKey: string;
 } {
-  const bundled = buildSessionPanes(undefined)[0]!;
-  const paneKey = placement === "left" ? HUNK_FILES_PANE_KEY : `test:${placement}`;
-  const pane: SessionPane = {
-    ...bundled,
-    key: paneKey,
-    placement,
-    registered: {
-      ...bundled.registered,
-      pane: { ...bundled.registered.pane, id: placement, placement } as ExtensionPane,
-    },
-  };
+  const pane = createTestPane(placement);
+  const paneKey = pane.key;
   const plan = (openKeys: readonly string[]) =>
     planExtensionPanes({
       panes: [pane],
@@ -92,6 +102,36 @@ describe("pane slide presentation", () => {
       expect(middlePane.bounds.y).not.toBe(openPane.bounds.y);
       expect(middle.reviewBounds.height).toBeGreaterThan(open.reviewBounds.height);
       expect(middle.reviewBounds.height).toBeLessThan(closed.reviewBounds.height);
+    }
+  });
+
+  test("starts an additional same-edge pane beyond the occupied outer edge", () => {
+    const first = createTestPane("left", "first");
+    const second = createTestPane("left", "second");
+    const plan = (openKeys: readonly string[]) =>
+      planExtensionPanes({
+        panes: [first, second],
+        openKeys,
+        sizes: { [first.key]: 20, [second.key]: 20 },
+        bodyWidth: 100,
+        bodyHeight: 30,
+        minReviewWidth: 20,
+        minReviewHeight: 5,
+      });
+    const before = plan([first.key]);
+    const after = plan([first.key, second.key]);
+    const start = interpolatePaneLayout(before, after, second.key, 0);
+    const firstBounds = start.panes.find(({ pane }) => pane.key === first.key)!.bounds;
+    const secondBounds = start.panes.find(({ pane }) => pane.key === second.key)!.bounds;
+
+    expect(secondBounds.x + secondBounds.width).toBeLessThanOrEqual(firstBounds.x);
+  });
+
+  test("keeps interpolated review edges inside the body", () => {
+    const { closed, open, paneKey } = createPaneLayouts("left");
+    for (const progress of [0.1, 0.25, 0.5, 0.75, 0.9]) {
+      const { reviewBounds } = interpolatePaneLayout(closed, open, paneKey, progress);
+      expect(reviewBounds.x + reviewBounds.width).toBe(100);
     }
   });
 

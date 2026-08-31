@@ -8,24 +8,36 @@ export function paneSlideAnimationDuration(): number {
   return process.env.NODE_ENV === "test" ? 0 : PANE_SLIDE_DURATION_MS;
 }
 
-/** Interpolate terminal geometry while snapping each value to a whole cell. */
+/** Interpolate terminal edges and derive dimensions so rounded bounds stay internally exact. */
 function interpolateBounds(from: PaneBounds, to: PaneBounds, progress: number): PaneBounds {
   const value = (start: number, end: number) => Math.round(start + (end - start) * progress);
-  return {
-    x: value(from.x, to.x),
-    y: value(from.y, to.y),
-    width: value(from.width, to.width),
-    height: value(from.height, to.height),
-  };
+  const x = value(from.x, to.x);
+  const y = value(from.y, to.y);
+  const right = value(from.x + from.width, to.x + to.width);
+  const bottom = value(from.y + from.height, to.y + to.height);
+  return { x, y, width: right - x, height: bottom - y };
 }
 
-/** Move a full-size pane just beyond the edge it enters from. */
-function offscreenPane(planned: PlannedPane): PlannedPane {
+/** Move a full-size pane beyond the outer body edge it enters from. */
+function offscreenPane(planned: PlannedPane, layout: ExtensionPaneLayoutPlan): PlannedPane {
+  const bodyRight = Math.max(
+    layout.reviewBounds.x + layout.reviewBounds.width,
+    ...layout.panes.map(({ bounds }) => bounds.x + bounds.width),
+  );
+  const bodyBottom = Math.max(
+    layout.reviewBounds.y + layout.reviewBounds.height,
+    ...layout.panes.map(({ bounds }) => bounds.y + bounds.height),
+  );
   const { placement } = planned.pane;
-  const offset =
-    placement === "left" || placement === "right"
-      ? { x: placement === "left" ? -planned.bounds.width : planned.bounds.width, y: 0 }
-      : { x: 0, y: placement === "top" ? -planned.bounds.height : planned.bounds.height };
+  const target =
+    placement === "left"
+      ? { x: -planned.bounds.width, y: planned.bounds.y }
+      : placement === "right"
+        ? { x: bodyRight, y: planned.bounds.y }
+        : placement === "top"
+          ? { x: planned.bounds.x, y: -planned.bounds.height }
+          : { x: planned.bounds.x, y: bodyBottom };
+  const offset = { x: target.x - planned.bounds.x, y: target.y - planned.bounds.y };
   const translate = (bounds: PaneBounds): PaneBounds => ({
     ...bounds,
     x: bounds.x + offset.x,
@@ -109,9 +121,10 @@ export function interpolatePaneLayout(
     if (!fromPane && !toPane) return [];
 
     const start =
-      fromPane ?? (toPane && key === transitioningPaneKey ? offscreenPane(toPane) : toPane);
+      fromPane ?? (toPane && key === transitioningPaneKey ? offscreenPane(toPane, to) : toPane);
     const end =
-      toPane ?? (fromPane && key === transitioningPaneKey ? offscreenPane(fromPane) : fromPane);
+      toPane ??
+      (fromPane && key === transitioningPaneKey ? offscreenPane(fromPane, from) : fromPane);
     if (!start || !end) return [];
 
     const divider =
