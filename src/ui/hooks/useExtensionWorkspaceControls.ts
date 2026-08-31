@@ -10,13 +10,16 @@ import type {
   ExtensionDialogs,
   ExtensionFileSide,
   ExtensionWorkspace,
+  ExtensionWorkspaceLocationRequest,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
 } from "../../extension-api/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import {
+  normalizeWorkspaceLocationRequest,
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
+  resolveExtensionWorkspaceLocation,
   resolveExtensionWorkspaceWriteTarget,
   type WorkspaceFileSource,
 } from "../lib/extensionWorkspace";
@@ -48,12 +51,22 @@ function expiredWorkspaceWrite(): ExtensionWorkspaceWriteResult {
   };
 }
 
+/** Describe a write that cannot ask for consent while another application owns the terminal. */
+function appActiveWorkspaceWrite(): ExtensionWorkspaceWriteResult {
+  return {
+    ok: false,
+    reason: "unavailable",
+    detail: "Workspace writes are unavailable while another application owns the terminal.",
+  };
+}
+
 /** Own live reviewed-document inputs and host-mediated extension workspace operations. */
 export function useExtensionWorkspaceControls({
   createExtensionDialogs,
   createReviewCapabilityLease,
   files,
   input,
+  isAppActive,
   onWorkspaceWriteCompleted,
   root,
   runWorkspaceWrite,
@@ -67,6 +80,8 @@ export function useExtensionWorkspaceControls({
   files: readonly WorkspaceFileSource[];
   /** The current CLI review input that decides whether writes are meaningful. */
   input: CliInput;
+  /** Whether an extension application currently owns the terminal renderer. */
+  isAppActive: () => boolean;
   /** Reconcile the review currently mounted by the host after a successful write. */
   onWorkspaceWriteCompleted: () => void;
   /** The current repository root, or the review's working directory. */
@@ -83,6 +98,12 @@ export function useExtensionWorkspaceControls({
       const lease = createReviewCapabilityLease();
       const resolveTarget = (fileId: string) =>
         resolveExtensionWorkspaceWriteTarget({ fileId, ...liveInputsRef.current });
+      const writeAuthorityRefusal = () => {
+        // Stale review authority remains the more fundamental refusal when both conditions apply.
+        if (!lease.isLive()) return expiredWorkspaceWrite();
+        if (isAppActive()) return appActiveWorkspaceWrite();
+        return null;
+      };
 
       return {
         async readDocument(fileId: string, side: ExtensionFileSide) {
@@ -98,16 +119,30 @@ export function useExtensionWorkspaceControls({
           const document = read ? await read().catch(() => null) : null;
           return lease.isLive() ? document : null;
         },
+        resolveLocation(request: ExtensionWorkspaceLocationRequest) {
+          const normalized = normalizeWorkspaceLocationRequest(request);
+          if (!lease.isLive()) return null;
+          return resolveExtensionWorkspaceLocation({
+            files: liveInputsRef.current.files,
+            request: normalized,
+          });
+        },
         canWriteDocument(fileId: string) {
           // An affordance probe answers false rather than throwing for malformed ids.
-          return lease.isLive() && typeof fileId === "string" && resolveTarget(fileId).writable;
+          return (
+            lease.isLive() &&
+            !isAppActive() &&
+            typeof fileId === "string" &&
+            resolveTarget(fileId).writable
+          );
         },
         async writeDocument(
           request: ExtensionWorkspaceWriteRequest,
         ): Promise<ExtensionWorkspaceWriteResult> {
           // Malformed requests are extension bugs, including after authority expires.
           const { fileId, text } = normalizeWorkspaceWriteRequest(request);
-          if (!lease.isLive()) return expiredWorkspaceWrite();
+          const initialRefusal = writeAuthorityRefusal();
+          if (initialRefusal) return initialRefusal;
 
           const target = resolveTarget(fileId);
           if (!target.writable) {
@@ -123,7 +158,8 @@ export function useExtensionWorkspaceControls({
               root,
             });
           const refusal = await verifyTarget();
-          if (!lease.isLive()) return expiredWorkspaceWrite();
+          const verifiedRefusal = writeAuthorityRefusal();
+          if (verifiedRefusal) return verifiedRefusal;
           if (refusal) {
             return { ok: false, reason: "unavailable", detail: refusal };
           }
@@ -133,7 +169,8 @@ export function useExtensionWorkspaceControls({
             body: `Extension ${extensionId} will replace this file's contents on disk.`,
             confirmLabel: "write",
           });
-          if (!lease.isLive()) return expiredWorkspaceWrite();
+          const consentRefusal = writeAuthorityRefusal();
+          if (consentRefusal) return consentRefusal;
           if (!confirmed) {
             return {
               ok: false,
@@ -143,13 +180,15 @@ export function useExtensionWorkspaceControls({
           }
 
           const changedTargetRefusal = await verifyTarget();
-          if (!lease.isLive()) return expiredWorkspaceWrite();
+          const reverifiedRefusal = writeAuthorityRefusal();
+          if (reverifiedRefusal) return reverifiedRefusal;
           if (changedTargetRefusal) {
             return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
 
           // Authority remains revocable until the host atomically starts the filesystem write.
-          if (!lease.isLive()) return expiredWorkspaceWrite();
+          const writeBoundaryRefusal = writeAuthorityRefusal();
+          if (writeBoundaryRefusal) return writeBoundaryRefusal;
           try {
             const started = await runWorkspaceWrite(() =>
               workspaceFileWriter(target.absolutePath, text),
@@ -174,6 +213,7 @@ export function useExtensionWorkspaceControls({
     [
       createExtensionDialogs,
       createReviewCapabilityLease,
+      isAppActive,
       onWorkspaceWriteCompleted,
       runWorkspaceWrite,
       workspaceFileWriter,

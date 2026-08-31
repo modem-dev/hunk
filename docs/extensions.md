@@ -280,9 +280,11 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `15`). Branch on it if you want
-one file to support several Hunk versions. Version 15 adds `{ side, line }` to
-opted-in pane `currentLine` paint; version 14 added structured `rangeEndpoints`
+The API generation this Hunk speaks (currently `16`). Branch on it if you want
+one file to support several Hunk versions. Version 16 adds temporary application
+handoffs and on-disk location resolution to command handlers; version 15 added
+`{ side, line }` to opted-in pane
+`currentLine` paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
 the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
@@ -467,12 +469,13 @@ instead of a crash.
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:
 
-| Field            | What it adds                                                       |
-| ---------------- | ------------------------------------------------------------------ |
-| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
-| `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
-| `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
-| `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
+| Field                   | What it adds                                                       |
+| ----------------------- | ------------------------------------------------------------------ |
+| `untrackedPaths`        | files your VCS calls unknown, synthesized into added-file diffs    |
+| `readFileSource`        | exact whole-file contents, for context expansion and highlighting  |
+| `resolveFileSourcePath` | exact filesystem provenance for application location handoff       |
+| `sourceCacheKey`        | stable source-snapshot identity for highlight reuse across reloads |
+| `extraFiles`            | files reviewed outside the patch, including skipped placeholders   |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping
@@ -585,6 +588,10 @@ async load(input, ctx) {
       }
       return changeType === "deleted" ? null : hgCat(newRev, path);
     },
+    resolveFileSourcePath: ({ path, changeType, side }) => {
+      if (side !== "new" || changeType === "deleted" || input.range) return null;
+      return join(ctx.cwd, path);
+    },
   };
 }
 ```
@@ -603,6 +610,15 @@ it when source state outside the patch changes. Omit it when the adapter cannot 
 stable identity and Hunk will invalidate conservatively. Leaving
 `readFileSource` off is fine: Hunk falls back to the content the patch itself carries,
 which renders the same diff with less context available.
+
+`resolveFileSourcePath` is separate from source reads because a binary or skipped
+file can still have a real path. Return an absolute path only when that exact
+reviewed side is backed by the filesystem. Return `null` for absent sides and
+for index, revision, stash, patch, merged, or other virtual sources, even when a
+same-named working-tree file exists. Hunk uses this provenance for
+`ctx.workspace.resolveLocation`; it never invents a checkout path for historical
+content. Direct file and difftool comparisons retain their concrete input paths
+independently of their display names.
 
 #### Files outside the patch
 
@@ -1679,6 +1695,47 @@ the same way, and a request made after that point cancels immediately. A blank
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
 
+#### Temporary applications
+
+`ctx.openInApp(callback)` temporarily replaces Hunk with an application your
+extension runs. Hunk suspends its renderer before calling you and restores the
+review in `finally` after your callback returns or throws:
+
+```ts
+async function runProjectTool(metadata: { file: string | undefined; line: number | undefined }) {
+  // Spawn an interactive process with inherited stdio and encode metadata however the app expects.
+  return { exitCode: 0, metadata };
+}
+
+hunk.registerCommand({ id: "open-tool", title: "Open project tool", key: "f8" }, async (ctx) => {
+  const file = ctx.selection.file;
+  const location = file
+    ? ctx.workspace.resolveLocation({
+        fileId: file.id,
+        ...(ctx.selection.hunkIndex === null ? {} : { hunkIndex: ctx.selection.hunkIndex }),
+        ...(ctx.selection.currentLine === null ? {} : { line: ctx.selection.currentLine }),
+      })
+    : null;
+  const result = await ctx.openInApp(() =>
+    runProjectTool({
+      file: location?.path,
+      line: location?.line,
+    }),
+  );
+  if (result.exitCode !== 0) ctx.notify(`Tool exited with status ${result.exitCode}`, "error");
+});
+```
+
+The extension owns process execution and decides how to pass file, line, hunk,
+or extension state through arguments, environment, files, or an application-specific
+protocol. Hunk only owns terminal suspension and restoration. One application
+may own the terminal at a time; concurrent calls and controls retained past a
+review reload reject without invoking the callback. The callback's value and
+error pass through unchanged. Host-presented dialogs cancel immediately and
+workspace writes return `unavailable` while the callback owns the terminal, so
+do not await Hunk UI from inside it. Non-interactive workspace reads and location
+resolution remain available.
+
 #### Workspace documents
 
 `ctx.workspace` reads full documents from the current review and can replace an
@@ -1687,6 +1744,7 @@ eligible working-tree file.
 | Method                                 | Result                                            |
 | -------------------------------------- | ------------------------------------------------- |
 | `readDocument(fileId, "old" \| "new")` | The reviewed source text, or `null`               |
+| `resolveLocation({ fileId, ... })`     | Absolute on-disk `{ path, line }`, or `null`      |
 | `canWriteDocument(fileId)`             | Whether the review and file allow writes          |
 | `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
 
@@ -1717,6 +1775,17 @@ file's patch. It works for every review kind. For example, the `"new"` side in
 returns `null` when the file or side is absent, no source is available, reading
 fails, or the document exceeds Hunk's size limit. Reads never prompt. An invalid
 side rejects the promise.
+
+`resolveLocation` turns a reviewed file id and optional `hunkIndex` and
+`{ side, line }` into an attested absolute path and one-based line on disk. Hunk
+uses parsed hunk metadata to map old-side deletions onto a filesystem-backed new
+side, so extensions can pass accurate locations to editors, debuggers, browsers,
+or other applications without interpreting opaque diff metadata. Direct file
+comparisons retain their concrete input paths, including the old path for a
+deleted-file comparison. Index, revision, stash, patch, merged, absent, and
+other virtual sides return `null` instead of borrowing a same-named checkout
+file. Missing hunks and stale controls also return `null`; malformed source
+addresses reject.
 
 Writes require all of the following:
 
@@ -1793,9 +1862,10 @@ ready resolve to their cancel value with a warning rather than opening later.
 Controls retained across a review or extension-registry replacement expire:
 navigation and pane mutations warn and do nothing, dialogs resolve to their
 normal cancel value, and workspace reads or not-yet-started writes return
-`null`/`unavailable` instead of acting on replacement content. Once a consented
-filesystem write starts, it reports its actual outcome and success reconciles
-the review then active.
+`null`/`unavailable` instead of acting on replacement content. A stale
+`openInApp` callback rejects before taking terminal ownership.
+Once a consented filesystem write starts, it reports its actual outcome and
+success reconciles the review then active.
 
 | Event                  | Payload                 | When                                                      |
 | ---------------------- | ----------------------- | --------------------------------------------------------- |

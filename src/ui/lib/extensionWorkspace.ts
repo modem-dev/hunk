@@ -19,10 +19,11 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeDiffPath } from "../../core/changeset/diffPaths";
-import type { FileSourceSide } from "../../core/changeset/fileSource";
+import type { FileSourcePaths, FileSourceSide } from "../../core/changeset/fileSource";
 import { canReloadInput } from "../../core/run/inputReload";
 import type { CliInput } from "../../core/run/commandInputs";
 import { readMetadataChangeType } from "../../extensions/events";
+import type { ExtensionWorkspaceLocation } from "../../extension-api/types";
 
 /**
  * The slice of one reviewed file the workspace policy inspects.
@@ -40,6 +41,8 @@ export interface WorkspaceFileSource {
   isTooLarge?: boolean;
   /** Absent when the loader had no reachable source for this file. */
   sourceFetcher?: { getFullText(side: FileSourceSide): Promise<string | null> };
+  /** Exact absolute paths for only the sides backed by the live filesystem. */
+  sourcePaths?: FileSourcePaths;
 }
 
 /** One reviewed document side's read, already bound to the file that answers it. */
@@ -64,6 +67,141 @@ export type ExtensionWorkspaceWriteTarget =
 export interface WorkspaceWriteRequestFields {
   fileId: string;
   text: string;
+}
+
+/** A validated reviewed source address ready for workspace resolution. */
+export interface WorkspaceLocationRequestFields {
+  fileId: string;
+  hunkIndex?: number;
+  line?: { side: FileSourceSide; line: number };
+}
+
+interface WorkspaceLocationHunk {
+  deletionStart: number;
+  deletionCount: number;
+  additionStart: number;
+  additionCount: number;
+  hunkContent: Array<
+    { type: "context"; lines: number } | { type: "change"; deletions: number; additions: number }
+  >;
+}
+
+interface WorkspaceLocationMetadata {
+  type: string;
+  hunks: WorkspaceLocationHunk[];
+}
+
+/** Reject malformed app-location metadata before it reaches workspace state. */
+export function normalizeWorkspaceLocationRequest(
+  request: unknown,
+): WorkspaceLocationRequestFields {
+  const fields = request as Partial<WorkspaceLocationRequestFields> | null | undefined;
+  if (typeof fields?.fileId !== "string" || fields.fileId.length === 0) {
+    throw new Error("workspace.resolveLocation requires a non-empty fileId.");
+  }
+  if (
+    fields.hunkIndex !== undefined &&
+    (!Number.isInteger(fields.hunkIndex) || fields.hunkIndex < 0)
+  ) {
+    throw new Error("workspace.resolveLocation hunkIndex must be a non-negative integer.");
+  }
+  if (fields.line !== undefined) {
+    if (fields.line.side !== "old" && fields.line.side !== "new") {
+      throw new Error('workspace.resolveLocation line.side must be "old" or "new".');
+    }
+    if (!Number.isInteger(fields.line.line) || fields.line.line < 1) {
+      throw new Error("workspace.resolveLocation line.line must be a positive integer.");
+    }
+  }
+  return {
+    fileId: fields.fileId,
+    ...(fields.hunkIndex === undefined ? {} : { hunkIndex: fields.hunkIndex }),
+    ...(fields.line === undefined
+      ? {}
+      : { line: { side: fields.line.side, line: fields.line.line } }),
+  };
+}
+
+/** Translate one old-side line to its corresponding filesystem-backed new-side line. */
+function lineOnDisk(hunk: WorkspaceLocationHunk, deletionLine: number) {
+  let deletionCursor = hunk.deletionStart;
+  let additionCursor = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      if (deletionLine < deletionCursor + content.lines) {
+        return additionCursor + (deletionLine - deletionCursor);
+      }
+      deletionCursor += content.lines;
+      additionCursor += content.lines;
+      continue;
+    }
+    if (deletionLine < deletionCursor + content.deletions) {
+      const offset = Math.min(deletionLine - deletionCursor, Math.max(content.additions - 1, 0));
+      return additionCursor + offset;
+    }
+    deletionCursor += content.deletions;
+    additionCursor += content.additions;
+  }
+  return additionCursor;
+}
+
+/** Resolve a reviewed source address against the authoritative parsed diff. */
+export function resolveExtensionWorkspaceLocation({
+  files,
+  request,
+}: {
+  files: readonly WorkspaceFileSource[];
+  request: WorkspaceLocationRequestFields;
+}): ExtensionWorkspaceLocation | null {
+  const file = files.find((candidate) => candidate.id === request.fileId);
+  if (!file) return null;
+  const metadata = file.metadata as Partial<WorkspaceLocationMetadata> | undefined;
+  if (!metadata || typeof metadata.type !== "string" || !Array.isArray(metadata.hunks)) return null;
+
+  const deleted = metadata.type === "deleted";
+  if (
+    (metadata.type === "new" && request.line?.side === "old") ||
+    (deleted && request.line?.side === "new")
+  ) {
+    return null;
+  }
+
+  let hunkIndex = request.hunkIndex;
+  if (request.line?.side === "old" && metadata.type !== "deleted") {
+    hunkIndex ??= metadata.hunks.findIndex(
+      (hunk) =>
+        request.line!.line >= hunk.deletionStart &&
+        request.line!.line < hunk.deletionStart + hunk.deletionCount,
+    );
+    if (hunkIndex < 0) hunkIndex = undefined;
+  }
+  const hunk = hunkIndex === undefined ? undefined : metadata.hunks[hunkIndex];
+  if (hunkIndex !== undefined && !hunk) return null;
+
+  let line: number;
+  if (request.line?.side === (deleted ? "old" : "new")) {
+    line = request.line.line;
+  } else if (request.line && !deleted) {
+    if (
+      !hunk ||
+      request.line.line < hunk.deletionStart ||
+      request.line.line >= hunk.deletionStart + hunk.deletionCount
+    ) {
+      return null;
+    }
+    line = lineOnDisk(hunk, request.line.line);
+  } else {
+    line = deleted ? (hunk?.deletionStart ?? 1) : (hunk?.additionStart ?? 1);
+  }
+
+  const filePath = file.sourcePaths?.[deleted ? "old" : "new"];
+  if (!filePath || !isAbsolute(filePath)) return null;
+
+  return {
+    path: filePath,
+    line: Math.max(1, line),
+  };
 }
 
 /**

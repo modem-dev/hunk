@@ -9,6 +9,7 @@ import {
   runSlText,
 } from "./commands";
 import { describeDiffRange } from "../diffRange";
+import { createWorkingTreeSourcePathResolver } from "../workingTreeSource";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -90,6 +91,9 @@ export const SaplingVcsAdapter = {
           title: range ? `${repoName} ${range}` : `${repoName} working copy`,
           patchText: runSlText({ input, args: diffArgs, cwd }),
           untrackedPaths: listSlUntrackedFiles(input, { cwd, repoRoot }),
+          ...(!input.range && !input.rangeEndpoints
+            ? { resolveFileSourcePath: createWorkingTreeSourcePathResolver(repoRoot) }
+            : {}),
         };
       },
       watchSignature(input, { cwd }) {

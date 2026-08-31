@@ -132,6 +132,18 @@ describe("GitVcsAdapter", () => {
     const trackedFile = { path: "tracked.txt", changeType: "change", isUntracked: false } as const;
     expect(await readSource?.({ ...trackedFile, side: "old" })).toBe("old\n");
     expect(await readSource?.({ ...trackedFile, side: "new" })).toBe("new\n");
+    expect(result.resolveFileSourcePath?.({ ...trackedFile, side: "old" })).toBeNull();
+    expect(
+      normalizeComparablePath(result.resolveFileSourcePath!({ ...trackedFile, side: "new" })!),
+    ).toBe(normalizeComparablePath(join(repo, "tracked.txt")));
+    expect(
+      result.resolveFileSourcePath?.({ ...trackedFile, changeType: "new", side: "old" }),
+    ).toBeNull();
+    expect(
+      result.resolveFileSourcePath?.({ ...trackedFile, changeType: "deleted", side: "new" }),
+    ).toBeNull();
+    rmSync(join(repo, "tracked.txt"));
+    expect(result.resolveFileSourcePath?.({ ...trackedFile, side: "new" })).toBeNull();
 
     git(repo, "add", "tracked.txt");
     const changedIndexResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
@@ -169,6 +181,8 @@ describe("GitVcsAdapter", () => {
     expect(result.untrackedPaths).toEqual([]);
     expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("old\ncontext\n");
     expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("new\ncontext\n");
+    expect(result.resolveFileSourcePath?.({ ...file, side: "old" })).toBeNull();
+    expect(result.resolveFileSourcePath?.({ ...file, side: "new" })).toBeNull();
   });
 
   test("loads revision and stash patches through adapter operations", async () => {
@@ -196,6 +210,8 @@ describe("GitVcsAdapter", () => {
     const showFile = { path: "file.txt", changeType: "change", isUntracked: false } as const;
     expect(await showResult.readFileSource?.({ ...showFile, side: "old" })).toBe("one\n");
     expect(await showResult.readFileSource?.({ ...showFile, side: "new" })).toBe("two\n");
+    expect(showResult.resolveFileSourcePath?.({ ...showFile, side: "old" })).toBeNull();
+    expect(showResult.resolveFileSourcePath?.({ ...showFile, side: "new" })).toBeNull();
 
     writeFileSync(join(repo, "file.txt"), "three\n");
     git(repo, "stash", "push", "-m", "adapter stash");

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
 import type { AppBootstrap } from "../core/bootstrap";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
@@ -28,7 +29,7 @@ const AFTER = lines(
 );
 
 const originalEditor = process.env.EDITOR;
-const originalSpawnSync = Bun.spawnSync;
+const originalSpawn = Bun.spawn;
 const tempDirs: string[] = [];
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -40,28 +41,35 @@ function createTempWorkspace() {
   return dir;
 }
 
-function mockSpawnSync(implementation: typeof Bun.spawnSync) {
-  const mutableBun = Bun as unknown as { spawnSync: typeof Bun.spawnSync };
-  mutableBun.spawnSync = implementation;
+function mockSpawn(implementation: (commands: string[]) => { exited: Promise<number> }) {
+  const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+  mutableBun.spawn = implementation as unknown as typeof Bun.spawn;
 }
 
 /** Bootstrap one working-tree review whose file really exists under `sourceLabel`. */
-function createEditorBootstrap(sourceLabel: string): AppBootstrap {
-  return createTestVcsAppBootstrap({
-    changesetId: "changeset:edit-in-editor",
-    initialMode: "stack",
-    sourceLabel,
-    files: [
-      createTestDiffFile({
-        after: AFTER,
-        agent: false,
-        before: BEFORE,
-        context: 3,
-        id: "sample",
-        path: "sample.ts",
-      }),
-    ],
-  });
+function createEditorBootstrap(sourceLabel: string, repoRoot = sourceLabel): AppBootstrap {
+  return {
+    ...createTestVcsAppBootstrap({
+      changesetId: "changeset:edit-in-editor",
+      initialMode: "stack",
+      sourceLabel,
+      files: [
+        {
+          ...createTestDiffFile({
+            after: AFTER,
+            agent: false,
+            before: BEFORE,
+            context: 3,
+            id: "sample",
+            path: "sample.ts",
+          }),
+          sourcePaths: { old: null, new: join(repoRoot, "sample.ts") },
+        },
+      ],
+    }),
+    extensions: createEmptyExtensionLoadResult(repoRoot),
+    reloadContext: { cwd: repoRoot, repoRoot },
+  };
 }
 
 async function flush(target: Awaited<ReturnType<typeof testRender>>) {
@@ -99,7 +107,7 @@ afterEach(async () => {
   } else {
     process.env.EDITOR = originalEditor;
   }
-  mockSpawnSync(originalSpawnSync);
+  (Bun as unknown as { spawn: typeof Bun.spawn }).spawn = originalSpawn;
 
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -119,7 +127,7 @@ describe("AppHost edit-selected-file shortcut", () => {
 
     await pressKeys(setup, "e");
 
-    // openSelectedFileInEditor returns "$EDITOR is not set." which shows as a session notice.
+    // The bundled editor extension owns editor configuration and reports its refusal.
     expect(setup.captureCharFrame()).toContain("EDITOR is not set");
   });
 
@@ -128,12 +136,15 @@ describe("AppHost edit-selected-file shortcut", () => {
     process.env.EDITOR = "vim";
 
     const spawnCalls: string[][] = [];
-    mockSpawnSync(((cmds: string[]) => {
+    mockSpawn((cmds) => {
       spawnCalls.push(cmds);
-      return { exitCode: 1 };
-    }) as unknown as typeof Bun.spawnSync);
+      return { exited: Promise.resolve(1) };
+    });
 
-    setup = await testRender(<AppHost bootstrap={createEditorBootstrap(workspace)} />, WIDE);
+    setup = await testRender(
+      <AppHost bootstrap={createEditorBootstrap("Mercurial working copy", workspace)} />,
+      WIDE,
+    );
     await flush(setup);
 
     // The hunk starts at line 1; step down onto the changed line, then one line past it.

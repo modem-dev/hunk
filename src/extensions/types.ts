@@ -74,6 +74,8 @@ export type {
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   ExtensionWorkspace,
+  ExtensionWorkspaceLocation,
+  ExtensionWorkspaceLocationRequest,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,

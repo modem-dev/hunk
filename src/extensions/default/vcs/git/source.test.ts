@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import { gitEndpointSourceSpec, gitFileSourcePath, readGitFileSource } from "./source";
 
 const tempDirs: string[] = [];
 
@@ -72,6 +72,17 @@ describe("gitEndpointSourceSpec", () => {
       kind: "fs",
       absolutePath: join("/repo", "a.ts"),
     });
+  });
+
+  test("exposes paths only for filesystem specs", () => {
+    expect(gitFileSourcePath({ kind: "fs", absolutePath: join("/repo", "a.ts") })).toBe(
+      join("/repo", "a.ts"),
+    );
+    expect(gitFileSourcePath({ kind: "git-index", repoRoot: "/repo", path: "a.ts" })).toBeNull();
+    expect(
+      gitFileSourcePath({ kind: "git-blob", repoRoot: "/repo", ref: "HEAD", path: "a.ts" }),
+    ).toBeNull();
+    expect(gitFileSourcePath({ kind: "none" })).toBeNull();
   });
 });
 

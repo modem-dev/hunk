@@ -20,11 +20,12 @@ object and registry collection (`src/extensions/runExtension.ts`):
   by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
   before config resolution, so backends exist without making core import the
   extension host. `default/ui/index.ts` is deliberately not part of that list:
-  it synchronously loads the bundled files pane through `runExtensionFactory`
-  only where the app resolves UI panes.
+  it synchronously loads the bundled files pane and editor command through
+  `runExtensionFactory` only where the interactive app resolves UI contributions.
 
-Git and the built-in file navigation use the public `registerVcsAdapter` and
-`registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
+Git, built-in file navigation, and open-in-editor workflow use the public
+`registerVcsAdapter`, `registerPane`, and `registerCommand` paths. The external
+[Hunk Lens](https://github.com/modem-dev/hunk-lens)
 extension exercises current-line pane paint through that same public contract.
 
 Bundled extensions are implicitly trusted and stay loaded under
@@ -272,10 +273,20 @@ inert before shutdown begins. Session behavior requests are registry data too:
 presentation view changes ephemeral without teaching `App` about an extension
 id.
 
+`src/ui/hooks/useExtensionAppController.ts` owns `ctx.openInApp`. Command-scoped
+leases refuse stale handoffs, one shared lock prevents overlapping applications,
+and renderer suspension always resumes in `finally` unless the renderer was
+destroyed. The extension owns execution and application-specific metadata;
+Hunk's bundled editor command consumes the same public callback and explicitly
+refreshes after a successful edit. Dialog admission and workspace writes consult
+the same ownership state so host UI cannot deadlock behind a suspended renderer.
+
 `src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains
 ownership of caching and size limits. Missing or unreadable sources become
-`null`.
+`null`. Location resolution maps reviewed file ids and source addresses onto
+attested on-disk paths and lines using per-side provenance supplied by loaders
+and VCS adapters plus the authoritative parsed hunk.
 
 Writes are limited to reloadable working-tree reviews and reviewed paths inside
 the review root. App supplies the current input, unfiltered changeset, and root

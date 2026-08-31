@@ -105,6 +105,23 @@ describe("buildDiffFile", () => {
       isBinary: false,
     });
   });
+
+  test("retains source paths for binary files independently of source fetching", () => {
+    let fetched = false;
+    const file = buildDiffFile(metadata, "Binary files a/x and b/x differ\n", 0, "src", null, {
+      sourceFetcherBuilder: () => {
+        fetched = true;
+        return undefined;
+      },
+      sourcePathBuilder: (context) => {
+        expect(context.isBinary).toBe(true);
+        return { old: "/repo/old.png", new: "/repo/new.png" };
+      },
+    });
+
+    expect(fetched).toBe(true);
+    expect(file.sourcePaths).toEqual({ old: "/repo/old.png", new: "/repo/new.png" });
+  });
 });
 
 describe("change-block line pairing", () => {

@@ -18,7 +18,6 @@ import type { PersistedViewPreferences } from "../core/run/config";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
-import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import {
   selectActiveEditableReviewNoteId,
@@ -35,6 +34,8 @@ import {
 } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
+import { getBundledUIRegistry } from "../extensions/default/ui";
+import { BUNDLED_EDITOR_COMMAND_FULL_ID } from "../extensions/default/ui/editor";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
@@ -54,6 +55,7 @@ import {
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionCommandRunner } from "./hooks/useExtensionCommandRunner";
+import { useExtensionAppController } from "./hooks/useExtensionAppController";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionEventContextProvider } from "./hooks/useExtensionEventContextProvider";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
@@ -103,7 +105,6 @@ import {
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
-import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
@@ -482,6 +483,7 @@ export function App({
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
+    cancelAll: cancelAllExtensionDialogs,
     createDialogs: createQueuedExtensionDialogs,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
@@ -491,6 +493,12 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
+  const extensionAppController = useExtensionAppController({
+    createReviewCapabilityLease,
+    onOwnershipStarted: cancelAllExtensionDialogs,
+    renderer,
+  });
+
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
@@ -499,11 +507,11 @@ export function App({
         (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
       );
       return createQueuedExtensionDialogs(extensionId, {
-        isLive: lease.isLive,
+        isLive: () => lease.isLive() && !extensionAppController.isAppActive(),
         showAttribution: !bundled,
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensionAppController, extensions],
   );
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
@@ -511,12 +519,12 @@ export function App({
     createReviewCapabilityLease,
     files: reviewFiles,
     input: bootstrap.input,
+    isAppActive: extensionAppController.isAppActive,
     onWorkspaceWriteCompleted,
     root: bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd,
     runWorkspaceWrite,
     workspaceFileWriter,
   });
-
   useExtensionEventContextProvider({
     createDialogs: createExtensionDialogs,
     createNavigation: createExtensionNavigation,
@@ -531,12 +539,27 @@ export function App({
     createKeyboardModeControls,
     createLineHighlightControls,
     createNavigation: createExtensionNavigation,
+    createOpenInApp: extensionAppController.createOpenInApp,
     createPaneControls,
     createReviewControls: createExtensionReviewControls,
     createWorkspaceControls: extensionWorkspaceController.createWorkspaceControls,
     extensions,
     getSelection: getExtensionSelection,
   });
+
+  const bundledEditorCommand = useMemo(() => {
+    const command = resolveExtensionCommands(getBundledUIRegistry()).commands.find(
+      ({ extensionId, command: registration }) =>
+        `${extensionId}.${registration.id}` === BUNDLED_EDITOR_COMMAND_FULL_ID,
+    );
+    if (!command) throw new Error("Bundled editor command is not registered.");
+    return command;
+  }, []);
+
+  /** Delegate the shared host command shell to the bundled editor extension. */
+  const triggerEditSelectedFile = useCallback(() => {
+    runExtensionCommand(bundledEditorCommand);
+  }, [bundledEditorCommand, runExtensionCommand]);
 
   const registeredExtensionCommands = useMemo(
     () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
@@ -883,38 +906,6 @@ export function App({
     refreshCurrentInput,
     showNotice: showSessionNotice,
   });
-
-  const triggerEditSelectedFile = useCallback(() => {
-    const basePath = isVcsReviewInput(bootstrap.input)
-      ? bootstrap.changeset.sourceLabel
-      : undefined;
-    const message = openSelectedFileInEditor({
-      basePath,
-      file: selectedFile,
-      lineCursor: activeLineCursor,
-      renderer,
-      selectedHunk: review.selectedHunk,
-    });
-
-    if (message) {
-      showSessionNotice(message);
-      return;
-    }
-
-    if (canRefreshCurrentInput) {
-      triggerRefreshCurrentInput();
-    }
-  }, [
-    activeLineCursor,
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input.kind,
-    canRefreshCurrentInput,
-    renderer,
-    review.selectedHunk,
-    selectedFile,
-    showSessionNotice,
-    triggerRefreshCurrentInput,
-  ]);
 
   /** Close the agent skill setup overlay. */
   const closeAgentSkill = useCallback(() => {

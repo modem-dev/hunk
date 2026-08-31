@@ -110,7 +110,7 @@ bad or duplicate id is skipped with a startup notice.
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `15`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `16`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -160,8 +160,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.review`
   (deeply immutable snapshots of stable files and complete saved store notes),
-  `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed), and
-  `ctx.workspace` (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
+  `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed),
+  `ctx.openInApp` (temporary terminal ownership around extension-run applications),
+  and `ctx.workspace` (`readDocument`, `resolveLocation`, `canWriteDocument`,
+  `writeDocument` with consent).
 - **Pane components** get frozen `files`, selection, placement, exact dimensions,
   optional `currentLine` paint (with `{ side, line }` when opted in), semantic `theme`, resolved `keybindings`, and
   guarded navigation/notification `actions`.
@@ -214,8 +216,9 @@ Most extension bugs are one of these:
   `review-note-navigator` shows how to join stable note ids and file keys back to guarded
   navigation after awaiting a selector; file filters can still refuse hidden targets.
 - **Retained review controls expire on reload.** An old handler cannot control
-  replacement content: pane/navigation calls become inert, dialogs cancel, and
-  workspace reads or not-yet-started writes return `null`/`unavailable`. A
+  replacement content: pane/navigation calls become inert, dialogs cancel,
+  stale app handoffs reject, and workspace reads or not-yet-started writes
+  return `null`/`unavailable`. A
   consented write already in progress reports its real outcome, holds graceful
   exit until it settles, and reconciles the active review on success. `shutdown`
   runs after revocation, so use it only
@@ -252,10 +255,13 @@ Most extension bugs are one of these:
 - **Failures are contained, not sandboxed.** A throwing factory is rolled back to
   zero registrations and a throwing handler is a warning naming the extension —
   containment against bugs, not against code that should not have been loaded.
-- **The API touches nothing outside the review.** No clipboard, no filesystem, no
-  process surface beyond `ctx.workspace` — an extension is ordinary code, so shell
-  out for the rest. Never write to stdout: the renderer owns it. For the same
-  reason `hunk.log` is collected as diagnostics and printed nowhere; `ctx.notify`
+- **Application execution stays extension-owned.** Extensions are ordinary
+  trusted code and may spawn processes; use `ctx.openInApp` when one needs the
+  terminal so Hunk suspends and restores its renderer. `ctx.workspace.resolveLocation`
+  maps only filesystem-attested reviewed sides to app-ready paths and lines.
+  Dialogs cancel and writes refuse while an app owns the terminal, so do not
+  await host UI inside the callback. Never write to stdout while
+  Hunk owns the terminal; `hunk.log` is collected as diagnostics and `ctx.notify`
   is how a user hears from you.
 - **`HunkExtensionUserError`** (detected structurally by `name`) buys the full
   treatment — message plus `suggestions`, no stack trace — only from a VCS adapter

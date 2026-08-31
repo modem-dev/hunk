@@ -22,12 +22,14 @@ export function buildSkippedLargeUntrackedDiffFile(
   index: number,
   sourcePrefix: string,
   largeFileCheck: LargeFileCheck,
+  absolutePath: string,
 ) {
   return buildDiffFile(createSkippedLargeMetadata(filePath, "new"), "", index, sourcePrefix, null, {
     isTooLarge: true,
     isUntracked: true,
     stats: largeFileCheck.stats,
     statsTruncated: largeFileCheck.statsTruncated,
+    sourcePathBuilder: () => ({ old: null, new: absolutePath }),
   });
 }
 
@@ -86,12 +88,19 @@ export function buildFilesystemUntrackedDiffFile(
     // patch already carries the only content a symlink has.
     return buildDiffFile(parseSingleFilePatch(patch, filePath), patch, index, sourcePrefix, null, {
       isUntracked: true,
+      sourcePathBuilder: () => ({ old: null, new: absolutePath }),
     });
   }
 
   const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
   if (largeFileCheck.shouldSkip) {
-    return buildSkippedLargeUntrackedDiffFile(filePath, index, sourcePrefix, largeFileCheck);
+    return buildSkippedLargeUntrackedDiffFile(
+      filePath,
+      index,
+      sourcePrefix,
+      largeFileCheck,
+      absolutePath,
+    );
   }
 
   if (isProbablyBinaryFile(absolutePath)) {
@@ -101,7 +110,11 @@ export function buildFilesystemUntrackedDiffFile(
       index,
       sourcePrefix,
       null,
-      { isBinary: true, isUntracked: true },
+      {
+        isBinary: true,
+        isUntracked: true,
+        sourcePathBuilder: () => ({ old: null, new: absolutePath }),
+      },
     );
   }
 
@@ -128,5 +141,6 @@ export function buildFilesystemUntrackedDiffFile(
             old: { kind: "none" },
             new: { kind: "fs", absolutePath },
           }),
+    sourcePathBuilder: () => ({ old: null, new: absolutePath }),
   });
 }

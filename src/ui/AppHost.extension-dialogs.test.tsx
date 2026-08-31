@@ -214,6 +214,48 @@ function writeDialogFixture(extPath: string, logPath: string, askSource: string)
 }
 
 describe("extension dialogs", () => {
+  test("dialogs cancel immediately instead of queueing while an application owns the terminal", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-app-owner-");
+    const extDir = createTempDir("hunk-ext-dialog-app-owner-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerCommand({ id: "ask-in-app", title: "Ask in app", key: "y" }, async (ctx) => {\n` +
+        `    const pending = ctx.dialogs.confirm({ title: "Already queued confirm" });\n` +
+        `    const answers = await ctx.openInApp(async () => await Promise.all([\n` +
+        `      pending,\n` +
+        `      ctx.dialogs.confirm({ title: "Invisible confirm" }),\n` +
+        `      ctx.dialogs.select({ title: "Invisible select", options: ["one"] }),\n` +
+        `      ctx.dialogs.input({ title: "Invisible input" }),\n` +
+        `    ]));\n` +
+        `    appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(answers) + "\\n");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("[false,false,null,null]"),
+        "the app-owned dialogs to resolve their cancel values",
+      );
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("alpha.txt");
+      expect(frame).not.toContain("Already queued confirm");
+      expect(frame).not.toContain("Invisible confirm");
+      expect(frame).not.toContain("Invisible select");
+      expect(frame).not.toContain("Invisible input");
+    });
+  });
+
   test("a confirm dialog renders with attribution and resolves true on enter", async () => {
     const repo = createTestRepo("hunk-ext-dialog-confirm-");
     // Outside the repo, so the fixture and its log never join the review.

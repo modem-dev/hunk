@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 15;
+export const HUNK_EXTENSION_API_VERSION = 16;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -797,6 +797,11 @@ export type ExtensionVcsFileSourceReader = (
   request: ExtensionVcsFileSourceRequest,
 ) => Promise<ExtensionVcsFileSourceResult>;
 
+/** Resolve one reviewed side to its exact absolute path when it is filesystem-backed. */
+export type ExtensionVcsFileSourcePathResolver = (
+  request: ExtensionVcsFileSourceRequest,
+) => string | null;
+
 /* -------------------------------------------------------------------------- */
 /* Extra reviewed files                                                        */
 /* -------------------------------------------------------------------------- */
@@ -875,6 +880,11 @@ export interface ExtensionVcsPatchResult {
    * carries, which renders the same diff with less context available.
    */
   readFileSource?: ExtensionVcsFileSourceReader;
+  /**
+   * Return the exact absolute path for a filesystem-backed side, or `null` for
+   * absent, index, historical, patch, and other virtual sources.
+   */
+  resolveFileSourcePath?: ExtensionVcsFileSourcePathResolver;
   /**
    * Opaque stable identity for source state not already represented by each file's patch.
    *
@@ -1675,6 +1685,24 @@ export type ExtensionWorkspaceWriteResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
 
+/** A reviewed source address an extension wants to pass to an application. */
+export interface ExtensionWorkspaceLocationRequest {
+  /** The reviewed file, by its `ExtensionDiffFile.id`. */
+  fileId: string;
+  /** Hunk used to map an old-side line onto the corresponding on-disk file. */
+  hunkIndex?: number;
+  /** Exact source line to prefer over the hunk's first line. */
+  line?: { side: ExtensionFileSide; line: number };
+}
+
+/** The on-disk path and line represented by a reviewed source address. */
+export interface ExtensionWorkspaceLocation {
+  /** Absolute on-disk path corresponding to the reviewed source. */
+  path: string;
+  /** One-based line in the file on disk. */
+  line: number;
+}
+
 /**
  * The reviewed files as whole documents, read and written through the host.
  *
@@ -1729,6 +1757,13 @@ export interface ExtensionWorkspace {
    * the pairing this exists for.
    */
   readDocument(fileId: string, side: ExtensionFileSide): Promise<string | null>;
+  /**
+   * Resolve review metadata into the corresponding path and line on disk.
+   *
+   * Returns `null` when the input has no attested path, the file or hunk is
+   * unavailable, or the review generation expires. Malformed source addresses reject.
+   */
+  resolveLocation(request: ExtensionWorkspaceLocationRequest): ExtensionWorkspaceLocation | null;
   /**
    * Whether `writeDocument` could currently succeed for this reviewed file.
    *
@@ -1800,6 +1835,17 @@ export interface ExtensionSessionOptions {
 export interface ExtensionCommandContext extends ExtensionContext {
   /** Live access to the public built-in command table. */
   readonly commands: ExtensionCommandControls;
+  /**
+   * Temporarily hand Hunk's terminal to an application run by this extension.
+   *
+   * Hunk suspends its renderer before calling `run` and restores the review in
+   * `finally` after `run` settles. The extension owns execution, metadata,
+   * arguments, environment, and exit handling. Calls reject after this review
+   * generation expires or while another application already owns the terminal.
+   * Host-presented dialogs cancel and workspace writes are unavailable while
+   * `run` owns the terminal; document reads and location resolution remain available.
+   */
+  openInApp<Result>(run: () => Result | PromiseLike<Result>): Promise<Result>;
   /** Session keyboard modes registered by this command's owning extension. */
   readonly keyboardModes: ExtensionKeyboardModeControls;
   /** Session panes registered by this command's owning extension. */

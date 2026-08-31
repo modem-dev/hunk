@@ -128,7 +128,7 @@ export function changesetFromPatch(
   title: string,
   sourceLabel: string,
   sidecar: SidecarContext | null,
-  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder" | "sourcePathBuilder">,
 ): Changeset {
   const lineMoveKinds = collectLineMoveKinds(patchText);
   const sanitizedPatch = sanitizePatch(patchText);

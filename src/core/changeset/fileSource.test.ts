@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFileSourceFetcher, SourceTextTooLargeError } from "./fileSource";
+import {
+  createFileSourceFetcher,
+  fileSourcePathsForSpecs,
+  SourceTextTooLargeError,
+} from "./fileSource";
 
 const tempDirs: string[] = [];
 
@@ -22,6 +26,15 @@ afterEach(() => {
 });
 
 describe("createFileSourceFetcher", () => {
+  test("projects only filesystem-backed specs to source paths", () => {
+    expect(
+      fileSourcePathsForSpecs({
+        old: { kind: "none" },
+        new: { kind: "fs", absolutePath: join("/repo", "after.txt") },
+      }),
+    ).toEqual({ old: null, new: join("/repo", "after.txt") });
+  });
+
   test("reads fs paths for old and new sides", async () => {
     const dir = createTempDir("hunk-source-fs-");
     const left = join(dir, "before.txt");

@@ -7,6 +7,7 @@ import { act, useState } from "react";
 import type { CliInput } from "../../core/run/commandInputs";
 import type { ExtensionConfirmOptions } from "../../extension-api/types";
 import type { WorkspaceFileSource } from "../lib/extensionWorkspace";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import {
   useExtensionWorkspaceControls,
   type WorkspaceFileWriter,
@@ -17,6 +18,11 @@ const EXPIRED = {
   ok: false,
   reason: "unavailable",
   detail: "The review reloaded before this extension operation could finish.",
+} as const;
+const APP_ACTIVE = {
+  ok: false,
+  reason: "unavailable",
+  detail: "Workspace writes are unavailable while another application owns the terminal.",
 } as const;
 const WRITABLE_INPUT: CliInput = { kind: "vcs", staged: false, options: {} };
 const tempDirs: string[] = [];
@@ -35,10 +41,9 @@ function createTestRoot() {
 
 /** Build one reviewed file carrying an optional full-source reader. */
 function createTestFile(overrides: Partial<WorkspaceFileSource> = {}): WorkspaceFileSource {
+  const diff = createTestDiffFile({ id: "alpha", path: "alpha.txt" });
   return {
-    id: "alpha",
-    path: "alpha.txt",
-    metadata: { type: "change" },
+    ...diff,
     sourceFetcher: { getFullText: async (side) => `${side} alpha` },
     ...overrides,
   };
@@ -66,6 +71,7 @@ async function renderController({
   workspaceFileWriter?: WorkspaceFileWriter;
 } = {}) {
   let live = true;
+  let appActive = false;
   let controller!: ReturnType<typeof useExtensionWorkspaceControls>;
   let replaceInputs!: (next: {
     files: readonly WorkspaceFileSource[];
@@ -77,6 +83,7 @@ async function renderController({
     confirm: (options: ExtensionConfirmOptions) => confirm(options, extensionId),
   });
   const createReviewCapabilityLease = () => ({ isLive: () => live });
+  const isAppActive = () => appActive;
 
   function Harness() {
     const [liveInputs, setLiveInputs] = useState({ files, input, root });
@@ -87,6 +94,7 @@ async function renderController({
       createExtensionDialogs,
       createReviewCapabilityLease,
       ...liveInputs,
+      isAppActive,
       onWorkspaceWriteCompleted,
       runWorkspaceWrite,
       workspaceFileWriter,
@@ -97,7 +105,13 @@ async function renderController({
   const setup = await testRender(<Harness />, { width: 20, height: 4 });
   await act(async () => setup.renderOnce());
   return {
+    claimApp: () => {
+      appActive = true;
+    },
     controller: () => controller,
+    releaseApp: () => {
+      appActive = false;
+    },
     replaceInputs: async (next: {
       files: readonly WorkspaceFileSource[];
       input: CliInput;
@@ -223,6 +237,30 @@ describe("useExtensionWorkspaceControls reads", () => {
       await destroy(harness.setup);
     }
   });
+
+  test("resolves live app locations and makes retained resolvers inert", async () => {
+    const root = createTestRoot();
+    const harness = await renderController({
+      files: [
+        createTestFile({
+          sourcePaths: { old: null, new: join(root, "alpha.txt") },
+        }),
+      ],
+      root,
+    });
+    const workspace = harness.controller().createWorkspaceControls("probe");
+
+    try {
+      expect(workspace.resolveLocation({ fileId: "alpha" })).toEqual({
+        path: join(root, "alpha.txt"),
+        line: 1,
+      });
+      harness.retire();
+      expect(workspace.resolveLocation({ fileId: "alpha" })).toBeNull();
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
 });
 
 describe("useExtensionWorkspaceControls lifecycle", () => {
@@ -282,6 +320,140 @@ describe("useExtensionWorkspaceControls lifecycle", () => {
 });
 
 describe("useExtensionWorkspaceControls writes", () => {
+  test("refuses writes during app ownership without disabling reads or retained controls", async () => {
+    const root = createTestRoot();
+    let prompts = 0;
+    let writes = 0;
+    const harness = await renderController({
+      files: [
+        createTestFile({
+          sourcePaths: { old: null, new: join(root, "alpha.txt") },
+        }),
+      ],
+      root,
+      confirm: async () => {
+        prompts += 1;
+        return true;
+      },
+      workspaceFileWriter: async () => {
+        writes += 1;
+      },
+    });
+    const workspace = harness.controller().createWorkspaceControls("probe");
+    harness.claimApp();
+
+    try {
+      expect(workspace.canWriteDocument("alpha")).toBe(false);
+      await expect(
+        workspace.writeDocument({ fileId: "alpha", text: "replacement" }),
+      ).resolves.toEqual(APP_ACTIVE);
+      await expect(workspace.writeDocument({ fileId: "", text: "replacement" })).rejects.toThrow(
+        "non-empty fileId",
+      );
+      await expect(workspace.readDocument("alpha", "new")).resolves.toBe("new alpha");
+      expect(workspace.resolveLocation({ fileId: "alpha" })).toEqual({
+        path: join(root, "alpha.txt"),
+        line: 1,
+      });
+      expect(prompts).toBe(0);
+      expect(writes).toBe(0);
+
+      harness.releaseApp();
+      expect(workspace.canWriteDocument("alpha")).toBe(true);
+      await expect(
+        workspace.writeDocument({ fileId: "alpha", text: "replacement" }),
+      ).resolves.toEqual({ ok: true });
+      expect(prompts).toBe(1);
+      expect(writes).toBe(1);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("refuses ownership acquired during verification or consent and preserves stale precedence", async () => {
+    let prompts = 0;
+    const verifyingHarness = await renderController({
+      confirm: async () => {
+        prompts += 1;
+        return true;
+      },
+    });
+
+    try {
+      const pending = verifyingHarness
+        .controller()
+        .createWorkspaceControls("probe")
+        .writeDocument({ fileId: "alpha", text: "replacement" });
+      verifyingHarness.claimApp();
+      await expect(pending).resolves.toEqual(APP_ACTIVE);
+      expect(prompts).toBe(0);
+    } finally {
+      await destroy(verifyingHarness.setup);
+    }
+
+    let confirmStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      confirmStarted = resolve;
+    });
+    let resolveConfirm!: (confirmed: boolean) => void;
+    const confirmation = new Promise<boolean>((resolve) => {
+      resolveConfirm = resolve;
+    });
+    let writes = 0;
+    const consentHarness = await renderController({
+      confirm: async () => {
+        confirmStarted();
+        return await confirmation;
+      },
+      workspaceFileWriter: async () => {
+        writes += 1;
+      },
+    });
+
+    try {
+      const pending = consentHarness
+        .controller()
+        .createWorkspaceControls("probe")
+        .writeDocument({ fileId: "alpha", text: "replacement" });
+      await started;
+      consentHarness.claimApp();
+      resolveConfirm(true);
+      await expect(pending).resolves.toEqual(APP_ACTIVE);
+      expect(writes).toBe(0);
+    } finally {
+      await destroy(consentHarness.setup);
+    }
+
+    let staleConfirmStarted!: () => void;
+    const staleStarted = new Promise<void>((resolve) => {
+      staleConfirmStarted = resolve;
+    });
+    let resolveStaleConfirm!: (confirmed: boolean) => void;
+    const staleConfirmation = new Promise<boolean>((resolve) => {
+      resolveStaleConfirm = resolve;
+    });
+    const staleHarness = await renderController({
+      confirm: async () => {
+        staleConfirmStarted();
+        return await staleConfirmation;
+      },
+    });
+
+    try {
+      const pending = staleHarness
+        .controller()
+        .createWorkspaceControls("probe")
+        .writeDocument({ fileId: "alpha", text: "replacement" });
+      await staleStarted;
+      staleHarness.claimApp();
+      staleHarness.retire();
+      resolveStaleConfirm(true);
+      await expect(pending).resolves.toEqual(EXPIRED);
+    } finally {
+      await destroy(staleHarness.setup);
+    }
+  });
+
   test("throws for malformed requests and refuses unwritable reviews without prompting", async () => {
     let prompts = 0;
     const harness = await renderController({
@@ -557,6 +729,7 @@ describe("useExtensionWorkspaceControls writes", () => {
         .writeDocument({ fileId: "alpha", text: "replacement\n" });
       await started;
       harness.retire();
+      harness.claimApp();
       finishWrite();
 
       await expect(pending).resolves.toEqual({ ok: true });

@@ -118,6 +118,17 @@ describe("SaplingVcsAdapter", () => {
       expect(diffResult.title).toContain("working copy");
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
+      const reviewedFile = {
+        path: "file.txt",
+        changeType: "change",
+        isUntracked: false,
+      } as const;
+      expect(diffResult.resolveFileSourcePath?.({ ...reviewedFile, side: "old" })).toBeNull();
+      expect(
+        normalizeComparablePath(
+          diffResult.resolveFileSourcePath!({ ...reviewedFile, side: "new" })!,
+        ),
+      ).toBe(normalizeComparablePath(join(repo, "file.txt")));
 
       const showInput = {
         kind: "show",
@@ -130,6 +141,7 @@ describe("SaplingVcsAdapter", () => {
 
       expect(showResult.title).toContain("show .");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+      expect("resolveFileSourcePath" in showResult).toBe(false);
       expect(
         SaplingVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, {
           cwd: repo,
@@ -186,6 +198,7 @@ describe("SaplingVcsAdapter without the sl binary", () => {
       });
 
       expect(result.untrackedPaths).toEqual([]);
+      expect(result.resolveFileSourcePath).toBeUndefined();
       expect(commands.some((command) => command.includes("status"))).toBe(false);
       expect(
         commands.some((command) => command.includes("main") && command.includes("feature")),

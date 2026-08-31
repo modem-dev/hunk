@@ -1,16 +1,18 @@
 import { join, resolve, sep } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
 import {
+  normalizeWorkspaceLocationRequest,
   normalizeWorkspaceWriteRequest,
   resolveExtensionWorkspaceRead,
+  resolveExtensionWorkspaceLocation,
   resolveExtensionWorkspaceWriteTarget,
   type WorkspaceFileSource,
 } from "./extensionWorkspace";
 
 const ROOT = resolve(sep, "repo");
 const NO_OPTIONS: CommonOptions = {};
-
 /** One reviewed file as the workspace policy sees it, changed unless told otherwise. */
 function createTestWorkspaceFile(
   overrides: Partial<WorkspaceFileSource> = {},
@@ -238,5 +240,166 @@ describe("extension workspace write requests", () => {
     expect(() => normalizeWorkspaceWriteRequest({ fileId: "alpha", text: 12 })).toThrow(
       "text to be a string",
     );
+  });
+});
+
+describe("extension workspace locations", () => {
+  test("uses new-side provenance and maps old-side lines from parsed hunk metadata", () => {
+    const file = {
+      ...createTestDiffFile({
+        id: "alpha",
+        path: "packages/app/alpha.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nfour\n",
+      }),
+      sourcePaths: {
+        old: join(ROOT, "archive", "alpha.ts"),
+        new: join(ROOT, "packages", "app", "alpha.ts"),
+      },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        request: { fileId: "alpha", hunkIndex: 0, line: { side: "old", line: 3 } },
+      }),
+    ).toEqual({ path: join(ROOT, "packages", "app", "alpha.ts"), line: 2 });
+  });
+
+  test("rejects malformed source addresses and returns null for unavailable metadata", () => {
+    expect(() => normalizeWorkspaceLocationRequest(undefined)).toThrow("non-empty fileId");
+    expect(() => normalizeWorkspaceLocationRequest({ fileId: "alpha", hunkIndex: -1 })).toThrow(
+      "non-negative integer",
+    );
+    expect(() =>
+      normalizeWorkspaceLocationRequest({
+        fileId: "alpha",
+        line: { side: "both", line: 1 },
+      }),
+    ).toThrow('line.side must be "old" or "new"');
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [createTestWorkspaceFile({ metadata: undefined })],
+        request: { fileId: "alpha" },
+      }),
+    ).toBeNull();
+  });
+
+  test("preserves old-side offsets through context and multi-line replacements", () => {
+    const removed = {
+      ...createTestDiffFile({
+        id: "removed",
+        path: "removed.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nfour\n",
+        context: 1,
+      }),
+      sourcePaths: { old: null, new: join(ROOT, "removed.ts") },
+    };
+    const replaced = {
+      ...createTestDiffFile({
+        id: "replaced",
+        path: "replaced.ts",
+        before: "one\ntwo\nthree\nfour\n",
+        after: "one\nTWO\nTHREE\nfour\n",
+      }),
+      sourcePaths: { old: null, new: join(ROOT, "replaced.ts") },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [removed],
+        request: { fileId: "removed", hunkIndex: 0, line: { side: "old", line: 3 } },
+      })?.line,
+    ).toBe(2);
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [replaced],
+        request: { fileId: "replaced", hunkIndex: 0, line: { side: "old", line: 3 } },
+      })?.line,
+    ).toBe(3);
+  });
+
+  test("uses concrete provenance instead of reviewed display paths", () => {
+    const file = {
+      ...createTestDiffFile({ id: "alpha", path: "display/after.ts" }),
+      sourcePaths: {
+        old: join(ROOT, "concrete", "before.ts"),
+        new: join(ROOT, "concrete", "after.ts"),
+      },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        request: { fileId: "alpha", line: { side: "new", line: 2 } },
+      }),
+    ).toEqual({ path: join(ROOT, "concrete", "after.ts"), line: 2 });
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [{ ...file, sourcePaths: undefined }],
+        request: { fileId: "alpha" },
+      }),
+    ).toBeNull();
+  });
+
+  test("resolves deleted direct comparisons to their old-side source", () => {
+    const file = {
+      ...createTestDiffFile({
+        id: "deleted",
+        path: "deleted.ts",
+        before: "one\ntwo\n",
+        after: "",
+      }),
+      sourcePaths: { old: join(ROOT, "archive", "deleted.ts"), new: null },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [file],
+        request: { fileId: "deleted", hunkIndex: 0, line: { side: "old", line: 2 } },
+      }),
+    ).toEqual({ path: join(ROOT, "archive", "deleted.ts"), line: 2 });
+  });
+
+  test("rejects requested absent sides before considering opposite-side provenance", () => {
+    const added = {
+      ...createTestDiffFile({ id: "added", before: "", after: "new\n" }),
+      sourcePaths: { old: null, new: join(ROOT, "added.ts") },
+    };
+    const deleted = {
+      ...createTestDiffFile({ id: "deleted", before: "old\n", after: "" }),
+      sourcePaths: { old: join(ROOT, "deleted.ts"), new: null },
+    };
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [added],
+        request: { fileId: "added", line: { side: "old", line: 1 } },
+      }),
+    ).toBeNull();
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [deleted],
+        request: { fileId: "deleted", line: { side: "new", line: 1 } },
+      }),
+    ).toBeNull();
+  });
+
+  test("returns null when the relevant side is virtual or its path is not absolute", () => {
+    const file = createTestDiffFile({ id: "alpha" });
+
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [{ ...file, sourcePaths: { old: join(ROOT, "old.ts"), new: null } }],
+        request: { fileId: "alpha", hunkIndex: 0, line: { side: "old", line: 1 } },
+      }),
+    ).toBeNull();
+    expect(
+      resolveExtensionWorkspaceLocation({
+        files: [{ ...file, sourcePaths: { old: null, new: "relative/alpha.ts" } }],
+        request: { fileId: "alpha" },
+      }),
+    ).toBeNull();
   });
 });
