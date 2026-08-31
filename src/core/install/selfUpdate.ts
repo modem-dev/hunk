@@ -66,6 +66,8 @@ export interface SelfUpdateCommandOptions {
   env?: NodeJS.ProcessEnv;
   /** Capture child output so an interactive status display remains intact. */
   captureOutput?: boolean;
+  /** Abort the package manager when the interactive update is canceled. */
+  signal?: AbortSignal;
 }
 
 export interface SelfUpdateIo {
@@ -197,6 +199,41 @@ function buildUpdateCommand(
   return npmUpdateCommand(executablePath, targetVersion, platform);
 }
 
+/** Terminate an updater and its descendants so cancellation cannot leave an installer running. */
+async function terminateUpdateProcessTree(child: Bun.Subprocess, platform: NodeJS.Platform) {
+  if (platform === "win32") {
+    try {
+      const terminator = Bun.spawn({
+        cmd: ["taskkill", "/PID", String(child.pid), "/T", "/F"],
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const exitCode = await terminator.exited;
+      if (exitCode === 0) {
+        return;
+      }
+    } catch {
+      // Fall back to the direct child when taskkill is unavailable.
+    }
+    child.kill();
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill();
+    return;
+  }
+  await Bun.sleep(250);
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // The process group exited during its grace period.
+  }
+}
+
 /** Spawn one package-manager command, capturing output when a transient status owns stdout. */
 async function spawnUpdateCommand(
   command: readonly string[],
@@ -210,13 +247,29 @@ async function spawnUpdateCommand(
       stdin: "ignore",
       stdout: options.captureOutput ? "pipe" : "inherit",
       stderr: "pipe",
+      // A separate process group lets interactive cancellation terminate the whole installer tree.
+      // Non-interactive children stay in Hunk's foreground group so ordinary shell signals reach them.
+      detached: Boolean(options.signal) && process.platform !== "win32",
     });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      options.captureOutput ? new Response(child.stdout).text() : Promise.resolve(undefined),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    return { exitCode, stdout, stderr };
+    let termination: Promise<void> | undefined;
+    const abortChild = () => {
+      termination ??= terminateUpdateProcessTree(child, process.platform);
+    };
+    options.signal?.addEventListener("abort", abortChild, { once: true });
+    if (options.signal?.aborted) {
+      abortChild();
+    }
+    try {
+      const [stdout, stderr, exitCode] = await Promise.all([
+        options.captureOutput ? new Response(child.stdout).text() : Promise.resolve(undefined),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      await termination;
+      return { exitCode, stdout, stderr };
+    } finally {
+      options.signal?.removeEventListener("abort", abortChild);
+    }
   } catch (error) {
     throw new HunkUserError(
       `Could not run ${executable}: ${error instanceof Error ? error.message : String(error)}`,
@@ -355,7 +408,13 @@ export async function runSelfUpdateCommand(
   const alreadyCurrent = input.version
     ? installedVersion === targetVersion
     : !isComparableVersion(installedVersion) || !isNewerVersion(installedVersion, targetVersion);
-  const interactive = Boolean(io.stdoutIsTTY && io.output && !env.NO_COLOR && env.TERM !== "dumb");
+  const interactive = Boolean(
+    io.stdoutIsTTY &&
+    io.output &&
+    !Object.hasOwn(env, "NO_COLOR") &&
+    !Object.hasOwn(env, "CI") &&
+    env.TERM !== "dumb",
+  );
   if (alreadyCurrent) {
     if (interactive) {
       intro("Hunk update", { output: io.output });
@@ -375,14 +434,30 @@ export async function runSelfUpdateCommand(
   );
   // Only the curl installer reads a version from its environment; every other channel names the
   // target in its argv, so the child otherwise inherits this process's environment untouched.
+  const cancellation = interactive ? new AbortController() : undefined;
+  let cancelSignal: NodeJS.Signals | undefined;
+  const rememberSigint = () => {
+    cancelSignal ??= "SIGINT";
+  };
+  const rememberSigterm = () => {
+    cancelSignal ??= "SIGTERM";
+  };
+  if (interactive) {
+    // Clack renders cancellation, while these listeners preserve which exit status the shell expects.
+    process.once("SIGINT", rememberSigint);
+    process.once("SIGTERM", rememberSigterm);
+  }
+
   const commandOptions: SelfUpdateCommandOptions = {
     ...(installSource === "curl"
       ? { env: { ...env, [CURL_INSTALL_VERSION_ENV]: targetVersion } }
       : {}),
-    ...(interactive ? { captureOutput: true } : {}),
+    ...(interactive ? { captureOutput: true, signal: cancellation?.signal } : {}),
   };
 
-  const progress = interactive ? spinner({ output: io.output }) : undefined;
+  const progress = interactive
+    ? spinner({ output: io.output, onCancel: () => cancellation?.abort() })
+    : undefined;
   if (interactive) {
     intro("Hunk update", { output: io.output });
     log.info(`Current  ${installedVersion}`, { output: io.output });
@@ -401,6 +476,12 @@ export async function runSelfUpdateCommand(
   } catch (error) {
     progress?.error("Update failed");
     throw error;
+  } finally {
+    process.removeListener("SIGINT", rememberSigint);
+    process.removeListener("SIGTERM", rememberSigterm);
+  }
+  if (cancelSignal) {
+    return cancelSignal === "SIGINT" ? 130 : 143;
   }
   if (result.exitCode !== 0) {
     progress?.error("Update failed");

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { InstallSource } from "./installSource";
@@ -6,6 +8,7 @@ import {
   parseUpdateMethod,
   parseUpdateVersion,
   runSelfUpdateCommand,
+  type SelfUpdateCommandOptions,
   type SelfUpdateInput,
   type SelfUpdateProcessResult,
   UPDATE_METHOD_VALUES,
@@ -28,6 +31,9 @@ interface UpdateRunOptions {
   latestVersion?: string;
   env?: NodeJS.ProcessEnv;
   commandResult?: SelfUpdateProcessResult;
+  commandRunner?: (
+    options: SelfUpdateCommandOptions | undefined,
+  ) => Promise<SelfUpdateProcessResult>;
   interactive?: boolean;
 }
 
@@ -68,7 +74,9 @@ async function runUpdate(options: UpdateRunOptions) {
         commands.push([...command]);
         commandEnvs.push(commandOptions?.env);
         commandCaptureModes.push(commandOptions?.captureOutput);
-        return options.commandResult ?? { exitCode: 0, stderr: "" };
+        return options.commandRunner
+          ? options.commandRunner(commandOptions)
+          : (options.commandResult ?? { exitCode: 0, stderr: "" });
       },
     },
   );
@@ -183,16 +191,104 @@ describe("hunk update", () => {
   });
 
   test("keeps plain output when color is disabled", async () => {
+    for (const value of ["", "1"]) {
+      const result = await runUpdate({
+        installSource: "npm",
+        interactive: true,
+        env: { NO_COLOR: value },
+      });
+
+      expect(result.renderedOutput).toBe("");
+      expect(result.stdout).toContain("Updating hunk 1.0.0 -> 1.1.0");
+      expect(result.commandCaptureModes).toEqual([undefined]);
+    }
+  });
+
+  test("keeps plain output in CI even when stdout is a TTY", async () => {
     const result = await runUpdate({
       installSource: "npm",
       interactive: true,
-      env: { NO_COLOR: "1" },
+      env: { CI: "true" },
     });
 
     expect(result.renderedOutput).toBe("");
     expect(result.stdout).toContain("Updating hunk 1.0.0 -> 1.1.0");
     expect(result.commandCaptureModes).toEqual([undefined]);
   });
+
+  test("aborts an interactive update and returns the shell signal status", async () => {
+    let commandAborted = false;
+    const result = await runUpdate({
+      installSource: "npm",
+      interactive: true,
+      commandRunner: (commandOptions) =>
+        new Promise((resolve) => {
+          commandOptions?.signal?.addEventListener(
+            "abort",
+            () => {
+              commandAborted = true;
+              resolve({ exitCode: 143, stderr: "" });
+            },
+            { once: true },
+          );
+          process.emit("SIGTERM");
+        }),
+    });
+
+    expect(commandAborted).toBe(true);
+    expect(result.exitCode).toBe(143);
+    expect(result.renderedOutput).toContain("Canceled");
+    expect(result.renderedOutput).not.toContain("Done");
+  });
+
+  test("kills an updater's descendant processes when canceled", async () => {
+    if (process.platform === "win32") {
+      // Windows uses taskkill for tree termination; the Unix process-group fixture cannot exercise it.
+      return;
+    }
+
+    const fixtureDir = mkdtempSync(join(tmpdir(), "hunk-update-cancel-"));
+    const curlPath = join(fixtureDir, "curl");
+    const installerPath = join(fixtureDir, "installer.sh");
+    const survivedPath = join(fixtureDir, "descendant-survived");
+    writeFileSync(
+      curlPath,
+      '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done\ncp "$FAKE_INSTALLER" "$2"\n',
+    );
+    writeFileSync(installerPath, `#!/bin/sh\n(sleep 0.5; touch '${survivedPath}') &\nwait\n`);
+    chmodSync(curlPath, 0o755);
+    chmodSync(installerPath, 0o755);
+
+    try {
+      const output = new PassThrough();
+      const cancellation = setTimeout(() => process.emit("SIGTERM"), 100);
+      const exitCode = await runSelfUpdateCommand(
+        { check: false },
+        {
+          stdout: () => {},
+          stderr: () => {},
+          stdoutIsTTY: true,
+          output,
+          env: {
+            PATH: `${fixtureDir}:${process.env.PATH ?? ""}`,
+            FAKE_INSTALLER: installerPath,
+            TERM: "xterm-256color",
+          },
+          executablePath: join(fixtureDir, "hunk"),
+          resolveInstalledVersion: () => "1.0.0",
+          resolveInstallSource: () => "curl",
+          fetchImpl: async () => jsonResponse({ tag_name: "v1.1.0" }),
+        },
+      );
+      clearTimeout(cancellation);
+
+      expect(exitCode).toBe(143);
+      await Bun.sleep(650);
+      expect(existsSync(survivedPath)).toBe(false);
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  }, 5_000);
 
   test("names the npm .cmd shim explicitly on Windows", async () => {
     const result = await runUpdate({ installSource: "npm", platform: "win32" });
