@@ -17,6 +17,7 @@ import {
   renderIndexPage,
   renderSeriesPage,
   resolveDates,
+  resolveTagDate,
   seriesSummary,
   socialCardPath,
   splitHighlights,
@@ -204,6 +205,12 @@ describe("highlights", () => {
 
 describe("date resolution", () => {
   const releases = parseChangelog(SAMPLE);
+
+  test("prefers an annotated tag publication date and falls back for lightweight tags", () => {
+    expect(resolveTagDate("2026-08-29\n", "2026-08-28\n")).toBe("2026-08-29");
+    expect(resolveTagDate("\n", "2026-08-28\n")).toBe("2026-08-28");
+    expect(resolveTagDate("not-a-date", "")).toBeUndefined();
+  });
 
   test("never recomputes a date that is already recorded", () => {
     const resolved = resolveDates(releases, { "0.19.0": "2020-01-01" }, () => "2099-12-31");
@@ -423,9 +430,53 @@ describe("feed", () => {
       notes: {},
       dates: { "0.19.0": "2026-08-16", "0.19.0-beta.0": "2026-08-10" },
     });
-    expect(feed).toContain('<guid isPermaLink="true">https://hunk.dev/changelog/0.19/</guid>');
+    expect(feed).toContain(
+      '<guid isPermaLink="true">https://hunk.dev/changelog/0.19/#v0-19-0</guid>',
+    );
     expect(feed).toContain(
       '<guid isPermaLink="true">https://hunk.dev/changelog/0.19/#v0-19-0-beta-0</guid>',
+    );
+  });
+
+  test("does not re-announce a stable patch because an older version had a beta", () => {
+    const seriesList = groupIntoSeries(
+      parseChangelog(
+        "## 0.19.2\n\n- Current.\n\n## 0.19.0\n\n- First stable.\n\n## 0.19.0-beta.0\n\n- Old beta.\n",
+      ),
+    );
+    const feed = renderFeed({
+      seriesList,
+      notes: {},
+      dates: {
+        "0.19.2": "2026-08-18",
+        "0.19.0": "2026-08-16",
+        "0.19.0-beta.0": "2026-08-15",
+      },
+    });
+    expect(feed).toContain('<guid isPermaLink="true">https://hunk.dev/changelog/0.19/</guid>');
+    expect(feed).not.toContain("#v0-19-2</guid>");
+  });
+
+  test("notifies a stable patch after a beta in an established series", () => {
+    const seriesList = groupIntoSeries(
+      parseChangelog(
+        "## 0.19.1\n\n- Stable.\n\n## 0.19.1-beta.0\n\n- Beta.\n\n## 0.19.0\n\n- Previous.\n",
+      ),
+    );
+    const feed = renderFeed({
+      seriesList,
+      notes: {},
+      dates: {
+        "0.19.1": "2026-08-18",
+        "0.19.1-beta.0": "2026-08-17",
+        "0.19.0": "2026-08-16",
+      },
+    });
+    expect(feed).toContain(
+      '<guid isPermaLink="true">https://hunk.dev/changelog/0.19/#v0-19-1</guid>',
+    );
+    expect(feed).toContain(
+      '<guid isPermaLink="true">https://hunk.dev/changelog/0.19/#v0-19-1-beta-0</guid>',
     );
   });
 

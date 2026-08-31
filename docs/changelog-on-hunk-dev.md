@@ -68,8 +68,9 @@ install yet.
 Two rules handle this without a draft state or an extra publication step:
 
 - **A recorded date is never recomputed.** Dates live in `website/releases/dates.json`; only a
-  version missing from it consults `git log -1 --format=%as v<version>`, and that lookup fails soft.
-  Generation is therefore deterministic, and `check:changelog` gates CI on Vercel's shallow, tagless
+  version missing from it reads the annotated tag's publication date, falling back to the tagged
+  commit date for a lightweight tag; either lookup fails soft. Generation is therefore deterministic,
+  and `check:changelog` gates CI on Vercel's shallow, tagless
   checkout without touching Git.
 - **Publication state is derived from dates, not from position.** An undated stable version renders
   as `Unreleased`; an undated prerelease remains off every surface until its tag exists. Neither can
@@ -80,8 +81,8 @@ Two rules handle this without a draft state or an extra publication step:
 version that leaves `CHANGELOG.md` does not linger in the committed map. Stable and prerelease tag
 dates are both retained.
 
-Step 4 of `skills/hunk-release/SKILL.md` regenerates after the tag exists. Every tag backfills its
-date and publishes its notes; only a stable tag adds the default install command and advances the
+Step 4 of `skills/hunk-release/SKILL.md` regenerates after every tag, including backports. Every tag
+backfills its date and publishes its notes; only the newest stable tag adds the default install command and advances the
 landing-page ribbon. RSS keeps one mutable item per stable series and gives every prerelease an
 exact-version anchor and GUID, so the later stable release still reaches subscribers as a new item.
 

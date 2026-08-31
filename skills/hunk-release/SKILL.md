@@ -54,7 +54,7 @@ Verify the intended versions, consumed Changesets, and new changelog section. Do
 - `links` — docs pages the highlights describe, rendered as "Related documentation".
 - `video` — `mp4` plus optional `webm`, `poster`, `duration`, and `title`, filled in at step 5.
 
-The release tag does not exist yet at this point, so the new version is rendered as `Unreleased` and is deliberately given no install command; the tag date is picked up by the next generation. Recorded dates in `website/releases/dates.json` are never recomputed, which is what lets `check:changelog` gate CI without Git tags.
+The release tag does not exist yet at this point. A stable version is rendered as `Unreleased` without an install command, while an undated prerelease remains off the site entirely; the tag date is picked up by the next generation. Recorded dates in `website/releases/dates.json` are never recomputed, which is what lets `check:changelog` gate CI without Git tags.
 
 Generate and compare the committed release benchmark:
 
@@ -173,7 +173,7 @@ bun run generate:og
 git diff --stat -- website
 ```
 
-This backfills the new tag's date, publishes its notes, and redraws the social cards whose contents changed. Stable releases also add the install command and move the landing-page ribbon; prereleases publish a clearly labeled series without advancing either stable surface. Commit it to `main` — the diff should only touch `website/releases/`, `website/src/content/docs/changelog/`, `website/public/changelog/rss.xml`, and the redrawn cards under `website/public/changelog/og/`. Skip this only for a backport, which does not advance the published latest release.
+This backfills the new tag's date, publishes its notes, and redraws the social cards whose contents changed. Stable releases also add the install command and move the landing-page ribbon; prereleases publish a clearly labeled series without advancing either stable surface. Commit it to `main` — the diff should only touch `website/releases/`, `website/src/content/docs/changelog/`, `website/public/changelog/rss.xml`, and the redrawn cards under `website/public/changelog/og/`. Run this for backports too: they publish into their older series without advancing the latest stable release.
 
 Prereleases publish to `hunk.dev/changelog` after their tag exists. A beta contributes its series page, exact version anchor, index row, feed item, and social card, while the stable latest marker, landing ribbon, and default install instructions continue to name the newest stable release.
 
@@ -233,7 +233,7 @@ https://github.com/user-attachments/assets/<video-id>
 
 </details>
 
-**Release notes**: https://hunk.dev/changelog/<major.minor>/ <!-- stable only -->
+**Release notes**: https://hunk.dev/changelog/<major.minor>/
 **Full changelog**: https://github.com/modem-dev/hunk/compare/<previous-tag>...<new-tag>
 ````
 

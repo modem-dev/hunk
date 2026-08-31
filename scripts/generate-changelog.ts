@@ -388,21 +388,37 @@ function readJsonInput<T>(path: string): T | Record<string, never> {
   }
 }
 
+/** Choose an annotated tag's publication date, falling back to its commit for lightweight tags. */
+export function resolveTagDate(taggerDate: string, commitDate: string) {
+  const validDate = (value: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : undefined;
+  return validDate(taggerDate) ?? validDate(commitDate);
+}
+
 /**
  * Resolve the tag date for one version, or `undefined` when Git cannot answer.
  *
  * Shallow clones and tagless checkouts are expected — the committed date map is what makes
- * generation deterministic, and this only ever fills gaps in it.
+ * generation deterministic, and this only ever fills gaps in it. Annotated tags use their tagger
+ * date because that records publication; lightweight tags fall back to the tagged commit date.
  */
 function tagDate(version: string): string | undefined {
   try {
-    const stdout = execFileSync("git", ["log", "-1", "--format=%as", `v${version}`], {
+    const taggerDate = execFileSync(
+      "git",
+      ["for-each-ref", "--format=%(taggerdate:short)", `refs/tags/v${version}`],
+      {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    const commitDate = execFileSync("git", ["log", "-1", "--format=%as", `v${version}`], {
       cwd: REPO_ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const date = stdout.trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
+    return resolveTagDate(taggerDate, commitDate);
   } catch {
     return undefined;
   }
@@ -989,9 +1005,9 @@ function xmlEscape(value: string) {
 /**
  * Render the RSS feed.
  *
- * Stable releases keep one item per minor series so patches update that series entry. Each
- * prerelease gets an anchored item of its own, ensuring the eventual stable release has a new GUID
- * and reaches subscribers instead of silently replacing its beta.
+ * Stable releases keep one item per minor series, version-anchored when that exact version had a
+ * beta so promotion reaches subscribers with a new GUID. Each prerelease also gets an anchored item
+ * of its own.
  */
 export function renderFeed({
   seriesList,
@@ -1006,26 +1022,32 @@ export function renderFeed({
     const summary = truncate(toPlainText(resolveSummary(series, notes[series.minor], dates)), 400);
     const seriesLink = `${SITE_ORIGIN}/changelog/${series.minor}/`;
     const stable = stablePublishedReleases(series, dates)[0];
+    const prereleases = publishedReleases(series, dates).filter((release) => release.prerelease);
+    // A stable promotion needs a versioned GUID when its own beta was already announced. An older
+    // beta in the same series must not re-announce an unrelated current patch.
+    const promotesPrerelease =
+      stable && prereleases.some((release) => release.version.startsWith(`${stable.version}-`));
+    const stableLink = promotesPrerelease
+      ? `${seriesLink}#${versionAnchor(stable.version)}`
+      : seriesLink;
     const stableEntry = stable
       ? [
           {
             version: stable.version,
             title: `Hunk ${series.minor}`,
-            link: seriesLink,
+            link: stableLink,
             date: dates[stable.version],
             summary,
           },
         ]
       : [];
-    const prereleaseEntries = publishedReleases(series, dates)
-      .filter((release) => release.prerelease)
-      .map((release) => ({
-        version: release.version,
-        title: `Hunk ${release.version} (Prerelease)`,
-        link: `${seriesLink}#${versionAnchor(release.version)}`,
-        date: dates[release.version],
-        summary,
-      }));
+    const prereleaseEntries = prereleases.map((release) => ({
+      version: release.version,
+      title: `Hunk ${release.version} (Prerelease)`,
+      link: `${seriesLink}#${versionAnchor(release.version)}`,
+      date: dates[release.version],
+      summary,
+    }));
     return [...stableEntry, ...prereleaseEntries];
   });
   entries.sort((a, b) =>
