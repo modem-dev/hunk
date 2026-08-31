@@ -509,7 +509,7 @@ export function formatReviewOutput(review: SessionReview) {
     ...review.files.flatMap((file) => [
       `  - ${formatSessionPath(file.path)} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
       ...file.hunks.map((hunk) => `      hunk ${hunk.index + 1}: ${hunk.header}`),
-      ...(file.patch === undefined ? [] : ["      patch:", file.patch]),
+      ...(file.patch === undefined ? [] : ["      patch:", sanitizeTerminalText(file.patch)]),
     ]),
     "",
   ].join("\n");

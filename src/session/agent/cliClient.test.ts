@@ -596,6 +596,22 @@ describe("Hunk session CLI formatters", () => {
     );
   });
 
+  test("review output neutralizes patch controls while preserving diff layout", () => {
+    const output = formatReviewOutput(
+      createTestSessionReview({
+        files: [
+          createTestSessionReviewFile({
+            path: "unsafe.txt",
+            patch: "@@ -0,0 +1 @@\n+before\x1b[2Jafter\n+\tindented",
+          }),
+        ],
+      }),
+    );
+
+    expect(output).not.toContain("\x1b");
+    expect(output).toContain("@@ -0,0 +1 @@\n+beforeafter\n+\tindented\n");
+  });
+
   test("review output renders populated notes but omits an empty Notes section", () => {
     const withoutNotes = formatReviewOutput(createTestSessionReview({ reviewNotes: [] }));
     const withNotes = formatReviewOutput(
