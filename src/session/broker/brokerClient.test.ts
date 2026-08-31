@@ -206,7 +206,10 @@ function installDeterministicClockTest() {
 }
 
 /** Observe WebSocket construction without opening a network connection. */
-function installWebSocketObserverTest(throwOnAttempt?: number) {
+function installWebSocketObserverTest(
+  throwOnAttempt?: number,
+  onConstruct?: (attempt: number) => void,
+) {
   if (restoreWebSocketObserverTest) {
     throw new Error("A WebSocket observer is already installed.");
   }
@@ -224,6 +227,7 @@ function installWebSocketObserverTest(throwOnAttempt?: number) {
 
     constructor(_url: string) {
       constructionAttempts += 1;
+      onConstruct?.(constructionAttempts);
       if (constructionAttempts === throwOnAttempt) throw new Error("socket factory exploded");
       sockets.push(this);
     }
@@ -816,7 +820,7 @@ describe("Hunk session daemon client", () => {
     }
   });
 
-  test.todo("known regression: client retained after synchronous socket factory failure prevents a later fresh start", async () => {
+  test("creates a fresh socket after synchronous socket construction fails", async () => {
     delete process.env.HUNK_MCP_DISABLE;
     const webSockets = installWebSocketObserverTest(1);
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
@@ -832,6 +836,54 @@ describe("Hunk session daemon client", () => {
       await settleWithinTestTimeout(client.start());
       expect(webSockets.constructionAttemptsTest()).toBe(2);
       expect(webSockets.sockets).toHaveLength(1);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  test("preserves a reentrant replacement and the original synchronous construction failure", () => {
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const config = prepareDirectConnectTest(client);
+    const startupFailure = { source: "socket construction" };
+    const cleanupFailure = new Error("connection cleanup exploded");
+    const snapshots: ReturnType<typeof createSnapshot>[] = [];
+    let failedConnectionStops = 0;
+    let replacementStops = 0;
+    const replacement = {
+      updateSnapshot(snapshot: ReturnType<typeof createSnapshot>) {
+        snapshots.push(snapshot);
+      },
+      stop() {
+        replacementStops += 1;
+      },
+    };
+    const webSockets = installWebSocketObserverTest(undefined, () => {
+      const failedConnection = clientTestAccess(client).connection;
+      if (!failedConnection) throw new Error("Expected the failed connection to be published.");
+      failedConnection.stop = () => {
+        failedConnectionStops += 1;
+        throw cleanupFailure;
+      };
+      clientTestAccess(client).connection = replacement;
+      throw startupFailure;
+    });
+
+    let thrown: unknown;
+    try {
+      clientTestAccess(client).connect(config);
+    } catch (error) {
+      thrown = error;
+    }
+
+    try {
+      expect(thrown).toBe(startupFailure);
+      expect(failedConnectionStops).toBe(1);
+      const nextSnapshot = createSnapshot();
+      client.updateSnapshot(nextSnapshot);
+      expect(snapshots).toEqual([nextSnapshot]);
+      client.stop();
+      expect(replacementStops).toBe(1);
     } finally {
       client.stop();
       webSockets.restoreTest();

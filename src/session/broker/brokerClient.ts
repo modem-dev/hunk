@@ -236,7 +236,19 @@ export class SessionBrokerClient {
     });
 
     this.connection = connection;
-    connection.start();
+    try {
+      connection.start();
+    } catch (error) {
+      try {
+        connection.stop();
+      } catch {
+        // Preserve the synchronous startup failure even when best-effort cleanup also fails.
+      }
+      if (this.connection === connection) {
+        this.connection = null;
+      }
+      throw error;
+    }
   }
 
   private scheduleReconnect(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {

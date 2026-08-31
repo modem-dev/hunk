@@ -185,6 +185,7 @@ describe("session broker connection", () => {
 
   test("preserves a synchronous socket factory throw and permits a later direct start", () => {
     const sockets: TestSocket[] = [];
+    const startupFailure = { source: "socket factory" };
     let attempts = 0;
     const connection = createSessionBrokerConnection<
       TestSessionInfo,
@@ -196,7 +197,7 @@ describe("session broker connection", () => {
       url: "ws://broker.test/session",
       createSocket: () => {
         attempts += 1;
-        if (attempts === 1) throw new Error("socket factory exploded");
+        if (attempts === 1) throw startupFailure;
         const socket = new TestSocket();
         sockets.push(socket);
         return socket;
@@ -206,7 +207,13 @@ describe("session broker connection", () => {
       protocolParsers,
     });
 
-    expect(() => connection.start()).toThrow("socket factory exploded");
+    let thrown: unknown;
+    try {
+      connection.start();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(startupFailure);
     expect(attempts).toBe(1);
     expect(sockets).toHaveLength(0);
 
