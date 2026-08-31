@@ -10,11 +10,14 @@
 #   curl -fsSL https://hunk.dev/install.sh | sh
 #   curl -fsSL https://hunk.dev/install.sh | sh -s -- 0.19.0
 #   curl -fsSL https://hunk.dev/install.sh | sh -s -- --no-modify-path
+#   curl -fsSL https://hunk.dev/install.sh | sh -s -- --force
 #
 # Environment:
 #   HUNK_VERSION          version to install (default: the newest GitHub release)
 #   HUNK_INSTALL_DIR      directory to install the binary into (default: $HOME/.hunk/bin)
 #   HUNK_NO_MODIFY_PATH   set to 1 to leave shell startup files alone
+#   HUNK_ALLOW_CONFLICTING_INSTALLS
+#                         set to 1 to install alongside another Hunk
 #
 # macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
 #
@@ -59,12 +62,15 @@ Arguments:
 
 Options:
   --no-modify-path     do not add the install directory to your shell startup files
+  -f, --force          install alongside competing Hunk installs
   -h, --help           show this help
 
 Environment:
   HUNK_VERSION         same as the positional version argument
   HUNK_INSTALL_DIR     directory to install the binary into (default: $HOME/.hunk/bin)
   HUNK_NO_MODIFY_PATH  set to 1 for --no-modify-path
+  HUNK_ALLOW_CONFLICTING_INSTALLS
+                       set to 1 for --force
 
 macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
 EOF
@@ -138,12 +144,128 @@ fetch() {
 # Print one Hunk binary's version, or nothing when it cannot run.
 installed_version() {
 	[ -x "$1" ] || return 0
-	"$1" --version 2>/dev/null | tr -d 'v \t\r' | head -n 1
+	candidate_version="$("$1" --version 2>/dev/null | tr -d 'v \t\r' | head -n 1)"
+	case "$candidate_version" in
+	[0-9]* ) printf '%s\n' "$candidate_version" ;;
+	esac
 }
 
 # --------------------------------------------------------------------------------------
-# PATH helpers
+# Competing-install and PATH helpers
 # --------------------------------------------------------------------------------------
+
+# Add one executable path to the newline-delimited conflict list exactly once.
+add_hunk_candidate() {
+	candidate="$1"
+	[ -x "$candidate" ] || return 0
+	[ "$candidate" = "$target_binary" ] && return 0
+	if [ -n "$hunk_candidates" ] && printf '%s\n' "$hunk_candidates" | grep -Fqx "$candidate"; then
+		return 0
+	fi
+	hunk_candidates="${hunk_candidates}${hunk_candidates:+
+}${candidate}"
+}
+
+# Print whether this path wins or loses against the directory this installer manages.
+shadowing_direction() {
+	candidate_dir="$(dirname "$1")"
+	candidate_position=0
+	target_position=0
+	position=1
+	remaining_path=${PATH:-}
+	last_path_entry=0
+	while :; do
+		case "$remaining_path" in
+		*:*) path_dir=${remaining_path%%:*}; remaining_path=${remaining_path#*:} ;;
+		*) path_dir=$remaining_path; remaining_path=""; last_path_entry=1 ;;
+		esac
+		[ -n "$path_dir" ] || path_dir=.
+		[ "$path_dir" = "$candidate_dir" ] && [ "$candidate_position" -eq 0 ] && candidate_position=$position
+		[ "$path_dir" = "$bin_dir" ] && [ "$target_position" -eq 0 ] && target_position=$position
+		position=$((position + 1))
+		[ "${last_path_entry:-0}" = "1" ] && break
+	done
+
+	if [ "$candidate_position" -eq 0 ]; then
+		printf 'not on the current PATH'
+	elif [ "$target_position" -eq 0 ] || [ "$candidate_position" -lt "$target_position" ]; then
+		printf 'shadows %s' "$target_binary"
+	else
+		printf 'is shadowed by %s' "$target_binary"
+	fi
+}
+
+# Name the likely owner from stable install-layout signals.
+competing_install_channel() {
+	case "$1" in
+	*/.nvm/versions/node/*/bin/hunk | */node_modules/* | */.npm/*) printf 'npm' ;;
+	/opt/homebrew/bin/hunk | /usr/local/bin/hunk | /home/linuxbrew/.linuxbrew/bin/hunk) printf 'Homebrew or npm' ;;
+	*/mise/installs/*/hunk) printf 'mise' ;;
+	*/.bun/bin/hunk) printf 'Bun' ;;
+	*/pnpm/*) printf 'pnpm' ;;
+	*) printf 'another package manager' ;;
+	esac
+}
+
+# Print package-manager-specific removal guidance without deleting anything.
+competing_install_remediation() {
+	candidate="$1"
+	case "$candidate" in
+	*/.nvm/versions/node/*/bin/hunk)
+		printf "'%s/npm' uninstall -g hunkdiff" "$(dirname "$candidate")"
+		;;
+	/opt/homebrew/bin/hunk | /usr/local/bin/hunk | /home/linuxbrew/.linuxbrew/bin/hunk)
+		printf 'brew uninstall hunk, or npm uninstall -g hunkdiff if npm owns this path'
+		;;
+	*/mise/installs/*/hunk)
+		printf 'mise uninstall hunk'
+		;;
+	*/node_modules/* | */.npm/* | */.bun/bin/hunk | */pnpm/*)
+		printf 'npm uninstall -g hunkdiff (using the package manager and runtime that own this path)'
+		;;
+	*)
+		printf 'remove this Hunk with the package manager that installed it'
+		;;
+	esac
+}
+
+# Refuse to create version skew unless the caller explicitly accepts the competing installs.
+check_competing_installs() {
+	hunk_candidates=""
+	remaining_path=${PATH:-}
+	last_path_entry=0
+	while :; do
+		case "$remaining_path" in
+		*:*) path_dir=${remaining_path%%:*}; remaining_path=${remaining_path#*:} ;;
+		*) path_dir=$remaining_path; remaining_path=""; last_path_entry=1 ;;
+		esac
+		[ -n "$path_dir" ] || path_dir=.
+		add_hunk_candidate "${path_dir%/}/hunk"
+		[ "$last_path_entry" = "1" ] && break
+	done
+
+	# nvm globals are per Node version, so inactive versions can be absent from PATH while old
+	# terminal panes still resolve them. These globs intentionally need no npm/node executable.
+	if [ -n "$home_dir" ]; then
+		for candidate in "$home_dir"/.nvm/versions/node/*/bin/hunk \
+			"$home_dir"/.local/share/mise/installs/hunk/*/hunk \
+			"$home_dir"/.local/share/mise/installs/hunk/*/bin/hunk; do
+			add_hunk_candidate "$candidate"
+		done
+	fi
+
+	[ -n "$hunk_candidates" ] || return 0
+	[ "$allow_conflicts" = "1" ] && return 0
+
+	warn "Another Hunk installation already exists; this installer will not overwrite or remove it."
+	printf '%s\n' "$hunk_candidates" | while IFS= read -r candidate; do
+		candidate_version="$(installed_version "$candidate")"
+		[ -n "$candidate_version" ] || candidate_version="unknown"
+		warn "  ${candidate} ($(competing_install_channel "$candidate"); version ${candidate_version}; $(shadowing_direction "$candidate"))"
+		warn "    Remove with: $(competing_install_remediation "$candidate")"
+	done
+	fail "Remove every competing Hunk above, then try again. To knowingly keep them, rerun this installer with --force."
+}
 
 # Append one line to one file unless an equivalent line is already there. Prints what it did.
 add_path_line() {
@@ -186,6 +308,7 @@ first_existing() {
 main() {
 	version="${HUNK_VERSION:-}"
 	no_modify_path="${HUNK_NO_MODIFY_PATH:-0}"
+	allow_conflicts="${HUNK_ALLOW_CONFLICTING_INSTALLS:-0}"
 
 	while [ "$#" -gt 0 ]; do
 		case "$1" in
@@ -195,6 +318,9 @@ main() {
 			;;
 		--no-modify-path)
 			no_modify_path=1
+			;;
+		-f | --force)
+			allow_conflicts=1
 			;;
 		-*)
 			fail "Unknown option: $1 (run with --help to see the supported options)"
@@ -234,7 +360,8 @@ main() {
 
 	custom_dir=""
 	if [ -n "${HUNK_INSTALL_DIR:-}" ]; then
-		bin_dir="$HUNK_INSTALL_DIR"
+		bin_dir="${HUNK_INSTALL_DIR%/}"
+		[ -n "$bin_dir" ] || bin_dir="/"
 		# The bundled skills are found by walking up from the binary, so a chosen directory holds
 		# both. `hunk update` cannot recognize a custom directory once this shell exits, so the
 		# install finishes with re-run guidance instead (see the note printed at the end).
@@ -246,11 +373,9 @@ main() {
 	fi
 
 	target_binary="${bin_dir}/hunk"
+	check_competing_installs
 
 	current="$(installed_version "$target_binary")"
-	if [ -z "$current" ] && command -v hunk >/dev/null 2>&1; then
-		current="$(installed_version "$(command -v hunk)")"
-	fi
 
 	if [ "$current" = "$version" ]; then
 		info "hunk ${version} is already installed."
@@ -356,7 +481,9 @@ main() {
 			add_path_line "${home_dir}/.profile" "$path_line"
 			;;
 		esac
-		info "Restart your shell, or run: export PATH=${quoted_bin_dir}:\"\$PATH\""
+		info ""
+		info "IMPORTANT: Restart every open shell and terminal pane, or run this in each one:"
+		info "  export PATH=${quoted_bin_dir}:\"\$PATH\""
 	fi
 
 	info ""

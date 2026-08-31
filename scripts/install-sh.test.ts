@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PLATFORM_PACKAGE_MATRIX } from "./prebuilt-package-helpers";
@@ -21,6 +21,58 @@ const INSTALL_SCRIPT = readFileSync(INSTALL_SCRIPT_PATH, "utf8");
 
 /** Platform pairs the installer serves: every published package except the Windows one. */
 const CURL_INSTALLABLE_SPECS = PLATFORM_PACKAGE_MATRIX.filter((spec) => spec.os !== "windows");
+
+/** Write a minimal Hunk executable that reports one version. */
+function writeFakeHunk(path: string, version: string) {
+  writeFileSync(path, `#!/bin/sh\nprintf '${version}\\n'\n`);
+  chmodSync(path, 0o755);
+}
+
+/** Run the installer against an already-current managed target without downloading anything. */
+function runConflictCheck(options: { force?: boolean; targetFirst?: boolean } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "hunk-install-conflict-"));
+  const home = join(root, "home");
+  const targetDir = join(home, ".hunk", "bin");
+  const foreignDir = join(root, "foreign", "bin");
+  const inactiveNvmDir = join(home, ".nvm", "versions", "node", "v20.0.0", "bin");
+  mkdirSync(targetDir, { recursive: true });
+  mkdirSync(foreignDir, { recursive: true });
+  mkdirSync(inactiveNvmDir, { recursive: true });
+  writeFakeHunk(join(targetDir, "hunk"), "1.2.3");
+  writeFakeHunk(join(foreignDir, "hunk"), "0.9.0");
+  writeFakeHunk(join(inactiveNvmDir, "hunk"), "0.8.0");
+
+  try {
+    const pathEntries = options.targetFirst
+      ? [targetDir, foreignDir, process.env.PATH ?? ""]
+      : [foreignDir, targetDir, process.env.PATH ?? ""];
+    const result = Bun.spawnSync(
+      ["sh", INSTALL_SCRIPT_PATH, ...(options.force ? ["--force"] : [])],
+      {
+        env: {
+          ...process.env,
+          HOME: home,
+          HUNK_VERSION: "1.2.3",
+          PATH: pathEntries.join(":"),
+        },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    return {
+      exitCode: result.exitCode,
+      stdout: Buffer.from(result.stdout).toString("utf8"),
+      stderr: Buffer.from(result.stderr).toString("utf8"),
+      target: join(targetDir, "hunk"),
+      foreign: join(foreignDir, "hunk"),
+      inactiveNvm: join(inactiveNvmDir, "hunk"),
+      inactiveNvmNpm: join(inactiveNvmDir, "npm"),
+    };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 /**
  * Run the installer's platform detection with a stubbed `uname` and print `<os> <arch>`.
@@ -107,6 +159,48 @@ describe("hunk.dev install script", () => {
   test("points unsupported platforms at the npm package", () => {
     expect(INSTALL_SCRIPT).toContain("npm install -g hunkdiff");
   });
+
+  test.skipIf(process.platform === "win32")(
+    "refuses every visible and inactive-nvm competing install with exact remediation",
+    () => {
+      const result = runConflictCheck();
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(
+        `${result.foreign} (another package manager; version 0.9.0; shadows ${result.target})`,
+      );
+      expect(result.stderr).toContain(
+        `${result.inactiveNvm} (npm; version 0.8.0; not on the current PATH)`,
+      );
+      expect(result.stderr).toContain(`'${result.inactiveNvmNpm}' uninstall -g hunkdiff`);
+      expect(result.stderr).toContain("rerun this installer with --force");
+      expect(result.stdout).not.toContain("Downloading");
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "names when the managed target shadows a competing install",
+    () => {
+      const result = runConflictCheck({ targetFirst: true });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(
+        `${result.foreign} (another package manager; version 0.9.0; is shadowed by ${result.target})`,
+      );
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "allows an explicit force flag and preserves the already-current fast path",
+    () => {
+      const result = runConflictCheck({ force: true });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("hunk 1.2.3 is already installed.");
+      expect(result.stdout).not.toContain("Downloading");
+      expect(result.stderr).toBe("");
+    },
+  );
 
   test.skipIf(process.platform === "win32")(
     "resolves every published macOS and Linux platform pair",
