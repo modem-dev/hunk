@@ -203,19 +203,6 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   },
 ];
 
-/**
- * Serialize one value for a raw `<script type="application/ld+json">` body.
- *
- * `JSON.stringify` leaves `<` alone, so a listing whose text contained
- * `</script>` would close the element and turn the rest of the payload into
- * markup. Escaping `<` as its JSON unicode escape keeps the document valid
- * JSON-LD while making that impossible. The catalog is hand-reviewed today and
- * will be generated from repository descriptions nobody reviews.
- */
-export function toJsonLdScriptBody(value: unknown) {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
-}
-
 /** GitHub account that publishes one listing. */
 export function ownerOf(listing: ExtensionListing) {
   return listing.repo.split("/")[0] ?? listing.repo;

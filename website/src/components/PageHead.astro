@@ -1,0 +1,69 @@
+---
+import { toJsonLdScriptBody } from "../lib/jsonLd";
+
+/**
+ * The `<head>` every hand-built marketing page shares.
+ *
+ * Starlight owns the head for docs; these are the pages outside it — the home
+ * page, the extension directory, and the comparison cluster — which all need the
+ * same canonical URL, Open Graph, Twitter card, icon, and analytics block. They
+ * differ only in title, description, keywords, social image, and structured
+ * data, so those are the props.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** Comma-separated, matching the `keywords` meta convention already in use. */
+  keywords: string;
+  /** Site-absolute path with a trailing slash, e.g. `/compare/hunk-vs-delta/`. */
+  path: string;
+  ogImage?: string;
+  ogImageAlt: string;
+  /** One JSON-LD object, or several to emit as separate script tags. */
+  schema?: unknown | unknown[];
+}
+
+const {
+  title,
+  description,
+  keywords,
+  path,
+  ogImage = "https://hunk.dev/og.png",
+  ogImageAlt,
+  schema,
+} = Astro.props;
+
+const canonical = `https://hunk.dev${path}`;
+const schemas = schema === undefined ? [] : Array.isArray(schema) ? schema : [schema];
+---
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width" />
+<meta name="theme-color" content="#f4f1ea" />
+<meta name="description" content={description} />
+<meta name="keywords" content={keywords} />
+<meta name="author" content="Modem" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="hunk" />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={ogImageAlt} />
+<meta property="og:locale" content="en_US" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+<link rel="canonical" href={canonical} />
+<link rel="icon" href="/icon.png" type="image/png" />
+<link rel="apple-touch-icon" href="/apple-icon.png" />
+<title>{title}</title>
+{
+  schemas.map((entry) => (
+    <script type="application/ld+json" is:inline set:html={toJsonLdScriptBody(entry)}></script>
+  ))
+}
+<script is:inline defer src="/_vercel/insights/script.js"></script>

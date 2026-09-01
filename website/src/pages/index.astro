@@ -1,6 +1,7 @@
 ---
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
+import PageHead from "../components/PageHead.astro";
 import CommunityVideos from "../components/marketing/CommunityVideos.astro";
 import FeatureShowcase from "../components/marketing/FeatureShowcase.astro";
 import InstallTabs from "../components/marketing/InstallTabs.astro";
@@ -73,35 +74,14 @@ const formattedStars =
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#f4f1ea" />
-    <meta name="description" content={description} />
-    <meta
-      name="keywords"
-      content="diff, terminal, TUI, code review, git, jujutsu, AI agents, extensions, OpenTUI"
+    <PageHead
+      title={title}
+      description={description}
+      keywords="diff, terminal, TUI, code review, git, jujutsu, AI agents, extensions, OpenTUI"
+      path="/"
+      ogImageAlt="hunk — terminal diffs for humans & agents"
+      schema={schema}
     />
-    <meta name="author" content="Modem" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="hunk" />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:url" content="https://hunk.dev/" />
-    <meta property="og:image" content="https://hunk.dev/og.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="hunk — terminal diffs for humans & agents" />
-    <meta property="og:locale" content="en_US" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content="https://hunk.dev/og.png" />
-    <link rel="canonical" href="https://hunk.dev/" />
-    <link rel="icon" href="/icon.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/apple-icon.png" />
-    <title>{title}</title>
-    <script type="application/ld+json" is:inline set:html={JSON.stringify(schema)}></script>
-    <script is:inline defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
     <div class="marketing">
@@ -159,6 +139,7 @@ const formattedStars =
           <div class="cta">
             <a class="ghost" href="#install">Install hunk</a>
             <a class="plain" href="/docs/start/quick-start/">Read the quick start</a>
+            <a class="plain" href="/compare/">Compare with delta &amp; difftastic</a>
           </div>
         </section>
       </main>

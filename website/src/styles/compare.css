@@ -1,0 +1,363 @@
+/*
+ * Comparison pages: the `/compare/` hub and each head-to-head page.
+ *
+ * These are read, not skimmed, so the type block is narrower than the marketing
+ * shell and the rhythm is closer to the docs. Everything reuses the brand tokens
+ * marketing.css already defines; nothing here introduces a new color.
+ */
+
+.marketing .cmp {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px;
+}
+
+.marketing .cmp-intro {
+  padding-top: 60px;
+  padding-bottom: 8px;
+}
+
+.marketing .crumbs {
+  margin: 0 0 18px;
+  color: var(--soft);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.marketing .crumbs a {
+  color: var(--soft);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+}
+
+.marketing .crumbs a:hover {
+  color: var(--ink);
+}
+
+.marketing .cmp h1 {
+  font-size: clamp(30px, 5vw, 48px);
+}
+
+/* The lead answer is what an answer engine quotes, so it reads as the page's thesis. */
+.marketing .cmp-answer {
+  max-width: 660px;
+  margin: 0 0 34px;
+  color: var(--hunk-body);
+  font-size: 17px;
+  line-height: 1.66;
+}
+
+.marketing .cmp-answer code,
+.marketing .cmp-prose code,
+.marketing .cmp-note code,
+.marketing .cmp-cell code {
+  padding: 1px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  font-size: 0.92em;
+}
+
+.marketing .cmp-meta a {
+  color: var(--soft);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+}
+
+.marketing .cmp-meta a:hover {
+  color: var(--ink);
+}
+
+.marketing .cmp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0 0 8px;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+/* Verdict pair */
+.marketing .picks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0 12px;
+}
+
+.marketing .pick {
+  padding: 20px 22px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.marketing .pick h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.marketing .pick ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marketing .pick li {
+  position: relative;
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--hunk-body);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.marketing .pick li::before {
+  position: absolute;
+  left: 0;
+  color: var(--acc);
+  content: "+";
+  font-weight: 700;
+}
+
+.marketing .pick li:last-child {
+  margin-bottom: 0;
+}
+
+/* Prose sections. The section keeps the 960px shell so tables and card grids use
+   the full width; only the measure-sensitive parts narrow. */
+.marketing .cmp-section {
+  padding-top: 46px;
+}
+
+.marketing .cmp-section h2 {
+  margin: 0 0 16px;
+  font-size: clamp(21px, 3vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.marketing .cmp-prose {
+  max-width: 720px;
+  margin: 0 0 16px;
+  color: var(--hunk-body);
+  font-size: 15.5px;
+  line-height: 1.68;
+}
+
+.marketing .cmp-code {
+  max-width: 720px;
+  margin: 22px 0 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  overflow: hidden;
+}
+
+.marketing .cmp-code .paper-bar {
+  border-radius: 0;
+}
+
+.marketing .cmp-code pre {
+  margin: 0;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.marketing .cmp-code code {
+  color: var(--hunk-body);
+}
+
+/* Capability table */
+.marketing .cmp-table-wrap {
+  margin-top: 22px;
+  overflow-x: auto;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.marketing table.cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.marketing .cmp-table th,
+.marketing .cmp-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.marketing .cmp-table thead th {
+  border-bottom: 1.5px solid var(--ink);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.marketing .cmp-table tbody tr:last-child th,
+.marketing .cmp-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.marketing .cmp-table tbody th {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.marketing .cmp-table .cmp-mark {
+  width: 84px;
+  text-align: center;
+  font-size: 15px;
+}
+
+/* JetBrains Mono has no half-filled circle, and the fallback it picks for `partial`
+   is a different size from the other two marks. A symbol-complete stack keeps the
+   three states reading as one set. */
+.marketing .cmp-table td.cmp-mark {
+  font-family: ui-sans-serif, system-ui, "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+}
+
+.marketing .cmp-mark[data-support="yes"] {
+  color: var(--acc);
+}
+
+.marketing .cmp-mark[data-support="partial"] {
+  color: var(--soft);
+}
+
+.marketing .cmp-mark[data-support="no"] {
+  color: var(--rule);
+}
+
+.marketing .cmp-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.marketing .cmp-legend {
+  margin: 10px 0 0;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+/* FAQ */
+.marketing .faq-item {
+  max-width: 720px;
+  padding: 20px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.marketing .faq-item h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.marketing .faq-item p {
+  margin: 0;
+  color: var(--hunk-body);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+/* Sources and sibling navigation */
+.marketing .cmp-sources ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 28px;
+}
+
+.marketing .cmp-sources li {
+  margin: 0 0 8px;
+  font-size: 13px;
+  break-inside: avoid;
+}
+
+.marketing .cmp-sources a {
+  color: var(--hunk-body);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+}
+
+.marketing .cmp-sources a:hover {
+  color: var(--ink);
+}
+
+.marketing .cmp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.marketing a.cmp-card {
+  display: block;
+  padding: 20px 22px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--ink);
+  text-decoration: none;
+  transition: 0.12s;
+}
+
+.marketing a.cmp-card:hover {
+  background: var(--hunk-paper-hover);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.marketing .cmp-card b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.marketing .cmp-card span {
+  display: block;
+  color: var(--hunk-body);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.marketing .cmp-tail {
+  padding-top: 56px;
+  padding-bottom: 96px;
+}
+
+@media (max-width: 720px) {
+  .marketing .cmp {
+    padding-inline: 22px;
+  }
+
+  .marketing .picks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .marketing .cmp-sources ul {
+    columns: 1;
+  }
+}

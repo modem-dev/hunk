@@ -1,0 +1,302 @@
+---
+import BrandFooter from "../../components/BrandFooter.astro";
+import BrandHeader from "../../components/BrandHeader.astro";
+import PageHead from "../../components/PageHead.astro";
+import {
+  COMPARISONS,
+  COMPARISONS_REVIEWED_ON,
+  SUPPORT_MARKS,
+  comparisonUrl,
+  type Comparison,
+} from "../../data/comparisons";
+import { withInlineCode, withoutInlineCode } from "../../lib/inlineCode";
+import "../../styles/marketing.css";
+import "../../styles/compare.css";
+
+/**
+ * One head-to-head page per entry in the comparison catalog.
+ *
+ * The page is ordered for the reader who arrived from a "hunk vs X" query: the
+ * answer first, then the two-sided verdict, then the argument, then the table,
+ * then the questions that query usually implies. Structured data mirrors that
+ * same content rather than restating it, and `.md` variants of these URLs are
+ * built from the identical catalog entry, so nothing here is the only place a
+ * claim lives.
+ */
+export function getStaticPaths() {
+  return COMPARISONS.map((comparison) => ({
+    params: { slug: comparison.slug },
+    props: { comparison },
+  }));
+}
+
+interface Props {
+  comparison: Comparison;
+}
+
+const { comparison } = Astro.props;
+const { rival } = comparison;
+const path = `/compare/${comparison.slug}/`;
+const url = comparisonUrl(comparison);
+
+/**
+ * Republish the capability table as structured data.
+ *
+ * The rendered table is a `<table>` an answer engine has to infer meaning from.
+ * `additionalProperty` states each row as a named property of the product it
+ * describes, with the row's caveat as its description, so the comparison is
+ * readable without parsing the layout. Both products get the same property
+ * names, which is what makes the two lists comparable.
+ */
+function capabilityProperties(side: "hunk" | "rival") {
+  return comparison.capabilities.map((row) => ({
+    "@type": "PropertyValue",
+    name: withoutInlineCode(row.capability),
+    value: SUPPORT_MARKS[row[side]].label,
+    ...(row.note ? { description: withoutInlineCode(row.note) } : {}),
+  }));
+}
+
+const hunkApplication = {
+  "@type": "SoftwareApplication",
+  name: "Hunk",
+  url: "https://hunk.dev/",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "macOS, Linux, Windows",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  additionalProperty: capabilityProperties("hunk"),
+};
+
+const schema = [
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: comparison.headline,
+    description: comparison.description,
+    url,
+    mainEntityOfPage: url,
+    inLanguage: "en",
+    datePublished: COMPARISONS_REVIEWED_ON,
+    dateModified: COMPARISONS_REVIEWED_ON,
+    author: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
+    publisher: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
+    about: [
+      hunkApplication,
+      {
+        "@type": "SoftwareApplication",
+        name: rival.name,
+        url: rival.url,
+        applicationCategory: "DeveloperApplication",
+        additionalProperty: capabilityProperties("rival"),
+      },
+    ],
+    abstract: withoutInlineCode(comparison.answer),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: comparison.faqs.map((faq) => ({
+      "@type": "Question",
+      name: withoutInlineCode(faq.question),
+      acceptedAnswer: { "@type": "Answer", text: withoutInlineCode(faq.answer) },
+    })),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Compare", item: "https://hunk.dev/compare/" },
+      { "@type": "ListItem", position: 2, name: comparison.headline, item: url },
+    ],
+  },
+];
+
+const siblings = COMPARISONS.filter((entry) => entry.slug !== comparison.slug);
+const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDateString("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageHead
+      title={comparison.title}
+      description={comparison.description}
+      keywords={comparison.keywords.join(", ")}
+      path={path}
+      ogImageAlt={`${comparison.headline}: how the two terminal diff tools compare`}
+      schema={schema}
+    />
+    <link rel="alternate" type="text/markdown" href={`https://hunk.dev/compare/${comparison.slug}.md`} />
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <BrandHeader />
+      </header>
+
+      <main>
+        <section class="cmp cmp-intro">
+          <nav class="crumbs" aria-label="Breadcrumb">
+            <a href="/compare/">Compare</a> / {comparison.headline}
+          </nav>
+          <h1>{comparison.headline}</h1>
+          <p class="cmp-answer" set:html={withInlineCode(comparison.answer)} />
+          <p class="cmp-meta">
+            <span>Checked against each project's own docs in {reviewedOn}</span>
+            <a href={`/compare/${comparison.slug}.md`}>Read as Markdown</a>
+          </p>
+        </section>
+
+        <section class="cmp" aria-labelledby="verdict">
+          <h2 id="verdict" class="sr-only">Which to choose</h2>
+          <div class="picks">
+            <div class="pick">
+              <h3>Choose Hunk if</h3>
+              <ul>
+                {comparison.pick.hunk.map((reason) => <li set:html={withInlineCode(reason)} />)}
+              </ul>
+            </div>
+            <div class="pick">
+              <h3>Choose {rival.name} if</h3>
+              <ul>
+                {comparison.pick.rival.map((reason) => <li set:html={withInlineCode(reason)} />)}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {
+          comparison.sections.map((section) => (
+            <section class="cmp cmp-section">
+              <h2>{section.heading}</h2>
+              {section.body.map((paragraph) => (
+                <p class="cmp-prose" set:html={withInlineCode(paragraph)} />
+              ))}
+              {section.code && (
+                <figure class="cmp-code">
+                  <div class="paper-bar">
+                    <span class="dot" />
+                    <span class="dot" />
+                    <span class="dot" />
+                    <span class="pt">{section.code.caption ?? "terminal"}</span>
+                  </div>
+                  {/* Both scroll sideways on a phone, so both need to be reachable by keyboard. */}
+                  <pre tabindex="0"><code>{section.code.lines.join("\n")}</code></pre>
+                </figure>
+              )}
+            </section>
+          ))
+        }
+
+        <section class="cmp cmp-section" aria-labelledby="capabilities">
+          <h2 id="capabilities">Hunk vs {rival.name}, capability by capability</h2>
+          <p class="cmp-prose">
+            {rival.name} is written in {rival.language} and licensed {rival.license}. Hunk is
+            TypeScript, MIT, and ships as a standalone binary for macOS, Linux, and Windows.
+          </p>
+          <div
+            class="cmp-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={`Hunk compared with ${rival.name}, capability by capability`}
+          >
+            <table class="cmp-table">
+              <caption class="sr-only">
+                Hunk compared with {rival.name}, capability by capability
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col" class="cmp-mark">Hunk</th>
+                  <th scope="col" class="cmp-mark">{rival.name}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  comparison.capabilities.map((row) => (
+                    <tr>
+                      <th scope="row">
+                        <span set:html={withInlineCode(row.capability)} />
+                        {row.note && <span class="cmp-note" set:html={withInlineCode(row.note)} />}
+                      </th>
+                      <td class="cmp-mark" data-support={row.hunk}>
+                        <span aria-hidden="true">{SUPPORT_MARKS[row.hunk].symbol}</span>
+                        <span class="sr-only">{SUPPORT_MARKS[row.hunk].label}</span>
+                      </td>
+                      <td class="cmp-mark" data-support={row.rival}>
+                        <span aria-hidden="true">{SUPPORT_MARKS[row.rival].symbol}</span>
+                        <span class="sr-only">{SUPPORT_MARKS[row.rival].label}</span>
+                      </td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="cmp-legend">
+            {SUPPORT_MARKS.yes.symbol} yes · {SUPPORT_MARKS.partial.symbol} partly, see the note ·{" "}
+            {SUPPORT_MARKS.no.symbol} no
+          </p>
+        </section>
+
+        <section class="cmp cmp-section faq" aria-labelledby="faq">
+          <h2 id="faq">Questions people ask</h2>
+          {
+            comparison.faqs.map((faq) => (
+              <div class="faq-item">
+                <h3 set:html={withInlineCode(faq.question)} />
+                <p set:html={withInlineCode(faq.answer)} />
+              </div>
+            ))
+          }
+        </section>
+
+        <section class="cmp cmp-section cmp-sources" aria-labelledby="sources">
+          <h2 id="sources">Sources</h2>
+          <p class="cmp-prose">
+            Claims about {rival.name} were checked against its own documentation in {reviewedOn}. If
+            something here has gone stale,{" "}
+            <a href="https://github.com/modem-dev/hunk/issues">open an issue</a> and it gets fixed.
+          </p>
+          <ul>
+            {
+              comparison.sources.map((source) => (
+                <li>
+                  <a href={source.url}>{source.label}</a>
+                </li>
+              ))
+            }
+          </ul>
+        </section>
+
+        <section class="cmp cmp-section" aria-labelledby="more">
+          <h2 id="more">Other comparisons</h2>
+          <div class="cmp-cards">
+            {
+              siblings.map((entry) => (
+                <a class="cmp-card" href={`/compare/${entry.slug}/`}>
+                  <b>{entry.headline}</b>
+                  <span>{entry.summary}</span>
+                </a>
+              ))
+            }
+          </div>
+        </section>
+
+        <section class="cmp cmp-tail">
+          <h2>Try Hunk on your next changeset.</h2>
+          <div class="cta">
+            <a class="ghost" href="/#install">Install hunk</a>
+            <a class="plain" href="/docs/start/quick-start/">Read the quick start</a>
+          </div>
+        </section>
+      </main>
+
+      <BrandFooter />
+    </div>
+  </body>
+</html>

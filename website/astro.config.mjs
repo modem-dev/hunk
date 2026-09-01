@@ -45,6 +45,12 @@ export default defineConfig({
               description: "Drop-in agent skill for driving a live Hunk review session.",
             },
             {
+              label: "Hunk compared with other diff tools",
+              url: "https://hunk.dev/compare/",
+              description:
+                "Head-to-head pages for delta, difftastic, diff-so-fancy, git diff, and Plannotator. Each is also served as Markdown at the same URL plus `.md`.",
+            },
+            {
               label: "Hunk changelog",
               url: "https://hunk.dev/changelog/",
               description: "Every release, grouped by minor series, with per-version change lists.",
@@ -178,6 +184,9 @@ export default defineConfig({
         // One link rather than a group: the changelog is generated, grows every release, and
         // carries its own series navigation, so listing 19 versions here would bury the docs.
         { label: "Changelog", link: "/changelog/" },
+        // The comparison cluster lives outside the docs but answers a docs-shaped question
+        // ("should I be using this instead of delta?"), so it gets one link rather than a page.
+        { label: "Compare with other tools", link: "/compare/" },
       ],
     }),
   ],

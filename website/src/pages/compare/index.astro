@@ -1,0 +1,129 @@
+---
+import BrandFooter from "../../components/BrandFooter.astro";
+import BrandHeader from "../../components/BrandHeader.astro";
+import PageHead from "../../components/PageHead.astro";
+import { COMPARISONS, COMPARISONS_REVIEWED_ON, comparisonUrl } from "../../data/comparisons";
+import "../../styles/marketing.css";
+import "../../styles/compare.css";
+
+/**
+ * The hub the individual comparisons link back to.
+ *
+ * It exists for two readers: the person who wants to know where Hunk sits among
+ * the tools they already run, and the crawler that needs one page linking the
+ * whole cluster together. It stays short on purpose. The argument belongs on the
+ * pages themselves.
+ */
+const title = "Hunk vs other diff tools";
+const description =
+  "How Hunk compares with delta, difftastic, diff-so-fancy, git diff, and Plannotator. What each tool is for, capability tables checked against their own docs, and when to run both.";
+
+const schema = [
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "Hunk comparisons",
+    description,
+    url: "https://hunk.dev/compare/",
+    numberOfItems: COMPARISONS.length,
+    itemListElement: COMPARISONS.map((comparison, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: comparison.headline,
+      description: comparison.summary,
+      url: comparisonUrl(comparison),
+    })),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Compare", item: "https://hunk.dev/compare/" },
+    ],
+  },
+];
+
+const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDateString("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageHead
+      title={title}
+      description={description}
+      keywords="hunk vs delta, hunk vs difftastic, hunk vs git diff, terminal diff tool comparison, best git diff tool"
+      path="/compare/"
+      ogImageAlt="Hunk compared with delta, difftastic, diff-so-fancy, git diff, and Plannotator"
+      schema={schema}
+    />
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <BrandHeader />
+      </header>
+
+      <main>
+        <section class="cmp cmp-intro">
+          <p class="kicker"># where hunk fits</p>
+          <h1>Hunk vs the tools<br />you already run.</h1>
+          <p class="cmp-answer">
+            Most terminal diff tools are pagers. They restyle the text Git already printed. Hunk is
+            a review UI: one multi-file stream, a file sidebar, split and stack layouts, expandable
+            context, watch mode, and agent notes beside the code. These pages say where that is
+            worth it, and where the other tool wins.
+          </p>
+          <p class="cmp-meta">
+            <span>{COMPARISONS.length} comparisons · checked against each project's own docs in {
+                reviewedOn
+              }</span>
+          </p>
+        </section>
+
+        <section class="cmp" aria-label="Comparisons">
+          <div class="cmp-cards">
+            {
+              COMPARISONS.map((comparison) => (
+                <a class="cmp-card" href={`/compare/${comparison.slug}/`}>
+                  <b>{comparison.headline}</b>
+                  <span>{comparison.summary}</span>
+                </a>
+              ))
+            }
+          </div>
+        </section>
+
+        <section class="cmp cmp-section">
+          <h2>How these are written</h2>
+          <p class="cmp-prose">
+            Every mark comes from the other project's own docs. Where a bare mark would mislead, the
+            caveat sits next to it. Rows the other tool wins are in the tables too: structural
+            diffing, styled <code>git blame</code>, plan review before code exists. A comparison
+            that concedes nothing is not worth reading.
+          </p>
+          <p class="cmp-prose">
+            Each page is also served as Markdown at the same URL plus <code>.md</code>, and its
+            capability table is published as JSON-LD, so an agent can read the comparison without
+            parsing the layout. The docs corpus is available the same way at{" "}
+            <a href="/llms.txt">/llms.txt</a>.
+          </p>
+        </section>
+
+        <section class="cmp cmp-tail">
+          <h2>Try Hunk on your next changeset.</h2>
+          <div class="cta">
+            <a class="ghost" href="/#install">Install hunk</a>
+            <a class="plain" href="/docs/start/quick-start/">Read the quick start</a>
+          </div>
+        </section>
+      </main>
+
+      <BrandFooter />
+    </div>
+  </body>
+</html>
