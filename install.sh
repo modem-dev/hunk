@@ -18,6 +18,9 @@
 #   HUNK_NO_MODIFY_PATH   set to 1 to leave shell startup files alone
 #   HUNK_ALLOW_CONFLICTING_INSTALLS
 #                         set to 1 to install alongside another Hunk
+#   HUNK_DISABLE_ANALYTICS
+#                         set to 1 to resolve releases directly from GitHub
+#   DO_NOT_TRACK          set to 1 to resolve releases directly from GitHub
 #
 # macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
 #
@@ -30,6 +33,7 @@
 set -eu
 
 REPO="modem-dev/hunk"
+RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"
 RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
 
@@ -71,6 +75,9 @@ Environment:
   HUNK_NO_MODIFY_PATH  set to 1 for --no-modify-path
   HUNK_ALLOW_CONFLICTING_INSTALLS
                        set to 1 for --force
+  HUNK_DISABLE_ANALYTICS
+                       set to 1 to bypass Hunk's aggregate release endpoint
+  DO_NOT_TRACK         set to 1 to bypass Hunk's aggregate release endpoint
 
 macOS and Linux only. On Windows, install with `npm install -g hunkdiff`.
 EOF
@@ -128,12 +135,32 @@ download() {
 	fi
 }
 
-# Print one URL's body, returning non-zero when the server refuses it.
+# Print one metadata URL's body with one bounded attempt.
 fetch() {
 	if [ "$downloader" = "curl" ]; then
-		curl -fsSL "$1"
+		curl -fsSL --max-time 5 "$1"
 	else
-		wget -q -O - "$1"
+		wget -q -t 1 -T 5 -O - "$1"
+	fi
+}
+
+# Resolve through Hunk's observable release endpoint without sending an installation identifier.
+# This attempt is bounded so a stalled proxy yields promptly to the direct GitHub fallback.
+fetch_release_proxy() {
+	current_header=""
+	[ -n "${1:-}" ] && current_header="X-Hunk-Current-Version: $1"
+	if [ "$downloader" = "curl" ]; then
+		if [ -n "$current_header" ]; then
+			curl -fsSL --max-time 5 -H "X-Hunk-Request-Source: install" -H "$current_header" "$RELEASE_PROXY"
+		else
+			curl -fsSL --max-time 5 -H "X-Hunk-Request-Source: install" "$RELEASE_PROXY"
+		fi
+	else
+		if [ -n "$current_header" ]; then
+			wget -q -t 1 -T 5 --header="X-Hunk-Request-Source: install" --header="$current_header" -O - "$RELEASE_PROXY"
+		else
+			wget -q -t 1 -T 5 --header="X-Hunk-Request-Source: install" -O - "$RELEASE_PROXY"
+		fi
 	fi
 }
 
@@ -400,9 +427,22 @@ main() {
 
 	if [ -z "$version" ]; then
 		info "Resolving the newest Hunk release..."
+		release_current=""
+		if [ -n "${HUNK_INSTALL_DIR:-}" ]; then
+			release_current="$(installed_version "${HUNK_INSTALL_DIR%/}/hunk")"
+		elif [ -n "${HOME:-}" ]; then
+			release_current="$(installed_version "${HOME}/.hunk/bin/hunk")"
+		fi
 		# Parsed with sed rather than jq so the installer needs nothing but a shell and a downloader.
-		version="$(fetch "$RELEASES_API" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
-		[ -n "$version" ] || fail "Could not resolve the newest Hunk release from ${RELEASES_API}."
+		if [ "${HUNK_DISABLE_ANALYTICS:-0}" != "1" ] && [ "${DO_NOT_TRACK:-0}" != "1" ]; then
+			proxy_payload="$(fetch_release_proxy "$release_current" 2>/dev/null)" || proxy_payload=""
+			version="$(printf '%s\n' "$proxy_payload" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+			printf '%s\n' "$version" | grep -q '^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' || version=""
+		fi
+		if [ -z "$version" ]; then
+			version="$(fetch "$RELEASES_API" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
+		fi
+		[ -n "$version" ] || fail "Could not resolve the newest Hunk release from Hunk or ${RELEASES_API}."
 	fi
 
 	home_dir="${HOME:-}"

@@ -20,9 +20,9 @@ function createFormulaResponse(stable: string) {
   });
 }
 
-/** Build one JSON response that mimics the GitHub latest-release payload. */
+/** Build one JSON response accepted by both the release proxy and direct-GitHub fallback. */
 function createGitHubReleaseResponse(tagName: string) {
-  return new Response(JSON.stringify({ tag_name: tagName }), {
+  return new Response(JSON.stringify({ version: tagName.replace(/^v/, ""), tag_name: tagName }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
@@ -129,11 +129,14 @@ describe("startup update notice", () => {
   test("reads the GitHub releases API for curl installer installs", async () => {
     await withTempStatePath(async (statePath) => {
       const requested: string[] = [];
+      const headers: Headers[] = [];
 
       await expect(
         resolveStartupUpdateNotice({
-          fetchImpl: async (input) => {
+          env: {},
+          fetchImpl: async (input, init) => {
             requested.push(String(input));
+            headers.push(new Headers(init?.headers));
             return createGitHubReleaseResponse("v0.7.1");
           },
           resolveExecutablePath: () => join("/", "home", "reviewer", ".hunk", "bin", "hunk"),
@@ -144,7 +147,9 @@ describe("startup update notice", () => {
         key: "latest:0.7.1",
         message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
-      expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
+      expect(requested).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+      expect(headers[0]?.get("x-hunk-request-source")).toBe("startup");
+      expect(headers[0]?.get("x-hunk-current-version")).toBe("0.7.0");
     });
   });
 

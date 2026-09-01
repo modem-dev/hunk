@@ -13,12 +13,16 @@ import { isPrereleaseVersion, isStableVersion } from "../run/version";
 
 const NPM_DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const HOMEBREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/hunk.json";
+const HUNK_CURL_RELEASE_URL = "https://updates.hunk.dev/v1/curl/latest";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/modem-dev/hunk/releases/latest";
 const DEFAULT_RELEASE_FETCH_TIMEOUT_MS = 5_000;
+const DISABLE_ANALYTICS_ENV = "HUNK_DISABLE_ANALYTICS";
+const DO_NOT_TRACK_ENV = "DO_NOT_TRACK";
 
 export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type UpdateChannel = "latest" | "beta";
+export type ReleaseRequestSource = "startup" | "update-check" | "update";
 
 /** Versions one install source currently publishes, after validation. */
 export interface ChannelVersions {
@@ -29,6 +33,9 @@ export interface ChannelVersions {
 export interface ReleaseLookupDeps {
   fetchImpl?: FetchImpl;
   fetchTimeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+  requestSource?: ReleaseRequestSource;
+  currentVersion?: string;
 }
 
 /** Build one fetch timeout signal for a release lookup, if supported by the runtime. */
@@ -117,16 +124,41 @@ export async function fetchHomebrewChannelVersions(
   return { latest: stable && isStableVersion(stable) ? stable : undefined };
 }
 
+/** Return whether release analytics are disabled by either supported environment convention. */
+function releaseAnalyticsDisabled(env: NodeJS.ProcessEnv = process.env) {
+  return env[DISABLE_ANALYTICS_ENV] === "1" || env[DO_NOT_TRACK_ENV] === "1";
+}
+
+/** Build bounded headers for the first-party curl release endpoint. */
+function curlReleaseHeaders(deps: ReleaseLookupDeps) {
+  const headers: Record<string, string> = {};
+  if (deps.requestSource) {
+    headers["X-Hunk-Request-Source"] = deps.requestSource;
+  }
+  if (deps.currentVersion) {
+    headers["X-Hunk-Current-Version"] = deps.currentVersion;
+  }
+  return headers;
+}
+
 /**
- * Fetch the version of the newest GitHub release the curl installer downloads from.
+ * Fetch the stable release published for curl installs.
  *
- * `releases/latest` never points at a prerelease, so a curl install only ever hears about
- * `latest`. Release tags are spelled `v1.2.3` and versions are not, so the prefix is stripped
- * before validation.
+ * The first-party endpoint supplies aggregate release-check observability and normalized metadata.
+ * Opted-out clients bypass it, and every endpoint failure falls back to GitHub so analytics can
+ * never make update discovery less reliable.
  */
 export async function fetchCurlChannelVersions(
   deps: ReleaseLookupDeps = {},
 ): Promise<ChannelVersions> {
+  if (!releaseAnalyticsDisabled(deps.env)) {
+    const proxyPayload = await fetchJson(HUNK_CURL_RELEASE_URL, deps, curlReleaseHeaders(deps));
+    const proxyVersion = readStringField(proxyPayload, "version");
+    if (proxyVersion && isStableVersion(proxyVersion)) {
+      return { latest: proxyVersion };
+    }
+  }
+
   const payload = await fetchJson(GITHUB_LATEST_RELEASE_URL, deps, {
     Accept: "application/vnd.github+json",
   });
