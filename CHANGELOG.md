@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.21.0-beta.1
+
+### Minor Changes
+
+- [#965](https://github.com/modem-dev/hunk/pull/965) [`034796a`](https://github.com/modem-dev/hunk/commit/034796a959193c1637a1ef676d7dbccb41d377be) - Add a pane-wide `onActivate` callback to the extension API for primary mouse presses.
+
+### Patch Changes
+
+- [#955](https://github.com/modem-dev/hunk/pull/955) [`9b5d419`](https://github.com/modem-dev/hunk/commit/9b5d4190cdfe68628794174adcda4db5e14e275b) - Fence late session lifecycle commits so stopped or replaced generations cannot authenticate, reconnect, publish daemon launch metadata, or mutate broker client state.
+
+- [#956](https://github.com/modem-dev/hunk/pull/956) [`be35bb5`](https://github.com/modem-dev/hunk/commit/be35bb591eca9d2547c77dccaa111640485046f7) - Contain unexpected session broker lifecycle failures behind one fixed, redacted user-visible message.
+
+- [#954](https://github.com/modem-dev/hunk/pull/954) [`39217ae`](https://github.com/modem-dev/hunk/commit/39217ae09b5935fb1a6dd9be42c3042e1ede972a) - Let focused editors inside extension panes receive keys before Hunk's global shortcuts.
+
+- [#950](https://github.com/modem-dev/hunk/pull/950) [`d4b1286`](https://github.com/modem-dev/hunk/commit/d4b1286aec23854c186f398499138fc3e2dd1bfd) - Retry session broker connections after synchronous WebSocket startup failures.
+
+- [#961](https://github.com/modem-dev/hunk/pull/961) [`1e97cf4`](https://github.com/modem-dev/hunk/commit/1e97cf42ebc77224bd1338769f83bb2e80296582) - Publish dated prerelease notes on hunk.dev without promoting them as the latest stable release or default install target.
+
+- [#960](https://github.com/modem-dev/hunk/pull/960) [`e9726c4`](https://github.com/modem-dev/hunk/commit/e9726c47eecb499da68f936da04a459367f5d18c) - Refuse curl installs alongside competing Hunk binaries unless explicitly forced, and print each conflicting path, version, PATH precedence, and package-manager removal guidance.
+
 ## 0.21.0-beta.0
 
 ### Minor Changes
