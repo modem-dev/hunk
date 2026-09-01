@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { PLATFORM_PACKAGE_MATRIX } from "./prebuilt-package-helpers";
 
 /**
@@ -45,6 +45,7 @@ function runConflictCheck(
     aliasOnly?: boolean;
     targetDirectoryAlias?: boolean;
     duplicateForeignAlias?: boolean;
+    nvmAliasFirst?: boolean;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "hunk-install-conflict-"));
@@ -58,12 +59,32 @@ function runConflictCheck(
   mkdirSync(foreignDir, { recursive: true });
   mkdirSync(inactiveNvmDir, { recursive: true });
   writeFakeHunk(join(targetDir, "hunk"), "1.2.3");
+  if (options.nvmAliasFirst) {
+    const npmPackageBinary = join(
+      home,
+      ".nvm",
+      "versions",
+      "node",
+      "v20.0.0",
+      "lib",
+      "node_modules",
+      "hunkdiff",
+      "bin",
+      "hunk.cjs",
+    );
+    mkdirSync(dirname(npmPackageBinary), { recursive: true });
+    writeFakeHunk(npmPackageBinary, "0.8.0");
+    symlinkSync("../lib/node_modules/hunkdiff/bin/hunk.cjs", join(inactiveNvmDir, "hunk"));
+  } else if (!options.aliasOnly) {
+    writeFakeHunk(join(inactiveNvmDir, "hunk"), "0.8.0");
+  }
   if (options.aliasOnly) {
     symlinkSync(join(targetDir, "hunk"), join(foreignDir, "hunk"));
+  } else if (options.nvmAliasFirst) {
+    symlinkSync(join(inactiveNvmDir, "hunk"), join(foreignDir, "hunk"));
   } else {
     writeFakeHunk(join(foreignDir, "hunk"), "0.9.0");
   }
-  if (!options.aliasOnly) writeFakeHunk(join(inactiveNvmDir, "hunk"), "0.8.0");
   if (options.targetDirectoryAlias) symlinkSync(targetDir, targetAliasDir, "dir");
   if (options.duplicateForeignAlias) symlinkSync(foreignDir, foreignAliasDir, "dir");
 
@@ -243,6 +264,18 @@ describe("hunk.dev install script", () => {
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr.match(/version 0\.9\.0/g)).toHaveLength(1);
       expect(result.stderr).not.toContain(result.foreignAlias);
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "uses a canonical manager path when an unrecognized alias is discovered first",
+    () => {
+      const result = runConflictCheck({ nvmAliasFirst: true });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(`${result.foreign} (npm; version 0.8.0;`);
+      expect(result.stderr).toContain(`'${result.inactiveNvmNpm}' uninstall -g hunkdiff`);
+      expect(result.stderr.match(/version 0\.8\.0/g)).toHaveLength(1);
     },
   );
 
