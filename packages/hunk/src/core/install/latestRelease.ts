@@ -125,8 +125,8 @@ export async function fetchHomebrewChannelVersions(
 }
 
 /** Return whether release analytics are disabled by either supported environment convention. */
-function releaseAnalyticsDisabled(env: NodeJS.ProcessEnv = process.env) {
-  return env[DISABLE_ANALYTICS_ENV] === "1" || env[DO_NOT_TRACK_ENV] === "1";
+function releaseAnalyticsDisabled(env: NodeJS.ProcessEnv | undefined) {
+  return env?.[DISABLE_ANALYTICS_ENV] === "1" || env?.[DO_NOT_TRACK_ENV] === "1";
 }
 
 /** Build bounded headers for the first-party curl release endpoint. */
