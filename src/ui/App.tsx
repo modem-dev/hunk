@@ -692,7 +692,9 @@ export function App({
     liveCommentSummaries: review.liveCommentSummaries,
     navigateToLocation: review.navigateToLocation,
     noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
+    onPersistedCommentsError: showSessionNotice,
     openAgentNotes,
+    persistedCommentsPath: bootstrap.persistedCommentsPath,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
     reviewProducer,
@@ -703,6 +705,7 @@ export function App({
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
     showAgentNotes,
+    sourceLabel: bootstrap.changeset.sourceLabel,
   });
   const maxVisibleLineNumber = useMemo(
     () =>

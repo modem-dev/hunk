@@ -49,6 +49,7 @@ async function reserveLoopbackPort() {
 interface SessionListJson {
   sessions: Array<{
     sessionId: string;
+    pid: number;
     files: Array<{
       path: string;
     }>;
@@ -109,8 +110,15 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
   return { dir, before, after, transcript, afterName };
 }
 
-function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+function spawnHunkSession(
+  fixture: ReturnType<typeof createFixtureFiles>,
+  port: number,
+  extraArgs: string[] = [],
+) {
+  const innerCommand = [
+    `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`,
+    ...extraArgs.map(shellQuote),
+  ].join(" ");
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -974,6 +982,78 @@ sessionDescribe("session CLI integration", () => {
       });
     } finally {
       await cleanupHunkSession(session, fixture, port);
+    }
+  }, 20_000);
+
+  test("mirrors comments to the git directory as they change, surviving SIGKILL", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "persist",
+      ["export const value = 1;", "console.log(value);"],
+      ["export const value = 2;", "console.log(value * 2);"],
+    );
+    const init = Bun.spawnSync(["git", "init"], {
+      cwd: fixture.dir,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    expect(init.exitCode).toBe(0);
+    const commentsPath = join(fixture.dir, ".git", "hunk", "review-comments.json");
+    const session = spawnHunkSession(fixture, port, ["--persist-comments"]);
+
+    try {
+      const listed = await waitForRegisteredSessions(port);
+      const sessionId = listed[0]!.sessionId;
+      const sessionPid = listed[0]!.pid;
+
+      const comment = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "1",
+          "--summary",
+          "Persisted note",
+          "--json",
+        ],
+        port,
+      );
+      expect(comment.proc.exitCode).toBe(0);
+      expect(comment.stderr).toBe("");
+
+      await waitUntil("comment mirrored to disk", () => {
+        if (!existsSync(commentsPath)) {
+          return null;
+        }
+        const parsed = JSON.parse(readFileSync(commentsPath, "utf8")) as {
+          reviewNotes?: Array<{ body?: string }>;
+        };
+        return parsed.reviewNotes?.some((note) => note.body === "Persisted note") ? parsed : null;
+      });
+
+      // A closed terminal pane dies exactly like this: no teardown hook ever runs.
+      process.kill(sessionPid, "SIGKILL");
+      await session.exited.catch(() => undefined);
+
+      const persisted = JSON.parse(readFileSync(commentsPath, "utf8")) as {
+        updatedAt: string;
+        sourceLabel: string;
+        reviewNotes: Array<{ filePath: string; body: string; newRange?: [number, number] }>;
+      };
+      expect(persisted.sourceLabel.length).toBeGreaterThan(0);
+      expect(persisted.reviewNotes).toMatchObject([
+        { filePath: fixture.afterName, body: "Persisted note", newRange: [1, 1] },
+      ]);
+    } finally {
+      if (session.exitCode === null) {
+        session.kill();
+        await session.exited.catch(() => undefined);
+      }
+      await stopTestDaemon(port);
     }
   }, 20_000);
 });

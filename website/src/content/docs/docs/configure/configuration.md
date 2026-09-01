@@ -27,6 +27,7 @@ hunk_headers = true
 menu_bar = true
 sidebar = "auto"
 agent_notes = false
+persist_comments = false
 transparent_background = false
 ```
 

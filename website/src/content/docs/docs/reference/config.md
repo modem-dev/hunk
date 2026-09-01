@@ -170,6 +170,16 @@ Show agent notes when a review opens.
 
 ---
 
+**`persist_comments`**
+
+Mirror review notes to `<git-dir>/hunk/review-comments.json` as they change, so they survive the session ending.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
 **`copy_decorations`**
 
 Include diff signs and line numbers in copied selections.

@@ -140,6 +140,7 @@ printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tig
 - Pass `--focus` when you want to jump to the new note or the first note in a batch
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
+- When no live session answers, a review launched with `--persist-comments` (or `persist_comments = true` in config) leaves its notes at `$(git rev-parse --absolute-git-dir)/hunk/review-comments.json`; its `reviewNotes` array matches `review --include-notes --json` and `updatedAt` says when it was last written
 
 ### Attention marks
 

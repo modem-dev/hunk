@@ -19,6 +19,14 @@ import {
   type AppliedExtensionRegistrations,
 } from "../extensions/apply";
 import type { ExtensionLoadResult } from "../extensions/types";
+import type { StartupNotice } from "../core/process/startupNotice";
+import { resolvePersistedReviewCommentsPath } from "./session/persistedComments";
+
+/** Warn when `--persist-comments` was requested outside a Git repository. */
+const PERSIST_COMMENTS_UNAVAILABLE_NOTICE: StartupNotice = {
+  key: "persist-comments:unavailable",
+  message: "persist_comments is on, but no Git directory was found • comments stay in memory",
+};
 
 export interface SessionBootstrapOptions {
   configured: HunkConfigResolution;
@@ -90,6 +98,18 @@ export async function loadConfiguredSessionBootstrap({
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
     bootstrap.keybindings = configured.keybindings;
+
+    if (input.options.persistComments) {
+      const persistedCommentsPath = resolvePersistedReviewCommentsPath(bootstrap.reloadContext.cwd);
+      if (persistedCommentsPath) {
+        bootstrap.persistedCommentsPath = persistedCommentsPath;
+      } else {
+        bootstrap.startupNotices = [
+          ...(bootstrap.startupNotices ?? []),
+          PERSIST_COMMENTS_UNAVAILABLE_NOTICE,
+        ];
+      }
+    }
 
     return { applied, bootstrap, input, previousFileLanguages, sessionThemes, sessionVcs };
   } catch (error) {

@@ -158,6 +158,7 @@ wrap_lines = false
 menu_bar = true
 sidebar = "auto"     # "auto", true, false
 agent_notes = false
+persist_comments = false # mirror review notes to <git-dir>/hunk/review-comments.json
 prompt_save_view_preferences = true
 transparent_background = false
 ```

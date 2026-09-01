@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
 import { replaceExtensionFileLanguages } from "../core/changeset/fileLanguage";
 import type { HunkConfigResolution } from "../core/run/config";
@@ -88,5 +91,46 @@ describe("loadConfiguredSessionBootstrap", () => {
     expect(fileLanguageForPath("CurrentHunkfile")).toBe("python");
     expect(fileLanguageForPath("ReplacementHunkfile")).toBe("text");
     replaceExtensionFileLanguages([]);
+  });
+
+  test("resolves the persisted-comments path only when the option is on and a git dir exists", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-bootstrap-repo-"));
+    const plain = mkdtempSync(join(tmpdir(), "hunk-bootstrap-plain-"));
+    try {
+      expect(Bun.spawnSync(["git", "init"], { cwd: repo, stderr: "ignore" }).exitCode).toBe(0);
+      const load = async (repoCwd: string, persistComments: boolean) => {
+        const input: CliInput = {
+          kind: "vcs",
+          staged: false,
+          options: { vcs: "git", persistComments },
+        };
+        return loadConfiguredSessionBootstrap({
+          configured: createTestConfig(input),
+          cwd: repoCwd,
+          loadAppBootstrapImpl: async (resolvedInput) => ({
+            ...createTestBootstrap(resolvedInput),
+            reloadContext: { cwd: repoCwd },
+          }),
+        });
+      };
+
+      const persisted = await load(repo, true);
+      expect(persisted.bootstrap.persistedCommentsPath).toBe(
+        join(realpathSync.native(repo), ".git", "hunk", "review-comments.json"),
+      );
+      expect(persisted.bootstrap.startupNotices ?? []).toEqual([]);
+
+      const disabled = await load(repo, false);
+      expect(disabled.bootstrap.persistedCommentsPath).toBeUndefined();
+
+      const outsideRepo = await load(plain, true);
+      expect(outsideRepo.bootstrap.persistedCommentsPath).toBeUndefined();
+      expect(outsideRepo.bootstrap.startupNotices).toMatchObject([
+        { key: "persist-comments:unavailable" },
+      ]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(plain, { recursive: true, force: true });
+    }
   });
 });

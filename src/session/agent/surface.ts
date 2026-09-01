@@ -139,6 +139,10 @@ export const AUXILIARY_AGENT_OPTIONS = {
     flag: "--width <n>",
     description: "layout width in columns",
   },
+  persistComments: {
+    flag: "--persist-comments",
+    description: "mirror review notes to <git-dir>/hunk/review-comments.json",
+  },
 } as const satisfies Record<string, AgentCommandOption>;
 
 /** Selector notation shared by every synopsis line that targets one live session. */

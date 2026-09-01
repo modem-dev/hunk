@@ -44,6 +44,8 @@ export interface CommonOptions {
   menuBar?: boolean;
   sidebar?: SidebarVisibility;
   agentNotes?: boolean;
+  /** Mirror review notes to the worktree's Git metadata directory as they change. */
+  persistComments?: boolean;
   copyDecorations?: boolean;
   promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;

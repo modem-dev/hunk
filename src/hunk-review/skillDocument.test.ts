@@ -17,8 +17,8 @@ const DOCUMENTED_AGENT_FLAGS = new Set([
   ...Object.values(AUXILIARY_AGENT_OPTIONS).map(agentOptionFlagName),
 ]);
 
-/** Flags of non-hunk shell tools that appear inside doc examples (e.g. curl). */
-const NON_HUNK_SHELL_FLAGS = new Set(["--data"]);
+/** Flags of non-hunk shell tools that appear inside doc examples (e.g. curl, git). */
+const NON_HUNK_SHELL_FLAGS = new Set(["--data", "--absolute-git-dir"]);
 
 /** Normalize checkout line endings so the comparison stays portable on Windows. */
 function normalizeNewlines(text: string) {
@@ -44,6 +44,9 @@ describe("hunk-review skill document", () => {
 
     expect(mentioned.length).toBeGreaterThan(0);
     for (const flag of mentioned) {
+      if (NON_HUNK_SHELL_FLAGS.has(flag)) {
+        continue;
+      }
       expect(DOCUMENTED_AGENT_FLAGS).toContain(flag);
     }
   });

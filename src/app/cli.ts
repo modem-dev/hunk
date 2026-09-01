@@ -131,6 +131,8 @@ export const COMMON_REVIEW_OPTIONS = [
   { flag: "--no-sidebar", description: "hide files pane" },
   { flag: "--agent-notes", description: "show agent notes by default" },
   { flag: "--no-agent-notes", description: "hide agent notes by default" },
+  AUXILIARY_AGENT_OPTIONS.persistComments,
+  { flag: "--no-persist-comments", description: "keep review notes in memory only" },
   { flag: "--transparent-bg", description: "let terminal background show through Hunk surfaces" },
   { flag: "--no-transparent-bg", description: "paint Hunk surfaces with the active theme" },
   {
@@ -417,6 +419,11 @@ function buildCommonOptions(
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    persistComments: resolveBooleanFlag(
+      argv,
+      AUXILIARY_AGENT_OPTIONS.persistComments.flag,
+      `--no-${AUXILIARY_AGENT_OPTIONS.persistComments.flag.slice(2)}`,
+    ),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
     // Read straight from argv so the absence of the flag stays undefined rather than
     // becoming Commander's implicit `true` default for a negatable option.
@@ -543,6 +550,7 @@ function renderCliHelp() {
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --sidebar / --no-sidebar                show or hide files pane by default",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
+    "  --persist-comments / --no-persist-comments  mirror review notes to <git-dir>/hunk/review-comments.json",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
     "  --extension <path>                      load an extension entry file or directory (repeatable)",

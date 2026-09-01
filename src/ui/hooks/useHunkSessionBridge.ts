@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReviewProducer } from "../../app/review/producer";
 import type { DiffFile } from "../../core/changeset/model";
 import type { CliInput } from "../../core/run/commandInputs";
@@ -12,8 +12,12 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { TerminalReview } from "./useTerminalReview";
+import { writePersistedReviewComments } from "../../app/session/persistedComments";
 
-/** Bridge one live Hunk review session to the local session daemon. */
+/**
+ * Bridge one live Hunk review session to the local session daemon, and mirror the
+ * published review notes to the persisted-comments file when one is configured.
+ */
 export function useHunkSessionBridge({
   addAgentLineHighlight,
   addLiveComment,
@@ -25,7 +29,9 @@ export function useHunkSessionBridge({
   liveCommentSummaries,
   navigateToLocation,
   noteMarkupWidth,
+  onPersistedCommentsError,
   openAgentNotes,
+  persistedCommentsPath,
   reloadSession,
   removeLiveComment,
   reviewNoteCount,
@@ -36,6 +42,7 @@ export function useHunkSessionBridge({
   selectedHunk,
   selectedHunkIndex,
   showAgentNotes,
+  sourceLabel,
 }: {
   addAgentLineHighlight: TerminalReview["addAgentLineHighlight"];
   addLiveComment: TerminalReview["addLiveComment"];
@@ -48,7 +55,10 @@ export function useHunkSessionBridge({
   navigateToLocation: TerminalReview["navigateToLocation"];
   /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
   noteMarkupWidth?: number;
+  onPersistedCommentsError?: (message: string) => void;
   openAgentNotes: () => void;
+  /** Mirror `reviewNoteSummaries` to this file as notes change; absent when persistence is off. */
+  persistedCommentsPath?: string;
   reloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
@@ -64,6 +74,8 @@ export function useHunkSessionBridge({
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
   showAgentNotes: boolean;
+  /** Where this review came from (`git diff`, a patch file, …), recorded in the persisted file. */
+  sourceLabel: string;
 }) {
   const bridge = useMemo(
     () =>
@@ -154,4 +166,34 @@ export function useHunkSessionBridge({
     selectedHunkIndex,
     showAgentNotes,
   ]);
+
+  // The mount's first summaries are recorded, not written: a session that never touches
+  // its notes must not clobber what an earlier session persisted before an agent reads it.
+  const persistedBaselineRef = useRef<SessionReviewNoteSummary[] | null>(null);
+
+  useEffect(() => {
+    if (!persistedCommentsPath) {
+      return;
+    }
+    if (persistedBaselineRef.current === null) {
+      persistedBaselineRef.current = reviewNoteSummaries;
+      return;
+    }
+    if (persistedBaselineRef.current === reviewNoteSummaries) {
+      return;
+    }
+    persistedBaselineRef.current = reviewNoteSummaries;
+
+    try {
+      writePersistedReviewComments(persistedCommentsPath, {
+        updatedAt: new Date().toISOString(),
+        sourceLabel,
+        reviewNotes: reviewNoteSummaries,
+      });
+    } catch (error) {
+      onPersistedCommentsError?.(
+        `Persisting comments failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }, [onPersistedCommentsError, persistedCommentsPath, reviewNoteSummaries, sourceLabel]);
 }

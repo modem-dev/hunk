@@ -429,6 +429,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     description: "Show agent notes when a review opens.",
   },
   {
+    key: "persist_comments",
+    property: "persistComments",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: false,
+    description:
+      "Mirror review notes to `<git-dir>/hunk/review-comments.json` as they change, so they survive the session ending.",
+  },
+  {
     key: "copy_decorations",
     property: "copyDecorations",
     type: "boolean",
@@ -1029,6 +1038,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     menuBar: overrides.menuBar ?? base.menuBar,
     sidebar: overrides.sidebar ?? base.sidebar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    persistComments: overrides.persistComments ?? base.persistComments,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     promptSaveViewPreferences:
       overrides.promptSaveViewPreferences ?? base.promptSaveViewPreferences,
@@ -1305,6 +1315,7 @@ export function resolveConfiguredCliInput(
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
     sidebar: resolvedOptions.sidebar ?? "auto",
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    persistComments: resolvedOptions.persistComments ?? false,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     promptSaveViewPreferences: resolvedOptions.promptSaveViewPreferences ?? true,
     transparentBackground: resolvedOptions.transparentBackground ?? false,

@@ -56,6 +56,8 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialCursorLine?: CursorLine;
   startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
+  /** Where review notes are mirrored on change; absent unless `--persist-comments` resolved a Git dir. */
+  persistedCommentsPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;
   /** App-owned extension state carried without coupling core to the extension host. */

@@ -16,32 +16,34 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 
 ## Common review options
 
-| Option                      | Description                                                     |
-| --------------------------- | --------------------------------------------------------------- |
-| `--mode <mode>`             | layout mode: auto, split, stack                                 |
-| `--cursor-line <style>`     | current-line marker: row, number, off                           |
-| `--theme <theme>`           | named theme override                                            |
-| `--agent-context <path>`    | JSON sidecar with agent rationale                               |
-| `--pager`                   | use pager-style chrome                                          |
-| `--experimental`            | enable experimental features (currently STML agent-note markup) |
-| `--fast`                    | experimentally offload eligible syntax highlighting             |
-| `--line-numbers`            | show line numbers                                               |
-| `--no-line-numbers`         | hide line numbers                                               |
-| `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
-| `--file-gap <rows>`         | file separator rows, including the ─ rule: 0-8 Default: 1.      |
-| `--hunk-gap <rows>`         | blank rows before each later hunk: 0-8 Default: 0.              |
-| `--wrap`                    | wrap long diff lines                                            |
-| `--no-wrap`                 | truncate long diff lines to one row                             |
-| `--hunk-headers`            | show hunk metadata rows                                         |
-| `--no-hunk-headers`         | hide hunk metadata rows                                         |
-| `--sidebar`                 | show files pane                                                 |
-| `--no-sidebar`              | hide files pane                                                 |
-| `--agent-notes`             | show agent notes by default                                     |
-| `--no-agent-notes`          | hide agent notes by default                                     |
-| `--transparent-bg`          | let terminal background show through Hunk surfaces              |
-| `--no-transparent-bg`       | paint Hunk surfaces with the active theme                       |
-| `--extension <path>`        | load an extension entry file or directory (repeatable)          |
-| `--no-extensions`           | disable user extensions for this run                            |
+| Option                      | Description                                                      |
+| --------------------------- | ---------------------------------------------------------------- |
+| `--mode <mode>`             | layout mode: auto, split, stack                                  |
+| `--cursor-line <style>`     | current-line marker: row, number, off                            |
+| `--theme <theme>`           | named theme override                                             |
+| `--agent-context <path>`    | JSON sidecar with agent rationale                                |
+| `--pager`                   | use pager-style chrome                                           |
+| `--experimental`            | enable experimental features (currently STML agent-note markup)  |
+| `--fast`                    | experimentally offload eligible syntax highlighting              |
+| `--line-numbers`            | show line numbers                                                |
+| `--no-line-numbers`         | hide line numbers                                                |
+| `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                 |
+| `--file-gap <rows>`         | file separator rows, including the ─ rule: 0-8 Default: 1.       |
+| `--hunk-gap <rows>`         | blank rows before each later hunk: 0-8 Default: 0.               |
+| `--wrap`                    | wrap long diff lines                                             |
+| `--no-wrap`                 | truncate long diff lines to one row                              |
+| `--hunk-headers`            | show hunk metadata rows                                          |
+| `--no-hunk-headers`         | hide hunk metadata rows                                          |
+| `--sidebar`                 | show files pane                                                  |
+| `--no-sidebar`              | hide files pane                                                  |
+| `--agent-notes`             | show agent notes by default                                      |
+| `--no-agent-notes`          | hide agent notes by default                                      |
+| `--persist-comments`        | mirror review notes to &lt;git-dir&gt;/hunk/review-comments.json |
+| `--no-persist-comments`     | keep review notes in memory only                                 |
+| `--transparent-bg`          | let terminal background show through Hunk surfaces               |
+| `--no-transparent-bg`       | paint Hunk surfaces with the active theme                        |
+| `--extension <path>`        | load an extension entry file or directory (repeatable)           |
+| `--no-extensions`           | disable user extensions for this run                             |
 
 `--experimental` may also be placed before the review command, as in `hunk --experimental diff`.
 
