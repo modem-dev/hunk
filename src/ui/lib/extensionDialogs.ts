@@ -12,7 +12,7 @@
 import type {
   ExtensionConfirmOptions,
   ExtensionDialogs,
-  ExtensionDocumentOptions,
+  ExtensionInfoOptions,
   ExtensionInputOptions,
   ExtensionSelectOptions,
 } from "../../extension-api/types";
@@ -27,14 +27,14 @@ const DEFAULT_CANCEL_LABEL = "cancel";
 /** Body lines one confirm dialog may show; beyond this the modal stops being a prompt. */
 const MAX_CONFIRM_BODY_LINES = 6;
 
-/** Body lines one read-only document may retain before host-side windowing. */
-const MAX_DOCUMENT_BODY_LINES = 100;
+/** Body lines one read-only info dialog may retain before host-side windowing. */
+const MAX_INFO_BODY_LINES = 100;
 
 /** Clipboard text is bounded before it reaches the terminal's OSC 52 channel. */
-const MAX_DOCUMENT_COPY_TEXT_LENGTH = 16_384;
+const MAX_INFO_COPY_TEXT_LENGTH = 16_384;
 
-/** Default heading for a document's copyable text card. */
-const DEFAULT_DOCUMENT_COPY_LABEL = "Content";
+/** Default heading for an info dialog's copyable text card. */
+const DEFAULT_INFO_COPY_LABEL = "Content";
 
 /** What every queued dialog carries, whatever kind it is. */
 interface ExtensionDialogRequestBase {
@@ -71,18 +71,18 @@ export interface ExtensionInputDialogRequest extends ExtensionDialogRequestBase 
   initial: string;
 }
 
-/** Clipboard and display forms of one document's normalized copyable text. */
-export interface ExtensionDocumentCopyRequest {
+/** Clipboard and display forms of one info dialog's normalized copyable text. */
+export interface ExtensionInfoCopyRequest {
   label: string;
   text: string;
   displayLines: string[];
 }
 
-/** One normalized read-only document the host should draw. */
-export interface ExtensionDocumentDialogRequest extends ExtensionDialogRequestBase {
-  kind: "document";
+/** One normalized read-only info dialog the host should draw. */
+export interface ExtensionInfoDialogRequest extends ExtensionDialogRequestBase {
+  kind: "info";
   bodyLines: string[];
-  copy: ExtensionDocumentCopyRequest | null;
+  copy: ExtensionInfoCopyRequest | null;
 }
 
 /** One dialog the host should draw, normalized from what an extension asked for. */
@@ -90,7 +90,7 @@ export type ExtensionDialogRequest =
   | ExtensionConfirmDialogRequest
   | ExtensionSelectDialogRequest
   | ExtensionInputDialogRequest
-  | ExtensionDocumentDialogRequest;
+  | ExtensionInfoDialogRequest;
 
 /** What a dialog hands back to the awaiting handler. */
 type ExtensionDialogResult = boolean | string | null | undefined;
@@ -108,7 +108,7 @@ export interface ExtensionDialogQueue {
    * Accept the dialog with this id.
    *
    * A confirm resolves `true`. A select or input resolves `value`; without one
-   * there is nothing to hand back, so it settles as a cancel instead. Documents
+   * there is nothing to hand back, so it settles as a cancel instead. Info dialogs
    * ignore acceptance and remain visible until cancelled.
    *
    * Answering anything but the current dialog is ignored: an answer computed
@@ -180,57 +180,55 @@ function normalizeBodyLines(body: unknown, maxLines = MAX_CONFIRM_BODY_LINES) {
     .map((line) => sanitizeTerminalLine(line));
 }
 
-/** Normalize a document body while rejecting content the host would have to discard. */
-function normalizeDocumentBodyLines(body: unknown) {
+/** Normalize an info body while rejecting content the host would have to discard. */
+function normalizeInfoBodyLines(body: unknown) {
   if (typeof body !== "string" || body.length === 0) return [];
   const lines = body.split("\n");
-  if (lines.length > MAX_DOCUMENT_BODY_LINES) {
-    invalid("document", `body must contain at most ${MAX_DOCUMENT_BODY_LINES} lines.`);
+  if (lines.length > MAX_INFO_BODY_LINES) {
+    invalid("info", `body must contain at most ${MAX_INFO_BODY_LINES} lines.`);
   }
   return lines.map((line) => sanitizeTerminalLine(line));
 }
 
-/** Validate and normalize a document's optional clipboard card. */
-function normalizeDocumentCopy(
-  copy: ExtensionDocumentOptions["copy"],
-): ExtensionDocumentCopyRequest | null {
+/** Validate and normalize an info dialog's optional clipboard card. */
+function normalizeInfoCopy(copy: ExtensionInfoOptions["copy"]): ExtensionInfoCopyRequest | null {
   if (copy === undefined) return null;
   if (!copy || typeof copy.text !== "string" || copy.text.length === 0) {
-    invalid("document", "copy.text must be a non-empty string.");
+    invalid("info", "copy.text must be a non-empty string.");
   }
-  if (copy.text.length > MAX_DOCUMENT_COPY_TEXT_LENGTH) {
-    invalid("document", `copy.text must be at most ${MAX_DOCUMENT_COPY_TEXT_LENGTH} characters.`);
+  if (copy.text.length > MAX_INFO_COPY_TEXT_LENGTH) {
+    invalid("info", `copy.text must be at most ${MAX_INFO_COPY_TEXT_LENGTH} characters.`);
   }
 
   const text = sanitizeTerminalText(copy.text).replaceAll("\t", "    ");
-  if (text.length > MAX_DOCUMENT_COPY_TEXT_LENGTH) {
+  if (text.length > MAX_INFO_COPY_TEXT_LENGTH) {
     invalid(
-      "document",
-      `normalized copy.text must be at most ${MAX_DOCUMENT_COPY_TEXT_LENGTH} characters.`,
+      "info",
+      `normalized copy.text must be at most ${MAX_INFO_COPY_TEXT_LENGTH} characters.`,
     );
   }
   if (text.length === 0) {
-    invalid("document", "copy.text must contain visible or whitespace content.");
+    invalid("info", "copy.text must contain visible or whitespace content.");
   }
 
   let displayLines = text.split("\n").map((line) => sanitizeTerminalLine(line));
   if (copy.displayLines !== undefined) {
     if (!Array.isArray(copy.displayLines) || copy.displayLines.length === 0) {
-      invalid("document", "copy.displayLines must be a non-empty string array.");
+      invalid("info", "copy.displayLines must be a non-empty string array.");
     }
     displayLines = copy.displayLines.map((line) => {
       if (typeof line !== "string" || line.includes("\n")) {
-        invalid("document", "copy.displayLines must contain single-line strings.");
+        invalid("info", "copy.displayLines must contain single-line strings.");
       }
       return sanitizeTerminalLine(line).replaceAll("\t", "    ");
     });
     if (displayLines.join(" ") !== text && displayLines.join("\n") !== text) {
-      invalid("document", "copy.displayLines must contain the same text as copy.text.");
+      invalid("info", "copy.displayLines must contain the same text as copy.text.");
     }
   }
 
   return {
-    label: normalizeLabel(copy.label, DEFAULT_DOCUMENT_COPY_LABEL),
+    label: normalizeLabel(copy.label, DEFAULT_INFO_COPY_LABEL),
     text,
     displayLines,
   };
@@ -278,7 +276,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
 
   /** The cancel value one request resolves with. */
   const cancelValueFor = (request: ExtensionDialogRequest): ExtensionDialogResult =>
-    request.kind === "confirm" ? false : request.kind === "document" ? undefined : null;
+    request.kind === "confirm" ? false : request.kind === "info" ? undefined : null;
 
   /**
    * Queue one request and hand back the promise its handler awaits.
@@ -392,16 +390,16 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
             isLive,
           );
         },
-        async document(options: ExtensionDocumentOptions) {
-          const title = normalizeTitle("document", options?.title);
-          const bodyLines = normalizeDocumentBodyLines(options.body);
-          const copy = normalizeDocumentCopy(options.copy);
+        async info(options: ExtensionInfoOptions) {
+          const title = normalizeTitle("info", options?.title);
+          const bodyLines = normalizeInfoBodyLines(options.body);
+          const copy = normalizeInfoCopy(options.copy);
           if (bodyLines.length === 0 && copy === null) {
-            invalid("document", "requires body or copy content.");
+            invalid("info", "requires body or copy content.");
           }
           await enqueue<undefined>(
             (id) => ({
-              kind: "document",
+              kind: "info",
               id,
               extensionId,
               showAttribution,
@@ -436,7 +434,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
         return;
       }
 
-      if (active.request.kind === "document") {
+      if (active.request.kind === "info") {
         return;
       }
 

@@ -89,7 +89,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { planExtensionDocumentDialog } from "./lib/extensionDialogGeometry";
+import { planExtensionInfoDialog } from "./lib/extensionDialogGeometry";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -936,21 +936,17 @@ export function App({
     runExtensionCommand(bundledAgentSkillCommand);
   }, [bundledAgentSkillCommand, runExtensionCommand]);
 
-  const extensionDocumentLayout =
-    extensionDialog?.kind === "document"
-      ? planExtensionDocumentDialog(extensionDialog, terminal.width, terminal.height)
+  const extensionInfoLayout =
+    extensionDialog?.kind === "info"
+      ? planExtensionInfoDialog(extensionDialog, terminal.width, terminal.height)
       : null;
   const extensionDialogCopySupported =
     (renderer.isOsc52Supported?.() ?? false) && typeof renderer.copyToClipboardOSC52 === "function";
-  const extensionDocumentCopyExposed = extensionDocumentLayout?.copyActionExposed ?? false;
+  const extensionInfoCopyExposed = extensionInfoLayout?.copyActionExposed ?? false;
 
-  /** Copy a document dialog's normalized payload through the terminal clipboard integration. */
-  const copyExtensionDialogDocument = useCallback(() => {
-    if (
-      extensionDialog?.kind !== "document" ||
-      !extensionDialog.copy ||
-      !extensionDocumentCopyExposed
-    ) {
+  /** Copy an info dialog's normalized payload through the terminal clipboard integration. */
+  const copyExtensionDialogInfo = useCallback(() => {
+    if (extensionDialog?.kind !== "info" || !extensionDialog.copy || !extensionInfoCopyExposed) {
       return;
     }
 
@@ -968,7 +964,7 @@ export function App({
   }, [
     extensionDialog,
     extensionDialogCopySupported,
-    extensionDocumentCopyExposed,
+    extensionInfoCopyExposed,
     renderer,
     showTransientNotice,
   ]);
@@ -1167,8 +1163,8 @@ export function App({
     extensionDialog,
     acceptExtensionDialog,
     cancelExtensionDialog,
-    extensionDocumentCopyEnabled: extensionDocumentCopyExposed && extensionDialogCopySupported,
-    copyExtensionDialogDocument,
+    extensionInfoCopyEnabled: extensionInfoCopyExposed && extensionDialogCopySupported,
+    copyExtensionDialogInfo,
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
     trustRepoExtensions,
@@ -1494,7 +1490,7 @@ export function App({
           onAccept={acceptExtensionDialog}
           onCancel={cancelExtensionDialog}
           onChangeInput={setExtensionDialogInputValue}
-          onCopyDocument={() => copyExtensionDialogDocument()}
+          onCopyInfo={() => copyExtensionDialogInfo()}
           onPickOption={setExtensionDialogSelectedIndex}
         />
       ) : null}

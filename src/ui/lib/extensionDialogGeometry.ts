@@ -1,7 +1,7 @@
 import { fitText, measureTextWidth, sliceTextByWidth, wrapText } from "./text";
 import { extensionToastPrefix } from "./extensionNotifications";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "./modalGeometry";
-import type { ExtensionDocumentDialogRequest } from "./extensionDialogs";
+import type { ExtensionInfoDialogRequest } from "./extensionDialogs";
 
 /** Wrapped body rows that fit one modal body allocation. */
 export interface WindowedDialogText {
@@ -70,8 +70,8 @@ export function windowDialogLiteralText(
   return { lines: [...wrapped.slice(0, maxRows - 1), "…"], truncated: true };
 }
 
-/** Concrete row allocation shared by document rendering and copy authorization. */
-export interface ExtensionDocumentDialogLayout {
+/** Concrete row allocation shared by info rendering and copy authorization. */
+export interface ExtensionInfoDialogLayout {
   frame: { width: number; height: number };
   bodyWidth: number;
   cardWidth: number;
@@ -90,8 +90,8 @@ export interface ExtensionDocumentDialogLayout {
   copyActionExposed: boolean;
 }
 
-/** Preserve meaningful text when a constrained document has only one body row. */
-function windowDocumentText(sourceLines: readonly string[], width: number, maxRows: number) {
+/** Preserve meaningful text when constrained info has only one body row. */
+function windowInfoText(sourceLines: readonly string[], width: number, maxRows: number) {
   const windowed = windowDialogText(sourceLines, width, maxRows);
   if (maxRows !== 1 || !windowed.truncated) return windowed;
 
@@ -99,12 +99,12 @@ function windowDocumentText(sourceLines: readonly string[], width: number, maxRo
   return { lines: [fitText(`${firstLine}…`, width, "…")], truncated: true };
 }
 
-/** Plan a read-only document so rendering and keyboard copy use identical disclosure facts. */
-export function planExtensionDocumentDialog(
-  request: ExtensionDocumentDialogRequest,
+/** Plan read-only info so rendering and keyboard copy use identical disclosure facts. */
+export function planExtensionInfoDialog(
+  request: ExtensionInfoDialogRequest,
   terminalWidth: number,
   terminalHeight: number,
-): ExtensionDocumentDialogLayout {
+): ExtensionInfoDialogLayout {
   const width = Math.min(84, Math.max(58, terminalWidth - 8));
   const measuredFrame = resolveModalGeometry({
     width,
@@ -167,7 +167,7 @@ export function planExtensionDocumentDialog(
   const copyLabelRows = hasCopy && remainingRows > 1 ? 1 : 0;
   remainingRows -= copyLabelRows;
   const copyCardRows = hasCopy ? remainingRows : 0;
-  const visibleBody = windowDocumentText(request.bodyLines, bodyWidth, bodyRows);
+  const visibleBody = windowInfoText(request.bodyLines, bodyWidth, bodyRows);
   const visibleCopy = copy
     ? windowDialogLiteralText(
         copy.displayLines,

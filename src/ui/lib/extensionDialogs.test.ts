@@ -51,11 +51,11 @@ describe("createExtensionDialogQueue", () => {
     queue.accept(queue.current()!.id);
     expect(await valueless).toBeNull();
 
-    const document = dialogs.document({ title: "Guide", body: "Read this." });
+    const info = dialogs.info({ title: "Guide", body: "Read this." });
     queue.accept(queue.current()!.id);
-    expect(queue.current()).toMatchObject({ kind: "document", title: "Guide" });
+    expect(queue.current()).toMatchObject({ kind: "info", title: "Guide" });
     queue.cancel(queue.current()!.id);
-    expect(await document).toBeUndefined();
+    expect(await info).toBeUndefined();
   });
 
   test("ignores an answer aimed at a dialog that is no longer current", async () => {
@@ -121,18 +121,18 @@ describe("createExtensionDialogQueue", () => {
     expect(queue.current()).toMatchObject({ title: "Pick", options: ["opt"] });
   });
 
-  test("uses the same terminal-safe text for document display and clipboard payloads", () => {
+  test("uses the same terminal-safe text for info display and clipboard payloads", () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("guide");
 
-    void dialogs.document({
+    void dialogs.info({
       title: "Setup",
       body: "one\n\u001b[31mtwo\u001b[0m",
       copy: { label: "Prompt", text: "copy\t\u001b[31mexactly\u001b[0m" },
     });
 
     expect(queue.current()).toMatchObject({
-      kind: "document",
+      kind: "info",
       bodyLines: ["one", "two"],
       copy: {
         label: "Prompt",
@@ -146,7 +146,7 @@ describe("createExtensionDialogQueue", () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("guide");
 
-    void dialogs.document({
+    void dialogs.info({
       title: "Setup",
       copy: { text: "copy this exactly", displayLines: ["copy this", "exactly"] },
     });
@@ -156,7 +156,7 @@ describe("createExtensionDialogQueue", () => {
     queue.cancelAll();
 
     await expect(
-      dialogs.document({
+      dialogs.info({
         title: "Setup",
         copy: { text: "safe text", displayLines: ["different text"] },
       }),
@@ -269,18 +269,18 @@ describe("createExtensionDialogQueue", () => {
     await expect(dialogs.select({ title: "Which?", options: [] })).rejects.toThrow(
       /at least one option/,
     );
-    await expect(dialogs.document({ title: "Empty" })).rejects.toThrow(/body or copy content/);
-    await expect(dialogs.document({ title: "Bad copy", copy: { text: "" } })).rejects.toThrow(
+    await expect(dialogs.info({ title: "Empty" })).rejects.toThrow(/body or copy content/);
+    await expect(dialogs.info({ title: "Bad copy", copy: { text: "" } })).rejects.toThrow(
       /non-empty string/,
     );
     await expect(
-      dialogs.document({ title: "Long body", body: Array(101).fill("line").join("\n") }),
+      dialogs.info({ title: "Long body", body: Array(101).fill("line").join("\n") }),
     ).rejects.toThrow(/at most 100 lines/);
     await expect(
-      dialogs.document({ title: "Long copy", copy: { text: "x".repeat(16_385) } }),
+      dialogs.info({ title: "Long copy", copy: { text: "x".repeat(16_385) } }),
     ).rejects.toThrow(/at most 16384 characters/);
     await expect(
-      dialogs.document({ title: "Expanded copy", copy: { text: "\t".repeat(4_097) } }),
+      dialogs.info({ title: "Expanded copy", copy: { text: "\t".repeat(4_097) } }),
     ).rejects.toThrow(/normalized copy.text.*at most 16384 characters/);
     await expect(
       dialogs.select({ title: "Which?", options: [1 as unknown as string] }),

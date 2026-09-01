@@ -17,7 +17,7 @@ const registerBundledAgentSkill: ExtensionFactory = (hunk) => {
       title: "Show setup guidance for reviewing with an agent",
     },
     async (ctx) => {
-      await ctx.dialogs.document({
+      await ctx.dialogs.info({
         title: "Agent skill",
         body: "Teach your agent how to review this Hunk session.",
         copy: {

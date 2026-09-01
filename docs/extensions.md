@@ -281,7 +281,7 @@ new instances and run that shutdown/startup pair around the replacement.
 ### `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `17`). Branch on it if you want
-one file to support several Hunk versions. Version 17 adds read-only document
+one file to support several Hunk versions. Version 17 adds read-only info
 dialogs with optional clipboard actions; version 16 added temporary application
 handoffs and on-disk location resolution to command handlers; version 15 added
 `{ side, line }` to opted-in pane
@@ -1675,7 +1675,7 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 });
 ```
 
-`document` presents read-only guidance rather than asking for an answer. At
+`info` presents read-only guidance rather than asking for an answer. At
 least `body` or `copy` must be present. A body may contain up to 100 source
 lines, and copy text may contain up to 16,384 JavaScript string code units.
 When `copy` is provided, `c` and the clickable copy action send its `text` to
@@ -1689,7 +1689,7 @@ clipboard `text`, so a preview cannot disguise what the action copies:
 
 ```ts
 hunk.registerCommand({ id: "agent-setup", title: "Agent setup" }, async (ctx) => {
-  await ctx.dialogs.document({
+  await ctx.dialogs.info({
     title: "Agent setup",
     body: "Give this prompt to your coding agent.",
     copy: {
@@ -1709,9 +1709,9 @@ itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
 One dialog is on screen at a time. Concurrent requests queue in call order,
 across extensions too, so a second modal waits its turn instead of replacing
 the first. While a dialog is up it owns the keyboard: Escape cancels (`false`
-or `null`) or closes a document, Enter accepts the confirm action, highlighted
+or `null`) or closes an info dialog, Enter accepts the confirm action, highlighted
 option, or typed text, and review shortcuts stay suppressed underneath.
-Documents ignore Enter and remain open. Confirm dialogs also answer to `y`/`n`,
+Info dialogs ignore Enter and remain open. Confirm dialogs also answer to `y`/`n`,
 select dialogs to `↑`/`↓`, and every dialog's actions and rows are clickable.
 
 Two things resolve a dialog without the user: the session moving on, and bad

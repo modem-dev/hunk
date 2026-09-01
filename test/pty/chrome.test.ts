@@ -84,7 +84,7 @@ describe("PTY chrome", () => {
     }
   });
 
-  test("the Agent menu opens bundled skill guidance as a modal document", async () => {
+  test("the Agent menu opens bundled skill guidance as an info dialog", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -100,7 +100,7 @@ describe("PTY chrome", () => {
       expect(menu).toContain("Next annotated file");
 
       await session.click(/Agent skill/);
-      const document = await harness.waitForSnapshot(
+      const info = await harness.waitForSnapshot(
         session,
         (text) =>
           text.includes("Teach your agent how to review this Hunk session.") &&
@@ -108,7 +108,7 @@ describe("PTY chrome", () => {
           text.includes("⧉  Copy prompt"),
         5_000,
       );
-      expect(document).not.toContain("ext hunk");
+      expect(info).not.toContain("ext hunk");
 
       await session.press("enter");
       const stillOpen = await session.text({ immediate: true });

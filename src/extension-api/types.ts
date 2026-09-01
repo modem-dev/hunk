@@ -1631,8 +1631,8 @@ export interface ExtensionInputOptions {
   initial?: string;
 }
 
-/** Copyable text shown inside a document dialog. */
-export interface ExtensionDocumentCopyOptions {
+/** Copyable text shown inside an info dialog. */
+export interface ExtensionInfoCopyOptions {
   /** Short heading shown above the copyable text. Defaults to "Content". */
   label?: string;
   /**
@@ -1648,13 +1648,13 @@ export interface ExtensionDocumentCopyOptions {
   displayLines?: readonly string[];
 }
 
-/** Read-only guidance shown to the user as a modal document. */
-export interface ExtensionDocumentOptions {
+/** Read-only information shown to the user in a modal. */
+export interface ExtensionInfoOptions {
   title: string;
   /** Optional prose shown above the copyable text. Limited to 100 source lines. */
   body?: string;
   /** Optional text card the user can copy with `c` or the mouse. */
-  copy?: ExtensionDocumentCopyOptions;
+  copy?: ExtensionInfoCopyOptions;
 }
 
 /**
@@ -1669,7 +1669,7 @@ export interface ExtensionDocumentOptions {
  *
  * Escape always dismisses, resolving the cancel value (`false`, `null`, or
  * `undefined`). Enter accepts: the confirm action, the highlighted option, or
- * the typed text. Documents are read-only and remain open until dismissed.
+ * the typed text. Info dialogs are read-only and remain open until dismissed.
  * A session reload — the refresh key, a watch-triggered reload, an agent
  * command — cancels open and queued dialogs the same way: the review they
  * asked about is being replaced. A dialog raised while the app is tearing
@@ -1678,7 +1678,7 @@ export interface ExtensionDocumentOptions {
  *
  * Bad arguments are a programming error rather than a user answer, so they
  * reject instead of resolving: a missing or blank `title`, a `select` with no
- * options, or document content outside its documented bounds. Because a dialog
+ * options, or info content outside its documented bounds. Because a dialog
  * call is only useful awaited, the rejection
  * surfaces through the same path as any other handler failure — a warning toast
  * naming the extension.
@@ -1691,7 +1691,7 @@ export interface ExtensionDialogs {
   /** Resolves the submitted text, or null on cancel/escape. */
   input(options: ExtensionInputOptions): Promise<string | null>;
   /** Show read-only guidance until the user dismisses it. */
-  document(options: ExtensionDocumentOptions): Promise<void>;
+  info(options: ExtensionInfoOptions): Promise<void>;
 }
 
 /** One whole-document replacement an extension asks the host to write. */

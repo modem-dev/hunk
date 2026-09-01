@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { ExtensionDocumentDialogRequest } from "./extensionDialogs";
+import type { ExtensionInfoDialogRequest } from "./extensionDialogs";
 import {
-  planExtensionDocumentDialog,
+  planExtensionInfoDialog,
   windowDialogLiteralText,
   windowDialogText,
 } from "./extensionDialogGeometry";
 
-const documentRequest = {
+const infoRequest = {
   id: 1,
-  kind: "document",
+  kind: "info",
   extensionId: "example",
   showAttribution: true,
   title: "Agent setup",
@@ -18,7 +18,7 @@ const documentRequest = {
     text: "Load the Hunk skill and use it for this review. Run hunk skill path.",
     displayLines: ["Load the Hunk skill and use it for this review. Run hunk skill path."],
   },
-} satisfies ExtensionDocumentDialogRequest;
+} satisfies ExtensionInfoDialogRequest;
 
 describe("windowDialogText", () => {
   test("wraps prose within the available terminal-cell rows", () => {
@@ -75,10 +75,10 @@ describe("windowDialogLiteralText", () => {
   });
 });
 
-describe("planExtensionDocumentDialog", () => {
+describe("planExtensionInfoDialog", () => {
   test("exposes copy only when its complete payload and attribution fit", () => {
-    const complete = planExtensionDocumentDialog(documentRequest, 50, 20);
-    const constrained = planExtensionDocumentDialog(documentRequest, 50, 12);
+    const complete = planExtensionInfoDialog(infoRequest, 50, 20);
+    const constrained = planExtensionInfoDialog(infoRequest, 50, 12);
 
     expect(complete.visibleCopy.truncated).toBe(false);
     expect(complete.copyActionExposed).toBe(true);
@@ -86,8 +86,8 @@ describe("planExtensionDocumentDialog", () => {
     expect(constrained.copyActionExposed).toBe(false);
   });
 
-  test("prioritizes required attribution over document actions", () => {
-    const layout = planExtensionDocumentDialog(documentRequest, 50, 7);
+  test("prioritizes required attribution over info actions", () => {
+    const layout = planExtensionInfoDialog(infoRequest, 50, 7);
 
     expect(layout.attributionRows).toBe(1);
     expect(layout.attributionText).toBe("ext example");
@@ -96,11 +96,7 @@ describe("planExtensionDocumentDialog", () => {
   });
 
   test("withholds copy when required attribution is truncated", () => {
-    const layout = planExtensionDocumentDialog(
-      { ...documentRequest, extensionId: "x".repeat(80) },
-      50,
-      30,
-    );
+    const layout = planExtensionInfoDialog({ ...infoRequest, extensionId: "x".repeat(80) }, 50, 30);
 
     expect(layout.attributionText).not.toBe(`ext ${"x".repeat(80)}`);
     expect(layout.visibleCopy.truncated).toBe(false);
@@ -108,9 +104,9 @@ describe("planExtensionDocumentDialog", () => {
   });
 
   test("withholds copy when frame chrome leaves no real card width", () => {
-    const layout = planExtensionDocumentDialog(
+    const layout = planExtensionInfoDialog(
       {
-        ...documentRequest,
+        ...infoRequest,
         showAttribution: false,
         bodyLines: [],
         copy: { label: "Content", text: "x", displayLines: ["x"] },

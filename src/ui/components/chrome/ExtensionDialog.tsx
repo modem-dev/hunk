@@ -1,12 +1,12 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type {
   ExtensionDialogRequest,
-  ExtensionDocumentCopyRequest,
-  ExtensionDocumentDialogRequest,
+  ExtensionInfoCopyRequest,
+  ExtensionInfoDialogRequest,
   ExtensionInputDialogRequest,
   ExtensionSelectDialogRequest,
 } from "../../lib/extensionDialogs";
-import { planExtensionDocumentDialog, windowDialogText } from "../../lib/extensionDialogGeometry";
+import { planExtensionInfoDialog, windowDialogText } from "../../lib/extensionDialogGeometry";
 import { extensionToastPrefix } from "../../lib/extensionNotifications";
 import { listWindowStart } from "../../lib/listWindow";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
@@ -44,7 +44,7 @@ export function ExtensionDialog({
   onAccept,
   onCancel,
   onChangeInput,
-  onCopyDocument,
+  onCopyInfo,
   onPickOption,
   request,
   selectedIndex,
@@ -58,7 +58,7 @@ export function ExtensionDialog({
   onAccept: (selectedIndexOverride?: number) => void;
   onCancel: () => void;
   onChangeInput: (value: string) => void;
-  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
+  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
   /** Highlight one option row without accepting it, mirroring the theme selector. */
   onPickOption: (index: number) => void;
   request: ExtensionDialogRequest;
@@ -67,12 +67,12 @@ export function ExtensionDialog({
   terminalWidth: number;
   theme: AppTheme;
 }) {
-  if (request.kind === "document") {
+  if (request.kind === "info") {
     return (
-      <ExtensionDocumentDialog
+      <ExtensionInfoDialog
         copySupported={copySupported}
         onCancel={onCancel}
-        onCopyDocument={onCopyDocument}
+        onCopyInfo={onCopyInfo}
         request={request}
         terminalHeight={terminalHeight}
         terminalWidth={terminalWidth}
@@ -157,10 +157,10 @@ export function ExtensionDialog({
 }
 
 /** Render read-only guidance with an optional host-mediated clipboard card. */
-function ExtensionDocumentDialog({
+function ExtensionInfoDialog({
   copySupported,
   onCancel,
-  onCopyDocument,
+  onCopyInfo,
   request,
   terminalHeight,
   terminalWidth,
@@ -168,14 +168,14 @@ function ExtensionDocumentDialog({
 }: {
   copySupported: boolean;
   onCancel: () => void;
-  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
-  request: ExtensionDocumentDialogRequest;
+  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
+  request: ExtensionInfoDialogRequest;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
 }) {
   const copy = request.copy;
-  const layout = planExtensionDocumentDialog(request, terminalWidth, terminalHeight);
+  const layout = planExtensionInfoDialog(request, terminalWidth, terminalHeight);
   const {
     actionGapRows,
     actionRows,
@@ -248,10 +248,10 @@ function ExtensionDocumentDialog({
         ) : null}
         {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
         {actionRows > 0 && copy && copyActionExposed ? (
-          <DocumentCopyAction
+          <InfoCopyAction
             copy={copy}
             copySupported={copySupported}
-            onCopyDocument={onCopyDocument}
+            onCopyInfo={onCopyInfo}
             theme={theme}
             width={bodyWidth}
           />
@@ -266,17 +266,17 @@ function ExtensionDocumentDialog({
   );
 }
 
-/** Render the compact copy affordance beneath a document card. */
-function DocumentCopyAction({
+/** Render the compact copy affordance beneath an info card. */
+function InfoCopyAction({
   copy,
   copySupported,
-  onCopyDocument,
+  onCopyInfo,
   theme,
   width,
 }: {
-  copy: ExtensionDocumentCopyRequest;
+  copy: ExtensionInfoCopyRequest;
   copySupported: boolean;
-  onCopyDocument: (copy: ExtensionDocumentCopyRequest) => void;
+  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
   theme: AppTheme;
   width: number;
 }) {
@@ -291,7 +291,7 @@ function DocumentCopyAction({
         style={{ backgroundColor: copySupported ? theme.accentMuted : theme.panelAlt }}
         onMouseUp={(event: TuiMouseEvent) => {
           event.stopPropagation();
-          if (copySupported) onCopyDocument(copy);
+          if (copySupported) onCopyInfo(copy);
         }}
       >
         <text fg={copySupported ? theme.text : theme.muted}>{label}</text>

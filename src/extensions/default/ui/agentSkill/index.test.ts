@@ -28,13 +28,13 @@ describe("bundled agent skill extension", () => {
     });
   });
 
-  test("opens its onboarding through the public document dialog", async () => {
-    const document = mock(async () => {});
-    const context = { dialogs: { document } } as unknown as ExtensionCommandContext;
+  test("opens its onboarding through the public info dialog", async () => {
+    const info = mock(async () => {});
+    const context = { dialogs: { info } } as unknown as ExtensionCommandContext;
 
     await getBundledAgentSkillCommand().handler(context);
 
-    expect(document).toHaveBeenCalledWith({
+    expect(info).toHaveBeenCalledWith({
       title: "Agent skill",
       body: "Teach your agent how to review this Hunk session.",
       copy: {

@@ -160,7 +160,7 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.review`
   (deeply immutable snapshots of stable files and complete saved store notes),
-  `ctx.dialogs` (`confirm`/`select`/`input`/`document`, queued and attributed),
+  `ctx.dialogs` (`confirm`/`select`/`input`/`info`, queued and attributed),
   `ctx.openInApp` (temporary terminal ownership around extension-run applications),
   and `ctx.workspace` (`readDocument`, `resolveLocation`, `canWriteDocument`,
   `writeDocument` with consent).

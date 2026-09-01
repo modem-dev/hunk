@@ -317,15 +317,15 @@ describe("extension dialogs", () => {
     });
   });
 
-  test("a document dialog renders copyable guidance and closes only on escape", async () => {
-    const repo = createTestRepo("hunk-ext-dialog-document-");
-    const extDir = createTempDir("hunk-ext-dialog-document-ext-");
+  test("an info dialog renders copyable guidance and closes only on escape", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-info-");
+    const extDir = createTempDir("hunk-ext-dialog-info-ext-");
     const logPath = join(extDir, "probe.log");
     const extPath = join(extDir, "ext.ts");
     writeDialogFixture(
       extPath,
       logPath,
-      `ctx.dialogs.document({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
+      `ctx.dialogs.info({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);
@@ -345,7 +345,7 @@ describe("extension dialogs", () => {
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Agent setup"),
-          "the document dialog to open",
+          "the info dialog to open",
         );
 
         const frame = setup.captureCharFrame();
@@ -377,7 +377,7 @@ describe("extension dialogs", () => {
         await flushUntil(
           setup,
           () => readProbeLog(logPath).includes("answer undefined"),
-          "the document handler to finish",
+          "the info handler to finish",
         );
       },
       undefined,
@@ -386,14 +386,14 @@ describe("extension dialogs", () => {
   });
 
   test("withholds copy when a short terminal cannot disclose the complete payload", async () => {
-    const repo = createTestRepo("hunk-ext-dialog-document-short-");
-    const extDir = createTempDir("hunk-ext-dialog-document-short-ext-");
+    const repo = createTestRepo("hunk-ext-dialog-info-short-");
+    const extDir = createTempDir("hunk-ext-dialog-info-short-ext-");
     const logPath = join(extDir, "probe.log");
     const extPath = join(extDir, "ext.ts");
     writeDialogFixture(
       extPath,
       logPath,
-      `ctx.dialogs.document({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
+      `ctx.dialogs.info({ title: "Agent setup", body: "Teach your agent how to review this Hunk session.", copy: { label: "Prompt", text: "Load the Hunk skill and use it for this review. Run hunk skill path to get the skill path." } })`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);
@@ -413,7 +413,7 @@ describe("extension dialogs", () => {
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Agent setup"),
-          "the constrained document dialog to open",
+          "the constrained info dialog to open",
         );
 
         const frame = setup.captureCharFrame();
@@ -433,15 +433,15 @@ describe("extension dialogs", () => {
     );
   });
 
-  test("an unavailable document copy action is visible but inert", async () => {
-    const repo = createTestRepo("hunk-ext-dialog-document-unavailable-");
-    const extDir = createTempDir("hunk-ext-dialog-document-unavailable-ext-");
+  test("an unavailable info copy action is visible but inert", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-info-unavailable-");
+    const extDir = createTempDir("hunk-ext-dialog-info-unavailable-ext-");
     const logPath = join(extDir, "probe.log");
     const extPath = join(extDir, "ext.ts");
     writeDialogFixture(
       extPath,
       logPath,
-      `ctx.dialogs.document({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
+      `ctx.dialogs.info({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);
@@ -479,20 +479,20 @@ describe("extension dialogs", () => {
       await flushUntil(
         setup,
         () => readProbeLog(logPath).includes("answer undefined"),
-        "the unavailable-copy document to close",
+        "the unavailable-copy info dialog to close",
       );
     });
   });
 
   test("reports a clipboard write rejected by the renderer as a failure", async () => {
-    const repo = createTestRepo("hunk-ext-dialog-document-copy-failure-");
-    const extDir = createTempDir("hunk-ext-dialog-document-copy-failure-ext-");
+    const repo = createTestRepo("hunk-ext-dialog-info-copy-failure-");
+    const extDir = createTempDir("hunk-ext-dialog-info-copy-failure-ext-");
     const logPath = join(extDir, "probe.log");
     const extPath = join(extDir, "ext.ts");
     writeDialogFixture(
       extPath,
       logPath,
-      `ctx.dialogs.document({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
+      `ctx.dialogs.info({ title: "Copy setup", copy: { label: "Prompt", text: "copy me" } })`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);

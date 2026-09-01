@@ -39,9 +39,9 @@ export interface UseAppKeyboardShortcutsOptions {
   extensionDialog: ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
-  /** Whether the visible document's fully disclosed copy action is usable. */
-  extensionDocumentCopyEnabled: boolean;
-  copyExtensionDialogDocument: () => void;
+  /** Whether the visible info dialog's fully disclosed copy action is usable. */
+  extensionInfoCopyEnabled: boolean;
+  copyExtensionDialogInfo: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
   extensionTrustPromptOpen: boolean;
   trustRepoExtensions: () => void;
@@ -110,8 +110,8 @@ export function useAppKeyboardShortcuts({
   extensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
-  extensionDocumentCopyEnabled,
-  copyExtensionDialogDocument,
+  extensionInfoCopyEnabled,
+  copyExtensionDialogInfo,
   moveExtensionDialogSelection,
   extensionTrustPromptOpen,
   trustRepoExtensions,
@@ -144,7 +144,7 @@ export function useAppKeyboardShortcuts({
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
   const extensionDialogRef = useRef(extensionDialog);
-  const extensionDocumentCopyEnabledRef = useRef(extensionDocumentCopyEnabled);
+  const extensionInfoCopyEnabledRef = useRef(extensionInfoCopyEnabled);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
@@ -157,7 +157,7 @@ export function useAppKeyboardShortcuts({
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
   const cancelExtensionDialogRef = useRef(cancelExtensionDialog);
-  const copyExtensionDialogDocumentRef = useRef(copyExtensionDialogDocument);
+  const copyExtensionDialogInfoRef = useRef(copyExtensionDialogInfo);
   const moveExtensionDialogSelectionRef = useRef(moveExtensionDialogSelection);
 
   activeMenuIdRef.current = activeMenuId;
@@ -168,7 +168,7 @@ export function useAppKeyboardShortcuts({
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
   extensionDialogRef.current = extensionDialog;
-  extensionDocumentCopyEnabledRef.current = extensionDocumentCopyEnabled;
+  extensionInfoCopyEnabledRef.current = extensionInfoCopyEnabled;
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
@@ -177,7 +177,7 @@ export function useAppKeyboardShortcuts({
   sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
   cancelExtensionDialogRef.current = cancelExtensionDialog;
-  copyExtensionDialogDocumentRef.current = copyExtensionDialogDocument;
+  copyExtensionDialogInfoRef.current = copyExtensionDialogInfo;
   moveExtensionDialogSelectionRef.current = moveExtensionDialogSelection;
 
   /**
@@ -336,19 +336,19 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "return" || key.name === "enter") {
-      if (dialog.kind !== "document") {
+      if (dialog.kind !== "info") {
         acceptExtensionDialogRef.current();
       }
       return "mine";
     }
 
     if (
-      dialog.kind === "document" &&
+      dialog.kind === "info" &&
       dialog.copy &&
-      extensionDocumentCopyEnabledRef.current &&
+      extensionInfoCopyEnabledRef.current &&
       isUnmodifiedKey(key, "c")
     ) {
-      copyExtensionDialogDocumentRef.current();
+      copyExtensionDialogInfoRef.current();
       return "mine";
     }
 
