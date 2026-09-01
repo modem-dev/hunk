@@ -167,6 +167,7 @@ describe("session daemon launcher", () => {
   test("coordinates concurrent ensure calls so only one launcher runs", async () => {
     const runtimeDir = createRuntimeDir();
     const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const clock = new DeterministicLifecycleClockTest();
     let healthy = false;
     let launchCount = 0;
 
@@ -179,19 +180,21 @@ describe("session daemon launcher", () => {
         execPath: "/usr/bin/bun",
         timeoutMs: 300,
         intervalMs: 10,
+        lifecycleClock: clock,
         isHealthy: async () => healthy,
         isPortReachable: async () => false,
         launchDaemon: () => {
           launchCount += 1;
-          const timer = setTimeout(() => {
+          clock.schedule(() => {
             healthy = true;
           }, 25);
-          timer.unref?.();
           return { pid: process.pid } as ChildProcess;
         },
       }),
     );
 
+    await clock.flushMicrotasksTest();
+    await clock.advanceByTestAsync(30);
     await expect(Promise.all(ensureCalls)).resolves.toHaveLength(6);
     expect(launchCount).toBe(1);
 
