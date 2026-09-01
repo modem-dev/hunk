@@ -1,6 +1,7 @@
 import type {
   BoxRenderable,
   MouseEvent as TuiMouseEvent,
+  Renderable,
   ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
@@ -89,7 +90,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { planExtensionInfoDialog } from "./lib/extensionDialogGeometry";
+import { normalizeExtensionDialogClipboardText } from "./lib/extensionDialogs";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -205,6 +206,8 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const activeReviewGenerationRef = useRef(bootstrap);
+  const renderedReviewGenerationRef = useRef(bootstrap);
+  renderedReviewGenerationRef.current = bootstrap;
   const bundledDialogsLiveRef = useRef(false);
   useLayoutEffect(() => {
     activeReviewGenerationRef.current = bootstrap;
@@ -490,8 +493,11 @@ export function App({
   const {
     accept: acceptExtensionDialog,
     cancel: cancelExtensionDialog,
+    cancelRequest: cancelExtensionDialogRequest,
     cancelAll: cancelAllExtensionDialogs,
     createDialogs: createQueuedExtensionDialogs,
+    getCurrentRequest: getCurrentExtensionDialogRequest,
+    isCurrentRequestLive: isCurrentExtensionDialogRequestLive,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
     pickOption: setExtensionDialogSelectedIndex,
@@ -519,6 +525,7 @@ export function App({
         // reloadable user-extension registry, but their review-scoped controls
         // still retire when the mounted review changes.
         isLive: () =>
+          renderedReviewGenerationRef.current === bootstrap &&
           !extensionAppController.isAppActive() &&
           (bundled
             ? bundledDialogsLiveRef.current && activeReviewGenerationRef.current === bootstrap
@@ -526,7 +533,13 @@ export function App({
         showAttribution: !bundled,
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensionAppController, extensions],
+    [
+      bootstrap,
+      createQueuedExtensionDialogs,
+      createReviewCapabilityLease,
+      extensionAppController,
+      extensions,
+    ],
   );
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
@@ -936,38 +949,100 @@ export function App({
     runExtensionCommand(bundledAgentSkillCommand);
   }, [bundledAgentSkillCommand, runExtensionCommand]);
 
-  const extensionInfoLayout =
-    extensionDialog?.kind === "info"
-      ? planExtensionInfoDialog(extensionDialog, terminal.width, terminal.height)
-      : null;
   const extensionDialogCopySupported =
     (renderer.isOsc52Supported?.() ?? false) && typeof renderer.copyToClipboardOSC52 === "function";
-  const extensionInfoCopyExposed = extensionInfoLayout?.copyActionExposed ?? false;
-
-  /** Copy an info dialog's normalized payload through the terminal clipboard integration. */
-  const copyExtensionDialogInfo = useCallback(() => {
-    if (extensionDialog?.kind !== "info" || !extensionDialog.copy || !extensionInfoCopyExposed) {
-      return;
+  const extensionDialogActive = extensionDialog !== null;
+  const extensionOpenDialogActive = extensionDialog?.kind === "open";
+  const extensionOpenDialogFocusLeaseRef = useRef<{
+    active: boolean;
+    previous: Renderable | null;
+  }>({ active: false, previous: null });
+  if (extensionOpenDialogActive && !extensionOpenDialogFocusLeaseRef.current.active) {
+    // Capture before the custom tree commits and takes focus. OpenTUI exposes
+    // one process-wide focus owner, so restoring this exact renderable also
+    // preserves imperative review-scroll focus outside pager mode.
+    extensionOpenDialogFocusLeaseRef.current = {
+      active: true,
+      previous: renderer.currentFocusedRenderable,
+    };
+  }
+  useLayoutEffect(() => {
+    const lease = extensionOpenDialogFocusLeaseRef.current;
+    if (!extensionDialog && lease.active) {
+      extensionOpenDialogFocusLeaseRef.current = { active: false, previous: null };
+      // `focus()` is inert when teardown already destroyed the old owner.
+      lease.previous?.focus();
     }
+  }, [extensionDialog]);
 
-    if (extensionDialogCopySupported) {
-      const copied = renderer.copyToClipboardOSC52!(extensionDialog.copy.text);
-      if (!copied) {
-        showTransientNotice("Clipboard copy failed");
+  /** Copy text only for the custom dialog that still owns the mounted component. */
+  const copyExtensionDialogText = useCallback(
+    (requestId: number, text: string) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId) ||
+        !(renderer.isOsc52Supported?.() ?? false) ||
+        typeof renderer.copyToClipboardOSC52 !== "function"
+      ) {
+        return false;
+      }
+
+      const normalized = normalizeExtensionDialogClipboardText(text);
+      return normalized !== null && renderer.copyToClipboardOSC52(normalized);
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, renderer],
+  );
+
+  /** Show status only for the custom dialog that still owns the mounted component. */
+  const notifyExtensionDialog = useCallback(
+    (requestId: number, message: string) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId)
+      ) {
         return;
       }
+      const safeMessage = sanitizeTerminalLine(message).trim();
+      if (!safeMessage) return;
       showTransientNotice(
-        `Copied ${extensionDialog.title.toLowerCase()} ${extensionDialog.copy.label.toLowerCase()} to clipboard`,
+        current.showAttribution ? `Extension ${current.extensionId}: ${safeMessage}` : safeMessage,
       );
-      return;
-    }
-  }, [
-    extensionDialog,
-    extensionDialogCopySupported,
-    extensionInfoCopyExposed,
-    renderer,
-    showTransientNotice,
-  ]);
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, showTransientNotice],
+  );
+
+  /** Close only the custom dialog whose mounted component owns this action. */
+  const closeExtensionDialogComponent = useCallback(
+    (requestId: number) => {
+      if (isCurrentExtensionDialogRequestLive(requestId)) {
+        cancelExtensionDialogRequest(requestId);
+      }
+    },
+    [cancelExtensionDialogRequest, isCurrentExtensionDialogRequestLive],
+  );
+
+  /** Contain one custom component failure and leave its host frame dismissible. */
+  const reportExtensionDialogRenderFailure = useCallback(
+    (requestId: number, error: unknown) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId)
+      ) {
+        return;
+      }
+      const detail = error instanceof Error ? error.message || error.name : String(error);
+      showSessionNotice(
+        `Extension ${current.extensionId} dialog failed rendering • ${sanitizeTerminalLine(detail)}`,
+      );
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, showSessionNotice],
+  );
 
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
@@ -1163,8 +1238,6 @@ export function App({
     extensionDialog,
     acceptExtensionDialog,
     cancelExtensionDialog,
-    extensionInfoCopyEnabled: extensionInfoCopyExposed && extensionDialogCopySupported,
-    copyExtensionDialogInfo,
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
     trustRepoExtensions,
@@ -1369,7 +1442,8 @@ export function App({
             selectedHunkIndex={selectedHunkIndex}
             scrollToNote={review.scrollToNote}
             draftNote={review.draftNote}
-            draftNoteFocused={focusArea === "note"}
+            draftNoteFocused={focusArea === "note" && !extensionDialogActive}
+            keyboardFocusBlocked={extensionDialogActive}
             separatorWidth={diffSeparatorWidth}
             showAgentNotes={showAgentNotes}
             showLineNumbers={showLineNumbers}
@@ -1432,7 +1506,7 @@ export function App({
       {statusBarVisible ? (
         <StatusBar
           filter={review.filter}
-          filterFocused={focusArea === "filter"}
+          filterFocused={focusArea === "filter" && !extensionDialogActive}
           modeText={keyboardModeHint ?? undefined}
           noticeText={
             sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
@@ -1490,8 +1564,11 @@ export function App({
           onAccept={acceptExtensionDialog}
           onCancel={cancelExtensionDialog}
           onChangeInput={setExtensionDialogInputValue}
-          onCopyInfo={() => copyExtensionDialogInfo()}
+          onClose={closeExtensionDialogComponent}
+          onCopy={copyExtensionDialogText}
+          onNotify={notifyExtensionDialog}
           onPickOption={setExtensionDialogSelectedIndex}
+          onRenderFailure={reportExtensionDialogRenderFailure}
         />
       ) : null}
 

@@ -1,16 +1,19 @@
-import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
+import type { BoxRenderable, MouseEvent as TuiMouseEvent, Renderable } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
+import { Component, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import type { ExtensionDialogActions, ExtensionDialogProps } from "../../../extension-api/types";
 import type {
   ExtensionDialogRequest,
-  ExtensionInfoCopyRequest,
-  ExtensionInfoDialogRequest,
   ExtensionInputDialogRequest,
+  ExtensionOpenDialogRequest,
   ExtensionSelectDialogRequest,
 } from "../../lib/extensionDialogs";
-import { planExtensionInfoDialog, windowDialogText } from "../../lib/extensionDialogGeometry";
+import { planExtensionOpenDialog, windowDialogText } from "../../lib/extensionDialogGeometry";
 import { extensionToastPrefix } from "../../lib/extensionNotifications";
 import { listWindowStart } from "../../lib/listWindow";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
-import { fitText, measureTextWidth, padText } from "../../lib/text";
+import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ConfirmDialog, confirmDialogHeight, DialogActionRow } from "./ConfirmDialog";
 import { ModalFrame } from "./ModalFrame";
@@ -38,14 +41,27 @@ function attributionText(extensionId: string, width: number) {
   return fitText(`${extensionToastPrefix()} ${extensionId}`, width);
 }
 
+/** Report whether one focused renderable belongs to a custom dialog's bounded root. */
+function isWithinRenderable(root: Renderable, candidate: Renderable | null) {
+  let current = candidate;
+  while (current) {
+    if (current === root) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 export function ExtensionDialog({
   copySupported,
   inputValue,
   onAccept,
   onCancel,
   onChangeInput,
-  onCopyInfo,
+  onClose,
+  onCopy,
+  onNotify,
   onPickOption,
+  onRenderFailure,
   request,
   selectedIndex,
   terminalHeight,
@@ -58,21 +74,27 @@ export function ExtensionDialog({
   onAccept: (selectedIndexOverride?: number) => void;
   onCancel: () => void;
   onChangeInput: (value: string) => void;
-  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
+  onClose: (requestId: number) => void;
+  onCopy: (requestId: number, text: string) => boolean;
+  onNotify: (requestId: number, message: string) => void;
   /** Highlight one option row without accepting it, mirroring the theme selector. */
   onPickOption: (index: number) => void;
+  onRenderFailure: (requestId: number, error: unknown) => void;
   request: ExtensionDialogRequest;
   selectedIndex: number;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
 }) {
-  if (request.kind === "info") {
+  if (request.kind === "open") {
     return (
-      <ExtensionInfoDialog
+      <ExtensionOpenDialog
         copySupported={copySupported}
         onCancel={onCancel}
-        onCopyInfo={onCopyInfo}
+        onClose={onClose}
+        onCopy={onCopy}
+        onNotify={onNotify}
+        onRenderFailure={onRenderFailure}
         request={request}
         terminalHeight={terminalHeight}
         terminalWidth={terminalWidth}
@@ -156,11 +178,42 @@ export function ExtensionDialog({
   );
 }
 
-/** Render read-only guidance with an optional host-mediated clipboard card. */
-function ExtensionInfoDialog({
+/** Contain a custom dialog's render failure to its request identity. */
+class ExtensionDialogErrorBoundary extends Component<
+  {
+    request: ExtensionOpenDialogRequest;
+    fallback: ReactNode;
+    onError: (error: unknown) => void;
+    children: ReactNode;
+  },
+  { failed: boolean; request: ExtensionOpenDialogRequest | null }
+> {
+  override state = { failed: false, request: null as ExtensionOpenDialogRequest | null };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  static getDerivedStateFromProps(
+    props: { request: ExtensionOpenDialogRequest },
+    state: { failed: boolean; request: ExtensionOpenDialogRequest | null },
+  ) {
+    return props.request !== state.request ? { request: props.request, failed: false } : null;
+  }
+  override componentDidCatch(error: unknown) {
+    this.props.onError(error);
+  }
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** Mount an extension-owned component inside host-controlled modal chrome. */
+function ExtensionOpenDialog({
   copySupported,
   onCancel,
-  onCopyInfo,
+  onClose,
+  onCopy,
+  onNotify,
+  onRenderFailure,
   request,
   terminalHeight,
   terminalWidth,
@@ -168,30 +221,63 @@ function ExtensionInfoDialog({
 }: {
   copySupported: boolean;
   onCancel: () => void;
-  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
-  request: ExtensionInfoDialogRequest;
+  onClose: (requestId: number) => void;
+  onCopy: (requestId: number, text: string) => boolean;
+  onNotify: (requestId: number, message: string) => void;
+  onRenderFailure: (requestId: number, error: unknown) => void;
+  request: ExtensionOpenDialogRequest;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
 }) {
-  const copy = request.copy;
-  const layout = planExtensionInfoDialog(request, terminalWidth, terminalHeight);
-  const {
-    actionGapRows,
-    actionRows,
-    attributionGapRows,
-    attributionRows,
-    bodyCopyGapRows,
-    bodyWidth,
-    cardTextWidth,
-    cardWidth,
-    copyActionExposed,
-    copyCardRows,
-    copyLabelRows,
-    frame,
-    visibleBody,
-    visibleCopy,
-  } = layout;
+  const renderer = useRenderer();
+  const componentRootRef = useRef<BoxRenderable | null>(null);
+  const layout = planExtensionOpenDialog(request, terminalWidth, terminalHeight);
+  const { attributionGapRows, attributionRows, bodyWidth, componentHeight, frame } = layout;
+  const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
+  const actions = useMemo<ExtensionDialogActions>(
+    () =>
+      Object.freeze({
+        close: () => onClose(request.id),
+        copy: (text: string) => onCopy(request.id, text),
+        notify: (message: string) => onNotify(request.id, message),
+      }),
+    [onClose, onCopy, onNotify, request.id],
+  );
+  const viewProps: ExtensionDialogProps = {
+    width: bodyWidth,
+    height: componentHeight,
+    theme: publicTheme,
+    copySupported,
+    actions,
+  };
+  const View = request.component as (props: ExtensionDialogProps) => ReactNode;
+  const componentBox = (children: ReactNode, fallback = false) => (
+    <box
+      ref={fallback ? undefined : componentRootRef}
+      focusable={true}
+      focused={fallback}
+      style={{
+        width: bodyWidth,
+        height: componentHeight,
+        flexShrink: 0,
+        overflow: "hidden",
+        flexDirection: "column",
+        backgroundColor: theme.panel,
+      }}
+    >
+      {children}
+    </box>
+  );
+
+  useLayoutEffect(() => {
+    const root = componentRootRef.current;
+    if (root && !isWithinRenderable(root, renderer.currentFocusedRenderable)) {
+      // A nested input that focused itself during mount wins. Otherwise the
+      // bounded root traps unhandled keys before they reach the review.
+      root.focus();
+    }
+  }, [renderer, request.id]);
 
   return (
     <ModalFrame
@@ -203,101 +289,27 @@ function ExtensionInfoDialog({
       width={frame.width}
       onClose={onCancel}
     >
-      <box style={{ width: "100%", height: "100%", flexDirection: "column" }}>
-        {attributionRows > 0 ? (
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={theme.badgeNeutral}>{layout.attributionText}</text>
-          </box>
-        ) : null}
-        {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-        {visibleBody.lines.map((line, index) => (
-          <box key={`body:${index}:${line}`} style={{ width: "100%", height: 1 }}>
-            <text fg={theme.text}>{fitText(line, bodyWidth)}</text>
-          </box>
-        ))}
-        {bodyCopyGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-        {copy && copyLabelRows > 0 ? (
-          <box style={{ width: "100%", height: 1, paddingLeft: 1 }}>
-            <text fg={theme.badgeNeutral}>{fitText(copy.label, bodyWidth - 1)}</text>
-          </box>
-        ) : null}
-        {copy && copyCardRows > 0 ? (
-          <box style={{ width: "100%", height: copyCardRows, paddingLeft: 1 }}>
-            <box
-              style={{
-                width: cardWidth,
-                height: copyCardRows,
-                flexDirection: "column",
-                ...(copyCardRows >= 3
-                  ? {
-                      border: true,
-                      borderColor: theme.border,
-                      paddingLeft: 1,
-                      paddingRight: 1,
-                    }
-                  : {}),
-              }}
-            >
-              {visibleCopy.lines.map((line, index) => (
-                <box key={`copy:${index}:${line}`} style={{ width: "100%", height: 1 }}>
-                  <text fg={theme.text}>{fitText(line, cardTextWidth)}</text>
-                </box>
-              ))}
-            </box>
-          </box>
-        ) : null}
-        {actionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-        {actionRows > 0 && copy && copyActionExposed ? (
-          <InfoCopyAction
-            copy={copy}
-            copySupported={copySupported}
-            onCopyInfo={onCopyInfo}
-            theme={theme}
-            width={bodyWidth}
-          />
-        ) : actionRows > 0 ? (
-          <DialogActionRow
-            actions={[{ keyLabel: "esc", label: "close", run: onCancel }]}
-            theme={theme}
-          />
-        ) : null}
-      </box>
+      {attributionRows > 0 ? (
+        <box style={{ width: "100%", height: 1 }}>
+          <text fg={theme.badgeNeutral}>{layout.attributionText}</text>
+        </box>
+      ) : null}
+      {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      {componentHeight > 0 ? (
+        <ExtensionDialogErrorBoundary
+          key={request.id}
+          request={request}
+          fallback={componentBox(<text fg={publicTheme.muted}>Dialog unavailable</text>, true)}
+          onError={(error) => {
+            onRenderFailure(request.id, error);
+          }}
+        >
+          {componentBox(<View {...viewProps} />)}
+        </ExtensionDialogErrorBoundary>
+      ) : (
+        <box ref={componentRootRef} focusable={true} style={{ width: bodyWidth, height: 0 }} />
+      )}
     </ModalFrame>
-  );
-}
-
-/** Render the compact copy affordance beneath an info card. */
-function InfoCopyAction({
-  copy,
-  copySupported,
-  onCopyInfo,
-  theme,
-  width,
-}: {
-  copy: ExtensionInfoCopyRequest;
-  copySupported: boolean;
-  onCopyInfo: (copy: ExtensionInfoCopyRequest) => void;
-  theme: AppTheme;
-  width: number;
-}) {
-  const label = fitText(
-    copySupported ? ` ⧉  Copy ${copy.label.toLowerCase()} ` : " Copy unavailable ",
-    width,
-    "…",
-  );
-  return (
-    <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
-      <box
-        style={{ backgroundColor: copySupported ? theme.accentMuted : theme.panelAlt }}
-        onMouseUp={(event: TuiMouseEvent) => {
-          event.stopPropagation();
-          if (copySupported) onCopyInfo(copy);
-        }}
-      >
-        <text fg={copySupported ? theme.text : theme.muted}>{label}</text>
-      </box>
-      <text fg={theme.muted}>{padText("", Math.max(0, width - measureTextWidth(label)))}</text>
-    </box>
   );
 }
 

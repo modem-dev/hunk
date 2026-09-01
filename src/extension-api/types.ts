@@ -1631,45 +1631,61 @@ export interface ExtensionInputOptions {
   initial?: string;
 }
 
-/** Copyable text shown inside an info dialog. */
-export interface ExtensionInfoCopyOptions {
-  /** Short heading shown above the copyable text. Defaults to "Content". */
-  label?: string;
+/** Actions available while an extension-owned dialog component is mounted. */
+export interface ExtensionDialogActions {
+  /** Close this dialog and resolve its `open` promise. */
+  close(): void;
   /**
-   * Text copied after Hunk removes terminal control sequences and expands tabs
-   * to four spaces. Limited to 16,384 JavaScript string code units.
+   * Copy terminal-safe text through Hunk's OSC 52 integration.
+   *
+   * Hunk strips terminal control sequences, expands tabs to four spaces, and
+   * rejects empty or oversized payloads. Returns false when copying is
+   * unsupported, refused, or no longer belongs to the mounted dialog.
    */
-  text: string;
-  /**
-   * Optional authored display rows for `text`. Their sanitized contents must
-   * rejoin with spaces or newlines to the sanitized clipboard text, so they
-   * can control wrapping without presenting different content.
-   */
-  displayLines?: readonly string[];
+  copy(text: string): boolean;
+  /** Show one short host status message while this dialog remains current. */
+  notify(message: string): void;
 }
 
-/** Read-only information shown to the user in a modal. */
-export interface ExtensionInfoOptions {
+/** Everything an extension-owned dialog component receives. */
+export interface ExtensionDialogProps {
+  /** Exact host-owned component width after terminal clamping. */
+  readonly width: number;
+  /** Exact host-owned component height after terminal clamping and attribution. */
+  readonly height: number;
+  readonly theme: ExtensionPaintTheme;
+  /** Whether Hunk's renderer currently supports clipboard writes. */
+  readonly copySupported: boolean;
+  readonly actions: ExtensionDialogActions;
+}
+
+/** A React/OpenTUI component mounted inside a host-owned modal frame. */
+export type ExtensionDialogComponent = (props: ExtensionDialogProps) => unknown;
+
+/** One extension-owned modal surface opened from a command or event handler. */
+export interface ExtensionDialogOptions {
   title: string;
-  /** Optional prose shown above the copyable text. Limited to 100 source lines. */
-  body?: string;
-  /** Optional text card the user can copy with `c` or the mouse. */
-  copy?: ExtensionInfoCopyOptions;
+  /** Preferred component width in terminal cells. Defaults to 64; maximum 240. */
+  width?: number;
+  /** Preferred component height in terminal rows. Defaults to 12; maximum 100. */
+  height?: number;
+  component: ExtensionDialogComponent;
 }
 
 /**
  * Present modal interactions from a command handler, one at a time.
  *
- * Every dialog is drawn by Hunk, not by the extension. Dialogs from installed
- * extensions carry an attribution line naming their source, so a third-party
- * prompt cannot present itself as Hunk asking; Hunk-owned bundled extensions
+ * Hunk draws every frame and every confirm/select/input surface; `open` mounts
+ * extension-owned content inside that frame. Dialogs from installed extensions
+ * carry an attribution line naming their source; Hunk-owned bundled extensions
  * omit that redundant marker. Only one dialog is on screen at a time:
  * concurrent requests queue in call order (FIFO), including across extensions,
  * so a second question waits for the first to be answered rather than replacing it.
  *
  * Escape always dismisses, resolving the cancel value (`false`, `null`, or
  * `undefined`). Enter accepts: the confirm action, the highlighted option, or
- * the typed text. Info dialogs are read-only and remain open until dismissed.
+ * the typed text. Open component dialogs remain mounted until they call
+ * `actions.close()` or the user presses Escape.
  * A session reload — the refresh key, a watch-triggered reload, an agent
  * command — cancels open and queued dialogs the same way: the review they
  * asked about is being replaced. A dialog raised while the app is tearing
@@ -1678,7 +1694,7 @@ export interface ExtensionInfoOptions {
  *
  * Bad arguments are a programming error rather than a user answer, so they
  * reject instead of resolving: a missing or blank `title`, a `select` with no
- * options, or info content outside its documented bounds. Because a dialog
+ * options, or invalid component-dialog dimensions. Because a dialog
  * call is only useful awaited, the rejection
  * surfaces through the same path as any other handler failure — a warning toast
  * naming the extension.
@@ -1690,8 +1706,8 @@ export interface ExtensionDialogs {
   select(options: ExtensionSelectOptions): Promise<string | null>;
   /** Resolves the submitted text, or null on cancel/escape. */
   input(options: ExtensionInputOptions): Promise<string | null>;
-  /** Show read-only guidance until the user dismisses it. */
-  info(options: ExtensionInfoOptions): Promise<void>;
+  /** Mount an extension-owned React/OpenTUI surface inside a host-owned modal. */
+  open(options: ExtensionDialogOptions): Promise<void>;
 }
 
 /** One whole-document replacement an extension asks the host to write. */

@@ -236,12 +236,13 @@ modal keys also remain outside the table and therefore outside the event.
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
 `src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
-per-extension `dialogs` object, normalizing (and sanitizing) extension-authored
-text into a request the host draws, and answering by request id so a duplicated
+per-extension `dialogs` object, normalizing host-rendered prompts or retaining a
+custom component request, and answering by request id so a duplicated
 Enter cannot spill onto whatever was queued behind. App subscribes with
 `useSyncExternalStore`, renders the current request through
 `src/ui/components/chrome/ExtensionDialog.tsx` (confirm reuses `ConfirmDialog`;
-select, input, and read-only copyable documents are `ModalFrame` surfaces), and
+select and input are `ModalFrame` surfaces; `open` mounts a guarded public
+React/OpenTUI component inside exact clamped bounds), and
 unmount calls `shutdown()` so
 every pending and queued dialog resolves its cancel value instead of leaving a
 handler awaiting forever. Key precedence in `useAppKeyboardShortcuts` places
@@ -255,8 +256,9 @@ must not be able to impersonate Hunk. The host derives the extension's trusted
 bundled origin from registry metadata and omits the redundant marker only for
 Hunk-owned bundled UI. `src/ui/lib/modalGeometry.ts` clamps the frame before
 extension text is wrapped or windowed, so measurement and rendering use the
-same terminal width; body/options yield rows to a pinned mouse-clickable action
-footer on short terminals.
+same terminal width. Custom components receive the remaining exact rectangle
+after required attribution and own layout within it; Hunk retains Escape,
+clipboard mediation, queue settlement, and render-failure containment.
 
 Lifecycle and bus handlers receive that same attributed dialog queue plus the
 same guarded live navigation commands use. `App` installs both through the

@@ -15,7 +15,7 @@ import {
 } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
-import { isEscapeKey, isSaveDraftNoteKey, isUnmodifiedKey } from "../lib/keyboard";
+import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 
 type FocusArea = "files" | "filter" | "note";
@@ -39,9 +39,6 @@ export interface UseAppKeyboardShortcutsOptions {
   extensionDialog: ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
-  /** Whether the visible info dialog's fully disclosed copy action is usable. */
-  extensionInfoCopyEnabled: boolean;
-  copyExtensionDialogInfo: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
   extensionTrustPromptOpen: boolean;
   trustRepoExtensions: () => void;
@@ -110,8 +107,6 @@ export function useAppKeyboardShortcuts({
   extensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
-  extensionInfoCopyEnabled,
-  copyExtensionDialogInfo,
   moveExtensionDialogSelection,
   extensionTrustPromptOpen,
   trustRepoExtensions,
@@ -144,7 +139,6 @@ export function useAppKeyboardShortcuts({
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
   const extensionDialogRef = useRef(extensionDialog);
-  const extensionInfoCopyEnabledRef = useRef(extensionInfoCopyEnabled);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
@@ -157,7 +151,6 @@ export function useAppKeyboardShortcuts({
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
   const cancelExtensionDialogRef = useRef(cancelExtensionDialog);
-  const copyExtensionDialogInfoRef = useRef(copyExtensionDialogInfo);
   const moveExtensionDialogSelectionRef = useRef(moveExtensionDialogSelection);
 
   activeMenuIdRef.current = activeMenuId;
@@ -168,7 +161,6 @@ export function useAppKeyboardShortcuts({
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
   extensionDialogRef.current = extensionDialog;
-  extensionInfoCopyEnabledRef.current = extensionInfoCopyEnabled;
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
@@ -177,7 +169,6 @@ export function useAppKeyboardShortcuts({
   sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
   cancelExtensionDialogRef.current = cancelExtensionDialog;
-  copyExtensionDialogInfoRef.current = copyExtensionDialogInfo;
   moveExtensionDialogSelectionRef.current = moveExtensionDialogSelection;
 
   /**
@@ -320,9 +311,9 @@ export function useAppKeyboardShortcuts({
    * extension may not outrank them — and above menus, help, and the command
    * table.
    *
-   * The input kind is the one non-modal-shaped answer: keys it does not act on
-   * are the text the user is typing into the dialog's focused field, so they
-   * are the focused widget's, not swallowed.
+   * Input and open dialogs leave unclaimed keys for their focused surface. The
+   * open dialog's bounded root takes focus even when its component has no input,
+   * so those keys cannot reach a previously focused review widget behind it.
    */
   const handleExtensionDialogShortcut = (key: KeyEvent): KeyOwner => {
     const dialog = extensionDialogRef.current;
@@ -336,20 +327,11 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "return" || key.name === "enter") {
-      if (dialog.kind !== "info") {
+      if (dialog.kind !== "open") {
         acceptExtensionDialogRef.current();
+        return "mine";
       }
-      return "mine";
-    }
-
-    if (
-      dialog.kind === "info" &&
-      dialog.copy &&
-      extensionInfoCopyEnabledRef.current &&
-      isUnmodifiedKey(key, "c")
-    ) {
-      copyExtensionDialogInfoRef.current();
-      return "mine";
+      return "focused";
     }
 
     if (dialog.kind === "select") {
@@ -380,7 +362,7 @@ export function useAppKeyboardShortcuts({
       }
     }
 
-    return dialog.kind === "input" ? "focused" : "mine";
+    return dialog.kind === "input" || dialog.kind === "open" ? "focused" : "mine";
   };
 
   /** Own every key while the theme selector is up; it is a modal surface. */

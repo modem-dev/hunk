@@ -11,8 +11,8 @@
 
 import type {
   ExtensionConfirmOptions,
+  ExtensionDialogOptions,
   ExtensionDialogs,
-  ExtensionInfoOptions,
   ExtensionInputOptions,
   ExtensionSelectOptions,
 } from "../../extension-api/types";
@@ -27,14 +27,16 @@ const DEFAULT_CANCEL_LABEL = "cancel";
 /** Body lines one confirm dialog may show; beyond this the modal stops being a prompt. */
 const MAX_CONFIRM_BODY_LINES = 6;
 
-/** Body lines one read-only info dialog may retain before host-side windowing. */
-const MAX_INFO_BODY_LINES = 100;
+/** Default extension-owned component rectangle. */
+const DEFAULT_OPEN_DIALOG_WIDTH = 64;
+const DEFAULT_OPEN_DIALOG_HEIGHT = 12;
+
+/** Bounds keep one request from retaining absurd off-screen geometry. */
+const MAX_OPEN_DIALOG_WIDTH = 240;
+const MAX_OPEN_DIALOG_HEIGHT = 100;
 
 /** Clipboard text is bounded before it reaches the terminal's OSC 52 channel. */
-const MAX_INFO_COPY_TEXT_LENGTH = 16_384;
-
-/** Default heading for an info dialog's copyable text card. */
-const DEFAULT_INFO_COPY_LABEL = "Content";
+const MAX_DIALOG_COPY_TEXT_LENGTH = 16_384;
 
 /** What every queued dialog carries, whatever kind it is. */
 interface ExtensionDialogRequestBase {
@@ -71,18 +73,12 @@ export interface ExtensionInputDialogRequest extends ExtensionDialogRequestBase 
   initial: string;
 }
 
-/** Clipboard and display forms of one info dialog's normalized copyable text. */
-export interface ExtensionInfoCopyRequest {
-  label: string;
-  text: string;
-  displayLines: string[];
-}
-
-/** One normalized read-only info dialog the host should draw. */
-export interface ExtensionInfoDialogRequest extends ExtensionDialogRequestBase {
-  kind: "info";
-  bodyLines: string[];
-  copy: ExtensionInfoCopyRequest | null;
+/** One extension-owned component the host should mount in a modal frame. */
+export interface ExtensionOpenDialogRequest extends ExtensionDialogRequestBase {
+  kind: "open";
+  width: number;
+  height: number;
+  component: ExtensionDialogOptions["component"];
 }
 
 /** One dialog the host should draw, normalized from what an extension asked for. */
@@ -90,7 +86,7 @@ export type ExtensionDialogRequest =
   | ExtensionConfirmDialogRequest
   | ExtensionSelectDialogRequest
   | ExtensionInputDialogRequest
-  | ExtensionInfoDialogRequest;
+  | ExtensionOpenDialogRequest;
 
 /** What a dialog hands back to the awaiting handler. */
 type ExtensionDialogResult = boolean | string | null | undefined;
@@ -104,12 +100,14 @@ export interface ExtensionDialogQueue {
   ): ExtensionDialogs;
   /** The dialog that should be on screen, or `null` when none is. */
   current(): ExtensionDialogRequest | null;
+  /** Whether this id is still the current request and its owning capability remains live. */
+  isCurrentLive(id: number): boolean;
   /**
    * Accept the dialog with this id.
    *
    * A confirm resolves `true`. A select or input resolves `value`; without one
-   * there is nothing to hand back, so it settles as a cancel instead. Info dialogs
-   * ignore acceptance and remain visible until cancelled.
+   * there is nothing to hand back, so it settles as a cancel instead. Open
+   * component dialogs ignore acceptance and remain visible until cancelled.
    *
    * Answering anything but the current dialog is ignored: an answer computed
    * for a dialog the queue has already moved past — a repeated key, a late
@@ -180,58 +178,30 @@ function normalizeBodyLines(body: unknown, maxLines = MAX_CONFIRM_BODY_LINES) {
     .map((line) => sanitizeTerminalLine(line));
 }
 
-/** Normalize an info body while rejecting content the host would have to discard. */
-function normalizeInfoBodyLines(body: unknown) {
-  if (typeof body !== "string" || body.length === 0) return [];
-  const lines = body.split("\n");
-  if (lines.length > MAX_INFO_BODY_LINES) {
-    invalid("info", `body must contain at most ${MAX_INFO_BODY_LINES} lines.`);
+/** Normalize one preferred component dimension, or reject it. */
+function normalizeOpenDialogDimension(
+  name: "width" | "height",
+  value: unknown,
+  fallback: number,
+  maximum: number,
+) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > maximum) {
+    invalid("open", `${name} must be an integer from 1 to ${maximum}.`);
   }
-  return lines.map((line) => sanitizeTerminalLine(line));
+  return value as number;
 }
 
-/** Validate and normalize an info dialog's optional clipboard card. */
-function normalizeInfoCopy(copy: ExtensionInfoOptions["copy"]): ExtensionInfoCopyRequest | null {
-  if (copy === undefined) return null;
-  if (!copy || typeof copy.text !== "string" || copy.text.length === 0) {
-    invalid("info", "copy.text must be a non-empty string.");
-  }
-  if (copy.text.length > MAX_INFO_COPY_TEXT_LENGTH) {
-    invalid("info", `copy.text must be at most ${MAX_INFO_COPY_TEXT_LENGTH} characters.`);
+/** Normalize one custom-dialog clipboard payload, or reject it without throwing. */
+export function normalizeExtensionDialogClipboardText(text: unknown): string | null {
+  if (typeof text !== "string" || text.length === 0 || text.length > MAX_DIALOG_COPY_TEXT_LENGTH) {
+    return null;
   }
 
-  const text = sanitizeTerminalText(copy.text).replaceAll("\t", "    ");
-  if (text.length > MAX_INFO_COPY_TEXT_LENGTH) {
-    invalid(
-      "info",
-      `normalized copy.text must be at most ${MAX_INFO_COPY_TEXT_LENGTH} characters.`,
-    );
-  }
-  if (text.length === 0) {
-    invalid("info", "copy.text must contain visible or whitespace content.");
-  }
-
-  let displayLines = text.split("\n").map((line) => sanitizeTerminalLine(line));
-  if (copy.displayLines !== undefined) {
-    if (!Array.isArray(copy.displayLines) || copy.displayLines.length === 0) {
-      invalid("info", "copy.displayLines must be a non-empty string array.");
-    }
-    displayLines = copy.displayLines.map((line) => {
-      if (typeof line !== "string" || line.includes("\n")) {
-        invalid("info", "copy.displayLines must contain single-line strings.");
-      }
-      return sanitizeTerminalLine(line).replaceAll("\t", "    ");
-    });
-    if (displayLines.join(" ") !== text && displayLines.join("\n") !== text) {
-      invalid("info", "copy.displayLines must contain the same text as copy.text.");
-    }
-  }
-
-  return {
-    label: normalizeLabel(copy.label, DEFAULT_INFO_COPY_LABEL),
-    text,
-    displayLines,
-  };
+  const normalized = sanitizeTerminalText(text).replaceAll("\t", "    ");
+  return normalized.length > 0 && normalized.length <= MAX_DIALOG_COPY_TEXT_LENGTH
+    ? normalized
+    : null;
 }
 
 /** Normalize the choices of a select dialog, or reject them. */
@@ -276,7 +246,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
 
   /** The cancel value one request resolves with. */
   const cancelValueFor = (request: ExtensionDialogRequest): ExtensionDialogResult =>
-    request.kind === "confirm" ? false : request.kind === "info" ? undefined : null;
+    request.kind === "confirm" ? false : request.kind === "open" ? undefined : null;
 
   /**
    * Queue one request and hand back the promise its handler awaits.
@@ -390,22 +360,33 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
             isLive,
           );
         },
-        async info(options: ExtensionInfoOptions) {
-          const title = normalizeTitle("info", options?.title);
-          const bodyLines = normalizeInfoBodyLines(options.body);
-          const copy = normalizeInfoCopy(options.copy);
-          if (bodyLines.length === 0 && copy === null) {
-            invalid("info", "requires body or copy content.");
+        async open(options: ExtensionDialogOptions) {
+          const title = normalizeTitle("open", options?.title);
+          if (typeof options?.component !== "function") {
+            invalid("open", "requires a component function.");
           }
+          const width = normalizeOpenDialogDimension(
+            "width",
+            options.width,
+            DEFAULT_OPEN_DIALOG_WIDTH,
+            MAX_OPEN_DIALOG_WIDTH,
+          );
+          const height = normalizeOpenDialogDimension(
+            "height",
+            options.height,
+            DEFAULT_OPEN_DIALOG_HEIGHT,
+            MAX_OPEN_DIALOG_HEIGHT,
+          );
           await enqueue<undefined>(
             (id) => ({
-              kind: "info",
+              kind: "open",
               id,
               extensionId,
               showAttribution,
               title,
-              bodyLines,
-              copy,
+              width,
+              height,
+              component: options.component,
             }),
             undefined,
             isLive,
@@ -416,6 +397,11 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
 
     current() {
       return pending[0]?.request ?? null;
+    },
+
+    isCurrentLive(id: number) {
+      const active = pending[0];
+      return active?.request.id === id && active.isLive();
     },
 
     accept(id: number, value?: string) {
@@ -434,7 +420,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
         return;
       }
 
-      if (active.request.kind === "info") {
+      if (active.request.kind === "open") {
         return;
       }
 

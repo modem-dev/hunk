@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, useState } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { useExtensionDialogController } from "./useExtensionDialogController";
 
 /** Mount the controller with a replaceable review-generation token. */
@@ -116,5 +116,42 @@ describe("useExtensionDialogController", () => {
     expect(await confirmed).toBe(false);
     expect(await selected).toBeNull();
     expect(await dialogs.input({ title: "Too late?" })).toBeNull();
+  });
+
+  test("retires the current request before child layout cleanup", async () => {
+    let controller!: ReturnType<typeof useExtensionDialogController>;
+    let requestDuringCleanup: unknown = "not cleaned";
+
+    function CleanupProbe() {
+      useLayoutEffect(
+        () => () => {
+          requestDuringCleanup = controller.getCurrentRequest();
+        },
+        [],
+      );
+      return null;
+    }
+
+    function Harness() {
+      controller = useExtensionDialogController({ reviewGeneration: "review" });
+      return <CleanupProbe />;
+    }
+
+    const setup = await testRender(<Harness />, { width: 40, height: 4 });
+    await act(async () => setup.renderOnce());
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = controller.createDialogs("probe").open({
+        title: "Open",
+        component: () => null,
+      });
+    });
+    await act(async () => setup.renderOnce());
+    expect(controller.getCurrentRequest()).toMatchObject({ kind: "open" });
+
+    await act(async () => setup.renderer.destroy());
+
+    expect(requestDuringCleanup).toBeNull();
+    expect(await pending).toBeUndefined();
   });
 });

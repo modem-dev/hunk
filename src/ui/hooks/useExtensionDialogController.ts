@@ -8,6 +8,12 @@ import {
 export interface ExtensionDialogController {
   /** Build the dialog capability one extension command receives. */
   createDialogs: ExtensionDialogQueue["createDialogs"];
+  /** Read the queue's live request rather than a render-time snapshot. */
+  getCurrentRequest: ExtensionDialogQueue["current"];
+  /** Check request identity and generation liveness at the moment an action runs. */
+  isCurrentRequestLive: ExtensionDialogQueue["isCurrentLive"];
+  /** Cancel one request only while it remains at the front of the queue. */
+  cancelRequest: ExtensionDialogQueue["cancel"];
   /** Request currently visible to the user. */
   request: ExtensionDialogRequest | null;
   selectedIndex: number;
@@ -52,8 +58,9 @@ export function useExtensionDialogController({
     }
   }, [queue, reviewGeneration]);
 
-  useEffect(() => {
-    // Settle every pending handler when this App instance leaves the review tree.
+  useLayoutEffect(() => {
+    // Retire capabilities before custom component layout cleanups can retain or
+    // invoke actions from a dialog whose App is already leaving the tree.
     return () => queue.shutdown();
   }, [queue]);
 
@@ -84,6 +91,9 @@ export function useExtensionDialogController({
 
   return {
     createDialogs: queue.createDialogs,
+    getCurrentRequest: queue.current,
+    isCurrentRequestLive: queue.isCurrentLive,
+    cancelRequest: queue.cancel,
     request,
     selectedIndex,
     inputValue,

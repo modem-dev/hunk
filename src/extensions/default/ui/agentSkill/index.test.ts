@@ -1,11 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ExtensionCommandContext } from "hunkdiff/extension";
 import { getBundledUIRegistry } from "..";
-import {
-  AGENT_SKILL_PROMPT,
-  AGENT_SKILL_PROMPT_ROWS,
-  BUNDLED_AGENT_SKILL_COMMAND_FULL_ID,
-} from ".";
+import { AgentSkillDialog, BUNDLED_AGENT_SKILL_COMMAND_FULL_ID } from ".";
 
 /** Return the agent-skill registration from the process-static bundled UI registry. */
 function getBundledAgentSkillCommand() {
@@ -28,20 +24,17 @@ describe("bundled agent skill extension", () => {
     });
   });
 
-  test("opens its onboarding through the public info dialog", async () => {
-    const info = mock(async () => {});
-    const context = { dialogs: { info } } as unknown as ExtensionCommandContext;
+  test("opens its onboarding through the public component dialog", async () => {
+    const open = mock(async () => {});
+    const context = { dialogs: { open } } as unknown as ExtensionCommandContext;
 
     await getBundledAgentSkillCommand().handler(context);
 
-    expect(info).toHaveBeenCalledWith({
+    expect(open).toHaveBeenCalledWith({
       title: "Agent skill",
-      body: "Teach your agent how to review this Hunk session.",
-      copy: {
-        label: "Prompt",
-        text: AGENT_SKILL_PROMPT,
-        displayLines: AGENT_SKILL_PROMPT_ROWS,
-      },
+      width: 80,
+      height: 9,
+      component: AgentSkillDialog,
     });
   });
 });

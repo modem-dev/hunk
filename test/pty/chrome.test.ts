@@ -84,7 +84,7 @@ describe("PTY chrome", () => {
     }
   });
 
-  test("the Agent menu opens bundled skill guidance as an info dialog", async () => {
+  test("the Agent menu opens bundled skill guidance as a component dialog", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],

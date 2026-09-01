@@ -318,6 +318,7 @@ export function DiffPane({
   draftNoteFocused = false,
   separatorWidth,
   pagerMode = false,
+  keyboardFocusBlocked = false,
   copyDecorations = false,
   screenTop = 0,
   showTopChrome,
@@ -387,6 +388,8 @@ export function DiffPane({
   draftNoteFocused?: boolean;
   separatorWidth: number;
   pagerMode?: boolean;
+  /** Prevent a modal custom surface from forwarding unhandled keys to the review stream. */
+  keyboardFocusBlocked?: boolean;
   copyDecorations?: boolean;
   screenTop?: number;
   showTopChrome?: boolean;
@@ -2710,7 +2713,7 @@ export function DiffPane({
                 height="100%"
                 scrollY={true}
                 viewportCulling={true}
-                focused={pagerMode}
+                focused={pagerMode && !keyboardFocusBlocked}
                 onMouseDown={beginCopySelection}
                 onMouseDrag={updateCopySelection}
                 onMouseDragEnd={endCopySelection}
