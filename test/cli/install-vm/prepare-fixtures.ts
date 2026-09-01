@@ -569,6 +569,33 @@ async function stageSyntheticCurlArchive(
 }
 
 /** Prepare local registry and curl fixtures from the explicitly built checkout. */
+/** Redirect the production installer through the VM's isolated release and download server. */
+export function rewriteCurlInstallerForVmServer(installer: string) {
+  const replacements = [
+    [
+      'RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"',
+      'RELEASE_PROXY="http://172.16.0.1:18080/unavailable-release-proxy"',
+    ],
+    [
+      'RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"',
+      'RELEASES_API="http://172.16.0.1:18080/latest"',
+    ],
+    [
+      'DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"',
+      'DOWNLOAD_BASE="http://172.16.0.1:18080/download"',
+    ],
+  ] as const;
+
+  let rewritten = installer;
+  for (const [production, fixture] of replacements) {
+    if (!rewritten.includes(production)) {
+      throw new Error(`Curl installer fixture could not replace ${production}.`);
+    }
+    rewritten = rewritten.replace(production, fixture);
+  }
+  return rewritten;
+}
+
 export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: string) {
   const releaseRoot = releaseNpmDir(repoRoot);
   const currentManifest = JSON.parse(
@@ -694,15 +721,9 @@ export async function prepareInstallVmFixtures(repoRoot: string, outputRoot: str
       `${sha256(truncatedArchive)}  ${archiveName}\n`,
     );
 
-    const installer = readFileSync(path.join(repoRoot, "install.sh"), "utf8")
-      .replace(
-        'RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"',
-        'RELEASES_API="http://172.16.0.1:18080/latest"',
-      )
-      .replace(
-        'DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"',
-        'DOWNLOAD_BASE="http://172.16.0.1:18080/download"',
-      );
+    const installer = rewriteCurlInstallerForVmServer(
+      readFileSync(path.join(repoRoot, "install.sh"), "utf8"),
+    );
     writeFileSync(path.join(httpRoot, "install.sh"), installer);
 
     const fixtureManifest: InstallVmFixtureManifest = {

@@ -35,6 +35,7 @@ async function runUpdate(options: UpdateRunOptions) {
   const stderr: string[] = [];
   const commands: string[][] = [];
   const commandEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+  const releaseRequests: Array<{ url: string; headers: Headers }> = [];
   const latestVersion = options.latestVersion ?? "1.1.0";
 
   const exitCode = await runSelfUpdateCommand(
@@ -48,12 +49,15 @@ async function runUpdate(options: UpdateRunOptions) {
       resolveInstalledVersion: () => options.installedVersion ?? "1.0.0",
       resolveInstallSource: () => options.installSource,
       // One payload carrying every registry shape, so a `--method` override still resolves.
-      fetchImpl: async () =>
-        jsonResponse({
+      fetchImpl: async (input, init) => {
+        releaseRequests.push({ url: String(input), headers: new Headers(init?.headers) });
+        return jsonResponse({
           latest: latestVersion,
+          version: latestVersion,
           versions: { stable: latestVersion },
           tag_name: `v${latestVersion}`,
-        }),
+        });
+      },
       runCommand: async (command, commandOptions) => {
         commands.push([...command]);
         commandEnvs.push(commandOptions?.env);
@@ -68,6 +72,7 @@ async function runUpdate(options: UpdateRunOptions) {
     stderr: stderr.join(""),
     commands,
     commandEnvs,
+    releaseRequests,
   };
 }
 
@@ -209,6 +214,8 @@ describe("hunk update", () => {
     expect(result.commandEnvs).toEqual([
       { PATH: "/usr/bin", HOME: "/home/reviewer", HUNK_VERSION: "1.1.0" },
     ]);
+    expect(result.releaseRequests[0]?.headers.get("x-hunk-request-source")).toBe("update");
+    expect(result.releaseRequests[0]?.headers.get("x-hunk-current-version")).toBe("1.0.0");
     expect(result.stdout).toContain("Updated hunk to 1.1.0.");
   });
 
@@ -224,13 +231,16 @@ describe("hunk update", () => {
     expect(result.commandEnvs[0]?.HUNK_VERSION).toBe("0.9.0");
   });
 
-  test("reports the GitHub release version for a curl --check", async () => {
+  test("classifies curl --check release requests without installing", async () => {
     const result = await runUpdate({ installSource: "curl", input: { check: true } });
 
     expect(result.exitCode).toBe(0);
     expect(result.commands).toEqual([]);
     expect(result.stdout).toContain("hunk 1.0.0 (installed with the install script)");
     expect(result.stdout).toContain("latest 1.1.0");
+    expect(result.releaseRequests[0]?.url).toBe("https://updates.hunk.dev/v1/curl/latest");
+    expect(result.releaseRequests[0]?.headers.get("x-hunk-request-source")).toBe("update-check");
+    expect(result.releaseRequests[0]?.headers.get("x-hunk-current-version")).toBe("1.0.0");
   });
 
   test("refuses to pin a version on Homebrew", async () => {

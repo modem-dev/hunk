@@ -38,32 +38,81 @@ describe("release channel lookups", () => {
     expect(requested).toEqual(["https://formulae.brew.sh/api/formula/hunk.json"]);
   });
 
-  test("reads the newest GitHub release tag for curl installer installs", async () => {
+  test("reads curl release metadata through the first-party endpoint", async () => {
     const requested: string[] = [];
-    const accepts: unknown[] = [];
+    const headers: Headers[] = [];
 
     await expect(
       fetchChannelVersions("curl", {
+        env: {},
+        requestSource: "startup",
+        currentVersion: "1.3.0",
         fetchImpl: async (input, init) => {
           requested.push(String(input));
-          accepts.push(new Headers(init?.headers).get("accept"));
-          return jsonResponse({ tag_name: "v1.4.0" });
+          headers.push(new Headers(init?.headers));
+          return jsonResponse({ version: "1.4.0" });
         },
       }),
     ).resolves.toEqual({ latest: "1.4.0" });
-    expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
-    expect(accepts).toEqual(["application/vnd.github+json"]);
+    expect(requested).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+    expect(headers[0]?.get("x-hunk-request-source")).toBe("startup");
+    expect(headers[0]?.get("x-hunk-current-version")).toBe("1.3.0");
   });
 
-  test("drops a GitHub release tag that is not a stable version", async () => {
+  test("falls back to GitHub when the first-party endpoint fails or is invalid", async () => {
+    for (const proxyResponse of [jsonResponse({}, 503), jsonResponse({ version: "invalid" })]) {
+      const requested: string[] = [];
+      const accepts: Array<string | null> = [];
+      await expect(
+        fetchChannelVersions("curl", {
+          env: {},
+          fetchImpl: async (input, init) => {
+            requested.push(String(input));
+            accepts.push(new Headers(init?.headers).get("accept"));
+            return requested.length === 1
+              ? proxyResponse.clone()
+              : jsonResponse({ tag_name: "v1.4.0" });
+          },
+        }),
+      ).resolves.toEqual({ latest: "1.4.0" });
+      expect(requested).toEqual([
+        "https://updates.hunk.dev/v1/curl/latest",
+        "https://api.github.com/repos/modem-dev/hunk/releases/latest",
+      ]);
+      expect(accepts).toEqual([null, "application/vnd.github+json"]);
+    }
+  });
+
+  test("bypasses first-party analytics when either opt-out is set", async () => {
+    for (const env of [{ HUNK_DISABLE_ANALYTICS: "1" }, { DO_NOT_TRACK: "1" }]) {
+      const requested: string[] = [];
+      await expect(
+        fetchChannelVersions("curl", {
+          env,
+          fetchImpl: async (input) => {
+            requested.push(String(input));
+            return jsonResponse({ tag_name: "v1.4.0" });
+          },
+        }),
+      ).resolves.toEqual({ latest: "1.4.0" });
+      expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
+    }
+  });
+
+  test("drops curl release metadata that is not a stable version", async () => {
     await expect(
       fetchChannelVersions("curl", {
-        fetchImpl: async () => jsonResponse({ tag_name: "v1.4.0-beta.1" }),
+        env: {},
+        fetchImpl: async (input) =>
+          String(input).includes("updates.hunk.dev")
+            ? jsonResponse({ version: "1.4.0-beta.1" })
+            : jsonResponse({ tag_name: "v1.4.0-beta.1" }),
       }),
     ).resolves.toEqual({ latest: undefined });
 
     await expect(
       fetchChannelVersions("curl", {
+        env: {},
         fetchImpl: async () => jsonResponse({ name: "1.4.0" }),
       }),
     ).resolves.toEqual({ latest: undefined });
