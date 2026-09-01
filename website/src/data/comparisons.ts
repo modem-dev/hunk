@@ -1,4 +1,5 @@
 import { BUNDLED_SHIKI_THEME_IDS } from "../../../src/core/theme/catalog";
+import { SITE_ORIGIN } from "../lib/site";
 
 /**
  * Hand-authored comparisons between Hunk and the diff tools people already run.
@@ -9,10 +10,9 @@ import { BUNDLED_SHIKI_THEME_IDS } from "../../../src/core/theme/catalog";
  * a bare mark would mislead, and each page ends with the sources it was checked
  * against. Overstating a rival is the fastest way to lose the reader we came for.
  *
- * The module is the single source for three renderings — the HTML page, the
- * `.md` variant agents read, and the hub's index — so entries stay plain data:
- * prose is unformatted strings, code samples are structured, and nothing here
- * knows about markup.
+ * The HTML page, the `.md` variant agents read, and the hub's index all render
+ * from these entries, so they stay plain data: prose is unformatted strings,
+ * code samples are structured, and nothing here knows about markup.
  */
 
 /** How completely a tool covers one capability. */
@@ -70,8 +70,35 @@ export interface Comparison {
   sources: { label: string; url: string }[];
 }
 
+/** The date these pages first went up. Publication dates do not move when claims are re-checked. */
+export const COMPARISONS_PUBLISHED_ON = "2026-09-01";
+
 /** The date the rival claims on these pages were last checked against their own docs. */
 export const COMPARISONS_REVIEWED_ON = "2026-09-01";
+
+/** Month and year of the last check, for the line every page shows above the fold. */
+export function reviewedOnLabel(): string {
+  return new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Hunk's own side of the header sentence each table opens with.
+ *
+ * It is a claim about Hunk, so it belongs beside the rival facts in the catalog
+ * rather than typed once per renderer.
+ */
+export const HUNK_FACTS = {
+  language: "TypeScript",
+  license: "MIT",
+  platforms: "macOS, Linux, and Windows",
+} as const;
+
+/** Year the titles advertise, derived so it cannot go stale against the check date. */
+const REVIEW_YEAR = COMPARISONS_REVIEWED_ON.slice(0, 4);
 
 const THEME_COUNT = BUNDLED_SHIKI_THEME_IDS.length;
 
@@ -88,7 +115,7 @@ export const COMPARISONS: Comparison[] = [
       license: "MIT",
     },
     headline: "Hunk vs delta",
-    title: "Hunk vs delta: pager or review UI? (2026)",
+    title: `Hunk vs delta: pager or review UI? (${REVIEW_YEAR})`,
     description:
       "Hunk vs delta. delta restyles git diff output in your pager. Hunk turns the same changeset into a review UI. Capability table, setup for running both, and how to choose.",
     keywords: [
@@ -113,7 +140,7 @@ export const COMPARISONS: Comparison[] = [
       rival: [
         "You want every diff you print to look better, with no change to how you work.",
         "You want `git blame`, `git grep`, and `git log` styled too, not just diffs.",
-        "You want the smallest startup cost on a diff you will glance at and close.",
+        "You want the lowest startup cost on a diff you will glance at and close.",
         "You already tuned delta and you like reading in a pager.",
       ],
     },
@@ -123,7 +150,7 @@ export const COMPARISONS: Comparison[] = [
         capability: "Themes",
         hunk: "yes",
         rival: "yes",
-        note: `Hunk ships ${THEME_COUNT} bundled themes and takes custom ones. delta reads bat-compatible themes.`,
+        note: `Hunk ships ${THEME_COUNT} bundled themes and takes custom ones. delta pairs bat syntax themes with its own collection, browsable via \`delta --show-themes\`.`,
       },
       {
         capability: "Side-by-side / split view",
@@ -148,7 +175,7 @@ export const COMPARISONS: Comparison[] = [
         capability: "Hunk-by-hunk navigation across the whole changeset",
         hunk: "yes",
         rival: "partial",
-        note: "delta's `n`/`N` move the pager to the next diff section. Hunk tracks a selected hunk that the rest of the UI reacts to.",
+        note: "With `delta.navigate` enabled, `n`/`N` jump the pager between files, and between commits in `log -p`. Hunk tracks a selected hunk that the rest of the UI reacts to.",
       },
       {
         capability: "Mouse: click, wheel, scrollbar, menus",
@@ -179,7 +206,7 @@ export const COMPARISONS: Comparison[] = [
       { capability: "Works as a Git pager (`core.pager`)", hunk: "yes", rival: "yes" },
       { capability: "Works as a Git difftool", hunk: "yes", rival: "yes" },
       {
-        capability: "Styles `git blame`, `git grep`, and `git log`",
+        capability: "Styles `git blame` and `git grep` output",
         hunk: "no",
         rival: "yes",
         note: "Hunk's pager mode opens the review UI for patches and falls back to a plain-text pager for everything else.",
@@ -197,7 +224,7 @@ export const COMPARISONS: Comparison[] = [
         heading: "What delta is",
         body: [
           "delta is a pager. Git prints a unified diff and pipes it to whatever `core.pager` points at. delta sits in that pipe and rewrites the text on the way through. Two lines of `.gitconfig` and every diff you print looks better, including the ones inside `git add -p`, `git log -p`, and `git show`.",
-          "It does the job well. Syntax highlighting with bat-compatible themes, word-level highlighting inside changed lines, an opt-in side-by-side view with wrapping, line numbers, `n`/`N` navigation between diff sections, hyperlinked commit hashes, and styled `git blame` and `git grep`. Written in Rust, MIT-licensed, well over a hundred config options.",
+          "It does the job well. Syntax highlighting with bat syntax themes plus its own theme collection, word-level highlighting inside changed lines, an opt-in side-by-side view with wrapping, line numbers, opt-in `n`/`N` navigation between files, hyperlinked commit hashes, and styled `git blame` and `git grep`. Written in Rust, MIT-licensed, with a `--help` that runs to about 110 options.",
           "What it does not do is hold a model of your changeset. It sees a stream of text and emits a prettier one. No file list, no selected hunk, no state that survives from one line to the next.",
         ],
       },
@@ -250,7 +277,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Which is faster, Hunk or delta?",
         answer:
-          "delta wins on startup. It is a Rust stream filter doing one pass over text. Hunk builds a review model and mounts a terminal UI, which costs more up front and buys navigation, state, and annotations. `hunk --fast` offloads eligible syntax highlighting to cut that cost.",
+          "delta starts faster, and that is structural: it is a Rust stream filter doing one pass over text. Hunk builds a review model and mounts a terminal UI, which costs more up front and buys navigation, state, and annotations. The experimental `hunk --fast` offloads eligible syntax highlighting to cut that cost.",
       },
       {
         question: "Does Hunk need configuration to be useful?",
@@ -278,7 +305,7 @@ export const COMPARISONS: Comparison[] = [
       license: "MIT",
     },
     headline: "Hunk vs difftastic",
-    title: "Hunk vs difftastic: structural diff or review UI? (2026)",
+    title: `Hunk vs difftastic: structural diff or review UI? (${REVIEW_YEAR})`,
     description:
       "Hunk vs difftastic. difftastic changes what the diff says by parsing your code with tree-sitter. Hunk changes how you read a changeset. What each is for, and why they do not compose.",
     keywords: [
@@ -356,16 +383,10 @@ export const COMPARISONS: Comparison[] = [
         note: "difftastic lists this as a non-goal. Reordering still shows as a change in both tools.",
       },
       {
-        capability: "Predictable cost on heavily-changed files",
-        hunk: "yes",
-        rival: "partial",
-        note: "difftastic's FAQ says it scales relatively poorly on files with many changes and can use a lot of memory.",
-      },
-      {
         capability: "Git integration",
         hunk: "yes",
         rival: "yes",
-        note: "difftastic goes in `GIT_EXTERNAL_DIFF` or a difftool. Hunk runs natively, as a pager, or as a difftool.",
+        note: "difftastic goes in `GIT_EXTERNAL_DIFF` or `diff.external`. Hunk runs natively, as a pager, or as a difftool.",
       },
       {
         capability: "Native Jujutsu and Sapling support",
@@ -380,8 +401,8 @@ export const COMPARISONS: Comparison[] = [
         heading: "What difftastic is",
         body: [
           "difftastic parses both versions of a file with tree-sitter and diffs the trees instead of the lines. The payoff shows up where line diffs are worst. Wrap a block in an `if`, reindent a function, move a closing brace, and difftastic reports the actual change instead of a wall of red and green.",
-          "It supports more than thirty languages and falls back to line-oriented diffing with word highlighting when it cannot parse a file. It is written in Rust and is usually wired in as a Git external diff or difftool.",
-          "Its docs are clear about the limits. Producing applicable patches, merging, and ignoring reordered elements are stated non-goals, and the FAQ says difftastic scales relatively poorly on files with a large number of changes and can use a lot of memory.",
+          "Its manual lists more than fifty programming languages plus ten structured text formats, and `difft --list-languages` prints what your build supports. It falls back to line-oriented diffing with word highlighting when it cannot parse a file, and it is written in Rust and usually wired in as Git's external diff.",
+          "Its docs are clear about the limits. Producing applicable patches, merging, and ignoring reordered elements are stated non-goals, and the README lists under Known Issues that difftastic scales relatively poorly on files with a large number of changes and can use a lot of memory.",
         ],
         code: {
           caption: "The usual difftastic wiring",
@@ -389,8 +410,10 @@ export const COMPARISONS: Comparison[] = [
             "# one command",
             "GIT_EXTERNAL_DIFF=difft git diff",
             "",
-            "# or as a difftool",
+            "# or make it the default external diff",
             "git config --global diff.external difft",
+            "# other subcommands then need --ext-diff:",
+            "git show --ext-diff",
           ],
         },
       },
@@ -404,7 +427,7 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "They do not compose, and that is fine",
         body: [
-          "You cannot pipe difftastic into Hunk. difftastic emits its own rendered side-by-side output, not a unified diff, and Hunk's review stream is built from unified diffs. Setting `GIT_EXTERNAL_DIFF=difft` and then opening `hunk diff` does not stack the two. Hunk reads Git's own patch output.",
+          "You cannot pipe difftastic into Hunk. difftastic emits its own rendered output, or JSON with `--display json`, but never a unified diff, and Hunk's review stream is built from unified diffs. Setting `GIT_EXTERNAL_DIFF=difft` and then opening `hunk diff` does not stack the two. Hunk reads Git's own patch output.",
           "Not much is lost, because you reach for them at different moments. When one file's diff looks nonsensical after a reformat, run difftastic on that file. When you are reviewing a change across a dozen files, open Hunk.",
         ],
         code: {
@@ -425,7 +448,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Can I use difftastic as Hunk's diff engine?",
         answer:
-          "No. Hunk builds its review stream from unified diffs, and difftastic's output is its own rendered display rather than a patch. Configure difftastic as a Git external diff for the files where structure matters, and use `hunk diff` to review the changeset.",
+          "No. Hunk builds its review stream from unified diffs, and difftastic's output is its own rendered display, or JSON, rather than a patch. Configure difftastic as a Git external diff for the files where structure matters, and use `hunk diff` to review the changeset.",
       },
       {
         question: "Does Hunk do structural or AST diffing?",
@@ -440,7 +463,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Is difftastic slower than Hunk?",
         answer:
-          "Hard to compare directly, since one is a diff algorithm and the other is a UI. What is documented is that difftastic's tree diffing gets expensive on files with many changes. Hunk's cost scales with rendering the changeset, and `hunk --fast` offloads eligible syntax highlighting.",
+          "Hard to compare directly, since one is a diff algorithm and the other is a UI. What is documented is that difftastic's tree diffing gets expensive on files with many changes. Hunk's cost scales with rendering the changeset instead, and the experimental `hunk --fast` offloads eligible syntax highlighting.",
       },
     ],
     sources: [
@@ -460,7 +483,7 @@ export const COMPARISONS: Comparison[] = [
       license: "MIT",
     },
     headline: "Hunk vs diff-so-fancy",
-    title: "Hunk vs diff-so-fancy: what switching gets you (2026)",
+    title: `Hunk vs diff-so-fancy: what switching gets you (${REVIEW_YEAR})`,
     description:
       "Hunk vs diff-so-fancy. diff-so-fancy tidies git diff headers and markers in your pager. Hunk is a review UI with a file sidebar, split layouts, and agent notes. Compared honestly.",
     keywords: [
@@ -483,7 +506,7 @@ export const COMPARISONS: Comparison[] = [
       ],
       rival: [
         "You want minimal, familiar output and nothing more.",
-        "You want one script in `$PATH` and no binary to install.",
+        "You want a Perl script and its `lib/` in `$PATH`, with no binary to install.",
         "Your habits are built around `less` and you do not want a UI.",
       ],
     },
@@ -499,7 +522,7 @@ export const COMPARISONS: Comparison[] = [
         capability: "Word-level highlighting inside a changed line",
         hunk: "yes",
         rival: "partial",
-        note: "diff-so-fancy passes through Git's own word-diff emphasis rather than computing its own.",
+        note: "diff-so-fancy computes character-level emphasis with a bundled copy of Git's contrib/diff-highlight, colored through `color.diff-highlight.*`, rather than a token-level word diff.",
       },
       {
         capability: "Themes",
@@ -523,20 +546,25 @@ export const COMPARISONS: Comparison[] = [
         note: "diff-so-fancy sets `interactive.diffFilter`. Hunk is a review viewer and does not filter interactive staging.",
       },
       {
-        capability: "Runtime dependency",
-        hunk: "yes",
-        rival: "yes",
-        note: "diff-so-fancy needs Perl. Hunk's default install is a standalone binary, and the npm install needs Node.js 22+.",
+        capability: "Runs with no language runtime installed",
+        hunk: "partial",
+        rival: "no",
+        note: "diff-so-fancy needs Perl 5.14+. Hunk's script, Homebrew, mise, and Nix installs are standalone binaries; only the npm install needs Node.js 22+.",
       },
-      { capability: "Native Jujutsu and Sapling support", hunk: "yes", rival: "no" },
+      {
+        capability: "Native Jujutsu and Sapling support",
+        hunk: "yes",
+        rival: "partial",
+        note: "diff-so-fancy works wherever a VCS lets you set a pager, and its docs show a Mercurial recipe. Hunk detects jj and Sapling workspaces and takes native revsets.",
+      },
       { capability: "TypeScript extension API", hunk: "yes", rival: "no" },
     ],
     sections: [
       {
         heading: "What diff-so-fancy is",
         body: [
-          "diff-so-fancy is a Perl script you drop in `$PATH` and put in front of your pager. It takes Git's diff output and makes it more human. File headers collapse to a readable line, the leading `+` and `-` come out of the gutter so copied code stays copyable, empty lines get colored so added and removed blanks are visible, and a ruler separates files.",
-          "It is deliberately small. No syntax highlighting, no side-by-side, no state. It is a text filter, and it has been a reliable one for a decade. It also covers `git add -p` through `interactive.diffFilter`, which Hunk does not replicate.",
+          "diff-so-fancy is a Perl script you drop in `$PATH`, alongside its `lib/` directory, and put in front of your pager. It takes Git's diff output and makes it more human. File headers collapse to a readable line, the leading `+` and `-` come out of the gutter so copied code stays copyable, empty lines get colored so added and removed blanks are visible, and a ruler separates files.",
+          "It is deliberately small. No syntax highlighting, no side-by-side, no state. It is a text filter, and it has been one since 2015. It also covers `git add -p` through `interactive.diffFilter`, which Hunk does not replicate.",
         ],
         code: {
           caption: "The standard diff-so-fancy setup",
@@ -578,7 +606,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Is diff-so-fancy still maintained?",
         answer:
-          "Yes, though development is quiet. It is a mature script doing a fixed job, which is part of why it is still in so many dotfiles.",
+          "Yes. Commits continue through 2026, though tagged releases are infrequent: the last was v1.4.12 in August 2024. It is a mature script doing a fixed job, which is part of why it is still in so many dotfiles.",
       },
       {
         question: "Can I keep diff-so-fancy and add Hunk?",
@@ -605,7 +633,7 @@ export const COMPARISONS: Comparison[] = [
       license: "GPL-2.0",
     },
     headline: "Hunk vs git diff",
-    title: "Hunk vs git diff: a better way to read a changeset (2026)",
+    title: `Hunk vs git diff: a better way to read a changeset (${REVIEW_YEAR})`,
     description:
       "Hunk vs git diff. git diff prints a unified patch. Hunk renders the same data as a navigable review UI with a file sidebar, split view, and agent notes. What changes, and what does not.",
     keywords: [
@@ -657,7 +685,13 @@ export const COMPARISONS: Comparison[] = [
         capability: "Themes",
         hunk: "yes",
         rival: "partial",
-        note: `Hunk ships ${THEME_COUNT} bundled themes and takes custom ones. Git has color settings rather than themes.`,
+        note: `Hunk ships ${THEME_COUNT} bundled themes and takes custom ones. Git has \`color.diff.*\` settings rather than themes.`,
+      },
+      {
+        capability: "Word-level highlighting inside a changed line",
+        hunk: "yes",
+        rival: "partial",
+        note: "Git has `--word-diff` and `--color-words`, opt-in per invocation. Hunk highlights word-level changes by default.",
       },
       { capability: "File sidebar you can jump from", hunk: "yes", rival: "no" },
       { capability: "Hunk-by-hunk navigation across the changeset", hunk: "yes", rival: "no" },
@@ -728,7 +762,7 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "What stays the same",
         body: [
-          "Git is still the source of truth. Hunk does not reimplement diffing, does not change what counts as a change, and does not touch your repository. It reads what Git reports and draws it. Rename detection, `--color-moved`, and path filtering all still come from Git, and `hunk show HEAD~1 -- src/ui README.md` filters the way you would expect.",
+          "Git is still the source of truth. Hunk does not reimplement diffing, does not change what counts as a change, and does not modify your files or Git state. It reads what Git reports and draws it. Rename detection, `--color-moved`, and path filtering all still come from Git, and `hunk show HEAD~1 -- src/ui README.md` filters the way you would expect.",
           "It also takes nothing away. `git diff` keeps working, scripts that parse it keep working, and an alias gives you Hunk only when you want it, without changing your default pager.",
         ],
       },
@@ -779,7 +813,7 @@ export const COMPARISONS: Comparison[] = [
       license: "Apache-2.0 or MIT",
     },
     headline: "Hunk vs Plannotator",
-    title: "Hunk vs Plannotator: terminal or browser review (2026)",
+    title: `Hunk vs Plannotator: terminal or browser review (${REVIEW_YEAR})`,
     description:
       "Hunk vs Plannotator. Two review surfaces built for coding-agent output. Plannotator reviews plans and diffs in your browser. Hunk keeps the review in the terminal. Where each fits.",
     keywords: [
@@ -804,6 +838,7 @@ export const COMPARISONS: Comparison[] = [
         "You want to review the agent's plan before it writes any code.",
         "You prefer a browser UI, with wider text, images, and rendered Markdown.",
         "You want to review a GitHub PR or GitLab MR by pasting its URL.",
+        "You want AI reviews built into the tool, posting comments on the diff for you.",
         "You work in Perforce or GitButler.",
       ],
     },
@@ -812,14 +847,14 @@ export const COMPARISONS: Comparison[] = [
         capability: "Reviews agent plans before implementation",
         hunk: "no",
         rival: "yes",
-        note: "Plan review is Plannotator's original purpose. Hunk starts once there is a diff.",
+        note: "Plan review is what Plannotator leads with. Hunk starts once there is a diff.",
       },
       { capability: "Reviews local code changes as a diff", hunk: "yes", rival: "yes" },
       {
         capability: "Terminal-native UI",
         hunk: "yes",
         rival: "partial",
-        note: "Plannotator is browser-first. A separate terminal annotator exists as a plugin.",
+        note: "Plannotator is browser-first. A separate terminal annotator ships as a Herdr plugin and as a standalone TUI, for documents rather than diffs.",
       },
       {
         capability: "Browser UI",
@@ -835,10 +870,16 @@ export const COMPARISONS: Comparison[] = [
       },
       { capability: "Line-level comments returned to the agent", hunk: "yes", rival: "yes" },
       {
+        capability: "Built-in AI review that posts its own comments",
+        hunk: "no",
+        rival: "yes",
+        note: "Plannotator can launch AI reviews that comment on the diff and answer questions about it. Hunk relies on the agent you already have.",
+      },
+      {
         capability: "Agent can read and drive the live review session",
         hunk: "yes",
-        rival: "no",
-        note: "`hunk session` lets an agent list, inspect, and navigate the review you have open.",
+        rival: "partial",
+        note: "Plannotator exposes WebMCP tools on its plan and annotate surfaces to a WebMCP-capable browser, not on its diff review. Hunk's `hunk session` works from any shell against the diff review itself.",
       },
       {
         capability: "Reviews a GitHub PR or GitLab MR by URL",
@@ -856,20 +897,35 @@ export const COMPARISONS: Comparison[] = [
         rival: "no",
         note: "Hunk also stands in for `core.pager` and `git difftool` on ordinary, non-agent work.",
       },
-      { capability: "Watch mode that reloads the review", hunk: "yes", rival: "no" },
-      { capability: "Split and stack layouts switchable mid-review", hunk: "yes", rival: "no" },
+      {
+        capability: "Watch mode that reloads the review",
+        hunk: "yes",
+        rival: "partial",
+        note: "Plannotator polls the repo while a review is open and offers a Refresh when the working tree moves. Hunk's `--watch` reloads the review itself.",
+      },
+      {
+        capability: "Split and unified layouts switchable mid-review",
+        hunk: "yes",
+        rival: "yes",
+        note: "Plannotator toggles Split and Unified from its settings panel. Hunk adds a responsive auto layout and switches from the keyboard.",
+      },
       {
         capability: "Themes",
         hunk: "yes",
         rival: "yes",
         note: `Hunk ships ${THEME_COUNT} bundled themes and takes custom ones. Plannotator ships its own set, chosen in its settings panel.`,
       },
-      { capability: "Third-party extension API", hunk: "yes", rival: "no" },
+      {
+        capability: "Third-party extension API",
+        hunk: "yes",
+        rival: "no",
+        note: "Meaning third-party code that extends the review UI itself. Plannotator has agent integrations, editor extensions, and custom review skills, but no such API.",
+      },
       {
         capability: "Data stays on your machine",
         hunk: "yes",
         rival: "yes",
-        note: "Plannotator is local by default and offers a separate hosted product. Hunk has no hosted component.",
+        note: "Plannotator is local by default and is building a separate hosted product, Workspaces, for team sharing. Hunk has no hosted component.",
       },
     ],
     sections: [
@@ -883,9 +939,9 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "What Plannotator does",
         body: [
-          "Plannotator runs a local binary that starts a temporary server and opens the session in your browser. Its distinguishing move is plan review. When an agent proposes a plan, that plan opens for annotation before any code is written, and you can delete, insert, replace, or comment inline, then approve or request changes.",
-          "Its code review surface handles local changes across Git, Jujutsu, Perforce, and GitButler, and it can open a GitHub pull request or GitLab merge request from a URL. It integrates with a long list of agents through host-specific hooks and commands, and it is dual-licensed under Apache 2.0 or MIT. Plans, diffs, and annotations stay local by default.",
-          "If reviewing plans before implementation is part of how you work, or you want one tool to cover hosted PRs too, that is a real capability Hunk does not have.",
+          "Plannotator runs a local binary that starts a temporary server and opens the session in your browser. What it leads with is plan review. When an agent proposes a plan, that plan opens for annotation before any code is written, and you can comment, redline, mark up, and label inline, then approve or send structured feedback back to the agent.",
+          "Its code review surface handles local changes across Git, Jujutsu, Perforce, and GitButler, and it can open a GitHub pull request or GitLab merge request from a URL. It has AI review built in, so it can answer questions about what you are reading and launch reviews that post their own comments on the diff. It integrates with a long list of agents through host-specific hooks and commands, and it is dual-licensed under Apache 2.0 or MIT. Plans, diffs, and annotations stay local by default.",
+          "If reviewing plans before implementation is part of how you work, or you want hosted PRs and built-in AI review in the same tool, those are real capabilities Hunk does not have.",
         ],
       },
       {
@@ -911,7 +967,7 @@ export const COMPARISONS: Comparison[] = [
       {
         heading: "Choosing",
         body: [
-          "Take Plannotator if the plan is where you most want to catch problems, if you would rather read in a browser, or if you need Perforce, GitButler, or hosted PR review in the same tool.",
+          "Take Plannotator if the plan is where you most want to catch problems, if you would rather read in a browser, or if you need Perforce, GitButler, hosted PR review, or built-in AI review in the same tool.",
           "Take Hunk if the diff is what you review, if you want the agent's reasoning rendered in the diff rather than alongside it, if the agent should be able to read and drive the session you have open, or if you want one terminal tool that is also your everyday Git pager and difftool.",
           "They are not exclusive. They hook into agents at different points, so nothing stops you annotating a plan in one and reviewing the resulting diff in the other.",
         ],
@@ -931,12 +987,12 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Which works better over SSH?",
         answer:
-          "Hunk, because it never needs a browser. It is a terminal UI, so a remote shell or a tmux session on a server is a normal place to run it. Plannotator opens a local server and expects a browser to reach it.",
+          "Hunk, because it never needs a browser. It is a terminal UI, so a remote shell or a tmux session on a server is a normal place to run it. Plannotator documents SSH and devcontainer setups, auto-detecting SSH and switching to a fixed port you forward, but the reading still happens in a browser on some machine.",
       },
       {
         question: "Do both send my code anywhere?",
         answer:
-          "Neither, by default. Hunk runs locally with a loopback daemon for session control and has no hosted component. Plannotator keeps plans, diffs, and annotations local by default, and separately offers a hosted product for sharing.",
+          "Neither, by default. Hunk runs locally with a loopback daemon for session control and has no hosted component. Plannotator keeps plans, diffs, and annotations local by default, and is separately building a hosted product, Workspaces, for team sharing.",
       },
       {
         question: "Which agents does each support?",
@@ -958,7 +1014,7 @@ export const COMPARISONS: Comparison[] = [
 
 /** Absolute URL for a comparison page, for canonical links and structured data. */
 export function comparisonUrl(comparison: Comparison): string {
-  return `https://hunk.dev/compare/${comparison.slug}/`;
+  return `${SITE_ORIGIN}/compare/${comparison.slug}/`;
 }
 
 /** Symbol and screen-reader label for one support mark. */

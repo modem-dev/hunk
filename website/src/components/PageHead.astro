@@ -1,5 +1,6 @@
 ---
 import { toJsonLdScriptBody } from "../lib/jsonLd";
+import { SITE_ORIGIN } from "../lib/site";
 
 /**
  * The `<head>` every hand-built marketing page shares.
@@ -20,7 +21,7 @@ interface Props {
   ogImage?: string;
   ogImageAlt: string;
   /** One JSON-LD object, or several to emit as separate script tags. */
-  schema?: unknown | unknown[];
+  schema?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 const {
@@ -28,12 +29,12 @@ const {
   description,
   keywords,
   path,
-  ogImage = "https://hunk.dev/og.png",
+  ogImage = `${SITE_ORIGIN}/og.png`,
   ogImageAlt,
   schema,
 } = Astro.props;
 
-const canonical = `https://hunk.dev${path}`;
+const canonical = `${SITE_ORIGIN}${path}`;
 const schemas = schema === undefined ? [] : Array.isArray(schema) ? schema : [schema];
 ---
 

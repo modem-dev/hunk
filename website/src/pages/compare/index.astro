@@ -2,7 +2,8 @@
 import BrandFooter from "../../components/BrandFooter.astro";
 import BrandHeader from "../../components/BrandHeader.astro";
 import PageHead from "../../components/PageHead.astro";
-import { COMPARISONS, COMPARISONS_REVIEWED_ON, comparisonUrl } from "../../data/comparisons";
+import { COMPARISONS, comparisonUrl, reviewedOnLabel } from "../../data/comparisons";
+import { SITE_ORIGIN } from "../../lib/site";
 import "../../styles/marketing.css";
 import "../../styles/compare.css";
 
@@ -24,7 +25,7 @@ const schema = [
     "@type": "ItemList",
     name: "Hunk comparisons",
     description,
-    url: "https://hunk.dev/compare/",
+    url: `${SITE_ORIGIN}/compare/`,
     numberOfItems: COMPARISONS.length,
     itemListElement: COMPARISONS.map((comparison, index) => ({
       "@type": "ListItem",
@@ -38,16 +39,13 @@ const schema = [
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Compare", item: "https://hunk.dev/compare/" },
+      { "@type": "ListItem", position: 1, name: "Hunk", item: `${SITE_ORIGIN}/` },
+      { "@type": "ListItem", position: 2, name: "Compare", item: `${SITE_ORIGIN}/compare/` },
     ],
   },
 ];
 
-const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDateString("en-US", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const reviewedOn = reviewedOnLabel();
 ---
 
 <!doctype html>
@@ -58,7 +56,7 @@ const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDate
       description={description}
       keywords="hunk vs delta, hunk vs difftastic, hunk vs git diff, terminal diff tool comparison, best git diff tool"
       path="/compare/"
-      ogImageAlt="Hunk compared with delta, difftastic, diff-so-fancy, git diff, and Plannotator"
+      ogImageAlt="hunk: terminal diffs for humans and agents"
       schema={schema}
     />
   </head>

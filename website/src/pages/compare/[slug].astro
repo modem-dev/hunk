@@ -4,12 +4,16 @@ import BrandHeader from "../../components/BrandHeader.astro";
 import PageHead from "../../components/PageHead.astro";
 import {
   COMPARISONS,
+  COMPARISONS_PUBLISHED_ON,
   COMPARISONS_REVIEWED_ON,
+  HUNK_FACTS,
   SUPPORT_MARKS,
   comparisonUrl,
+  reviewedOnLabel,
   type Comparison,
 } from "../../data/comparisons";
 import { withInlineCode, withoutInlineCode } from "../../lib/inlineCode";
+import { SITE_ORIGIN } from "../../lib/site";
 import "../../styles/marketing.css";
 import "../../styles/compare.css";
 
@@ -18,10 +22,9 @@ import "../../styles/compare.css";
  *
  * The page is ordered for the reader who arrived from a "hunk vs X" query: the
  * answer first, then the two-sided verdict, then the argument, then the table,
- * then the questions that query usually implies. Structured data mirrors that
- * same content rather than restating it, and `.md` variants of these URLs are
- * built from the identical catalog entry, so nothing here is the only place a
- * claim lives.
+ * then the questions that query usually implies. The structured data and the
+ * `.md` variant of this URL render from the same catalog entry, so a capability
+ * mark cannot differ between what a reader sees and what a crawler reads.
  */
 export function getStaticPaths() {
   return COMPARISONS.map((comparison) => ({
@@ -44,23 +47,27 @@ const url = comparisonUrl(comparison);
  *
  * The rendered table is a `<table>` an answer engine has to infer meaning from.
  * `additionalProperty` states each row as a named property of the product it
- * describes, with the row's caveat as its description, so the comparison is
- * readable without parsing the layout. Both products get the same property
- * names, which is what makes the two lists comparable.
+ * describes, and both products get the same property names, which is what makes
+ * the two lists comparable.
+ *
+ * Row notes are deliberately left out. A note is a clause about the row, not
+ * about either product ("delta emits a linear stream", "Hunk honors
+ * `diff.colorMoved`"), so attaching it to one product's property would publish a
+ * claim about the other tool under this tool's name. The table and the `.md`
+ * variant carry the notes in the place they belong.
  */
 function capabilityProperties(side: "hunk" | "rival") {
   return comparison.capabilities.map((row) => ({
     "@type": "PropertyValue",
     name: withoutInlineCode(row.capability),
     value: SUPPORT_MARKS[row[side]].label,
-    ...(row.note ? { description: withoutInlineCode(row.note) } : {}),
   }));
 }
 
 const hunkApplication = {
-  "@type": "SoftwareApplication",
+  "@type": ["SoftwareApplication", "Product"],
   name: "Hunk",
-  url: "https://hunk.dev/",
+  url: `${SITE_ORIGIN}/`,
   applicationCategory: "DeveloperApplication",
   operatingSystem: "macOS, Linux, Windows",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
@@ -76,14 +83,14 @@ const schema = [
     url,
     mainEntityOfPage: url,
     inLanguage: "en",
-    datePublished: COMPARISONS_REVIEWED_ON,
+    datePublished: COMPARISONS_PUBLISHED_ON,
     dateModified: COMPARISONS_REVIEWED_ON,
     author: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
     publisher: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
     about: [
       hunkApplication,
       {
-        "@type": "SoftwareApplication",
+        "@type": ["SoftwareApplication", "Product"],
         name: rival.name,
         url: rival.url,
         applicationCategory: "DeveloperApplication",
@@ -105,18 +112,15 @@ const schema = [
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Compare", item: "https://hunk.dev/compare/" },
-      { "@type": "ListItem", position: 2, name: comparison.headline, item: url },
+      { "@type": "ListItem", position: 1, name: "Hunk", item: `${SITE_ORIGIN}/` },
+      { "@type": "ListItem", position: 2, name: "Compare", item: `${SITE_ORIGIN}/compare/` },
+      { "@type": "ListItem", position: 3, name: comparison.headline, item: url },
     ],
   },
 ];
 
 const siblings = COMPARISONS.filter((entry) => entry.slug !== comparison.slug);
-const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDateString("en-US", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const reviewedOn = reviewedOnLabel();
 ---
 
 <!doctype html>
@@ -127,10 +131,14 @@ const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDate
       description={comparison.description}
       keywords={comparison.keywords.join(", ")}
       path={path}
-      ogImageAlt={`${comparison.headline}: how the two terminal diff tools compare`}
+      ogImageAlt="hunk: terminal diffs for humans and agents"
       schema={schema}
     />
-    <link rel="alternate" type="text/markdown" href={`https://hunk.dev/compare/${comparison.slug}.md`} />
+    <link
+      rel="alternate"
+      type="text/markdown"
+      href={`${SITE_ORIGIN}/compare/${comparison.slug}.md`}
+    />
   </head>
   <body>
     <div class="marketing">
@@ -195,8 +203,9 @@ const reviewedOn = new Date(`${COMPARISONS_REVIEWED_ON}T00:00:00Z`).toLocaleDate
         <section class="cmp cmp-section" aria-labelledby="capabilities">
           <h2 id="capabilities">Hunk vs {rival.name}, capability by capability</h2>
           <p class="cmp-prose">
-            {rival.name} is written in {rival.language} and licensed {rival.license}. Hunk is
-            TypeScript, MIT, and ships as a standalone binary for macOS, Linux, and Windows.
+            {rival.name} is written in {rival.language} and licensed {rival.license}. Hunk is{" "}
+            {HUNK_FACTS.language}, {HUNK_FACTS.license}, and ships as a standalone binary for{" "}
+            {HUNK_FACTS.platforms}.
           </p>
           <div
             class="cmp-table-wrap"

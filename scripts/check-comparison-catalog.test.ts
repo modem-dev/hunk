@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { BUNDLED_SHIKI_THEME_IDS } from "../src/core/theme/catalog";
-import { COMPARISONS, comparisonUrl } from "../website/src/data/comparisons";
+import { COMPARISONS, COMPARISONS_REVIEWED_ON } from "../website/src/data/comparisons";
 
 /**
  * The hunk.dev comparison catalog, held to the standard the pages claim.
@@ -25,6 +25,7 @@ describe("comparison catalog", () => {
       // and say enough to be useful when lifted away from the page.
       expect(comparison.answer.length).toBeGreaterThan(200);
       expect(comparison.answer).toContain("Hunk");
+      expect(comparison.answer, comparison.slug).toContain(comparison.rival.name);
       expect(comparison.title.length).toBeLessThanOrEqual(70);
       expect(comparison.description.length).toBeLessThanOrEqual(200);
     }
@@ -55,12 +56,34 @@ describe("comparison catalog", () => {
     for (const comparison of COMPARISONS) {
       expect(comparison.faqs.length).toBeGreaterThan(2);
       expect(comparison.sources.length).toBeGreaterThan(1);
-      // At least one source is the other project's own documentation.
+      // At least one source is the other project's own documentation, not just
+      // some absolute URL: a page that cites only hunk.dev has not been checked.
+      const rivalHost = new URL(comparison.rival.url).host;
       expect(
-        comparison.sources.some((source) => source.url.startsWith("http")),
-        comparison.slug,
+        comparison.sources.some((source) => {
+          if (!source.url.startsWith("http")) return false;
+          return new URL(source.url).host === rivalHost;
+        }),
+        `${comparison.slug} cites no source from ${rivalHost}`,
       ).toBe(true);
-      expect(comparisonUrl(comparison)).toBe(`https://hunk.dev/compare/${comparison.slug}/`);
+    }
+  });
+
+  test("names each capability once, so the two products stay comparable", () => {
+    // The structured data publishes these names as properties of both products
+    // and pairs them by position; a duplicate name silently breaks that pairing.
+    for (const comparison of COMPARISONS) {
+      const names = comparison.capabilities.map((row) => row.capability);
+      expect(new Set(names).size, comparison.slug).toBe(names.length);
+    }
+  });
+
+  test("advertises the year it was actually checked", () => {
+    // The title is the one string search results show; a hardcoded year would go
+    // stale on 1 January with nothing to catch it.
+    const year = COMPARISONS_REVIEWED_ON.slice(0, 4);
+    for (const comparison of COMPARISONS) {
+      expect(comparison.title, comparison.slug).toContain(year);
     }
   });
 

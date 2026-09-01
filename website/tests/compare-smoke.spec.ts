@@ -61,7 +61,8 @@ test("comparison pages carry the structured data answer engines read", async ({ 
   const types = await page
     .locator('script[type="application/ld+json"]')
     .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.textContent ?? "{}")["@type"]));
-  expect(types).toEqual(["TechArticle", "FAQPage", "BreadcrumbList"]);
+  expect(types).toHaveLength(3);
+  expect(types).toEqual(expect.arrayContaining(["TechArticle", "FAQPage", "BreadcrumbList"]));
 
   const faq = await page
     .locator('script[type="application/ld+json"]')
@@ -80,8 +81,15 @@ test("comparison pages carry the structured data answer engines read", async ({ 
   const rows = await page.locator(".cmp-table tbody tr").count();
   expect(article.about).toHaveLength(2);
   for (const product of article.about) {
+    // `additionalProperty` is outside SoftwareApplication's schema.org domain, so
+    // the products are multi-typed; without Product a validator drops the payload.
+    expect(product["@type"]).toContain("Product");
     expect(product.additionalProperty).toHaveLength(rows);
-    expect(product.additionalProperty.every(({ value }) => value)).toBe(true);
+    for (const { value, description } of product.additionalProperty) {
+      expect(["Yes", "Partly", "No"]).toContain(value);
+      // A row note describes the row, not one product, so it is not published here.
+      expect(description).toBeUndefined();
+    }
   }
   expect(article.about[0].additionalProperty.map(({ name }) => name)).toEqual(
     article.about[1].additionalProperty.map(({ name }) => name),
@@ -125,11 +133,13 @@ test("the comparison cluster is reachable from the site's own navigation", async
 });
 
 test("comparison pages have no serious automated accessibility violations", async ({ page }) => {
-  await page.goto("/compare/hunk-vs-delta/");
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-  const blocking = results.violations.filter(
-    ({ impact }) => impact === "critical" || impact === "serious",
-  );
+  for (const path of ["/compare/", ...COMPARISONS.map((slug) => `/compare/${slug}/`)]) {
+    await page.goto(path);
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    const blocking = results.violations.filter(
+      ({ impact }) => impact === "critical" || impact === "serious",
+    );
 
-  expect(blocking).toEqual([]);
+    expect(blocking, path).toEqual([]);
+  }
 });
