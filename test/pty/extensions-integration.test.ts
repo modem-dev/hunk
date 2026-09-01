@@ -96,6 +96,28 @@ export default function (hunk) {
 }
 `;
 
+/** A scrollable pane that records host activation from its buffered content. */
+const PANE_ACTIVATION_EXTENSION_SOURCE = `import { appendFileSync } from "node:fs";
+import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "activation",
+    placement: "right",
+    defaultOpen: true,
+    onActivate: () => appendFileSync(".hunk-pane-activation.log", "pane\\n"),
+    component: () => createElement(
+      "scrollbox",
+      { width: "100%", height: "100%", scrollY: true, focused: false },
+      createElement(
+        "box",
+        { style: { width: "100%", height: 30 } },
+        createElement("text", { content: "PANE ACTIVATE TARGET" }),
+      ),
+    ),
+  });
+}
+`;
+
 /** A named files-slot replacement beside an independently controlled pane. */
 const FILES_SLOT_EXTENSION_SOURCE = `import { createElement } from "react";
 export default function (hunk) {
@@ -482,6 +504,41 @@ describe("PTY extensions", () => {
       // The same key toggles it away again.
       await session.press("y");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a scrollbox body press activates its pane in a real PTY", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(PANE_ACTIVATION_EXTENSION_SOURCE);
+    const activationLog = join(fixture.dir, ".hunk-pane-activation.log");
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/PANE ACTIVATE TARGET/, { timeout: 20_000 });
+      const targetRow = lineIndexOf(frame, "PANE ACTIVATE TARGET");
+      const targetColumn = frame.split("\n")[targetRow]!.indexOf("PANE ACTIVATE TARGET") + 5;
+      // Stay clear of the pane divider's intentional multi-cell resize hit area.
+      await session.clickAt(targetColumn, targetRow);
+
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(activationLog) && Date.now() < deadline) {
+        await Bun.sleep(20);
+      }
+      expect(readFileSync(activationLog, "utf8")).toBe("pane\n");
     } finally {
       session.close();
     }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState, type ReactNode } from "react";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
@@ -118,6 +119,104 @@ describe("ExtensionPaneHost actions", () => {
           ["alpha", 0],
           ["alpha", 0],
         ]);
+      },
+    );
+  });
+});
+
+describe("ExtensionPaneHost activation", () => {
+  test("activates once through nested content without consuming its primary press", async () => {
+    const files = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    let activations = 0;
+    let childPresses = 0;
+    const registered = registeredView(() => (
+      <scrollbox width="100%" height="100%" scrollY={true} focused={false}>
+        <box
+          style={{ width: "100%", height: 30 }}
+          onMouseDown={() => {
+            childPresses += 1;
+          }}
+        >
+          <text content="nested target" />
+        </box>
+      </scrollbox>
+    ));
+    registered.pane.onActivate = () => {
+      activations += 1;
+    };
+
+    await withPane(
+      <ExtensionPaneHost
+        registered={registered}
+        files={files}
+        fileViews={toReadOnlyFileViews(files)}
+        selectedFileId={null}
+        selectedHunkIndex={null}
+        showTopChrome={true}
+        theme={theme}
+        width={30}
+        height={20}
+        placement="left"
+        currentLine={null}
+        keybindings={TEST_KEYBINDINGS}
+        notify={() => {}}
+        onSelectFile={() => {}}
+        onSelectHunk={() => {}}
+        onRevealLine={() => "line"}
+      />,
+      async (setup) => {
+        await act(async () => setup.mockMouse.click(2, 0, MouseButtons.LEFT));
+        expect(activations).toBe(1);
+        expect(childPresses).toBe(1);
+
+        await act(async () => setup.mockMouse.click(2, 0, MouseButtons.RIGHT));
+        expect(activations).toBe(1);
+        expect(childPresses).toBe(2);
+      },
+    );
+  });
+
+  test("contains synchronous and asynchronous activation failures", async () => {
+    const files = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    const notifications: string[] = [];
+    const failures = [new Error("sync exploded"), new Error("async exploded")];
+    const registered = registeredView(() => <text content="activate" />);
+    registered.pane.onActivate = () => {
+      const failure = failures.shift();
+      if (!failure) return;
+      if (failure.message.startsWith("async")) return Promise.reject(failure) as unknown as void;
+      throw failure;
+    };
+
+    await withPane(
+      <ExtensionPaneHost
+        registered={registered}
+        files={files}
+        fileViews={toReadOnlyFileViews(files)}
+        selectedFileId={null}
+        selectedHunkIndex={null}
+        showTopChrome={true}
+        theme={theme}
+        width={30}
+        height={20}
+        placement="left"
+        currentLine={null}
+        keybindings={TEST_KEYBINDINGS}
+        notify={(message) => notifications.push(message)}
+        onSelectFile={() => {}}
+        onSelectHunk={() => {}}
+        onRevealLine={() => "line"}
+      />,
+      async (setup) => {
+        await act(async () => setup.mockMouse.click(1, 0, MouseButtons.LEFT));
+        await act(async () => setup.mockMouse.click(1, 0, MouseButtons.LEFT));
+        await Promise.resolve();
+
+        expect(notifications).toHaveLength(2);
+        expect(notifications[0]).toContain('pane "probe-view" activation failed • sync exploded');
+        expect(notifications[1]).toContain('pane "probe-view" activation failed • async exploded');
       },
     );
   });

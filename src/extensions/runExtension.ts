@@ -474,6 +474,9 @@ export function createExtensionApi(
       if (pane.available !== undefined && typeof pane.available !== "function") {
         throw new Error("registerPane available must be a function.");
       }
+      if (pane.onActivate !== undefined && typeof pane.onActivate !== "function") {
+        throw new Error("registerPane onActivate must be a function.");
+      }
       if (pane.currentLine !== undefined && typeof pane.currentLine !== "boolean") {
         throw new Error("registerPane currentLine must be a boolean.");
       }

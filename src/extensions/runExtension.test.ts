@@ -132,6 +132,30 @@ describe("runExtensionFactory", () => {
 });
 
 describe("registerPane", () => {
+  test("accepts activation callbacks and rejects invalid values", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const onActivate = () => {};
+    runExtensionFactory({
+      metadata: bundledMetadata("activation"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerPane({ id: "valid", onActivate, component: () => null });
+        expect(() =>
+          hunk.registerPane({
+            id: "invalid",
+            onActivate: "activate" as unknown as () => void,
+            component: () => null,
+          }),
+        ).toThrow("registerPane onActivate must be a function.");
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.panes[0]?.pane.onActivate).toBe(onActivate);
+  });
+
   test("collects every placement with normalized width or height", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];

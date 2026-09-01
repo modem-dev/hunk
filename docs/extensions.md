@@ -280,9 +280,10 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `15`). Branch on it if you want
-one file to support several Hunk versions. Version 15 adds `{ side, line }` to
-opted-in pane `currentLine` paint; version 14 added structured `rangeEndpoints`
+The API generation this Hunk speaks (currently `16`). Branch on it if you want
+one file to support several Hunk versions. Version 16 adds pane-wide
+`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
+paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
 the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
@@ -745,6 +746,13 @@ hide it conditionally. One pane may replace each named target; the first
 registration owns that slot and later claims are skipped with a warning.
 `replaces` may also name another pane by its fully qualified
 `"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+
+`onActivate()` observes a primary mouse press anywhere in the pane's content,
+including content nested in a `<scrollbox>`. Use it to focus an extension-owned
+editor or update pane-local active state without adding mouse handlers to every
+row. Hunk does not stop propagation or prevent the press, so extension-local
+mouse behavior can continue. Other mouse buttons do not activate the pane. A
+thrown or rejected callback is contained and reported as an attributed warning.
 
 `hunk:files` is a named role, not a left-edge location. The
 `hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane**

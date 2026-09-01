@@ -1,3 +1,4 @@
+import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { Component, memo, useMemo, useRef, type ReactNode } from "react";
 import type {
   ExtensionDiffFile,
@@ -18,6 +19,30 @@ import type { AppTheme } from "../../themes";
 
 function describeError(error: unknown) {
   return error instanceof Error ? error.message || error.name : String(error);
+}
+
+/** Run a pane activation without allowing extension failures to escape into mouse routing. */
+function activatePane(registered: RegisteredPane, notify: ExtensionNotifySink) {
+  const onActivate = registered.pane.onActivate;
+  if (!onActivate) return;
+
+  const report = (error: unknown) =>
+    notify(
+      `Extension ${registered.extensionId} pane "${registered.pane.id}" activation failed • ${describeError(error)}`,
+      "warning",
+    );
+  try {
+    const result = (onActivate as () => unknown)();
+    if (
+      result !== null &&
+      (typeof result === "object" || typeof result === "function") &&
+      typeof (result as PromiseLike<unknown>).then === "function"
+    ) {
+      void Promise.resolve(result).catch(report);
+    }
+  } catch (error) {
+    report(error);
+  }
 }
 
 /** Contain render failures to one registration identity. */
@@ -130,8 +155,12 @@ function ExtensionPaneHostView({
     currentLine: registered.pane.currentLine ? currentLine : null,
   };
   const filesChrome = paneKey(registered) === HUNK_FILES_PANE_KEY;
+  const onMouseDown = (event: TuiMouseEvent) => {
+    if (event.button === MouseButton.LEFT) activatePane(registered, notify);
+  };
   const box = (children: ReactNode) => (
     <box
+      onMouseDown={onMouseDown}
       style={{
         width,
         height,

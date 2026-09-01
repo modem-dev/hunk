@@ -7,9 +7,10 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `15`). Branch on it if you want
-one file to support several Hunk versions. Version 15 adds `{ side, line }` to
-opted-in pane `currentLine` paint; version 14 added structured two-revision
+The API generation this Hunk speaks (currently `16`). Branch on it if you want
+one file to support several Hunk versions. Version 16 adds pane-wide
+`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
+paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
 and committed note-edit events; version 12 added responsive fractional pane
 sizing; version 11 added the `dim` line-highlight tone; version 10 added

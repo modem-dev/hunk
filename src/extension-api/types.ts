@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 15;
+export const HUNK_EXTENSION_API_VERSION = 16;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1192,6 +1192,8 @@ interface ExtensionPaneBase {
   currentLine?: boolean;
   /** Synchronous frame-availability policy. */
   available?(context: ExtensionPaneAvailabilityContext): boolean;
+  /** Observes primary mouse presses inside the pane without consuming child interaction. */
+  onActivate?(): void;
   component: ExtensionPaneComponent;
 }
 
