@@ -74,10 +74,15 @@ test("comparison pages carry the structured data answer engines read", async ({ 
 
   // The capability table is republished as properties of each product, so an
   // answer engine reads the comparison without inferring it from a <table>.
-  const article = await page
+  const article = (await page
     .locator('script[type="application/ld+json"]')
     .first()
-    .evaluate((node) => JSON.parse(node.textContent ?? "{}"));
+    .evaluate((node) => JSON.parse(node.textContent ?? "{}"))) as {
+    about: {
+      "@type": string[];
+      additionalProperty: { name: string; value: string; description?: string }[];
+    }[];
+  };
   const rows = await page.locator(".cmp-table tbody tr").count();
   expect(article.about).toHaveLength(2);
   for (const product of article.about) {
