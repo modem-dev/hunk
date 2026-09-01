@@ -210,6 +210,12 @@ callbacks receive a frozen opaque generation token; after foreign work settles, 
 commits only: they do not cancel foreign promises, cryptography, probes, or other work already in
 progress.
 
+Unexpected defects in connection-owned native callbacks, scheduled work, or fire-and-forget work
+terminally retire that connection. Applications may supply `onDefect` to observe the event. The
+callback receives only `SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE`; thrown values and lifecycle data
+are never forwarded, the callback runs at most once, and callback failures are contained. This
+runtime-neutral package does not write defect reports to process output.
+
 The helper owns:
 
 - initial `register`

@@ -10,7 +10,11 @@ import {
   SESSION_BROKER_SIGNATURE_ALGORITHM,
 } from "@hunk/session-broker-core";
 import { SessionBrokerAuthenticator } from "./authentication";
-import { createSessionBrokerConnection, type SessionBrokerConnection } from "./connection";
+import {
+  SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE,
+  createSessionBrokerConnection,
+  type SessionBrokerConnection,
+} from "./connection";
 import { webSessionBrokerCrypto } from "./crypto";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type { SessionBrokerSocketLike } from "./types";
@@ -37,6 +41,7 @@ class TestSocket implements SessionBrokerSocketLike {
   readyState = 0;
   sent: string[] = [];
   throwOnSend = false;
+  throwOnNextSend: unknown = null;
   lastClose: { code?: number; reason?: string } | null = null;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -45,6 +50,11 @@ class TestSocket implements SessionBrokerSocketLike {
 
   send(data: string) {
     if (this.throwOnSend) throw new Error("socket exploded");
+    if (this.throwOnNextSend !== null) {
+      const error = this.throwOnNextSend;
+      this.throwOnNextSend = null;
+      throw error;
+    }
     this.sent.push(data);
   }
 
@@ -72,6 +82,24 @@ class TestSocket implements SessionBrokerSocketLike {
 class DeferredCloseSocketTest extends TestSocket {
   override close(code?: number, reason?: string) {
     this.lastClose = { code, reason };
+  }
+}
+
+/** Throw from selected one-shot schedules while retaining deterministic retry time. */
+class ThrowingScheduleClockTest extends DeterministicLifecycleClockTest {
+  scheduleCalls = 0;
+
+  constructor(
+    private readonly throwOnScheduleCall: number,
+    private readonly thrownValue: unknown,
+  ) {
+    super();
+  }
+
+  override schedule(callback: () => void, delayMs: number) {
+    this.scheduleCalls += 1;
+    if (this.scheduleCalls === this.throwOnScheduleCall) throw this.thrownValue;
+    return super.schedule(callback, delayMs);
   }
 }
 
@@ -103,6 +131,33 @@ function createSnapshot(): SessionSnapshot<TestSessionState> {
   return {
     updatedAt: "2026-04-15T00:00:00.000Z",
     state: { selectedIndex: 0 },
+  };
+}
+
+/** Create one valid producer authentication setup for lifecycle-only connection tests. */
+async function createProducerAuthenticationTest() {
+  const pair = (await crypto.subtle.generateKey("Ed25519", false, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
+  const grant: ProducerGrant = {
+    kind: "producer",
+    appId: "dev.example",
+    principalId: "producer-1",
+    keyId: "producer-key-1",
+    grantId: "producer-grant-1",
+    algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
+    issuedAt: Date.now() - 1_000,
+    expiresAt: Date.now() + 60_000,
+    revocationId: "producer-revocation-1",
+    mayDelegate: false,
+    operations: ["register"],
+  };
+  return {
+    appId: "dev.example",
+    appRevision: 1,
+    credential: { grant, privateKey: pair.privateKey },
+    daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
   };
 }
 
@@ -283,6 +338,405 @@ describe("session broker connection", () => {
     expect(clock.pendingCountTest()).toBe(0);
   });
 
+  test("contains a heartbeat defect once and terminally retires its timer", () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const socket = new TestSocket();
+    const defectMessages: string[] = [];
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      heartbeatIntervalMs: 10,
+      lifecycleClock: clock,
+      onDefect: (message) => defectMessages.push(message),
+    });
+
+    connection.start();
+    socket.emitOpen();
+    socket.throwOnSend = true;
+
+    expect(() => clock.advanceByTest(10)).not.toThrow();
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    expect(clock.pendingCountTest()).toBe(0);
+    expect(() => clock.advanceByTest(100)).not.toThrow();
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    connection.start();
+    expect(clock.pendingCountTest()).toBe(0);
+  });
+
+  test("observes async lifecycle callbacks and contains an async defect sink", async () => {
+    const callbackMarker = `connected-${crypto.randomUUID()}`;
+    const sinkMarker = `sink-${crypto.randomUUID()}`;
+    const socket = new TestSocket();
+    const defectMessages: string[] = [];
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const connection = createSessionBrokerConnection({
+        url: "ws://broker.test/session",
+        createSocket: () => socket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers,
+        onConnected: async () => {
+          throw new Error(callbackMarker);
+        },
+        onDefect: async (message) => {
+          defectMessages.push(message);
+          throw new Error(sinkMarker);
+        },
+      });
+
+      connection.start();
+      socket.emitOpen();
+      await Bun.sleep(10);
+      connection.start();
+
+      expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+      expect(unhandledRejections).toEqual([]);
+      expect(JSON.stringify({ defectMessages, sent: socket.sent })).not.toContain(callbackMarker);
+      expect(JSON.stringify({ defectMessages, sent: socket.sent })).not.toContain(sinkMarker);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
+  test("contains a successful command-result transport defect without exposing it", async () => {
+    const marker = `result-send-${crypto.randomUUID()}`;
+    const socket = new TestSocket();
+    const defectMessages: string[] = [];
+    const capturedConsole: unknown[][] = [];
+    const capturedStdout: unknown[][] = [];
+    const capturedStderr: unknown[][] = [];
+    const originalConsoleError = console.error;
+    const originalStdoutWrite = process.stdout.write;
+    const originalStderrWrite = process.stderr.write;
+    let factoryCalls = 0;
+    let dispatches = 0;
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        factoryCalls += 1;
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: {
+        dispatchCommand: async () => {
+          dispatches += 1;
+          return { ok: true };
+        },
+      },
+      onDefect: (message) => defectMessages.push(message),
+    });
+
+    console.error = (...args: unknown[]) => capturedConsole.push(args);
+    process.stdout.write = ((...args: unknown[]) => {
+      capturedStdout.push(args);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((...args: unknown[]) => {
+      capturedStderr.push(args);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      connection.start();
+      socket.emitOpen();
+      socket.throwOnNextSend = new Error(marker);
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: "request-sensitive-send",
+          command: "annotate",
+          input: { summary: "review" },
+        }),
+      );
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: "request-queued-before-defect",
+          command: "annotate",
+          input: { summary: "must not dispatch" },
+        }),
+      );
+      await Bun.sleep(0);
+
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: "request-after-defect",
+          command: "annotate",
+          input: { summary: "ignored" },
+        }),
+      );
+      connection.start();
+      await Bun.sleep(0);
+    } finally {
+      console.error = originalConsoleError;
+      process.stdout.write = originalStdoutWrite;
+      process.stderr.write = originalStderrWrite;
+    }
+
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    expect({ dispatches, factoryCalls }).toEqual({ dispatches: 1, factoryCalls: 1 });
+    expect(socket.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+    expect(capturedConsole).toEqual([]);
+    expect(capturedStdout).toEqual([]);
+    expect(capturedStderr).toEqual([]);
+    expect(
+      JSON.stringify({
+        defectMessages,
+        sent: socket.sent,
+        close: socket.lastClose,
+        registration: connection.getRegistration(),
+        capturedConsole,
+        capturedStdout,
+        capturedStderr,
+      }),
+    ).not.toContain(marker);
+  });
+
+  test("contains an error command-result transport defect outside bridge rejection handling", async () => {
+    const bridgeMarker = `bridge-error-${crypto.randomUUID()}`;
+    const transportMarker = `error-send-${crypto.randomUUID()}`;
+    const socket = new TestSocket();
+    const defectMessages: string[] = [];
+    let dispatches = 0;
+    const connection = createSessionBrokerConnection<
+      TestSessionInfo,
+      TestSessionState,
+      TestSocket,
+      TestServerMessage,
+      { ok: true }
+    >({
+      url: "ws://broker.test/session",
+      createSocket: () => socket,
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      bridge: {
+        dispatchCommand: async () => {
+          dispatches += 1;
+          throw new Error(bridgeMarker);
+        },
+      },
+      onDefect: (message) => defectMessages.push(message),
+    });
+
+    connection.start();
+    socket.emitOpen();
+    socket.throwOnNextSend = new Error(transportMarker);
+    socket.emitMessage(
+      JSON.stringify({
+        type: "command",
+        requestId: "request-error-send",
+        command: "annotate",
+        input: { summary: "review" },
+      }),
+    );
+    await Bun.sleep(0);
+
+    expect(dispatches).toBe(1);
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    expect(socket.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+    const observable = JSON.stringify({
+      defectMessages,
+      sent: socket.sent,
+      close: socket.lastClose,
+      registration: connection.getRegistration(),
+    });
+    expect(observable).not.toContain(bridgeMarker);
+    expect(observable).not.toContain(transportMarker);
+  });
+
+  test("contains direct authenticated handshake scheduling failure after socket commit", async () => {
+    const marker = `direct-handshake-clock-${crypto.randomUUID()}`;
+    const clock = new ThrowingScheduleClockTest(1, new Error(marker));
+    const sockets: TestSocket[] = [];
+    const defectMessages: string[] = [];
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      producerAuthentication: await createProducerAuthenticationTest(),
+      lifecycleClock: clock,
+      onDefect: (message) => defectMessages.push(message),
+    });
+
+    expect(() => connection.start()).not.toThrow();
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]).toMatchObject({
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+      lastClose: { code: undefined, reason: undefined },
+    });
+    expect(clock.pendingCountTest()).toBe(0);
+    connection.start();
+    expect(sockets).toHaveLength(1);
+    expect(JSON.stringify({ defectMessages, socket: sockets[0] })).not.toContain(marker);
+  });
+
+  test("contains authenticated handshake scheduling failure during natural reconnect", async () => {
+    const marker = `reconnect-handshake-clock-${crypto.randomUUID()}`;
+    const clock = new ThrowingScheduleClockTest(3, new Error(marker));
+    const sockets: TestSocket[] = [];
+    const defectMessages: string[] = [];
+    const connection = createSessionBrokerConnection({
+      url: "ws://broker.test/session",
+      createSocket: () => {
+        const socket = new TestSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      registration: createRegistration(),
+      snapshot: createSnapshot(),
+      protocolParsers,
+      producerAuthentication: await createProducerAuthenticationTest(),
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+      onDefect: (message) => defectMessages.push(message),
+    });
+
+    connection.start();
+    sockets[0]!.emitClose();
+    expect(clock.pendingCountTest()).toBe(1);
+    await clock.advanceByTestAsync(10);
+
+    expect(clock.scheduleCalls).toBe(3);
+    expect(clock.pendingCountTest()).toBe(0);
+    expect(defectMessages).toEqual([SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1]).toMatchObject({
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+      lastClose: { code: undefined, reason: undefined },
+    });
+    connection.start();
+    expect(sockets).toHaveLength(2);
+    expect(JSON.stringify({ defectMessages, sockets })).not.toContain(marker);
+  });
+
+  test("redacts callback defects, contains its sink, and performs no package output", () => {
+    const sinkMarker = `sink-${crypto.randomUUID()}`;
+    const markers = Array.from({ length: 4 }, () => crypto.randomUUID());
+    let getterReads = 0;
+    let stringifications = 0;
+    const thrownValues: unknown[] = [
+      new Error(markers[0]),
+      markers[1],
+      { marker: markers[2] },
+      {
+        get marker() {
+          getterReads += 1;
+          return markers[3];
+        },
+        toString() {
+          stringifications += 1;
+          return markers[3];
+        },
+      },
+    ];
+    const hookArguments: unknown[][] = [];
+    const capturedConsole: unknown[][] = [];
+    const capturedStdout: unknown[][] = [];
+    const capturedStderr: unknown[][] = [];
+    const escaped: unknown[] = [];
+    const registrations: string[] = [];
+    const originalConsoleError = console.error;
+    const originalStdoutWrite = process.stdout.write;
+    const originalStderrWrite = process.stderr.write;
+
+    console.error = (...args: unknown[]) => capturedConsole.push(args);
+    process.stdout.write = ((...args: unknown[]) => {
+      capturedStdout.push(args);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((...args: unknown[]) => {
+      capturedStderr.push(args);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      for (const thrownValue of thrownValues) {
+        const clock = new DeterministicLifecycleClockTest();
+        const socket = new TestSocket();
+        const connection = createSessionBrokerConnection({
+          url: "ws://broker.test/session",
+          createSocket: () => socket,
+          registration: createRegistration(),
+          snapshot: createSnapshot(),
+          protocolParsers,
+          reconnectDelayMs: 10,
+          lifecycleClock: clock,
+          resolveClose: () => {
+            throw thrownValue;
+          },
+          onDefect: (...args) => {
+            hookArguments.push(args);
+            throw new Error(sinkMarker);
+          },
+        });
+
+        connection.start();
+        socket.emitOpen();
+        try {
+          socket.emitClose(1008, "close-policy");
+        } catch (error) {
+          escaped.push(error);
+        }
+        registrations.push(JSON.stringify(connection.getRegistration()));
+        clock.advanceByTest(100);
+        socket.emitClose(1008, "late-close");
+        connection.start();
+
+        expect(clock.pendingCountTest()).toBe(0);
+      }
+    } finally {
+      console.error = originalConsoleError;
+      process.stdout.write = originalStdoutWrite;
+      process.stderr.write = originalStderrWrite;
+    }
+
+    expect(hookArguments).toEqual(
+      thrownValues.map(() => [SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE]),
+    );
+    expect(capturedConsole).toEqual([]);
+    expect(capturedStdout).toEqual([]);
+    expect(capturedStderr).toEqual([]);
+    expect(escaped).toEqual([]);
+    expect(getterReads).toBe(0);
+    expect(stringifications).toBe(0);
+    const observableText = JSON.stringify({
+      hookArguments,
+      capturedConsole,
+      capturedStdout,
+      capturedStderr,
+      escaped,
+      registrations,
+    });
+    for (const marker of [...markers, sinkMarker]) expect(observableText).not.toContain(marker);
+  });
+
   test("uses a delayed fixed-rate heartbeat and disposes it on stop", () => {
     const clock = new DeterministicLifecycleClockTest();
     const socket = new TestSocket();
@@ -434,6 +888,7 @@ describe("session broker connection", () => {
   test("preserves a synchronous socket factory throw and permits a later direct start", () => {
     const sockets: TestSocket[] = [];
     const startupFailure = { source: "socket factory" };
+    const defectMessages: string[] = [];
     let attempts = 0;
     const connection = createSessionBrokerConnection<
       TestSessionInfo,
@@ -453,6 +908,7 @@ describe("session broker connection", () => {
       registration: createRegistration(),
       snapshot: createSnapshot(),
       protocolParsers,
+      onDefect: (message) => defectMessages.push(message),
     });
 
     let thrown: unknown;
@@ -464,6 +920,7 @@ describe("session broker connection", () => {
     expect(thrown).toBe(startupFailure);
     expect(attempts).toBe(1);
     expect(sockets).toHaveLength(0);
+    expect(defectMessages).toEqual([]);
 
     connection.start();
     sockets[0]!.emitOpen();
@@ -585,8 +1042,8 @@ describe("session broker connection", () => {
 
     connection.start();
     socket.emitOpen();
-    expect(() => socket.emitMessage("{")).toThrow("socket close exploded");
-    expect(socket.closeAttempts).toBe(1);
+    expect(() => socket.emitMessage("{")).not.toThrow();
+    expect(socket.closeAttempts).toBe(2);
     const sentBeforeLateCommand = socket.sent.length;
 
     socket.emitMessage(
@@ -599,7 +1056,7 @@ describe("session broker connection", () => {
     );
     expect(dispatches).toBe(0);
     expect(socket.sent).toHaveLength(sentBeforeLateCommand);
-    expect(socket.closeAttempts).toBe(1);
+    expect(socket.closeAttempts).toBe(2);
 
     socket.failClose = false;
     socket.onerror?.();
@@ -661,10 +1118,8 @@ describe("session broker connection", () => {
       helloInit.hello,
       "ws://broker.test/session",
     );
-    expect(() => clock.advanceByTest(connection.limits.maxHandshakeDurationMs)).toThrow(
-      "socket close exploded",
-    );
-    expect(socket.closeAttempts).toBe(1);
+    expect(() => clock.advanceByTest(connection.limits.maxHandshakeDurationMs)).not.toThrow();
+    expect(socket.closeAttempts).toBe(2);
 
     socket.emitMessage(JSON.stringify({ type: "hello-challenge", challenge }));
     await clock.flushMicrotasksTest();
@@ -1170,30 +1625,8 @@ describe("session broker connection", () => {
   });
 
   test("closes malformed and mismatched commands without invoking the bridge", async () => {
-    const socket = new TestSocket();
     let dispatched = 0;
-    const connection = createSessionBrokerConnection<
-      TestSessionInfo,
-      TestSessionState,
-      TestSocket,
-      TestServerMessage,
-      { ok: true }
-    >({
-      url: "ws://broker.test/session",
-      createSocket: () => socket,
-      registration: createRegistration(),
-      snapshot: createSnapshot(),
-      protocolParsers,
-      bridge: {
-        dispatchCommand: async () => {
-          dispatched += 1;
-          return { ok: true };
-        },
-      },
-      reconnectDelayMs: 1_000,
-    });
-    connection.start();
-    socket.emitOpen();
+    const defectMessages: string[] = [];
 
     for (const message of [
       null,
@@ -1211,16 +1644,41 @@ describe("session broker connection", () => {
         input: { summary: "note", extra: true },
       },
     ]) {
-      socket.readyState = 1;
+      const socket = new TestSocket();
+      const connection = createSessionBrokerConnection<
+        TestSessionInfo,
+        TestSessionState,
+        TestSocket,
+        TestServerMessage,
+        { ok: true }
+      >({
+        url: "ws://broker.test/session",
+        createSocket: () => socket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers,
+        bridge: {
+          dispatchCommand: async () => {
+            dispatched += 1;
+            return { ok: true };
+          },
+        },
+        reconnectDelayMs: 1_000,
+        onDefect: (defect) => defectMessages.push(defect),
+      });
+      connection.start();
+      socket.emitOpen();
       socket.emitMessage(JSON.stringify(message));
       expect(socket.lastClose).toEqual({
         code: 1008,
         reason: "Malformed session broker command.",
       });
+      expect(defectMessages).toEqual([]);
+      connection.stop();
     }
     await Bun.sleep(0);
     expect(dispatched).toBe(0);
-    connection.stop();
+    expect(defectMessages).toEqual([]);
   });
 
   test("enforces text framing and the exact websocket message ceiling before app parsing", async () => {
@@ -1463,6 +1921,97 @@ describe("session broker connection", () => {
     expect(sockets[0]!.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
     expect(sockets[1]!.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
     connection.stop();
+  });
+
+  test("closes post-dispatch result failures without defect reporting or sensitive output", async () => {
+    type AdversarialResult = { ok: true; toJSON?: () => { ok: true } };
+
+    for (const failure of ["measurement", "parser", "serialization"] as const) {
+      const marker = `${failure}-${crypto.randomUUID()}`;
+      let parsedSerializationCalls = 0;
+      const bridgeResult: AdversarialResult =
+        failure === "measurement"
+          ? {
+              ok: true,
+              toJSON: () => {
+                throw new Error(marker);
+              },
+            }
+          : { ok: true };
+      const parsedResult: AdversarialResult =
+        failure === "serialization"
+          ? {
+              ok: true,
+              toJSON: () => {
+                parsedSerializationCalls += 1;
+                if (parsedSerializationCalls === 2) throw new Error(marker);
+                return { ok: true };
+              },
+            }
+          : { ok: true };
+      const adversarialParsers = createSessionBrokerProtocolParsers<
+        TestSessionInfo,
+        TestSessionState,
+        TestServerMessage,
+        AdversarialResult
+      >({
+        appRevision: 1,
+        features: [],
+        parseRegistration: (value) => value as SessionRegistration<TestSessionInfo>,
+        parseSnapshot: (value) => value as SessionSnapshot<TestSessionState>,
+        commands: [
+          {
+            command: "annotate",
+            version: 1,
+            parseInput: (value) => value as { summary: string },
+            parseResult: () => {
+              if (failure === "parser") throw new Error(marker);
+              return parsedResult;
+            },
+          },
+        ],
+      });
+      const socket = new TestSocket();
+      const defectMessages: string[] = [];
+      const connection = createSessionBrokerConnection<
+        TestSessionInfo,
+        TestSessionState,
+        TestSocket,
+        TestServerMessage,
+        AdversarialResult
+      >({
+        url: "ws://broker.test/session",
+        createSocket: () => socket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers: adversarialParsers,
+        bridge: { dispatchCommand: async () => bridgeResult },
+        onDefect: (message) => defectMessages.push(message),
+      });
+
+      connection.start();
+      socket.emitOpen();
+      socket.emitMessage(
+        JSON.stringify({
+          type: "command",
+          requestId: `request-${failure}`,
+          command: "annotate",
+          input: { summary: "review" },
+        }),
+      );
+      await Bun.sleep(0);
+
+      expect(socket.lastClose).toEqual({
+        code: 1008,
+        reason: "Malformed session broker command result.",
+      });
+      expect(defectMessages).toEqual([]);
+      expect(socket.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
+      expect(
+        JSON.stringify({ defectMessages, sent: socket.sent, close: socket.lastClose }),
+      ).not.toContain(marker);
+      connection.stop();
+    }
   });
 
   test("does not send a command result when envelope serialization retires its generation", async () => {
@@ -1959,53 +2508,37 @@ describe("session broker connection", () => {
   });
 
   test("rejects producer hello wrappers with unknown or dangerous keys", async () => {
-    const socket = new TestSocket();
-    const pair = (await crypto.subtle.generateKey("Ed25519", false, [
-      "sign",
-      "verify",
-    ])) as CryptoKeyPair;
-    const grant: ProducerGrant = {
-      kind: "producer",
-      appId: "dev.example",
-      principalId: "producer-1",
-      keyId: "producer-key-1",
-      grantId: "producer-grant-1",
-      algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
-      issuedAt: Date.now() - 1_000,
-      expiresAt: Date.now() + 60_000,
-      revocationId: "producer-revocation-1",
-      mayDelegate: false,
-      operations: ["register"],
-    };
-    const connection = createSessionBrokerConnection({
-      url: "ws://broker.test/session",
-      createSocket: () => socket,
-      registration: createRegistration(),
-      snapshot: createSnapshot(),
-      protocolParsers,
-      producerAuthentication: {
-        appId: "dev.example",
-        appRevision: 1,
-        credential: { grant, privateKey: pair.privateKey },
-        daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
-      },
-      reconnectDelayMs: 10_000,
-    });
-    connection.start();
-    socket.emitOpen();
+    const producerAuthentication = await createProducerAuthenticationTest();
+    const defectMessages: string[] = [];
 
     for (const message of [
       '{"type":"hello-challenge","challenge":{},"extra":true}',
       '{"type":"hello-challenge","challenge":{},"__proto__":{}}',
     ]) {
-      socket.readyState = 1;
+      const socket = new TestSocket();
+      const connection = createSessionBrokerConnection({
+        url: "ws://broker.test/session",
+        createSocket: () => socket,
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+        protocolParsers,
+        producerAuthentication,
+        reconnectDelayMs: 10_000,
+        onDefect: (defect) => defectMessages.push(defect),
+      });
+      connection.start();
+      socket.emitOpen();
       socket.emitMessage(message);
+      await Bun.sleep(0);
+
       expect(socket.lastClose).toEqual({
         code: 1008,
         reason: "Session broker authentication failed.",
       });
+      expect(defectMessages).toEqual([]);
+      connection.stop();
     }
-    connection.stop();
+    expect(defectMessages).toEqual([]);
   });
 
   test("retries a transient synchronous socket factory failure during reconnect", async () => {

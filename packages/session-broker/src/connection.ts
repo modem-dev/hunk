@@ -46,6 +46,9 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SOCKET_OPEN_STATE = 1;
 const PRODUCER_COMMAND_OVERHEAD_BYTES = 128;
 
+export const SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE =
+  "Session broker lifecycle failed unexpectedly.";
+
 /** Identifies the exact socket generation that owns one connection callback. */
 export interface SessionBrokerConnectionGeneration {
   readonly id: number;
@@ -130,6 +133,8 @@ export interface SessionBrokerConnectionOptions<
   prepareReconnect?: (generation: SessionBrokerConnectionGeneration) => Promise<void>;
   onConnected?: (generation: SessionBrokerConnectionGeneration) => void;
   onWarning?: (message: string, generation: SessionBrokerConnectionGeneration) => void;
+  /** Observe one terminal lifecycle defect through a fixed, redacted message. */
+  onDefect?: (message: string) => void;
   limits?: SessionBrokerLimitOptions["limits"];
   unsafeLimits?: SessionBrokerLimitOptions["unsafeLimits"];
 }
@@ -161,6 +166,7 @@ export class SessionBrokerConnection<
   private reconnectTimer: ScheduledReconnect<Socket> | null = null;
   private heartbeatTimer: (() => void) | null = null;
   private stopped = false;
+  private lifecycleDefectReported = false;
   private registration: SessionRegistration<Info>;
   private snapshot: SessionSnapshot<State>;
   private pendingSessionReplacement: PendingSessionReplacement<Info, State> | null = null;
@@ -239,7 +245,7 @@ export class SessionBrokerConnection<
 
   setBridge(bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null) {
     this.bridge = bridge;
-    void this.flushQueuedMessages();
+    this.observeLifecycleWork(this.flushQueuedMessages());
   }
 
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
@@ -332,106 +338,134 @@ export class SessionBrokerConnection<
     this.currentGeneration = generation;
     this.socket = socket;
     if (this.options.producerAuthentication) {
-      const disposeHandshake = this.lifecycleClock.schedule(() => {
-        this.closeGeneration(generation, 1008, "Session broker authentication timed out.");
-      }, this.limits.maxHandshakeDurationMs);
+      let disposeHandshake: () => void;
+      try {
+        disposeHandshake = this.lifecycleClock.schedule(() => {
+          this.runLifecycleCallback(() => {
+            this.closeGeneration(generation, 1008, "Session broker authentication timed out.");
+          });
+        }, this.limits.maxHandshakeDurationMs);
+      } catch {
+        // Construction has already committed this socket generation. A scheduling failure is no
+        // longer a caller-owned factory failure, so retire it through the bounded defect boundary.
+        this.reportLifecycleDefect();
+        return;
+      }
+      if (this.stopped || this.currentGeneration !== generation) {
+        try {
+          disposeHandshake();
+        } catch {
+          this.reportLifecycleDefect();
+        }
+        return;
+      }
       this.handshakeTimers.set(generation, disposeHandshake);
     }
 
     socket.onopen = () => {
-      if (!this.canAuthenticate(generation)) return;
-      if (this.options.producerAuthentication) {
-        const authentication = this.options.producerAuthentication;
-        const request = createSessionBrokerHelloRequest({
-          ...authentication,
-          endpoint: this.options.url,
-        });
-        this.producerHellos.set(generation, { request });
-        socket.send(JSON.stringify({ type: "hello-init", hello: request }));
-        return;
-      }
-      this.activateGeneration(generation);
+      this.runLifecycleCallback(() => {
+        if (!this.canAuthenticate(generation)) return;
+        if (this.options.producerAuthentication) {
+          const authentication = this.options.producerAuthentication;
+          const request = createSessionBrokerHelloRequest({
+            ...authentication,
+            endpoint: this.options.url,
+          });
+          this.producerHellos.set(generation, { request });
+          socket.send(JSON.stringify({ type: "hello-init", hello: request }));
+          return;
+        }
+        this.activateGeneration(generation);
+      });
     };
 
     socket.onmessage = (event) => {
-      if (!this.canReceive(generation)) return;
-      if (typeof event.data !== "string") {
-        this.closeGeneration(generation, 1003, "Session broker accepts text messages only.");
-        return;
-      }
-      if (utf8ByteLength(event.data) > this.limits.maxWsMessageBytes) {
-        this.closeGeneration(generation, 1009, "Message exceeds the session broker size limit.");
-        return;
-      }
-      if (this.options.producerAuthentication && generation.status !== "active") {
-        void this.handleProducerHello(generation, event.data);
-        return;
-      }
-      let parsed: ServerMessage;
-      try {
-        const raw = parseSessionBrokerJsonText(event.data) as {
-          input?: unknown;
-        };
-        if (commandValueBytes(raw?.input) > this.limits.maxCommandInputBytes) {
-          throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+      this.runLifecycleCallback(() => {
+        if (!this.canReceive(generation)) return;
+        if (typeof event.data !== "string") {
+          this.closeGeneration(generation, 1003, "Session broker accepts text messages only.");
+          return;
         }
-        parsed = this.options.protocolParsers.parseServerMessage(raw);
-        if (commandValueBytes(parsed.input) > this.limits.maxCommandInputBytes) {
-          throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+        if (utf8ByteLength(event.data) > this.limits.maxWsMessageBytes) {
+          this.closeGeneration(generation, 1009, "Message exceeds the session broker size limit.");
+          return;
         }
-      } catch {
-        // Never invoke the app bridge after a malformed or mismatched command contract. Closing
-        // prevents this producer from retaining daemon assumptions that were not actually parsed.
-        this.closeGeneration(generation, 1008, "Malformed session broker command.");
-        return;
-      }
+        if (this.options.producerAuthentication && generation.status !== "active") {
+          this.observeLifecycleWork(this.handleProducerHello(generation, event.data));
+          return;
+        }
+        let parsed: ServerMessage;
+        try {
+          const raw = parseSessionBrokerJsonText(event.data) as {
+            input?: unknown;
+          };
+          if (commandValueBytes(raw?.input) > this.limits.maxCommandInputBytes) {
+            throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+          }
+          parsed = this.options.protocolParsers.parseServerMessage(raw);
+          if (commandValueBytes(parsed.input) > this.limits.maxCommandInputBytes) {
+            throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+          }
+        } catch {
+          // Never invoke the app bridge after a malformed or mismatched command contract. Closing
+          // prevents this producer from retaining daemon assumptions that were not actually parsed.
+          this.closeGeneration(generation, 1008, "Malformed session broker command.");
+          return;
+        }
 
-      // App-owned parsers may synchronously stop or replace the connection. Refuse admission after
-      // that authority change so the stale input retains no budget or queue ownership.
-      if (!this.isGenerationActive(generation)) return;
-      void this.handleServerMessage(generation, parsed);
+        // App-owned parsers may synchronously stop or replace the connection. Refuse admission after
+        // that authority change so the stale input retains no budget or queue ownership.
+        if (!this.isGenerationActive(generation)) return;
+        this.observeLifecycleWork(this.handleServerMessage(generation, parsed));
+      });
     };
 
     socket.onclose = (event) => {
-      const wasAuthenticated = generation.authenticated;
-      this.disposeHandshake(generation);
-      const ownsConnection = this.currentGeneration === generation;
-      generation.status = "closed";
-      if (ownsConnection) {
-        this.socket = null;
-        this.stopHeartbeat();
-      }
+      this.runLifecycleCallback(() => {
+        const wasAuthenticated = generation.authenticated;
+        this.disposeHandshake(generation);
+        const ownsConnection = this.currentGeneration === generation;
+        generation.status = "closed";
+        if (ownsConnection) {
+          this.socket = null;
+          this.stopHeartbeat();
+        }
 
-      this.queuedMessages = this.queuedMessages.filter((queued) => {
-        if (queued.generation !== generation) return true;
-        queued.reservation.release();
-        return false;
+        this.queuedMessages = this.queuedMessages.filter((queued) => {
+          if (queued.generation !== generation) return true;
+          queued.reservation.release();
+          return false;
+        });
+        // Executing bridge work retains its reservation until its promise settles. A disconnect
+        // prevents its response from migrating but does not make the retained input or work vanish.
+        if (this.stopped || !ownsConnection || this.currentGeneration !== generation) return;
+
+        const directive = this.options.resolveClose?.(
+          {
+            code: event.code,
+            reason: event.reason,
+            authenticated: wasAuthenticated,
+          },
+          generation.token,
+        ) ?? { reconnect: true };
+        if (directive.warning && this.isGenerationCurrent(generation.token)) {
+          this.observeLifecycleCallbackResult(
+            this.options.onWarning?.(directive.warning, generation.token),
+          );
+        }
+
+        if (directive.reconnect !== false && this.isGenerationCurrent(generation.token)) {
+          this.scheduleReconnect(generation);
+        }
       });
-      // Executing bridge work retains its reservation until its promise settles. A disconnect
-      // prevents its response from migrating but does not make the retained input or work vanish.
-      if (this.stopped || !ownsConnection || this.currentGeneration !== generation) return;
-
-      const directive = this.options.resolveClose?.(
-        {
-          code: event.code,
-          reason: event.reason,
-          authenticated: wasAuthenticated,
-        },
-        generation.token,
-      ) ?? { reconnect: true };
-      if (directive.warning && this.isGenerationCurrent(generation.token)) {
-        this.options.onWarning?.(directive.warning, generation.token);
-      }
-
-      if (directive.reconnect !== false && this.isGenerationCurrent(generation.token)) {
-        this.scheduleReconnect(generation);
-      }
     };
 
     socket.onerror = () => {
-      // Normalize raw socket errors through onclose so reconnect and warning policy stays in one
-      // place instead of splitting behavior across runtime-specific error events.
-      this.closeGeneration(generation);
+      this.runLifecycleCallback(() => {
+        // Normalize raw socket errors through onclose so reconnect and warning policy stays in one
+        // place instead of splitting behavior across runtime-specific error events.
+        this.closeGeneration(generation);
+      });
     };
   }
 
@@ -503,7 +537,7 @@ export class SessionBrokerConnection<
     generation.authenticated = true;
     this.disposeHandshake(generation);
     this.startHeartbeat(generation);
-    this.options.onConnected?.(generation.token);
+    this.observeLifecycleCallbackResult(this.options.onConnected?.(generation.token));
     const replacement = this.pendingSessionReplacement;
     const registration = replacement?.registration ?? this.registration;
     const snapshot = replacement?.snapshot ?? this.snapshot;
@@ -518,12 +552,13 @@ export class SessionBrokerConnection<
     ) {
       replacement.published = true;
     }
-    void this.flushQueuedMessages(generation);
+    this.observeLifecycleWork(this.flushQueuedMessages(generation));
   }
 
   /** Verify the daemon challenge and acknowledgement before registration leaves this process. */
   private async handleProducerHello(generation: ConnectionGeneration<Socket>, message: unknown) {
     const socket = generation.socket;
+    let sendingProof = false;
     let activating = false;
     try {
       if (typeof message === "string" && utf8ByteLength(message) > this.limits.maxWsMessageBytes) {
@@ -548,7 +583,9 @@ export class SessionBrokerConnection<
         );
         if (!this.canAuthenticate(generation)) return;
         hello.pending = pending;
+        sendingProof = true;
         socket.send(JSON.stringify({ type: "hello-proof", proof: pending.proof }));
+        sendingProof = false;
         return;
       }
       if (!hello.pending) throw new Error();
@@ -558,12 +595,11 @@ export class SessionBrokerConnection<
       activating = true;
       this.activateGeneration(generation);
     } catch {
-      if (
-        !this.canAuthenticate(generation) &&
-        !(activating && this.isGenerationActive(generation))
-      ) {
+      if (sendingProof || activating) {
+        this.reportLifecycleDefect();
         return;
       }
+      if (!this.canAuthenticate(generation)) return;
       this.closeGeneration(generation, 1008, "Session broker authentication failed.");
     }
   }
@@ -581,7 +617,7 @@ export class SessionBrokerConnection<
       if (this.reconnectTimer !== scheduled) return;
       this.reconnectTimer = null;
       if (!this.isGenerationCurrent(generation.token)) return;
-      void this.prepareAndReconnect(generation);
+      this.observeLifecycleWork(this.prepareAndReconnect(generation));
     }, delayMs);
     scheduled = { generation, dispose };
     this.reconnectTimer = scheduled;
@@ -614,9 +650,11 @@ export class SessionBrokerConnection<
   /** Warn and retry only while one failed reconnect generation still owns commit authority. */
   private handleReconnectFailure(generation: ConnectionGeneration<Socket>, error: unknown) {
     if (!this.isGenerationCurrent(generation.token)) return;
-    this.options.onWarning?.(
-      error instanceof Error ? error.message : "Session broker reconnect preparation failed.",
-      generation.token,
+    this.observeLifecycleCallbackResult(
+      this.options.onWarning?.(
+        error instanceof Error ? error.message : "Session broker reconnect preparation failed.",
+        generation.token,
+      ),
     );
     if (!this.isGenerationCurrent(generation.token)) return;
     this.scheduleReconnect(generation);
@@ -628,10 +666,12 @@ export class SessionBrokerConnection<
     }
 
     this.heartbeatTimer = this.lifecycleClock.scheduleInterval(() => {
-      if (!this.isGenerationActive(generation)) return;
-      this.send({
-        type: "heartbeat",
-        sessionId: this.registration.sessionId,
+      this.runLifecycleCallback(() => {
+        if (!this.isGenerationActive(generation)) return;
+        this.send({
+          type: "heartbeat",
+          sessionId: this.registration.sessionId,
+        });
       });
     }, this.options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS);
   }
@@ -643,6 +683,87 @@ export class SessionBrokerConnection<
 
     this.heartbeatTimer();
     this.heartbeatTimer = null;
+  }
+
+  /** Contain one native or timer callback failure at the lifecycle owner. */
+  private runLifecycleCallback(callback: () => void) {
+    try {
+      callback();
+    } catch {
+      this.reportLifecycleDefect();
+    }
+  }
+
+  /** Observe fire-and-forget lifecycle work without exposing its rejection. */
+  private observeLifecycleWork(work: Promise<unknown>) {
+    void work.catch(() => this.reportLifecycleDefect());
+  }
+
+  /** Treat a promise returned from a nominally synchronous lifecycle callback as observed work. */
+  private observeLifecycleCallbackResult(result: unknown) {
+    void Promise.resolve(result).catch(() => this.reportLifecycleDefect());
+  }
+
+  /** Retire all lifecycle authority and emit at most one fixed defect notification. */
+  private reportLifecycleDefect() {
+    if (this.stopped || this.lifecycleDefectReported) return;
+    this.lifecycleDefectReported = true;
+    this.stopped = true;
+
+    const reconnectTimer = this.reconnectTimer;
+    this.reconnectTimer = null;
+    try {
+      reconnectTimer?.dispose();
+    } catch {
+      // Defect cleanup is terminal and best effort; observer failures cannot recurse.
+    }
+
+    const heartbeatTimer = this.heartbeatTimer;
+    this.heartbeatTimer = null;
+    try {
+      heartbeatTimer?.();
+    } catch {
+      // Continue retiring the remaining socket and scheduling authority.
+    }
+
+    const handshakeTimers = [...this.handshakeTimers.values()];
+    this.handshakeTimers.clear();
+    for (const dispose of handshakeTimers) {
+      try {
+        dispose();
+      } catch {
+        // Continue retiring every handshake timer after one disposer fails.
+      }
+    }
+
+    for (const entry of this.queuedMessages.splice(0)) {
+      try {
+        entry.reservation.release();
+      } catch {
+        // Internal reservation cleanup cannot weaken terminal lifecycle retirement.
+      }
+    }
+
+    const generation = this.currentGeneration;
+    this.currentGeneration = null;
+    this.socket = null;
+    if (generation) {
+      generation.status = "closed";
+      try {
+        generation.socket.close();
+      } catch {
+        // Socket cleanup cannot escape or trigger a second defect notification.
+      }
+    }
+
+    try {
+      const observerResult = this.options.onDefect?.(SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE);
+      // TypeScript permits async functions where a void callback is expected. Observe that promise
+      // without recursively reporting a defect in the best-effort defect observer itself.
+      void Promise.resolve(observerResult).catch(() => undefined);
+    } catch {
+      // The optional observer is best effort and cannot recursively report its own failure.
+    }
   }
 
   private send(message: SessionClientMessage<Info, State, Result>) {
@@ -721,6 +842,7 @@ export class SessionBrokerConnection<
   private async flushQueuedMessages(generation = this.currentGeneration) {
     if (!this.bridge || !generation || this.draining) return;
     this.draining = true;
+    let failed = false;
     try {
       // Take one command at a time so newly received work joins the same FIFO and a disconnect can
       // prevent every command that has not started from executing on a replacement transport.
@@ -742,14 +864,18 @@ export class SessionBrokerConnection<
           entry.reservation.release();
         }
       }
+    } catch (error) {
+      failed = true;
+      throw error;
     } finally {
       this.draining = false;
       if (
+        !failed &&
         this.bridge &&
         this.currentGeneration &&
         this.queuedMessages.some((entry) => entry.generation === this.currentGeneration)
       ) {
-        void this.flushQueuedMessages(this.currentGeneration);
+        this.observeLifecycleWork(this.flushQueuedMessages(this.currentGeneration));
       }
     }
   }
@@ -761,13 +887,30 @@ export class SessionBrokerConnection<
   ) {
     const bridge = this.bridge;
     if (!bridge) return;
+
+    let result: Result;
     try {
-      const result = await bridge.dispatchCommand(message);
+      result = await bridge.dispatchCommand(message);
+    } catch (error) {
       if (!this.isGenerationActive(generation)) return;
+      // A bridge rejection is an expected command outcome. Serialization and transport remain
+      // outside this catch so their defects cannot be mislabeled or expose the thrown value.
+      this.sendToGeneration(generation, {
+        type: "command-result",
+        requestId: message.requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown broker connection error.",
+      });
+      return;
+    }
+
+    if (!this.isGenerationActive(generation)) return;
+    let parsedResult: Result;
+    try {
       if (commandValueBytes(result) > this.limits.maxCommandResultBytes) {
         throw new BrokerProtocolError("invalid-app-payload");
       }
-      const parsedResult = this.options.protocolParsers.parseCommandResult(
+      parsedResult = this.options.protocolParsers.parseCommandResult(
         message.command,
         message.commandVersion ?? 1,
         result,
@@ -775,25 +918,29 @@ export class SessionBrokerConnection<
       if (commandValueBytes(parsedResult) > this.limits.maxCommandResultBytes) {
         throw new BrokerProtocolError("invalid-app-payload");
       }
-      this.sendToGeneration(generation, {
+    } catch {
+      if (!this.isGenerationActive(generation)) return;
+      this.closeGeneration(generation, 1008, "Malformed session broker command result.");
+      return;
+    }
+
+    let serialized: string;
+    try {
+      serialized = JSON.stringify({
         type: "command-result",
         requestId: message.requestId,
         ok: true,
         result: parsedResult,
-      });
-    } catch (error) {
+      } satisfies SessionClientMessage<Info, State, Result>);
+    } catch {
       if (!this.isGenerationActive(generation)) return;
-      if (error instanceof BrokerProtocolError) {
-        this.closeGeneration(generation, 1008, "Malformed session broker command result.");
-        return;
-      }
-      this.sendToGeneration(generation, {
-        type: "command-result",
-        requestId: message.requestId,
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown broker connection error.",
-      });
+      this.closeGeneration(generation, 1008, "Malformed session broker command result.");
+      return;
     }
+    // App-owned serialization can retire this generation. The transport write itself remains
+    // outside every expected-error catch and therefore rejects to the lifecycle defect observer.
+    if (!this.isGenerationActive(generation)) return;
+    generation.socket.send(serialized);
   }
 }
 
