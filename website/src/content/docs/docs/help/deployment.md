@@ -52,7 +52,7 @@ The domain move is the only production switch. No proxy, rewrite, or `/docs` pat
 ```bash
 curl --fail --location https://hunk.dev/
 curl --fail --location https://hunk.dev/docs/
-curl --fail https://hunk.dev/sitemap-index.xml
+curl --fail https://hunk.dev/sitemap.xml
 curl --fail https://hunk.dev/pagefind/pagefind.js
 curl --fail https://hunk.dev/docs/hunk-review-skill.md
 curl --fail https://hunk.dev/og.png

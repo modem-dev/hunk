@@ -38,4 +38,4 @@ Allow: /
 User-agent: meta-externalagent
 Allow: /
 
-Sitemap: https://hunk.dev/sitemap-index.xml
+Sitemap: https://hunk.dev/sitemap.xml
