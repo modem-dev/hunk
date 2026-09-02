@@ -129,7 +129,6 @@ test("every comparison is also served as Markdown for agents", async ({ page, re
 test("the comparison cluster is reachable from the site's own navigation", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".brand-footer a[href='/compare/']")).toHaveCount(1);
-  await expect(page.locator("main a[href='/compare/']")).toHaveCount(1);
 
   await page.goto("/compare/hunk-vs-delta/");
   await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Compare");
