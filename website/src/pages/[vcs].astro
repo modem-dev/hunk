@@ -1,0 +1,138 @@
+---
+import BrandFooter from "../components/BrandFooter.astro";
+import BrandHeader from "../components/BrandHeader.astro";
+import PageHead from "../components/PageHead.astro";
+import { VCS_LANDING_PAGES, vcsLandingUrl, type VcsLandingPage } from "../data/vcsLandingPages";
+import { withInlineCode, withoutInlineCode } from "../lib/inlineCode";
+import { SITE_ORIGIN } from "../lib/site";
+import "../styles/marketing.css";
+import "../styles/compare.css";
+
+/** Builds one canonical workflow guide for every VCS Hunk supports. */
+export function getStaticPaths() {
+  return VCS_LANDING_PAGES.map((page) => ({ params: { vcs: page.slug }, props: { page } }));
+}
+
+interface Props {
+  page: VcsLandingPage;
+}
+
+const { page } = Astro.props;
+const path = `/${page.slug}/`;
+const url = vcsLandingUrl(page);
+const siblings = VCS_LANDING_PAGES.filter((entry) => entry.slug !== page.slug);
+const schema = [
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: page.title,
+    description: page.description,
+    url,
+    mainEntityOfPage: url,
+    inLanguage: "en",
+    author: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
+    publisher: { "@type": "Organization", name: "Modem", url: "https://modem.dev" },
+    about: {
+      "@type": "SoftwareApplication",
+      name: "Hunk",
+      url: `${SITE_ORIGIN}/`,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "macOS, Linux, Windows",
+    },
+    abstract: withoutInlineCode(page.answer),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Hunk", item: `${SITE_ORIGIN}/` },
+      { "@type": "ListItem", position: 2, name: `Hunk for ${page.name}`, item: url },
+    ],
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageHead
+      title={page.title}
+      description={page.description}
+      keywords={page.keywords.join(", ")}
+      path={path}
+      ogImageAlt={`Hunk terminal diff viewer for ${page.name}`}
+      schema={schema}
+    />
+    <link rel="alternate" type="text/markdown" href={`${SITE_ORIGIN}/${page.slug}.md`} />
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top"><BrandHeader /></header>
+      <main>
+        <section class="cmp cmp-intro">
+          <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Hunk</a> / {page.name}</nav>
+          <p class="kicker"># hunk for {page.command}</p>
+          <h1>Review {page.name} changes<br />without leaving the terminal.</h1>
+          <p class="cmp-answer">{page.answer}</p>
+          <p class="cmp-meta">
+            <span>Native {page.command} repository support</span>
+            <a href={`/${page.slug}.md`}>Read as Markdown</a>
+          </p>
+        </section>
+
+        <section class="cmp cmp-section" aria-labelledby="quick-start">
+          <h2 id="quick-start">Start reviewing</h2>
+          <p class="cmp-prose">Run these commands inside a {page.name} workspace:</p>
+          <figure class="cmp-code">
+            <div class="paper-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="pt">terminal</span></div>
+            <pre tabindex="0"><code>{page.quickStart.join("\n")}</code></pre>
+          </figure>
+        </section>
+
+        {page.workflows.map((workflow) => (
+          <section class="cmp cmp-section">
+            <h2>{workflow.heading}</h2>
+            <p class="cmp-prose" set:html={withInlineCode(workflow.body)} />
+          </section>
+        ))}
+
+        {page.setup && (
+          <section class="cmp cmp-section">
+            <h2>{page.setup.heading}</h2>
+            <figure class="cmp-code">
+              <div class="paper-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="pt">config</span></div>
+              <pre tabindex="0"><code>{page.setup.lines.join("\n")}</code></pre>
+            </figure>
+          </section>
+        )}
+
+        <section class="cmp cmp-section">
+          <h2>What to know</h2>
+          <p class="cmp-prose">{page.limitations}</p>
+          <p class="cmp-prose"><a href={page.docsHref}>Read the complete {page.name} workflow documentation →</a></p>
+        </section>
+
+        <section class="cmp cmp-section" aria-labelledby="other-vcs">
+          <h2 id="other-vcs">Hunk for other version-control systems</h2>
+          <div class="cmp-cards">
+            {siblings.map((entry) => (
+              <a class="cmp-card" href={`/${entry.slug}/`}>
+                <b>Hunk for {entry.name}</b>
+                <span>{entry.description}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+
+        <section class="cmp cmp-tail">
+          <h2>Try Hunk on your next {page.name} changeset.</h2>
+          <div class="cta">
+            <a class="ghost" href="/#install">Install hunk</a>
+            <a class="plain" href={page.docsHref}>Read the workflow docs</a>
+          </div>
+        </section>
+      </main>
+      <BrandFooter />
+    </div>
+  </body>
+</html>
