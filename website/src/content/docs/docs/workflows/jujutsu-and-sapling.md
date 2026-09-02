@@ -3,7 +3,7 @@ title: Jujutsu and Sapling
 description: Use native revsets and pager integration in jj and Sapling workspaces.
 ---
 
-Hunk detects Git, Jujutsu (`jj`), and Sapling (`sl`) repositories. `hunk diff [target]` and `hunk show [target]` pass native revsets to the detected backend.
+Hunk detects Git, Jujutsu (`jj`), and Sapling (`sl`) repositories. `hunk diff [target]` and `hunk show [target]` pass native revsets to the detected backend. See the concise [Jujutsu](/jujutsu/) and [Sapling](/sapling/) workflow overviews for a quick introduction.
 
 ## Jujutsu
 
