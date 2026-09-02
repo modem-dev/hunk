@@ -59,13 +59,17 @@ test("a release page carries its versions, dates, and install command", async ({
   await expect(page.locator("#v0-18-0-beta-0")).toHaveCount(1);
 });
 
-test("a beta-only series publishes notes without stable install guidance", async ({ page }) => {
+test("a promoted prerelease series publishes stable install guidance", async ({ page }) => {
   await page.goto("/changelog/0.21/");
-  await expect(page.getByRole("heading", { level: 3, name: "0.21.0-beta.0" })).toBeVisible();
+  for (const version of ["0.21.0", "0.21.0-beta.1", "0.21.0-beta.0"]) {
+    await expect(page.getByRole("heading", { level: 3, name: version, exact: true })).toBeVisible();
+  }
+  await expect(page.locator("#v0-21-0")).toHaveCount(1);
   await expect(page.locator("#v0-21-0-beta-0")).toHaveCount(1);
+
   const installBlocks = page.locator(".sl-markdown-content pre");
-  await expect(installBlocks.filter({ hasText: "npm i -g" })).toHaveCount(0);
-  await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(0);
+  await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
+  await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(1);
 });
 
 test("release pages link the docs pages their highlights describe", async ({ page }) => {
@@ -86,8 +90,8 @@ test("the index lists every series newest first and links each one", async ({ pa
   expect(labels.length).toBeGreaterThan(5);
   expect(labels[0]).toBe("Hunk 0.21");
 
-  // A prerelease can lead the index without replacing the newest stable series as Latest.
-  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(1);
+  // Stable promotion moves the one Latest marker to the newest series.
+  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(0);
   await expect(page.getByText(/^Latest ·/)).toHaveCount(1);
 });
 
