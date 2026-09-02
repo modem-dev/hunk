@@ -24,7 +24,9 @@ head:
 
 ## [Hunk 0.21](/changelog/0.21/)
 
-Prerelease · August 30, 2026 – September 1, 2026 · 2 releases · 37 changes
+Prerelease · August 30, 2026 – September 1, 2026 · 3 releases · 75 changes
+
+Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.
 
 ## [Hunk 0.20](/changelog/0.20/)
 

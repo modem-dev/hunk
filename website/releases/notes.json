@@ -1,4 +1,14 @@
 {
+  "0.21": {
+    "summary": "Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.",
+    "tagline": "Secure sessions, threaded notes, richer comparisons",
+    "links": [
+      { "label": "Live session control", "href": "/docs/agents/live-session-control/" },
+      { "label": "Comments and annotations", "href": "/docs/agents/comments-and-annotations/" },
+      { "label": "Files and patches", "href": "/docs/workflows/files-and-patches/" },
+      { "label": "Extension API", "href": "/docs/extend/extension-api/" }
+    ]
+  },
   "0.20": {
     "summary": "Hunk 0.20 adds a one-line installer with conditional checksum verification and self-updates, launches a directory of 12 community extensions, and makes line-level reviewing faster and more precise.",
     "tagline": "One-line install, self-updates, extension directory",
