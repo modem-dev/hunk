@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 16;
+export const HUNK_EXTENSION_API_VERSION = 17;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1631,18 +1631,61 @@ export interface ExtensionInputOptions {
   initial?: string;
 }
 
+/** Actions available while an extension-owned dialog component is mounted. */
+export interface ExtensionDialogActions {
+  /** Close this dialog and resolve its `open` promise. */
+  close(): void;
+  /**
+   * Copy terminal-safe text through Hunk's OSC 52 integration.
+   *
+   * Hunk strips terminal control sequences, expands tabs to four spaces, and
+   * rejects empty or oversized payloads. Returns false when copying is
+   * unsupported, refused, or no longer belongs to the mounted dialog.
+   */
+  copy(text: string): boolean;
+  /** Show one short host status message while this dialog remains current. */
+  notify(message: string): void;
+}
+
+/** Everything an extension-owned dialog component receives. */
+export interface ExtensionDialogProps {
+  /** Exact host-owned component width after terminal clamping. */
+  readonly width: number;
+  /** Exact host-owned component height after terminal clamping and attribution. */
+  readonly height: number;
+  readonly theme: ExtensionPaintTheme;
+  /** Whether Hunk's renderer currently supports clipboard writes. */
+  readonly copySupported: boolean;
+  readonly actions: ExtensionDialogActions;
+}
+
+/** A React/OpenTUI component mounted inside a host-owned modal frame. */
+export type ExtensionDialogComponent = (props: ExtensionDialogProps) => unknown;
+
+/** One extension-owned modal surface opened from a command or event handler. */
+export interface ExtensionDialogOptions {
+  title: string;
+  /** Preferred component width in terminal cells. Defaults to 64; maximum 240. */
+  width?: number;
+  /** Preferred component height in terminal rows. Defaults to 12; maximum 100. */
+  height?: number;
+  component: ExtensionDialogComponent;
+}
+
 /**
- * Ask the user questions from a command handler, one modal at a time.
+ * Present modal interactions from a command handler, one at a time.
  *
- * Every dialog is drawn by Hunk, not by the extension. Dialogs from installed
- * extensions carry an attribution line naming their source, so a third-party
- * prompt cannot present itself as Hunk asking; Hunk-owned bundled extensions
+ * Hunk draws every frame and every confirm/select/input surface; `open` mounts
+ * extension-owned content inside that frame. Dialogs from installed extensions
+ * carry an attribution line naming their source; Hunk-owned bundled extensions
  * omit that redundant marker. Only one dialog is on screen at a time:
  * concurrent requests queue in call order (FIFO), including across extensions,
  * so a second question waits for the first to be answered rather than replacing it.
  *
- * Escape always cancels, resolving the cancel value (`false`, or `null`).
- * Enter accepts: the confirm action, the highlighted option, or the typed text.
+ * Escape always dismisses, resolving the cancel value (`false`, `null`, or
+ * `undefined`). Enter accepts: the confirm action, the highlighted option, or
+ * the typed text. Open component dialogs remain mounted until they call
+ * `actions.close()` or the user presses Escape.
  * A session reload — the refresh key, a watch-triggered reload, an agent
  * command — cancels open and queued dialogs the same way: the review they
  * asked about is being replaced. A dialog raised while the app is tearing
@@ -1650,8 +1693,9 @@ export interface ExtensionInputOptions {
  * never left hanging.
  *
  * Bad arguments are a programming error rather than a user answer, so they
- * reject instead of resolving: a missing or blank `title`, or a `select` with
- * no options. Because a dialog call is only useful awaited, the rejection
+ * reject instead of resolving: a missing or blank `title`, a `select` with no
+ * options, or invalid component-dialog dimensions. Because a dialog
+ * call is only useful awaited, the rejection
  * surfaces through the same path as any other handler failure — a warning toast
  * naming the extension.
  */
@@ -1662,6 +1706,8 @@ export interface ExtensionDialogs {
   select(options: ExtensionSelectOptions): Promise<string | null>;
   /** Resolves the submitted text, or null on cancel/escape. */
   input(options: ExtensionInputOptions): Promise<string | null>;
+  /** Mount an extension-owned React/OpenTUI surface inside a host-owned modal. */
+  open(options: ExtensionDialogOptions): Promise<void>;
 }
 
 /** One whole-document replacement an extension asks the host to write. */

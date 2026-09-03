@@ -1,13 +1,18 @@
-import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
+import type { BoxRenderable, MouseEvent as TuiMouseEvent, Renderable } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
+import { Component, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import type { ExtensionDialogActions, ExtensionDialogProps } from "../../../extension-api/types";
 import type {
   ExtensionDialogRequest,
   ExtensionInputDialogRequest,
+  ExtensionOpenDialogRequest,
   ExtensionSelectDialogRequest,
 } from "../../lib/extensionDialogs";
+import { planExtensionOpenDialog, windowDialogText } from "../../lib/extensionDialogGeometry";
 import { extensionToastPrefix } from "../../lib/extensionNotifications";
-import { windowDialogText } from "../../lib/extensionDialogGeometry";
 import { listWindowStart } from "../../lib/listWindow";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
+import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ConfirmDialog, confirmDialogHeight, DialogActionRow } from "./ConfirmDialog";
@@ -36,37 +41,74 @@ function attributionText(extensionId: string, width: number) {
   return fitText(`${extensionToastPrefix()} ${extensionId}`, width);
 }
 
+/** Report whether one focused renderable belongs to a custom dialog's bounded root. */
+function isWithinRenderable(root: Renderable, candidate: Renderable | null) {
+  let current = candidate;
+  while (current) {
+    if (current === root) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 export function ExtensionDialog({
+  copySupported,
   inputValue,
-  onAccept,
-  onCancel,
-  onChangeInput,
-  onPickOption,
+  onAcceptRequest,
+  onCancelRequest,
+  onChangeInputRequest,
+  onClose,
+  onCopy,
+  onNotify,
+  onPickOptionRequest,
+  onRenderFailure,
   request,
   selectedIndex,
   terminalHeight,
   terminalWidth,
   theme,
 }: {
+  copySupported: boolean;
   /** Live text of an input dialog's field; ignored by the other kinds. */
   inputValue: string;
-  onAccept: (selectedIndexOverride?: number) => void;
-  onCancel: () => void;
-  onChangeInput: (value: string) => void;
+  onAcceptRequest: (requestId: number, selectedIndexOverride?: number) => void;
+  onCancelRequest: (requestId: number) => void;
+  onChangeInputRequest: (requestId: number, value: string) => void;
+  onClose: (requestId: number) => void;
+  onCopy: (requestId: number, text: string) => boolean;
+  onNotify: (requestId: number, message: string) => void;
   /** Highlight one option row without accepting it, mirroring the theme selector. */
-  onPickOption: (index: number) => void;
+  onPickOptionRequest: (requestId: number, index: number) => void;
+  onRenderFailure: (requestId: number, error: unknown) => void;
   request: ExtensionDialogRequest;
   selectedIndex: number;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
 }) {
+  if (request.kind === "open") {
+    return (
+      <ExtensionOpenDialog
+        copySupported={copySupported}
+        onCancel={() => onCancelRequest(request.id)}
+        onClose={onClose}
+        onCopy={onCopy}
+        onNotify={onNotify}
+        onRenderFailure={onRenderFailure}
+        request={request}
+        terminalHeight={terminalHeight}
+        terminalWidth={terminalWidth}
+        theme={theme}
+      />
+    );
+  }
+
   if (request.kind === "select") {
     return (
       <ExtensionSelectDialog
-        onAccept={onAccept}
-        onCancel={onCancel}
-        onPickOption={onPickOption}
+        onAccept={(selectedIndexOverride) => onAcceptRequest(request.id, selectedIndexOverride)}
+        onCancel={() => onCancelRequest(request.id)}
+        onPickOption={(index) => onPickOptionRequest(request.id, index)}
         request={request}
         selectedIndex={selectedIndex}
         terminalHeight={terminalHeight}
@@ -80,9 +122,9 @@ export function ExtensionDialog({
     return (
       <ExtensionInputDialog
         inputValue={inputValue}
-        onAccept={onAccept}
-        onCancel={onCancel}
-        onChangeInput={onChangeInput}
+        onAccept={() => onAcceptRequest(request.id)}
+        onCancel={() => onCancelRequest(request.id)}
+        onChangeInput={(value) => onChangeInputRequest(request.id, value)}
         request={request}
         terminalHeight={terminalHeight}
         terminalWidth={terminalWidth}
@@ -109,8 +151,16 @@ export function ExtensionDialog({
   return (
     <ConfirmDialog
       actions={[
-        { keyLabel: "enter/y", label: request.confirmLabel, run: onAccept },
-        { keyLabel: "esc/n", label: request.cancelLabel, run: onCancel },
+        {
+          keyLabel: "enter/y",
+          label: request.confirmLabel,
+          run: () => onAcceptRequest(request.id),
+        },
+        {
+          keyLabel: "esc/n",
+          label: request.cancelLabel,
+          run: () => onCancelRequest(request.id),
+        },
       ]}
       height={confirmDialogHeight(visibleBody.lines.length + attributionRows + attributionGapRows)}
       terminalHeight={terminalHeight}
@@ -118,7 +168,7 @@ export function ExtensionDialog({
       theme={theme}
       title={request.title}
       width={frame.width}
-      onClose={onCancel}
+      onClose={() => onCancelRequest(request.id)}
     >
       {attributionRows > 0 ? (
         <box style={{ width: "100%", height: 1 }}>
@@ -133,6 +183,151 @@ export function ExtensionDialog({
         </box>
       ))}
     </ConfirmDialog>
+  );
+}
+
+/** Contain a custom dialog's render failure to its request identity. */
+class ExtensionDialogErrorBoundary extends Component<
+  {
+    request: ExtensionOpenDialogRequest;
+    fallback: ReactNode;
+    onError: (error: unknown) => void;
+    retireActions: () => void;
+    children: ReactNode;
+  },
+  { failed: boolean; request: ExtensionOpenDialogRequest | null }
+> {
+  override state = { failed: false, request: null as ExtensionOpenDialogRequest | null };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  static getDerivedStateFromProps(
+    props: { request: ExtensionOpenDialogRequest },
+    state: { failed: boolean; request: ExtensionOpenDialogRequest | null },
+  ) {
+    return props.request !== state.request ? { request: props.request, failed: false } : null;
+  }
+  override componentDidCatch(error: unknown) {
+    this.props.retireActions();
+    this.props.onError(error);
+  }
+  override componentWillUnmount() {
+    this.props.retireActions();
+  }
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** Mount an extension-owned component inside host-controlled modal chrome. */
+function ExtensionOpenDialog({
+  copySupported,
+  onCancel,
+  onClose,
+  onCopy,
+  onNotify,
+  onRenderFailure,
+  request,
+  terminalHeight,
+  terminalWidth,
+  theme,
+}: {
+  copySupported: boolean;
+  onCancel: () => void;
+  onClose: (requestId: number) => void;
+  onCopy: (requestId: number, text: string) => boolean;
+  onNotify: (requestId: number, message: string) => void;
+  onRenderFailure: (requestId: number, error: unknown) => void;
+  request: ExtensionOpenDialogRequest;
+  terminalHeight: number;
+  terminalWidth: number;
+  theme: AppTheme;
+}) {
+  const renderer = useRenderer();
+  const componentRootRef = useRef<BoxRenderable | null>(null);
+  const layout = planExtensionOpenDialog(request, terminalWidth, terminalHeight);
+  const { attributionGapRows, attributionRows, bodyWidth, componentHeight, frame } = layout;
+  const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
+  const actionLease = request.actionLease;
+  const actions = useMemo<ExtensionDialogActions>(
+    () =>
+      Object.freeze({
+        close: () => {
+          if (actionLease.active) onClose(request.id);
+        },
+        copy: (text: string) => actionLease.active && onCopy(request.id, text),
+        notify: (message: string) => {
+          if (actionLease.active) onNotify(request.id, message);
+        },
+      }),
+    [actionLease, onClose, onCopy, onNotify, request.id],
+  );
+  const viewProps: ExtensionDialogProps = {
+    width: bodyWidth,
+    height: componentHeight,
+    theme: publicTheme,
+    copySupported,
+    actions,
+  };
+  const View = request.component as (props: ExtensionDialogProps) => ReactNode;
+  const componentBox = (children: ReactNode, fallback = false) => (
+    <box
+      ref={fallback ? undefined : componentRootRef}
+      focusable={true}
+      focused={fallback}
+      visible={componentHeight > 0}
+      style={{
+        width: bodyWidth,
+        height: componentHeight,
+        flexShrink: 0,
+        overflow: "hidden",
+        flexDirection: "column",
+        backgroundColor: theme.panel,
+      }}
+    >
+      {children}
+    </box>
+  );
+
+  useLayoutEffect(() => {
+    const root = componentRootRef.current;
+    if (root && !isWithinRenderable(root, renderer.currentFocusedRenderable)) {
+      // A nested input that focused itself during mount wins. Otherwise the
+      // bounded root traps unhandled keys before they reach the review.
+      root.focus();
+    }
+  }, [renderer, request.id]);
+
+  return (
+    <ModalFrame
+      height={frame.height}
+      terminalHeight={terminalHeight}
+      terminalWidth={terminalWidth}
+      theme={theme}
+      title={request.title}
+      width={frame.width}
+      onClose={onCancel}
+    >
+      {attributionRows > 0 ? (
+        <box style={{ width: "100%", height: 1 }}>
+          <text fg={theme.badgeNeutral}>{layout.attributionText}</text>
+        </box>
+      ) : null}
+      {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
+      <ExtensionDialogErrorBoundary
+        key={request.id}
+        request={request}
+        fallback={componentBox(<text fg={publicTheme.muted}>Dialog unavailable</text>, true)}
+        retireActions={() => {
+          actionLease.active = false;
+        }}
+        onError={(error) => {
+          onRenderFailure(request.id, error);
+        }}
+      >
+        {componentBox(<View {...viewProps} />)}
+      </ExtensionDialogErrorBoundary>
+    </ModalFrame>
   );
 }
 

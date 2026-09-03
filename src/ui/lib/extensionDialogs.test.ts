@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { createExtensionDialogQueue } from "./extensionDialogs";
+import {
+  createExtensionDialogQueue,
+  normalizeExtensionDialogClipboardText,
+} from "./extensionDialogs";
+
+const TestDialog = () => null;
 
 describe("createExtensionDialogQueue", () => {
   test("shows one dialog at a time and queues the rest in call order", async () => {
@@ -50,6 +55,12 @@ describe("createExtensionDialogQueue", () => {
     const valueless = dialogs.select({ title: "Which?", options: ["a"] });
     queue.accept(queue.current()!.id);
     expect(await valueless).toBeNull();
+
+    const opened = dialogs.open({ title: "Guide", component: TestDialog });
+    queue.accept(queue.current()!.id);
+    expect(queue.current()).toMatchObject({ kind: "open", title: "Guide" });
+    queue.cancel(queue.current()!.id);
+    expect(await opened).toBeUndefined();
   });
 
   test("ignores an answer aimed at a dialog that is no longer current", async () => {
@@ -113,6 +124,32 @@ describe("createExtensionDialogQueue", () => {
       options: ["\u001b]0;pwned\u0007opt"],
     });
     expect(queue.current()).toMatchObject({ title: "Pick", options: ["opt"] });
+  });
+
+  test("carries a custom component and default rectangle into the request", () => {
+    const queue = createExtensionDialogQueue();
+    const dialogs = queue.createDialogs("guide");
+
+    void dialogs.open({
+      title: "Setup",
+      component: TestDialog,
+    });
+
+    expect(queue.current()).toMatchObject({
+      kind: "open",
+      width: 64,
+      height: 12,
+      component: TestDialog,
+    });
+  });
+
+  test("normalizes bounded custom-dialog clipboard payloads", () => {
+    expect(normalizeExtensionDialogClipboardText("copy\t\u001b[31mexactly\u001b[0m")).toBe(
+      "copy    exactly",
+    );
+    expect(normalizeExtensionDialogClipboardText("")).toBeNull();
+    expect(normalizeExtensionDialogClipboardText("x".repeat(16_385))).toBeNull();
+    expect(normalizeExtensionDialogClipboardText("\t".repeat(4_097))).toBeNull();
   });
 
   test("sanitizes an input dialog's starting text without trimming it", () => {
@@ -206,7 +243,7 @@ describe("createExtensionDialogQueue", () => {
     expect(await second).toBe(false);
   });
 
-  test("rejects a blank title and a select with no options", async () => {
+  test("rejects blank sanitized titles and malformed select options", async () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("probe");
 
@@ -221,6 +258,36 @@ describe("createExtensionDialogQueue", () => {
     await expect(dialogs.select({ title: "Which?", options: [] })).rejects.toThrow(
       /at least one option/,
     );
+    await expect(dialogs.confirm({ title: "\u001b[31m\u001b[0m" })).rejects.toThrow(
+      /non-empty title after terminal sanitization/,
+    );
+    await expect(
+      dialogs.select({ title: "Which?", options: ["\u001b]0;pwned\u0007"] }),
+    ).rejects.toThrow(/remain non-empty after sanitization/);
+    await expect(dialogs.select({ title: "Which?", options: ["   "] })).rejects.toThrow(
+      /remain non-empty after sanitization/,
+    );
+    const sparseOptions = Array.from({ length: 2 }, () => "one");
+    delete sparseOptions[0];
+    sparseOptions[1] = "one";
+    await expect(dialogs.select({ title: "Which?", options: sparseOptions })).rejects.toThrow(
+      /dense array of strings/,
+    );
+    await expect(dialogs.open({ title: "No component", component: null as never })).rejects.toThrow(
+      /component function/,
+    );
+    await expect(
+      dialogs.open({ title: "Bad width", width: 0, component: TestDialog }),
+    ).rejects.toThrow(/width must be an integer from 1 to 240/);
+    await expect(
+      dialogs.open({ title: "Wide", width: 241, component: TestDialog }),
+    ).rejects.toThrow(/width must be an integer from 1 to 240/);
+    await expect(
+      dialogs.open({ title: "Bad height", height: 1.5, component: TestDialog }),
+    ).rejects.toThrow(/height must be an integer from 1 to 100/);
+    await expect(
+      dialogs.open({ title: "Tall", height: 101, component: TestDialog }),
+    ).rejects.toThrow(/height must be an integer from 1 to 100/);
     await expect(
       dialogs.select({ title: "Which?", options: [1 as unknown as string] }),
     ).rejects.toThrow(/must all be strings/);

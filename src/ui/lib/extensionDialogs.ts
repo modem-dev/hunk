@@ -1,7 +1,7 @@
 /**
  * The queue behind `ctx.dialogs`, kept free of React on purpose.
  *
- * Extensions ask questions from async handlers, so the interesting behavior is
+ * Extensions open modal surfaces from async handlers, so the interesting behavior is
  * ordering and settlement — one dialog on screen at a time, later requests
  * waiting their turn, everything still waiting resolving its cancel value when
  * the session goes away. None of that is rendering, so it lives here as plain
@@ -11,11 +11,12 @@
 
 import type {
   ExtensionConfirmOptions,
+  ExtensionDialogOptions,
   ExtensionDialogs,
   ExtensionInputOptions,
   ExtensionSelectOptions,
 } from "../../extension-api/types";
-import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "../../lib/terminalText";
 
 /** Default label for the accepting action of a confirm dialog. */
 const DEFAULT_CONFIRM_LABEL = "ok";
@@ -25,6 +26,17 @@ const DEFAULT_CANCEL_LABEL = "cancel";
 
 /** Body lines one confirm dialog may show; beyond this the modal stops being a prompt. */
 const MAX_CONFIRM_BODY_LINES = 6;
+
+/** Default extension-owned component rectangle. */
+const DEFAULT_OPEN_DIALOG_WIDTH = 64;
+const DEFAULT_OPEN_DIALOG_HEIGHT = 12;
+
+/** Bounds keep one request from retaining absurd off-screen geometry. */
+const MAX_OPEN_DIALOG_WIDTH = 240;
+const MAX_OPEN_DIALOG_HEIGHT = 100;
+
+/** Clipboard text is bounded before it reaches the terminal's OSC 52 channel. */
+const MAX_DIALOG_COPY_TEXT_LENGTH = 16_384;
 
 /** What every queued dialog carries, whatever kind it is. */
 interface ExtensionDialogRequestBase {
@@ -61,14 +73,25 @@ export interface ExtensionInputDialogRequest extends ExtensionDialogRequestBase 
   initial: string;
 }
 
+/** One extension-owned component the host should mount in a modal frame. */
+export interface ExtensionOpenDialogRequest extends ExtensionDialogRequestBase {
+  kind: "open";
+  width: number;
+  height: number;
+  component: ExtensionDialogOptions["component"];
+  /** Shared across React render retries so every retained action can be retired together. */
+  actionLease: { active: boolean };
+}
+
 /** One dialog the host should draw, normalized from what an extension asked for. */
 export type ExtensionDialogRequest =
   | ExtensionConfirmDialogRequest
   | ExtensionSelectDialogRequest
-  | ExtensionInputDialogRequest;
+  | ExtensionInputDialogRequest
+  | ExtensionOpenDialogRequest;
 
 /** What a dialog hands back to the awaiting handler. */
-type ExtensionDialogResult = boolean | string | null;
+type ExtensionDialogResult = boolean | string | null | undefined;
 
 /** The host-side controller for every extension dialog in one session. */
 export interface ExtensionDialogQueue {
@@ -79,11 +102,14 @@ export interface ExtensionDialogQueue {
   ): ExtensionDialogs;
   /** The dialog that should be on screen, or `null` when none is. */
   current(): ExtensionDialogRequest | null;
+  /** Whether this id is still the current request and its owning capability remains live. */
+  isCurrentLive(id: number): boolean;
   /**
    * Accept the dialog with this id.
    *
    * A confirm resolves `true`. A select or input resolves `value`; without one
-   * there is nothing to hand back, so it settles as a cancel instead.
+   * there is nothing to hand back, so it settles as a cancel instead. Open
+   * component dialogs ignore acceptance and remain visible until cancelled.
    *
    * Answering anything but the current dialog is ignored: an answer computed
    * for a dialog the queue has already moved past — a repeated key, a late
@@ -123,7 +149,12 @@ function normalizeTitle(method: string, title: unknown) {
     invalid(method, "requires a non-empty title.");
   }
 
-  return sanitizeTerminalLine(title.trim());
+  const normalized = sanitizeTerminalLine(title.trim()).trim();
+  if (normalized.length === 0) {
+    invalid(method, "requires a non-empty title after terminal sanitization.");
+  }
+
+  return normalized;
 }
 
 /** Normalize an optional extension-authored label, falling back to Hunk's own. */
@@ -132,7 +163,7 @@ function normalizeLabel(label: unknown, fallback: string) {
     return fallback;
   }
 
-  return sanitizeTerminalLine(label.trim());
+  return sanitizeTerminalLine(label.trim()).trim() || fallback;
 }
 
 /**
@@ -143,15 +174,41 @@ function normalizeLabel(label: unknown, fallback: string) {
  * dialog text is third-party and routinely carries repo-controlled fragments,
  * exactly like toast text.
  */
-function normalizeBodyLines(body: unknown) {
+function normalizeBodyLines(body: unknown, maxLines = MAX_CONFIRM_BODY_LINES) {
   if (typeof body !== "string" || body.length === 0) {
     return [];
   }
 
   return body
     .split("\n")
-    .slice(0, MAX_CONFIRM_BODY_LINES)
+    .slice(0, maxLines)
     .map((line) => sanitizeTerminalLine(line));
+}
+
+/** Normalize one preferred component dimension, or reject it. */
+function normalizeOpenDialogDimension(
+  name: "width" | "height",
+  value: unknown,
+  fallback: number,
+  maximum: number,
+) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > maximum) {
+    invalid("open", `${name} must be an integer from 1 to ${maximum}.`);
+  }
+  return value as number;
+}
+
+/** Normalize one custom-dialog clipboard payload, or reject it without throwing. */
+export function normalizeExtensionDialogClipboardText(text: unknown): string | null {
+  if (typeof text !== "string" || text.length === 0 || text.length > MAX_DIALOG_COPY_TEXT_LENGTH) {
+    return null;
+  }
+
+  const normalized = sanitizeTerminalText(text).replaceAll("\t", "    ");
+  return normalized.length > 0 && normalized.length <= MAX_DIALOG_COPY_TEXT_LENGTH
+    ? normalized
+    : null;
 }
 
 /** Normalize the choices of a select dialog, or reject them. */
@@ -160,13 +217,25 @@ function normalizeOptions(options: unknown) {
     invalid("select", "requires at least one option.");
   }
 
-  return options.map((option) => {
+  const normalizedOptions: string[] = [];
+  for (let index = 0; index < options.length; index += 1) {
+    if (!Object.hasOwn(options, index)) {
+      invalid("select", "options must be a dense array of strings.");
+    }
+    const option = options[index];
     if (typeof option !== "string") {
-      invalid("select", "options must all be strings.");
+      invalid("select", "options must all be strings that remain non-empty after sanitization.");
     }
 
-    return sanitizeTerminalLine(option);
-  });
+    const normalized = sanitizeTerminalLine(option).trim();
+    if (normalized.length === 0) {
+      invalid("select", "options must all be strings that remain non-empty after sanitization.");
+    }
+
+    normalizedOptions.push(normalized);
+  }
+
+  return normalizedOptions;
 }
 
 /**
@@ -194,9 +263,14 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
     }
   };
 
-  /** The cancel value one request resolves with: `false` for confirm, `null` otherwise. */
+  /** The cancel value one request resolves with. */
   const cancelValueFor = (request: ExtensionDialogRequest): ExtensionDialogResult =>
-    request.kind === "confirm" ? false : null;
+    request.kind === "confirm" ? false : request.kind === "open" ? undefined : null;
+
+  /** Retire component actions before settling or removing their request. */
+  const retireActions = (request: ExtensionDialogRequest) => {
+    if (request.kind === "open") request.actionLease.active = false;
+  };
 
   /**
    * Queue one request and hand back the promise its handler awaits.
@@ -231,6 +305,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   const drainPending = () => {
     const drained = pending.splice(0);
     for (const entry of drained) {
+      retireActions(entry.request);
       entry.settle(cancelValueFor(entry.request));
     }
 
@@ -246,6 +321,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
       return;
     }
 
+    retireActions(active.request);
     active.settle(value);
     notify();
   };
@@ -310,11 +386,49 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
             isLive,
           );
         },
+        async open(options: ExtensionDialogOptions) {
+          const title = normalizeTitle("open", options?.title);
+          if (typeof options?.component !== "function") {
+            invalid("open", "requires a component function.");
+          }
+          const width = normalizeOpenDialogDimension(
+            "width",
+            options.width,
+            DEFAULT_OPEN_DIALOG_WIDTH,
+            MAX_OPEN_DIALOG_WIDTH,
+          );
+          const height = normalizeOpenDialogDimension(
+            "height",
+            options.height,
+            DEFAULT_OPEN_DIALOG_HEIGHT,
+            MAX_OPEN_DIALOG_HEIGHT,
+          );
+          await enqueue<undefined>(
+            (id) => ({
+              kind: "open",
+              id,
+              extensionId,
+              showAttribution,
+              title,
+              width,
+              height,
+              component: options.component,
+              actionLease: { active: true },
+            }),
+            undefined,
+            isLive,
+          );
+        },
       };
     },
 
     current() {
       return pending[0]?.request ?? null;
+    },
+
+    isCurrentLive(id: number) {
+      const active = pending[0];
+      return active?.request.id === id && active.isLive();
     },
 
     accept(id: number, value?: string) {
@@ -330,6 +444,10 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
 
       if (active.request.kind === "confirm") {
         settleCurrent(true);
+        return;
+      }
+
+      if (active.request.kind === "open") {
         return;
       }
 

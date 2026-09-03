@@ -23,7 +23,6 @@ type FocusArea = "files" | "filter" | "note";
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
-  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -36,8 +35,8 @@ export interface UseAppKeyboardShortcutsOptions {
    */
   commands: readonly AppCommand[];
   denyRepoExtensions: () => void;
-  /** The extension dialog currently on screen, or `null` when none is. */
-  extensionDialog: ExtensionDialogRequest | null;
+  /** Read the live queued dialog; several keys can arrive before React renders it. */
+  getExtensionDialog: () => ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
@@ -69,7 +68,6 @@ export interface UseAppKeyboardShortcutsOptions {
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
   saveDraftNote: () => void;
-  showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
   toggleFocusArea: () => void;
@@ -98,7 +96,6 @@ export interface UseAppKeyboardShortcutsOptions {
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
-  closeAgentSkill,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -107,7 +104,7 @@ export function useAppKeyboardShortcuts({
   closeExtensionTrustPrompt,
   commands,
   denyRepoExtensions,
-  extensionDialog,
+  getExtensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
   moveExtensionDialogSelection,
@@ -129,7 +126,6 @@ export function useAppKeyboardShortcuts({
   neverAskToSaveViewPreferencesAndQuit,
   closeSaveConfigPrompt,
   saveDraftNote,
-  showAgentSkill,
   showHelp,
   switchMenu,
   toggleFocusArea,
@@ -138,12 +134,11 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
-  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
-  const extensionDialogRef = useRef(extensionDialog);
+  const getExtensionDialogRef = useRef(getExtensionDialog);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
@@ -152,7 +147,7 @@ export function useAppKeyboardShortcuts({
   const isKeyboardModeActiveRef = useRef(isKeyboardModeActive);
   const exitKeyboardModeRef = useRef(exitKeyboardMode);
   const sendKeyboardModeKeyRef = useRef(sendKeyboardModeKey);
-  // These three close over live dialog state (the highlighted option, the typed
+  // These callbacks close over live dialog state (the highlighted option, the typed
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
   const cancelExtensionDialogRef = useRef(cancelExtensionDialog);
@@ -161,12 +156,11 @@ export function useAppKeyboardShortcuts({
   activeMenuIdRef.current = activeMenuId;
   commandsRef.current = commands;
   focusAreaRef.current = focusArea;
-  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
-  extensionDialogRef.current = extensionDialog;
+  getExtensionDialogRef.current = getExtensionDialog;
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
@@ -229,15 +223,10 @@ export function useAppKeyboardShortcuts({
     return "mine";
   };
 
-  /** Escape closes the topmost open overlay (agent skill, then help). */
+  /** Escape closes Hunk's help overlay. */
   const handleDialogShortcut = (key: KeyEvent): KeyOwner => {
     if (!isEscapeKey(key)) {
       return "notMine";
-    }
-
-    if (showAgentSkillRef.current) {
-      closeAgentSkill();
-      return "mine";
     }
 
     if (showHelpRef.current) {
@@ -322,12 +311,12 @@ export function useAppKeyboardShortcuts({
    * extension may not outrank them — and above menus, help, and the command
    * table.
    *
-   * The input kind is the one non-modal-shaped answer: keys it does not act on
-   * are the text the user is typing into the dialog's focused field, so they
-   * are the focused widget's, not swallowed.
+   * Input and open dialogs leave unclaimed keys for their focused surface. The
+   * open dialog's bounded root takes focus even when its component has no input,
+   * so those keys cannot reach a previously focused review widget behind it.
    */
   const handleExtensionDialogShortcut = (key: KeyEvent): KeyOwner => {
-    const dialog = extensionDialogRef.current;
+    const dialog = getExtensionDialogRef.current();
     if (!dialog) {
       return "notMine";
     }
@@ -338,8 +327,11 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "return" || key.name === "enter") {
-      acceptExtensionDialogRef.current();
-      return "mine";
+      if (dialog.kind !== "open") {
+        acceptExtensionDialogRef.current();
+        return "mine";
+      }
+      return "focused";
     }
 
     if (dialog.kind === "select") {
@@ -370,7 +362,7 @@ export function useAppKeyboardShortcuts({
       }
     }
 
-    return dialog.kind === "input" ? "focused" : "mine";
+    return dialog.kind === "input" || dialog.kind === "open" ? "focused" : "mine";
   };
 
   /** Own every key while the theme selector is up; it is a modal surface. */

@@ -278,4 +278,72 @@ describe("UI key routing with a focused scroll box", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("an open component dialog isolates unhandled keys from the focused review", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-key-routing-dialog-"));
+    const extension = join(root, "custom-dialog");
+    mkdirSync(extension, { recursive: true });
+    writeFileSync(
+      join(extension, "package.json"),
+      JSON.stringify({
+        name: "custom-dialog",
+        private: true,
+        hunk: { extensions: ["./index.ts"] },
+      }),
+    );
+    writeFileSync(
+      join(extension, "index.ts"),
+      `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerCommand({ id: "open", title: "Open", key: "y" }, (ctx) =>
+    ctx.dialogs.open({
+      title: "Focused custom surface",
+      component: ({ theme }) => createElement("text", { fg: theme.text }, "Unhandled keys stay here"),
+    }),
+  );
+}
+`,
+    );
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+    });
+    const bootstrap = createScrollableBootstrap();
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("big.ts"), 12);
+      const scrollBox = findReviewScrollBox(setup.renderer.root);
+      if (!scrollBox) {
+        throw new Error("No scrollable review scroll box found in the rendered app.");
+      }
+      await act(async () => {
+        scrollBox.focus();
+        await setup.mockInput.typeText("y");
+      });
+      await waitForFrame(setup, (frame) => frame.includes("Focused custom surface"), 12);
+      const scrollTopBefore = scrollBox.scrollTop;
+
+      await act(async () => setup.mockInput.typeText("j"));
+      await flush(setup);
+
+      expect(scrollBox.scrollTop).toBe(scrollTopBefore);
+      expect(setup.captureCharFrame()).toContain("Focused custom surface");
+
+      await act(async () => setup.mockInput.pressEscape());
+      await waitForFrame(setup, (frame) => !frame.includes("Focused custom surface"), 12);
+      expect(setup.renderer.currentFocusedRenderable).toBe(scrollBox);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

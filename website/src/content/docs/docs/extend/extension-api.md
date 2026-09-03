@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds temporary application
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds custom React/OpenTUI
+dialog surfaces; version 16 added temporary application
 handoffs and on-disk location resolution to command handlers; version 15 added
 `{ side, line }` to opted-in pane
 `currentLine` paint; version 14 added structured two-revision
@@ -284,11 +285,12 @@ A handler may be async; a failure becomes a warning naming your extension.
 
 ### Asking the user
 
-`ctx.dialogs` puts a question on screen and waits for the answer. Three methods, all return promises:
+`ctx.dialogs` puts a modal surface on screen and waits for it to settle. Four methods return promises:
 
 - `confirm({ title, body?, confirmLabel?, cancelLabel? })` → `true` or `false`
 - `select({ title, options })` → the chosen string, or `null`
 - `input({ title, placeholder?, initial? })` → the typed string, or `null`
+- `open({ title, width?, height?, component })` → `void` when closed
 
 ```ts
 hunk.registerCommand(
@@ -309,6 +311,47 @@ hunk.registerCommand(
   },
 );
 ```
+
+`open` mounts a React/OpenTUI component in an exact host-owned rectangle, like
+`registerPane` inside modal chrome. Preferred `width` and `height` default to
+`64×12` and are clamped to the terminal. The component receives the resulting
+dimensions, semantic theme, clipboard availability, and guarded `close`, `copy`,
+and `notify` actions. Escape stays host-owned; other keys reach the component.
+
+```tsx
+import type { ExtensionDialogProps } from "hunkdiff/extension";
+
+const prompt = "Review the current Hunk session. Focus on correctness.";
+
+function AgentSetupDialog({ actions, copySupported, theme }: ExtensionDialogProps) {
+  const copy = () => {
+    actions.notify(actions.copy(prompt) ? "Copied agent prompt" : "Clipboard copy failed");
+  };
+  return (
+    <box style={{ width: "100%", height: "100%", flexDirection: "column" }}>
+      <text fg={theme.text}>{prompt}</text>
+      <box onMouseUp={copy}>
+        <text fg={copySupported ? theme.accent : theme.muted}>Copy prompt</text>
+      </box>
+    </box>
+  );
+}
+
+hunk.registerCommand({ id: "agent-setup", title: "Agent setup" }, async (ctx) => {
+  await ctx.dialogs.open({
+    title: "Agent setup",
+    width: 64,
+    height: 6,
+    component: AgentSetupDialog,
+  });
+});
+```
+
+Component dialogs are trusted extension code like panes. Hunk cannot verify
+what an arbitrary component visibly discloses before it calls `actions.copy`.
+Hunk still owns bounds, frame chrome, attribution, Escape handling, queueing,
+and render-failure containment. Clipboard payloads are sanitized and limited to
+16,384 JavaScript string code units.
 
 `select` fits acting on part of the selection — asking which hunk to jump to, then navigating there:
 
@@ -331,9 +374,9 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 });
 ```
 
-Hunk draws the dialog; your text fills the title, body, and choices. Dialogs from installed extensions carry an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a third-party prompt cannot present itself as Hunk asking. Hunk's own bundled extensions omit that redundant marker.
+Hunk draws every frame and every confirm/select/input surface. Dialogs from installed extensions carry an `ext <your-id>` attribution line — the same marker `notify` toasts use. Hunk's own bundled extensions omit that redundant marker.
 
-One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
+One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`) or closes a component dialog. Enter accepts host-rendered interactive dialogs; component-dialog keys other than Escape reach the mounted surface. Confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and host-rendered actions are clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
 ### Temporary applications
 
