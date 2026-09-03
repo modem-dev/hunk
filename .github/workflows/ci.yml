@@ -49,7 +49,7 @@ jobs:
           node-version: 22
 
       - name: Install Jujutsu
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
         with:
           tool: jj-cli
 
