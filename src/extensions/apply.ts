@@ -8,16 +8,18 @@ import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
 import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import type {
-  ExtensionContext,
-  ExtensionLoadResult,
-  ExtensionRegistry,
-  RegisteredCommand,
-  RegisteredFileView,
-  RegisteredKeyboardMode,
-  RegisteredLineHighlighter,
-  RegisteredPane,
+import {
+  createEmptyExtensionRegistry,
+  type ExtensionContext,
+  type ExtensionLoadResult,
+  type ExtensionRegistry,
+  type RegisteredCommand,
+  type RegisteredFileView,
+  type RegisteredKeyboardMode,
+  type RegisteredLineHighlighter,
+  type RegisteredPane,
 } from "./types";
+import { getBundledFileLanguages } from "./default/languages";
 
 /**
  * One registration Hunk refused to apply.
@@ -41,17 +43,20 @@ function describeError(error: unknown) {
 }
 
 /**
- * Register every extension-contributed file selector and language.
+ * Register every bundled and user-extension file selector and language.
  *
- * Selectors are applied once per load pass. Within one selector category the last registration
- * wins, matching how a later config layer overrides an earlier one; Hunk's own `.mts`/`.cts`
- * extension mappings are never overridden.
+ * Bundled selectors load first so `--no-extensions` still gets shipped defaults; user
+ * registrations follow and win ties within a selector category. Hunk's reserved `.mts`/`.cts`
+ * extension mappings remain non-overridable.
  */
 export function applyExtensionFileLanguages(registry: ExtensionRegistry): ExtensionApplyIssue[] {
   const issues: ExtensionApplyIssue[] = [];
   const registrations: FileLanguageRegistration[] = [];
 
-  for (const { extensionId, matcher, language } of registry.fileLanguages) {
+  for (const { extensionId, matcher, language } of [
+    ...getBundledFileLanguages(),
+    ...registry.fileLanguages,
+  ]) {
     if (matcher.kind === "extension" && BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has(matcher.value)) {
       issues.push({
         extensionId,
@@ -354,8 +359,12 @@ export function applyExtensionRegistrations(
   baseCatalog: VcsCatalog,
 ): AppliedExtensionRegistrations {
   if (!result) {
-    replaceExtensionFileLanguages([]);
-    return { vcsAdapters: [], vcsCatalog: baseCatalog, issues: [] };
+    // Still apply bundled file languages when user extensions are absent or disabled.
+    return {
+      vcsAdapters: [],
+      vcsCatalog: baseCatalog,
+      issues: applyExtensionFileLanguages(createEmptyExtensionRegistry()),
+    };
   }
 
   const languageIssues = applyExtensionFileLanguages(result.registry);

@@ -21,7 +21,9 @@ object and registry collection (`src/extensions/runExtension.ts`):
   before config resolution, so backends exist without making core import the
   extension host. `default/ui/index.ts` is deliberately not part of that list:
   it synchronously loads the bundled files pane through `runExtensionFactory`
-  only where the app resolves UI panes.
+  only where the app resolves UI panes. `default/languages/` ships file-language
+  selectors as plain data that `applyExtensionFileLanguages` prepends ahead of
+  user extensions, so apply stays off the diff-engine import graph.
 
 Git and the built-in file navigation use the public `registerVcsAdapter` and
 `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)

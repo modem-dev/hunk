@@ -35,11 +35,13 @@ import {
  * rather than a crash — even though these factories are Hunk's own and that
  * path should be unreachable.
  *
- * VCS backends are the only registration kind this tier uses today. The app
- * composition root reads `getBundledVcsAdapters` and builds the core catalog.
- * A bundled extension that registered a theme or a changeset transform would
- * also have to be threaded through `applyExtensionRegistrations`, which today
- * only sees the user-extension load result.
+ * File-language selectors live in `default/languages/` as plain registration
+ * data that `applyExtensionFileLanguages` prepends; that path must stay free of
+ * `runExtension` so startup does not pull the diff engine. The app composition
+ * root reads `getBundledVcsAdapters` and builds the core catalog. A bundled
+ * extension that registered a theme or a changeset transform would also have to
+ * be threaded through `applyExtensionRegistrations`, which today only sees the
+ * user-extension load result for those kinds.
  */
 
 interface BundledExtensionDefinition {

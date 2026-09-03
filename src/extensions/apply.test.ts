@@ -170,6 +170,21 @@ describe("extension file languages", () => {
 
     applyExtensionFileLanguages(createEmptyExtensionLoadResult("/repo").registry);
     expect(fileLanguageForPath("nested/TemporaryHunkfile")).toBe("text");
+    // Bundled Starlark selectors survive a user-extension-only reload wipe.
+    expect(fileLanguageForPath("pkg/BUILD")).toBe("python");
+  });
+
+  test("lets a user extension replace a bundled Starlark selector", async () => {
+    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { result } = createTestLoadResult();
+    result.registry.fileLanguages.push({
+      extensionId: "override",
+      matcher: { kind: "filename", value: "BUILD" },
+      language: "ruby",
+    });
+
+    expect(applyExtensionFileLanguages(result.registry)).toEqual([]);
+    expect(fileLanguageForPath("pkg/BUILD")).toBe("ruby");
   });
 
   test("keeps reserved extensions authoritative over broader selectors", async () => {
