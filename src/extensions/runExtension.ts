@@ -519,7 +519,16 @@ export function createExtensionApi(
         width: defaultExtensionPaneSize("left"),
         defaultOpen: view.defaultOpen,
         replaces: view.replacesDefault ? "hunk:files" : undefined,
-        component: view.component as unknown as ExtensionPane["component"],
+        component: (props) =>
+          view.component({
+            files: [...props.files],
+            selectedFileId: props.selectedFileId,
+            selectedHunkIndex: props.selectedHunkIndex,
+            width: props.width,
+            theme: props.theme,
+            keybindings: props.keybindings,
+            actions: props.actions,
+          }),
       });
     },
     registerFileView(view: ExtensionFileView) {
