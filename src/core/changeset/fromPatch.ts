@@ -9,11 +9,18 @@
  * Moved-line capture has to run before sanitizing: Git marks moved lines only through SGR
  * color, which `sanitizePatch` strips on its way to parser-safe text.
  */
-import { parsePatchFiles } from "@pierre/diffs";
+import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { buildDiffFile, type BuildDiffFileOptions } from "./diffFile";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../patch/chunks";
 import { sanitizePatch, stripTerminalControl } from "../patch/sanitize";
-import type { Changeset, DiffLineMoveKind, DiffLineMoveKinds, SidecarContext } from "./model";
+import type { SanitizedGitPatch } from "../patch/gitFormat";
+import type {
+  Changeset,
+  DiffFile,
+  DiffLineMoveKind,
+  DiffLineMoveKinds,
+  SidecarContext,
+} from "./model";
 
 /** Return SGR parameter strings that Git emitted before one diff line marker. */
 function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {
@@ -138,14 +145,16 @@ export function changesetFromPatch(
   try {
     parsedPatches = parsePatchFiles(sanitizedPatchText, "patch", true);
   } catch {
-    return {
-      id: `changeset:${Date.now()}`,
-      sourceLabel,
+    // One unparseable file must not discard the whole review: fall back to
+    // per-file parsing so every salvageable file still renders.
+    return changesetFromPatchChunks(
+      sanitizedPatch,
+      lineMoveKinds,
       title,
-      summary: sanitizedPatchText.trim() || undefined,
-      agentSummary: sidecar?.summary,
-      files: [],
-    };
+      sourceLabel,
+      sidecar,
+      perFileOptions,
+    );
   }
 
   const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
@@ -180,5 +189,147 @@ export function changesetFromPatch(
         },
       );
     }),
+  };
+}
+
+/**
+ * Best-effort display name for a chunk the parser rejected.
+ *
+ * Headers reaching this fallback are already sanitized toward the `a/X b/Y`
+ * shape, so the b-side names the file. This is display-only (the placeholder
+ * carries no hunks), so an even token split is acceptable where Git itself
+ * would call the rename genuinely ambiguous.
+ */
+function displayNameForUnparseableChunk(chunk: string, index: number): string {
+  const firstLine = chunk.split("\n", 1)[0] ?? "";
+  const rest = firstLine.startsWith("diff --git ") ? firstLine.slice("diff --git ".length) : "";
+  if (rest) {
+    const tokens = rest.split(" ");
+    const secondHalf = tokens.slice(Math.ceil(tokens.length / 2)).join(" ");
+    const name = secondHalf.replace(/^"?b\//, "").replace(/"$/, "");
+    if (name) {
+      return name;
+    }
+  }
+  return `unparseable-file-${index + 1}`;
+}
+
+/** Build a placeholder for one file chunk that failed to parse, keeping its review slot. */
+function buildSkippedUnparseableFile(
+  name: string,
+  index: number,
+  sourceLabel: string,
+  sidecar: SidecarContext | null,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
+  lineMoveKinds?: DiffLineMoveKinds,
+): DiffFile {
+  const metadata: FileDiffMetadata = {
+    name,
+    type: "change",
+    hunks: [],
+    splitLineCount: 0,
+    unifiedLineCount: 0,
+    isPartial: true,
+    additionLines: [],
+    deletionLines: [],
+    cacheKey: `${name}:unparseable-skipped`,
+  };
+  return buildDiffFile(
+    metadata,
+    `Skipped file with unparseable diff content: ${name}\n`,
+    index,
+    sourceLabel,
+    sidecar,
+    {
+      ...perFileOptions,
+      pathsAreExact: true,
+      lineMoveKinds,
+    },
+  );
+}
+
+/** Re-parse per file chunk after a whole-patch parse failure, preserving good files. */
+function changesetFromPatchChunks(
+  sanitizedPatch: SanitizedGitPatch,
+  lineMoveKinds: DiffLineMoveKinds[],
+  title: string,
+  sourceLabel: string,
+  sidecar: SidecarContext | null,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
+): Changeset {
+  const chunks = splitPatchIntoFileChunks(sanitizedPatch.text);
+  const files: DiffFile[] = [];
+  const summaries: string[] = [];
+  let index = 0;
+
+  const pushParsedFile = (metadata: FileDiffMetadata) => {
+    const decodedPaths = sanitizedPatch.filePaths[index];
+    const normalizedMetadata = decodedPaths
+      ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
+      : metadata;
+    files.push(
+      buildDiffFile(
+        normalizedMetadata,
+        findPatchChunk(metadata, chunks, index),
+        index,
+        sourceLabel,
+        sidecar,
+        {
+          ...perFileOptions,
+          pathsAreExact: Boolean(decodedPaths),
+          lineMoveKinds: hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
+        },
+      ),
+    );
+    index += 1;
+  };
+
+  for (const chunk of chunks) {
+    let parsed: ReturnType<typeof parsePatchFiles> | undefined;
+    try {
+      parsed = parsePatchFiles(chunk, "patch", true);
+    } catch {
+      parsed = undefined;
+    }
+    const chunkFiles =
+      parsed?.flatMap((entry) => {
+        if (entry.patchMetadata) {
+          summaries.push(entry.patchMetadata);
+        }
+        return entry.files;
+      }) ?? [];
+    if (chunkFiles.length === 0) {
+      // The chunk could not be parsed at all: keep a visible placeholder in
+      // its slot so the review stays complete instead of silently dropping it.
+      // Prefer the sanitizer's exact decoded path, then a best-effort read of
+      // the (already sanitized) header, then a positional fallback name.
+      const name =
+        sanitizedPatch.filePaths[index]?.path ??
+        displayNameForUnparseableChunk(chunk, index);
+      files.push(
+        buildSkippedUnparseableFile(
+          name,
+          index,
+          sourceLabel,
+          sidecar,
+          perFileOptions,
+          hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
+        ),
+      );
+      index += 1;
+      continue;
+    }
+    for (const metadata of chunkFiles) {
+      pushParsedFile(metadata);
+    }
+  }
+
+  return {
+    id: `changeset:${Date.now()}`,
+    sourceLabel,
+    title,
+    summary: summaries.join("\n\n") || undefined,
+    agentSummary: sidecar?.summary,
+    files,
   };
 }
