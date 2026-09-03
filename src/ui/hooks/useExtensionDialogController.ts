@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   createExtensionDialogQueue,
   type ExtensionDialogQueue,
@@ -19,12 +26,14 @@ export interface ExtensionDialogController {
   selectedIndex: number;
   inputValue: string;
   accept: (selectedIndexOverride?: number) => void;
+  /** Accept only the rendered request with this id; stale controls are ignored. */
+  acceptRequest: (requestId: number, selectedIndexOverride?: number) => void;
   cancel: () => void;
   /** Cancel the visible request and every queued request with their kind-specific values. */
   cancelAll: () => void;
   moveSelection: (delta: number) => void;
-  pickOption: (index: number) => void;
-  updateInput: (value: string) => void;
+  pickOption: (requestId: number, index: number) => void;
+  updateInput: (requestId: number, value: string) => void;
 }
 
 /** Own the React state and lifetime of one App instance's extension-dialog queue. */
@@ -38,14 +47,27 @@ export function useExtensionDialogController({
   const request = useSyncExternalStore(queue.subscribe, queue.current, queue.current);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputValue, setInputValue] = useState("");
-  const requestId = request?.id ?? null;
-  const initialInput = request?.kind === "input" ? request.initial : "";
+  const selectedIndexRef = useRef(0);
+  const inputValueRef = useRef("");
+  const answerRequestIdRef = useRef<number | null>(null);
+  /** Align mutable answer state before another key can arrive ahead of React. */
+  const alignAnswerState = useCallback((active: ExtensionDialogRequest | null) => {
+    const activeId = active?.id ?? null;
+    if (answerRequestIdRef.current === activeId) return;
+
+    answerRequestIdRef.current = activeId;
+    selectedIndexRef.current = 0;
+    inputValueRef.current = active?.kind === "input" ? active.initial : "";
+  }, []);
+
+  alignAnswerState(request);
 
   useEffect(() => {
     // A promoted queued request must never inherit the previous request's answer state.
-    setSelectedIndex(0);
-    setInputValue(initialInput);
-  }, [initialInput, requestId]);
+    alignAnswerState(request);
+    setSelectedIndex(selectedIndexRef.current);
+    setInputValue(inputValueRef.current);
+  }, [alignAnswerState, request]);
 
   const previousReviewGenerationRef = useRef(reviewGeneration);
   useLayoutEffect(() => {
@@ -64,44 +86,99 @@ export function useExtensionDialogController({
     return () => queue.shutdown();
   }, [queue]);
 
-  /** Answer the visible request with the state appropriate to its dialog kind. */
+  /** Answer one rendered request only while it remains current. */
+  const acceptRequest = useCallback(
+    (requestId: number, selectedIndexOverride?: number) => {
+      const active = queue.current();
+      alignAnswerState(active);
+      if (!active || active.id !== requestId) return;
+
+      if (active.kind === "select") {
+        queue.accept(active.id, active.options[selectedIndexOverride ?? selectedIndexRef.current]);
+        alignAnswerState(queue.current());
+        return;
+      }
+
+      queue.accept(active.id, active.kind === "input" ? inputValueRef.current : undefined);
+      alignAnswerState(queue.current());
+    },
+    [alignAnswerState, queue],
+  );
+
+  /** Answer the live request with the state appropriate to its dialog kind. */
   const accept = (selectedIndexOverride?: number) => {
-    if (!request) return;
-
-    if (request.kind === "select") {
-      queue.accept(request.id, request.options[selectedIndexOverride ?? selectedIndex]);
-      return;
-    }
-
-    queue.accept(request.id, request.kind === "input" ? inputValue : undefined);
+    const active = queue.current();
+    if (active) acceptRequest(active.id, selectedIndexOverride);
   };
 
   /** Dismiss the visible request with its kind-specific cancel value. */
   const cancel = () => {
-    if (request) queue.cancel(request.id);
+    const active = queue.current();
+    if (active) queue.cancel(active.id);
+    alignAnswerState(queue.current());
   };
 
   /** Move a select request's highlight, wrapping at both ends. */
   const moveSelection = (delta: number) => {
-    if (request?.kind !== "select") return;
+    const active = queue.current();
+    alignAnswerState(active);
+    if (active?.kind !== "select") return;
 
-    const optionCount = request.options.length;
-    setSelectedIndex((current) => (current + delta + optionCount) % optionCount);
+    const optionCount = active.options.length;
+    const next = (selectedIndexRef.current + delta + optionCount) % optionCount;
+    selectedIndexRef.current = next;
+    setSelectedIndex(next);
+  };
+
+  /** Cancel one live request and synchronously prepare any promoted answer state. */
+  const cancelRequest = useCallback(
+    (id: number) => {
+      queue.cancel(id);
+      alignAnswerState(queue.current());
+    },
+    [alignAnswerState, queue],
+  );
+
+  /** Drain every request and synchronously clear its mutable answer state. */
+  const cancelAll = useCallback(() => {
+    queue.cancelAll();
+    alignAnswerState(queue.current());
+  }, [alignAnswerState, queue]);
+
+  /** Select one option while keeping the same-flush answer state current. */
+  const pickOption = (requestId: number, index: number) => {
+    const active = queue.current();
+    alignAnswerState(active);
+    if (active?.kind !== "select" || active.id !== requestId) return;
+
+    selectedIndexRef.current = index;
+    setSelectedIndex(index);
+  };
+
+  /** Update input text in both React and same-flush answer state. */
+  const updateInput = (requestId: number, value: string) => {
+    const active = queue.current();
+    alignAnswerState(active);
+    if (active?.kind !== "input" || active.id !== requestId) return;
+
+    inputValueRef.current = value;
+    setInputValue(value);
   };
 
   return {
     createDialogs: queue.createDialogs,
     getCurrentRequest: queue.current,
     isCurrentRequestLive: queue.isCurrentLive,
-    cancelRequest: queue.cancel,
+    cancelRequest,
     request,
     selectedIndex,
     inputValue,
     accept,
+    acceptRequest,
     cancel,
-    cancelAll: queue.cancelAll,
+    cancelAll,
     moveSelection,
-    pickOption: setSelectedIndex,
-    updateInput: setInputValue,
+    pickOption,
+    updateInput,
   };
 }

@@ -54,13 +54,13 @@ function isWithinRenderable(root: Renderable, candidate: Renderable | null) {
 export function ExtensionDialog({
   copySupported,
   inputValue,
-  onAccept,
-  onCancel,
-  onChangeInput,
+  onAcceptRequest,
+  onCancelRequest,
+  onChangeInputRequest,
   onClose,
   onCopy,
   onNotify,
-  onPickOption,
+  onPickOptionRequest,
   onRenderFailure,
   request,
   selectedIndex,
@@ -71,14 +71,14 @@ export function ExtensionDialog({
   copySupported: boolean;
   /** Live text of an input dialog's field; ignored by the other kinds. */
   inputValue: string;
-  onAccept: (selectedIndexOverride?: number) => void;
-  onCancel: () => void;
-  onChangeInput: (value: string) => void;
+  onAcceptRequest: (requestId: number, selectedIndexOverride?: number) => void;
+  onCancelRequest: (requestId: number) => void;
+  onChangeInputRequest: (requestId: number, value: string) => void;
   onClose: (requestId: number) => void;
   onCopy: (requestId: number, text: string) => boolean;
   onNotify: (requestId: number, message: string) => void;
   /** Highlight one option row without accepting it, mirroring the theme selector. */
-  onPickOption: (index: number) => void;
+  onPickOptionRequest: (requestId: number, index: number) => void;
   onRenderFailure: (requestId: number, error: unknown) => void;
   request: ExtensionDialogRequest;
   selectedIndex: number;
@@ -90,7 +90,7 @@ export function ExtensionDialog({
     return (
       <ExtensionOpenDialog
         copySupported={copySupported}
-        onCancel={onCancel}
+        onCancel={() => onCancelRequest(request.id)}
         onClose={onClose}
         onCopy={onCopy}
         onNotify={onNotify}
@@ -106,9 +106,9 @@ export function ExtensionDialog({
   if (request.kind === "select") {
     return (
       <ExtensionSelectDialog
-        onAccept={onAccept}
-        onCancel={onCancel}
-        onPickOption={onPickOption}
+        onAccept={(selectedIndexOverride) => onAcceptRequest(request.id, selectedIndexOverride)}
+        onCancel={() => onCancelRequest(request.id)}
+        onPickOption={(index) => onPickOptionRequest(request.id, index)}
         request={request}
         selectedIndex={selectedIndex}
         terminalHeight={terminalHeight}
@@ -122,9 +122,9 @@ export function ExtensionDialog({
     return (
       <ExtensionInputDialog
         inputValue={inputValue}
-        onAccept={onAccept}
-        onCancel={onCancel}
-        onChangeInput={onChangeInput}
+        onAccept={() => onAcceptRequest(request.id)}
+        onCancel={() => onCancelRequest(request.id)}
+        onChangeInput={(value) => onChangeInputRequest(request.id, value)}
         request={request}
         terminalHeight={terminalHeight}
         terminalWidth={terminalWidth}
@@ -151,8 +151,16 @@ export function ExtensionDialog({
   return (
     <ConfirmDialog
       actions={[
-        { keyLabel: "enter/y", label: request.confirmLabel, run: onAccept },
-        { keyLabel: "esc/n", label: request.cancelLabel, run: onCancel },
+        {
+          keyLabel: "enter/y",
+          label: request.confirmLabel,
+          run: () => onAcceptRequest(request.id),
+        },
+        {
+          keyLabel: "esc/n",
+          label: request.cancelLabel,
+          run: () => onCancelRequest(request.id),
+        },
       ]}
       height={confirmDialogHeight(visibleBody.lines.length + attributionRows + attributionGapRows)}
       terminalHeight={terminalHeight}
@@ -160,7 +168,7 @@ export function ExtensionDialog({
       theme={theme}
       title={request.title}
       width={frame.width}
-      onClose={onCancel}
+      onClose={() => onCancelRequest(request.id)}
     >
       {attributionRows > 0 ? (
         <box style={{ width: "100%", height: 1 }}>
@@ -184,6 +192,7 @@ class ExtensionDialogErrorBoundary extends Component<
     request: ExtensionOpenDialogRequest;
     fallback: ReactNode;
     onError: (error: unknown) => void;
+    retireActions: () => void;
     children: ReactNode;
   },
   { failed: boolean; request: ExtensionOpenDialogRequest | null }
@@ -199,7 +208,11 @@ class ExtensionDialogErrorBoundary extends Component<
     return props.request !== state.request ? { request: props.request, failed: false } : null;
   }
   override componentDidCatch(error: unknown) {
+    this.props.retireActions();
     this.props.onError(error);
+  }
+  override componentWillUnmount() {
+    this.props.retireActions();
   }
   override render() {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -235,14 +248,19 @@ function ExtensionOpenDialog({
   const layout = planExtensionOpenDialog(request, terminalWidth, terminalHeight);
   const { attributionGapRows, attributionRows, bodyWidth, componentHeight, frame } = layout;
   const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
+  const actionLease = request.actionLease;
   const actions = useMemo<ExtensionDialogActions>(
     () =>
       Object.freeze({
-        close: () => onClose(request.id),
-        copy: (text: string) => onCopy(request.id, text),
-        notify: (message: string) => onNotify(request.id, message),
+        close: () => {
+          if (actionLease.active) onClose(request.id);
+        },
+        copy: (text: string) => actionLease.active && onCopy(request.id, text),
+        notify: (message: string) => {
+          if (actionLease.active) onNotify(request.id, message);
+        },
       }),
-    [onClose, onCopy, onNotify, request.id],
+    [actionLease, onClose, onCopy, onNotify, request.id],
   );
   const viewProps: ExtensionDialogProps = {
     width: bodyWidth,
@@ -257,6 +275,7 @@ function ExtensionOpenDialog({
       ref={fallback ? undefined : componentRootRef}
       focusable={true}
       focused={fallback}
+      visible={componentHeight > 0}
       style={{
         width: bodyWidth,
         height: componentHeight,
@@ -295,20 +314,19 @@ function ExtensionOpenDialog({
         </box>
       ) : null}
       {attributionGapRows > 0 ? <box style={{ width: "100%", height: 1 }} /> : null}
-      {componentHeight > 0 ? (
-        <ExtensionDialogErrorBoundary
-          key={request.id}
-          request={request}
-          fallback={componentBox(<text fg={publicTheme.muted}>Dialog unavailable</text>, true)}
-          onError={(error) => {
-            onRenderFailure(request.id, error);
-          }}
-        >
-          {componentBox(<View {...viewProps} />)}
-        </ExtensionDialogErrorBoundary>
-      ) : (
-        <box ref={componentRootRef} focusable={true} style={{ width: bodyWidth, height: 0 }} />
-      )}
+      <ExtensionDialogErrorBoundary
+        key={request.id}
+        request={request}
+        fallback={componentBox(<text fg={publicTheme.muted}>Dialog unavailable</text>, true)}
+        retireActions={() => {
+          actionLease.active = false;
+        }}
+        onError={(error) => {
+          onRenderFailure(request.id, error);
+        }}
+      >
+        {componentBox(<View {...viewProps} />)}
+      </ExtensionDialogErrorBoundary>
     </ModalFrame>
   );
 }

@@ -12,6 +12,7 @@ const openRequest = {
   width: 64,
   height: 12,
   component: TestDialog,
+  actionLease: { active: true },
 } satisfies ExtensionOpenDialogRequest;
 
 describe("windowDialogText", () => {

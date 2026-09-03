@@ -79,6 +79,8 @@ export interface ExtensionOpenDialogRequest extends ExtensionDialogRequestBase {
   width: number;
   height: number;
   component: ExtensionDialogOptions["component"];
+  /** Shared across React render retries so every retained action can be retired together. */
+  actionLease: { active: boolean };
 }
 
 /** One dialog the host should draw, normalized from what an extension asked for. */
@@ -147,7 +149,12 @@ function normalizeTitle(method: string, title: unknown) {
     invalid(method, "requires a non-empty title.");
   }
 
-  return sanitizeTerminalLine(title.trim());
+  const normalized = sanitizeTerminalLine(title.trim()).trim();
+  if (normalized.length === 0) {
+    invalid(method, "requires a non-empty title after terminal sanitization.");
+  }
+
+  return normalized;
 }
 
 /** Normalize an optional extension-authored label, falling back to Hunk's own. */
@@ -156,7 +163,7 @@ function normalizeLabel(label: unknown, fallback: string) {
     return fallback;
   }
 
-  return sanitizeTerminalLine(label.trim());
+  return sanitizeTerminalLine(label.trim()).trim() || fallback;
 }
 
 /**
@@ -210,13 +217,25 @@ function normalizeOptions(options: unknown) {
     invalid("select", "requires at least one option.");
   }
 
-  return options.map((option) => {
+  const normalizedOptions: string[] = [];
+  for (let index = 0; index < options.length; index += 1) {
+    if (!Object.hasOwn(options, index)) {
+      invalid("select", "options must be a dense array of strings.");
+    }
+    const option = options[index];
     if (typeof option !== "string") {
-      invalid("select", "options must all be strings.");
+      invalid("select", "options must all be strings that remain non-empty after sanitization.");
     }
 
-    return sanitizeTerminalLine(option);
-  });
+    const normalized = sanitizeTerminalLine(option).trim();
+    if (normalized.length === 0) {
+      invalid("select", "options must all be strings that remain non-empty after sanitization.");
+    }
+
+    normalizedOptions.push(normalized);
+  }
+
+  return normalizedOptions;
 }
 
 /**
@@ -247,6 +266,11 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   /** The cancel value one request resolves with. */
   const cancelValueFor = (request: ExtensionDialogRequest): ExtensionDialogResult =>
     request.kind === "confirm" ? false : request.kind === "open" ? undefined : null;
+
+  /** Retire component actions before settling or removing their request. */
+  const retireActions = (request: ExtensionDialogRequest) => {
+    if (request.kind === "open") request.actionLease.active = false;
+  };
 
   /**
    * Queue one request and hand back the promise its handler awaits.
@@ -281,6 +305,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
   const drainPending = () => {
     const drained = pending.splice(0);
     for (const entry of drained) {
+      retireActions(entry.request);
       entry.settle(cancelValueFor(entry.request));
     }
 
@@ -296,6 +321,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
       return;
     }
 
+    retireActions(active.request);
     active.settle(value);
     notify();
   };
@@ -387,6 +413,7 @@ export function createExtensionDialogQueue(): ExtensionDialogQueue {
               width,
               height,
               component: options.component,
+              actionLease: { active: true },
             }),
             undefined,
             isLive,

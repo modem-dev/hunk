@@ -492,6 +492,7 @@ export function App({
 
   const {
     accept: acceptExtensionDialog,
+    acceptRequest: acceptExtensionDialogRequest,
     cancel: cancelExtensionDialog,
     cancelRequest: cancelExtensionDialogRequest,
     cancelAll: cancelAllExtensionDialogs,
@@ -1235,7 +1236,7 @@ export function App({
     closeExtensionTrustPrompt,
     commands: appCommands,
     denyRepoExtensions,
-    extensionDialog,
+    getExtensionDialog: getCurrentExtensionDialogRequest,
     acceptExtensionDialog,
     cancelExtensionDialog,
     moveExtensionDialogSelection,
@@ -1561,13 +1562,13 @@ export function App({
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
-          onAccept={acceptExtensionDialog}
-          onCancel={cancelExtensionDialog}
-          onChangeInput={setExtensionDialogInputValue}
+          onAcceptRequest={acceptExtensionDialogRequest}
+          onCancelRequest={cancelExtensionDialogRequest}
+          onChangeInputRequest={setExtensionDialogInputValue}
           onClose={closeExtensionDialogComponent}
           onCopy={copyExtensionDialogText}
           onNotify={notifyExtensionDialog}
-          onPickOption={setExtensionDialogSelectedIndex}
+          onPickOptionRequest={setExtensionDialogSelectedIndex}
           onRenderFailure={reportExtensionDialogRenderFailure}
         />
       ) : null}

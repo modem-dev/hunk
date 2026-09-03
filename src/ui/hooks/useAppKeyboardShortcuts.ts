@@ -35,8 +35,8 @@ export interface UseAppKeyboardShortcutsOptions {
    */
   commands: readonly AppCommand[];
   denyRepoExtensions: () => void;
-  /** The extension dialog currently on screen, or `null` when none is. */
-  extensionDialog: ExtensionDialogRequest | null;
+  /** Read the live queued dialog; several keys can arrive before React renders it. */
+  getExtensionDialog: () => ExtensionDialogRequest | null;
   acceptExtensionDialog: () => void;
   cancelExtensionDialog: () => void;
   moveExtensionDialogSelection: (delta: number) => void;
@@ -104,7 +104,7 @@ export function useAppKeyboardShortcuts({
   closeExtensionTrustPrompt,
   commands,
   denyRepoExtensions,
-  extensionDialog,
+  getExtensionDialog,
   acceptExtensionDialog,
   cancelExtensionDialog,
   moveExtensionDialogSelection,
@@ -138,7 +138,7 @@ export function useAppKeyboardShortcuts({
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
-  const extensionDialogRef = useRef(extensionDialog);
+  const getExtensionDialogRef = useRef(getExtensionDialog);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
   const isFileViewModeActiveRef = useRef(isFileViewModeActive);
@@ -160,7 +160,7 @@ export function useAppKeyboardShortcuts({
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
-  extensionDialogRef.current = extensionDialog;
+  getExtensionDialogRef.current = getExtensionDialog;
   isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
@@ -316,7 +316,7 @@ export function useAppKeyboardShortcuts({
    * so those keys cannot reach a previously focused review widget behind it.
    */
   const handleExtensionDialogShortcut = (key: KeyEvent): KeyOwner => {
-    const dialog = extensionDialogRef.current;
+    const dialog = getExtensionDialogRef.current();
     if (!dialog) {
       return "notMine";
     }

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { KeyEvent, type ParsedKey } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../test/helpers/filesystem";
@@ -74,6 +75,23 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
     await setup.renderOnce();
     await Bun.sleep(0);
     await setup.renderOnce();
+  });
+}
+
+/** Publish one key synchronously, used for same-input-flush coverage. */
+function testKeyEvent(fields: Partial<ParsedKey>) {
+  return new KeyEvent({
+    name: "",
+    sequence: "",
+    raw: "",
+    ctrl: false,
+    meta: false,
+    option: false,
+    shift: false,
+    number: false,
+    eventType: "press",
+    source: "raw",
+    ...fields,
   });
 }
 
@@ -339,6 +357,71 @@ describe("extension dialogs", () => {
         () => !setup.captureCharFrame().includes("Reformat the file?"),
         "the dialog to close",
       );
+    });
+  });
+
+  test("owns later keys when a command opens and cancels a dialog in one input flush", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-same-flush-");
+    const extDir = createTempDir("hunk-ext-dialog-same-flush-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(extPath, logPath, `ctx.dialogs.confirm({ title: "Same flush?" })`);
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup, quits) => {
+      await act(async () => {
+        setup.renderer.keyInput.emit(
+          "keypress",
+          testKeyEvent({ name: "y", sequence: "y", raw: "y" }),
+        );
+        setup.renderer.keyInput.emit(
+          "keypress",
+          testKeyEvent({ name: "q", sequence: "q", raw: "q" }),
+        );
+        setup.renderer.keyInput.emit(
+          "keypress",
+          testKeyEvent({ name: "escape", sequence: "\u001b", raw: "\u001b" }),
+        );
+      });
+
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("answer false"),
+        "the same-flush Escape to cancel the queued dialog",
+      );
+      expect(quits()).toBe(0);
+      expect(setup.captureCharFrame()).not.toContain("Same flush?");
+    });
+  });
+
+  test("moves and accepts a newly opened select dialog in one input flush", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-select-same-flush-");
+    const extDir = createTempDir("hunk-ext-dialog-select-same-flush-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.select({ title: "Same flush choice", options: ["one", "two"] })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        setup.renderer.keyInput.emit(
+          "keypress",
+          testKeyEvent({ name: "y", sequence: "y", raw: "y" }),
+        );
+        setup.renderer.keyInput.emit("keypress", testKeyEvent({ name: "down" }));
+        setup.renderer.keyInput.emit("keypress", testKeyEvent({ name: "return" }));
+      });
+
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("answer two"),
+        "the same-flush selection to resolve",
+      );
+      expect(setup.captureCharFrame()).not.toContain("Same flush choice");
     });
   });
 
@@ -670,11 +753,17 @@ describe("extension dialogs", () => {
     writeDialogFixture(
       extPath,
       logPath,
-      `ctx.dialogs.open({ title: "Broken surface", width: 30, height: 4, component: () => { throw new Error("surface exploded"); } })`,
+      `ctx.dialogs.open({ title: "Broken surface", width: 30, height: 4, component: ({ actions }) => { const retained = actions; setTimeout(() => { appendFileSync(${JSON.stringify(logPath)}, "failed-copy " + String(retained.copy("stale")) + "\\n"); retained.notify("stale failure notice"); retained.close(); appendFileSync(${JSON.stringify(logPath)}, "failed-actions-called\\n"); }, 10); throw new Error("surface exploded"); } })`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
+      const copied: string[] = [];
+      setup.renderer.isOsc52Supported = () => true;
+      setup.renderer.copyToClipboardOSC52 = (text: string) => {
+        copied.push(text);
+        return true;
+      };
       await act(async () => {
         await setup.mockInput.typeText("y");
       });
@@ -687,6 +776,15 @@ describe("extension dialogs", () => {
       const failed = setup.captureCharFrame();
       expect(failed).toContain("Broken surface");
       expect(failed).toContain("surface exploded");
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("failed-actions-called"),
+        "the retained failed-component actions to run",
+      );
+      expect(readProbeLog(logPath)).toContain("failed-copy false");
+      expect(copied).toEqual([]);
+      expect(setup.captureCharFrame()).toContain("Dialog unavailable");
+      expect(setup.captureCharFrame()).not.toContain("stale failure notice");
 
       await act(async () => {
         await setup.mockInput.pressEscape();
@@ -695,6 +793,63 @@ describe("extension dialogs", () => {
         setup,
         () => readProbeLog(logPath).includes("answer undefined"),
         "the failed component dialog to close",
+      );
+    });
+  });
+
+  test("keeps a custom component mounted through a zero-row terminal allocation", async () => {
+    const repo = createTestRepo("hunk-ext-dialog-open-zero-height-");
+    const extDir = createTempDir("hunk-ext-dialog-open-zero-height-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeDialogFixture(
+      extPath,
+      logPath,
+      `ctx.dialogs.open({ title: "Resize surface", width: 30, height: 4, component: function StatefulDialog({ height, theme }) { const [value, setValue] = useState("initial"); useKeyboard((key) => { if (matchesKey("x", key)) setValue("preserved"); }); return createElement("text", { fg: theme.text }, value + " at " + height); } })`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("initial at 4"),
+        "the stateful component to open",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("x");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("preserved at 4"),
+        "the stateful component to update before shrinking",
+      );
+
+      await act(async () => {
+        await setup.resize(80, 8);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).not.toContain("preserved at");
+
+      await act(async () => {
+        await setup.resize(80, 20);
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("preserved at 4"),
+        "the zero-row component state to survive the resize",
+      );
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("answer undefined"),
+        "the resized component dialog to close",
       );
     });
   });

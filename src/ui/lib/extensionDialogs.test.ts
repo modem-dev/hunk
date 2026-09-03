@@ -243,7 +243,7 @@ describe("createExtensionDialogQueue", () => {
     expect(await second).toBe(false);
   });
 
-  test("rejects a blank title and a select with no options", async () => {
+  test("rejects blank sanitized titles and malformed select options", async () => {
     const queue = createExtensionDialogQueue();
     const dialogs = queue.createDialogs("probe");
 
@@ -257,6 +257,21 @@ describe("createExtensionDialogQueue", () => {
     );
     await expect(dialogs.select({ title: "Which?", options: [] })).rejects.toThrow(
       /at least one option/,
+    );
+    await expect(dialogs.confirm({ title: "\u001b[31m\u001b[0m" })).rejects.toThrow(
+      /non-empty title after terminal sanitization/,
+    );
+    await expect(
+      dialogs.select({ title: "Which?", options: ["\u001b]0;pwned\u0007"] }),
+    ).rejects.toThrow(/remain non-empty after sanitization/);
+    await expect(dialogs.select({ title: "Which?", options: ["   "] })).rejects.toThrow(
+      /remain non-empty after sanitization/,
+    );
+    const sparseOptions = Array.from({ length: 2 }, () => "one");
+    delete sparseOptions[0];
+    sparseOptions[1] = "one";
+    await expect(dialogs.select({ title: "Which?", options: sparseOptions })).rejects.toThrow(
+      /dense array of strings/,
     );
     await expect(dialogs.open({ title: "No component", component: null as never })).rejects.toThrow(
       /component function/,

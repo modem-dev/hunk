@@ -57,11 +57,50 @@ describe("useExtensionDialogController", () => {
       expect(harness.controller().selectedIndex).toBe(0);
       expect(harness.controller().inputValue).toBe("feature/base");
 
-      await act(async () => harness.controller().updateInput("feature/typed"));
+      await act(async () =>
+        harness.controller().updateInput(harness.controller().request!.id, "feature/typed"),
+      );
       await act(async () => harness.controller().accept());
       expect(await typed).toBe("feature/typed");
       await flush(harness.setup);
       expect(harness.controller().request).toBeNull();
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("ignores controls retained from a rendered request after promotion", async () => {
+    const harness = await renderController();
+    const dialogs = harness.controller().createDialogs("probe");
+    let selected!: Promise<string | null>;
+    let typed!: Promise<string | null>;
+
+    try {
+      await act(async () => {
+        selected = dialogs.select({ title: "First", options: ["one", "two"] });
+        typed = dialogs.input({ title: "Second", initial: "initial" });
+      });
+      await flush(harness.setup);
+      const firstId = harness.controller().request!.id;
+
+      await act(async () => {
+        harness.controller().pickOption(firstId, 1);
+        harness.controller().acceptRequest(firstId);
+        harness.controller().pickOption(firstId, 0);
+        harness.controller().updateInput(firstId, "stale");
+        harness.controller().acceptRequest(firstId);
+      });
+
+      expect(await selected).toBe("two");
+      expect(harness.controller().getCurrentRequest()).toMatchObject({
+        kind: "input",
+        title: "Second",
+      });
+      await flush(harness.setup);
+      expect(harness.controller().inputValue).toBe("initial");
+
+      await act(async () => harness.controller().cancel());
+      expect(await typed).toBeNull();
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
