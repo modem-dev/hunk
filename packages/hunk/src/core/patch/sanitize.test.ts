@@ -38,6 +38,18 @@ describe("stripTerminalControl", () => {
     expect(stripTerminalControl("a\x1bMb")).toBe("ab");
   });
 
+  test("does not let OSC sequences span newlines into binary content", () => {
+    // Binary bytes resembling ESC ] ... BEL must not eat the newline: the
+    // lone-escape rule may still take the ESC ] bytes, but the line count
+    // reaching the patch parser must stay intact.
+    expect(stripTerminalControl("a\x1b]payload\nmore\x07b")).toBe("apayload\nmore\x07b");
+  });
+
+  test("does not let DCS sequences span newlines into binary content", () => {
+    // Same newline guarantee for ESC P ... ST-looking binary bytes.
+    expect(stripTerminalControl("a\x1bPdata\nmore\x1b\\b")).toBe("adata\nmoreb");
+  });
+
   test("leaves text with no control sequences unchanged", () => {
     expect(stripTerminalControl("plain diff text")).toBe("plain diff text");
   });

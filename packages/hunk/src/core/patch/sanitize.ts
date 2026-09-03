@@ -17,8 +17,11 @@ export { escapeUntrackedPatchPath } from "../../lib/patchPath";
 /** Remove terminal escape sequences so Git-colored pager input still parses as plain patch text. */
 export function stripTerminalControl(text: string) {
   return text
-    .replace(/\x1bP[\s\S]*?\x1b\\/g, "")
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
+    // DCS and OSC sequences terminate on the same line: letting them span
+    // newlines eats binary bytes (for example ESC ] ... BEL inside a binary
+    // file a VCS emitted as text) and corrupts hunk line counts downstream.
+    .replace(/\x1bP[^\n]*?\x1b\\/g, "")
+    .replace(/\x1b\][^\n]*?(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/\x1b[@-_]/g, "");
 }
