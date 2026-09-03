@@ -82,6 +82,7 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  findAppCommandById,
   observeAppCommandDispatch,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
@@ -1046,6 +1047,7 @@ export function App({
         stepDiffLine,
         selectCursorLine: setCursorLine,
         selectLayoutMode,
+        saveDraftNote,
         startUserNote: () => startUserNote(),
         toggleAgentNotes,
         toggleCopyDecorations,
@@ -1064,6 +1066,7 @@ export function App({
     ],
     publishCommandExecuted,
   );
+  const draftSaveKeyLabel = findAppCommandById(appCommands, "hunk.review.saveNote")?.keyLabels[0];
   useExtensionRuntimeBindings({
     commands: appCommands,
     navigation: extensionNavigationBindings,
@@ -1151,7 +1154,6 @@ export function App({
     discardViewPreferencesAndQuit,
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
-    saveDraftNote,
     showAgentSkill,
     showHelp,
     switchMenu,
@@ -1367,6 +1369,7 @@ export function App({
             onRemoveLiveNote={review.removeLiveComment}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
+            draftSaveKeyLabel={draftSaveKeyLabel}
             onStartUserNoteAtHunk={startUserNote}
             onUpdateDraftNote={updateDraftNote}
             onBlurDraftNote={blurDraftNote}

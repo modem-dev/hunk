@@ -13,7 +13,12 @@ import {
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
-import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
+import {
+  isEscapeKey,
+  isSaveDraftNoteKey,
+  matchesSaveDraftNoteCommand,
+  noteComposerSaveOwner,
+} from "./keyboard";
 import {
   BoundedClusterWidthCache,
   CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
@@ -210,6 +215,58 @@ describe("ui helpers", () => {
     // Unmodified s and other ctrl chords must not save.
     expect(isSaveDraftNoteKey(createKeyEvent({ name: "s" }))).toBe(false);
     expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "x" }))).toBe(false);
+    // Extra modifiers are a different chord, including on CSI-u / raw.
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, shift: true, name: "s" }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S, shift: true }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S_CSI_U, shift: true }))).toBe(false);
+  });
+
+  test("save-draft-note command matching uses resolved chords and the Ctrl-S encoding net", () => {
+    const CTRL_S = "\u0013";
+    const CTRL_S_CSI_U = "\u001b[115;5u";
+    const ctrlS = createKeyEvent({ ctrl: true, name: "s" });
+    const csiU = createKeyEvent({ sequence: CTRL_S_CSI_U });
+    const remapped = createKeyEvent({ ctrl: true, name: "return" });
+
+    expect(matchesSaveDraftNoteCommand([], ctrlS)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], ctrlS)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], createKeyEvent({ sequence: CTRL_S }))).toBe(
+      true,
+    );
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], csiU)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["Ctrl+s"], csiU)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], remapped)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], ctrlS)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], csiU)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["alt+s"], csiU)).toBe(false);
+    expect(
+      matchesSaveDraftNoteCommand(
+        ["ctrl+s"],
+        createKeyEvent({ ctrl: true, shift: true, name: "s" }),
+      ),
+    ).toBe(false);
+  });
+
+  test("focused composer save owns the key only when execute-by-id runs", () => {
+    const ctrlS = createKeyEvent({ ctrl: true, name: "s" });
+    const ran: string[] = [];
+
+    expect(
+      noteComposerSaveOwner(["ctrl+s"], ctrlS, () => {
+        ran.push("save");
+        return true;
+      }),
+    ).toBe("mine");
+    expect(ran).toEqual(["save"]);
+
+    expect(noteComposerSaveOwner(["ctrl+s"], ctrlS, () => false)).toBe("focused");
+    expect(
+      noteComposerSaveOwner(["ctrl+enter"], ctrlS, () => {
+        ran.push("should-not-run");
+        return true;
+      }),
+    ).toBeUndefined();
+    expect(ran).toEqual(["save"]);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {

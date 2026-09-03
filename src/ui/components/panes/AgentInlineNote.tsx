@@ -36,6 +36,14 @@ interface BorderActionItem {
   onMouseUp: () => void;
 }
 
+/** Cells one action occupies: key, optional space, then label. */
+function actionItemTextWidth(keyLabel: string, label: string) {
+  if (!keyLabel) {
+    return label.length;
+  }
+  return label ? keyLabel.length + 1 + label.length : keyLabel.length;
+}
+
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";
   text: string;
@@ -204,15 +212,7 @@ export function AgentInlineNote({
   layout: Exclude<LayoutMode, "auto">;
   noteCount?: number;
   noteIndex?: number;
-  draft?: {
-    body: string;
-    focused: boolean;
-    onBlur?: () => void;
-    onCancel: () => void;
-    onFocus?: () => void;
-    onInput: (value: string) => void;
-    onSave: () => void;
-  };
+  draft?: VisibleAgentNote["draft"];
   actions?: AgentInlineNoteActions;
   /** Legacy compact delete affordance; semantic cards use explicit `actions`. */
   onClose?: () => void;
@@ -388,7 +388,7 @@ export function AgentInlineNote({
     const availableItemsWidth = Math.max(0, boxWidth - 4);
     const fullItemsWidth = items.reduce(
       (total, item, index) =>
-        total + item.keyLabel.length + 1 + item.label.length + (index > 0 ? 1 : 0),
+        total + actionItemTextWidth(item.keyLabel, item.label) + (index > 0 ? 1 : 0),
       0,
     );
     const renderedItems = items.map((item) => ({
@@ -397,10 +397,7 @@ export function AgentInlineNote({
     }));
     const itemsWidth = renderedItems.reduce(
       (total, item, index) =>
-        total +
-        item.keyLabel.length +
-        (item.displayLabel ? 1 + item.displayLabel.length : 0) +
-        (index > 0 ? 1 : 0),
+        total + actionItemTextWidth(item.keyLabel, item.displayLabel) + (index > 0 ? 1 : 0),
       0,
     );
     const innerWidth = Math.max(0, boxWidth - 2);
@@ -425,8 +422,8 @@ export function AgentInlineNote({
         {renderedItems.map((item, index) => {
           const hovered = hoveredActionId === item.id;
           const backgroundColor = hovered ? theme.accentMuted : theme.panel;
-          const itemWidth =
-            item.keyLabel.length + (item.displayLabel ? 1 + item.displayLabel.length : 0);
+          const itemWidth = actionItemTextWidth(item.keyLabel, item.displayLabel);
+          const labelPrefix = item.keyLabel && item.displayLabel ? " " : "";
           return (
             <box
               key={item.id}
@@ -447,9 +444,11 @@ export function AgentInlineNote({
                 style={{ width: itemWidth, height: 1, backgroundColor }}
               >
                 <text bg={backgroundColor}>
-                  <span fg={theme.noteTitleText}>{item.keyLabel}</span>
+                  {item.keyLabel ? <span fg={theme.noteTitleText}>{item.keyLabel}</span> : null}
                   {item.displayLabel ? (
-                    <span fg={hovered ? theme.text : theme.muted}>{` ${item.displayLabel}`}</span>
+                    <span
+                      fg={hovered ? theme.text : theme.muted}
+                    >{`${labelPrefix}${item.displayLabel}`}</span>
                   ) : null}
                 </text>
               </box>
@@ -468,7 +467,7 @@ export function AgentInlineNote({
     const draftTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4));
     const draftTopBorderSuffix = `${"─".repeat(Math.max(0, boxWidth - 3 - draftTitleText.length))}╮`;
     const draftActionItems: BorderActionItem[] = [
-      { id: "save", keyLabel: "^S", label: "save", onMouseUp: draft.onSave },
+      { id: "save", keyLabel: draft.saveKeyLabel ?? "", label: "save", onMouseUp: draft.onSave },
       { id: "cancel", keyLabel: "Esc", label: "cancel", onMouseUp: draft.onCancel },
     ];
     const draftTextareaRows = draftVisibleLineCount;

@@ -239,7 +239,7 @@ describe("PTY notes", () => {
       expect(freshDraft).toContain("Write a note");
       const composerBorder = freshDraft
         .split("\n")
-        .find((line) => line.includes("^S save") && line.includes("Esc cancel"));
+        .find((line) => line.includes("Ctrl+S save") && line.includes("Esc cancel"));
       expect(composerBorder?.trimStart().startsWith("╰")).toBe(true);
       expect(composerBorder?.trimEnd().endsWith("╯")).toBe(true);
 
@@ -250,7 +250,7 @@ describe("PTY notes", () => {
       });
       const saveRowBeforeNewline = draftBeforeNewline
         .split("\n")
-        .findIndex((line) => line.includes("^S save") && line.includes("Esc cancel"));
+        .findIndex((line) => line.includes("Ctrl+S save") && line.includes("Esc cancel"));
       expect(saveRowBeforeNewline).toBeGreaterThanOrEqual(0);
 
       await session.type("\x0a");
@@ -259,7 +259,7 @@ describe("PTY notes", () => {
         (text) => {
           const saveRowAfterNewline = text
             .split("\n")
-            .findIndex((line) => line.includes("^S save") && line.includes("Esc cancel"));
+            .findIndex((line) => line.includes("Ctrl+S save") && line.includes("Esc cancel"));
           return (
             text.includes("Please cover this edge case.") &&
             saveRowAfterNewline > saveRowBeforeNewline
@@ -828,7 +828,7 @@ describe("PTY notes", () => {
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this clicked draft.");
-      await session.click(/\^S save/);
+      await session.click(/Ctrl\+S save/);
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
 
       expect(saved).toContain("Save this clicked draft.");

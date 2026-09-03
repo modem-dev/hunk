@@ -42,6 +42,8 @@ export interface VisibleAgentNote {
     onFocus?: () => void;
     onInput: (value: string) => void;
     onSave: () => void;
+    /** Live chord for save, from `hunk.review.saveNote`; omitted when unbound. */
+    saveKeyLabel?: string;
   };
 }
 

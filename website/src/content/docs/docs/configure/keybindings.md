@@ -31,6 +31,6 @@ Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a 
 
 The menus and the in-app help (`?`) show the keys for the commands they present, so a remap changes what they advertise. The full table of built-in command ids and their default keys lives in [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) in the repository. Commands listed without a default key remain callable by id and can be assigned a shortcut; some also appear in menus.
 
-Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter`, `Ctrl-S` while writing a note — belong to those widgets and are not remappable.
+Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter` — belong to those widgets and are not remappable. The note composer's save shortcut is the command `hunk.review.saveNote` (default `ctrl+s`) and is remappable; while the composer is focused it still wins over the command table, using the resolved chord.
 
 `[keybindings]` is read from your user config only, never from a repository's `.hunk/config.toml`: which keys do what is a property of your keyboard and habits, so a checkout you review cannot rearrange them.

@@ -73,6 +73,7 @@ The built-in commands and the keys they ship with:
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
 | `hunk.review.replyToActiveNote`                | Reply to the active review note                | `R`                          |
+| `hunk.review.saveNote`                         | Save a draft review note                       | `ctrl+s`                     |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
@@ -122,10 +123,17 @@ invoke these same public `hunk.*` commands.
 Routing precedence is host prompts and dialogs, menus/overlays, focused text
 inputs, an interactive file-view mode, a session extension keyboard mode, then
 the command table and focused review widget. Keys that belong to a dialog,
-menu, or focused text input — `Esc`, `Enter`, `Ctrl-S` while writing a note —
-are part of those widgets rather than commands, and are not remappable. Escape
-is also the reserved exit from each active extension mode, so an extension
-cannot trap the keyboard.
+menu, or focused text input — `Esc`, `Enter` — are part of those widgets rather
+than commands, and are not remappable. The note composer's save shortcut is the
+command `hunk.review.saveNote` (default `ctrl+s`) and is remappable; while the
+composer is focused it still wins over the command table, using the resolved
+chord. Escape is also the reserved exit from each active extension mode, so an
+extension cannot trap the keyboard.
+
+```toml
+[keybindings]
+"hunk.review.saveNote" = "ctrl+enter"   # Zellij-friendly; default is ctrl+s
+```
 
 `[keybindings]` is read from your user config only — never from a repository's
 `.hunk/config.toml`. Which keys do what is a property of your keyboard and your

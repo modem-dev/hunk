@@ -113,6 +113,9 @@ describe("app command catalog", () => {
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.app.quit"), { count: 1, state }),
     ).toBeUndefined();
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.saveNote"), { count: 1, state }),
+    ).toBeUndefined();
   });
 
   test("lowers a new note at the current selection, with an optional measured line", () => {

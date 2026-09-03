@@ -362,4 +362,63 @@ describe("AgentInlineNote draft composer", () => {
       }
     }
   });
+
+  test("draft footer shows the resolved save chord and omits it when unbound", async () => {
+    const labeled = await testRender(
+      <AgentInlineNote
+        annotation={draftAnnotation("body")}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        draft={{
+          body: "body",
+          focused: true,
+          onInput: () => {},
+          onCancel: () => {},
+          onSave: () => {},
+          saveKeyLabel: "Ctrl+Enter",
+        }}
+      />,
+      { width: 120, height: 12 },
+    );
+
+    try {
+      await flush(labeled);
+      expect(labeled.captureCharFrame()).toContain("Ctrl+Enter save Esc cancel");
+    } finally {
+      await act(async () => {
+        labeled.renderer.destroy();
+      });
+    }
+
+    const unbound = await testRender(
+      <AgentInlineNote
+        annotation={draftAnnotation("body")}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        draft={{
+          body: "body",
+          focused: true,
+          onInput: () => {},
+          onCancel: () => {},
+          onSave: () => {},
+        }}
+      />,
+      { width: 120, height: 12 },
+    );
+
+    try {
+      await flush(unbound);
+      const frame = unbound.captureCharFrame();
+      expect(frame).toContain("save Esc cancel");
+      expect(frame).not.toContain("Ctrl+S save");
+    } finally {
+      await act(async () => {
+        unbound.renderer.destroy();
+      });
+    }
+  });
 });

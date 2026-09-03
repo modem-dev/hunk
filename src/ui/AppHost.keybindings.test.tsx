@@ -97,6 +97,7 @@ async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
   externalQuitSignal?: AbortSignal,
+  renderOptions?: { kittyKeyboard?: boolean },
 ) {
   let quitCount = 0;
   const setup = await testRender(
@@ -105,7 +106,7 @@ async function withAppHost(
       externalQuitSignal={externalQuitSignal}
       onQuit={() => (quitCount += 1)}
     />,
-    { width: 120, height: 24 },
+    { width: 120, height: 24, ...renderOptions },
   );
 
   try {
@@ -373,6 +374,132 @@ describe("user keybindings", () => {
       });
       await flush(setup);
       expect(seen).toEqual(["hunk.app.toggleFocusArea"]);
+    });
+  });
+
+  test("a remapped save-note chord saves a draft and emits command_executed", async () => {
+    const repo = createTestRepo("hunk-keybindings-save-note-remap-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.review.saveNote" = "ctrl+enter"\n',
+    );
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: ({ commandId }) => {
+        seen.push(commandId);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    // Kitty encodes Ctrl+Enter as CSI-u; legacy mock input would emit a bare
+    // return and drop the ctrl flag.
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await act(async () => {
+          await setup.mockInput.typeText("c");
+        });
+        await flush(setup);
+        await act(async () => {
+          await setup.mockInput.typeText("Remapped save.");
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).toContain("Ctrl+Enter save");
+
+        await act(async () => {
+          setup.mockInput.pressKey("s", { ctrl: true });
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).toContain("Draft note");
+        expect(setup.captureCharFrame()).not.toContain("Your note");
+
+        await act(async () => {
+          await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).toContain("Draft note");
+        expect(setup.captureCharFrame()).not.toContain("Your note");
+
+        seen.length = 0;
+        await act(async () => {
+          setup.mockInput.pressEnter({ ctrl: true });
+        });
+        await flush(setup);
+        expect(seen).toEqual(["hunk.review.saveNote"]);
+        const saved = setup.captureCharFrame();
+        expect(saved).toContain("Your note");
+        expect(saved).toContain("Remapped save.");
+        expect(saved).not.toContain("Draft note");
+      },
+      undefined,
+      { kittyKeyboard: true },
+    );
+  });
+
+  test("unbinding save-note leaves Ctrl-S doing nothing in the composer", async () => {
+    const repo = createTestRepo("hunk-keybindings-save-note-unbind-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.review.saveNote" = false\n',
+    );
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("Still a draft.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        setup.mockInput.pressKey("s", { ctrl: true });
+      });
+      await flush(setup);
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain("Still a draft.");
+      expect(frame).not.toContain("Your note");
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain("Still a draft.");
+      expect(frame).not.toContain("Your note");
+    });
+  });
+
+  test("CSI-u Ctrl-S does not save after save-note is remapped away", async () => {
+    const repo = createTestRepo("hunk-keybindings-save-note-csiu-remap-");
+    const bootstrap = await launchWithConfig(
+      repo,
+      '[keybindings]\n"hunk.review.saveNote" = "ctrl+enter"\n',
+    );
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("Encoding net off.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain("Encoding net off.");
+      expect(frame).not.toContain("Your note");
     });
   });
 });

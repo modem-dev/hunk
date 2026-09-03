@@ -1843,8 +1843,9 @@ it, whether the user reached it through a key, a menu, an old command alias, or
 may still have detached async work in flight; this event observes the accepted user action, not
 promise settlement. Listen for ids rather than key chords so behavior follows the user's live
 `[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal
-commands and do not emit this event. Modal widget keys such as Escape, Enter, note-editor Ctrl-S,
-and F10 menu navigation are also not commands.
+commands and do not emit this event. Modal widget keys such as Escape, Enter,
+and F10 menu navigation are also not commands. The note composer's save shortcut
+is `hunk.review.saveNote` and does emit this event.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
 `"daemon"` (an agent command through the session broker), or `"manual"` (the

@@ -52,6 +52,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     selectCursorLine: noop,
     stepDiffLine: noop,
     selectLayoutMode: noop,
+    saveDraftNote: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
     toggleCopyDecorations: record("toggleCopyDecorations"),
