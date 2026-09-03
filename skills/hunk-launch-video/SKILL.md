@@ -282,6 +282,36 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 - Target pacing: money shots hold 3–4s, context shots 2–3s, typing/walk frames
   0.2–0.6s; keep the total near 60s.
 
+## Command and output legibility
+
+Terminal commands and their results must be readable at normal playback size.
+Never rely on a full-width terminal prompt or output region as the only way the
+viewer can understand a command scene; text that looks acceptable in a 1080p
+source frame is often illegible in an embedded player or social feed.
+
+Use this default treatment:
+
+1. **Present the exact command in large type.** The easiest treatment is a
+   `cmd` card or an oversized editorial callout immediately before the real
+   terminal result. A typing animation may remain for motion, but it does not
+   replace the large command treatment.
+2. **Zoom the real output.** Crop or scale the captured terminal frame around
+   the meaningful result so both the command and the important output lines
+   are comfortably readable. A brief full-window establishing shot is fine,
+   but the result's main hold must use the focused view.
+3. **Keep the evidence real.** Never fabricate terminal output. Large command
+   text may reproduce the exact command as an editorial overlay; any enlarged
+   output must come from the captured PTY frame. If reusable crop/zoom controls
+   are missing, add them to `@hunk/term-video` rather than baking one-off image
+   edits into a storyboard.
+4. **Trim before shrinking.** Prefer fewer relevant lines and a tighter crop
+   over fitting a long transcript into the frame. Split a workflow across
+   multiple focused shots when one crop cannot keep every important line
+   legible.
+
+Treat command legibility as a release gate: if the command or its result cannot
+be read when the 1920x1080 video is displayed at 50% size, revise the shot.
+
 ## Content accuracy (learned the hard way)
 
 - **Verify install commands against reality**, not the README: check
@@ -302,6 +332,9 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
 - Eyeball keyframes in `.video-work/frames/` (Read renders PNGs) after
   capture — especially new scenes — before compositing.
+- Inspect every command scene at 50% display size. Confirm the exact command is
+  shown in large type and the meaningful real output is zoomed tightly enough
+  to read; a readable caption does not compensate for unreadable terminal text.
 - After encoding, return to the repository root, set `VIDEO` to the produced
   MP4, and inspect a mid-animation point, each new scene, and the outro:
 
