@@ -158,7 +158,8 @@ export async function loadHistoryBootstrap({
   );
   let closed = false;
   return {
-    input: resolvedTheme ? { ...input, theme: resolvedTheme } : input,
+    // Static history renders from the command input, which only carries one theme id.
+    input: typeof resolvedTheme === "string" ? { ...input, theme: resolvedTheme } : input,
     source,
     providerId: sanitizeTerminalLine(adapter.id),
     providerName: sanitizeTerminalLine(adapter.name),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ThemeSelectorItem } from "../components/chrome/ThemeSelectorDialog";
-import type { ThemeController } from "../theme/controller";
+import { resolveThemeSelectionId, type ThemeController } from "../theme/controller";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "../themes";
 
 interface ThemeSelectorControllerState {
@@ -22,7 +22,7 @@ export function useThemeSelectorController({
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
   const {
-    themeId: committedThemeId,
+    themeSelection: committedThemeSelection,
     customThemes,
     themeMode,
     terminalColors,
@@ -40,8 +40,12 @@ export function useThemeSelectorController({
     [customThemes, themeMode, terminalColors],
   );
   const committedTheme = useMemo(
-    () => resolveTheme(committedThemeId, themeMode ?? null, customThemes),
-    [committedThemeId, customThemes, themeMode, terminalColors],
+    () => resolveTheme(committedThemeSelection, themeMode ?? null, customThemes),
+    [committedThemeSelection, customThemes, themeMode, terminalColors],
+  );
+  const committedThemeId = useMemo(
+    () => resolveThemeSelectionId(committedThemeSelection, themeMode, customThemes),
+    [committedThemeSelection, customThemes, themeMode, terminalColors],
   );
   const committedIndex = themeOptions.findIndex((theme) => theme.id === committedTheme.id);
   const storedSelectedIndex = themeOptions.findIndex((theme) => theme.id === state.selectedThemeId);
@@ -202,6 +206,7 @@ export function useThemeSelectorController({
     activeTheme,
     baseTheme,
     themeId: committedThemeId,
+    themeSelection: committedThemeSelection,
     themeSelectorItems: items,
     themeSelectorOpen: state.open,
     themeSelectorSelectedIndex: selectedIndex,

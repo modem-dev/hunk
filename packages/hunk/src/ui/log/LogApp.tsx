@@ -131,14 +131,14 @@ export function LogApp({
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
   const currentViewPreferences = useMemo(
-    () => ({ ...sessionViewPreferences, theme: themeSelector.themeId }),
-    [sessionViewPreferences, themeSelector.themeId],
+    () => ({ ...sessionViewPreferences, theme: themeSelector.themeSelection }),
+    [sessionViewPreferences, themeSelector.themeSelection],
   );
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
     initialPreferences: {
       ...runtime.initialViewPreferences,
-      theme: themeController.initialThemeId,
+      theme: themeController.initialThemeSelection,
     },
     configPath: runtime.viewPreferencesConfigPath,
     pagerMode: false,
