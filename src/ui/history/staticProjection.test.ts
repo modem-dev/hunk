@@ -4,6 +4,7 @@ import { planHistoryPage } from "../../core/history/lanePlanner";
 import type { HistoryCommit } from "../../core/history/types";
 import {
   formatHistoryDecorations,
+  getHistoryCommitIdBounds,
   projectHistoryRecord,
   projectHistoryRow,
   renderHistoryConvergence,
@@ -44,6 +45,13 @@ describe("static history projection", () => {
     expect(text).not.toContain("\x1b");
     expect(text).not.toContain("\n");
     expect(text).toContain("aaaaaaaa");
+  });
+
+  test("reports the compact commit-id hit target in display cells", () => {
+    const bounds = getHistoryCommitIdBounds(row);
+    const text = projectHistoryRow(row, { ascii: false, color: false });
+    expect(text.slice(bounds.start, bounds.end)).toBe("aaaaaaaa");
+    expect(bounds.end - bounds.start).toBe(8);
   });
 
   test("honors actual sub-20-column terminal widths", () => {
