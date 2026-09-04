@@ -47,11 +47,17 @@ function createMergeHistoryRepo() {
   writeFileSync(join(cwd, "base.ts"), "export const base = true;\n");
   git(cwd, ["add", "base.ts"]);
   git(cwd, ["commit", "-qm", "Root"]);
+  const defaultBranch = Bun.spawnSync(["git", "branch", "--show-current"], {
+    cwd,
+    stdout: "pipe",
+  })
+    .stdout.toString()
+    .trim();
   git(cwd, ["checkout", "-qb", "side"]);
   writeFileSync(join(cwd, "side.ts"), "export const side = true;\n");
   git(cwd, ["add", "side.ts"]);
   git(cwd, ["commit", "-qm", "Side"]);
-  git(cwd, ["checkout", "-q", "master"]);
+  git(cwd, ["checkout", "-q", defaultBranch]);
   writeFileSync(join(cwd, "main.ts"), "export const main = true;\n");
   git(cwd, ["add", "main.ts"]);
   git(cwd, ["commit", "-qm", "Main"]);
@@ -106,6 +112,16 @@ describe("interactive hunk log", () => {
       });
       expect(returned).toContain("Enter open");
 
+      // Scrolling the history body dismisses an open dropdown before moving selection.
+      await session.press("f10");
+      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      session.writeRaw("\x1b[<65;50;5M");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Open selected commit"),
+        5_000,
+      );
+
       // Clicking outside the id selects the second row without opening it.
       session.writeRaw("\x1b[<0;50;3M\x1b[<0;50;3m");
       await session.press("enter");
@@ -124,11 +140,52 @@ describe("interactive hunk log", () => {
       await session.press("q");
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
 
-      // Opening again without moving proves return restored the immutable-id selection.
-      await session.press("enter");
+      // Opening again without moving proves return restored the immutable-id selection. The
+      // coalesced trailing q must be consumed by the log transition rather than closing the child.
+      session.writeRaw("\rq");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       await session.press("q");
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("uses an ASCII graph in a dumb terminal", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--interactive", "--ascii", "--no-extensions"],
+      cwd,
+      cols: 80,
+      rows: 16,
+      env: { TERM: "dumb", NO_COLOR: "" },
+    });
+    try {
+      const history = await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      expect(history).toContain("*");
+      expect(history).not.toContain("●");
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("refreshes from a new provider cursor and reveals a new commit", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--interactive", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 90,
+      rows: 18,
+    });
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'third';\n");
+      git(cwd, ["commit", "-qam", "Third history commit"]);
+      await session.press("r");
+      const refreshed = await session.waitForText(/Third history commit/, { timeout: 15_000 });
+      expect(refreshed).toContain("History refreshed");
       await session.press("q");
     } finally {
       session.close();
@@ -149,13 +206,14 @@ describe("interactive hunk log", () => {
       await session.press("right");
       await session.press("right");
       await session.press("right");
-      await session.waitForText(/Open parent/, { timeout: 5_000 });
+      await session.waitForText(/Compare with parent/, { timeout: 5_000 });
       await session.press("down");
       await session.press("down");
       await session.press("down");
       await session.press("enter");
-      await session.waitForText(/Open parent/, { timeout: 5_000 });
-      await session.press("down");
+      await session.waitForText(/Compare with parent/, { timeout: 5_000 });
+      session.writeRaw("\x1b[<65;50;10M");
+      await session.waitIdle();
       await session.press("enter");
       const review = await session.waitForText(/main\.ts/, { timeout: 15_000 });
       expect(review).not.toContain("side.ts");

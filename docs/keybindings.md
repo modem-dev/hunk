@@ -51,7 +51,9 @@ View includes Hunk's shared theme selector. It uses `Up`/`Down` or `j`/`k` to mo
 `g`/`G` or `Home`/`End` to jump, `/` to search, `n`/`N` for matches, `r` to refresh, `y` to copy
 the full commit id, `Enter` to open the commit in normal Hunk review, and `q` to quit. With a mouse, click a commit
 id to open it immediately, click elsewhere on a row to select it, or double-click a row to open it.
-Quitting the opened review returns to the retained history selection and viewport.
+Quitting the opened review returns to the retained history selection and viewport. The Commit menu's
+**Compare with first parent** and **Compare with parent…** actions compare the selected commit against
+an ordered provider-owned parent; they do not navigate the history selection to that parent.
 
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |

@@ -16,6 +16,7 @@ import { LogApp, type LogAppOutcome } from "./LogApp";
 import { LogController } from "./controller";
 import { launchHistoryReview } from "./reviewLaunch";
 import type { HistoryRuntime } from "../history/types";
+import { interactiveLogUsesColor } from "./colorPolicy";
 
 const LOG_SHUTDOWN_SIGNALS: NodeJS.Signals[] =
   process.platform === "win32"
@@ -80,7 +81,14 @@ async function mountLogSurface(
     interrupt = installJobControlInterruptSupport(renderer, requestInterrupt);
     suspend = installJobControlSuspendSupport(renderer);
     disconnect = installTerminalDisconnectSupport(stdin, requestQuit);
-    root.render(<LogApp controller={controller} runtime={runtime} onOutcome={finish} />);
+    root.render(
+      <LogApp
+        controller={controller}
+        runtime={runtime}
+        useColor={interactiveLogUsesColor(runtime.input.color, process.env)}
+        onOutcome={finish}
+      />,
+    );
     return await outcome;
   } finally {
     for (const [signal, handler] of signalHandlers) process.off(signal, handler);

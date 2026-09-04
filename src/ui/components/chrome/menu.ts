@@ -77,6 +77,26 @@ export function buildMenuSpecs(menus: AppMenus) {
   );
 }
 
+/** Fit a shared ordered menu model into one bar and retain hidden menus behind overflow. */
+export function responsiveMenuSpecs(menuSpecs: readonly MenuSpec[], terminalWidth: number) {
+  const rightEdge = Math.max(1, terminalWidth - 1);
+  const allVisible = menuSpecs.filter((menu) => menu.left + menu.width <= rightEdge);
+  if (allVisible.length === menuSpecs.length) {
+    return { visible: allVisible, hidden: [] as MenuSpec[], overflowLeft: null };
+  }
+
+  const overflowWidth = 3;
+  const visible = menuSpecs.filter((menu) => menu.left + menu.width + overflowWidth <= rightEdge);
+  const visibleIds = new Set(visible.map((menu) => menu.id));
+  const hidden = menuSpecs.filter((menu) => !visibleIds.has(menu.id));
+  const previous = visible.at(-1);
+  return {
+    visible,
+    hidden,
+    overflowLeft: previous ? previous.left + previous.width : 1,
+  };
+}
+
 /** Find the next selectable menu item, skipping separators. */
 export function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, delta: number) {
   if (entries.length === 0) {

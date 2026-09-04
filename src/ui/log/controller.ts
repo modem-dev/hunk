@@ -56,7 +56,7 @@ export class LogController {
       presentation: {
         format: runtime.input.format,
         graph: true,
-        unicode: !runtime.input.ascii,
+        unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
         author: true,
         date: true,
         decorations: true,

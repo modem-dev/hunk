@@ -1448,6 +1448,7 @@ export function App({
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
             top={showMenuBar ? 1 : 0}
+            terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}
             onHoverItem={setActiveMenuItemIndex}

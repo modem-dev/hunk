@@ -4,6 +4,7 @@ import type { LogSnapshot } from "./controller";
 import {
   buildLogHelpSections,
   isLogCommandEnabled,
+  logCommand,
   logCommandHint,
   matchLogCommand,
 } from "./commands";
@@ -53,6 +54,8 @@ describe("log command authority", () => {
     expect(matchLogCommand(key("x", "j"))).toBe("next");
     expect(matchLogCommand(key("c", "\x03", true))).toBe("quit");
     expect(logCommandHint("next")).toBe("↓ / j");
+    expect(logCommand("open-first-parent").label).toBe("Compare with first parent");
+    expect(logCommand("open-parent").label).toBe("Compare with parent…");
     expect(buildLogHelpSections().flatMap((section) => section.rows)).toContainEqual({
       keys: "↓ / j",
       description: "next commit",

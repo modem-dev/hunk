@@ -79,6 +79,20 @@ describe("LogController", () => {
     await controller.close();
   });
 
+  test("forces ASCII graph presentation for TERM=dumb", async () => {
+    const previous = process.env.TERM;
+    process.env.TERM = "dumb";
+    try {
+      const { runtime } = createRuntime();
+      const controller = new LogController(runtime);
+      expect(controller.getSnapshot().presentation.unicode).toBe(false);
+      await controller.close();
+    } finally {
+      if (previous === undefined) delete process.env.TERM;
+      else process.env.TERM = previous;
+    }
+  });
+
   test("initializes format from CLI input and loads enough pages for navigation", async () => {
     const { runtime } = createRuntime(["one", "two", "three", "four", "five"]);
     runtime.input.format = "medium";
