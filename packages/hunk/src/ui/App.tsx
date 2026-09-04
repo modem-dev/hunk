@@ -252,6 +252,7 @@ export function App({
     activeTheme,
     baseTheme,
     themeId,
+    themeSelection,
     themeSelectorItems,
     themeSelectorOpen,
     themeSelectorSelectedIndex,
@@ -271,7 +272,7 @@ export function App({
   const currentViewPreferences = useMemo<PersistedViewPreferences>(
     () => ({
       mode: layoutMode,
-      theme: themeId,
+      theme: themeSelection,
       showLineNumbers,
       wrapLines,
       showHunkHeaders,
@@ -288,7 +289,7 @@ export function App({
       showHunkHeaders,
       showLineNumbers,
       showMenuBar,
-      themeId,
+      themeSelection,
       wrapLines,
     ],
   );

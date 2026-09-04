@@ -56,6 +56,58 @@ function customTheme(
 const noNotice = () => {};
 
 describe("useThemeSelectorController", () => {
+  test("draws an adaptive pair from the detected background and keeps the pair committed", async () => {
+    const adaptive = { dark: "vitesse-dark", light: "one-light" };
+    const dark = await renderThemeSelectorController({
+      initialTheme: adaptive,
+      initialThemeMode: "dark",
+      onTransientNotice: noNotice,
+      transparentBackground: false,
+    });
+
+    try {
+      expect(dark.controller.baseTheme.id).toBe("vitesse-dark");
+      expect(dark.controller.themeId).toBe("vitesse-dark");
+      expect(dark.controller.themeSelection).toEqual(adaptive);
+    } finally {
+      await destroyController(dark.setup);
+    }
+
+    const light = await renderThemeSelectorController({
+      initialTheme: adaptive,
+      initialThemeMode: "light",
+      onTransientNotice: noNotice,
+      transparentBackground: false,
+    });
+
+    try {
+      expect(light.controller.baseTheme.id).toBe("one-light");
+      expect(light.controller.themeSelection).toEqual(adaptive);
+    } finally {
+      await destroyController(light.setup);
+    }
+  });
+
+  test("commits one picked theme over an adaptive pair", async () => {
+    const harness = await renderThemeSelectorController({
+      initialTheme: { dark: "vitesse-dark", light: "one-light" },
+      initialThemeMode: "dark",
+      onTransientNotice: noNotice,
+      transparentBackground: false,
+    });
+
+    try {
+      const draculaIndex = availableThemes().findIndex((theme) => theme.id === "dracula");
+      await act(async () => harness.controller.acceptThemeSelectorItem(draculaIndex));
+
+      expect(harness.controller.themeSelection).toBe("dracula");
+      expect(harness.controller.themeId).toBe("dracula");
+      expect(harness.controller.baseTheme.id).toBe("dracula");
+    } finally {
+      await destroyController(harness.setup);
+    }
+  });
+
   test("resolves auto initialization from the detected light or dark terminal mode", async () => {
     const light = await renderThemeSelectorController({
       initialTheme: "auto",

@@ -7,6 +7,7 @@ import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
+import { themeSelectionNeedsTerminalMode } from "../core/theme/selection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -557,7 +558,11 @@ export async function prepareStartupPlan(
   // Embedded reviews inherit their owner's detected mode so bootstrap never queries a terminal
   // whose input and renderer are already exclusively owned.
   let initialThemeMode: AppBootstrap["initialThemeMode"] = deps.terminalThemeMode;
-  if (!initialThemeMode && cliInput.options.theme === "auto" && stdoutIsTTY) {
+  if (
+    !initialThemeMode &&
+    themeSelectionNeedsTerminalMode(cliInput.options.theme) &&
+    stdoutIsTTY
+  ) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =

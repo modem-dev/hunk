@@ -98,6 +98,28 @@ describe("themes", () => {
     expect(resolveTheme("auto", "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
   });
 
+  test("follows an adaptive pair across terminal backgrounds", () => {
+    const adaptive = { dark: "vitesse-dark", light: "one-light" };
+    expect(resolveTheme(adaptive, "dark").id).toBe("vitesse-dark");
+    expect(resolveTheme(adaptive, "light").id).toBe("one-light");
+    expect(resolveTheme(adaptive, null).id).toBe("vitesse-dark");
+    expect(resolveTheme({ ...adaptive, fallback: "nord" }, null).id).toBe("nord");
+    expect(resolveTheme({ dark: "graphite", light: "paper" }, "light").id).toBe(
+      DEFAULT_LIGHT_THEME_ID,
+    );
+    expect(resolveTheme({ dark: "nope", light: "one-light" }, "dark").id).toBe(
+      DEFAULT_DARK_THEME_ID,
+    );
+  });
+
+  test("resolves a custom theme named by one side of an adaptive pair", () => {
+    const resolved = resolveTheme({ dark: "ocean", light: "one-light" }, "dark", [
+      { id: "ocean", base: "nord", label: "Ocean", accent: "#7fd1ff" },
+    ]);
+    expect(resolved.id).toBe("ocean");
+    expect(resolved.accent).toBe("#7fd1ff");
+  });
+
   test("maps removed theme ids to compatible built-in themes", () => {
     expect(resolveTheme("graphite", null).id).toBe("github-dark-default");
     expect(resolveTheme("paper", null).id).toBe("github-light-default");
