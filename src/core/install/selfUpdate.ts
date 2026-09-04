@@ -305,6 +305,9 @@ export async function runSelfUpdateCommand(
   const channelVersions = await fetchChannelVersions(installSource, {
     fetchImpl: io.fetchImpl,
     fetchTimeoutMs: io.fetchTimeoutMs,
+    env,
+    requestSource: input.check ? "update-check" : "update",
+    currentVersion: installedVersion,
   });
   const latestVersion = channelVersions.latest;
   const targetVersion = input.version ?? latestVersion;

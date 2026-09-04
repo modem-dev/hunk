@@ -223,6 +223,9 @@ export async function resolveStartupUpdateNotice(
   const channelVersions = await fetchChannelVersions(lookupSource, {
     fetchImpl: deps.fetchImpl,
     fetchTimeoutMs: deps.fetchTimeoutMs,
+    env,
+    requestSource: "startup",
+    currentVersion: resolveInstalledVersion(),
   });
 
   return selectUpdateNotice(resolveInstalledVersion(), channelVersions, installSource);

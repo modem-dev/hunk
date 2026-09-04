@@ -128,6 +128,58 @@ function runConflictCheck(
   }
 }
 
+/** Run default-version resolution against a stub downloader and an already-current target. */
+function runReleaseResolution(options: { proxyFails?: boolean; disableAnalytics?: boolean } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "hunk-install-release-"));
+  const home = join(root, "home");
+  const targetDir = join(home, ".hunk", "bin");
+  const toolsDir = join(root, "tools");
+  const curlLog = join(root, "curl.log");
+  mkdirSync(targetDir, { recursive: true });
+  mkdirSync(toolsDir, { recursive: true });
+  writeFakeHunk(join(targetDir, "hunk"), "1.2.3");
+  const curlPath = join(toolsDir, "curl");
+  writeFileSync(
+    curlPath,
+    [
+      "#!/bin/sh",
+      'for argument in "$@"; do url="$argument"; done',
+      'printf "%s\\n" "$url" >>"$CURL_LOG"',
+      'case "$url" in',
+      '  https://updates.hunk.dev/*) [ "${PROXY_FAILS:-0}" = "1" ] && exit 22; printf \'%s\\n\' \'{"version":"1.2.3"}\' ;;',
+      "  https://api.github.com/*) printf '%s\\n' '{\"tag_name\":\"v1.2.3\"}' ;;",
+      "  *) exit 22 ;;",
+      "esac",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(curlPath, 0o755);
+
+  try {
+    const result = Bun.spawnSync(["sh", INSTALL_SCRIPT_PATH, "--no-modify-path"], {
+      env: {
+        ...process.env,
+        HOME: home,
+        PATH: [toolsDir, targetDir, "/usr/bin", "/bin"].join(":"),
+        CURL_LOG: curlLog,
+        PROXY_FAILS: options.proxyFails ? "1" : "0",
+        HUNK_DISABLE_ANALYTICS: options.disableAnalytics ? "1" : undefined,
+      },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return {
+      exitCode: result.exitCode,
+      stdout: Buffer.from(result.stdout).toString("utf8"),
+      stderr: Buffer.from(result.stderr).toString("utf8"),
+      requests: readFileSync(curlLog, "utf8").trim().split("\n"),
+    };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 /**
  * Run the installer's platform detection with a stubbed `uname` and print `<os> <arch>`.
  *
@@ -191,6 +243,39 @@ describe("hunk.dev install script", () => {
     expect(INSTALL_SCRIPT).toContain('package_name="hunkdiff-${os}-${arch}"');
     expect(INSTALL_SCRIPT).toContain("SHA256SUMS");
     expect(INSTALL_SCRIPT).toContain("https://github.com/${REPO}/releases/download");
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "resolves through Hunk and falls back directly to GitHub",
+    () => {
+      const proxied = runReleaseResolution();
+      expect(proxied.exitCode).toBe(0);
+      expect(proxied.requests).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+      expect(proxied.stdout).toContain("hunk 1.2.3 is already installed.");
+
+      const fallback = runReleaseResolution({ proxyFails: true });
+      expect(fallback.exitCode).toBe(0);
+      expect(fallback.requests).toEqual([
+        "https://updates.hunk.dev/v1/curl/latest",
+        "https://api.github.com/repos/modem-dev/hunk/releases/latest",
+      ]);
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "bypasses Hunk release analytics when opted out",
+    () => {
+      const result = runReleaseResolution({ disableAnalytics: true });
+      expect(result.exitCode).toBe(0);
+      expect(result.requests).toEqual([
+        "https://api.github.com/repos/modem-dev/hunk/releases/latest",
+      ]);
+    },
+  );
+
+  test("sends only bounded release-check headers to Hunk's endpoint", () => {
+    expect(INSTALL_SCRIPT).toContain('"X-Hunk-Request-Source: install"');
+    expect(INSTALL_SCRIPT).toContain('current_header="X-Hunk-Current-Version: $1"');
   });
 
   test("installs beside the bundled skills so skill resolution still finds them", () => {
