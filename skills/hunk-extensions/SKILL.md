@@ -98,6 +98,7 @@ bad or duplicate id is skipped with a startup notice.
 | Keep demo/training view settings temporary               | `hunk.configureSession(options)`             |
 | Add a selectable color theme                             | `hunk.registerTheme(theme)`                  |
 | Highlight an extension, exact filename, or filename glob | `hunk.registerFileLanguage(matcher, lang)`   |
+| Add a bounded data-only TextMate syntax grammar          | `hunk.registerSyntaxGrammar(grammar)`        |
 | Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`           |
 | Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                    |
 | Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
@@ -110,7 +111,7 @@ bad or duplicate id is skipped with a startup notice.
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `15`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `17`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -190,6 +191,10 @@ through untouched.
 
 Most extension bugs are one of these:
 
+- **Custom syntax grammars are data, not loaders.** Register the grammar during the factory, map
+  files separately with `registerFileLanguage`, and use only local includes. Hunk bounds and freezes
+  the grammar, runs its regexes in the killable worker, and leaves custom languages plain when worker
+  offload is unavailable.
 - **Registering a surface does not show it.** Panes need `defaultOpen`,
   `replaces: "hunk:files"`, or a command that opens them. File views remain raw
   until selected from the **View** menu.

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
+import { createPtyHarness, dragMouse, lineIndexOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
 const REVIEW_TRIAGE_EXTENSION = resolve(
@@ -16,6 +16,9 @@ const REVIEW_SNAPSHOT_EXPORT_EXTENSION = resolve(
 );
 const VIM_NAVIGATION_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
+);
+const ARCHLANG_SYNTAX_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/archlang-syntax", import.meta.url)),
 );
 
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
@@ -279,6 +282,42 @@ const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
 `;
 
 describe("PTY extensions", () => {
+  test("a custom syntax grammar highlights its mapped file through the worker", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture("export default () => {};", "fixture.ts", [
+      {
+        path: "architecture.arch",
+        before: 'component old: model observed {\n  roots ["src/old"]\n}\n',
+        after:
+          'component current: model observed {\n  roots ["src/current"]\n}\nproperty stable on component current {\n  advisory\n}\n',
+      },
+    ]);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", ARCHLANG_SYNTAX_EXTENSION],
+      cwd: fixture.dir,
+      env: { XDG_CONFIG_HOME: configHome },
+      cols: 110,
+      rows: 28,
+    });
+
+    await session.waitForText(/component current/);
+    let highlighted = false;
+    for (let attempt = 0; attempt < 40 && !highlighted; attempt += 1) {
+      const line = session.getTerminalData().lines.find((candidate) =>
+        candidate.spans
+          .map((span) => span.text)
+          .join("")
+          .includes("component current"),
+      );
+      const codeColors = line?.spans
+        .filter((span) => span.text.includes("component") || span.text.includes("current"))
+        .map((span) => span.fg)
+        .filter(Boolean);
+      highlighted = new Set(codeColors).size > 1;
+      if (!highlighted) await sleep(50);
+    }
+    expect(highlighted).toBe(true);
+  });
   test("trust prompt runs repo extensions after the user trusts the repository", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);

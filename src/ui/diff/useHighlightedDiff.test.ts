@@ -4,6 +4,7 @@ import { resolveTheme } from "../themes";
 import { HIGHLIGHT_WORKER_MIN_LINES } from "./diffRows";
 import { prefetchHighlightedDiff, highlightedDiffCacheKey } from "./useHighlightedDiff";
 import { registerHighlightWorker } from "./worker";
+import { replaceExtensionSyntaxGrammars } from "../../core/changeset/syntaxGrammar";
 
 /** Build one file large enough to qualify for worker highlighting. */
 function createLargeHighlightTestFile(id: string) {
@@ -45,6 +46,24 @@ function registerFailingHighlightWorkerForTest() {
 }
 
 describe("highlighted diff cache", () => {
+  test("invalidates cached results when custom grammar data changes", () => {
+    const file = createLargeHighlightTestFile("grammar-cache");
+    const theme = resolveTheme("github-dark-default", null);
+    replaceExtensionSyntaxGrammars([]);
+    const before = highlightedDiffCacheKey(theme, file);
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "custom",
+        grammar: Object.freeze({
+          id: "custom",
+          scopeName: "source.custom",
+          patterns: Object.freeze([{ match: "x", name: "keyword.custom" }]),
+        }),
+      },
+    ]);
+    expect(highlightedDiffCacheKey(theme, file)).not.toBe(before);
+    replaceExtensionSyntaxGrammars([]);
+  });
   test("does not reuse stale highlighted text for patches that collide under sampling", async () => {
     const firstPatch = createAdversarialPatch("a");
     const secondPatch = createAdversarialPatch("b");

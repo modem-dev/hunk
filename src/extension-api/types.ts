@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 16;
+export const HUNK_EXTENSION_API_VERSION = 17;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -35,6 +35,45 @@ export type ExtensionFileLanguageMatcher =
       readonly value: string;
       readonly target: "basename" | "path";
     };
+
+/** One capture group inside a serializable TextMate grammar rule. */
+export interface ExtensionSyntaxGrammarCapture {
+  readonly name?: string;
+  readonly contentName?: string;
+  readonly patterns?: readonly ExtensionSyntaxGrammarRule[];
+}
+
+/**
+ * One rule in the safe, serializable TextMate subset accepted by Hunk.
+ *
+ * Includes may reference only this grammar (`#name`, `$self`, or `$base`). External grammars,
+ * injections, embedded languages, and executable loaders are deliberately outside API v17.
+ */
+export interface ExtensionSyntaxGrammarRule {
+  readonly include?: string;
+  readonly name?: string;
+  readonly contentName?: string;
+  readonly match?: string;
+  readonly begin?: string;
+  readonly end?: string;
+  readonly while?: string;
+  readonly captures?: Readonly<Record<string, ExtensionSyntaxGrammarCapture>>;
+  readonly beginCaptures?: Readonly<Record<string, ExtensionSyntaxGrammarCapture>>;
+  readonly endCaptures?: Readonly<Record<string, ExtensionSyntaxGrammarCapture>>;
+  readonly whileCaptures?: Readonly<Record<string, ExtensionSyntaxGrammarCapture>>;
+  readonly patterns?: readonly ExtensionSyntaxGrammarRule[];
+  readonly applyEndPatternLast?: 0 | 1;
+}
+
+/** A data-only TextMate grammar contributed by one trusted extension. */
+export interface ExtensionSyntaxGrammar {
+  /** Stable language id passed separately to `registerFileLanguage`. */
+  readonly id: string;
+  /** TextMate scope rooted below `source.` or `text.`. */
+  readonly scopeName: string;
+  readonly patterns: readonly ExtensionSyntaxGrammarRule[];
+  readonly repository?: Readonly<Record<string, ExtensionSyntaxGrammarRule>>;
+}
 
 /** Capability object handed to every extension event handler and transform. */
 export interface ExtensionContext {
@@ -1986,6 +2025,8 @@ export interface HunkExtensionAPI {
   registerTheme(theme: ExtensionThemeConfig): void;
   /** Map a file extension, exact filename, or glob to a syntax-highlighting language. */
   registerFileLanguage(matcher: string | ExtensionFileLanguageMatcher, language: string): void;
+  /** Register a bounded, data-only TextMate grammar for later file-language mappings. */
+  registerSyntaxGrammar(grammar: ExtensionSyntaxGrammar): void;
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
   /**

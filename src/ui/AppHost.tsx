@@ -4,6 +4,7 @@ import { ReviewProducer } from "../app/review/producer";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
+import { restoreSyntaxGrammars } from "../core/changeset/syntaxGrammar";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";
@@ -324,6 +325,7 @@ export function AppHost({
       // Quit therefore linearizes either wholly before or wholly after adoption.
       if (quitRequestedRef.current) {
         restoreFileLanguageRegistrations(loaded.previousFileLanguages);
+        restoreSyntaxGrammars(loaded.previousSyntaxGrammars);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw reloadRefusedDuringShutdown();
       }
@@ -372,6 +374,7 @@ export function AppHost({
         }
       } catch (error) {
         restoreFileLanguageRegistrations(loaded.previousFileLanguages);
+        restoreSyntaxGrammars(loaded.previousSyntaxGrammars);
         await retirePreparedExtensionReplacement(replacementExtensions);
         throw error;
       }

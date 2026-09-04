@@ -34,6 +34,7 @@
         "oxfmt": "^0.41.0",
         "oxlint": "^1.56.0",
         "react": "^19.2.4",
+        "shiki": "3.23.0",
         "simple-git-hooks": "^2.13.1",
         "tuistory": "^0.11.0",
         "typescript": "^5.9.3",

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import { supportsHighlightWorkerOffload } from "../../../highlightWorkerClient";
+import { replaceExtensionSyntaxGrammars } from "../../../core/changeset/syntaxGrammar";
 import type { CompactHighlightedDiff } from "./highlightCompact";
 import {
   disposeHighlightWorker,
@@ -8,11 +9,9 @@ import {
   registerHighlightWorker,
 } from "./highlightWorkerClient";
 
-interface TestWorkerRequest {
-  version: 3;
-  id: number;
-  aliasContext: boolean;
-}
+type TestWorkerRequest =
+  | { version: 4; type: "configure"; generation: number; grammars: readonly unknown[] }
+  | { version: 4; type: "highlight"; id: number; aliasContext: boolean };
 
 /** Build the smallest valid compact worker response. */
 function emptyCompactResponse(): CompactHighlightedDiff {
@@ -63,6 +62,13 @@ function createTestHighlightWorker({ throwOnPost }: { throwOnPost?: Error } = {}
     reply(data: unknown) {
       worker.onmessage?.({ data } as MessageEvent);
     },
+    acknowledgeConfiguration() {
+      const request = state.messages.at(-1);
+      if (!request || request.type !== "configure") throw new Error("Expected configure request");
+      worker.onmessage?.({
+        data: { version: 4, type: "configured", generation: request.generation, ok: true },
+      } as MessageEvent);
+    },
   };
 }
 
@@ -79,6 +85,7 @@ function requestHighlight(aliasContext = false) {
 
 afterEach(() => {
   disposeHighlightWorker();
+  replaceExtensionSyntaxGrammars([]);
 });
 
 describe("highlight worker client", () => {
@@ -111,24 +118,31 @@ describe("highlight worker client", () => {
     const second = requestHighlight();
     expect(control.state.unrefCalls).toBe(1);
     expect(control.state.messages).toHaveLength(1);
-    expect(control.state.messages[0]?.aliasContext).toBe(true);
+    expect(control.state.messages[0]?.type).toBe("configure");
+    control.acknowledgeConfiguration();
+    expect(control.state.messages).toHaveLength(2);
+    const firstRequest = control.state.messages[1];
+    expect(firstRequest?.type === "highlight" && firstRequest.aliasContext).toBe(true);
 
-    control.reply({ version: 2, id: control.state.messages[0]?.id, ok: true });
+    control.reply({ version: 3, type: "highlight", id: 1, ok: true });
     await Promise.resolve();
-    expect(control.state.messages).toHaveLength(1);
+    expect(control.state.messages).toHaveLength(2);
 
     control.reply({
-      version: 3,
-      id: control.state.messages[0]?.id,
+      version: 4,
+      type: "highlight",
+      id: firstRequest?.type === "highlight" ? firstRequest.id : -1,
       ok: true,
       code: emptyCompactResponse(),
     });
     await expect(first).resolves.toEqual(emptyCompactResponse());
-    expect(control.state.messages).toHaveLength(2);
+    expect(control.state.messages).toHaveLength(3);
+    const secondRequest = control.state.messages[2];
 
     control.reply({
-      version: 3,
-      id: control.state.messages[1]?.id,
+      version: 4,
+      type: "highlight",
+      id: secondRequest?.type === "highlight" ? secondRequest.id : -1,
       ok: false,
       message: "highlight rejected",
     });
@@ -160,9 +174,100 @@ describe("highlight worker client", () => {
     const recovered = createTestHighlightWorker();
     registerHighlightWorker(recovered.worker);
     const pending = requestHighlight();
-    const request = recovered.state.messages[0]!;
-    recovered.reply({ version: 3, id: request.id, ok: true, code: emptyCompactResponse() });
+    recovered.acknowledgeConfiguration();
+    const request = recovered.state.messages[1]!;
+    recovered.reply({
+      version: 4,
+      type: "highlight",
+      id: request.type === "highlight" ? request.id : -1,
+      ok: true,
+      code: emptyCompactResponse(),
+    });
     await expect(pending).resolves.toEqual(emptyCompactResponse());
+  });
+
+  test("rejects every pending request when worker configuration is rejected", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const active = requestHighlight();
+    const queued = requestHighlight();
+    const configure = control.state.messages[0];
+    if (!configure || configure.type !== "configure") throw new Error("Expected configure request");
+
+    control.reply({
+      version: 4,
+      type: "configured",
+      generation: configure.generation,
+      ok: false,
+      message: "grammar rejected",
+    });
+
+    await expect(active).rejects.toThrow("grammar rejected");
+    await expect(queued).rejects.toThrow("grammar rejected");
+    expect(control.state.terminateCalls).toBe(1);
+  });
+
+  test("times out stalled worker configuration without waiting for the production budget", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker, { timeoutMs: 10 });
+
+    await expect(requestHighlight()).rejects.toThrow(
+      "Syntax grammar configuration timed out after 10ms",
+    );
+    expect(control.state.terminateCalls).toBe(1);
+  });
+
+  test("sends grammar data before work and retires a worker on generation change", async () => {
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "custom",
+        grammar: Object.freeze({
+          id: "custom",
+          scopeName: "source.custom",
+          patterns: Object.freeze([{ match: "x", name: "keyword.custom" }]),
+        }),
+      },
+    ]);
+    const first = createTestHighlightWorker();
+    registerHighlightWorker(first.worker);
+    const pending = requestHighlight();
+    const configure = first.state.messages[0];
+    expect(configure?.type).toBe("configure");
+    expect(configure?.type === "configure" && configure.grammars).toHaveLength(1);
+
+    replaceExtensionSyntaxGrammars([]);
+    await expect(pending).rejects.toThrow("configuration changed");
+    expect(first.state.terminateCalls).toBe(1);
+
+    const replacement = createTestHighlightWorker();
+    registerHighlightWorker(replacement.worker);
+    const replacementPending = requestHighlight();
+    expect(replacement.state.messages[0]?.type).toBe("configure");
+    disposeHighlightWorker();
+    await expect(replacementPending).rejects.toThrow("disposed");
+  });
+
+  test("retires an active highlight when its configured grammar generation changes", async () => {
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "custom",
+        grammar: Object.freeze({
+          id: "custom",
+          scopeName: "source.custom",
+          patterns: Object.freeze([{ match: "x", name: "keyword.custom" }]),
+        }),
+      },
+    ]);
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const active = requestHighlight();
+    control.acknowledgeConfiguration();
+    expect(control.state.messages[1]?.type).toBe("highlight");
+
+    replaceExtensionSyntaxGrammars([]);
+
+    await expect(active).rejects.toThrow("configuration changed");
+    expect(control.state.terminateCalls).toBe(1);
   });
 
   test("disposal terminates the worker and rejects active plus queued work", async () => {

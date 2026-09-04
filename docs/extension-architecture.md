@@ -43,15 +43,20 @@ load issue and costs only that extension. The rules themselves are stated in
 
 ## One registry, one apply path
 
-Registrations (session behavior, themes, file languages, VCS adapters,
+Registrations (session behavior, themes, file languages, syntax grammars, VCS adapters,
 changeset transforms, panes, interactive commands, top-level CLI commands,
 lifecycle/UI events, and inter-extension bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
 Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
-language. A live reload replaces the compiled selector generation while preparing its changeset
-and restores the previous generation if any pre-commit step fails. Staged external-VCS bootstrap
+language. Custom syntax grammars are bounded, deeply frozen TextMate data rather than retained
+extension loaders. `core/changeset/syntaxGrammar.ts` owns their generation and digest; the UI sends
+that snapshot through the versioned highlight-worker configure handshake before matching jobs.
+Grammar changes replace the worker and participate in rendered-result cache identity. Custom regexes
+never run on the terminal thread, so worker failure or compiled-Windows worker unavailability falls
+back to plaintext without poisoning bundled languages. A live reload replaces the selector and
+grammar generations while preparing its changeset and restores both if any pre-commit step fails. Staged external-VCS bootstrap
 retains the provisional candidate/config snapshot: a final pass that
 only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses

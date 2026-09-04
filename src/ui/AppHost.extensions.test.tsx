@@ -18,6 +18,10 @@ import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
 import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
+import {
+  replaceExtensionSyntaxGrammars,
+  syntaxGrammarSnapshot,
+} from "../core/changeset/syntaxGrammar";
 import type { CliInput } from "../core/run/commandInputs";
 
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -57,6 +61,7 @@ const tempDirs: string[] = [];
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
 afterEach(async () => {
+  replaceExtensionSyntaxGrammars([]);
   for (const dir of tempDirs.splice(0)) {
     await removeTestDirectory(dir);
   }
@@ -128,14 +133,22 @@ function useTempConfigHome(configToml?: string) {
 }
 
 /** Write an extension that appends every lifecycle event it sees to a log file. */
-function writeProbeExtension(path: string, logPath: string, languageExtension?: string) {
+function writeProbeExtension(
+  path: string,
+  logPath: string,
+  languageExtension?: string,
+  syntaxGrammarId?: string,
+) {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(
     path,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
+      (syntaxGrammarId
+        ? `  hunk.registerSyntaxGrammar({ id: ${JSON.stringify(syntaxGrammarId)}, scopeName: ${JSON.stringify(`source.${syntaxGrammarId}`)}, patterns: [{ match: "x", name: "keyword.${syntaxGrammarId}" }] });\n`
+        : "") +
       (languageExtension
-        ? `  hunk.registerFileLanguage(${JSON.stringify(languageExtension)}, "python");\n`
+        ? `  hunk.registerFileLanguage(${JSON.stringify(languageExtension)}, ${JSON.stringify(syntaxGrammarId ?? "python")});\n`
         : "") +
       `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
       `  hunk.on("startup", () => {\n` +
@@ -159,6 +172,8 @@ function writeDelayedReplacementExtension(path: string, logPath: string, release
     `import { appendFileSync, existsSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
       `  const replacement = existsSync(${JSON.stringify(logPath)});\n` +
+      `  const grammarId = replacement ? "replacementgategrammar" : "currentgategrammar";\n` +
+      `  hunk.registerSyntaxGrammar({ id: grammarId, scopeName: "source." + grammarId, patterns: [{ match: "x", name: "keyword." + grammarId }] });\n` +
       `  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");\n` +
       `  hunk.transformChangeset(async (changeset) => {\n` +
       `    while (replacement && !existsSync(${JSON.stringify(releasePath)})) {\n` +
@@ -500,7 +515,7 @@ describe("reload keeps launch extension authority", () => {
     const repo = createTestRepo("hunk-apphost-broker-replacement-failure-");
     const logPath = join(repo, "probe.log");
     const extPath = join(repo, "ext.ts");
-    writeProbeExtension(extPath, logPath, "currenthunksyntax");
+    writeProbeExtension(extPath, logPath, "currenthunksyntax", "currenthunksyntax");
     useTempConfigHome();
 
     const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
@@ -519,8 +534,9 @@ describe("reload keeps launch extension authority", () => {
       { producerId: "broker-failure" },
     );
     const initialGeneration = producer.getPublication().generation;
-    expect(fileLanguageForPath("example.currenthunksyntax")).toBe("python");
-    writeProbeExtension(extPath, logPath, "replacementhunksyntax");
+    expect(fileLanguageForPath("example.currenthunksyntax")).toBe("currenthunksyntax");
+    expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual(["currenthunksyntax"]);
+    writeProbeExtension(extPath, logPath, "replacementhunksyntax", "replacementhunksyntax");
 
     await withAppHost(
       bootstrap,
@@ -547,8 +563,9 @@ describe("reload keeps launch extension authority", () => {
         expect(events.filter((line) => line === "factory")).toHaveLength(2);
         expect(events.filter((line) => line === "startup")).toHaveLength(1);
         expect(events.filter((line) => line === "shutdown")).toHaveLength(1);
-        expect(fileLanguageForPath("example.currenthunksyntax")).toBe("python");
+        expect(fileLanguageForPath("example.currenthunksyntax")).toBe("currenthunksyntax");
         expect(fileLanguageForPath("example.replacementhunksyntax")).toBe("text");
+        expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual(["currenthunksyntax"]);
       },
       broker.client,
       { reviewProducer: producer },
@@ -666,6 +683,8 @@ describe("reload keeps launch extension authority", () => {
       cwd: join(repo, "sub"),
       cliExtensionPaths: [extPath],
     });
+    applyExtensionRegistrations(bootstrap.extensions, getBundledVcsCatalog());
+    expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual(["currentgategrammar"]);
     const broker = createTestBrokerClient();
     const quitController = new AbortController();
     let quits = 0;
@@ -705,6 +724,9 @@ describe("reload keeps launch extension authority", () => {
         expect(broker.replacementCount()).toBe(0);
         expect(events.filter((line) => line === "startup")).toHaveLength(1);
         expect(events.filter((line) => line === "session_reload")).toHaveLength(0);
+        expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual([
+          "currentgategrammar",
+        ]);
       },
       broker.client,
       { externalQuitSignal: quitController.signal, onQuit: () => (quits += 1) },

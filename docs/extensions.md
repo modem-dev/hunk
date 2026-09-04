@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds bounded data-only custom TextMate
+syntax grammars; version 16 added pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
@@ -428,8 +429,41 @@ filenames take precedence over globs, which take precedence over extensions. The
 extension wins, and later registrations win ties within each category. Direct attempts to register
 those two reserved extensions are skipped with a notice.
 
-This API selects a language already available to Pierre/Shiki. It does not load a new syntax
-grammar; an unknown language remains plain text.
+This API selects a language already available to Pierre/Shiki or registered by the same load pass.
+An unknown language remains plain text.
+
+### `hunk.registerSyntaxGrammar(grammar)`
+
+Register a data-only TextMate grammar, then map files to its language id separately:
+
+```ts
+hunk.registerSyntaxGrammar({
+  id: "mydsl",
+  scopeName: "source.mydsl",
+  patterns: [
+    { match: "\\b(component|contract)\\b", name: "keyword.control.mydsl" },
+    { include: "#strings" },
+  ],
+  repository: {
+    strings: { begin: '"', end: '"', name: "string.quoted.double.mydsl" },
+  },
+});
+hunk.registerFileLanguage(".mydsl", "mydsl");
+```
+
+API v17 accepts a closed serializable subset: `match`, `begin`/`end`/`while`, captures, nested
+`patterns`, and local repository includes. Includes may use only `#name`, `$self`, or `$base`.
+External includes, embedded languages, injections, loaders, functions, unknown keys, and bundled
+language ids are refused. Hunk bounds serialized bytes, nesting depth, node count, and individual
+strings, then deeply copies and freezes accepted data.
+
+Custom regexes run only in the killable highlight worker. A timeout or grammar failure renders that
+file as plaintext and does not poison bundled languages. Hunk keeps custom grammars plaintext when
+worker offload is unavailable, including compiled Windows builds. Reloading atomically replaces the
+complete grammar generation and invalidates worker and rendered-result caches; the first extension
+to claim an id wins, and retired registries retain no executable loader authority.
+
+See `examples/extensions/archlang-syntax/` for a complete grammar and `.arch` mapping.
 
 ### `hunk.registerVcsAdapter(adapter)`
 

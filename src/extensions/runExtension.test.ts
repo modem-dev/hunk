@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
+import { normalizeSyntaxGrammar, SYNTAX_GRAMMAR_LIMITS } from "./syntaxGrammars";
 import {
   createEmptyExtensionRegistry,
   HUNK_EXTENSION_API_VERSION,
@@ -945,5 +946,137 @@ describe("toInternalVcsAdapter detection ids", () => {
           'VCS adapter "hg" returned detection id "mercurial" • using the registered id instead',
       },
     ]);
+  });
+});
+
+describe("registerSyntaxGrammar", () => {
+  const grammar = () => ({
+    id: "archlang",
+    scopeName: "source.archlang",
+    patterns: [
+      { match: "\\b(component|contract|property)\\b", name: "keyword.control.archlang" },
+      { include: "#strings" },
+    ],
+    repository: {
+      strings: { begin: '"', end: '"', name: "string.quoted.double.archlang" },
+    },
+  });
+
+  test("deeply copies and freezes bounded data registrations", () => {
+    const registry = createEmptyExtensionRegistry();
+    const source = grammar();
+    runExtensionFactory({
+      metadata: bundledMetadata("archlang"),
+      registry,
+      issues: [],
+      factory: (hunk) => hunk.registerSyntaxGrammar(source),
+    });
+
+    source.patterns[0]!.name = "changed";
+    const stored = registry.syntaxGrammars[0]!.grammar;
+    expect(stored.patterns[0]?.name).toBe("keyword.control.archlang");
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored.patterns)).toBe(true);
+    expect(Object.isFrozen(stored.patterns[0])).toBe(true);
+  });
+
+  test("rejects unsafe grammar features, external includes, and excessive input", () => {
+    const registry = createEmptyExtensionRegistry();
+    const failures: string[] = [];
+    for (const candidate of [
+      { ...grammar(), injections: {} },
+      { ...grammar(), patterns: [{ include: "source.typescript" }] },
+      { ...grammar(), patterns: [{ match: "x".repeat(40_000) }] },
+      { ...grammar(), id: "text" },
+    ]) {
+      runExtensionFactory({
+        metadata: bundledMetadata(`bad-${failures.length}`),
+        registry,
+        issues: [],
+        factory: (hunk) => {
+          try {
+            hunk.registerSyntaxGrammar(candidate as never);
+          } catch (error) {
+            failures.push(String(error));
+          }
+        },
+      });
+    }
+    expect(failures).toHaveLength(4);
+    expect(failures.join("\n")).toContain("does not support grammar.injections");
+    expect(failures.join("\n")).toContain("#local");
+    expect(failures.join("\n")).toContain("string-size limit");
+    expect(registry.syntaxGrammars).toEqual([]);
+  });
+
+  test("requires local includes to name own repository rules", () => {
+    for (const inheritedName of ["constructor", "toString", "hasOwnProperty"]) {
+      expect(() =>
+        normalizeSyntaxGrammar({
+          id: "prototype-check",
+          scopeName: "source.prototype-check",
+          patterns: [{ include: `#${inheritedName}` }],
+        }),
+      ).toThrow(`references missing local rule #${inheritedName}`);
+    }
+
+    expect(() =>
+      normalizeSyntaxGrammar({
+        id: "owned-constructor",
+        scopeName: "source.owned-constructor",
+        patterns: [{ include: "#constructor" }],
+        repository: { constructor: { match: "constructor" } },
+      }),
+    ).not.toThrow();
+  });
+
+  test("accepts exact depth and node limits and rejects the next grammar node", () => {
+    const nestedRule = (depth: number): Record<string, unknown> =>
+      depth === 1 ? { match: "x" } : { patterns: [nestedRule(depth - 1)] };
+    const grammarWithPatterns = (patterns: Record<string, unknown>[]) => ({
+      id: "boundary",
+      scopeName: "source.boundary",
+      patterns,
+    });
+
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([nestedRule(SYNTAX_GRAMMAR_LIMITS.depth)])),
+    ).not.toThrow();
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([nestedRule(SYNTAX_GRAMMAR_LIMITS.depth + 1)])),
+    ).toThrow("grammar-depth limit");
+
+    const allowedRules = Array.from({ length: SYNTAX_GRAMMAR_LIMITS.nodes - 1 }, () => ({
+      match: "x",
+    }));
+    expect(() => normalizeSyntaxGrammar(grammarWithPatterns(allowedRules))).not.toThrow();
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([...allowedRules, { match: "x" }])),
+    ).toThrow("grammar-node limit");
+  });
+
+  test("rolls back and seals grammar registration with the rest of the factory", () => {
+    const registry = createEmptyExtensionRegistry();
+    let escaped: ((value: ReturnType<typeof grammar>) => void) | undefined;
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-grammar"),
+      registry,
+      issues: [],
+      factory: (hunk) => {
+        hunk.registerSyntaxGrammar(grammar());
+        throw new Error("rollback");
+      },
+    });
+    expect(registry.syntaxGrammars).toEqual([]);
+
+    runExtensionFactory({
+      metadata: bundledMetadata("sealed-grammar"),
+      registry,
+      issues: [],
+      factory: (hunk) => {
+        escaped = hunk.registerSyntaxGrammar.bind(hunk);
+      },
+    });
+    expect(() => escaped?.(grammar())).toThrow("can only be called while the extension is loading");
   });
 });
