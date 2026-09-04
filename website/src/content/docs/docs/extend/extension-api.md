@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds structured review metadata to delegated
+patch commands; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
@@ -37,7 +38,20 @@ hunk.registerCliCommand(
       return { kind: "exit" };
     }
     await ctx.stderr.write("Preparing review…\n");
-    return { kind: "delegate", argv: ["diff"] };
+    return {
+      kind: "delegate",
+      argv: ["patch", "review.diff"],
+      review: {
+        kind: "change-request",
+        provider: "GitHub",
+        title: "Add structured review metadata",
+        url: "https://github.com/acme/project/pull/123",
+        id: "#123",
+        author: "octocat",
+        base: "main",
+        head: "review-metadata",
+      },
+    };
   },
 );
 ```
@@ -45,9 +59,17 @@ hunk.registerCliCommand(
 Handlers receive `ctx.cwd`, cooperative `ctx.signal`, streaming `ctx.stdin`,
 and leased, backpressure-aware stdout/stderr writers. They may access networks,
 services, processes, and files. Return a validated exit status or delegate once
-to a built-in Hunk command. Delegation cannot follow stdout output or any stdin
-read, target another extension command, or change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension claim in
-discovery order wins.
+to a built-in Hunk command. A delegated `patch` command may also carry a provider-neutral
+`review` descriptor whose exact shape is `change-request`, `commit`, or `comparison`. Hunk bounds
+all strings and the 4 KiB payload, rejects control characters, unknown fields, and unsafe URLs,
+then copies and freezes it. `provider` and change-request `id` allow 256 bytes; `author`, `base`,
+`head`, and `revision` allow 512; `title` and `url` allow 2 KiB. The descriptor remains app-bootstrap metadata rather than entering
+changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
+reloads clear it. Exit results and non-`patch` delegation cannot carry one.
+
+Delegation cannot follow stdout output or any stdin read, target another extension command, or
+change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension
+claim in discovery order wins.
 
 Use a leading explicit path while developing:
 

@@ -259,6 +259,120 @@ describe("extension CLI command runtime", () => {
     ).rejects.toThrow("exit code must be a safe integer");
   });
 
+  test("copies and freezes exact bounded delegated review descriptors", async () => {
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Add review metadata",
+      url: "https://github.com/modem-dev/hunk/pull/123",
+      id: "#123",
+      author: "octocat",
+      base: "main",
+      head: "metadata",
+    };
+    const execution = await runExtensionCliCommand({
+      extensionId: "tools",
+      commandName: "tools",
+      args: [],
+      stdin: (async function* () {})(),
+      stdout: createTestWriter([]),
+      stderr: createTestWriter([]),
+      signals: new EventEmitter(),
+      handler: () => ({ kind: "delegate", argv: ["patch", "review.diff"], review }),
+    });
+
+    expect(execution.result).toEqual({
+      kind: "delegate",
+      argv: ["patch", "review.diff"],
+      review,
+    });
+    if (execution.result.kind !== "delegate" || !execution.result.review) {
+      throw new Error("Expected delegated review metadata.");
+    }
+    expect(execution.result.review).not.toBe(review);
+    expect(Object.isFrozen(execution.result.review)).toBe(true);
+    review.title = "mutated";
+    expect(execution.result.review.title).toBe("Add review metadata");
+  });
+
+  test("rejects malformed, unsafe, and oversized delegated review descriptors", async () => {
+    const execute = (review: unknown, kind: "delegate" | "exit" = "delegate") =>
+      runExtensionCliCommand({
+        extensionId: "tools",
+        commandName: "tools",
+        args: [],
+        stdin: (async function* () {})(),
+        stdout: createTestWriter([]),
+        stderr: createTestWriter([]),
+        signals: new EventEmitter(),
+        handler: () =>
+          kind === "delegate"
+            ? ({ kind, argv: ["patch", "review.diff"], review } as never)
+            : ({ kind, review } as never),
+      });
+
+    const valid = { kind: "commit", provider: "GitHub", title: "Commit", revision: "abc" };
+    await expect(execute({ ...valid, extra: true })).rejects.toThrow("unknown fields");
+    await expect(execute({ ...valid, title: "bad\u001b[31m" })).rejects.toThrow(
+      "control characters",
+    );
+    await expect(execute({ ...valid, url: "http://github.com/commit/abc" })).rejects.toThrow(
+      "credential-free HTTPS URL",
+    );
+    await expect(execute({ ...valid, url: "https://user@example.com/commit/abc" })).rejects.toThrow(
+      "credential-free HTTPS URL",
+    );
+    await expect(execute({ ...valid, title: "x".repeat(2049) })).rejects.toThrow("byte limit");
+    await expect(
+      execute({
+        kind: "change-request",
+        provider: "p".repeat(256),
+        title: "t".repeat(1800),
+        url: `https://example.com/${"u".repeat(1800)}`,
+        id: "i".repeat(256),
+        author: "a".repeat(100),
+      }),
+    ).rejects.toThrow("total byte limit");
+    await expect(execute(valid, "exit")).rejects.toThrow("exit results cannot include");
+  });
+
+  test("bounds the complete serialized delegated review descriptor at exactly 4 KiB", async () => {
+    const execute = (review: unknown) =>
+      runExtensionCliCommand({
+        extensionId: "tools",
+        commandName: "tools",
+        args: [],
+        stdin: (async function* () {})(),
+        stdout: createTestWriter([]),
+        stderr: createTestWriter([]),
+        signals: new EventEmitter(),
+        handler: () => ({ kind: "delegate", argv: ["patch", "review.diff"], review }) as never,
+      });
+    const withoutHead = {
+      kind: "change-request" as const,
+      provider: "p".repeat(256),
+      title: "t".repeat(2048),
+      id: "i".repeat(256),
+      author: "a".repeat(512),
+      base: "b".repeat(512),
+      head: "",
+    };
+    const serializedWithoutHeadBytes = new TextEncoder().encode(JSON.stringify(withoutHead)).length;
+    const multibytePrefix = "🚀";
+    const exactHead = `${multibytePrefix}${"h".repeat(
+      4 * 1024 - serializedWithoutHeadBytes - new TextEncoder().encode(multibytePrefix).length,
+    )}`;
+    const exact = { ...withoutHead, head: exactHead };
+    expect(new TextEncoder().encode(JSON.stringify(exact))).toHaveLength(4 * 1024);
+    await expect(execute(exact)).resolves.toMatchObject({
+      result: { kind: "delegate", review: exact },
+    });
+
+    const oversized = { ...exact, head: `${exactHead}h` };
+    expect(new TextEncoder().encode(JSON.stringify(oversized))).toHaveLength(4 * 1024 + 1);
+    await expect(execute(oversized)).rejects.toThrow("total byte limit");
+  });
+
   test("aborts on host signals and removes listeners", async () => {
     const signals = new EventEmitter();
     const execution = runExtensionCliCommand({

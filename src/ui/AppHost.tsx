@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
+import { reviewDescriptorAfterReload } from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
@@ -53,6 +54,7 @@ export function AppHost({
   externalQuitSignal,
   hostClient,
   onQuit = () => process.exit(0),
+  onActiveBootstrapChange,
   reviewProducer,
   startupNoticeResolver,
   watchRuntime,
@@ -64,6 +66,8 @@ export function AppHost({
   externalQuitSignal?: AbortSignal;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
+  /** Observe the bootstrap after its matching App commit; used by mounted host tests. */
+  onActiveBootstrapChange?: (bootstrap: AppBootstrap) => void;
   /**
    * The producer whose generations this host publishes. Supplied by the process that
    * built the initial registration from its first publication; a host mounted without one
@@ -86,6 +90,11 @@ export function AppHost({
         },
       };
   const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
+  const reviewIdentityRef = useRef({
+    input: initialBootstrap.input,
+    cwd: initialBootstrap.reloadContext.cwd,
+    review: initialBootstrap.review,
+  });
   const [producer] = useState(
     () =>
       reviewProducer ??
@@ -142,6 +151,10 @@ export function AppHost({
     notices: activeBootstrap.startupNotices,
     resolver: startupNoticeResolver,
   });
+
+  useLayoutEffect(() => {
+    onActiveBootstrapChange?.(activeBootstrap);
+  }, [activeBootstrap, onActiveBootstrapChange]);
 
   useLayoutEffect(() => {
     // Child layout effects run before the parent's, so controls and generation
@@ -334,6 +347,14 @@ export function AppHost({
       try {
         const { applied, bootstrap, input: reloadInput, sessionVcs } = loaded;
         nextBootstrap = bootstrap;
+        const preservedReview = reviewDescriptorAfterReload(
+          reviewIdentityRef.current.input,
+          reviewIdentityRef.current.cwd,
+          reviewIdentityRef.current.review,
+          nextBootstrap.input,
+          cwd,
+        );
+        if (preservedReview) nextBootstrap.review = preservedReview;
         if (extensions) {
           reportExtensionApplyIssues(applied.issues, extensions.context);
         }
@@ -400,6 +421,11 @@ export function AppHost({
           })
         : undefined;
 
+      reviewIdentityRef.current = {
+        input: nextBootstrap.input,
+        cwd,
+        review: nextBootstrap.review,
+      };
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
         // Bumping the key forces a full App remount. Callers that pass `resetApp: false` get a

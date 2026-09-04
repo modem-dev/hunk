@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 16;
+export const HUNK_EXTENSION_API_VERSION = 17;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1279,11 +1279,54 @@ export interface ExtensionCliExitResult {
   readonly code?: number;
 }
 
+/** Shared display fields for one extension-described review source. */
+export interface ExtensionReviewDescriptorBase {
+  /** Provider name shown to the user, such as `GitHub` or `GitLab`. */
+  readonly provider: string;
+  /** Human-readable review title. */
+  readonly title: string;
+  /** Optional HTTPS page for the described review source. */
+  readonly url?: string;
+}
+
+/** Metadata for a provider change request such as a pull or merge request. */
+export interface ExtensionChangeRequestReviewDescriptor extends ExtensionReviewDescriptorBase {
+  readonly kind: "change-request";
+  /** Provider-local identifier, such as `#123`. */
+  readonly id: string;
+  readonly author?: string;
+  readonly base?: string;
+  readonly head?: string;
+}
+
+/** Metadata for one reviewed commit. */
+export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescriptorBase {
+  readonly kind: "commit";
+  /** Provider revision identifier. */
+  readonly revision: string;
+  readonly author?: string;
+}
+
+/** Metadata for one comparison between two provider refs. */
+export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDescriptorBase {
+  readonly kind: "comparison";
+  readonly base: string;
+  readonly head: string;
+}
+
+/** Bounded provider-neutral metadata attached to an extension-delegated patch review. */
+export type ExtensionReviewDescriptor =
+  | ExtensionChangeRequestReviewDescriptor
+  | ExtensionCommitReviewDescriptor
+  | ExtensionComparisonReviewDescriptor;
+
 /** Hand terminal ownership to one built-in Hunk command. */
 export interface ExtensionCliDelegateResult {
   readonly kind: "delegate";
   /** Tokens after the `hunk` executable. Extension commands cannot be targets. */
   readonly argv: readonly string[];
+  /** Optional metadata for a delegated built-in `patch` review. */
+  readonly review?: ExtensionReviewDescriptor;
 }
 
 export type ExtensionCliCommandResult = ExtensionCliExitResult | ExtensionCliDelegateResult;

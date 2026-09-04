@@ -28,6 +28,7 @@ import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
+import type { ExtensionReviewDescriptor } from "../extension-api/types";
 
 /**
  * Load the bundled VCS catalog, memoized per call to `prepareStartupPlan`.
@@ -175,6 +176,7 @@ export async function prepareStartupPlan(
   let controllingTerminal: ControllingTerminal | null = null;
   let preloadedExtensions: import("../extensions/types").ExtensionLoadResult | undefined;
   let delegatedDiscoveryCatalog: VcsCatalog | undefined;
+  let delegatedReview: ExtensionReviewDescriptor | undefined;
 
   /** Retire startup-owned extension state before returning a non-app plan. */
   const retirePreloadedExtensions = async () => {
@@ -296,6 +298,12 @@ export async function prepareStartupPlan(
           "Extension CLI commands may delegate only to built-in Hunk commands.",
         );
       }
+      if (execution.result.review && delegated.kind !== "patch") {
+        throw new HunkUserError(
+          "Extension review metadata may be attached only to a delegated patch command.",
+        );
+      }
+      delegatedReview = execution.result.review;
       parsedCliInput = applyDelegatedExtensionFlags(delegated, invocation);
       delegatedDiscoveryCatalog = resolved.discoveryCatalog;
     } catch (error) {
@@ -550,6 +558,7 @@ export async function prepareStartupPlan(
   }
   const { applied, bootstrap, input: resolvedInput, sessionThemes, sessionVcs } = preparedSession;
   cliInput = resolvedInput;
+  if (delegatedReview) bootstrap.review = delegatedReview;
 
   // Built after adapter resolution so the notice names the backend the session really loads with.
   const unknownVcsNotices =

@@ -59,6 +59,7 @@ export type {
   ExtensionKeyboardMode,
   ExtensionKeyboardModeKeyResult,
   ExtensionLineHighlighter,
+  ExtensionReviewDescriptor,
   ExtensionReviewControls,
   ExtensionReviewNote,
   ExtensionReviewSnapshot,

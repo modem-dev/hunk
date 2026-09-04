@@ -126,6 +126,97 @@ describe("startup planning", () => {
     expect(shutdowns).toBe(1);
   });
 
+  test("carries validated review metadata only into a delegated patch bootstrap", async () => {
+    const invocation = {
+      kind: "extension-cli" as const,
+      commandName: "tools",
+      args: [],
+      extensionPaths: ["/tools.ts"],
+      extensionsEnabled: true,
+    };
+    const patchInput: CliInput = { kind: "patch", file: "/tmp/review.diff", options: {} };
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Add metadata",
+      url: "https://github.com/modem-dev/hunk/pull/123",
+      id: "#123",
+      author: "octocat",
+      base: "main",
+      head: "metadata",
+    };
+    const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.extensions.push({ id: "tools", sourcePath: "/tools.ts", origin: "flag" });
+    extensions.registry.cliCommands.push({
+      extensionId: "tools",
+      command: { name: "tools", summary: "Tools" },
+      handler: () => ({ kind: "delegate", argv: ["patch", "/tmp/review.diff"], review }),
+    });
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "tools"], {
+      parseCliImpl: async (argv) => (argv.includes("patch") ? patchInput : invocation),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(input, {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        }),
+      resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+        configured: {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        },
+        extensions,
+        commands: resolveExtensionCliCommands(extensions.registry),
+        collisionIssues: [],
+        discoveryCatalog: baseVcsCatalog,
+      }),
+      loadStartupExtensionsImpl: async () => extensions,
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") throw new Error("Expected app plan.");
+    expect(plan.bootstrap.review).toEqual(review);
+    expect(Object.isFrozen(plan.bootstrap.review)).toBe(true);
+  });
+
+  test("rejects review metadata when delegation targets a non-patch built-in", async () => {
+    const invocation = {
+      kind: "extension-cli" as const,
+      commandName: "tools",
+      args: [],
+      extensionPaths: ["/tools.ts"],
+      extensionsEnabled: true,
+    };
+    const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.extensions.push({ id: "tools", sourcePath: "/tools.ts", origin: "flag" });
+    extensions.registry.cliCommands.push({
+      extensionId: "tools",
+      command: { name: "tools", summary: "Tools" },
+      handler: () => ({
+        kind: "delegate",
+        argv: ["--version"],
+        review: { kind: "commit", provider: "GitHub", title: "Commit", revision: "abc" },
+      }),
+    });
+
+    await expect(
+      prepareStartupPlan(["bun", "hunk", "tools"], {
+        parseCliImpl: async (argv) =>
+          argv.includes("--version") ? { kind: "help", text: "1.2.3\n" } : invocation,
+        resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+          configured: {
+            extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+          },
+          extensions,
+          commands: resolveExtensionCliCommands(extensions.registry),
+          collisionIssues: [],
+          discoveryCatalog: baseVcsCatalog,
+        }),
+      }),
+    ).rejects.toThrow("only to a delegated patch command");
+  });
+
   test("lists the loaded extension commands when the requested token is unclaimed", async () => {
     const invocation = {
       kind: "extension-cli" as const,

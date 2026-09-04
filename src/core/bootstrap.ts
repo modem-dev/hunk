@@ -11,7 +11,7 @@
  * boundary rules name: `changeset/loaders.ts` assembles this value in
  * `loadAppBootstrap`, so it has to name the shape it returns.
  */
-import type { NamedCustomThemeConfig } from "../extension-api/types";
+import type { ExtensionReviewDescriptor, NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset } from "./changeset/model";
 import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/commandInputs";
 import type { UserKeyBinding } from "./run/config";
@@ -55,6 +55,8 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;
   startupNotices?: readonly StartupNotice[];
+  /** Validated metadata attached only by an extension-delegated patch review. */
+  review?: ExtensionReviewDescriptor;
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;

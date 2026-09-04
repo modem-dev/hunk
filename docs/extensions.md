@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds structured review metadata to delegated
+patch commands; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
@@ -312,7 +313,20 @@ hunk.registerCliCommand(
     }
 
     await ctx.stderr.write("Preparing review…\n");
-    return { kind: "delegate", argv: ["diff", "--agent-context", "notes.json"] };
+    return {
+      kind: "delegate",
+      argv: ["patch", "review.diff"],
+      review: {
+        kind: "change-request",
+        provider: "GitHub",
+        title: "Add structured review metadata",
+        url: "https://github.com/acme/project/pull/123",
+        id: "#123",
+        author: "octocat",
+        base: "main",
+        head: "review-metadata",
+      },
+    };
   },
 );
 ```
@@ -323,6 +337,19 @@ backpressure-aware `ctx.stdout`/`ctx.stderr`. It may use ordinary JavaScript API
 to access networks, processes, services, and files. Return `{ kind: "exit",
 code? }` with a status from 0 through 255, or delegate exactly once to a
 built-in Hunk command.
+
+A delegated built-in `patch` command may include a provider-neutral `review` descriptor. Its
+`kind` is `change-request`, `commit`, or `comparison`; each exact shape combines bounded display
+strings with an optional credential-free HTTPS URL. Hunk rejects unknown fields, control
+characters, invalid types, unsafe URLs, fields over their byte limits, and descriptors over 4 KiB,
+then copies and freezes the accepted value. `provider` and change-request `id` allow 256 bytes;
+`author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB. Exit results and delegation to any built-in other than
+`patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
+
+The descriptor describes the review source rather than its diff contents: it stays on the app
+bootstrap and does not enter changeset transforms or `ReviewDocumentV1`. Refreshing the same
+file-backed patch preserves it, including watch and manual refresh; an explicit reload to a
+different patch path or input kind clears it.
 
 Delegation cannot target another extension command or change extension bootstrap
 flags. Do not write stdout or read stdin before delegating; use stderr for
