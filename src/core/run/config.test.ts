@@ -131,6 +131,45 @@ describe("config persistence", () => {
     );
   });
 
+  test("appends after a trailing comment when the file has no table to document", () => {
+    const home = createTempDir("hunk-save-config-trailing-comment-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    // No trailing newline, so the comment is the last line the writer sees.
+    writeFileSync(configPath, "# personal defaults");
+
+    saveGlobalViewPreferences(
+      {
+        mode: "split",
+        theme: "dracula",
+        showLineNumbers: false,
+        wrapLines: true,
+        showHunkHeaders: false,
+        showMenuBar: false,
+        showAgentNotes: true,
+        copyDecorations: true,
+        cursorLine: "row",
+      },
+      { env: { HOME: home } },
+    );
+
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        "# personal defaults",
+        'theme = "dracula"',
+        'mode = "split"',
+        "line_numbers = false",
+        "wrap_lines = true",
+        "hunk_headers = false",
+        "menu_bar = false",
+        "agent_notes = true",
+        "copy_decorations = true",
+        'cursor_line = "row"',
+        "",
+      ].join("\n"),
+    );
+  });
+
   test("diffs view preference snapshots as the TOML assignments a save would rewrite", () => {
     const initial = {
       mode: "auto",
@@ -470,6 +509,33 @@ describe("adaptive theme config", () => {
     expect(Bun.TOML.parse(saved)).toMatchObject({
       theme: "dracula",
       custom_theme: { label: "Keep me" },
+    });
+  });
+
+  test("leaves one blank line where a collapsed [theme] table used to separate its neighbours", () => {
+    const home = createTempDir("hunk-adaptive-theme-seam-home-");
+    const configPath = writeUserConfig(home, [
+      "[custom_theme]",
+      'label = "Keep me"',
+      "",
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+      "[extensions]",
+      "enabled = true",
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain('label = "Keep me"\n\n[extensions]');
+    expect(saved).not.toMatch(/\n\n\n/);
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: "dracula",
+      custom_theme: { label: "Keep me" },
+      extensions: { enabled: true },
     });
   });
 
