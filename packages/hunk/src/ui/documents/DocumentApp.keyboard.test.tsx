@@ -197,7 +197,7 @@ test("theme opening, acceptance and cancellation update modal ownership within a
     const themes = availableThemes([], null);
     const initialIndex = themes.findIndex((theme) => theme.id === "github-dark-default");
     await app.burst("return", "e");
-    expect(app.themeController.getSnapshot().themeId).toBe(
+    expect(app.themeController.getSnapshot().themeSelection).toBe(
       themes[(initialIndex + 1) % themes.length]!.id,
     );
     expect(app.edit).toHaveBeenCalledTimes(1);
@@ -217,7 +217,7 @@ test("menu toggles and menu-launched themes use live ownership before a render",
     await app.burst("f10", "right", "return", "e", "down", "return");
     expect(app.edit).toHaveBeenCalledTimes(1);
     expect(app.controller.getSnapshot().selectedKey).toBe("a");
-    expect(app.themeController.getSnapshot().themeId).not.toBe("github-dark-default");
+    expect(app.themeController.getSnapshot().themeSelection).not.toBe("github-dark-default");
   } finally {
     await app.close();
   }

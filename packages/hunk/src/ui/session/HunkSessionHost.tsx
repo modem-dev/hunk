@@ -397,7 +397,7 @@ export function HunkSessionHost({
         extensionsEnabled: historyRoute.runtime.input.extensionsEnabled,
         extensionPaths: historyRoute.runtime.input.extensionPaths,
         extensionSession: historyRoute.runtime.extensionSession.current,
-        themeId: themeController.getSnapshot().themeId,
+        themeId: themeController.themeId(),
         themeMode: themeController.themeMode,
       };
       if (historyRoute.returnRoute) {
@@ -437,7 +437,7 @@ export function HunkSessionHost({
       }
       const reviewBootstrap = applySessionViewPreferences(plan.bootstrap, {
         ...sessionViewPreferencesRef.current,
-        theme: themeController.getSnapshot().themeId,
+        theme: themeController.getSnapshot().themeSelection,
       });
       const reviewRuntime = createReviewRuntime(
         reviewBootstrap,
