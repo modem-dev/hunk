@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
 import type { CliInput } from "./commandInputs";
+import type { PersistedViewPreferences } from "./config";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
@@ -350,6 +351,139 @@ describe("adaptive theme config", () => {
     expect(saved).toContain('theme = "dracula"');
     expect(saved).not.toContain("[theme]");
     expect(saved).toContain("[custom_theme]");
+  });
+
+  function themePreferences(theme: PersistedViewPreferences["theme"]): PersistedViewPreferences {
+    return {
+      mode: "auto",
+      theme,
+      showLineNumbers: true,
+      wrapLines: false,
+      showHunkHeaders: true,
+      showMenuBar: true,
+      showAgentNotes: false,
+      copyDecorations: false,
+      cursorLine: "row",
+    };
+  }
+
+  test("replaces dotted theme keys instead of appending a second definition", () => {
+    const home = createTempDir("hunk-adaptive-theme-dotted-home-");
+    const configPath = writeUserConfig(home, [
+      "wrap_lines = false",
+      'theme.dark = "vitesse-dark"',
+      'theme.light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(Bun.TOML.parse(saved)).toMatchObject({ theme: "dracula" });
+    expect(saved).not.toContain("theme.light");
+  });
+
+  test("replaces a quoted key inside the [theme] table rather than duplicating it", () => {
+    const home = createTempDir("hunk-adaptive-theme-quoted-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      '"dark" = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences({ dark: "nord", light: "one-light" }), {
+      configPath,
+    });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: { dark: "nord", light: "one-light" },
+    });
+  });
+
+  test("keeps the next section's comments when the [theme] table collapses", () => {
+    const home = createTempDir("hunk-adaptive-theme-comments-home-");
+    const configPath = writeUserConfig(home, [
+      'mode = "split"',
+      "",
+      "# theme picked per background",
+      "[theme]",
+      'dark = "vitesse-dark" # night',
+      'light = "vitesse-light"',
+      "",
+      "# my custom colors",
+      "[custom_theme]",
+      'label = "Keep me"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences({ dark: "nord", light: "one-light" }), {
+      configPath,
+    });
+
+    let saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain('dark = "nord" # night');
+    expect(saved).toContain("# my custom colors");
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(saved).not.toContain("[theme]");
+    // The collapsed key takes the table's place, so each comment still introduces what follows it.
+    expect(saved).toContain(["# theme picked per background", 'theme = "dracula"'].join("\n"));
+    expect(saved).toContain(["# my custom colors", "[custom_theme]"].join("\n"));
+  });
+
+  test("indents a key added to an indented [theme] table like its siblings", () => {
+    const home = createTempDir("hunk-adaptive-theme-indent-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      '  dark = "vitesse-dark"',
+      '  light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(
+      themePreferences({ dark: "nord", light: "one-light", fallback: "dracula" }),
+      { configPath },
+    );
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(saved).toContain('  fallback = "dracula"');
+  });
+
+  test("keeps a collapsed theme out of a table that precedes it", () => {
+    const home = createTempDir("hunk-adaptive-theme-late-table-home-");
+    const configPath = writeUserConfig(home, [
+      "[custom_theme]",
+      'label = "Keep me"',
+      "",
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: "dracula",
+      custom_theme: { label: "Keep me" },
+    });
+  });
+
+  test("collapsing a theme-only config leaves no leading blank line", () => {
+    const home = createTempDir("hunk-adaptive-theme-only-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    expect(readFileSync(configPath, "utf8").startsWith('theme = "dracula"\n')).toBe(true);
   });
 
   test("writes a pair as an inline table when the file has no [theme] section", () => {
