@@ -179,6 +179,43 @@ describe("plain text pager fallback", () => {
     expectNoUnsafeTerminalControls(written);
   });
 
+  test("pages ANSI-dense git log output promptly and with its color intact", async () => {
+    // LazyGit and similar hosts point Git's pager at `hunk pager` for whole branch logs, so a
+    // non-patch `git log --graph --color=always` stream arrives here carrying one SGR sequence
+    // every ~18 bytes. Sanitizing that used to be quadratic in the sequence count, which pegged a
+    // core for minutes per concurrent LazyGit job instead of paging the text straight through.
+    const gitLog = Array.from(
+      { length: 5_000 },
+      (_, index) =>
+        `\x1b[33m* commit ${index}\x1b[m \x1b[1;36m(\x1b[1;32mHEAD\x1b[1;36m)\x1b[m\n` +
+        `\x1b[32m| Author: someone\x1b[m\n`,
+    ).join("");
+    let written = "";
+
+    const startedAt = performance.now();
+    await pagePlainText(
+      gitLog,
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+          pager.stdin = new PassThrough();
+          pager.stdin.on("data", (chunk) => {
+            written += String(chunk);
+          });
+          pager.stdin.on("finish", () => {
+            queueMicrotask(() => pager.emit("close", 0));
+          });
+          return pager as never;
+        },
+      }),
+    );
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(written).toBe(gitLog);
+    expect(elapsedMs).toBeLessThan(2_000);
+  });
+
   test("spawns pager commands without a shell", async () => {
     const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
     pager.stdin = new PassThrough();
