@@ -242,6 +242,42 @@ function serializeTomlPreferenceValue(value: string | boolean | ThemeSelection) 
   return JSON.stringify(value);
 }
 
+function tomlKeyPattern(key: string) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*(?:${escaped}|"${escaped}"|'${escaped}')\\s*(?:\\.|=)`);
+}
+
+function findTrailingTomlComment(line: string) {
+  let inSingle = false;
+  let inDouble = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === "\\" && inDouble) {
+      index += 1;
+      continue;
+    }
+    if (char === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (char === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (char === "#" && !inSingle && !inDouble) {
+      return line.slice(index).trimEnd();
+    }
+  }
+
+  return "";
+}
+
+function rewriteAssignmentLine(existing: string, assignment: string) {
+  const indent = existing.match(/^\s*/)?.[0] ?? "";
+  const comment = findTrailingTomlComment(existing);
+  return `${indent}${assignment}${comment ? ` ${comment}` : ""}`;
+}
+
 /** Update one top-level TOML key while preserving sections and unrelated comments. */
 function upsertTopLevelTomlValue(
   source: string,
@@ -256,15 +292,27 @@ function upsertTopLevelTomlValue(
     firstTableIndex = lines.length;
   }
 
-  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+  const keyPattern = tomlKeyPattern(key);
+  const matches: number[] = [];
   for (let index = 0; index < firstTableIndex; index += 1) {
     if (keyPattern.test(lines[index] ?? "")) {
-      lines[index] = assignment;
-      return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+      matches.push(index);
     }
   }
 
+  const [first, ...duplicates] = matches;
+  if (first !== undefined) {
+    lines[first] = rewriteAssignmentLine(lines[first] ?? "", assignment);
+    for (const index of duplicates.reverse()) {
+      lines.splice(index, 1);
+    }
+    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+  }
+
   let insertAt = firstTableIndex;
+  while (insertAt > 0 && (lines[insertAt - 1] ?? "").trim().startsWith("#")) {
+    insertAt -= 1;
+  }
   const hasTableSpacer = insertAt > 0 && lines[insertAt - 1] === "";
   if (hasTableSpacer) {
     insertAt -= 1;
@@ -285,7 +333,15 @@ function findThemeTableRange(lines: readonly string[]) {
   }
 
   const nextHeaderOffset = lines.slice(headerIndex + 1).findIndex((line) => /^\s*\[/.test(line));
-  const end = nextHeaderOffset < 0 ? lines.length : headerIndex + 1 + nextHeaderOffset;
+  let end = nextHeaderOffset < 0 ? lines.length : headerIndex + 1 + nextHeaderOffset;
+  while (end > headerIndex + 1) {
+    const line = (lines[end - 1] ?? "").trim();
+    if (line.length > 0 && !line.startsWith("#")) {
+      break;
+    }
+    end -= 1;
+  }
+
   return { headerIndex, end };
 }
 
@@ -295,7 +351,7 @@ function applyThemeTableKey(
   key: string,
   value: string | undefined,
 ) {
-  const keyPattern = new RegExp(`^\\s*${key}\\s*=`);
+  const keyPattern = tomlKeyPattern(key);
   const existingIndex = lines
     .slice(range.headerIndex + 1, range.end)
     .findIndex((line) => keyPattern.test(line));
@@ -306,7 +362,10 @@ function applyThemeTableKey(
       range.end -= 1;
       return;
     }
-    lines[absolute] = `${key} = ${JSON.stringify(value)}`;
+    lines[absolute] = rewriteAssignmentLine(
+      lines[absolute] ?? "",
+      `${key} = ${JSON.stringify(value)}`,
+    );
     return;
   }
 
@@ -314,11 +373,8 @@ function applyThemeTableKey(
     return;
   }
 
-  let insertAt = range.end;
-  while (insertAt > range.headerIndex + 1 && (lines[insertAt - 1] ?? "").trim().length === 0) {
-    insertAt -= 1;
-  }
-  lines.splice(insertAt, 0, `${key} = ${JSON.stringify(value)}`);
+  const indent = (lines[range.end - 1] ?? "").match(/^\s*/)?.[0] ?? "";
+  lines.splice(range.end, 0, `${indent}${key} = ${JSON.stringify(value)}`);
   range.end += 1;
 }
 
@@ -340,8 +396,19 @@ function upsertThemeTomlValue(source: string, value: ThemeSelection | undefined)
     return `${lines.join("\n").replace(/\n*$/, "")}\n`;
   }
 
+  const firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (firstTableIndex === range.headerIndex) {
+    lines.splice(
+      range.headerIndex,
+      range.end - range.headerIndex,
+      `theme = ${serializeTomlPreferenceValue(value)}`,
+    );
+    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+  }
+
   lines.splice(range.headerIndex, range.end - range.headerIndex);
-  return upsertTopLevelTomlValue(`${lines.join("\n").replace(/\n*$/, "")}\n`, "theme", value);
+  const remaining = lines.join("\n").replace(/^\n+/, "").replace(/\n*$/, "");
+  return upsertTopLevelTomlValue(remaining.length > 0 ? `${remaining}\n` : "", "theme", value);
 }
 
 /** Accept only the current-line styles the review stream can draw. */
@@ -376,14 +443,14 @@ function normalizeBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
 }
 
-function normalizeThemeSelection(value: unknown) {
-  const read = readThemeSelection(value);
+function normalizeThemeSelection(value: unknown, origin: ConfigValueOrigin = {}) {
+  const read = readThemeSelection(value, `${origin.section ?? ""}theme`);
   if (read === undefined) {
     return undefined;
   }
 
   if ("issue" in read) {
-    throw new Error(read.issue);
+    throw new Error(origin.file ? `${read.issue} (${origin.file})` : read.issue);
   }
 
   return read.selection;
@@ -1202,8 +1269,17 @@ function resolveExtensionsConfig(
   };
 }
 
+interface ConfigValueOrigin {
+  file?: string;
+  section?: string;
+}
+
 /** Normalize one cataloged config value according to its runtime property. */
-function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
+function normalizeConfigReferenceValue(
+  property: keyof CommonOptions,
+  value: unknown,
+  origin: ConfigValueOrigin = {},
+) {
   switch (property) {
     case "mode":
       return isLayoutModeInput(value) ? normalizeLayoutModeInput(value) : undefined;
@@ -1214,7 +1290,7 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
     case "vcs":
       return normalizeVcsMode(value);
     case "theme":
-      return normalizeThemeSelection(value);
+      return normalizeThemeSelection(value, origin);
     case "tabWidth":
       return normalizeTabWidth(value);
     case "fileGap":
@@ -1233,9 +1309,14 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
 }
 
 /** Read the view preferences stored at one TOML object level. */
+interface ReadConfigPreferencesOptions extends ConfigValueOrigin {
+  /** Whether keys that only the user config may set are honored at this level. */
+  includeUserOnly?: boolean;
+}
+
 function readConfigPreferences(
   source: Record<string, unknown>,
-  { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
+  { includeUserOnly = true, ...origin }: ReadConfigPreferencesOptions = {},
 ): CommonOptions {
   const preferences: CommonOptions = {};
   const mutable = preferences as Record<string, unknown>;
@@ -1251,7 +1332,7 @@ function readConfigPreferences(
     ];
     let normalized: unknown;
     for (const key of runtimeKeys) {
-      normalized = normalizeConfigReferenceValue(option.property, source[key]);
+      normalized = normalizeConfigReferenceValue(option.property, source[key], origin);
       if (normalized !== undefined) {
         break;
       }
@@ -1316,18 +1397,24 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 function resolveConfigLayer(
   source: Record<string, unknown>,
   input: ConfigurableInput,
-  { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
+  { file, includeUserOnly = true }: { file?: string; includeUserOnly?: boolean } = {},
 ): CommonOptions {
-  let resolved = readConfigPreferences(source, { includeUserOnly });
+  let resolved = readConfigPreferences(source, { file, includeUserOnly });
 
   const commandSection = CONFIG_COMMAND_SECTIONS[input.kind] ? source[input.kind] : undefined;
   if (isRecord(commandSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(commandSection, { includeUserOnly }));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(commandSection, { file, includeUserOnly, section: `${input.kind}.` }),
+    );
   }
 
   const pagerSection = source.pager;
   if (input.options.pager && isRecord(pagerSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(pagerSection, { includeUserOnly }));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(pagerSection, { file, includeUserOnly, section: "pager." }),
+    );
   }
 
   return resolved;
@@ -1583,7 +1670,7 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
 
   if (userConfigPath && sources.userConfig) {
     const userConfig = sources.userConfig;
-    const userLayer = resolveConfigLayer(userConfig, input);
+    const userLayer = resolveConfigLayer(userConfig, input, { file: userConfigPath });
     explicitVcsId = userLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
@@ -1593,7 +1680,10 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
 
   if (repoConfigPath && sources.repoConfig) {
     const repoConfig = sources.repoConfig;
-    const repoLayer = resolveConfigLayer(repoConfig, input, { includeUserOnly: false });
+    const repoLayer = resolveConfigLayer(repoConfig, input, {
+      file: repoConfigPath,
+      includeUserOnly: false,
+    });
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
