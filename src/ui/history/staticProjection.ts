@@ -146,6 +146,14 @@ function styledGraph(text: string, theme: AppTheme) {
   ).join("");
 }
 
+/** Return the zero-based display-cell bounds occupied by a compact row's commit id. */
+export function getHistoryCommitIdBounds(row: HistoryGraphRow, ascii = false) {
+  const graphPrefix = `${renderHistoryGraph(row, ascii)}  `;
+  const displayId = sanitizeTerminalLine(row.commit.displayId).replaceAll("\t", " ");
+  const start = measureTextWidth(graphPrefix);
+  return { start, end: start + measureTextWidth(displayId) };
+}
+
 /** Render one safe compact history row from symbolic topology and normalized metadata. */
 export function projectHistoryRow(row: HistoryGraphRow, options: HistoryProjectionOptions) {
   const theme = options.theme ?? resolveHistoryTheme(undefined);

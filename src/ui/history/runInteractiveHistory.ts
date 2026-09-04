@@ -9,6 +9,7 @@ import { fitText } from "../lib/text";
 import {
   background,
   foreground,
+  getHistoryCommitIdBounds,
   projectHistoryRow,
   resolveHistoryColor,
   resolveHistoryTheme,
@@ -213,6 +214,15 @@ export async function runInteractiveHistory(
       else if (/^[^\x00-\x1f\x7f]+$/u.test(key)) draft += key;
     }
   };
+  /** Open one provider-planned review while yielding terminal ownership. */
+  const openRowReview = async (row: HistoryGraphRow) => {
+    const reviewAction = await bootstrap.planReview(row.commit);
+    input.discardPending();
+    leaveTerminal();
+    const code = await openCommitReview(bootstrap, reviewAction);
+    if (!stopped) enterTerminal();
+    notice = code === 0 ? "" : `Could not open ${row.commit.displayId}`;
+  };
   const cleanup = () => {
     if (stopped) return;
     stopped = true;
@@ -265,18 +275,13 @@ export async function runInteractiveHistory(
         );
         notice = `Copied ${rows[selected]!.commit.displayId}`;
       } else if ((key === "\r" || key === "\n") && rows[selected]) {
-        const selectedRow = rows[selected]!;
-        const reviewAction = await bootstrap.planReview(selectedRow.commit);
-        input.discardPending();
-        leaveTerminal();
-        const code = await openCommitReview(bootstrap, reviewAction);
+        await openRowReview(rows[selected]!);
         if (stopped) break;
-        enterTerminal();
-        notice = code === 0 ? "" : `Could not open ${rows[selected]!.commit.displayId}`;
       } else {
         const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(key);
         if (mouse) {
           const button = Number(mouse[1]);
+          const screenColumn = Number(mouse[2]) - 1;
           const screenRow = Number(mouse[3]) - 1;
           const visibleCount = Math.min(height, rows.length - top);
           if (button === 64) selected -= 3;
@@ -290,15 +295,16 @@ export async function runInteractiveHistory(
             screenRow < visibleCount
           ) {
             const index = top + screenRow;
+            const row = rows[index]!;
             selected = index;
+            const idBounds = getHistoryCommitIdBounds(
+              row,
+              bootstrap.input.ascii || process.env.TERM === "dumb",
+            );
+            const clickedCommitId = screenColumn >= idBounds.start && screenColumn < idBounds.end;
             const now = Date.now();
-            if (lastClick.index === index && now - lastClick.at < 400) {
-              const reviewAction = await bootstrap.planReview(rows[index]!.commit);
-              input.discardPending();
-              leaveTerminal();
-              const code = await openCommitReview(bootstrap, reviewAction);
-              if (!stopped) enterTerminal();
-              notice = code === 0 ? "" : `Could not open ${rows[index]!.commit.displayId}`;
+            if (clickedCommitId || (lastClick.index === index && now - lastClick.at < 400)) {
+              await openRowReview(row);
             }
             lastClick = { index, at: now };
           }
