@@ -94,18 +94,26 @@ export function formatHistoryDecorations(row: HistoryGraphRow) {
     .map((entry) => ({
       kind: entry.kind,
       label: sanitizeTerminalLine(entry.label).replaceAll("\t", " "),
+      ...(entry.kind === "head" && entry.attachedLocalBranch
+        ? {
+            attachedLocalBranch: sanitizeTerminalLine(entry.attachedLocalBranch).replaceAll(
+              "\t",
+              " ",
+            ),
+          }
+        : {}),
     }))
     .filter((entry) => entry.label);
   const headIndex = values.findIndex((entry) => entry.kind === "head");
-  const headLabel = headIndex >= 0 ? values[headIndex]!.label : "";
-  const attachedBranch = headLabel.startsWith("HEAD -> ") ? headLabel.slice("HEAD -> ".length) : "";
+  const head = headIndex >= 0 ? values[headIndex] : undefined;
+  const attachedBranch = head?.attachedLocalBranch ?? "";
   const branchIndex = attachedBranch
     ? values.findIndex((entry) => entry.kind === "local-branch" && entry.label === attachedBranch)
     : -1;
   const labels: string[] = [];
-  if (headIndex >= 0) labels.push(headLabel);
+  if (head) labels.push(attachedBranch ? `${head.label} -> ${attachedBranch}` : head.label);
   for (let index = 0; index < values.length; index += 1) {
-    if (index === headIndex || (headIndex >= 0 && index === branchIndex)) continue;
+    if (index === headIndex || index === branchIndex) continue;
     const entry = values[index]!;
     labels.push(entry.kind === "tag" ? `tag: ${entry.label}` : entry.label);
   }

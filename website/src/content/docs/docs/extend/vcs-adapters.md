@@ -30,6 +30,42 @@ The ids Hunk ships with — `git`, `jj`, and `sl` — are reserved. An adapter t
 
 `operations` is optional and may implement any of `working-tree-diff`, `revision-show`, and `stash-show`; an operation you leave out — or leaving the map off entirely — produces a clear "not supported" error for that command instead of a crash.
 
+## History
+
+The built-in `hunk log` surface gets all repository semantics from the selected adapter's optional
+`history` capability. Hunk owns presentation, themes, graph layout, paging, and terminal lifecycle;
+the adapter owns traversal, refs, immutable identities, and how a selected item opens in review.
+
+```ts
+history: {
+  async open(input, ctx) {
+    return openHgHistory(input, ctx);
+  },
+  planReview(commit) {
+    return commit.parentRevisionIds[0]
+      ? {
+          kind: "revision-range",
+          fromRevisionId: commit.parentRevisionIds[0],
+          toRevisionId: commit.revisionId,
+        }
+      : { kind: "revision-show", revisionId: commit.revisionId };
+  },
+},
+```
+
+`planReview` is provider-owned because roots, merges, and revision syntax differ. Hunk treats every
+revision id as opaque and routes the returned action through the same adapter's `revision-show` or
+`working-tree-diff` operation.
+
+History pages must remain in **child-before-parent topological order across the complete source**.
+When both commits are returned, a child must precede its parent even when they fall on different
+pages. Each read may return at most its requested limit, and `done` distinguishes a page boundary
+from repository end. Hunk validates these invariants across pages.
+
+Decorations are structured. A `head` decoration may set `attachedLocalBranch`; do not encode branch
+attachment or arrow punctuation in its label. This lets Hunk render and deduplicate decorations
+without parsing provider display text.
+
 A `load` result is patch text plus how to label it. Everything else on it is optional, and each optional field buys one thing:
 
 | Field            | What it adds                                                      |

@@ -465,7 +465,7 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
-API version 17 also adds the optional, read-only `history` capability used by `hunk log`:
+API version 18 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
 
 ```ts
 hunk.registerVcsAdapter({
@@ -482,17 +482,40 @@ hunk.registerVcsAdapter({
         close() {},
       };
     },
+    planReview(commit) {
+      return commit.parentRevisionIds[0]
+        ? {
+            kind: "revision-range",
+            fromRevisionId: commit.parentRevisionIds[0],
+            toRevisionId: commit.revisionId,
+          }
+        : { kind: "revision-show", revisionId: commit.revisionId };
+    },
   },
 });
 ```
 
-History is deliberately separate from patch-producing `operations`. Commits must carry an
-immutable full `revisionId`, display id, ordered parent ids, subject, optional message body,
-author (and optional email), ISO authored time, and structured ref decorations. Reads may return at most the requested limit and must distinguish
-a page boundary from repository end with `done`. Hunk copies and validates every page, strips
-terminal controls from display metadata, rejects duplicate revisions, forwards cancellation, and
-closes the source at EOF or failure. Git implements this capability today; the bundled jj and
-Sapling adapters currently report it as unsupported.
+History is deliberately separate from patch-producing `operations`. The built-in host owns command
+routing, graph planning, themes, terminal lifecycle, and static/interactive presentation. The
+adapter owns every repository semantic: traversal and filtering, immutable identities, refs, and
+`planReview`'s decision about how roots and merges open through that adapter's ordinary review
+operations. Hunk treats revision ids as opaque strings and never invents provider revision syntax.
+
+Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
+message body, author (and optional email), ISO authored time, and structured ref decorations. A
+`head` decoration carries an optional `attachedLocalBranch`; use that field rather than embedding an
+arrow or branch identity in its display label.
+
+Every source must emit commits in **child-before-parent topological order**. If both a child and one
+of its parents are included, the child appears first. This invariant spans the source's complete
+lifetime: page boundaries do not reset it, and a parent returned on one page cannot be followed by
+its child on a later page. Reads may return at most the requested limit and must distinguish a page
+boundary from repository end with `done`. Hunk copies and validates every page, strips terminal
+controls from display metadata, rejects duplicate revisions and parent-before-child output across
+pages, forwards cancellation, and closes the source at EOF or failure.
+
+The bundled Git extension implements this public capability today; the bundled jj and Sapling
+adapters currently report it as unsupported. Third-party adapters use exactly the same contract.
 
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:

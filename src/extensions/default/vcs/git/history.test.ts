@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createGitVcsAdapter } from "./index";
 import { buildGitHistoryArgs, parseGitHistory } from "./history";
 
 describe("Git history production", () => {
@@ -81,6 +82,34 @@ describe("Git history production", () => {
       "",
     ].join("\0");
     expect(parseGitHistory(text, new Map(), true)[0]!.parentRevisionIds).toEqual(["b".repeat(40)]);
+  });
+
+  test("owns first-parent merge and root review semantics", async () => {
+    const history = createGitVcsAdapter().history!;
+    const root = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [],
+      subject: "Root",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    expect(await history.planReview(root)).toEqual({
+      kind: "revision-show",
+      revisionId: root.revisionId,
+    });
+    expect(
+      await history.planReview({
+        ...root,
+        revisionId: "b".repeat(40),
+        parentRevisionIds: ["c".repeat(40), "d".repeat(40)],
+      }),
+    ).toEqual({
+      kind: "revision-range",
+      fromRevisionId: "c".repeat(40),
+      toRevisionId: "b".repeat(40),
+    });
   });
 
   test("rejects truncated records and invalid SHA object ids", () => {

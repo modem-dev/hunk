@@ -549,11 +549,41 @@ describe("parseCli", () => {
     await expect(parseCli(["bun", "hunk", "--fast", "log"])).rejects.toThrow("review command");
   });
 
-  test("accepts the internal VCS override used by history-to-review transitions", async () => {
+  test("preserves opaque provider-planned history reviews through the private handoff", async () => {
+    const encoded = (value: unknown) =>
+      Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
     expect(
-      await parseCli(["bun", "hunk", "diff", "parent", "commit", "--vcs", "demo"]),
+      await parseCli([
+        "bun",
+        "hunk",
+        "diff",
+        "--history-review",
+        encoded({
+          kind: "revision-range",
+          fromRevisionId: "-opaque:parent/α",
+          toRevisionId: "opaque:commit/β",
+        }),
+        "--vcs",
+        "demo",
+      ]),
     ).toMatchObject({
       kind: "vcs",
+      rangeEndpoints: { from: "-opaque:parent/α", to: "opaque:commit/β" },
+      options: { vcs: "demo" },
+    });
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "show",
+        "--history-review",
+        encoded({ kind: "revision-show", revisionId: "-opaque:root/γ" }),
+        "--vcs",
+        "demo",
+      ]),
+    ).toMatchObject({
+      kind: "show",
+      ref: "-opaque:root/γ",
       options: { vcs: "demo" },
     });
   });

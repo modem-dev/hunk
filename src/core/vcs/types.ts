@@ -1,6 +1,8 @@
 import type {
+  ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
+  ExtensionVcsHistoryReviewAction,
   ExtensionVcsWatchPlan,
 } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
@@ -49,9 +51,13 @@ export interface VcsHistorySource {
   close(): Promise<void>;
 }
 
-/** Optional provider-neutral read-only history capability. */
+/** Optional provider-neutral read-only history and review-planning capability. */
 export interface VcsHistoryCapability {
   open(input: ExtensionVcsHistoryInput, context: VcsLoadContext): Promise<VcsHistorySource>;
+  planReview(
+    commit: ExtensionVcsHistoryCommit,
+    context: VcsLoadContext,
+  ): Promise<ExtensionVcsHistoryReviewAction>;
 }
 
 /**

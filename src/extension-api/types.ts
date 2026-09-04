@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 17;
+export const HUNK_EXTENSION_API_VERSION = 18;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -727,11 +727,19 @@ export interface ExtensionVcsShowInput {
   options: ExtensionVcsReviewOptions;
 }
 
-/** One ref label decorating a history commit. */
-export interface ExtensionVcsHistoryDecoration {
-  kind: "head" | "local-branch" | "remote-branch" | "tag" | "ref";
-  label: string;
-}
+/** One structured ref decorating a history commit. */
+export type ExtensionVcsHistoryDecoration =
+  | {
+      kind: "head";
+      /** Display label for detached HEAD; normally `HEAD`. */
+      label: string;
+      /** Local branch HEAD is attached to, without display punctuation. */
+      attachedLocalBranch?: string;
+    }
+  | {
+      kind: "local-branch" | "remote-branch" | "tag" | "ref";
+      label: string;
+    };
 
 /** One immutable commit summary returned by a VCS history provider. */
 export interface ExtensionVcsHistoryCommit {
@@ -761,7 +769,13 @@ export interface ExtensionVcsHistoryInput {
   pathspecs?: string[];
 }
 
-/** One bounded history read. `done` distinguishes EOF from a page boundary. */
+/**
+ * One bounded history read in child-before-parent topological order.
+ *
+ * Across every page from one source, a commit must appear before any of its
+ * parents that the source emits. Page boundaries never reset that invariant.
+ * `done` distinguishes EOF from a page boundary.
+ */
 export interface ExtensionVcsHistoryPage {
   commits: ExtensionVcsHistoryCommit[];
   done: boolean;
@@ -769,9 +783,22 @@ export interface ExtensionVcsHistoryPage {
 
 /** A cancellable history cursor owned by its provider. */
 export interface ExtensionVcsHistorySource {
+  /** Read the next page while preserving the source-wide topological order. */
   read(options: { limit: number; signal?: AbortSignal }): Promise<ExtensionVcsHistoryPage>;
   close(): void | Promise<void>;
 }
+
+/** A provider-owned declaration of how Hunk should review one history item. */
+export type ExtensionVcsHistoryReviewAction =
+  | {
+      kind: "revision-show";
+      revisionId: string;
+    }
+  | {
+      kind: "revision-range";
+      fromRevisionId: string;
+      toRevisionId: string;
+    };
 
 /** Optional read-only history capability implemented independently of review operations. */
 export interface ExtensionVcsHistoryCapability {
@@ -779,6 +806,16 @@ export interface ExtensionVcsHistoryCapability {
     input: ExtensionVcsHistoryInput,
     context: ExtensionVcsLoadContext,
   ): ExtensionVcsHistorySource | Promise<ExtensionVcsHistorySource>;
+  /**
+   * Declare how to open one returned commit in Hunk's ordinary review surface.
+   *
+   * Providers own root and merge semantics. Revision ids are opaque to the
+   * host; the returned action is passed to this adapter's review operation.
+   */
+  planReview(
+    commit: ExtensionVcsHistoryCommit,
+    context: ExtensionVcsLoadContext,
+  ): ExtensionVcsHistoryReviewAction | Promise<ExtensionVcsHistoryReviewAction>;
 }
 
 /** Stash review request, as extension adapters receive it. */

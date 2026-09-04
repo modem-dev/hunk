@@ -14,22 +14,29 @@ import {
   resolveHistoryTheme,
 } from "./staticProjection";
 import { TerminalInputReader } from "./terminalInput";
+import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
 import type { HistoryRuntime } from "./types";
 
 const ENTER_ALT = "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h";
 const LEAVE_ALT = "\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l";
 
-/** Run one child Hunk review after completely yielding ownership of the terminal. */
-async function openCommitReview(bootstrap: HistoryRuntime, row: HistoryGraphRow) {
+/** Convert a provider-owned review declaration into one child Hunk invocation. */
+export function historyReviewArgs(action: ExtensionVcsHistoryReviewAction) {
+  const payload = Buffer.from(JSON.stringify(action), "utf8").toString("base64url");
+  return [action.kind === "revision-range" ? "diff" : "show", "--history-review", payload];
+}
+
+/** Run one provider-planned child Hunk review after yielding terminal ownership. */
+async function openCommitReview(
+  bootstrap: HistoryRuntime,
+  action: ExtensionVcsHistoryReviewAction,
+) {
   const current = resolveCurrentHunkCommand();
   const extensionArgs = bootstrap.input.extensionPaths.flatMap((path) => [
     "--extension",
     resolve(path),
   ]);
-  const firstParent = row.commit.parentRevisionIds[0];
-  const reviewArgs = firstParent
-    ? ["diff", firstParent, row.commit.revisionId]
-    : ["show", row.commit.revisionId];
+  const reviewArgs = historyReviewArgs(action);
   const args = [
     ...current.args,
     ...reviewArgs,
@@ -252,9 +259,10 @@ export async function runInteractiveHistory(
         notice = `Copied ${rows[selected]!.commit.displayId}`;
       } else if ((key === "\r" || key === "\n") && rows[selected]) {
         const selectedRow = rows[selected]!;
+        const reviewAction = await bootstrap.planReview(selectedRow.commit);
         input.discardPending();
         leaveTerminal();
-        const code = await openCommitReview(bootstrap, selectedRow);
+        const code = await openCommitReview(bootstrap, reviewAction);
         if (stopped) break;
         enterTerminal();
         notice = code === 0 ? "" : `Could not open ${rows[selected]!.commit.displayId}`;
@@ -278,9 +286,10 @@ export async function runInteractiveHistory(
             selected = index;
             const now = Date.now();
             if (lastClick.index === index && now - lastClick.at < 400) {
+              const reviewAction = await bootstrap.planReview(rows[index]!.commit);
               input.discardPending();
               leaveTerminal();
-              const code = await openCommitReview(bootstrap, rows[index]!);
+              const code = await openCommitReview(bootstrap, reviewAction);
               if (!stopped) enterTerminal();
               notice = code === 0 ? "" : `Could not open ${rows[index]!.commit.displayId}`;
             }

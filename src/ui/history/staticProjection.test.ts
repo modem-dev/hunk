@@ -21,7 +21,7 @@ const commit: HistoryCommit = {
   authorName: "Ada\rLovelace",
   authoredAt: "2026-01-02T03:04:05Z",
   decorations: [
-    { kind: "head", label: "HEAD -> main\x1b[2J" },
+    { kind: "head", label: "HEAD\x1b[2J", attachedLocalBranch: "main" },
     { kind: "local-branch", label: "main" },
     { kind: "remote-branch", label: "origin/main" },
     { kind: "tag", label: "v1.0.0" },

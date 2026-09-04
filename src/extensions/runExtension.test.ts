@@ -963,6 +963,22 @@ describe("toInternalVcsAdapter detection ids", () => {
 });
 
 describe("toInternalVcsAdapter history boundary", () => {
+  test("requires providers to own selected-item review planning", () => {
+    expect(() =>
+      toInternalVcsAdapter({
+        id: "incomplete",
+        name: "Incomplete",
+        detect: () => null,
+        history: {
+          open: () => ({
+            read: async () => ({ commits: [], done: true }),
+            close() {},
+          }),
+        } as never,
+      }),
+    ).toThrow("history must provide open() and planReview() functions");
+  });
+
   test("copies and sanitizes bounded history pages", async () => {
     const commit = {
       revisionId: "a".repeat(40),
@@ -984,6 +1000,10 @@ describe("toInternalVcsAdapter history boundary", () => {
           close: () => {
             closed += 1;
           },
+        }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
         }),
       },
     });
@@ -1037,7 +1057,13 @@ describe("toInternalVcsAdapter history boundary", () => {
       id: "demo",
       name: "Demo",
       detect: () => null,
-      history: { open: () => publicSource as never },
+      history: {
+        open: () => publicSource as never,
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
     });
     const source = await adapter.history!.open({}, { cwd: "/repo" });
     const result = await source.read({ limit: 1 });
@@ -1059,11 +1085,108 @@ describe("toInternalVcsAdapter history boundary", () => {
             closed += 1;
           },
         }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
       },
     });
     const source = await adapter.history!.open({}, { cwd: "/repo" });
     await expect(source.read({ limit: 1 })).rejects.toThrow("more commits");
     await source.close();
     expect(closed).toBe(1);
+  });
+
+  test("preserves custom-provider paging and provider-owned opaque review plans", async () => {
+    const root = {
+      revisionId: "opaque:root/revision",
+      displayId: "root",
+      parentRevisionIds: [],
+      subject: "Root",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const child = {
+      ...root,
+      revisionId: "opaque:child/revision",
+      displayId: "child",
+      parentRevisionIds: [root.revisionId],
+      subject: "Child",
+    };
+    let page = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "opaque",
+      name: "Opaque VCS",
+      detect: (cwd) => ({ id: "opaque", repoRoot: cwd }),
+      history: {
+        open: () => ({
+          read: async () =>
+            page++ === 0 ? { commits: [child], done: false } : { commits: [root], done: true },
+          close() {},
+        }),
+        planReview: (selected) =>
+          selected.parentRevisionIds.length
+            ? {
+                kind: "revision-range",
+                fromRevisionId: `opaque:base-for/${selected.revisionId}`,
+                toRevisionId: selected.revisionId,
+              }
+            : { kind: "revision-show", revisionId: `opaque:root-view/${selected.revisionId}` },
+      },
+    });
+
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    expect((await source.read({ limit: 1 })).commits.map((commit) => commit.revisionId)).toEqual([
+      child.revisionId,
+    ]);
+    expect((await source.read({ limit: 1 })).commits.map((commit) => commit.revisionId)).toEqual([
+      root.revisionId,
+    ]);
+    await expect(adapter.history!.planReview(child, { cwd: "/repo" })).resolves.toEqual({
+      kind: "revision-range",
+      fromRevisionId: `opaque:base-for/${child.revisionId}`,
+      toRevisionId: child.revisionId,
+    });
+    await expect(adapter.history!.planReview(root, { cwd: "/repo" })).resolves.toEqual({
+      kind: "revision-show",
+      revisionId: `opaque:root-view/${root.revisionId}`,
+    });
+  });
+
+  test("rejects parent-before-child ordering across page boundaries", async () => {
+    const commit = (revisionId: string, parentRevisionIds: string[]) => ({
+      revisionId,
+      displayId: revisionId,
+      parentRevisionIds,
+      subject: revisionId,
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    });
+    let page = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "misordered",
+      name: "Misordered",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () =>
+            page++ === 0
+              ? { commits: [commit("parent", [])], done: false }
+              : { commits: [commit("child", ["parent"])], done: true },
+          close() {},
+        }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    await source.read({ limit: 1 });
+    await expect(source.read({ limit: 1 })).rejects.toThrow(
+      "VCS history returned parent parent before child child.",
+    );
   });
 });
