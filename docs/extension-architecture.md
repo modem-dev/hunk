@@ -346,6 +346,15 @@ bootstrap marker and also consults the available catalog; startup performs a
 second root/config pass when a global, config-path, or CLI adapter recognizes a
 repository unavailable to the bundled catalog.
 
+`hunk log` follows the same boundary. Core/app and `src/ui/history/` own the built-in command,
+validated graph planning, presentation, themes, paging, terminal lifecycle, and child-process
+orchestration. The selected adapter's public `history` capability owns traversal, filtering,
+immutable revision and parent identities, structured decorations, and the declarative review action
+for a selected item. The host treats those ids as opaque and never constructs provider revision
+syntax or decides root/merge comparison semantics. History pages remain child-before-parent across
+the full cursor, including page boundaries; the extension conversion boundary validates that
+ordering before core or UI consumes it.
+
 ## Public contract rules
 
 The authoring surface is the `hunkdiff/extension` export — a façade over

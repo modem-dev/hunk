@@ -284,6 +284,16 @@ export function createGitVcsAdapter({
       open(input, { cwd }) {
         return openGitHistory(input, { cwd, gitExecutable });
       },
+      planReview(commit) {
+        const firstParent = commit.parentRevisionIds[0];
+        return firstParent
+          ? {
+              kind: "revision-range" as const,
+              fromRevisionId: firstParent,
+              toRevisionId: commit.revisionId,
+            }
+          : { kind: "revision-show" as const, revisionId: commit.revisionId };
+      },
     },
     operations: {
       "working-tree-diff": {

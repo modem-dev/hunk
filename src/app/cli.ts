@@ -55,6 +55,7 @@ import {
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP, parseReviewGap } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/run/tabWidth";
 import { resolveCliVersion } from "../core/run/version";
+import type { ExtensionVcsHistoryReviewAction } from "../extension-api/types";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {
@@ -196,11 +197,11 @@ export const CLI_REFERENCE_COMMANDS = {
   },
   log: {
     path: "log",
-    summary: "print an attractive Git commit history",
-    synopsis: ["hunk log [revision-or-range] [-- <pathspec...>]"],
+    summary: "print an attractive repository history",
+    synopsis: ["hunk log [revision-expression] [-- <pathspec...>]"],
     details: [
       "Static output is the default. Use --interactive for the experimental history browser.",
-      "This is an opinionated Git log subset, not a parser for arbitrary git-log options.",
+      "The selected VCS provider defines revision, filtering, and review semantics.",
     ],
     options: [
       { flag: "--all", description: "include commits reachable from every ref" },
@@ -212,8 +213,8 @@ export const CLI_REFERENCE_COMMANDS = {
       },
       { flag: "--author <pattern>", description: "limit commits by author" },
       { flag: "--grep <pattern>", description: "limit commits by subject or message" },
-      { flag: "--since <date>", description: "show commits newer than a Git date" },
-      { flag: "--until <date>", description: "show commits older than a Git date" },
+      { flag: "--since <date>", description: "show commits newer than a provider date" },
+      { flag: "--until <date>", description: "show commits older than a provider date" },
       {
         flag: "--color <mode>",
         description: "color output: auto, always, never",
@@ -812,10 +813,48 @@ function resolveReloadSelector(
   );
 }
 
-/** Parse the overloaded `hunk diff` command. */
+/** Decode a private child-process handoff without interpreting provider revision ids. */
+function decodeHistoryReviewAction(payload: unknown): ExtensionVcsHistoryReviewAction {
+  if (typeof payload !== "string" || payload.length === 0) {
+    throw new Error("Invalid history review handoff.");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid history review handoff.");
+  }
+  if (!value || typeof value !== "object") throw new Error("Invalid history review handoff.");
+  const action = value as Record<string, unknown>;
+  if (
+    action.kind === "revision-show" &&
+    typeof action.revisionId === "string" &&
+    action.revisionId.length > 0
+  ) {
+    return { kind: "revision-show", revisionId: action.revisionId };
+  }
+  if (
+    action.kind === "revision-range" &&
+    typeof action.fromRevisionId === "string" &&
+    action.fromRevisionId.length > 0 &&
+    typeof action.toRevisionId === "string" &&
+    action.toRevisionId.length > 0
+  ) {
+    return {
+      kind: "revision-range",
+      fromRevisionId: action.fromRevisionId,
+      toRevisionId: action.toRevisionId,
+    };
+  }
+  throw new Error("Invalid history review handoff.");
+}
+
+/** Parse the provider-neutral `hunk diff` command. */
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCliReferenceCommand("diff").argument("[targets...]");
+  const command = createCliReferenceCommand("diff")
+    .addOption(new Option("--history-review <payload>").hideHelp())
+    .argument("[targets...]");
 
   let parsedTargets: string[] = [];
   let parsedOptions: Record<string, unknown> = {};
@@ -837,6 +876,26 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   const files = Array.isArray(parsedOptions.files)
     ? parsedOptions.files.filter((value): value is string => typeof value === "string")
     : undefined;
+  const historyReview = parsedOptions.historyReview;
+
+  if (historyReview !== undefined) {
+    const action = decodeHistoryReviewAction(historyReview);
+    if (
+      action.kind !== "revision-range" ||
+      files ||
+      parsedTargets.length > 0 ||
+      staged ||
+      normalizedPathspecs
+    ) {
+      throw new Error("Invalid history review handoff for `hunk diff`.");
+    }
+    return {
+      kind: "vcs",
+      rangeEndpoints: { from: action.fromRevisionId, to: action.toRevisionId },
+      staged: false,
+      options,
+    };
+  }
 
   if (files) {
     if (files.length !== 2 || parsedTargets.length > 0 || staged || normalizedPathspecs) {
@@ -896,10 +955,12 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   );
 }
 
-/** Parse the Git-style `hunk show` command. */
+/** Parse the provider-neutral `hunk show` command. */
 async function parseShowCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCliReferenceCommand("show").argument("[ref]");
+  const command = createCliReferenceCommand("show")
+    .addOption(new Option("--history-review <payload>").hideHelp())
+    .argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -915,11 +976,20 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
   await parseStandaloneCommand(command, commandTokens);
 
+  const options = buildCommonOptions(parsedOptions, argv);
+  if (parsedOptions.historyReview !== undefined) {
+    const action = decodeHistoryReviewAction(parsedOptions.historyReview);
+    if (action.kind !== "revision-show" || parsedRef || pathspecs.length > 0) {
+      throw new Error("Invalid history review handoff for `hunk show`.");
+    }
+    return { kind: "show", ref: action.revisionId, options };
+  }
+
   return {
     kind: "show",
     ref: parsedRef,
     pathspecs: pathspecs.length > 0 ? pathspecs : undefined,
-    options: buildCommonOptions(parsedOptions, argv),
+    options,
   };
 }
 

@@ -93,17 +93,17 @@ Also accepts every [common review option](#common-review-options).
 
 ## `hunk log`
 
-print an attractive Git commit history
+print an attractive repository history
 
 ### Usage
 
 ```bash
-hunk log [revision-or-range] [-- <pathspec...>]
+hunk log [revision-expression] [-- <pathspec...>]
 ```
 
 Static output is the default. Use --interactive for the experimental history browser.
 
-This is an opinionated Git log subset, not a parser for arbitrary git-log options.
+The selected VCS provider defines revision, filtering, and review semantics.
 
 ### Command-specific options
 
@@ -114,8 +114,8 @@ This is an opinionated Git log subset, not a parser for arbitrary git-log option
 | `-n, --max-count <count>` | stop after this many commits                           |
 | `--author <pattern>`      | limit commits by author                                |
 | `--grep <pattern>`        | limit commits by subject or message                    |
-| `--since <date>`          | show commits newer than a Git date                     |
-| `--until <date>`          | show commits older than a Git date                     |
+| `--since <date>`          | show commits newer than a provider date                |
+| `--until <date>`          | show commits older than a provider date                |
 | `--color <mode>`          | color output: auto, always, never                      |
 | `--format <format>`       | record format: medium or compact                       |
 | `--oneline`               | alias for --format compact                             |

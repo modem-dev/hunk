@@ -24,6 +24,9 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    async planReview(commit) {
+      return { kind: "revision-show", revisionId: commit.revisionId };
+    },
     source: {
       async read({ limit }) {
         const page = commits.slice(offset, offset + limit);

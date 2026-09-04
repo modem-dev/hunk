@@ -29,6 +29,7 @@ import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type {
   ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistorySource,
   ExtensionVcsOperation,
 } from "../extension-api/types";
@@ -214,7 +215,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
     assertNonEmptyString(snapshot[key], `VCS history commit ${key} must be a non-empty string.`);
   const safeRevision = (revision: unknown, label: string) => {
     const text = assertNonEmptyString(revision, `${label} must be a non-empty string.`);
-    if (text.startsWith("-") || sanitizeTerminalLine(text) !== text) {
+    if (sanitizeTerminalLine(text) !== text) {
       throw new Error(`${label} must be a terminal-safe immutable revision id.`);
     }
     return text;
@@ -245,16 +246,30 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
     if (!isPlainObject(decoration)) {
       throw new Error("VCS history returned an invalid decoration.");
     }
-    const fields = snapshotProperties(decoration, ["kind", "label"]);
+    const fields = snapshotProperties(decoration, ["kind", "label", "attachedLocalBranch"]);
     if (typeof fields.kind !== "string" || !decorationKinds.has(fields.kind)) {
       throw new Error("VCS history returned an invalid decoration.");
     }
-    return {
-      kind: fields.kind as ExtensionVcsHistoryCommit["decorations"][number]["kind"],
-      label: sanitizeTerminalLine(
-        assertNonEmptyString(fields.label, "VCS history decoration labels must be non-empty."),
-      ).replaceAll("\t", " "),
-    };
+    const kind = fields.kind as ExtensionVcsHistoryCommit["decorations"][number]["kind"];
+    const label = sanitizeTerminalLine(
+      assertNonEmptyString(fields.label, "VCS history decoration labels must be non-empty."),
+    ).replaceAll("\t", " ");
+    if (kind === "head") {
+      const attachedLocalBranch =
+        fields.attachedLocalBranch === undefined
+          ? undefined
+          : sanitizeTerminalLine(
+              assertNonEmptyString(
+                fields.attachedLocalBranch,
+                "VCS history attached local branch must be non-empty.",
+              ),
+            ).replaceAll("\t", " ");
+      return { kind, label, ...(attachedLocalBranch ? { attachedLocalBranch } : {}) };
+    }
+    if (fields.attachedLocalBranch !== undefined) {
+      throw new Error("Only a VCS history HEAD decoration may name an attached local branch.");
+    }
+    return { kind, label };
   });
 
   return {
@@ -280,6 +295,37 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
       ? { logicalId: sanitizeTerminalLine(snapshot.logicalId).replaceAll("\t", " ") }
       : {}),
   };
+}
+
+/** Copy and validate a provider-owned plan for opening one opaque history item. */
+function normalizeHistoryReviewAction(value: unknown): ExtensionVcsHistoryReviewAction {
+  if (!isPlainObject(value)) {
+    throw new Error("VCS history planReview() must return an action object.");
+  }
+  const fields = snapshotProperties(value, [
+    "kind",
+    "revisionId",
+    "fromRevisionId",
+    "toRevisionId",
+  ]);
+  const revision = (candidate: unknown, label: string) => {
+    const text = assertNonEmptyString(candidate, `${label} must be a non-empty string.`);
+    if (sanitizeTerminalLine(text) !== text) {
+      throw new Error(`${label} must be a terminal-safe immutable revision id.`);
+    }
+    return text;
+  };
+  if (fields.kind === "revision-show") {
+    return { kind: "revision-show", revisionId: revision(fields.revisionId, "revisionId") };
+  }
+  if (fields.kind === "revision-range") {
+    return {
+      kind: "revision-range",
+      fromRevisionId: revision(fields.fromRevisionId, "fromRevisionId"),
+      toRevisionId: revision(fields.toRevisionId, "toRevisionId"),
+    };
+  }
+  throw new Error("VCS history planReview() returned an unsupported action kind.");
 }
 
 /** Wrap an extension history source with bounded reads, copying, cleanup, and error translation. */
@@ -341,6 +387,12 @@ async function toInternalHistorySource(
         for (const commit of commits) {
           if (acceptedIds.has(commit.revisionId)) {
             throw new Error(`VCS history returned duplicate revision ${commit.revisionId}.`);
+          }
+          const emittedParent = commit.parentRevisionIds.find((parent) => acceptedIds.has(parent));
+          if (emittedParent) {
+            throw new Error(
+              `VCS history returned parent ${emittedParent} before child ${commit.revisionId}.`,
+            );
           }
           acceptedIds.add(commit.revisionId);
         }
@@ -419,13 +471,24 @@ export function toInternalVcsAdapter(
   }
 
   const history = adapterFields.history;
-  const historyFields = isPlainObject(history) ? snapshotProperties(history, ["open"]) : undefined;
+  const historyFields = isPlainObject(history)
+    ? snapshotProperties(history, ["open", "planReview"])
+    : undefined;
   const historyOpen = historyFields?.open;
-  if (history !== undefined && (!isPlainObject(history) || typeof historyOpen !== "function")) {
-    throw new Error("registerVcsAdapter history must provide an open() function.");
+  const historyPlanReview = historyFields?.planReview;
+  if (
+    history !== undefined &&
+    (!isPlainObject(history) ||
+      typeof historyOpen !== "function" ||
+      typeof historyPlanReview !== "function")
+  ) {
+    throw new Error("registerVcsAdapter history must provide open() and planReview() functions.");
   }
 
   const openHistory = historyOpen as NonNullable<ExtensionVcsAdapter["history"]>["open"];
+  const planHistoryReview = historyPlanReview as NonNullable<
+    ExtensionVcsAdapter["history"]
+  >["planReview"];
   const detect = adapterFields.detect;
   if (typeof detect !== "function") {
     throw new Error("registerVcsAdapter requires a detect() function.");
@@ -474,6 +537,15 @@ export function toInternalVcsAdapter(
               context,
             );
             return await toInternalHistorySource(source);
+          } catch (error) {
+            throw toUserFacingError(error);
+          }
+        },
+        async planReview(commit, context) {
+          try {
+            return normalizeHistoryReviewAction(
+              await planHistoryReview.call(history, normalizeHistoryCommit(commit), context),
+            );
           } catch (error) {
             throw toUserFacingError(error);
           }

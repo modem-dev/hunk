@@ -3,7 +3,8 @@ title: Git history
 description: Read an attractive static Git history and open any commit in Hunk.
 ---
 
-`hunk log` is a static-first, read-only alternative to `git log`. Its default `medium` format keeps
+`hunk log` is Hunk's built-in, provider-neutral, static-first history surface. With the bundled Git
+adapter it is a read-only alternative to `git log`. Its default `medium` format keeps
 the familiar full commit id, author and email, authored date, complete message, branches, remotes,
 and tags while adding a faithful graph and Hunk's visual hierarchy. It is an alternative entry
 point into Hunk, not a repository dashboard or a replacement for Hunk's normal diff commands.
@@ -33,7 +34,8 @@ Decorations use familiar labels such as `(HEAD -> main, origin/main, tag: v0.21.
 lightweight and annotated tags. Color accepts `auto`, `always`, or `never`; automatic color respects
 `NO_COLOR` and `TERM=dumb`. Dumb terminals also select the ASCII graph. `--theme <id>` selects the
 same built-in or custom theme as Hunk review, including for `--color always` output. Hunk supports
-this deliberate subset rather than silently forwarding arbitrary `git log` flags.
+the bundled Git adapter supports this deliberate subset rather than silently forwarding arbitrary
+`git log` flags.
 
 ## Browse and open commits
 
@@ -57,8 +59,10 @@ When you quit the opened review, Hunk returns to the retained history selection,
 search. Opening a commit starts a fresh review process, so review notes and drafts cannot leak from
 one commit into another.
 
-History enumeration is currently implemented by the Git adapter. In jj or Sapling mode, select Git
-explicitly only when the checkout also has compatible Git metadata:
+History enumeration and selected-item review semantics come from the public VCS adapter contract;
+Hunk itself only presents and orchestrates them. The bundled Git adapter implements that contract
+today. In jj or Sapling mode, select Git explicitly only when the checkout also has compatible Git
+metadata:
 
 ```bash
 hunk log --vcs git

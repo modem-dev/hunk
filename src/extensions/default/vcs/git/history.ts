@@ -112,7 +112,11 @@ function readDecorations(options: GitHistoryOptions) {
   const headId = runGit(["rev-parse", "--verify", "--quiet", "HEAD"], options, [0, 1]).trim();
   if (headId) {
     const branch = runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], options, [0, 1]).trim();
-    add(headId, { kind: "head", label: branch ? `HEAD -> ${branch}` : "HEAD" });
+    add(headId, {
+      kind: "head",
+      label: "HEAD",
+      ...(branch ? { attachedLocalBranch: branch } : {}),
+    });
   }
 
   const order = new Map<ExtensionVcsHistoryDecoration["kind"], number>([

@@ -1,6 +1,10 @@
 import type { HistoryCommandInput } from "../core/run/commandInputs";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
-import type { NamedCustomThemeConfig } from "../extension-api/types";
+import type {
+  ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryReviewAction,
+  NamedCustomThemeConfig,
+} from "../extension-api/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
   detectVcs,
@@ -8,6 +12,7 @@ import {
   getDefaultVcsAdapter,
   getVcsAdapter,
   openVcsHistory,
+  planVcsHistoryReview,
 } from "../core/vcs";
 import type { VcsCatalog, VcsHistorySource } from "../core/vcs/types";
 import { resolveExtensionVcsAdapters, resolveSessionVcsId } from "../extensions/apply";
@@ -26,6 +31,7 @@ export interface HistoryBootstrap {
   extensions: ExtensionLoadResult;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
+  planReview(commit: ExtensionVcsHistoryCommit): Promise<ExtensionVcsHistoryReviewAction>;
   close(): Promise<void>;
 }
 
@@ -135,6 +141,9 @@ export async function loadHistoryBootstrap({
           ]
         : []),
     ],
+    planReview(commit) {
+      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot });
+    },
     async close() {
       if (closed) return;
       closed = true;
