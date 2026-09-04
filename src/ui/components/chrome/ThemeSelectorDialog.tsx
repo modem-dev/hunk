@@ -68,11 +68,17 @@ export function ThemeSelectorDialog({
   onClose: () => void;
   onPreviewItem: (index: number) => void;
 }) {
-  const width = Math.min(82, Math.max(56, terminalWidth - 8));
-  const modalHeight = Math.min(Math.max(12, terminalHeight - 4), 28);
+  const width = Math.max(1, Math.min(82, Math.max(56, terminalWidth - 8), terminalWidth - 2));
+  const modalHeight = Math.max(
+    1,
+    Math.min(28, Math.max(12, terminalHeight - 4), terminalHeight - 2),
+  );
   const bodyWidth = Math.max(1, width - 4);
   // ModalFrame contributes border/title/padding; reserve help/footer rows inside the body.
-  const visibleRows = Math.max(4, modalHeight - 7);
+  const visibleRows = Math.max(
+    1,
+    Math.min(Math.max(4, modalHeight - 7), Math.max(1, modalHeight - 5)),
+  );
   const [windowState, setWindowState] = useState<ThemeSelectorWindowState>(() => ({
     itemCount: items.length,
     selectedIndex,
@@ -123,9 +129,12 @@ export function ThemeSelectorDialog({
   );
 
   const visibleItems = items.slice(windowStart, windowStart + visibleRows);
-  const markerWidth = 3;
-  const descriptionWidth = 12;
-  const labelWidth = Math.max(8, bodyWidth - markerWidth - descriptionWidth - 2);
+  const markerWidth = Math.min(3, bodyWidth);
+  const descriptionWidth = bodyWidth >= 28 ? 12 : 0;
+  const labelWidth = Math.max(
+    0,
+    bodyWidth - markerWidth - descriptionWidth - (descriptionWidth ? 2 : 0),
+  );
 
   return (
     <ModalFrame

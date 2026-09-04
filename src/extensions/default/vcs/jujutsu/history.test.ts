@@ -171,7 +171,7 @@ describe("Jujutsu history production", () => {
     expect(parseJjHistory(raw, true)[0]!.parentRevisionIds).toEqual(["b".repeat(40)]);
   });
 
-  test("owns ordinary, merge, and root review semantics with revision-show", async () => {
+  test("owns default and explicitly selected parent review semantics", async () => {
     const history = createJjVcsAdapter().history!;
     for (const parentRevisionIds of [[], ["b".repeat(40)], ["b".repeat(40), "c".repeat(40)]]) {
       const commit = {
@@ -188,6 +188,17 @@ describe("Jujutsu history production", () => {
         kind: "revision-show",
         revisionId: commit.revisionId,
       });
+      if (parentRevisionIds[0]) {
+        expect(
+          await history.planReview(commit, undefined, {
+            parentRevisionId: parentRevisionIds[0],
+          }),
+        ).toEqual({
+          kind: "revision-range",
+          fromRevisionId: parentRevisionIds[0],
+          toRevisionId: commit.revisionId,
+        });
+      }
     }
   });
 

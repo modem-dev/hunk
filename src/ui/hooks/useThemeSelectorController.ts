@@ -16,6 +16,8 @@ export interface UseThemeSelectorControllerOptions {
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode | null;
   onTransientNotice: (text: string) => void;
+  /** Observe committed choices so a remounting surface can retain them. */
+  onThemeCommitted?: (themeId: string) => void;
   transparentBackground: boolean;
 }
 
@@ -25,6 +27,7 @@ export function useThemeSelectorController({
   initialTheme,
   initialThemeMode,
   onTransientNotice,
+  onThemeCommitted,
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
   // Startup detection is launch state. Soft bootstrap reloads may replace the
@@ -177,9 +180,10 @@ export function useThemeSelectorController({
         previewThemeId: null,
         selectedThemeId: item.id,
       }));
+      onThemeCommitted?.(item.id);
       onTransientNotice(`Theme: ${item.label}`);
     },
-    [onTransientNotice],
+    [onThemeCommitted, onTransientNotice],
   );
 
   /** Commit one pointer-selected item when its current catalog entry is valid. */

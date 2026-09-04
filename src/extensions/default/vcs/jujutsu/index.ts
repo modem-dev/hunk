@@ -138,8 +138,18 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
       },
       // JJ's single-revision diff compares ordinary commits with their parent,
       // merges with their merged-parent tree, and first commits with the root.
-      planReview(commit) {
-        return { kind: "revision-show" as const, revisionId: commit.revisionId };
+      planReview(commit, _context?: unknown, options?: { parentRevisionId?: string }) {
+        const parent = options?.parentRevisionId;
+        if (parent && !commit.parentRevisionIds.includes(parent)) {
+          throw new Error("The selected revision is not a parent of this Jujutsu commit.");
+        }
+        return parent
+          ? {
+              kind: "revision-range" as const,
+              fromRevisionId: parent,
+              toRevisionId: commit.revisionId,
+            }
+          : { kind: "revision-show" as const, revisionId: commit.revisionId };
       },
     },
     operations: {

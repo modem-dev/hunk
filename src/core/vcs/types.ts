@@ -3,6 +3,7 @@ import type {
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
   ExtensionVcsWatchPlan,
 } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
@@ -22,6 +23,7 @@ export interface VcsDetection {
 
 export interface VcsLoadContext {
   cwd: string;
+  signal?: AbortSignal;
 }
 
 export type VcsReviewInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
@@ -57,6 +59,7 @@ export interface VcsHistoryCapability {
   planReview(
     commit: ExtensionVcsHistoryCommit,
     context: VcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
   ): Promise<ExtensionVcsHistoryReviewAction>;
 }
 

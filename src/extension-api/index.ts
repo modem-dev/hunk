@@ -154,6 +154,7 @@ export type {
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
   ExtensionVcsHistorySource,
   ExtensionVcsLoadContext,
   ExtensionVcsOperation,

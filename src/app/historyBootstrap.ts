@@ -3,6 +3,7 @@ import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
   NamedCustomThemeConfig,
 } from "../extension-api/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
@@ -31,7 +32,11 @@ export interface HistoryBootstrap {
   extensions: ExtensionLoadResult;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
-  planReview(commit: ExtensionVcsHistoryCommit): Promise<ExtensionVcsHistoryReviewAction>;
+  planReview(
+    commit: ExtensionVcsHistoryCommit,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): Promise<ExtensionVcsHistoryReviewAction>;
+  reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;
 }
 
@@ -95,24 +100,22 @@ export async function loadHistoryBootstrap({
   }
   const repoRoot = selectedDetection?.repoRoot ?? cwd;
 
+  const historyInput = {
+    ...(input.revision ? { revision: input.revision } : {}),
+    ...(input.all ? { all: true } : {}),
+    ...(input.firstParent ? { firstParent: true } : {}),
+    ...(input.maxCount !== undefined ? { maxCount: input.maxCount } : {}),
+    ...(input.author !== undefined ? { author: input.author } : {}),
+    ...(input.grep !== undefined ? { grep: input.grep } : {}),
+    ...(input.since !== undefined ? { since: input.since } : {}),
+    ...(input.until !== undefined ? { until: input.until } : {}),
+    ...(input.pathspecs ? { pathspecs: [...input.pathspecs] } : {}),
+  };
+  const openSource = (signal?: AbortSignal) =>
+    openVcsHistory(adapter, historyInput, { cwd: repoRoot, signal }, catalog);
   let source: VcsHistorySource;
   try {
-    source = await openVcsHistory(
-      adapter,
-      {
-        ...(input.revision ? { revision: input.revision } : {}),
-        ...(input.all ? { all: true } : {}),
-        ...(input.firstParent ? { firstParent: true } : {}),
-        ...(input.maxCount !== undefined ? { maxCount: input.maxCount } : {}),
-        ...(input.author !== undefined ? { author: input.author } : {}),
-        ...(input.grep !== undefined ? { grep: input.grep } : {}),
-        ...(input.since !== undefined ? { since: input.since } : {}),
-        ...(input.until !== undefined ? { until: input.until } : {}),
-        ...(input.pathspecs ? { pathspecs: [...input.pathspecs] } : {}),
-      },
-      { cwd: repoRoot },
-      catalog,
-    );
+    source = await openSource();
     emitExtensionEvent(resolved.extensions, "startup", { cwd });
   } catch (error) {
     await retireExtensionLoadResult(resolved.extensions);
@@ -141,8 +144,22 @@ export async function loadHistoryBootstrap({
           ]
         : []),
     ],
-    planReview(commit) {
-      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot });
+    planReview(commit, options) {
+      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot }, options);
+    },
+    async reopenSource(signal) {
+      if (closed) throw new Error("History session is closed.");
+      signal?.throwIfAborted();
+      const previous = source;
+      const replacement = await openSource(signal);
+      if (closed || source !== previous || signal?.aborted) {
+        await replacement.close();
+        signal?.throwIfAborted();
+        throw new Error("History session changed while refreshing.");
+      }
+      source = replacement;
+      await previous.close();
+      return replacement;
     },
     async close() {
       if (closed) return;

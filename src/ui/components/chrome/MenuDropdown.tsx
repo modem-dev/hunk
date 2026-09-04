@@ -23,7 +23,7 @@ function renderMenuLine(
       style={{ width: "100%", height: 1, flexDirection: "row", justifyContent: "space-between" }}
     >
       <box style={{ width: leftWidth, height: 1 }}>
-        <text fg={theme.text}>{padText(text, leftWidth)}</text>
+        <text fg={entry.disabled ? theme.muted : theme.text}>{padText(text, leftWidth)}</text>
       </box>
       {hint ? (
         <box style={{ width: hintWidth, height: 1 }}>
@@ -42,6 +42,7 @@ export function MenuDropdown({
   activeMenuSpec,
   activeMenuWidth,
   top = 1,
+  terminalHeight = Number.MAX_SAFE_INTEGER,
   terminalWidth,
   theme,
   onHoverItem,
@@ -53,13 +54,23 @@ export function MenuDropdown({
   activeMenuSpec: MenuSpec;
   activeMenuWidth: number;
   top?: number;
+  terminalHeight?: number;
   terminalWidth: number;
   theme: AppTheme;
   onHoverItem: (index: number) => void;
   onSelectItem: (entry: Extract<MenuEntry, { kind: "item" }>) => void;
 }) {
-  const clampedWidth = Math.min(activeMenuWidth, Math.max(22, terminalWidth - 2));
-  const clampedLeft = Math.max(1, Math.min(activeMenuSpec.left, terminalWidth - clampedWidth - 1));
+  const clampedWidth = Math.max(1, Math.min(activeMenuWidth, terminalWidth - 2));
+  const clampedLeft = Math.max(0, Math.min(activeMenuSpec.left, terminalWidth - clampedWidth));
+  const visibleRowCount = Math.max(1, terminalHeight - top - 2);
+  const windowStart = Math.max(
+    0,
+    Math.min(
+      Math.max(0, activeMenuEntries.length - visibleRowCount),
+      activeMenuItemIndex - Math.floor(visibleRowCount / 2),
+    ),
+  );
+  const visibleEntries = activeMenuEntries.slice(windowStart, windowStart + visibleRowCount);
 
   return (
     <box
@@ -68,7 +79,7 @@ export function MenuDropdown({
         top,
         left: clampedLeft,
         width: clampedWidth,
-        height: activeMenuEntries.length + 2,
+        height: visibleEntries.length + 2,
         zIndex: 40,
         border: true,
         borderColor: theme.border,
@@ -76,13 +87,16 @@ export function MenuDropdown({
         flexDirection: "column",
       }}
     >
-      {activeMenuEntries.map((entry, index) =>
-        entry.kind === "separator" ? (
+      {visibleEntries.map((entry, offset) => {
+        const index = windowStart + offset;
+        return entry.kind === "separator" ? (
           <box
             key={`${activeMenuId}:separator:${index}`}
             style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}
           >
-            <text fg={theme.border}>{padText("-".repeat(clampedWidth - 4), clampedWidth - 2)}</text>
+            <text fg={theme.border}>
+              {padText("-".repeat(Math.max(0, clampedWidth - 4)), Math.max(0, clampedWidth - 2))}
+            </text>
           </box>
         ) : (
           <box
@@ -94,15 +108,25 @@ export function MenuDropdown({
               paddingLeft: 1,
               paddingRight: 1,
               flexDirection: "row",
-              backgroundColor: activeMenuItemIndex === index ? theme.accentMuted : theme.panel,
+              backgroundColor:
+                activeMenuItemIndex === index && !entry.disabled ? theme.accentMuted : theme.panel,
             }}
-            onMouseOver={() => onHoverItem(index)}
-            onMouseUp={() => onSelectItem(entry)}
+            onMouseOver={() => {
+              if (!entry.disabled) onHoverItem(index);
+            }}
+            onMouseUp={() => {
+              if (!entry.disabled) onSelectItem(entry);
+            }}
           >
-            {renderMenuLine(entry, clampedWidth - 2, theme, activeMenuItemIndex === index)}
+            {renderMenuLine(
+              entry,
+              Math.max(1, clampedWidth - 2),
+              theme,
+              activeMenuItemIndex === index && !entry.disabled,
+            )}
           </box>
-        ),
-      )}
+        );
+      })}
     </box>
   );
 }

@@ -39,6 +39,26 @@ function createHistoryRepo() {
   return cwd;
 }
 
+/** Create a merge whose second-parent comparison exposes only the main-side file. */
+function createMergeHistoryRepo() {
+  const cwd = mkdtempSync(join(tmpdir(), "hunk-log-merge-pty-"));
+  tempDirs.push(cwd);
+  git(cwd, ["init", "-q"]);
+  writeFileSync(join(cwd, "base.ts"), "export const base = true;\n");
+  git(cwd, ["add", "base.ts"]);
+  git(cwd, ["commit", "-qm", "Root"]);
+  git(cwd, ["checkout", "-qb", "side"]);
+  writeFileSync(join(cwd, "side.ts"), "export const side = true;\n");
+  git(cwd, ["add", "side.ts"]);
+  git(cwd, ["commit", "-qm", "Side"]);
+  git(cwd, ["checkout", "-q", "master"]);
+  writeFileSync(join(cwd, "main.ts"), "export const main = true;\n");
+  git(cwd, ["add", "main.ts"]);
+  git(cwd, ["commit", "-qm", "Main"]);
+  git(cwd, ["merge", "--no-ff", "-qm", "Merge side", "side"]);
+  return cwd;
+}
+
 afterEach(() => {
   harness.cleanup();
   for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -59,11 +79,22 @@ describe("interactive hunk log", () => {
         timeout: 15_000,
       });
       expect(history).toContain("First history commit");
-      expect(history).toContain("enter open");
+      expect(history).toContain("File  View  Navigate  Commit  Help");
+      expect(history).toContain("Enter open");
 
-      // The first compact row starts with one graph cell plus two spaces, so x=4
-      // lands inside its visible commit id. One press opens without a double-click.
-      session.writeRaw("\x1b[<0;5;1M");
+      // Mouse and keyboard share the same menu model and actions.
+      session.writeRaw("\x1b[<0;2;1M\x1b[<0;2;1m");
+      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      await session.press("right");
+      await session.press("enter");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      await session.waitForText(/Second history commit/, { timeout: 5_000 });
+
+      // The menu occupies row one; x=5 on the first history row lands inside
+      // its commit id and opens immediately without a double-click.
+      session.writeRaw("\x1b[<0;5;2M\x1b[<0;5;2m");
       const review = await session.waitForText(/historyValue = 'second'/, {
         timeout: 15_000,
       });
@@ -73,10 +104,11 @@ describe("interactive hunk log", () => {
       const returned = await session.waitForText(/Second history commit/, {
         timeout: 15_000,
       });
-      expect(returned).toContain("enter open");
+      expect(returned).toContain("Enter open");
 
-      // Terminals may coalesce rapid navigation and activation into one stdin chunk.
-      session.writeRaw("\x1b[B\r");
+      // Clicking outside the id selects the second row without opening it.
+      session.writeRaw("\x1b[<0;50;3M\x1b[<0;50;3m");
+      await session.press("enter");
       const rootReview = await session.waitForText(/historyValue = 'first'/, {
         timeout: 15_000,
       });
@@ -84,11 +116,51 @@ describe("interactive hunk log", () => {
       await session.press("q");
       await session.waitForText(/First history commit/, { timeout: 15_000 });
 
+      // A command key closes an open menu and falls through to canonical dispatch.
+      await session.press("f10");
+      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      session.writeRaw("k\r");
+      await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      await session.press("q");
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+
       // Opening again without moving proves return restored the immutable-id selection.
       await session.press("enter");
-      await session.waitForText(/historyValue = 'first'/, { timeout: 15_000 });
+      await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       await session.press("q");
-      await session.waitForText(/First history commit/, { timeout: 15_000 });
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("opens a merge against the provider-selected parent", async () => {
+    const cwd = createMergeHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--interactive", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+    try {
+      await session.waitForText(/Merge side/, { timeout: 15_000 });
+      await session.press("f10");
+      await session.press("right");
+      await session.press("right");
+      await session.press("right");
+      await session.waitForText(/Open parent/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("down");
+      await session.press("down");
+      await session.press("enter");
+      await session.waitForText(/Open parent/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      const review = await session.waitForText(/main\.ts/, { timeout: 15_000 });
+      expect(review).not.toContain("side.ts");
+      await session.press("q");
+      await session.waitForText(/Merge side/, { timeout: 15_000 });
       await session.press("q");
     } finally {
       session.close();

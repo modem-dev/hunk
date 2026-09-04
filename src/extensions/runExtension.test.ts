@@ -1195,6 +1195,7 @@ describe("toInternalVcsAdapter history boundary", () => {
       subject: "Child",
     };
     let page = 0;
+    let plannedParent: string | undefined;
     const adapter = toInternalVcsAdapter({
       id: "opaque",
       name: "Opaque VCS",
@@ -1205,14 +1206,17 @@ describe("toInternalVcsAdapter history boundary", () => {
             page++ === 0 ? { commits: [child], done: false } : { commits: [root], done: true },
           close() {},
         }),
-        planReview: (selected) =>
-          selected.parentRevisionIds.length
+        planReview: (selected, _context, options) => {
+          plannedParent = options?.parentRevisionId;
+          return selected.parentRevisionIds.length
             ? {
                 kind: "revision-range",
-                fromRevisionId: `opaque:base-for/${selected.revisionId}`,
+                fromRevisionId:
+                  options?.parentRevisionId ?? `opaque:base-for/${selected.revisionId}`,
                 toRevisionId: selected.revisionId,
               }
-            : { kind: "revision-show", revisionId: `opaque:root-view/${selected.revisionId}` },
+            : { kind: "revision-show", revisionId: `opaque:root-view/${selected.revisionId}` };
+        },
       },
     });
 
@@ -1228,6 +1232,14 @@ describe("toInternalVcsAdapter history boundary", () => {
       fromRevisionId: `opaque:base-for/${child.revisionId}`,
       toRevisionId: child.revisionId,
     });
+    await expect(
+      adapter.history!.planReview(child, { cwd: "/repo" }, { parentRevisionId: root.revisionId }),
+    ).resolves.toEqual({
+      kind: "revision-range",
+      fromRevisionId: root.revisionId,
+      toRevisionId: child.revisionId,
+    });
+    expect(plannedParent).toBe(root.revisionId);
     await expect(adapter.history!.planReview(root, { cwd: "/repo" })).resolves.toEqual({
       kind: "revision-show",
       revisionId: `opaque:root-view/${root.revisionId}`,

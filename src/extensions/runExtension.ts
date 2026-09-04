@@ -562,10 +562,25 @@ export function toInternalVcsAdapter(
             throw toUserFacingError(error);
           }
         },
-        async planReview(commit, context) {
+        async planReview(commit, context, options) {
           try {
+            const normalizedCommit = normalizeHistoryCommit(commit);
+            const parentRevisionId = options?.parentRevisionId;
+            if (
+              parentRevisionId !== undefined &&
+              !normalizedCommit.parentRevisionIds.includes(parentRevisionId)
+            ) {
+              throw new Error(
+                "VCS history parent selection must name one of the commit's parents.",
+              );
+            }
             return normalizeHistoryReviewAction(
-              await planHistoryReview.call(history, normalizeHistoryCommit(commit), context),
+              await planHistoryReview.call(
+                history,
+                normalizedCommit,
+                context,
+                parentRevisionId === undefined ? undefined : { parentRevisionId },
+              ),
             );
           } catch (error) {
             throw toUserFacingError(error);
