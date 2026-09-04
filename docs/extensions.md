@@ -280,12 +280,12 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `20`). Branch on it if you want
-one file to support several Hunk versions. Version 20 adds provider-owned history review
-planning; version 19 adds provider-owned history enumeration; version 18 lets lifecycle and
-custom-event handlers request a host-owned review reload; version 17 adds structured review
-metadata to delegated patch commands and projects it into pane availability and component
-props; version 16 adds pane-wide `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
+The API generation this Hunk speaks (currently `19`). Branch on it if you want
+one file to support several Hunk versions. Version 19 adds provider-owned history
+enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
+a host-owned review reload; version 17 adds structured review metadata to delegated patch
+commands and projects it into pane availability and component props; version 16 adds pane-wide
+`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
 committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
@@ -501,7 +501,7 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
-API version 18 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
+API version 17 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
 
 ```ts
 hunk.registerVcsAdapter({

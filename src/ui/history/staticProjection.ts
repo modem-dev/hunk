@@ -222,11 +222,16 @@ export function projectHistoryRecord(row: HistoryGraphRow, options: HistoryProje
     `${prefix(continuation)}Date:   ${date}`,
     prefix(continuation).trimEnd(),
     `${prefix(continuation)}    ${subject}`,
-    ...body.map((line) => `${prefix(continuation)}    ${line}`),
+    ...(body.length
+      ? [
+          prefix(continuation).trimEnd(),
+          ...body.map((line) => `${prefix(continuation)}    ${line}`),
+        ]
+      : []),
   ];
   const convergence = renderHistoryConvergence(row, options.ascii);
   if (convergence) plainLines.push(convergence);
-  plainLines.push("");
+  plainLines.push(prefix(continuation).trimEnd());
   const fitted = plainLines.map((line) => clampLine(line, options.width));
   if (!options.color) return fitted;
   return fitted.map((line, index) => {

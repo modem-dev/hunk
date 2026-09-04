@@ -120,7 +120,11 @@ function appendDecorations(
 }
 
 /** Parse fixed NUL-delimited Jujutsu template records. */
-export function parseJjHistory(text: string, firstParent = false): ExtensionVcsHistoryCommit[] {
+export function parseJjHistory(
+  text: string,
+  firstParent = false,
+  omitGraphParents = false,
+): ExtensionVcsHistoryCommit[] {
   if (!text) return [];
   const fields = text.split("\0");
   if (fields.length % HISTORY_FIELDS_PER_COMMIT === 1 && fields.at(-1) === "") fields.pop();
@@ -170,6 +174,7 @@ export function parseJjHistory(text: string, firstParent = false): ExtensionVcsH
       revisionId,
       displayId,
       parentRevisionIds: firstParent ? allParents.slice(0, 1) : allParents,
+      ...(omitGraphParents ? { graphParentRevisionIds: [] } : {}),
       ...splitDescription(description),
       authorName: authorName || "Unknown author",
       ...(authorEmail ? { authorEmail } : {}),
@@ -205,6 +210,17 @@ function resolveHistoryRepoRoot({ cwd, jjExecutable = "jj" }: JjHistoryOptions) 
   return normalizePathForOS(repoRoot);
 }
 
+/** Return whether traversal filters can omit direct parents from the emitted commit stream. */
+export function jjHistoryUsesBoundaryTopology(input: ExtensionVcsHistoryInput) {
+  return Boolean(
+    input.author !== undefined ||
+    input.grep !== undefined ||
+    input.since !== undefined ||
+    input.until !== undefined ||
+    input.pathspecs?.length,
+  );
+}
+
 /** Open a bounded, cancellable cursor over one long-lived `jj log` process. */
 export function openJjHistory(
   input: ExtensionVcsHistoryInput,
@@ -221,6 +237,7 @@ export function openJjHistory(
     };
   }
 
+  const omitGraphParents = jjHistoryUsesBoundaryTopology(input);
   const child = spawn(jjExecutable, buildJjHistoryArgs(input), {
     cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
@@ -255,7 +272,9 @@ export function openJjHistory(
       fields.push(buffered.slice(0, delimiter));
       buffered = buffered.slice(delimiter + 1);
       if (fields.length === HISTORY_FIELDS_PER_COMMIT) {
-        queue.push(...parseJjHistory(`${fields.join("\0")}\0`, input.firstParent));
+        queue.push(
+          ...parseJjHistory(`${fields.join("\0")}\0`, input.firstParent, omitGraphParents),
+        );
         fields.length = 0;
       }
     }

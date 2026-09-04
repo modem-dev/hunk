@@ -7,12 +7,12 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `20`). Branch on it if you want
-one file to support several Hunk versions. Version 20 adds provider-owned history review
-planning; version 19 adds provider-owned history enumeration; version 18 lets lifecycle and
-custom-event handlers request a host-owned review reload; version 17 adds structured review
-metadata to delegated patch commands and projects it into pane availability and component
-props; version 16 adds pane-wide `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
+The API generation this Hunk speaks (currently `19`). Branch on it if you want
+one file to support several Hunk versions. Version 19 adds provider-owned history
+enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
+a host-owned review reload; version 17 adds structured review metadata to delegated patch
+commands and projects it into pane availability and component props; version 16 adds pane-wide
+`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
 and committed note-edit events; version 12 added responsive fractional pane

@@ -471,7 +471,7 @@ export function toInternalVcsAdapter(
     "detectionPriority",
   ]);
   const adapterId = assertNonEmptyString(adapterFields.id, "registerVcsAdapter requires an id.");
-  if (sanitizeTerminalLine(adapterId) !== adapterId || adapterId.startsWith("-")) {
+  if (sanitizeTerminalLine(adapterId) !== adapterId) {
     throw new Error("registerVcsAdapter requires a terminal-safe id.");
   }
   const adapterName = sanitizeTerminalLine(

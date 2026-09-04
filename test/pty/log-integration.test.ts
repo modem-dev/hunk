@@ -61,7 +61,9 @@ describe("interactive hunk log", () => {
       expect(history).toContain("First history commit");
       expect(history).toContain("enter open");
 
-      await session.press("enter");
+      // The first compact row starts with one graph cell plus two spaces, so x=4
+      // lands inside its visible commit id. One press opens without a double-click.
+      session.writeRaw("\x1b[<0;5;1M");
       const review = await session.waitForText(/historyValue = 'second'/, {
         timeout: 15_000,
       });
