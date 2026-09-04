@@ -7,7 +7,8 @@ import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalColors, themeModeForTerminalColors } from "../core/theme/detection";
-import { setDetectedTerminalColors, themeFollowsTerminal } from "../core/theme/terminalColors";
+import { themeSelectionNeedsTerminalMode } from "../core/theme/selection";
+import { setDetectedTerminalColors } from "../core/theme/terminalColors";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -679,7 +680,7 @@ export async function prepareStartupPlan(
   if (
     !headlessWeb &&
     !initialThemeMode &&
-    themeFollowsTerminal(cliInput.options.theme) &&
+    themeSelectionNeedsTerminalMode(cliInput.options.theme) &&
     stdoutIsTTY
   ) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
