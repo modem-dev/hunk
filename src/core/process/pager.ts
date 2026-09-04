@@ -2,6 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import { parse as parseShellCommand, type ParseEntry } from "shell-quote";
 import { stripTerminalControl } from "../patch/sanitize";
 import { sanitizeTerminalText } from "../../lib/terminalText";
+import { writeStdout } from "./stdout";
 
 /** Detect whether generic pager stdin looks like a diff/patch that Hunk should review. */
 export function looksLikePatchInput(text: string) {
@@ -146,7 +147,15 @@ export async function pagePlainText(
   text: string,
   env: NodeJS.ProcessEnv = process.env,
   deps: PlainTextPagerDeps = {
-    stdout: process.stdout,
+    // Write through the descriptor rather than `process.stdout`: a piped consumer takes one
+    // buffer at a time, and the caller exits as soon as this returns.
+    stdout: {
+      isTTY: process.stdout.isTTY,
+      write: (chunk) => {
+        writeStdout(String(chunk));
+        return true;
+      },
+    },
     spawnImpl: spawn,
   },
 ) {

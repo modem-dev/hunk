@@ -84,6 +84,30 @@ describe("sanitizeTerminalText", () => {
     expect(output).toBe("safe0\x1b[31mred\x1b[m");
   });
 
+  test("restores dense ANSI styling in linear time", () => {
+    // `hunk pager` receives whole `git log --graph --color=always` streams from hosts like
+    // LazyGit: a few megabytes carrying ~170k SGR sequences. Restoring styles one at a time
+    // rescanned the entire document per sequence, so this input pegged a core for minutes and
+    // grew to gigabytes. Assert both the styled output and a wall-clock budget that only
+    // quadratic restoration can exceed.
+    const commitCount = 5_000;
+    const input = Array.from(
+      { length: commitCount },
+      (_, index) =>
+        `\x1b[33m* commit ${index}\x1b[m \x1b[1;36m(\x1b[1;32mHEAD\x1b[1;36m)\x1b[m\n` +
+        `\x1b[32m| Author: someone\x1b[m\n`,
+    ).join("");
+    const sequenceCount = input.match(/\x1b\[[0-9;:]*m/g)?.length ?? 0;
+    expect(sequenceCount).toBeGreaterThan(25_000);
+
+    const startedAt = performance.now();
+    const output = sanitizeTerminalText(input, { preserveAnsiStyle: true });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(output).toBe(input);
+    expect(elapsedMs).toBeLessThan(2_000);
+  });
+
   test("renders path controls as visible escapes without confusing literal backslashes", () => {
     const output = formatTerminalPath("dir/literal\\t-tab\tline\nescape\x1b");
 

@@ -2,6 +2,7 @@
 
 import { formatCliError } from "./core/run/errors";
 import { pagePlainText } from "./core/process/pager";
+import { writeStdout } from "./core/process/stdout";
 import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
@@ -11,7 +12,7 @@ async function main() {
   const startupPlan = await prepareStartupPlan();
 
   if (startupPlan.kind === "help") {
-    process.stdout.write(startupPlan.text);
+    writeStdout(startupPlan.text);
     process.exit(0);
   }
 
@@ -27,7 +28,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "session-command") {
-    process.stdout.write(await runSessionCommand(startupPlan.input));
+    writeStdout(await runSessionCommand(startupPlan.input));
     process.exit(0);
   }
 
@@ -40,7 +41,7 @@ async function main() {
     const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
     process.exit(
       await runExtensionManageCommand(startupPlan.input, {
-        stdout: (text) => process.stdout.write(text),
+        stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
         confirm: canConfirm
           ? async (question) => {
@@ -64,7 +65,7 @@ async function main() {
     const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
     process.exit(
       await runSelfUpdateCommand(startupPlan.input, {
-        stdout: (text) => process.stdout.write(text),
+        stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
       }),
     );
@@ -72,14 +73,14 @@ async function main() {
 
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
-    process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
+    process.exit(runMarkupGuideCommand({ stdout: (text) => writeStdout(text) }));
   }
 
   if (startupPlan.kind === "markup-render") {
     const { runMarkupRenderCommand } = await import("./ui/lib/stml/cli");
     process.exit(
       await runMarkupRenderCommand(startupPlan.input, {
-        stdout: (text) => process.stdout.write(text),
+        stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
         stdoutIsTTY: Boolean(process.stdout.isTTY),
         readStdinText: () => new Response(Bun.stdin.stream()).text(),
@@ -93,7 +94,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "passthrough") {
-    process.stdout.write(
+    writeStdout(
       sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
     );
     process.exit(0);
@@ -101,7 +102,7 @@ async function main() {
 
   if (startupPlan.kind === "static-diff-pager") {
     const { renderStaticDiffPager } = await import("./ui/staticDiffPager");
-    process.stdout.write(
+    writeStdout(
       await renderStaticDiffPager(startupPlan.text, startupPlan.options, {
         customThemes: startupPlan.customThemes,
         stderr: process.stderr,

@@ -15,6 +15,7 @@ const sevenBitControlStrings =
 const c1ControlStrings = /[\x90\x98\x9d\x9e\x9f][\s\S]*?(?:\x07|\x1b\\|\x9c)/g;
 const c1Csi = /\x9b[0-?]*[ -/]*[@-~]/g;
 const preservedStyleTokenDelimiters = /[\u{f0000}\u{f0001}]/gu;
+const preservedStyleTokens = /\u{f0000}(\d+)\u{f0001}/gu;
 
 /** Normalize untrusted terminal-bound text before rendering it in Hunk UI surfaces. */
 export function sanitizeTerminalText(
@@ -51,17 +52,25 @@ export function sanitizeTerminalText(
   // an internal token that later restores an ANSI sequence at the wrong location.
   const tokenSafeText = preserveAnsiStyle ? text.replace(preservedStyleTokenDelimiters, "") : text;
 
-  let sanitized = tokenSafeText
+  const sanitized = tokenSafeText
     .replace(sevenBitControlStrings, preserveStyle)
     .replace(c1ControlStrings, "")
     .replace(c1Csi, "")
     .replace(controlCharacters, "");
 
-  for (const [index, sequence] of preservedStyles.entries()) {
-    sanitized = sanitized.replaceAll(`\u{f0000}${index}\u{f0001}`, sequence);
+  if (preservedStyles.length === 0) {
+    return sanitized;
   }
 
-  return sanitized;
+  // Restore every placeholder in a single pass. Replacing one style at a time rescans and
+  // reallocates the whole document per preserved sequence, which is quadratic in ANSI-dense
+  // input: a few megabytes of `git log --graph --color=always` piped through `hunk pager`
+  // carries ~170k sequences and would peg a core for minutes while churning gigabytes.
+  // Input delimiters were stripped above, so every surviving token indexes a captured style.
+  return sanitized.replace(
+    preservedStyleTokens,
+    (_token, index: string) => preservedStyles[Number(index)] ?? "",
+  );
 }
 
 /** Sanitize a single terminal row or cell where newlines must never be preserved. */
