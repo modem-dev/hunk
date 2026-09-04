@@ -24,13 +24,13 @@ head:
 
 ## [Hunk 0.21](/changelog/0.21/)
 
-Prerelease · August 30, 2026 – September 1, 2026 · 3 releases · 75 changes
+Latest · August 30, 2026 – September 2, 2026 · 4 releases · 77 changes
 
 Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.
 
 ## [Hunk 0.20](/changelog/0.20/)
 
-Latest · August 25, 2026 – August 29, 2026 · 2 releases · 14 changes
+August 25, 2026 – August 29, 2026 · 2 releases · 14 changes
 
 Hunk 0.20 adds a one-line installer with conditional checksum verification and self-updates, launches a directory of 12 community extensions, and makes line-level reviewing faster and more precise.
 

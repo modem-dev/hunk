@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.21</title>
+      <link>https://hunk.dev/changelog/0.21/#v0-21-0</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.21/#v0-21-0</guid>
+      <pubDate>Wed, 02 Sep 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.</description>
+    </item>
+    <item>
       <title>Hunk 0.21.0-beta.1 (Prerelease)</title>
       <link>https://hunk.dev/changelog/0.21/#v0-21-0-beta-1</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.21/#v0-21-0-beta-1</guid>

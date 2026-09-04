@@ -11,9 +11,10 @@
     "slug": "0.21",
     "title": "Hunk 0.21",
     "tagline": "Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and…",
-    "meta": "Prerelease · August 30, 2026 – September 1, 2026 · 3 releases · 75 changes",
-    "chips": ["0.21.0-beta.1", "0.21.0-beta.0"],
-    "alt": "Hunk 0.21 release notes — Prerelease · August 30, 2026 – September 1, 2026 · 3 releases · 75 changes"
+    "meta": "August 30, 2026 – September 2, 2026 · 4 releases · 77 changes",
+    "chips": ["0.21.0", "0.21.0-beta.1", "0.21.0-beta.0"],
+    "latest": true,
+    "alt": "Hunk 0.21 release notes — August 30, 2026 – September 2, 2026 · 4 releases · 77 changes"
   },
   {
     "slug": "0.20",
@@ -21,7 +22,6 @@
     "tagline": "Hunk 0.20 adds a one-line installer with conditional checksum verification and self-updates, launches a directory of 12 community…",
     "meta": "August 25, 2026 – August 29, 2026 · 2 releases · 14 changes",
     "chips": ["0.20.1", "0.20.0"],
-    "latest": true,
     "alt": "Hunk 0.20 release notes — August 25, 2026 – August 29, 2026 · 2 releases · 14 changes"
   },
   {

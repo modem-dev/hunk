@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.21.1
+
+### Patch Changes
+
+- [#978](https://github.com/modem-dev/hunk/pull/978) [`bfbfac8`](https://github.com/modem-dev/hunk/commit/bfbfac8d2b3a54e1f72256d6dc24e873882d722f) - Fix `hunk pager` pegging a CPU core and growing to gigabytes of memory on large color-heavy
+  input. Restoring preserved ANSI styling rescanned and reallocated the whole document once per
+  sequence, so a `git log --graph --color=always` stream from a host like LazyGit took minutes of
+  solid CPU per process and never produced output. Styling is now restored in a single pass: a 3 MB
+  branch log pages through in well under a second.
+
+- [#978](https://github.com/modem-dev/hunk/pull/978) [`bfbfac8`](https://github.com/modem-dev/hunk/commit/bfbfac8d2b3a54e1f72256d6dc24e873882d722f) - Fix `hunk pager` truncating its output at 64 KB when a host reads it through a pipe, which cut off
+  large documents for Git's pager contract, LazyGit, and `| less`. Headless commands now hand the
+  whole document to the stdout descriptor before exiting, so a piped consumer receives every byte.
+
 ## 0.21.0
 
 ### Minor Changes

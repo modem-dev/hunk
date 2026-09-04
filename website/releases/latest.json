@@ -1,6 +1,6 @@
 {
-  "version": "0.20.1",
-  "minor": "0.20",
-  "date": "2026-08-29",
-  "summary": "One-line install, self-updates, extension directory"
+  "version": "0.21.0",
+  "minor": "0.21",
+  "date": "2026-09-02",
+  "summary": "Secure sessions, threaded notes, richer comparisons"
 }
