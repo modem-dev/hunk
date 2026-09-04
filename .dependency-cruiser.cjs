@@ -27,6 +27,7 @@ const PRODUCTION_ENTRY_POINTS = [
   "^src/main\\.tsx$",
   "^src/highlightWorkerEntry\\.ts$",
   "^src/opentui/index\\.ts$",
+  "^src/static/index\\.ts$",
   "^src/extension-api/index\\.ts$",
   "^src/hunk-review/skillDocument\\.ts$",
 ];
