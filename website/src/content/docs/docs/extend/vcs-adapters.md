@@ -30,6 +30,54 @@ The ids Hunk ships with — `git`, `jj`, and `sl` — are reserved. An adapter t
 
 `operations` is optional and may implement any of `working-tree-diff`, `revision-show`, and `stash-show`; an operation you leave out — or leaving the map off entirely — produces a clear "not supported" error for that command instead of a crash.
 
+## History
+
+The built-in `hunk log` surface gets all repository semantics from the selected adapter's optional
+`history` capability. Hunk owns presentation, themes, graph layout, paging, and terminal lifecycle;
+the adapter owns traversal, refs, immutable identities, and how a selected item opens in review.
+
+```ts
+history: {
+  async open(input, ctx) {
+    return openHgHistory(input, ctx);
+  },
+  planReview(commit) {
+    return commit.parentRevisionIds[0]
+      ? {
+          kind: "revision-range",
+          fromRevisionId: commit.parentRevisionIds[0],
+          toRevisionId: commit.revisionId,
+        }
+      : { kind: "revision-show", revisionId: commit.revisionId };
+  },
+},
+```
+
+This history fragment demonstrates static listing only. For interactive opening, the same adapter
+must also register a `revision-show` operation for `revision-show` actions and a `working-tree-diff`
+operation that accepts `rangeEndpoints` for `revision-range` actions. Otherwise Enter reports the
+missing review operation as unsupported.
+
+`planReview` is provider-owned because roots, merges, and revision syntax differ. Hunk treats every
+revision id as opaque and routes the returned action through the same adapter's `revision-show` or
+`working-tree-diff` operation.
+
+History pages must remain in **child-before-parent topological order across the complete source**.
+When both commits are returned, a child must precede its parent even when they fall on different
+pages. Each read may return at most its requested limit, and `done` distinguishes a page boundary
+from repository end. Hunk validates these invariants across pages.
+
+Decorations are structured. A `head` decoration may set `attachedLocalBranch`; do not encode branch
+attachment or arrow punctuation in its label. This lets Hunk render and deduplicate decorations
+without parsing provider display text. An optional `logicalId` names one logical change across
+provider rewrites (such as a Jujutsu change id); it is metadata, while graph and review operations
+continue to use immutable `revisionId` values.
+
+The bundled Git and Jujutsu adapters both implement this contract. Jujutsu emits immutable commit
+IDs plus logical change IDs, maps bookmarks/remotes/tags to structured decorations, and uses JJ's
+native single-revision diff for ordinary, merge, and root reviews. It works in both colocated and
+JJ-only workspaces; no Git command or `.git` worktree is required.
+
 A `load` result is patch text plus how to label it. Everything else on it is optional, and each optional field buys one thing:
 
 | Field            | What it adds                                                      |

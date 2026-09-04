@@ -825,6 +825,17 @@ describe("toInternalVcsAdapter detection ids", () => {
     expect(mismatches).toEqual(["mercurial"]);
   });
 
+  test("preserves terminal-safe adapter ids that begin with a dash", () => {
+    const adapter = toInternalVcsAdapter({
+      id: "-custom",
+      name: "Custom",
+      detect: () => ({ id: "-custom", repoRoot: "/repo" }),
+    });
+
+    expect(adapter.id).toBe("-custom");
+    expect(adapter.detect("/repo")).toEqual({ id: "-custom", repoRoot: "/repo" });
+  });
+
   test("passes a matching detection through untouched, with no diagnostic", () => {
     const mismatches: string[] = [];
     const detection = { id: "hg", repoRoot: "/repo" };
@@ -833,8 +844,22 @@ describe("toInternalVcsAdapter detection ids", () => {
       (returnedId) => mismatches.push(returnedId),
     );
 
-    expect(adapter.detect("/repo")).toBe(detection);
+    expect(adapter.detect("/repo")).toEqual(detection);
     expect(mismatches).toEqual([]);
+  });
+
+  test("snapshots and sanitizes adapter metadata before it reaches diagnostics", () => {
+    let nameReads = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      get name() {
+        nameReads += 1;
+        return nameReads === 1 ? "Demo\x1b[2J" : "Changed";
+      },
+      detect: () => null,
+    });
+    expect(adapter.name).toBe("Demo");
+    expect(nameReads).toBe(1);
   });
 
   test("treats a detection without a usable repoRoot as no detection", () => {
@@ -945,5 +970,303 @@ describe("toInternalVcsAdapter detection ids", () => {
           'VCS adapter "hg" returned detection id "mercurial" • using the registered id instead',
       },
     ]);
+  });
+});
+
+describe("toInternalVcsAdapter history boundary", () => {
+  test("requires providers to own selected-item review planning", () => {
+    expect(() =>
+      toInternalVcsAdapter({
+        id: "incomplete",
+        name: "Incomplete",
+        detect: () => null,
+        history: {
+          open: () => ({
+            read: async () => ({ commits: [], done: true }),
+            close() {},
+          }),
+        } as never,
+      }),
+    ).toThrow("history must provide open() and planReview() functions");
+  });
+
+  test("copies and sanitizes bounded history pages", async () => {
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "safe\x1b]52;c;cHdu\x07\nspoof",
+      authorName: "Ada\rLovelace",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [{ kind: "head" as const, label: "HEAD\x1b[2J" }],
+    };
+    let closed = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [commit], done: true }),
+          close: () => {
+            closed += 1;
+          },
+        }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    const page = await source.read({ limit: 1 });
+
+    expect(page.commits[0]?.subject).toBe("safespoof");
+    expect(page.commits[0]?.authorName).toBe("AdaLovelace");
+    expect(page.commits[0]?.decorations[0]?.label).toBe("HEAD");
+    expect(page.commits[0]).not.toBe(commit);
+    expect(closed).toBe(1);
+  });
+
+  test("rejects unsafe revision ids and required display fields erased by sanitization", async () => {
+    const validCommit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "Safe subject",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const readCommit = async (commit: typeof validCommit) => {
+      const adapter = toInternalVcsAdapter({
+        id: "adversarial",
+        name: "Adversarial",
+        detect: () => null,
+        history: {
+          open: () => ({
+            read: async () => ({ commits: [commit], done: true }),
+            close() {},
+          }),
+          planReview: (selected) => ({
+            kind: "revision-show",
+            revisionId: selected.revisionId,
+          }),
+        },
+      });
+      return adapter
+        .history!.open({}, { cwd: "/repo" })
+        .then((source) => source.read({ limit: 1 }));
+    };
+
+    await expect(readCommit({ ...validCommit, revisionId: `unsafe\tid` })).rejects.toThrow(
+      "terminal-safe immutable revision id",
+    );
+    for (const field of ["displayId", "subject", "authorName"] as const) {
+      await expect(readCommit({ ...validCommit, [field]: "\x1b[2J" })).rejects.toThrow(
+        `${field} must remain non-empty after sanitization`,
+      );
+    }
+  });
+
+  test("rejects tabs in provider-owned review action revision ids", async () => {
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "Safe subject",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const adapter = toInternalVcsAdapter({
+      id: "adversarial-plan",
+      name: "Adversarial plan",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [], done: true }),
+          close() {},
+        }),
+        planReview: () => ({ kind: "revision-show", revisionId: "unsafe\tid" }),
+      },
+    });
+
+    await expect(adapter.history!.planReview(commit, { cwd: "/repo" })).rejects.toThrow(
+      "terminal-safe immutable revision id",
+    );
+  });
+
+  test("snapshots source, page, commit, and decoration accessors exactly once", async () => {
+    const reads = { sourceRead: 0, commits: 0, subject: 0, label: 0 };
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [],
+      get subject() {
+        reads.subject += 1;
+        return reads.subject === 1 ? "Stable" : "Changed";
+      },
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [
+        {
+          kind: "tag",
+          get label() {
+            reads.label += 1;
+            return reads.label === 1 ? "v1" : "changed";
+          },
+        },
+      ],
+    };
+    const page = {
+      get commits() {
+        reads.commits += 1;
+        return reads.commits === 1 ? [commit] : [{}, {}];
+      },
+      done: true,
+    };
+    const publicSource = {
+      get read() {
+        reads.sourceRead += 1;
+        return async () => page;
+      },
+      close() {},
+    };
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: {
+        open: () => publicSource as never,
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    const result = await source.read({ limit: 1 });
+    expect(result.commits[0]?.subject).toBe("Stable");
+    expect(result.commits[0]?.decorations[0]?.label).toBe("v1");
+    expect(reads).toEqual({ sourceRead: 1, commits: 1, subject: 1, label: 1 });
+  });
+
+  test("closes malformed and over-limit sources once", async () => {
+    let closed = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [{}, {}], done: false }) as never,
+          close: () => {
+            closed += 1;
+          },
+        }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    await expect(source.read({ limit: 1 })).rejects.toThrow("more commits");
+    await source.close();
+    expect(closed).toBe(1);
+  });
+
+  test("preserves custom-provider paging and provider-owned opaque review plans", async () => {
+    const root = {
+      revisionId: "opaque:root/revision",
+      displayId: "root",
+      parentRevisionIds: [],
+      subject: "Root",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const child = {
+      ...root,
+      revisionId: "opaque:child/revision",
+      displayId: "child",
+      parentRevisionIds: [root.revisionId],
+      subject: "Child",
+    };
+    let page = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "opaque",
+      name: "Opaque VCS",
+      detect: (cwd) => ({ id: "opaque", repoRoot: cwd }),
+      history: {
+        open: () => ({
+          read: async () =>
+            page++ === 0 ? { commits: [child], done: false } : { commits: [root], done: true },
+          close() {},
+        }),
+        planReview: (selected) =>
+          selected.parentRevisionIds.length
+            ? {
+                kind: "revision-range",
+                fromRevisionId: `opaque:base-for/${selected.revisionId}`,
+                toRevisionId: selected.revisionId,
+              }
+            : { kind: "revision-show", revisionId: `opaque:root-view/${selected.revisionId}` },
+      },
+    });
+
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    expect((await source.read({ limit: 1 })).commits.map((commit) => commit.revisionId)).toEqual([
+      child.revisionId,
+    ]);
+    expect((await source.read({ limit: 1 })).commits.map((commit) => commit.revisionId)).toEqual([
+      root.revisionId,
+    ]);
+    await expect(adapter.history!.planReview(child, { cwd: "/repo" })).resolves.toEqual({
+      kind: "revision-range",
+      fromRevisionId: `opaque:base-for/${child.revisionId}`,
+      toRevisionId: child.revisionId,
+    });
+    await expect(adapter.history!.planReview(root, { cwd: "/repo" })).resolves.toEqual({
+      kind: "revision-show",
+      revisionId: `opaque:root-view/${root.revisionId}`,
+    });
+  });
+
+  test("rejects parent-before-child ordering across page boundaries", async () => {
+    const commit = (revisionId: string, parentRevisionIds: string[]) => ({
+      revisionId,
+      displayId: revisionId,
+      parentRevisionIds,
+      subject: revisionId,
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    });
+    let page = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "misordered",
+      name: "Misordered",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () =>
+            page++ === 0
+              ? { commits: [commit("parent", [])], done: false }
+              : { commits: [commit("child", ["parent"])], done: true },
+          close() {},
+        }),
+        planReview: (selected) => ({
+          kind: "revision-show",
+          revisionId: selected.revisionId,
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    await source.read({ limit: 1 });
+    await expect(source.read({ limit: 1 })).rejects.toThrow(
+      "VCS history returned parent parent before child child.",
+    );
   });
 });

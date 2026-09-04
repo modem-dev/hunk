@@ -55,6 +55,7 @@ import {
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP, parseReviewGap } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/run/tabWidth";
 import { resolveCliVersion } from "../core/run/version";
+import type { ExtensionVcsHistoryReviewAction } from "../extension-api/types";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {
@@ -64,6 +65,7 @@ export interface CliReferenceOption {
     | "layout"
     | "cursorLine"
     | "positiveInt"
+    | "nonNegativeInt"
     | "tabWidth"
     | "fileGap"
     | "hunkGap"
@@ -72,6 +74,8 @@ export interface CliReferenceOption {
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
   readonly hidden?: boolean;
+  /** Additional generated-documentation context for a hidden option. */
+  readonly hiddenNote?: string;
 }
 
 /** Structured command metadata used by runtime parsers and generated CLI docs. */
@@ -96,6 +100,11 @@ export const COMMON_REVIEW_OPTIONS = [
     parse: "cursorLine",
   },
   { flag: "--theme <theme>", description: "named theme override" },
+  {
+    flag: "--vcs <id>",
+    description: "select a VCS provider",
+    hidden: true,
+  },
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
@@ -159,6 +168,7 @@ const DIFF_OPTIONS = [
     flag: `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
     description: "include untracked files in working tree reviews",
     hidden: true,
+    hiddenNote: "Compatibility inverse; omitted from `--help`.",
   },
 ] as const satisfies readonly CliReferenceOption[];
 
@@ -187,6 +197,49 @@ export const CLI_REFERENCE_COMMANDS = {
     synopsis: ["hunk show [target] [-- <pathspec...>]"],
     commonReviewOptions: true,
     watch: true,
+  },
+  log: {
+    path: "log",
+    summary: "print an attractive repository history",
+    synopsis: ["hunk log [revision-expression] [-- <pathspec...>]"],
+    details: [
+      "Static output is the default. Use --interactive for the experimental history browser.",
+      "The selected VCS provider defines revision, filtering, and review semantics.",
+    ],
+    options: [
+      { flag: "--all", description: "include history from every provider-visible head" },
+      { flag: "--first-parent", description: "follow only the first parent of merge commits" },
+      {
+        flag: "-n, --max-count <count>",
+        description: "stop after this many commits",
+        parse: "nonNegativeInt",
+      },
+      { flag: "--author <pattern>", description: "limit commits by author" },
+      { flag: "--grep <pattern>", description: "limit commits by subject or message" },
+      { flag: "--since <date>", description: "show commits newer than a provider date" },
+      { flag: "--until <date>", description: "show commits older than a provider date" },
+      {
+        flag: "--color <mode>",
+        description: "color output: auto, always, never",
+        commanderDefault: "auto",
+      },
+      {
+        flag: "--format <format>",
+        description: "record format: medium or compact",
+        commanderDefault: "medium",
+      },
+      { flag: "--oneline", description: "alias for --format compact" },
+      { flag: "--theme <id>", description: "use the same theme as Hunk review" },
+      { flag: "--ascii", description: "use an ASCII graph" },
+      { flag: "--interactive", description: "browse history and open commits in Hunk" },
+      { flag: "--vcs <id>", description: "select a VCS history provider" },
+      {
+        flag: "--extension <path>",
+        description: "load an extension entry file or directory (repeatable)",
+        parse: "collect",
+      },
+      { flag: "--no-extensions", description: "disable user extensions for this run" },
+    ],
   },
   "stash-show": {
     path: "stash show",
@@ -379,6 +432,7 @@ function buildCommonOptions(
     mode?: LayoutMode;
     cursorLine?: CursorLine;
     theme?: string;
+    vcs?: string;
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
@@ -396,6 +450,7 @@ function buildCommonOptions(
     mode: options.mode,
     cursorLine: options.cursorLine,
     theme: options.theme,
+    vcs: options.vcs,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
@@ -435,6 +490,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
     commanderOption.argParser(parseCursorLine);
   } else if (option.parse === "positiveInt") {
     commanderOption.argParser(parsePositiveInt);
+  } else if (option.parse === "nonNegativeInt") {
+    commanderOption.argParser(parseNonNegativeInt);
   } else if (option.parse === "tabWidth") {
     commanderOption.argParser(parseTabWidth);
   } else if (option.parse === "fileGap") {
@@ -512,6 +569,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
+    "  hunk log [target] [-- <pathspec...>]    print an attractive repository history",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
@@ -758,10 +816,48 @@ function resolveReloadSelector(
   );
 }
 
-/** Parse the overloaded `hunk diff` command. */
+/** Decode a private child-process handoff without interpreting provider revision ids. */
+function decodeHistoryReviewAction(payload: unknown): ExtensionVcsHistoryReviewAction {
+  if (typeof payload !== "string" || payload.length === 0) {
+    throw new Error("Invalid history review handoff.");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid history review handoff.");
+  }
+  if (!value || typeof value !== "object") throw new Error("Invalid history review handoff.");
+  const action = value as Record<string, unknown>;
+  if (
+    action.kind === "revision-show" &&
+    typeof action.revisionId === "string" &&
+    action.revisionId.length > 0
+  ) {
+    return { kind: "revision-show", revisionId: action.revisionId };
+  }
+  if (
+    action.kind === "revision-range" &&
+    typeof action.fromRevisionId === "string" &&
+    action.fromRevisionId.length > 0 &&
+    typeof action.toRevisionId === "string" &&
+    action.toRevisionId.length > 0
+  ) {
+    return {
+      kind: "revision-range",
+      fromRevisionId: action.fromRevisionId,
+      toRevisionId: action.toRevisionId,
+    };
+  }
+  throw new Error("Invalid history review handoff.");
+}
+
+/** Parse the provider-neutral `hunk diff` command. */
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCliReferenceCommand("diff").argument("[targets...]");
+  const command = createCliReferenceCommand("diff")
+    .addOption(new Option("--history-review <payload>").hideHelp())
+    .argument("[targets...]");
 
   let parsedTargets: string[] = [];
   let parsedOptions: Record<string, unknown> = {};
@@ -783,6 +879,26 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   const files = Array.isArray(parsedOptions.files)
     ? parsedOptions.files.filter((value): value is string => typeof value === "string")
     : undefined;
+  const historyReview = parsedOptions.historyReview;
+
+  if (historyReview !== undefined) {
+    const action = decodeHistoryReviewAction(historyReview);
+    if (
+      action.kind !== "revision-range" ||
+      files ||
+      parsedTargets.length > 0 ||
+      staged ||
+      normalizedPathspecs
+    ) {
+      throw new Error("Invalid history review handoff for `hunk diff`.");
+    }
+    return {
+      kind: "vcs",
+      rangeEndpoints: { from: action.fromRevisionId, to: action.toRevisionId },
+      staged: false,
+      options,
+    };
+  }
 
   if (files) {
     if (files.length !== 2 || parsedTargets.length > 0 || staged || normalizedPathspecs) {
@@ -842,10 +958,12 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   );
 }
 
-/** Parse the Git-style `hunk show` command. */
+/** Parse the provider-neutral `hunk show` command. */
 async function parseShowCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCliReferenceCommand("show").argument("[ref]");
+  const command = createCliReferenceCommand("show")
+    .addOption(new Option("--history-review <payload>").hideHelp())
+    .argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -861,11 +979,77 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
   await parseStandaloneCommand(command, commandTokens);
 
+  const options = buildCommonOptions(parsedOptions, argv);
+  if (parsedOptions.historyReview !== undefined) {
+    const action = decodeHistoryReviewAction(parsedOptions.historyReview);
+    if (action.kind !== "revision-show" || parsedRef || pathspecs.length > 0) {
+      throw new Error("Invalid history review handoff for `hunk show`.");
+    }
+    return { kind: "show", ref: action.revisionId, options };
+  }
+
   return {
     kind: "show",
     ref: parsedRef,
     pathspecs: pathspecs.length > 0 ? pathspecs : undefined,
-    options: buildCommonOptions(parsedOptions, argv),
+    options,
+  };
+}
+
+/** Parse the deliberately small static-first `hunk log` grammar. */
+async function parseHistoryCommand(
+  tokens: string[],
+  extensionsEnabled: boolean,
+): Promise<ParsedCliInput> {
+  const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
+  const command = createCliReferenceCommand("log").argument("[revision]");
+  let revision: string | undefined;
+  let options: Record<string, unknown> = {};
+
+  command.action((parsedRevision: string | undefined, parsedOptions: Record<string, unknown>) => {
+    revision = parsedRevision;
+    options = parsedOptions;
+  });
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+  await parseStandaloneCommand(command, commandTokens);
+
+  const color = options.color;
+  if (color !== "auto" && color !== "always" && color !== "never") {
+    throw new Error(`Invalid color mode: ${String(color)}`);
+  }
+  const requestedFormat = options.format;
+  if (requestedFormat !== "medium" && requestedFormat !== "compact") {
+    throw new Error(`Invalid history format: ${String(requestedFormat)}`);
+  }
+  const format = options.oneline ? "compact" : requestedFormat;
+  if (revision && options.all) {
+    throw new Error("`hunk log` accepts either a revision/range or --all, not both.");
+  }
+  const extensionPaths = Array.isArray(options.extension)
+    ? options.extension.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    kind: "history",
+    ...(revision ? { revision } : {}),
+    ...(options.all ? { all: true } : {}),
+    ...(options.firstParent ? { firstParent: true } : {}),
+    ...(typeof options.maxCount === "number" ? { maxCount: options.maxCount } : {}),
+    ...(typeof options.author === "string" ? { author: options.author } : {}),
+    ...(typeof options.grep === "string" ? { grep: options.grep } : {}),
+    ...(typeof options.since === "string" ? { since: options.since } : {}),
+    ...(typeof options.until === "string" ? { until: options.until } : {}),
+    ...(pathspecs.length ? { pathspecs } : {}),
+    color,
+    format,
+    ascii: Boolean(options.ascii),
+    interactive: Boolean(options.interactive),
+    ...(typeof options.theme === "string" ? { theme: options.theme } : {}),
+    ...(typeof options.vcs === "string" ? { vcs: options.vcs } : {}),
+    extensionsEnabled: extensionsEnabled && options.extensions !== false,
+    extensionPaths,
   };
 }
 
@@ -963,6 +1147,7 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "markup-guide" ||
     input.kind === "extension-manage" ||
     input.kind === "extension-cli" ||
+    input.kind === "history" ||
     input.kind === "update"
   ) {
     throw new Error(
@@ -1966,6 +2151,7 @@ async function parseStashCommand(
 }
 
 const REVIEW_COMMAND_NAMES = new Set(["diff", "show", "patch", "pager", "difftool", "stash"]);
+const EXTENSION_AWARE_COMMAND_NAMES = new Set([...REVIEW_COMMAND_NAMES, "log"]);
 
 interface LeadingCliFlags {
   args: string[];
@@ -2080,7 +2266,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   if (
     extensionFlagTokens.length > 0 &&
     isBuiltInCliCommandName(commandName) &&
-    !REVIEW_COMMAND_NAMES.has(commandName)
+    !EXTENSION_AWARE_COMMAND_NAMES.has(commandName)
   ) {
     throw new Error(
       `\`${extensionFlagTokens[0]}\` must be used with a Hunk review command or an ` +
@@ -2095,6 +2281,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseDiffCommand(reviewRest, argv);
     case "show":
       return parseShowCommand(reviewRest, argv);
+    case "log":
+      return parseHistoryCommand(reviewRest, extensionsEnabled);
     case "patch":
       return parsePatchCommand(reviewRest, argv);
     case "pager":

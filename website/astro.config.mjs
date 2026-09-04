@@ -131,6 +131,7 @@ export default defineConfig({
               slug: "docs/workflows/working-trees-and-commits",
             },
             { label: "Files and patches", slug: "docs/workflows/files-and-patches" },
+            { label: "Repository history", slug: "docs/workflows/git-history" },
             { label: "Git pager and difftool", slug: "docs/workflows/git-pager-and-difftool" },
             { label: "Jujutsu and Sapling", slug: "docs/workflows/jujutsu-and-sapling" },
             { label: "Watch mode", slug: "docs/workflows/watch-mode" },

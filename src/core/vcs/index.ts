@@ -1,6 +1,11 @@
 import { relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
 import { HunkUserError } from "../run/errors";
+import type {
+  ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryInput,
+  ExtensionVcsHistoryReviewAction,
+} from "../../extension-api/types";
 import type { CliInput } from "../run/commandInputs";
 import type {
   VcsAdapter,
@@ -8,6 +13,7 @@ import type {
   VcsDetection,
   VcsId,
   VcsLoadContext,
+  VcsHistorySource,
   VcsOperation,
   VcsPatchResult,
   VcsReviewInput,
@@ -150,6 +156,39 @@ export async function loadVcsReview(
     throw createUnsupportedVcsOperationError(adapter, operation.kind, catalog);
   }
   return await handler.load(operation.input, context);
+}
+
+/** Open a provider-neutral history source or report that the selected backend lacks one. */
+export async function openVcsHistory(
+  adapter: VcsAdapter,
+  input: ExtensionVcsHistoryInput,
+  context: VcsLoadContext,
+  catalog: VcsCatalog,
+): Promise<VcsHistorySource> {
+  if (!adapter.history) {
+    const supportingAdapter = catalog.adapters.find((candidate) => candidate.history);
+    throw new HunkUserError(`\`hunk log\` is not supported by ${adapter.name}.`, [
+      ...(supportingAdapter
+        ? [`Use \`--vcs ${supportingAdapter.id}\` in a compatible repository.`]
+        : []),
+      "Use a VCS adapter that implements history browsing.",
+    ]);
+  }
+  return await adapter.history.open(input, context);
+}
+
+/** Ask the selected provider how one opaque history item should open in review. */
+export async function planVcsHistoryReview(
+  adapter: VcsAdapter,
+  commit: ExtensionVcsHistoryCommit,
+  context: VcsLoadContext,
+): Promise<ExtensionVcsHistoryReviewAction> {
+  if (!adapter.history) {
+    throw new HunkUserError(`\`hunk log\` is not supported by ${adapter.name}.`, [
+      "Use a VCS adapter that implements history browsing.",
+    ]);
+  }
+  return await adapter.history.planReview(commit, context);
 }
 
 /** Build an adapter event plan, falling back to signature polling. */

@@ -110,6 +110,31 @@ export type CliInput =
 export type ReviewNoteSource = "ai" | "agent" | "user";
 export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 
+export type HistoryColorMode = "auto" | "always" | "never";
+export type HistoryFormat = "medium" | "compact";
+
+/** Static-first VCS history invocation, deliberately separate from review view options. */
+export interface HistoryCommandInput {
+  kind: "history";
+  revision?: string;
+  all?: boolean;
+  firstParent?: boolean;
+  maxCount?: number;
+  author?: string;
+  grep?: string;
+  since?: string;
+  until?: string;
+  pathspecs?: string[];
+  color: HistoryColorMode;
+  format: HistoryFormat;
+  ascii: boolean;
+  interactive: boolean;
+  theme?: string;
+  vcs?: string;
+  extensionsEnabled: boolean;
+  extensionPaths: string[];
+}
+
 export interface HelpCommandInput {
   kind: "help";
   text: string;
@@ -350,6 +375,7 @@ export type ExtensionManageCommandInput =
 
 export type ParsedCliInput =
   | CliInput
+  | HistoryCommandInput
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput

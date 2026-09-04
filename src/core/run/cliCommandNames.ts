@@ -2,6 +2,7 @@
 export const BUILT_IN_CLI_COMMAND_NAMES = new Set([
   "diff",
   "show",
+  "log",
   "patch",
   "pager",
   "difftool",

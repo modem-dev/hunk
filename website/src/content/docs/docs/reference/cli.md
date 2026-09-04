@@ -21,6 +21,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
 | `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
+| `--vcs <id>`                | select a VCS provider Hidden from `--help`.                     |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
@@ -89,6 +90,41 @@ hunk show [target] [-- <pathspec...>]
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
+
+## `hunk log`
+
+print an attractive repository history
+
+### Usage
+
+```bash
+hunk log [revision-expression] [-- <pathspec...>]
+```
+
+Static output is the default. Use --interactive for the experimental history browser.
+
+The selected VCS provider defines revision, filtering, and review semantics.
+
+### Command-specific options
+
+| Option                    | Description                                            |
+| ------------------------- | ------------------------------------------------------ |
+| `--all`                   | include history from every provider-visible head       |
+| `--first-parent`          | follow only the first parent of merge commits          |
+| `-n, --max-count <count>` | stop after this many commits                           |
+| `--author <pattern>`      | limit commits by author                                |
+| `--grep <pattern>`        | limit commits by subject or message                    |
+| `--since <date>`          | show commits newer than a provider date                |
+| `--until <date>`          | show commits older than a provider date                |
+| `--color <mode>`          | color output: auto, always, never                      |
+| `--format <format>`       | record format: medium or compact                       |
+| `--oneline`               | alias for --format compact                             |
+| `--theme <id>`            | use the same theme as Hunk review                      |
+| `--ascii`                 | use an ASCII graph                                     |
+| `--interactive`           | browse history and open commits in Hunk                |
+| `--vcs <id>`              | select a VCS history provider                          |
+| `--extension <path>`      | load an extension entry file or directory (repeatable) |
+| `--no-extensions`         | disable user extensions for this run                   |
 
 ## `hunk stash show`
 

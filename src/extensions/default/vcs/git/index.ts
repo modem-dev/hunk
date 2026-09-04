@@ -19,6 +19,7 @@ import {
   type GitBackedInput,
   type GitDiffEndpoints,
 } from "./commands";
+import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
 import { describeDiffRange } from "../diffRange";
 import {
@@ -279,6 +280,21 @@ export function createGitVcsAdapter({
     name: "Git",
     detect: detectGitRepo,
     detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY,
+    history: {
+      open(input, { cwd }) {
+        return openGitHistory(input, { cwd, gitExecutable });
+      },
+      planReview(commit) {
+        const firstParent = commit.parentRevisionIds[0];
+        return firstParent
+          ? {
+              kind: "revision-range" as const,
+              fromRevisionId: firstParent,
+              toRevisionId: commit.revisionId,
+            }
+          : { kind: "revision-show" as const, revisionId: commit.revisionId };
+      },
+    },
     operations: {
       "working-tree-diff": {
         async load(input, { cwd }) {

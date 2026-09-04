@@ -55,7 +55,7 @@ function renderOptionTable(options: readonly (CliReferenceOption | AgentCommandO
     const details = [
       option.description,
       referenceOption.defaultValue ? `Default: ${referenceOption.defaultValue}.` : undefined,
-      referenceOption.hidden ? "Compatibility inverse; omitted from `--help`." : undefined,
+      referenceOption.hidden ? (referenceOption.hiddenNote ?? "Hidden from `--help`.") : undefined,
       "required" in option && option.required ? "Required." : undefined,
     ]
       .filter(Boolean)
