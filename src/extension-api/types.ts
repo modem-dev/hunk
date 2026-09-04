@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 16;
+export const HUNK_EXTENSION_API_VERSION = 17;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -727,6 +727,60 @@ export interface ExtensionVcsShowInput {
   options: ExtensionVcsReviewOptions;
 }
 
+/** One ref label decorating a history commit. */
+export interface ExtensionVcsHistoryDecoration {
+  kind: "head" | "local-branch" | "remote-branch" | "tag" | "ref";
+  label: string;
+}
+
+/** One immutable commit summary returned by a VCS history provider. */
+export interface ExtensionVcsHistoryCommit {
+  revisionId: string;
+  displayId: string;
+  parentRevisionIds: string[];
+  subject: string;
+  /** Commit message content after the subject, preserving paragraph breaks. */
+  body?: string;
+  authorName: string;
+  authorEmail?: string;
+  authoredAt: string;
+  decorations: ExtensionVcsHistoryDecoration[];
+  logicalId?: string;
+}
+
+/** Provider-neutral history traversal accepted by `hunk log`. */
+export interface ExtensionVcsHistoryInput {
+  revision?: string;
+  all?: boolean;
+  firstParent?: boolean;
+  maxCount?: number;
+  author?: string;
+  grep?: string;
+  since?: string;
+  until?: string;
+  pathspecs?: string[];
+}
+
+/** One bounded history read. `done` distinguishes EOF from a page boundary. */
+export interface ExtensionVcsHistoryPage {
+  commits: ExtensionVcsHistoryCommit[];
+  done: boolean;
+}
+
+/** A cancellable history cursor owned by its provider. */
+export interface ExtensionVcsHistorySource {
+  read(options: { limit: number; signal?: AbortSignal }): Promise<ExtensionVcsHistoryPage>;
+  close(): void | Promise<void>;
+}
+
+/** Optional read-only history capability implemented independently of review operations. */
+export interface ExtensionVcsHistoryCapability {
+  open(
+    input: ExtensionVcsHistoryInput,
+    context: ExtensionVcsLoadContext,
+  ): ExtensionVcsHistorySource | Promise<ExtensionVcsHistorySource>;
+}
+
 /** Stash review request, as extension adapters receive it. */
 export interface ExtensionVcsStashShowInput {
   kind: "stash-show";
@@ -972,6 +1026,8 @@ export interface ExtensionVcsAdapter {
   name: string;
   detect(cwd: string): ExtensionVcsDetection | null;
   operations?: ExtensionVcsOperations;
+  /** Optional static/interactive history enumeration capability. */
+  history?: ExtensionVcsHistoryCapability;
   /**
    * Where this adapter sits in detection order; higher is consulted first.
    *

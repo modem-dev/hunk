@@ -14,7 +14,7 @@ export function looksLikePatchInput(text: string) {
   );
 }
 
-const DEFAULT_TEXT_PAGER_COMMAND = "less -R";
+const DEFAULT_TEXT_PAGER_COMMAND = process.platform === "win32" ? "more" : "less -R";
 
 interface ResolvedPagerCommand {
   command: string;
@@ -141,53 +141,90 @@ export interface PlainTextPagerDeps {
   spawnImpl: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 }
 
-/** Stream plain text through a normal pager, or write directly when not attached to a terminal. */
-export async function pagePlainText(
-  text: string,
+export interface PlainTextPagerWriter {
+  write(text: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+/** Open one pager writer so callers can stream bounded chunks after deciding output will overflow. */
+export function openPlainTextPager(
   env: NodeJS.ProcessEnv = process.env,
-  deps: PlainTextPagerDeps = {
-    stdout: process.stdout,
-    spawnImpl: spawn,
-  },
-) {
-  if (!deps.stdout.isTTY) {
-    deps.stdout.write(sanitizeTerminalText(text));
-    return;
-  }
-
-  const safeText = sanitizeTerminalText(text, { preserveAnsiStyle: true });
-
+  deps: PlainTextPagerDeps = { stdout: process.stdout, spawnImpl: spawn },
+): PlainTextPagerWriter {
   const pagerSpec = resolveTextPagerSpec(env);
   const pagerCommand = pagerSpec.displayCommand;
-
   let pager: ChildProcess;
   try {
     pager = deps.spawnImpl(pagerSpec.command, pagerSpec.args, {
       shell: false,
       stdio: ["pipe", "inherit", "inherit"],
-      env: {
-        ...env,
-        ...pagerSpec.env,
-      },
+      env: { ...env, ...pagerSpec.env },
     });
   } catch (error) {
     throw new Error(`Pager command failed: ${pagerCommand}`, { cause: error });
   }
 
   let spawnError: unknown;
+  let stdinError: NodeJS.ErrnoException | undefined;
+  let closed = false;
   const closeCode = new Promise<number | null>((resolve) => {
     pager.once("error", (error) => {
       spawnError = error;
     });
-    pager.once("close", (code) => {
-      resolve(typeof code === "number" ? code : null);
-    });
+    pager.once("close", (code) => resolve(typeof code === "number" ? code : null));
+  });
+  pager.stdin?.once("error", (error: NodeJS.ErrnoException) => {
+    stdinError = error;
   });
 
-  pager.stdin?.end(safeText);
-  const code = await closeCode;
+  return {
+    async write(text) {
+      if (closed || stdinError?.code === "EPIPE") return;
+      const safeText = sanitizeTerminalText(text, { preserveAnsiStyle: true });
+      if (!pager.stdin?.write(safeText)) {
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            pager.stdin?.off("drain", finish);
+            pager.stdin?.off("error", finish);
+            pager.off("close", finish);
+            resolve();
+          };
+          pager.stdin?.once("drain", finish);
+          pager.stdin?.once("error", finish);
+          pager.once("close", finish);
+        });
+      }
+    },
+    async close() {
+      if (closed) return;
+      closed = true;
+      if (!pager.stdin?.destroyed) pager.stdin?.end();
+      const code = await closeCode;
+      const normalEarlyQuit = stdinError?.code === "EPIPE" && code === 0;
+      if (
+        spawnError ||
+        (stdinError && !normalEarlyQuit) ||
+        (typeof code === "number" && code !== 0)
+      ) {
+        throw new Error(`Pager command failed: ${pagerCommand}`, {
+          cause: spawnError ?? stdinError,
+        });
+      }
+    },
+  };
+}
 
-  if (spawnError || (typeof code === "number" && code !== 0)) {
-    throw new Error(`Pager command failed: ${pagerCommand}`, { cause: spawnError });
+/** Stream plain text through a normal pager, or write directly when not attached to a terminal. */
+export async function pagePlainText(
+  text: string,
+  env: NodeJS.ProcessEnv = process.env,
+  deps: PlainTextPagerDeps = { stdout: process.stdout, spawnImpl: spawn },
+) {
+  if (!deps.stdout.isTTY) {
+    deps.stdout.write(sanitizeTerminalText(text));
+    return;
   }
+  const pager = openPlainTextPager(env, deps);
+  await pager.write(text);
+  await pager.close();
 }

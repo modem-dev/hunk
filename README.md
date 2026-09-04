@@ -87,7 +87,16 @@ hunk --fast                    # experimentally offload eligible syntax highligh
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
+hunk log                       # print a portable, attractive Git history
+hunk log --interactive         # browse history; Enter opens a commit in Hunk
 ```
+
+`hunk log` is a static-first, read-only alternative to `git log`, not a repository manager or a
+parser for every formatting option. Its default output keeps full commit, author, date, message,
+branch, remote, and tag details; `--oneline` provides compact rows, and `--theme` uses the same
+palette as Hunk review. Static output remains safe for pipes, redirects, and normal terminal
+scrollback. The explicit interactive mode stays a single history list; after opening a commit,
+quit its normal Hunk review to return to the same selection.
 
 ### Working with Jujutsu and Sapling
 

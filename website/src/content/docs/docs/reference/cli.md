@@ -16,32 +16,33 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 
 ## Common review options
 
-| Option                      | Description                                                     |
-| --------------------------- | --------------------------------------------------------------- |
-| `--mode <mode>`             | layout mode: auto, split, stack                                 |
-| `--cursor-line <style>`     | current-line marker: row, number, off                           |
-| `--theme <theme>`           | named theme override                                            |
-| `--agent-context <path>`    | JSON sidecar with agent rationale                               |
-| `--pager`                   | use pager-style chrome                                          |
-| `--experimental`            | enable experimental features (currently STML agent-note markup) |
-| `--fast`                    | experimentally offload eligible syntax highlighting             |
-| `--line-numbers`            | show line numbers                                               |
-| `--no-line-numbers`         | hide line numbers                                               |
-| `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
-| `--file-gap <rows>`         | file separator rows, including the ─ rule: 0-8 Default: 1.      |
-| `--hunk-gap <rows>`         | blank rows before each later hunk: 0-8 Default: 0.              |
-| `--wrap`                    | wrap long diff lines                                            |
-| `--no-wrap`                 | truncate long diff lines to one row                             |
-| `--hunk-headers`            | show hunk metadata rows                                         |
-| `--no-hunk-headers`         | hide hunk metadata rows                                         |
-| `--sidebar`                 | show files pane                                                 |
-| `--no-sidebar`              | hide files pane                                                 |
-| `--agent-notes`             | show agent notes by default                                     |
-| `--no-agent-notes`          | hide agent notes by default                                     |
-| `--transparent-bg`          | let terminal background show through Hunk surfaces              |
-| `--no-transparent-bg`       | paint Hunk surfaces with the active theme                       |
-| `--extension <path>`        | load an extension entry file or directory (repeatable)          |
-| `--no-extensions`           | disable user extensions for this run                            |
+| Option                      | Description                                                         |
+| --------------------------- | ------------------------------------------------------------------- |
+| `--mode <mode>`             | layout mode: auto, split, stack                                     |
+| `--cursor-line <style>`     | current-line marker: row, number, off                               |
+| `--theme <theme>`           | named theme override                                                |
+| `--vcs <id>`                | select a VCS provider Compatibility inverse; omitted from `--help`. |
+| `--agent-context <path>`    | JSON sidecar with agent rationale                                   |
+| `--pager`                   | use pager-style chrome                                              |
+| `--experimental`            | enable experimental features (currently STML agent-note markup)     |
+| `--fast`                    | experimentally offload eligible syntax highlighting                 |
+| `--line-numbers`            | show line numbers                                                   |
+| `--no-line-numbers`         | hide line numbers                                                   |
+| `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                    |
+| `--file-gap <rows>`         | file separator rows, including the ─ rule: 0-8 Default: 1.          |
+| `--hunk-gap <rows>`         | blank rows before each later hunk: 0-8 Default: 0.                  |
+| `--wrap`                    | wrap long diff lines                                                |
+| `--no-wrap`                 | truncate long diff lines to one row                                 |
+| `--hunk-headers`            | show hunk metadata rows                                             |
+| `--no-hunk-headers`         | hide hunk metadata rows                                             |
+| `--sidebar`                 | show files pane                                                     |
+| `--no-sidebar`              | hide files pane                                                     |
+| `--agent-notes`             | show agent notes by default                                         |
+| `--no-agent-notes`          | hide agent notes by default                                         |
+| `--transparent-bg`          | let terminal background show through Hunk surfaces                  |
+| `--no-transparent-bg`       | paint Hunk surfaces with the active theme                           |
+| `--extension <path>`        | load an extension entry file or directory (repeatable)              |
+| `--no-extensions`           | disable user extensions for this run                                |
 
 `--experimental` may also be placed before the review command, as in `hunk --experimental diff`.
 
@@ -89,6 +90,41 @@ hunk show [target] [-- <pathspec...>]
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
+
+## `hunk log`
+
+print an attractive Git commit history
+
+### Usage
+
+```bash
+hunk log [revision-or-range] [-- <pathspec...>]
+```
+
+Static output is the default. Use --interactive for the experimental history browser.
+
+This is an opinionated Git log subset, not a parser for arbitrary git-log options.
+
+### Command-specific options
+
+| Option                    | Description                                            |
+| ------------------------- | ------------------------------------------------------ |
+| `--all`                   | include commits reachable from every ref               |
+| `--first-parent`          | follow only the first parent of merge commits          |
+| `-n, --max-count <count>` | stop after this many commits                           |
+| `--author <pattern>`      | limit commits by author                                |
+| `--grep <pattern>`        | limit commits by subject or message                    |
+| `--since <date>`          | show commits newer than a Git date                     |
+| `--until <date>`          | show commits older than a Git date                     |
+| `--color <mode>`          | color output: auto, always, never                      |
+| `--format <format>`       | record format: medium or compact                       |
+| `--oneline`               | alias for --format compact                             |
+| `--theme <id>`            | use the same theme as Hunk review                      |
+| `--ascii`                 | use an ASCII graph                                     |
+| `--interactive`           | browse history and open commits in Hunk                |
+| `--vcs <id>`              | select a VCS history provider                          |
+| `--extension <path>`      | load an extension entry file or directory (repeatable) |
+| `--no-extensions`         | disable user extensions for this run                   |
 
 ## `hunk stash show`
 

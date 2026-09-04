@@ -465,6 +465,35 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
+API version 17 also adds the optional, read-only `history` capability used by `hunk log`:
+
+```ts
+hunk.registerVcsAdapter({
+  id: "hg-history",
+  name: "Mercurial history",
+  detect: () => null,
+  history: {
+    async open() {
+      return {
+        async read({ signal }) {
+          signal?.throwIfAborted();
+          return { commits: [], done: true };
+        },
+        close() {},
+      };
+    },
+  },
+});
+```
+
+History is deliberately separate from patch-producing `operations`. Commits must carry an
+immutable full `revisionId`, display id, ordered parent ids, subject, optional message body,
+author (and optional email), ISO authored time, and structured ref decorations. Reads may return at most the requested limit and must distinguish
+a page boundary from repository end with `done`. Hunk copies and validates every page, strips
+terminal controls from display metadata, rejects duplicate revisions, forwards cancellation, and
+closes the source at EOF or failure. Git implements this capability today; the bundled jj and
+Sapling adapters currently report it as unsupported.
+
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:
 

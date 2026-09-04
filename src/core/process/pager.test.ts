@@ -321,6 +321,44 @@ describe("plain text pager fallback", () => {
     );
   });
 
+  test("accepts EPIPE only when an early-closing pager exits successfully", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    await pagePlainText(
+      "long output",
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            const error = Object.assign(new Error("broken pipe"), { code: "EPIPE" });
+            pager.stdin.emit("error", error);
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+  });
+
+  test("rejects EPIPE when the pager itself reports failure", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    const promise = pagePlainText(
+      "long output",
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            pager.stdin.emit("error", Object.assign(new Error("broken pipe"), { code: "EPIPE" }));
+            pager.emit("close", 1);
+          });
+          return pager as never;
+        },
+      }),
+    );
+    await expect(promise).rejects.toThrow("Pager command failed");
+  });
+
   test("throws when the pager exits with a non-zero status", async () => {
     const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
     pager.stdin = new PassThrough();

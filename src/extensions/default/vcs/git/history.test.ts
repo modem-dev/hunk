@@ -1,0 +1,103 @@
+import { describe, expect, test } from "bun:test";
+import { buildGitHistoryArgs, parseGitHistory } from "./history";
+
+describe("Git history production", () => {
+  test("builds the strict supported query with literal pathspec separation", () => {
+    expect(
+      buildGitHistoryArgs({
+        revision: "main..feature",
+        firstParent: true,
+        maxCount: 12,
+        author: "Ada",
+        grep: "parser",
+        since: "2.weeks",
+        until: "yesterday",
+        pathspecs: ["src/file with spaces.ts", "--not-an-option"],
+      }),
+    ).toEqual([
+      "log",
+      "--topo-order",
+      "--parents",
+      "--no-show-signature",
+      "--no-color",
+      "--abbrev=8",
+      "-z",
+      "--format=%H%x00%h%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%b",
+      "--first-parent",
+      "--max-count=12",
+      "--author=Ada",
+      "--grep=parser",
+      "--since=2.weeks",
+      "--until=yesterday",
+      "main..feature",
+      "--",
+      "src/file with spaces.ts",
+      "--not-an-option",
+    ]);
+  });
+
+  test("refuses option-like revisions", () => {
+    expect(() => buildGitHistoryArgs({ revision: "--output=/tmp/pwn" })).toThrow(
+      "Refused history revision",
+    );
+  });
+
+  test("parses NUL-delimited commits and copies structured decorations", () => {
+    const decorations = new Map([["a".repeat(40), [{ kind: "head" as const, label: "HEAD" }]]]);
+    const text = [
+      "a".repeat(40),
+      "aaaaaaaa",
+      `${"b".repeat(40)} ${"c".repeat(40)}`,
+      "Ada Lovelace",
+      "ada@example.com",
+      "2026-01-02T03:04:05Z",
+      "Merge work",
+      "Detailed rationale.\n",
+    ].join("\0");
+    expect(parseGitHistory(text, decorations)).toEqual([
+      {
+        revisionId: "a".repeat(40),
+        displayId: "aaaaaaaa",
+        parentRevisionIds: ["b".repeat(40), "c".repeat(40)],
+        subject: "Merge work",
+        body: "Detailed rationale.\n",
+        authorName: "Ada Lovelace",
+        authorEmail: "ada@example.com",
+        authoredAt: "2026-01-02T03:04:05Z",
+        decorations: [{ kind: "head", label: "HEAD" }],
+      },
+    ]);
+  });
+
+  test("drops excluded secondary parents for first-parent topology", () => {
+    const text = [
+      "a".repeat(40),
+      "aaaaaaaa",
+      `${"b".repeat(40)} ${"c".repeat(40)}`,
+      "Ada",
+      "ada@example.com",
+      "2026-01-01T00:00:00Z",
+      "Merge",
+      "",
+    ].join("\0");
+    expect(parseGitHistory(text, new Map(), true)[0]!.parentRevisionIds).toEqual(["b".repeat(40)]);
+  });
+
+  test("rejects truncated records and invalid SHA object ids", () => {
+    expect(() => parseGitHistory("id\0short\0parent")).toThrow("truncated history record");
+    expect(() =>
+      parseGitHistory(
+        [
+          "not-a-sha",
+          "short",
+          "",
+          "Ada",
+          "ada@example.com",
+          "2026-01-01T00:00:00Z",
+          "Bad",
+          "",
+        ].join("\0"),
+      ),
+    ).toThrow("invalid history object id");
+  });
+});

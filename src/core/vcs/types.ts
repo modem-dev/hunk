@@ -1,4 +1,8 @@
-import type { ExtensionVcsWatchPlan } from "../../extension-api/types";
+import type {
+  ExtensionVcsHistoryInput,
+  ExtensionVcsHistoryPage,
+  ExtensionVcsWatchPlan,
+} from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
 import type {
   VcsDiffCommandInput,
@@ -39,6 +43,17 @@ export interface VcsOperations {
   "stash-show"?: VcsOperation<VcsStashShowCommandInput>;
 }
 
+/** Internal history cursor after extension-boundary validation. */
+export interface VcsHistorySource {
+  read(options: { limit: number; signal?: AbortSignal }): Promise<ExtensionVcsHistoryPage>;
+  close(): Promise<void>;
+}
+
+/** Optional provider-neutral read-only history capability. */
+export interface VcsHistoryCapability {
+  open(input: ExtensionVcsHistoryInput, context: VcsLoadContext): Promise<VcsHistorySource>;
+}
+
 /**
  * One adapter operation's result, after the conversion boundary.
  *
@@ -73,6 +88,7 @@ export interface VcsAdapter {
   name: string;
   detect(cwd: string): VcsDetection | null;
   operations: VcsOperations;
+  history?: VcsHistoryCapability;
   /** Detection order weight; higher is consulted first. See the public contract. */
   detectionPriority?: number;
 }

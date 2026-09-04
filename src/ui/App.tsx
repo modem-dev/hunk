@@ -354,7 +354,9 @@ export function App({
     currentPreferences: currentViewPreferences,
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
-    promptSaveViewPreferences: bootstrap.input.options.promptSaveViewPreferences !== false,
+    promptSaveViewPreferences:
+      bootstrap.input.options.promptSaveViewPreferences !== false &&
+      process.env.HUNK_RETURN_TO_HISTORY !== "1",
     transientViewPreferences: extensionSessionOptions.transientViewPreferences,
     onQuit,
     showNotice: showSessionNotice,
@@ -1059,7 +1061,11 @@ export function App({
         toggleFilesPane,
         triggerEditSelectedFile,
         triggerRefreshCurrentInput,
-      }),
+      }).map((command) =>
+        process.env.HUNK_RETURN_TO_HISTORY === "1" && command.id === "hunk.app.quit"
+          ? { ...command, title: "Back to history" }
+          : command,
+      ),
       ...extensionAppCommands.commands,
     ],
     publishCommandExecuted,

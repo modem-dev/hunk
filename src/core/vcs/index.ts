@@ -1,6 +1,7 @@
 import { relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
 import { HunkUserError } from "../run/errors";
+import type { ExtensionVcsHistoryInput } from "../../extension-api/types";
 import type { CliInput } from "../run/commandInputs";
 import type {
   VcsAdapter,
@@ -8,6 +9,7 @@ import type {
   VcsDetection,
   VcsId,
   VcsLoadContext,
+  VcsHistorySource,
   VcsOperation,
   VcsPatchResult,
   VcsReviewInput,
@@ -150,6 +152,25 @@ export async function loadVcsReview(
     throw createUnsupportedVcsOperationError(adapter, operation.kind, catalog);
   }
   return await handler.load(operation.input, context);
+}
+
+/** Open a provider-neutral history source or report that the selected backend lacks one. */
+export async function openVcsHistory(
+  adapter: VcsAdapter,
+  input: ExtensionVcsHistoryInput,
+  context: VcsLoadContext,
+  catalog: VcsCatalog,
+): Promise<VcsHistorySource> {
+  if (!adapter.history) {
+    const supportingAdapter = catalog.adapters.find((candidate) => candidate.history);
+    throw new HunkUserError(`\`hunk log\` is not supported by ${adapter.name}.`, [
+      ...(supportingAdapter
+        ? [`Use \`--vcs ${supportingAdapter.id}\` in a compatible repository.`]
+        : []),
+      "Use a VCS adapter that implements history browsing.",
+    ]);
+  }
+  return await adapter.history.open(input, context);
 }
 
 /** Build an adapter event plan, falling back to signature polling. */

@@ -58,6 +58,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Usage:");
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
+    expect(parsed.text).toContain("hunk log");
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
@@ -485,6 +486,75 @@ describe("parseCli", () => {
       kind: "vcs",
       range: "trunk()..@",
       pathspecs: [".github"],
+    });
+  });
+
+  test("parses static and interactive log options without review flags", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "log",
+        "main..feature",
+        "--first-parent",
+        "-n",
+        "25",
+        "--author",
+        "Ada",
+        "--color",
+        "never",
+        "--ascii",
+        "--interactive",
+        "--",
+        "src/app.ts",
+      ]),
+    ).toEqual({
+      kind: "history",
+      revision: "main..feature",
+      firstParent: true,
+      maxCount: 25,
+      author: "Ada",
+      pathspecs: ["src/app.ts"],
+      color: "never",
+      format: "medium",
+      ascii: true,
+      interactive: true,
+      extensionsEnabled: true,
+      extensionPaths: [],
+    });
+  });
+
+  test("parses compact aliases, themes, and command-local extension disabling", async () => {
+    expect(
+      await parseCli(["bun", "hunk", "log", "--oneline", "--theme", "nord", "--no-extensions"]),
+    ).toMatchObject({
+      kind: "history",
+      format: "compact",
+      theme: "nord",
+      extensionsEnabled: false,
+    });
+    expect(await parseCli(["bun", "hunk", "--no-extensions", "log"])).toMatchObject({
+      kind: "history",
+      extensionsEnabled: false,
+    });
+  });
+
+  test("rejects unsupported log flags and conflicting traversal starts", async () => {
+    await expect(parseCli(["bun", "hunk", "log", "--pretty=raw"])).rejects.toThrow(
+      "unknown option",
+    );
+    await expect(parseCli(["bun", "hunk", "log", "HEAD", "--all"])).rejects.toThrow(
+      "either a revision/range or --all",
+    );
+    await expect(parseCli(["bun", "hunk", "--fast", "log"])).rejects.toThrow("review command");
+  });
+
+  test("accepts the internal VCS override used by history-to-review transitions", async () => {
+    expect(
+      await parseCli(["bun", "hunk", "diff", "parent", "commit", "--vcs", "demo"]),
+    ).toMatchObject({
+      kind: "vcs",
+      options: { vcs: "demo" },
     });
   });
 
