@@ -56,6 +56,7 @@ session-local compact/medium, graph, Unicode, author, date, and decoration contr
 - `/` to search and `n`/`N` for the next or previous match
 - `y` to copy the full immutable commit id
 - `Enter` to open the selected commit in Hunk's normal review
+- use Commit → **Compare with first parent** for the ordered first parent, or **Compare with parent…** to choose another merge parent; these compare the selected commit against that parent rather than opening the parent itself
 - click a visible commit id to open it immediately, or double-click elsewhere on a row
 - `r` to refresh while retaining the selected immutable commit when it still exists
 - `q` to quit

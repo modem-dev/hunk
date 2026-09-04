@@ -156,8 +156,12 @@ export const LOG_COMMANDS: readonly LogCommandDefinition[] = [
     shortcuts: [{ token: "sequence:N", display: "N" }],
     helpSection: "Navigation",
   },
-  { id: "open-first-parent", label: "Open first parent", menu: "commit" },
-  { id: "open-parent", label: "Open parent…", menu: "commit" },
+  {
+    id: "open-first-parent",
+    label: "Compare with first parent",
+    menu: "commit",
+  },
+  { id: "open-parent", label: "Compare with parent…", menu: "commit" },
   {
     id: "help",
     label: "Keyboard shortcuts",

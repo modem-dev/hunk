@@ -3,6 +3,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { MenuId } from "./chrome/menu";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
@@ -31,6 +32,7 @@ const { ThemeSelectorDialog } = await import("./chrome/ThemeSelectorDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
 const { DiffPane, storedReviewNoteActions } = await import("./panes/DiffPane");
+const { MenuBar } = await import("./chrome/MenuBar");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
@@ -3469,6 +3471,69 @@ describe("UI components", () => {
     expect(frame).toContain("First rationale.");
     expect(frame).toContain("Second note");
     expect(frame).toContain("Second rationale.");
+  });
+
+  test("MenuBar renders a responsive overflow for hidden top menus", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <MenuBar
+        activeMenuId={null}
+        menuSpecs={[
+          { id: "file", left: 1, width: 6, label: "File" },
+          { id: "view", left: 7, width: 6, label: "View" },
+          { id: "navigate", left: 13, width: 10, label: "Navigate" },
+          { id: "commit", left: 23, width: 8, label: "Commit" },
+          { id: "help", left: 31, width: 6, label: "Help" },
+        ]}
+        terminalWidth={20}
+        theme={theme}
+        topTitle="history"
+        onHoverMenu={() => {}}
+        onToggleMenu={() => {}}
+      />,
+      20,
+      2,
+    );
+    expect(frame).toContain("File");
+    expect(frame).toContain("…");
+    expect(frame).not.toContain("Navigate");
+  });
+
+  test("MenuBar overflow cycles through every hidden menu by mouse", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const toggled: string[] = [];
+    const clickOverflow = async (activeMenuId: MenuId | null) => {
+      const setup = await testRender(
+        <MenuBar
+          activeMenuId={activeMenuId}
+          menuSpecs={[
+            { id: "file", left: 1, width: 6, label: "File" },
+            { id: "view", left: 7, width: 6, label: "View" },
+            { id: "navigate", left: 13, width: 10, label: "Navigate" },
+            { id: "commit", left: 23, width: 8, label: "Commit" },
+            { id: "help", left: 31, width: 6, label: "Help" },
+          ]}
+          terminalWidth={20}
+          theme={theme}
+          topTitle="history"
+          onHoverMenu={() => {}}
+          onToggleMenu={(id) => toggled.push(id)}
+        />,
+        { width: 20, height: 2 },
+      );
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+          await setup.mockMouse.click(14, 0);
+        });
+      } finally {
+        setup.renderer.destroy();
+      }
+    };
+    await clickOverflow(null);
+    await clickOverflow("navigate");
+    await clickOverflow("commit");
+    expect(toggled).toEqual(["navigate", "commit", "help"]);
   });
 
   test("MenuDropdown renders checked items and key hints", async () => {

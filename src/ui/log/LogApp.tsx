@@ -24,6 +24,7 @@ import {
   type LogCommandId,
 } from "./commands";
 import { ParentSelectorDialog } from "./ParentSelectorDialog";
+import { monochromeLogTheme } from "./colorPolicy";
 
 export type LogAppOutcome =
   | { kind: "quit"; exitCode?: number }
@@ -34,10 +35,12 @@ export function LogApp({
   controller,
   runtime,
   onOutcome,
+  useColor,
 }: {
   controller: LogController;
   runtime: HistoryRuntime;
   onOutcome: (outcome: LogAppOutcome) => void;
+  useColor: boolean;
 }) {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const terminal = useTerminalDimensions();
@@ -46,6 +49,9 @@ export function LogApp({
   const [parentSelectorIndex, setParentSelectorIndex] = useState<number | null>(null);
   const [transientNotice, setTransientNotice] = useState("");
   const lastClick = useRef({ index: -1, at: 0 });
+  // Lock synchronously before awaiting provider planning so coalesced Enter+q input cannot
+  // quit the log or leak the trailing command into the child review.
+  const reviewPending = useRef(false);
   const themeController = useThemeSelectorController({
     customThemes: runtime.customThemes,
     initialTheme: snapshot.themeId,
@@ -54,7 +60,13 @@ export function LogApp({
     onThemeCommitted: (id) => controller.setTheme(id),
     transparentBackground: false,
   });
-  const theme = themeController.activeTheme;
+  const terminalThemeMode = renderer.themeMode ?? "dark";
+  const theme = useColor
+    ? themeController.activeTheme
+    : monochromeLogTheme(themeController.activeTheme, terminalThemeMode);
+  const chromeTheme = useColor
+    ? themeController.baseTheme
+    : monochromeLogTheme(themeController.baseTheme, terminalThemeMode);
   const selectedRow = snapshot.rows[snapshot.selected];
   const detailHeight =
     snapshot.presentation.format === "medium" && selectedRow && terminal.height >= 9 ? 5 : 0;
@@ -71,8 +83,10 @@ export function LogApp({
     }
   };
   const openSelected = async (parentRevisionId?: string) => {
+    if (reviewPending.current) return;
     const planned = controller.planSelectedReview(parentRevisionId);
     if (!planned) return;
+    reviewPending.current = true;
     try {
       onOutcome({
         kind: "open-review",
@@ -80,6 +94,7 @@ export function LogApp({
         themeId: themeController.themeId,
       });
     } catch (error) {
+      reviewPending.current = false;
       controller.setNotice(error instanceof Error ? error.message : String(error));
     }
   };
@@ -248,6 +263,10 @@ export function LogApp({
       key.preventDefault();
       key.stopPropagation();
     };
+    if (reviewPending.current) {
+      consume();
+      return;
+    }
     const name = key.name;
     const sequence = key.sequence ?? "";
     if (parentSelectorIndex !== null) {
@@ -352,7 +371,9 @@ export function LogApp({
           paddingLeft: 1,
           paddingRight: 1,
         }}
+        onMouseUp={() => menu.closeMenu()}
         onMouseScroll={(event: TuiMouseEvent) => {
+          menu.closeMenu();
           const direction = event.scroll?.direction;
           if (direction === "up") controller.move(-3, viewportHeight);
           else if (direction === "down") controller.move(3, viewportHeight);
@@ -478,7 +499,7 @@ export function LogApp({
           activeMenuWidth={menu.activeMenuWidth}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
-          theme={themeController.baseTheme}
+          theme={chromeTheme}
           onHoverItem={menu.setActiveMenuItemIndex}
           onSelectItem={(entry: Extract<MenuEntry, { kind: "item" }>) => {
             if (!entry.disabled) entry.action();
@@ -492,7 +513,7 @@ export function LogApp({
           selectedIndex={parentSelectorIndex}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
-          theme={themeController.baseTheme}
+          theme={chromeTheme}
           onAccept={(index) => {
             const parent = selectedRow.commit.parentRevisionIds[index];
             setParentSelectorIndex(null);
@@ -508,7 +529,7 @@ export function LogApp({
           selectedIndex={themeController.themeSelectorSelectedIndex}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
-          theme={themeController.baseTheme}
+          theme={chromeTheme}
           onAcceptItem={themeController.acceptThemeSelectorItem}
           onClose={themeController.closeThemeSelector}
           onPreviewItem={themeController.previewThemeSelectorItem}
@@ -519,7 +540,7 @@ export function LogApp({
           sections={LOG_HELP_SECTIONS}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
-          theme={themeController.baseTheme}
+          theme={chromeTheme}
           onClose={() => setShowHelp(false)}
         />
       ) : null}

@@ -429,7 +429,11 @@ describe("AppHost file views", () => {
 
       await act(async () => setup.mockInput.pressKey("F10"));
       await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"));
-      await act(async () => setup.mockInput.pressArrow("right"));
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+        // Height-clamped dropdowns window around the active item; wrap to the final action.
+        await setup.mockInput.pressArrow("up");
+      });
       const menu = await waitForFrame(setup, (frame) =>
         frame.includes("Apply “Bulk preview” to all matching files"),
       );

@@ -9,6 +9,7 @@ import {
   menuBoxHeight,
   menuWidth,
   nextMenuItemIndex,
+  responsiveMenuSpecs,
   type MenuEntry,
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
@@ -169,6 +170,21 @@ describe("ui helpers", () => {
     ];
 
     expect(menuWidth(wide)).toBe(menuWidth(ascii) + 10);
+  });
+
+  test("responsive menus keep hidden commands reachable behind a visible overflow", () => {
+    const item: MenuEntry = { kind: "item", label: "One", action: () => {} };
+    const specs = buildMenuSpecs({
+      file: [item],
+      view: [item],
+      navigate: [item],
+      commit: [item],
+      help: [item],
+    });
+    const layout = responsiveMenuSpecs(specs, 20);
+    expect(layout.visible.map((spec) => spec.id)).toEqual(["file", "view"]);
+    expect(layout.hidden.map((spec) => spec.id)).toEqual(["navigate", "commit", "help"]);
+    expect(layout.overflowLeft).toBe(13);
   });
 
   test("menuBarTitleWidth cedes title space to the menus the bar shows", () => {
