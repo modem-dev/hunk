@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
+import { normalizeSyntaxGrammar, SYNTAX_GRAMMAR_LIMITS } from "./syntaxGrammars";
 import {
   createEmptyExtensionRegistry,
   HUNK_EXTENSION_API_VERSION,
@@ -1006,6 +1007,52 @@ describe("registerSyntaxGrammar", () => {
     expect(failures.join("\n")).toContain("#local");
     expect(failures.join("\n")).toContain("string-size limit");
     expect(registry.syntaxGrammars).toEqual([]);
+  });
+
+  test("requires local includes to name own repository rules", () => {
+    for (const inheritedName of ["constructor", "toString", "hasOwnProperty"]) {
+      expect(() =>
+        normalizeSyntaxGrammar({
+          id: "prototype-check",
+          scopeName: "source.prototype-check",
+          patterns: [{ include: `#${inheritedName}` }],
+        }),
+      ).toThrow(`references missing local rule #${inheritedName}`);
+    }
+
+    expect(() =>
+      normalizeSyntaxGrammar({
+        id: "owned-constructor",
+        scopeName: "source.owned-constructor",
+        patterns: [{ include: "#constructor" }],
+        repository: { constructor: { match: "constructor" } },
+      }),
+    ).not.toThrow();
+  });
+
+  test("accepts exact depth and node limits and rejects the next grammar node", () => {
+    const nestedRule = (depth: number): Record<string, unknown> =>
+      depth === 1 ? { match: "x" } : { patterns: [nestedRule(depth - 1)] };
+    const grammarWithPatterns = (patterns: Record<string, unknown>[]) => ({
+      id: "boundary",
+      scopeName: "source.boundary",
+      patterns,
+    });
+
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([nestedRule(SYNTAX_GRAMMAR_LIMITS.depth)])),
+    ).not.toThrow();
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([nestedRule(SYNTAX_GRAMMAR_LIMITS.depth + 1)])),
+    ).toThrow("grammar-depth limit");
+
+    const allowedRules = Array.from({ length: SYNTAX_GRAMMAR_LIMITS.nodes - 1 }, () => ({
+      match: "x",
+    }));
+    expect(() => normalizeSyntaxGrammar(grammarWithPatterns(allowedRules))).not.toThrow();
+    expect(() =>
+      normalizeSyntaxGrammar(grammarWithPatterns([...allowedRules, { match: "x" }])),
+    ).toThrow("grammar-node limit");
   });
 
   test("rolls back and seals grammar registration with the rest of the factory", () => {

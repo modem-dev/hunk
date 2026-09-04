@@ -186,6 +186,37 @@ describe("highlight worker client", () => {
     await expect(pending).resolves.toEqual(emptyCompactResponse());
   });
 
+  test("rejects every pending request when worker configuration is rejected", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const active = requestHighlight();
+    const queued = requestHighlight();
+    const configure = control.state.messages[0];
+    if (!configure || configure.type !== "configure") throw new Error("Expected configure request");
+
+    control.reply({
+      version: 4,
+      type: "configured",
+      generation: configure.generation,
+      ok: false,
+      message: "grammar rejected",
+    });
+
+    await expect(active).rejects.toThrow("grammar rejected");
+    await expect(queued).rejects.toThrow("grammar rejected");
+    expect(control.state.terminateCalls).toBe(1);
+  });
+
+  test("times out stalled worker configuration without waiting for the production budget", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker, { timeoutMs: 10 });
+
+    await expect(requestHighlight()).rejects.toThrow(
+      "Syntax grammar configuration timed out after 10ms",
+    );
+    expect(control.state.terminateCalls).toBe(1);
+  });
+
   test("sends grammar data before work and retires a worker on generation change", async () => {
     replaceExtensionSyntaxGrammars([
       {
@@ -214,6 +245,29 @@ describe("highlight worker client", () => {
     expect(replacement.state.messages[0]?.type).toBe("configure");
     disposeHighlightWorker();
     await expect(replacementPending).rejects.toThrow("disposed");
+  });
+
+  test("retires an active highlight when its configured grammar generation changes", async () => {
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "custom",
+        grammar: Object.freeze({
+          id: "custom",
+          scopeName: "source.custom",
+          patterns: Object.freeze([{ match: "x", name: "keyword.custom" }]),
+        }),
+      },
+    ]);
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const active = requestHighlight();
+    control.acknowledgeConfiguration();
+    expect(control.state.messages[1]?.type).toBe("highlight");
+
+    replaceExtensionSyntaxGrammars([]);
+
+    await expect(active).rejects.toThrow("configuration changed");
+    expect(control.state.terminateCalls).toBe(1);
   });
 
   test("disposal terminates the worker and rejects active plus queued work", async () => {

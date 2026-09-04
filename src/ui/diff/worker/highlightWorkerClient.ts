@@ -59,6 +59,7 @@ let activeRequest: PendingHighlightRequest | null = null;
 let configuredGeneration = -1;
 let configurationInFlight: number | null = null;
 let requestTimer: ReturnType<typeof setTimeout> | undefined;
+let requestTimeoutMs = HIGHLIGHT_WORKER_TIMEOUT_MS;
 let nextRequestId = 1;
 const queuedRequests: PendingHighlightRequest[] = [];
 
@@ -72,8 +73,8 @@ function clearRequestTimer() {
 function armRequestTimer(label: string) {
   clearRequestTimer();
   requestTimer = setTimeout(() => {
-    resetWorker(new Error(`${label} timed out after ${HIGHLIGHT_WORKER_TIMEOUT_MS}ms.`));
-  }, HIGHLIGHT_WORKER_TIMEOUT_MS);
+    resetWorker(new Error(`${label} timed out after ${requestTimeoutMs}ms.`));
+  }, requestTimeoutMs);
   requestTimer.unref?.();
 }
 
@@ -88,10 +89,11 @@ function useHighlightWorker(nextWorker: Worker) {
   return nextWorker;
 }
 
-/** Register a caller-provided worker, such as a deterministic test double. */
-export function registerHighlightWorker(nextWorker: Worker) {
+/** Register a caller-provided worker, with an optional short timeout for deterministic tests. */
+export function registerHighlightWorker(nextWorker: Worker, options: { timeoutMs?: number } = {}) {
   if (worker && worker !== nextWorker)
     resetWorker(new Error("The syntax highlighting worker was replaced."));
+  requestTimeoutMs = options.timeoutMs ?? HIGHLIGHT_WORKER_TIMEOUT_MS;
   return useHighlightWorker(nextWorker);
 }
 
@@ -257,4 +259,5 @@ subscribeSyntaxGrammarChanges(() => {
 /** Terminate the shared worker when a controlled caller needs to release it. */
 export function disposeHighlightWorker() {
   resetWorker(new Error("The syntax highlighting worker was disposed."));
+  requestTimeoutMs = HIGHLIGHT_WORKER_TIMEOUT_MS;
 }

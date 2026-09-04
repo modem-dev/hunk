@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { bundledLanguages } from "shiki";
+import { renderBundledSyntaxLanguages } from "../../../scripts/generate-bundled-syntax-languages";
 import { BUNDLED_SYNTAX_LANGUAGE_IDS } from "./bundledSyntaxLanguages.generated";
 import {
   replaceExtensionSyntaxGrammars,
@@ -8,8 +11,11 @@ import {
 } from "./syntaxGrammar";
 
 describe("syntax grammar registry", () => {
-  test("keeps the generated bundled-id collision list current with Pierre", () => {
+  test("keeps the generated bundled-id collision list current and formatter-stable", () => {
     expect([...BUNDLED_SYNTAX_LANGUAGE_IDS].sort()).toEqual(Object.keys(bundledLanguages).sort());
+    expect(
+      readFileSync(resolve(import.meta.dir, "bundledSyntaxLanguages.generated.ts"), "utf8"),
+    ).toBe(renderBundledSyntaxLanguages());
   });
 
   test("changes digest only when normalized grammar bytes change", () => {

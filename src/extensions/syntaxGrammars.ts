@@ -265,7 +265,7 @@ export function normalizeSyntaxGrammar(value: unknown): ExtensionSyntaxGrammar {
   for (const rule of patterns) collectLocalIncludes(rule, includes);
   for (const rule of Object.values(repository ?? {})) collectLocalIncludes(rule, includes);
   for (const include of includes) {
-    if (!repository?.[include]) {
+    if (repository === undefined || !Object.hasOwn(repository, include)) {
       throw new Error(`registerSyntaxGrammar references missing local rule #${include}.`);
     }
   }

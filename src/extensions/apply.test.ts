@@ -8,10 +8,12 @@ import {
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
 } from "../extension-api/types";
 import type { Changeset, DiffFile } from "../core/changeset/model";
+import { replaceExtensionSyntaxGrammars } from "../core/changeset/syntaxGrammar";
 import { extendVcsCatalog } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { HUNK_FILES_PANE_KEY } from "./extensionIds";
+import { SYNTAX_GRAMMAR_LIMITS } from "./syntaxGrammars";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
@@ -45,6 +47,7 @@ function catalogWith(adapters: readonly VcsAdapter[] = []) {
 }
 
 afterEach(() => {
+  replaceExtensionSyntaxGrammars([]);
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -735,6 +738,25 @@ describe("extension syntax grammars", () => {
     const issues = applyExtensionSyntaxGrammars(registry);
     expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual(["custom"]);
     expect(issues.map(({ extensionId }) => extensionId)).toEqual(["second", "shadow"]);
+  });
+
+  test("accepts the exact session limit and attributes only the overflow", async () => {
+    const { syntaxGrammarSnapshot } = await import("../core/changeset/syntaxGrammar");
+    const registry = createEmptyExtensionLoadResult("/repo").registry;
+    registry.syntaxGrammars.push(
+      ...Array.from({ length: SYNTAX_GRAMMAR_LIMITS.grammarsPerSession + 1 }, (_, index) =>
+        registered(`owner-${index}`, `custom-${index}`),
+      ),
+    );
+
+    const issues = applyExtensionSyntaxGrammars(registry);
+    expect(syntaxGrammarSnapshot().grammars).toHaveLength(SYNTAX_GRAMMAR_LIMITS.grammarsPerSession);
+    expect(issues).toEqual([
+      {
+        extensionId: `owner-${SYNTAX_GRAMMAR_LIMITS.grammarsPerSession}`,
+        message: `Skipped syntax grammar "custom-${SYNTAX_GRAMMAR_LIMITS.grammarsPerSession}" from extension owner-${SYNTAX_GRAMMAR_LIMITS.grammarsPerSession} • the session grammar limit was reached`,
+      },
+    ]);
   });
 
   test("atomically removes retired grammar data", async () => {
