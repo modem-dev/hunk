@@ -67,7 +67,7 @@ export function createTestSessionSnapshot(
 }
 
 export function createTestSessionRegistration(
-  overrides: Partial<HunkSessionRegistration> &
+  overrides: Partial<Omit<HunkSessionRegistration, "info">> &
     Partial<
       Pick<
         HunkSessionRegistration["info"],
@@ -97,6 +97,7 @@ export function createTestSessionRegistration(
     launchedAt: "2026-03-22T00:00:00.000Z",
     ...registrationOverrides,
     info: {
+      ...infoOverrides,
       inputKind: inputKind ?? infoOverrides?.inputKind ?? "vcs",
       title: title ?? infoOverrides?.title ?? "repo working tree",
       sourceLabel: sourceLabel ?? infoOverrides?.sourceLabel ?? "/repo",

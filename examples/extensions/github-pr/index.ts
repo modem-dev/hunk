@@ -5,12 +5,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   HunkExtensionUserError,
+  type ExtensionChangeRequestReviewDescriptor,
   type ExtensionCliCommandHandler,
   type ExtensionFactory,
 } from "hunkdiff/extension";
 
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const MAX_DIFF_BYTES = 64 * 1024 * 1024;
+const MAX_METADATA_BYTES = 256 * 1024;
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/;
 
 export const GITHUB_PR_HELP = `Usage: hunk gh <pull-request> [--repo <owner/repo>] [-- <patch-options...>]
@@ -312,13 +314,21 @@ export async function resolveGitHubPullRequest(
 }
 
 /** Read a bounded response body so a remote server cannot exhaust process memory. */
-async function readBoundedResponse(response: Response, signal: AbortSignal): Promise<Uint8Array> {
+async function readBoundedResponse(
+  response: Response,
+  signal: AbortSignal,
+  maximumBytes = MAX_DIFF_BYTES,
+  description = "pull-request diff",
+): Promise<Uint8Array> {
   const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_DIFF_BYTES) {
-    throw new HunkExtensionUserError("The pull-request diff exceeds the 64 MiB safety limit.");
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new HunkExtensionUserError(
+      `The ${description} exceeds the ${formatByteLimit(maximumBytes)} safety limit.`,
+    );
   }
   if (!response.body) {
-    throw new HunkExtensionUserError("GitHub returned an empty pull-request response.");
+    throw new HunkExtensionUserError(`GitHub returned an empty ${description} response.`);
   }
 
   const reader = response.body.getReader();
@@ -332,9 +342,11 @@ async function readBoundedResponse(response: Response, signal: AbortSignal): Pro
       const next = await reader.read();
       if (next.done) break;
       total += next.value.byteLength;
-      if (total > MAX_DIFF_BYTES) {
+      if (total > maximumBytes) {
         await reader.cancel();
-        throw new HunkExtensionUserError("The pull-request diff exceeds the 64 MiB safety limit.");
+        throw new HunkExtensionUserError(
+          `The ${description} exceeds the ${formatByteLimit(maximumBytes)} safety limit.`,
+        );
       }
       chunks.push(next.value);
     }
@@ -342,7 +354,10 @@ async function readBoundedResponse(response: Response, signal: AbortSignal): Pro
     if (signal.aborted) {
       throw new HunkExtensionUserError("GitHub pull-request loading was cancelled.");
     }
-    throw error;
+    if (error instanceof HunkExtensionUserError) throw error;
+    throw new HunkExtensionUserError(`GitHub stopped sending the ${description}.`, {
+      suggestions: ["Check network access and retry."],
+    });
   } finally {
     reader.releaseLock();
   }
@@ -354,9 +369,36 @@ async function readBoundedResponse(response: Response, signal: AbortSignal): Pro
     offset += chunk.byteLength;
   }
   if (bytes.byteLength === 0) {
-    throw new HunkExtensionUserError("GitHub returned an empty pull-request diff.");
+    throw new HunkExtensionUserError(`GitHub returned an empty ${description}.`);
   }
   return bytes;
+}
+
+/** Format one binary byte limit for fixed, readable user errors. */
+function formatByteLimit(bytes: number): string {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+  return `${bytes / 1024} KiB`;
+}
+
+/** Build fixed GitHub headers without letting malformed credentials reach fetch. */
+function githubHeaders(env: NodeJS.ProcessEnv, accept: string): Headers {
+  const headers = new Headers({
+    Accept: accept,
+    "User-Agent": "hunk-github-pr-extension",
+    "X-GitHub-Api-Version": "2022-11-28",
+  });
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN;
+  if (token) {
+    try {
+      headers.set("Authorization", `Bearer ${token}`);
+    } catch {
+      throw new HunkExtensionUserError(
+        "The configured GitHub token contains characters that cannot be sent in an HTTP header.",
+        { suggestions: ["Set GH_TOKEN or GITHUB_TOKEN to the token value without line breaks."] },
+      );
+    }
+  }
+  return headers;
 }
 
 /** Convert a non-success GitHub response into a fixed, credential-safe error. */
@@ -397,6 +439,132 @@ function githubResponseError(response: Response, target: ResolvedGitHubPullReque
   return new HunkExtensionUserError(`GitHub returned HTTP ${response.status} for ${name}.`);
 }
 
+/** Parse the exact GitHub PR fields shown in Hunk's delegated review pane. */
+export function parseGitHubPullRequestMetadata(
+  value: unknown,
+  target: ResolvedGitHubPullRequest,
+): ExtensionChangeRequestReviewDescriptor {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+  const candidate = value as Record<string, unknown>;
+  const readString = (container: Record<string, unknown>, field: string, maximumBytes: number) => {
+    const fieldValue = container[field];
+    if (
+      typeof fieldValue !== "string" ||
+      fieldValue.length === 0 ||
+      /[\u0000-\u001f\u007f-\u009f]/u.test(fieldValue) ||
+      new TextEncoder().encode(fieldValue).byteLength > maximumBytes
+    ) {
+      throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+    }
+    return fieldValue;
+  };
+  const readObject = (field: string) => {
+    const fieldValue = candidate[field];
+    if (typeof fieldValue !== "object" || fieldValue === null || Array.isArray(fieldValue)) {
+      throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+    }
+    return fieldValue as Record<string, unknown>;
+  };
+
+  const title = readString(candidate, "title", 2 * 1024);
+  const pageUrl = readString(candidate, "html_url", 2 * 1024);
+  const user = readObject("user");
+  const author = readString(user, "login", 512);
+  const base = readString(readObject("base"), "ref", 512);
+  const head = readString(readObject("head"), "ref", 512);
+  const state = candidate.state;
+  const draft = candidate.draft;
+  if (
+    (state !== "open" && state !== "closed") ||
+    (draft !== undefined && typeof draft !== "boolean")
+  ) {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+  if (candidate.merged !== undefined && typeof candidate.merged !== "boolean") {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(pageUrl);
+  } catch {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+  const expectedPath = `/${target.owner}/${target.repo}/pull/${target.number}`.toLowerCase();
+  if (
+    parsedUrl.protocol !== "https:" ||
+    parsedUrl.hostname.toLowerCase() !== "github.com" ||
+    parsedUrl.port ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash ||
+    parsedUrl.pathname.toLowerCase() !== expectedPath
+  ) {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+
+  return {
+    kind: "change-request",
+    provider: "GitHub",
+    title,
+    url: pageUrl,
+    id: `#${target.number}`,
+    repository: `${target.owner}/${target.repo}`,
+    author,
+    base,
+    head,
+    state: candidate.merged === true ? "merged" : state,
+    ...(typeof draft === "boolean" ? { draft } : {}),
+  };
+}
+
+/** Fetch bounded GitHub pull-request metadata for delegated review chrome. */
+export async function fetchGitHubPullRequestMetadata(
+  target: ResolvedGitHubPullRequest,
+  signal: AbortSignal,
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImpl: GitHubFetch = fetch,
+): Promise<ExtensionChangeRequestReviewDescriptor> {
+  const url =
+    `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/` +
+    `${encodeURIComponent(target.repo)}/pulls/${target.number}`;
+  const headers = githubHeaders(env, "application/vnd.github+json");
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      headers,
+      redirect: "manual",
+      signal,
+    });
+  } catch {
+    if (signal.aborted) {
+      throw new HunkExtensionUserError("GitHub pull-request loading was cancelled.");
+    }
+    throw new HunkExtensionUserError(
+      "GitHub could not be reached while loading pull-request metadata.",
+      { suggestions: ["Check network access and retry."] },
+    );
+  }
+  if (!response.ok) throw githubResponseError(response, target);
+
+  const bytes = await readBoundedResponse(
+    response,
+    signal,
+    MAX_METADATA_BYTES,
+    "pull-request metadata",
+  );
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new HunkExtensionUserError("GitHub returned malformed pull-request metadata.");
+  }
+  return parseGitHubPullRequestMetadata(value, target);
+}
+
 /** Fetch one GitHub pull-request diff without invoking the gh CLI. */
 export async function fetchGitHubPullRequestDiff(
   target: ResolvedGitHubPullRequest,
@@ -404,23 +572,7 @@ export async function fetchGitHubPullRequestDiff(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: GitHubFetch = fetch,
 ): Promise<Uint8Array> {
-  const token = env.GH_TOKEN || env.GITHUB_TOKEN;
-  const headers = new Headers({
-    Accept: "application/vnd.github.v3.diff",
-    "User-Agent": "hunk-github-pr-extension",
-    "X-GitHub-Api-Version": "2022-11-28",
-  });
-  if (token) {
-    try {
-      headers.set("Authorization", `Bearer ${token}`);
-    } catch {
-      throw new HunkExtensionUserError(
-        "The configured GitHub token contains characters that cannot be sent in an HTTP header.",
-        { suggestions: ["Set GH_TOKEN or GITHUB_TOKEN to the token value without line breaks."] },
-      );
-    }
-  }
-
+  const headers = githubHeaders(env, "application/vnd.github.v3.diff");
   const url =
     `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/` +
     `${encodeURIComponent(target.repo)}/pulls/${target.number}`;
@@ -502,6 +654,12 @@ export function createGitHubPrExtension(
       await ctx.stderr.write(
         `Fetching GitHub pull request ${target.owner}/${target.repo}#${target.number}…\n`,
       );
+      const review = await fetchGitHubPullRequestMetadata(
+        target,
+        ctx.signal,
+        runtime.env,
+        runtime.fetchImpl,
+      );
       const diff = await fetchGitHubPullRequestDiff(
         target,
         ctx.signal,
@@ -531,7 +689,11 @@ export function createGitHubPrExtension(
         await discardPatch();
         throw new HunkExtensionUserError("GitHub pull-request loading was cancelled.");
       }
-      return { kind: "delegate", argv: ["patch", patchPath, ...invocation.patchArgs] };
+      return {
+        kind: "delegate",
+        argv: ["patch", patchPath, ...invocation.patchArgs],
+        review,
+      };
     };
 
     hunk.registerCliCommand(

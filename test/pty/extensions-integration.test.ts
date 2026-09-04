@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
@@ -16,6 +16,9 @@ const REVIEW_SNAPSHOT_EXPORT_EXTENSION = resolve(
 );
 const VIM_NAVIGATION_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
+);
+const GITHUB_PR_EXTENSION_ENTRY = resolve(
+  fileURLToPath(new URL("../../examples/extensions/github-pr/index.ts", import.meta.url)),
 );
 
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
@@ -49,6 +52,38 @@ const TRANSFORM_EXTENSION_SOURCE = `export default function (hunk) {
     files: changeset.files.filter((file) => !file.path.includes("beta")),
   }));
 }
+`;
+
+/** The real GitHub PR example with fixed network responses for an end-to-end pane proof. */
+const DELEGATED_REVIEW_EXTENSION_SOURCE = `import { createGitHubPrExtension } from ${JSON.stringify(GITHUB_PR_EXTENSION_ENTRY)};
+const metadata = {
+  title: "Delegated pane proof",
+  html_url: "https://github.com/modem-dev/hunk/pull/123",
+  user: { login: "octocat" },
+  state: "open",
+  draft: false,
+  merged: false,
+  base: { ref: "main" },
+  head: { ref: "feature/pane" },
+};
+const patch = [
+  "diff --git a/probe.txt b/probe.txt",
+  "--- a/probe.txt",
+  "+++ b/probe.txt",
+  "@@ -1 +1 @@",
+  "-before",
+  "+after",
+  "",
+].join("\\n");
+export default createGitHubPrExtension({
+  env: {},
+  fetchImpl: async (_url, init) => {
+    const accept = new Headers(init?.headers).get("accept");
+    if (accept === "application/vnd.github+json") return Response.json(metadata);
+    if (accept === "application/vnd.github.v3.diff") return new Response(patch);
+    throw new Error("Unexpected Accept header: " + accept);
+  },
+});
 `;
 
 /** A repo-local extension that only speaks through ctx.notify on startup. */
@@ -279,6 +314,62 @@ const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
 `;
 
 describe("PTY extensions", () => {
+  test("shows delegated change-request info above the review beside the files pane", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(DELEGATED_REVIEW_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+        "gh",
+        "123",
+        "--repo",
+        "modem-dev/hunk",
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("OPEN · #123 · Delegated pane proof") && text.includes("after"),
+        20_000,
+      );
+      expect(frame).toContain("octocat · GitHub · modem-dev/hunk · main ← feature/pane");
+      expect(lineIndexOf(frame, "OPEN · #123")).toBeLessThan(lineIndexOf(frame, "after"));
+    } finally {
+      session.close();
+    }
+  });
+
+  test("does not reserve review-info rows for an ordinary patch", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(NOTIFY_EXTENSION_SOURCE);
+    const patch = join(fixture.dir, "ordinary.diff");
+    writeFileSync(
+      patch,
+      "diff --git a/probe.txt b/probe.txt\\n--- a/probe.txt\\n+++ b/probe.txt\\n@@ -1 +1 @@\\n-before\\n+ordinary\\n",
+    );
+    const session = await harness.launchHunk({
+      args: ["patch", patch, "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/ordinary/, { timeout: 20_000 });
+      expect(frame).not.toContain("OPEN · #123");
+      expect(frame).not.toContain("Review info");
+    } finally {
+      session.close();
+    }
+  });
+
   test("trust prompt runs repo extensions after the user trusts the repository", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);

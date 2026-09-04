@@ -386,10 +386,11 @@ Both fields are collapsed to one sanitized line, so an extension cannot forge
 host output with newlines or escape sequences.
 
 The dependency-free [`github-pr` example](../examples/extensions/github-pr/)
-is a complete network workflow built on this contract. It fetches a GitHub PR
-diff without the `gh` CLI, writes a temporary patch with restrictive POSIX
-modes (and inherited temporary-directory ACLs on Windows), delegates to the
-built-in `patch` command, and removes the patch on extension shutdown. Run it
+is a complete network workflow built on this contract. It fetches bounded GitHub PR metadata and
+the diff without the `gh` CLI, attaches a `change-request` descriptor so the bundled review-info
+pane shows the provider facts above the diff, writes a temporary patch with restrictive POSIX modes
+(and inherited temporary-directory ACLs on Windows), delegates to the built-in `patch` command, and
+removes the patch on extension shutdown. Run it
 from this checkout with:
 
 ```bash

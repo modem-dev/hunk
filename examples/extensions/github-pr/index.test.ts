@@ -12,15 +12,45 @@ import type {
 import {
   createGitHubPrExtension,
   fetchGitHubPullRequestDiff,
+  fetchGitHubPullRequestMetadata,
   type GitHubFetch,
   parseGitHubPrInvocation,
   parseGitHubPullRequestLocator,
+  parseGitHubPullRequestMetadata,
   parseGitHubRemoteRepository,
   readGitOrigin,
   resolveGitHubPullRequest,
 } from "./index";
 
 const temporaryDirectories: string[] = [];
+
+/** Build the exact GitHub metadata fields the extension consumes. */
+function createTestPullRequestMetadata(overrides: Record<string, unknown> = {}) {
+  return {
+    title: "Describe delegated reviews",
+    html_url: "https://github.com/modem-dev/hunk/pull/123",
+    user: { login: "octocat" },
+    state: "open",
+    draft: false,
+    merged: false,
+    base: { ref: "main" },
+    head: { ref: "feature/review-info" },
+    ...overrides,
+  };
+}
+
+/** Mock the metadata and diff representations returned by one GitHub PR endpoint. */
+function createTestPullRequestFetch(
+  patch: string,
+  metadata: Record<string, unknown> = createTestPullRequestMetadata(),
+): GitHubFetch {
+  return (async (_url, init) => {
+    const accept = new Headers(init?.headers).get("accept");
+    if (accept === "application/vnd.github+json") return Response.json(metadata);
+    if (accept === "application/vnd.github.v3.diff") return new Response(patch);
+    throw new Error(`Unexpected Accept header: ${accept}`);
+  }) as GitHubFetch;
+}
 
 /** Create one test-owned temporary directory. */
 function createTestDirectory() {
@@ -155,6 +185,214 @@ describe("GitHub repository resolution", () => {
   });
 });
 
+describe("GitHub pull-request metadata", () => {
+  test("requests bounded JSON metadata with the same token and redirect policy", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const review = await fetchGitHubPullRequestMetadata(
+      { owner: "modem-dev", repo: "hunk", number: "123" },
+      new AbortController().signal,
+      { GH_TOKEN: "preferred", GITHUB_TOKEN: "fallback" },
+      (async (url, init) => {
+        requestUrl = String(url);
+        requestInit = init;
+        return Response.json(createTestPullRequestMetadata());
+      }) as GitHubFetch,
+    );
+
+    expect(requestUrl).toBe("https://api.github.com/repos/modem-dev/hunk/pulls/123");
+    expect(requestInit?.redirect).toBe("manual");
+    expect(new Headers(requestInit?.headers).get("accept")).toBe("application/vnd.github+json");
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe("Bearer preferred");
+    expect(review).toEqual({
+      kind: "change-request",
+      provider: "GitHub",
+      title: "Describe delegated reviews",
+      url: "https://github.com/modem-dev/hunk/pull/123",
+      id: "#123",
+      repository: "modem-dev/hunk",
+      author: "octocat",
+      base: "main",
+      head: "feature/review-info",
+      state: "open",
+      draft: false,
+    });
+  });
+
+  test("reports a merged PR only when GitHub explicitly attests merged true", () => {
+    const target = { owner: "modem-dev", repo: "hunk", number: "123" };
+    expect(
+      parseGitHubPullRequestMetadata(
+        createTestPullRequestMetadata({ state: "closed", merged: true }),
+        target,
+      ).state,
+    ).toBe("merged");
+    expect(
+      parseGitHubPullRequestMetadata(
+        createTestPullRequestMetadata({ state: "closed", merged: false }),
+        target,
+      ).state,
+    ).toBe("closed");
+    expect(
+      parseGitHubPullRequestMetadata(
+        createTestPullRequestMetadata({ state: "closed", merged: undefined }),
+        target,
+      ).state,
+    ).toBe("closed");
+    const withoutDraft = createTestPullRequestMetadata();
+    Reflect.deleteProperty(withoutDraft, "draft");
+    expect(parseGitHubPullRequestMetadata(withoutDraft, target)).not.toHaveProperty("draft");
+  });
+
+  test("rejects malformed provider fields and untrusted PR URLs", async () => {
+    const target = { owner: "modem-dev", repo: "hunk", number: "123" };
+    for (const metadata of [
+      null,
+      createTestPullRequestMetadata({ title: null }),
+      createTestPullRequestMetadata({ title: "forged\u001b[2Jtitle" }),
+      createTestPullRequestMetadata({ title: "x".repeat(2 * 1024 + 1) }),
+      createTestPullRequestMetadata({ user: { login: null } }),
+      createTestPullRequestMetadata({ state: "merged" }),
+      createTestPullRequestMetadata({ draft: "false" }),
+      createTestPullRequestMetadata({ base: { ref: "" } }),
+      createTestPullRequestMetadata({ base: { ref: "forged\nref" } }),
+      createTestPullRequestMetadata({ head: null }),
+      createTestPullRequestMetadata({ merged: "yes" }),
+      createTestPullRequestMetadata({
+        html_url: "https://attacker.invalid/modem-dev/hunk/pull/123",
+      }),
+      createTestPullRequestMetadata({ html_url: "https://github.com/modem-dev/hunk/pull/124" }),
+      createTestPullRequestMetadata({
+        html_url: "https://github.com/modem-dev/hunk/pull/123?token=secret",
+      }),
+    ]) {
+      expect(() => parseGitHubPullRequestMetadata(metadata, target)).toThrow(
+        "malformed pull-request metadata",
+      );
+    }
+
+    await expect(
+      fetchGitHubPullRequestMetadata(
+        target,
+        new AbortController().signal,
+        {},
+        (async () => new Response("{not json")) as GitHubFetch,
+      ),
+    ).rejects.toThrow("malformed pull-request metadata");
+    let declaredBodyCancelled = false;
+    const declaredOversizedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{}"));
+      },
+      cancel() {
+        declaredBodyCancelled = true;
+      },
+    });
+    await expect(
+      fetchGitHubPullRequestMetadata(
+        target,
+        new AbortController().signal,
+        {},
+        (async () =>
+          new Response(declaredOversizedBody, {
+            headers: { "content-length": String(256 * 1024 + 1) },
+          })) as GitHubFetch,
+      ),
+    ).rejects.toThrow("256 KiB");
+    expect(declaredBodyCancelled).toBe(true);
+
+    let streamCancelled = false;
+    const oversizedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(128 * 1024));
+        controller.enqueue(new Uint8Array(128 * 1024));
+        controller.enqueue(new Uint8Array(1));
+      },
+      cancel() {
+        streamCancelled = true;
+      },
+    });
+    await expect(
+      fetchGitHubPullRequestMetadata(
+        target,
+        new AbortController().signal,
+        {},
+        (async () => new Response(oversizedBody)) as GitHubFetch,
+      ),
+    ).rejects.toThrow("256 KiB");
+    expect(streamCancelled).toBe(true);
+  });
+
+  test("keeps metadata HTTP, body, network, and token failures credential-safe", async () => {
+    const target = { owner: "private", repo: "repo", number: "7" };
+    let malformedTokenFetches = 0;
+    await expect(
+      fetchGitHubPullRequestMetadata(
+        target,
+        new AbortController().signal,
+        { GH_TOKEN: "top-secret\nvalue" },
+        (async () => {
+          malformedTokenFetches += 1;
+          return Response.json({});
+        }) as GitHubFetch,
+      ),
+    ).rejects.toThrow("cannot be sent in an HTTP header");
+    expect(malformedTokenFetches).toBe(0);
+
+    for (const response of [
+      new Response("secret response body", { status: 401 }),
+      new Response("secret response body", { status: 404 }),
+      new Response(null, { status: 302, headers: { location: "https://attacker.invalid" } }),
+    ]) {
+      try {
+        await fetchGitHubPullRequestMetadata(
+          target,
+          new AbortController().signal,
+          { GH_TOKEN: "top-secret-token" },
+          (async () => response) as GitHubFetch,
+        );
+        throw new Error("Expected metadata loading to fail.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain("top-secret-token");
+        expect(message).not.toContain("secret response body");
+      }
+    }
+
+    await expect(
+      fetchGitHubPullRequestMetadata(target, new AbortController().signal, {}, (async () => {
+        throw new Error("network internals");
+      }) as GitHubFetch),
+    ).rejects.toThrow("could not be reached");
+
+    const failedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("secret stream internals"));
+      },
+    });
+    try {
+      await fetchGitHubPullRequestMetadata(
+        target,
+        new AbortController().signal,
+        {},
+        (async () => new Response(failedBody)) as GitHubFetch,
+      );
+      throw new Error("Expected metadata stream loading to fail.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("stopped sending the pull-request metadata");
+      expect(message).not.toContain("secret stream internals");
+    }
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      fetchGitHubPullRequestMetadata(target, controller.signal, {}, (async () =>
+        Response.json(createTestPullRequestMetadata())) as GitHubFetch),
+    ).rejects.toThrow("cancelled");
+  });
+});
+
 describe("GitHub diff fetching", () => {
   test("sends the exact diff request with GH_TOKEN precedence", async () => {
     let requestUrl = "";
@@ -245,7 +483,7 @@ describe("GitHub PR extension lifecycle", () => {
     const extension = createGitHubPrExtension({
       temporaryRoot,
       env: {},
-      fetchImpl: (async () => new Response(patch, { status: 200 })) as GitHubFetch,
+      fetchImpl: createTestPullRequestFetch(patch),
       resolveOrigin: async () => "git@github.com:modem-dev/hunk.git",
     });
     extension({
@@ -299,6 +537,19 @@ describe("GitHub PR extension lifecycle", () => {
     if (result.kind !== "delegate") throw new Error("Expected patch delegation.");
     expect(result.argv[0]).toBe("patch");
     expect(result.argv.slice(2)).toEqual(["--pager"]);
+    expect(result.review).toEqual({
+      kind: "change-request",
+      provider: "GitHub",
+      title: "Describe delegated reviews",
+      url: "https://github.com/modem-dev/hunk/pull/123",
+      id: "#123",
+      repository: "modem-dev/hunk",
+      author: "octocat",
+      base: "main",
+      head: "feature/review-info",
+      state: "open",
+      draft: false,
+    });
     const patchPath = result.argv[1]!;
     expect(readFileSync(patchPath, "utf8")).toBe(patch);
     expect(stdoutWrites).toBe(0);
@@ -317,7 +568,10 @@ describe("GitHub PR extension lifecycle", () => {
     createGitHubPrExtension({
       temporaryRoot,
       env: {},
-      fetchImpl: (async () => new Response("diff --git a/a b/a\n", { status: 200 })) as GitHubFetch,
+      fetchImpl: createTestPullRequestFetch(
+        "diff --git a/a b/a\n",
+        createTestPullRequestMetadata({ html_url: "https://github.com/owner/repo/pull/1" }),
+      ),
     })({
       registerCliCommand(
         _command: ExtensionCliCommand,
@@ -352,7 +606,10 @@ describe("GitHub PR extension lifecycle", () => {
     const extension = createGitHubPrExtension({
       temporaryRoot,
       env: {},
-      fetchImpl: (async () => new Response("diff --git a/a b/a\n", { status: 200 })) as GitHubFetch,
+      fetchImpl: createTestPullRequestFetch(
+        "diff --git a/a b/a\n",
+        createTestPullRequestMetadata({ html_url: "https://github.com/owner/repo/pull/1" }),
+      ),
     });
     const registrations: Array<{
       handler?: ExtensionCliCommandHandler;
@@ -439,13 +696,13 @@ describe("GitHub PR extension lifecycle", () => {
     expect(fetches).toBe(0);
   });
 
-  test("declares a dependency-free API-v10 folder extension", () => {
+  test("declares a dependency-free API-v17 folder extension", () => {
     const manifest = JSON.parse(readFileSync(join(import.meta.dir, "package.json"), "utf8")) as {
       dependencies?: unknown;
       devDependencies?: unknown;
       hunk?: { apiVersion?: number; extensions?: string[] };
     };
-    expect(manifest.hunk).toEqual({ extensions: ["./index.ts"], apiVersion: 10 });
+    expect(manifest.hunk).toEqual({ extensions: ["./index.ts"], apiVersion: 17 });
     expect(manifest.dependencies).toBeUndefined();
     expect(manifest.devDependencies).toBeUndefined();
   });
