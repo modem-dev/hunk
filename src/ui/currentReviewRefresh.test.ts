@@ -8,7 +8,7 @@ import {
 
 const currentView: CurrentReviewViewOptions = {
   layoutMode: "split",
-  themeId: "nord",
+  themeSelection: "nord",
   showAgentNotes: false,
   showHunkHeaders: false,
   showLineNumbers: false,
@@ -39,6 +39,23 @@ describe("current review refresh descriptor", () => {
       },
     });
     expect(input.options).toEqual({ mode: "stack", theme: "dracula", watch: true, tabWidth: 8 });
+  });
+
+  test("carries an adaptive theme pair through a refresh instead of freezing one side", () => {
+    const input: CliInput = {
+      kind: "diff",
+      left: "before.ts",
+      right: "after.ts",
+      options: { theme: "dracula" },
+    };
+    const adaptive = { dark: "vitesse-dark", light: "vitesse-light" };
+
+    const refreshed = withCurrentReviewViewOptions(input, {
+      ...currentView,
+      themeSelection: adaptive,
+    });
+
+    expect(refreshed.options.theme).toEqual(adaptive);
   });
 
   test("attaches the source path only to VCS inputs", () => {

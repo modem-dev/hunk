@@ -3,6 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import { createWatchTestRuntime } from "../../../test/helpers/watchTest";
 import type { CliInput } from "../../core/run/commandInputs";
+import type { ThemeSelection } from "../../core/theme/selection";
 import type { ReloadSessionOptions, ReloadedSessionResult } from "../../session/types";
 import type { WorkspaceRefreshRequest } from "../currentReviewRefresh";
 import {
@@ -32,12 +33,12 @@ function RefreshHarness({
   input: CliInput;
   onController: (controller: CurrentReviewRefreshController) => void;
   onRegister: (request: WorkspaceRefreshRequest) => () => void;
-  onSetTheme?: (setTheme: (themeId: string) => void) => void;
+  onSetTheme?: (setTheme: (themeSelection: ThemeSelection) => void) => void;
   onReload: (input: CliInput, options?: ReloadSessionOptions) => Promise<ReloadedSessionResult>;
   onWatchReloadPending?: () => void;
   watchRuntime?: Parameters<typeof useCurrentReviewRefreshController>[0]["watchRuntime"];
 }) {
-  const [themeId, setThemeId] = useState("dracula");
+  const [themeSelection, setThemeSelection] = useState<ThemeSelection>("dracula");
   const controller = useCurrentReviewRefreshController({
     input,
     onRegisterWorkspaceRefreshRequest: onRegister,
@@ -47,7 +48,7 @@ function RefreshHarness({
     sourceLabel: "/repo",
     view: {
       layoutMode: "stack",
-      themeId,
+      themeSelection,
       showAgentNotes: true,
       showHunkHeaders: true,
       showLineNumbers: true,
@@ -57,11 +58,11 @@ function RefreshHarness({
     watchRuntime,
   });
   onController(controller);
-  onSetTheme?.(setThemeId);
+  onSetTheme?.(setThemeSelection);
 
   return (
     <box>
-      <text>{themeId}</text>
+      <text>{JSON.stringify(themeSelection)}</text>
     </box>
   );
 }
@@ -79,7 +80,7 @@ describe("useCurrentReviewRefreshController", () => {
     const cleaned: WorkspaceRefreshRequest[] = [];
     let active: WorkspaceRefreshRequest | undefined;
     let controller!: CurrentReviewRefreshController;
-    let setTheme!: (themeId: string) => void;
+    let setTheme!: (themeSelection: ThemeSelection) => void;
     const reloads: Array<{ input: CliInput; options?: ReloadSessionOptions }> = [];
     const setup = await testRender(
       <RefreshHarness
@@ -146,6 +147,40 @@ describe("useCurrentReviewRefreshController", () => {
 
     expect(cleaned).toEqual(registered);
     expect(active).toBeUndefined();
+  });
+
+  test("re-registers an adaptive theme pair as a pair so a refresh still follows the terminal", async () => {
+    const registered: WorkspaceRefreshRequest[] = [];
+    let setTheme!: (themeSelection: ThemeSelection) => void;
+    const adaptive = { dark: "vitesse-dark", light: "vitesse-light" };
+    const setup = await testRender(
+      <RefreshHarness
+        input={reloadableInput}
+        onController={() => {}}
+        onRegister={(request) => {
+          registered.push(request);
+          return () => {};
+        }}
+        onSetTheme={(value) => {
+          setTheme = value;
+        }}
+        onReload={async () => reloadedResult}
+      />,
+      { width: 20, height: 4 },
+    );
+
+    try {
+      await act(async () => setup.renderOnce());
+      await act(async () => {
+        setTheme(adaptive);
+        await setup.renderOnce();
+      });
+
+      expect(registered).toHaveLength(2);
+      expect(registered[1]?.nextInput.options.theme).toEqual(adaptive);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
   });
 
   test("manual reload reports a rejection while the general operation preserves it", async () => {
