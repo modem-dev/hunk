@@ -66,6 +66,15 @@ export type ExtensionEntry = ExtensionListing & ExtensionActivity;
  */
 export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   {
+    repo: "modem-dev/hunk-gh",
+    name: "hunk-gh",
+    summary:
+      "Opens GitHub pull requests, commits, and ref comparisons in Hunk from the command line.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 10,
+  },
+  {
     repo: "modem-dev/hunk-hg",
     name: "hunk-hg",
     summary:
