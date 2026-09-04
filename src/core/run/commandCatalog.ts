@@ -321,8 +321,9 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
-    id: "hunk.view.layoutStack",
-    title: "Stack layout",
+    id: "hunk.view.layoutUnified",
+    aliases: ["hunk.view.layoutStack"],
+    title: "Unified layout",
     category: "view",
     defaultKeys: ["2"],
     locus: "client-local",

@@ -85,7 +85,7 @@ The built-in commands and the keys they ship with:
 | `hunk.view.cursorLineRow`                      | Highlight the current row                      | _(none)_                     |
 | `hunk.view.layoutAuto`                         | Auto layout                                    | `0`                          |
 | `hunk.view.layoutSplit`                        | Split layout                                   | `1`                          |
-| `hunk.view.layoutStack`                        | Stack layout                                   | `2`                          |
+| `hunk.view.layoutUnified`                      | Unified layout                                 | `2`                          |
 | `hunk.view.openThemeSelector`                  | Choose theme                                   | `t`                          |
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
 | `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
@@ -101,7 +101,9 @@ replacement on any terminal edge without changing unrelated panes. Remapping or
 unbinding `hunk.view.toggleFilesPane` changes that role-aware action, not an
 extension pane's own commands. The former `hunk.view.toggleSidebar` id remains a
 compatibility alias; prefer the files-pane name in new config and extension
-code.
+code. Likewise, `hunk.view.layoutStack` remains a deprecated alias for
+`hunk.view.layoutUnified`, so existing keybindings and extension command calls
+continue to select the canonical unified layout.
 
 Commands marked _(none)_ ship without a key: they remain callable by command id
 and can be assigned a shortcut through `[keybindings]`. Some also appear in a

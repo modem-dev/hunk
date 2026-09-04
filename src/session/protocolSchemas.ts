@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CliInput } from "../core/run/commandInputs";
+import { normalizeLayoutModeInput, type CliInput } from "../core/run/commandInputs";
 import { EXPERIMENTAL_FEATURES } from "../core/run/experimental";
 import {
   HUNK_SESSION_API_VERSION,
@@ -55,8 +55,13 @@ const rangeEndpointsSchema = z.strictObject({
   to: z.string().min(1),
 });
 
+/** Accept legacy layout vocabulary on the wire while returning canonical CLI state. */
+const layoutModeInputSchema = z
+  .enum(["auto", "split", "unified", "stack"])
+  .transform(normalizeLayoutModeInput);
+
 const commonOptionsSchema = z.strictObject({
-  mode: z.enum(["auto", "split", "stack"]).optional(),
+  mode: layoutModeInputSchema.optional(),
   cursorLine: z.enum(["row", "number", "off"]).optional(),
   vcs: z.string().optional(),
   theme: z.string().optional(),

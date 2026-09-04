@@ -25,7 +25,7 @@ import {
 import {
   DIFF_RAIL_PREFIX_WIDTH,
   resolveSplitCellGeometry,
-  resolveStackCellGeometry,
+  resolveUnifiedCellGeometry,
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
 import { measureTextWidth } from "../../lib/text";
@@ -174,13 +174,13 @@ function createCjkDiffFile(): DiffFile {
 function buildMultiFileTestContext({
   copyDecorations = true,
   files,
-  layout = "stack",
+  layout = "unified",
   width = 120,
   wrapLines = false,
 }: {
   copyDecorations?: boolean;
   files: DiffFile[];
-  layout?: "stack" | "split";
+  layout?: "unified" | "split";
   width?: number;
   wrapLines?: boolean;
 }) {
@@ -212,7 +212,7 @@ function buildMultiFileTestContext({
   return { context, fileSectionLayouts, sectionGeometry };
 }
 
-/** Build a one-line change that sits on both split and stack add-note wrap boundaries. */
+/** Build a one-line change that sits on both split and unified add-note wrap boundaries. */
 function createWrappedBoundaryDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
     { name: "boundary.ts", contents: "", cacheKey: "boundary-before" },
@@ -233,7 +233,7 @@ function createWrappedBoundaryDiffFile(): DiffFile {
 }
 
 function buildContext(
-  layout: "stack" | "split" = "stack",
+  layout: "unified" | "split" = "unified",
   width = 120,
   file: DiffFile = createDiffFile(),
 ): {
@@ -245,7 +245,7 @@ function buildContext(
 }
 
 /** Build copy and measured geometry with the same wrapped add-note reservation policy. */
-function buildWrappedBoundaryContext(layout: "stack" | "split", reserveAddNoteColumn: boolean) {
+function buildWrappedBoundaryContext(layout: "unified" | "split", reserveAddNoteColumn: boolean) {
   const file = createWrappedBoundaryDiffFile();
   const theme = resolveTheme("github-dark-default", null);
   const width = layout === "split" ? 20 : 10;
@@ -356,9 +356,9 @@ describe("findLineCursorForClick", () => {
     ).toBe(contextCursor!);
   });
 
-  test("resolves a stacked row and ignores non-line rows", () => {
+  test("resolves a unified row and ignores non-line rows", () => {
     const file = createDiffFile();
-    const { fileSectionLayouts, sectionGeometry } = buildContext("stack", 120, file);
+    const { fileSectionLayouts, sectionGeometry } = buildContext("unified", 120, file);
     const cursors = buildLineCursors([file], sectionGeometry);
     const cursor = cursors.find(
       (candidate) => candidate.target.side === "new" && candidate.target.line === 1,
@@ -583,14 +583,14 @@ describe("renderCopySelectionText", () => {
   });
 
   test("code-only single-row selections preserve selected columns", () => {
-    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("unified");
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
     const rowIndex = geometry.plannedRows.findIndex(
-      (row) => row.kind === "diff-row" && row.row.type === "stack-line",
+      (row) => row.kind === "diff-row" && row.row.type === "unified-line",
     );
     const visualRow = section.bodyTop + geometry.rowBounds[rowIndex]!.top;
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -627,7 +627,7 @@ describe("renderCopySelectionText", () => {
   });
 
   test("does not include terminal controls from copied paths or code", () => {
-    const { context, fileSectionLayouts } = buildContext("stack", 160, createMaliciousDiffFile());
+    const { context, fileSectionLayouts } = buildContext("unified", 160, createMaliciousDiffFile());
     const start: CopySelectionPoint = {
       kind: "pinned-header",
       column: 0,
@@ -665,13 +665,13 @@ describe("renderCopySelectionText", () => {
     const rowIndex = geometry.plannedRows.findIndex(
       (row) =>
         row.kind === "diff-row" &&
-        row.row.type === "stack-line" &&
+        row.row.type === "unified-line" &&
         row.row.cell.kind === "addition",
     );
     const bounds = geometry.rowBounds[rowIndex]!;
     expect(bounds.height).toBeGreaterThan(2);
 
-    const { gutterWidth, contentWidth } = resolveStackCellGeometry(
+    const { gutterWidth, contentWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -783,9 +783,9 @@ describe("renderCopySelectionText", () => {
 });
 
 describe("resolveCopySelectionSide", () => {
-  test("returns undefined in stack layout", () => {
-    expect(resolveCopySelectionSide(10, "stack", 120)).toBeUndefined();
-    expect(resolveCopySelectionSide(80, "stack", 120)).toBeUndefined();
+  test("returns undefined in unified layout", () => {
+    expect(resolveCopySelectionSide(10, "unified", 120)).toBeUndefined();
+    expect(resolveCopySelectionSide(80, "unified", 120)).toBeUndefined();
   });
 
   test("returns 'left' for columns inside the split left pane", () => {
@@ -1028,11 +1028,11 @@ describe("buildCopySelectedRowKeys", () => {
 
 describe("expandSelectionPoint", () => {
   test("triple-click with code-only copy selects the code line", () => {
-    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("unified");
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
     const undecoratedContext: CopySelectionContext = { ...context, copyDecorations: false };
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -1054,8 +1054,8 @@ describe("expandSelectionPoint", () => {
     });
   });
 
-  test("triple-click in stack selects the full width", () => {
-    const { context, fileSectionLayouts } = buildContext("stack");
+  test("triple-click in unified selects the full width", () => {
+    const { context, fileSectionLayouts } = buildContext("unified");
     const section = fileSectionLayouts[0]!;
     const point: CopySelectionPoint = {
       kind: "review-row",
@@ -1113,14 +1113,14 @@ describe("expandSelectionPoint", () => {
   });
 
   test("double-click on whitespace selects the whitespace character itself", () => {
-    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("unified");
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
 
     // Compute the global column for the space character between "export" and "const".
     // The addition row "export const answer = 42;" starts at bodyTop + 2
     // (after a hunk header row and a deletion row).
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -1148,10 +1148,10 @@ describe("expandSelectionPoint", () => {
   });
 
   test("double-click on a word stops at code punctuation", () => {
-    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("unified");
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -1260,7 +1260,7 @@ describe("renderCopySelectionText in split with side", () => {
 });
 
 describe("wrapped add-note copy parity", () => {
-  for (const layout of ["split", "stack"] as const) {
+  for (const layout of ["split", "unified"] as const) {
     test(`${layout} continuation rows match measured, decorated, code-only, and word-selection boundaries`, () => {
       const unreserved = buildWrappedBoundaryContext(layout, false);
       const { context, geometry, section } = buildWrappedBoundaryContext(layout, true);
@@ -1268,7 +1268,7 @@ describe("wrapped add-note copy parity", () => {
         row.kind === "diff-row" &&
         (row.row.type === "split-line"
           ? row.row.right.kind === "addition"
-          : row.row.type === "stack-line" && row.row.cell.kind === "addition");
+          : row.row.type === "unified-line" && row.row.cell.kind === "addition");
       const rowIndex = geometry.plannedRows.findIndex(isAddedCodeRow);
       const unreservedRowIndex = unreserved.geometry.plannedRows.findIndex(isAddedCodeRow);
       expect(rowIndex).toBeGreaterThanOrEqual(0);
@@ -1338,13 +1338,13 @@ describe("copy selection with wide (CJK) characters", () => {
 
   function buildCjkContext() {
     const { context, fileSectionLayouts, sectionGeometry } = buildContext(
-      "stack",
+      "unified",
       120,
       createCjkDiffFile(),
     );
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,
@@ -1488,7 +1488,7 @@ describe("copy selection with wide (CJK) characters", () => {
       metadata,
       agent: null,
     };
-    const { context, fileSectionLayouts } = buildContext("stack", 120, file);
+    const { context, fileSectionLayouts } = buildContext("unified", 120, file);
     const nextVisualRow = fileSectionLayouts[0]!.bodyTop;
 
     const headerCells = (startColumn: number, endColumn: number) =>
@@ -1531,10 +1531,10 @@ describe("copy selection with zero-width characters", () => {
       metadata,
       agent: null,
     };
-    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack", 120, file);
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("unified", 120, file);
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
-    const { gutterWidth } = resolveStackCellGeometry(
+    const { gutterWidth } = resolveUnifiedCellGeometry(
       context.width,
       geometry.lineNumberDigits,
       context.showLineNumbers,

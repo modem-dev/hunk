@@ -55,7 +55,7 @@ try {
   writeFileSync(join(repo, largePath), createLargeFileBody(lineCount));
 
   const bootstrap = await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack" } },
+    { kind: "vcs", staged: false, options: { mode: "unified" } },
     { cwd: repo },
   );
   const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 120, height: 30 });

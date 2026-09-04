@@ -22,7 +22,7 @@ describe("current review refresh descriptor", () => {
       kind: "diff",
       left: "before.ts",
       right: "after.ts",
-      options: { mode: "stack", theme: "dracula", watch: true, tabWidth: 8 },
+      options: { mode: "unified", theme: "dracula", watch: true, tabWidth: 8 },
     };
 
     expect(withCurrentReviewViewOptions(input, currentView)).toEqual({
@@ -38,7 +38,7 @@ describe("current review refresh descriptor", () => {
         wrapLines: true,
       },
     });
-    expect(input.options).toEqual({ mode: "stack", theme: "dracula", watch: true, tabWidth: 8 });
+    expect(input.options).toEqual({ mode: "unified", theme: "dracula", watch: true, tabWidth: 8 });
   });
 
   test("attaches the source path only to VCS inputs", () => {

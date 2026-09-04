@@ -32,7 +32,7 @@ describe("buildHelpSections", () => {
     expect(keysFor(sections, "previous / next hunk")).toBe("[ / ]");
     expect(keysFor(sections, "half page down / up")).toBe("d / u");
     expect(keysFor(sections, "move line-by-line")).toBe("Up / Down");
-    expect(keysFor(sections, "split / stack / auto")).toBe("1 / 2 / 0");
+    expect(keysFor(sections, "split / unified / auto")).toBe("1 / 2 / 0");
     expect(keysFor(sections, "lines / wrap / metadata / menu")).toBe("l / w / m / M");
   });
 

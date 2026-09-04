@@ -165,7 +165,7 @@ function renderedCardRowCount(frame: string) {
   return bottom - top + 1;
 }
 
-function plannedCardHeight(body: string, width: number, layout: "split" | "stack" = "split") {
+function plannedCardHeight(body: string, width: number, layout: "split" | "unified" = "split") {
   return measureAgentInlineNoteHeight({
     annotation: draftAnnotation(body),
     anchorSide: "new",
@@ -245,7 +245,7 @@ describe("AgentInlineNote draft composer", () => {
       <AgentInlineNote
         annotation={draftAnnotation(body)}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={34}
         draft={{
@@ -264,7 +264,7 @@ describe("AgentInlineNote draft composer", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("HEAD-");
       expect(frame).toContain("TAIL");
-      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "stack"));
+      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "unified"));
     } finally {
       await act(async () => {
         setup.renderer.destroy();

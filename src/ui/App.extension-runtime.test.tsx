@@ -13,7 +13,7 @@ function createBootstrap(id: string, extensions: ExtensionLoadResult): AppBootst
     ...createTestVcsAppBootstrap({
       changesetId: id,
       files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-      initialMode: "stack",
+      initialMode: "unified",
     }),
     extensions,
   };

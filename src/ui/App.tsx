@@ -725,7 +725,7 @@ export function App({
   );
   useEffect(() => {
     // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
-    // feels immediate after toggling split/stack or line wrapping.
+    // feels immediate after toggling split/unified or line wrapping.
     renderer.intermediateRender();
   }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
 

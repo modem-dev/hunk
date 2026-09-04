@@ -1,12 +1,12 @@
 /**
- * Paints split and stack diff code cells through React and OpenTUI.
+ * Paints split and unified diff code cells through React and OpenTUI.
  * Canonical code-row and styled-span plans continue to own geometry and wrapping.
  */
 import { Fragment, isValidElement, memo, type ReactNode } from "react";
 import { parseColor, StyledText, type TextChunk } from "@opentui/core";
 import type { AppTheme } from "../themes";
 import type { CodeCellLayoutPlan, CodeRowLayoutPlan } from "./codeRowLayout";
-import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRows";
+import type { DiffRow, RenderSpan, SplitLineCell, UnifiedLineCell } from "./diffRows";
 import {
   applyLineHighlightsToSpans,
   lineHighlightPaintKey,
@@ -16,8 +16,8 @@ import {
   lineHighlightToneStyle,
   splitCellPalette,
   splitGutterText,
-  stackCellPalette,
-  stackGutterText,
+  unifiedCellPalette,
+  unifiedGutterText,
 } from "./rowStyle";
 import { sanitizeTerminalSpans } from "../../lib/terminalText";
 import { measureTextWidth, sliceTextByWidth } from "../lib/text";
@@ -229,10 +229,10 @@ function appendPlainSplitCellChunks(
   );
 }
 
-/** Append one unhighlighted stack cell without constructing React span fibers. */
-function appendPlainStackCellChunks(
+/** Append one unhighlighted unified cell without constructing React span fibers. */
+function appendPlainUnifiedCellChunks(
   chunks: TextChunk[],
-  cell: StackLineCell,
+  cell: UnifiedLineCell,
   geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
@@ -240,7 +240,7 @@ function appendPlainStackCellChunks(
   contentOffset: number,
   prefix: CellPrefix,
 ) {
-  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
+  const palette = unifiedCellPalette(cell.kind, theme, cell.moveKind);
   chunks.push(
     {
       __isChunk: true,
@@ -250,7 +250,7 @@ function appendPlainStackCellChunks(
     },
     {
       __isChunk: true,
-      text: stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(geometry.gutterWidth),
+      text: unifiedGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(geometry.gutterWidth),
       fg: styledTextColor(palette.numberColor),
       bg: styledTextColor(palette.gutterBg),
     },
@@ -517,7 +517,7 @@ interface WrappedCellLine {
 interface WrappedCellLayout {
   gutterWidth: number;
   contentWidth: number;
-  palette: ReturnType<typeof splitCellPalette> | ReturnType<typeof stackCellPalette>;
+  palette: ReturnType<typeof splitCellPalette> | ReturnType<typeof unifiedCellPalette>;
   lines: WrappedCellLine[];
 }
 
@@ -546,16 +546,16 @@ function buildWrappedSplitCell(
   } satisfies WrappedCellLayout;
 }
 
-/** Build wrapped stack-cell gutter/content lines while keeping continuation gutters blank. */
-function buildWrappedStackCell(
-  cell: StackLineCell,
+/** Build wrapped unified-cell gutter/content lines while keeping continuation gutters blank. */
+function buildWrappedUnifiedCell(
+  cell: UnifiedLineCell,
   geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
   theme: AppTheme,
 ) {
-  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const firstGutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+  const palette = unifiedCellPalette(cell.kind, theme, cell.moveKind);
+  const firstGutterText = unifiedGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
     geometry.gutterWidth,
   );
   const wrappedSpans = wrapSpans(cell.spans, geometry.contentWidth);
@@ -702,8 +702,8 @@ function renderSplitCell(
   );
 }
 
-/** Render selection-invariant stack-cell content behind its independently painted rail. */
-const StackCellContent = memo(function StackCellContent({
+/** Render selection-invariant unified-cell content behind its independently painted rail. */
+const UnifiedCellContent = memo(function UnifiedCellContent({
   cell,
   gutterWidth,
   contentWidth,
@@ -715,7 +715,7 @@ const StackCellContent = memo(function StackCellContent({
   prefixWidth,
   highlight,
 }: {
-  cell: StackLineCell;
+  cell: UnifiedLineCell;
   gutterWidth: number;
   contentWidth: number;
   lineNumberDigits: number;
@@ -726,7 +726,7 @@ const StackCellContent = memo(function StackCellContent({
   prefixWidth: number;
   highlight?: CodeCellHighlight;
 }) {
-  const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
+  const basePalette = unifiedCellPalette(cell.kind, theme, cell.moveKind);
   const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
   const globalContentStart = prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
@@ -741,7 +741,7 @@ const StackCellContent = memo(function StackCellContent({
   return (
     <>
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
+        {unifiedGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
         cell.spans,
@@ -757,9 +757,9 @@ const StackCellContent = memo(function StackCellContent({
   );
 });
 
-/** Render one stack-view cell while letting a rail-only selection change skip its code spans. */
-function renderStackCell(
-  cell: StackLineCell,
+/** Render one unified-view cell while letting a rail-only selection change skip its code spans. */
+function renderUnifiedCell(
+  cell: UnifiedLineCell,
   geometry: CodeCellLayoutPlan,
   lineNumberDigits: number,
   showLineNumbers: boolean,
@@ -783,7 +783,7 @@ function renderStackCell(
           {resolvedPrefix.text}
         </span>
       ) : null}
-      <StackCellContent
+      <UnifiedCellContent
         key={`${keyPrefix}:body`}
         cell={cell}
         gutterWidth={geometry.gutterWidth}
@@ -857,10 +857,10 @@ function renderWrappedSplitCellLine(
   );
 }
 
-/** Render one already-wrapped stack cell line with its persistent rail prefix. */
-function renderWrappedStackCellLine(
+/** Render one already-wrapped unified cell line with its persistent rail prefix. */
+function renderWrappedUnifiedCellLine(
   line: WrappedCellLine,
-  palette: ReturnType<typeof stackCellPalette>,
+  palette: ReturnType<typeof unifiedCellPalette>,
   contentWidth: number,
   theme: AppTheme,
   keyPrefix: string,
@@ -959,7 +959,7 @@ function withRowLineHighlights(
     return left === row.left && right === row.right ? row : { ...row, left, right };
   }
 
-  if (row.type === "stack-line") {
+  if (row.type === "unified-line") {
     const cell = row.cell;
     // Context cells carry both numbers pointing at one merged range list, so
     // consulting the new side first never hides an old-side mark.
@@ -973,7 +973,7 @@ function withRowLineHighlights(
     if (!ranges) {
       return row;
     }
-    const contentBg = stackCellPalette(cell.kind, theme, cell.moveKind).contentBg;
+    const contentBg = unifiedCellPalette(cell.kind, theme, cell.moveKind).contentBg;
     return {
       ...row,
       cell: {
@@ -1077,9 +1077,9 @@ function renderNowrapSplitCodeCells({
   );
 }
 
-interface NowrapStackCodeCellOptions {
-  row: Extract<DiffRow, { type: "stack-line" }>;
-  layout: Extract<CodeRowLayoutPlan, { kind: "stack" }>;
+interface NowrapUnifiedCodeCellOptions {
+  row: Extract<DiffRow, { type: "unified-line" }>;
+  layout: Extract<CodeRowLayoutPlan, { kind: "unified" }>;
   lineNumberDigits: number;
   showLineNumbers: boolean;
   theme: AppTheme;
@@ -1089,8 +1089,8 @@ interface NowrapStackCodeCellOptions {
   guideOnNewSide: boolean;
 }
 
-/** Paint one nowrap stack row, retaining the direct-chunk path when it is unhighlighted. */
-function renderNowrapStackCodeCell({
+/** Paint one nowrap unified row, retaining the direct-chunk path when it is unhighlighted. */
+function renderNowrapUnifiedCodeCell({
   row,
   layout,
   lineNumberDigits,
@@ -1100,10 +1100,10 @@ function renderNowrapStackCodeCell({
   prefix,
   highlight,
   guideOnNewSide,
-}: NowrapStackCodeCellOptions) {
+}: NowrapUnifiedCodeCellOptions) {
   if (!highlight) {
     const chunks: TextChunk[] = [];
-    appendPlainStackCellChunks(
+    appendPlainUnifiedCellChunks(
       chunks,
       row.cell,
       layout.cell,
@@ -1119,13 +1119,13 @@ function renderNowrapStackCodeCell({
 
   return (
     <text key={`${row.key}:painted`}>
-      {renderStackCell(
+      {renderUnifiedCell(
         row.cell,
         layout.cell,
         lineNumberDigits,
         showLineNumbers,
         theme,
-        `${row.key}:stack`,
+        `${row.key}:unified`,
         horizontalOffset,
         prefix,
         highlight,
@@ -1261,13 +1261,13 @@ function createWrappedSplitCodeCells({
   };
 }
 
-interface WrappedStackCodeCellOptions extends Omit<
-  NowrapStackCodeCellOptions,
+interface WrappedUnifiedCodeCellOptions extends Omit<
+  NowrapUnifiedCodeCellOptions,
   "horizontalOffset"
 > {}
 
-/** Build a wrapped stack-row painter whose line count and chunks share one wrapped layout. */
-function createWrappedStackCodeCell({
+/** Build a wrapped unified-row painter whose line count and chunks share one wrapped layout. */
+function createWrappedUnifiedCodeCell({
   row,
   layout,
   lineNumberDigits,
@@ -1276,8 +1276,8 @@ function createWrappedStackCodeCell({
   prefix,
   highlight,
   guideOnNewSide,
-}: WrappedStackCodeCellOptions): WrappedCodeCells {
-  const wrapped = buildWrappedStackCell(
+}: WrappedUnifiedCodeCellOptions): WrappedCodeCells {
+  const wrapped = buildWrappedUnifiedCell(
     row.cell,
     layout.cell,
     lineNumberDigits,
@@ -1306,12 +1306,12 @@ function createWrappedStackCodeCell({
         styledRow = new StyledText(chunks);
       } else {
         styledRow = styledTextFromSpanNodes([
-          renderWrappedStackCellLine(
+          renderWrappedUnifiedCellLine(
             line,
             wrapped.palette,
             layout.cell.contentWidth,
             theme,
-            `${row.key}:stack:${index}`,
+            `${row.key}:unified:${index}`,
             prefix,
             highlight,
           ),
@@ -1359,8 +1359,8 @@ function spacerContent(width: number, background: string) {
 export const codeCellView = {
   applyLineHighlights: withRowLineHighlights,
   createWrappedSplit: createWrappedSplitCodeCells,
-  createWrappedStack: createWrappedStackCodeCell,
+  createWrappedUnified: createWrappedUnifiedCodeCell,
   renderNowrapSplit: renderNowrapSplitCodeCells,
-  renderNowrapStack: renderNowrapStackCodeCell,
+  renderNowrapUnified: renderNowrapUnifiedCodeCell,
   spacerContent,
 };

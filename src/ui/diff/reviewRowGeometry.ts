@@ -48,7 +48,7 @@ export function plannedReviewRowContributesToHunkBounds(row: PlannedReviewRow) {
   }
 
   if (
-    (row.row.type === "split-line" || row.row.type === "stack-line") &&
+    (row.row.type === "split-line" || row.row.type === "unified-line") &&
     row.row.isExpansionRow === true
   ) {
     return false;

@@ -22,7 +22,7 @@ import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import {
   buildSplitRows,
-  buildStackRows,
+  buildUnifiedRows,
   loadHighlightedDiff,
   type DiffRow,
   type RenderSpan,
@@ -36,9 +36,9 @@ import {
   splitGutterText,
   splitLeftRailColor,
   splitRightRailColor,
-  stackCellPalette,
-  stackGutterText,
-  stackRailColor,
+  unifiedCellPalette,
+  unifiedGutterText,
+  unifiedRailColor,
 } from "./diff/rowStyle";
 import { sliceTextByWidth } from "./lib/text";
 import {
@@ -124,12 +124,12 @@ function fixedWidthText(text: string, width: number) {
   return `${visible.text}${" ".repeat(Math.max(0, width - visible.width))}`;
 }
 
-function staticStackGutterText(
-  cell: Extract<DiffRow, { type: "stack-line" }>["cell"],
+function staticUnifiedGutterText(
+  cell: Extract<DiffRow, { type: "unified-line" }>["cell"],
   lineNumberWidth: number,
   showLineNumbers: boolean,
 ) {
-  return stackGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
+  return unifiedGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
     showLineNumbers ? lineNumberWidth * 2 + 5 : 2,
   );
 }
@@ -144,8 +144,8 @@ function staticSplitGutterText(
   );
 }
 
-/** Render one non-interactive stacked diff row as ANSI text. */
-function renderStaticStackRow(
+/** Render one non-interactive unified diff row as ANSI text. */
+function renderStaticUnifiedRow(
   row: DiffRow,
   theme: AppTheme,
   lineNumberWidth: number,
@@ -161,14 +161,14 @@ function renderStaticStackRow(
       : renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
   }
 
-  if (row.type !== "stack-line") {
+  if (row.type !== "unified-line") {
     return "";
   }
 
   const { cell } = row;
-  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  return `${colorText(marker(), stackRailColor(cell.kind, theme, true), theme.panel)}${colorText(
-    staticStackGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
+  const palette = unifiedCellPalette(cell.kind, theme, cell.moveKind);
+  return `${colorText(marker(), unifiedRailColor(cell.kind, theme, true), theme.panel)}${colorText(
+    staticUnifiedGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
     palette.numberColor,
     palette.gutterBg,
   )}${serializeSpans(cell.spans, palette.contentBg)}${fillRemainingLine(palette.contentBg)}`;
@@ -241,7 +241,7 @@ function renderStaticSplitRow(
 function maxLineNumberWidth(file: DiffFile, rows: DiffRow[]) {
   let max = 1;
   for (const row of rows) {
-    if (row.type === "stack-line") {
+    if (row.type === "unified-line") {
       max = Math.max(
         max,
         row.cell.oldLineNumber ? String(row.cell.oldLineNumber).length : 1,
@@ -341,9 +341,9 @@ function fileModeText(file: DiffFile) {
 }
 
 function resolveStaticLayout(options: CommonOptions) {
-  // Static pager output has historically defaulted to stack rows even on wide terminals.
+  // Static pager output has historically defaulted to unified rows even on wide terminals.
   // Honor only an explicit split request here so captured hosts avoid surprise layout changes.
-  return options.mode === "split" ? "split" : "stack";
+  return options.mode === "split" ? "split" : "unified";
 }
 
 /** Format one parsed diff file for static pager hosts like LazyGit's diff panel. */
@@ -360,7 +360,7 @@ async function renderStaticFile(
   const rows =
     layout === "split"
       ? buildSplitRows(file, highlighted, theme, tabWidth)
-      : buildStackRows(file, highlighted, theme, tabWidth);
+      : buildUnifiedRows(file, highlighted, theme, tabWidth);
   const lineNumberWidth = maxLineNumberWidth(file, rows);
   const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);
@@ -376,7 +376,7 @@ async function renderStaticFile(
       .map((row) =>
         layout === "split"
           ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width)
-          : renderStaticStackRow(row, theme, lineNumberWidth, options),
+          : renderStaticUnifiedRow(row, theme, lineNumberWidth, options),
       )
       .filter(Boolean),
   ].join("\n");

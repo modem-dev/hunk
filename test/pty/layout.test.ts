@@ -67,7 +67,7 @@ describe("PTY layout", () => {
     // appear without any scroll input.
     const fixture = harness.createManyShortFileRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--no-sidebar"],
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
       cwd: fixture.dir,
       cols: 100,
       rows: 40,
@@ -91,10 +91,33 @@ describe("PTY layout", () => {
     }
   });
 
+  test("the deprecated stack CLI value renders the canonical unified layout", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 24,
+    });
+
+    try {
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && text.includes("1   -  export const alpha = 1;"),
+        8_000,
+      );
+
+      expect(snapshot).not.toMatch(/▌.*▌/);
+      expect(snapshot).toContain("1   -  export const alpha = 1;");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a larger file gap inserts blank rows before the next file header", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", "--no-sidebar", "--file-gap", "3"],
+      args: ["diff", "--mode", "unified", "--no-sidebar", "--file-gap", "3"],
       cwd: fixture.dir,
       cols: 100,
       rows: 24,
@@ -131,7 +154,7 @@ describe("PTY layout", () => {
         fixture.before,
         fixture.after,
         "--mode",
-        "stack",
+        "unified",
         "--no-sidebar",
         "--hunk-gap",
         "2",
@@ -226,7 +249,7 @@ describe("PTY layout", () => {
   test("the CLI tab width reaches interactive app rendering", async () => {
     const fixture = harness.createTabbedFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack", "-x8"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified", "-x8"],
       cols: 100,
       rows: 12,
     });
@@ -620,10 +643,10 @@ describe("PTY layout", () => {
     }
   });
 
-  test("explicit stack mode stays stacked after a live resize", async () => {
+  test("explicit unified mode stays unified after a live resize", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack"],
+      args: ["diff", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 140,
       rows: 24,
@@ -650,10 +673,10 @@ describe("PTY layout", () => {
     }
   });
 
-  test("direct layout hotkeys can switch between split, stack, and auto in a real PTY", async () => {
+  test("direct layout hotkeys can switch between split, unified, and auto in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack"],
+      args: ["diff", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 220,
       rows: 24,
@@ -677,14 +700,14 @@ describe("PTY layout", () => {
       expect(split).toMatch(/▌.*▌/);
 
       await session.press("2");
-      const stack = await harness.waitForSnapshot(
+      const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );
 
-      expect(stack).not.toMatch(/▌.*▌/);
-      expect(stack).toContain("1   -  export const alpha = 1;");
+      expect(unified).not.toMatch(/▌.*▌/);
+      expect(unified).toContain("1   -  export const alpha = 1;");
 
       await session.press("0");
       const auto = await harness.waitForSnapshot(
@@ -732,13 +755,13 @@ describe("PTY layout", () => {
       expect(anchoredLineNumber).toBeDefined();
 
       await session.press("2");
-      const stacked = await harness.waitForSnapshot(
+      const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
         5_000,
       );
 
-      expect(stacked).toContain(`line${anchoredLineNumber} =`);
+      expect(unified).toContain(`line${anchoredLineNumber} =`);
 
       await session.press("1");
       const split = await harness.waitForSnapshot(

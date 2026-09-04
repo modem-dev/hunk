@@ -61,6 +61,8 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
+    expect(parsed.text).toContain("layout mode: auto, split, unified");
+    expect(parsed.text).not.toContain("layout mode: auto, split, stack");
     expect(parsed.text).toContain("--file-gap");
     expect(parsed.text).toContain("file separator rows, including ─");
     expect(parsed.text).toContain("--hunk-gap");
@@ -384,14 +386,23 @@ describe("parseCli", () => {
       left,
       right,
       "--mode",
-      "stack",
+      "unified",
     ]);
 
     expect(parsed).toMatchObject({
       kind: "diff",
       left,
       right,
-      options: { mode: "stack" },
+      options: { mode: "unified" },
+    });
+  });
+
+  test("normalizes the deprecated stack layout input to unified", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--mode", "stack"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { mode: "unified" },
     });
   });
 
@@ -1618,7 +1629,7 @@ describe("parseCli", () => {
       "right.ts",
       "src/example.ts",
       "--mode",
-      "stack",
+      "unified",
     ]);
 
     expect(parsed).toMatchObject({
@@ -1627,7 +1638,7 @@ describe("parseCli", () => {
       right: "right.ts",
       path: "src/example.ts",
       options: {
-        mode: "stack",
+        mode: "unified",
       },
     });
     if (parsed.kind !== "difftool") {

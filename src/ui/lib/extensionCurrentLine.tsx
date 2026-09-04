@@ -1,12 +1,12 @@
 import type { ExtensionCurrentLinePaint } from "../../extension-api/types";
-import type { DiffRow, SplitLineCell, StackLineCell } from "../diff/diffRows";
+import type { DiffRow, SplitLineCell, UnifiedLineCell } from "../diff/diffRows";
 import { DiffRowView } from "../diff/DiffRowView";
 import type { DiffSectionRowPlan } from "../diff/diffSectionRowPlan";
 import type { LineCursor } from "./lineCursors";
 import type { AppTheme } from "../themes";
 
 type SplitLineRow = Extract<DiffRow, { type: "split-line" }>;
-type StackLineRow = Extract<DiffRow, { type: "stack-line" }>;
+type UnifiedLineRow = Extract<DiffRow, { type: "unified-line" }>;
 
 /** One lifecycle update from the review renderer to pane orchestration. */
 export type ExtensionCurrentLinePaintUpdate =
@@ -52,8 +52,8 @@ export function applyExtensionCurrentLinePaintUpdate(
 }
 
 /** Adapt one private split cell into the private full-width row painter. */
-function stackRow(row: SplitLineRow, cell: SplitLineCell, side: "old" | "new"): StackLineRow {
-  const adapted: StackLineCell = {
+function unifiedRow(row: SplitLineRow, cell: SplitLineCell, side: "old" | "new"): UnifiedLineRow {
+  const adapted: UnifiedLineCell = {
     kind: cell.kind === "empty" ? "context" : cell.kind,
     sign: cell.kind === "empty" ? " " : cell.sign,
     ...(side === "old" ? { oldLineNumber: cell.lineNumber } : { newLineNumber: cell.lineNumber }),
@@ -61,7 +61,7 @@ function stackRow(row: SplitLineRow, cell: SplitLineCell, side: "old" | "new"): 
     spans: cell.spans,
   };
   return {
-    type: "stack-line",
+    type: "unified-line",
     key: `${row.key}:pane:${side}`,
     fileId: row.fileId,
     hunkIndex: row.hunkIndex,
@@ -96,8 +96,8 @@ export function createExtensionCurrentLinePaint({
   }
   if (!splitRow) return null;
   const rows = {
-    old: stackRow(splitRow, splitRow.left, "old"),
-    new: stackRow(splitRow, splitRow.right, "new"),
+    old: unifiedRow(splitRow, splitRow.left, "old"),
+    new: unifiedRow(splitRow, splitRow.right, "new"),
   };
   return Object.freeze({
     side: cursor.target.side,

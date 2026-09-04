@@ -1240,7 +1240,7 @@ Marks are addressed by **source coordinates**, never by rendered rows: `side`
 (`"old"` or `"new"`), a 1-based `line` on that side, and a `[start, end)`
 range in UTF-16 code units of the line's raw text — exactly what `indexOf` and
 `RegExp.exec` return against `file.patch` lines or a `readDocument` result.
-That addressing survives split vs stack layout, line wrapping, horizontal
+That addressing survives split vs unified layout, line wrapping, horizontal
 scrolling, and collapsed-context expansion, and the extension never learns
 Hunk's row model. A context line may be addressed through either side's line
 number; split view mirrors the mark onto both halves of the row. Offsets that
@@ -1815,7 +1815,7 @@ the review then active.
 | `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk                |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
 | `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
-| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
+| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/unified layout changes           |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
 | `note_created`         | `{ note }`              | a user saves an inline review note                        |
 | `note_edited`          | `{ note }`              | a draft body changes or an existing note is saved         |
@@ -1826,6 +1826,12 @@ the review then active.
 A newly mounted extension instance receives `startup` before its first
 `changeset_loaded`; reloads then deliver `changeset_loaded` before
 `session_reload` once the matching review generation has committed.
+
+Starting with extension API v16, `layout_changed` emits canonical layout values:
+`mode` is `"auto"`, `"split"`, or `"unified"`, while `layout` is `"split"` or
+`"unified"`. The deprecated `"stack"` literal remains in the public layout types
+so existing extension source continues to compile, but Hunk no longer emits it;
+branch on `"unified"` instead.
 
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.

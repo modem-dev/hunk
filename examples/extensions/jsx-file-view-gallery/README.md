@@ -9,7 +9,7 @@ Nested boxes, responsive meters, semantic color, and selected-hunk styling summa
 ```bash
 bun run src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/change-atlas/before.ts \
   examples/extensions/jsx-file-view-gallery/fixtures/change-atlas/after.ts
 ```
@@ -21,7 +21,7 @@ The extension lazily reads both exact documents, associates changed opaque three
 ```bash
 bun run src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/css-palette/before.css \
   examples/extensions/jsx-file-view-gallery/fixtures/css-palette/after.css
 ```
@@ -33,7 +33,7 @@ A conservative package-file parser highlights only the changed semantic-version 
 ```bash
 bun run src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/before/package.json \
   examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/after/package.json
 ```

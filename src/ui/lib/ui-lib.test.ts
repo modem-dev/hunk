@@ -471,12 +471,12 @@ describe("ui helpers", () => {
     expect(resizeSidebarWidth(34, 33, 120, 22, 80)).toBe(80);
   });
 
-  test("estimateDiffSectionBodyRows matches split and stack row counts from the render plan", async () => {
+  test("estimateDiffSectionBodyRows matches split and unified row counts from the render plan", async () => {
     const file = createDiffFile();
     const theme = resolveTheme("github-dark-default", null);
 
     expect(estimateDiffSectionBodyRows(file, "split", true, theme)).toBeGreaterThan(0);
-    expect(estimateDiffSectionBodyRows(file, "stack", true, theme)).toBeGreaterThan(
+    expect(estimateDiffSectionBodyRows(file, "unified", true, theme)).toBeGreaterThan(
       estimateDiffSectionBodyRows(file, "split", true, theme),
     );
     expect(estimateDiffSectionBodyRows(file, "split", false, theme)).toBe(

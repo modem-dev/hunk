@@ -15,7 +15,19 @@ import type {
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
 
-export type LayoutMode = "auto" | "split" | "stack";
+export type LayoutMode = "auto" | "split" | "unified";
+export type LayoutModeInput = LayoutMode | "stack";
+
+/** Return whether an unknown value uses canonical or deprecated layout vocabulary. */
+export function isLayoutModeInput(value: unknown): value is LayoutModeInput {
+  return value === "auto" || value === "split" || value === "unified" || value === "stack";
+}
+
+/** Normalize canonical and deprecated layout inputs without widening runtime state. */
+export function normalizeLayoutModeInput(value: LayoutModeInput): LayoutMode {
+  return value === "stack" ? "unified" : value;
+}
+
 export type CursorLine = "row" | "number" | "off";
 export type SidebarVisibility = boolean | "auto";
 export type VcsMode = string;

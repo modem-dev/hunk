@@ -159,7 +159,7 @@ hunk.registerLineHighlighter({
 ```
 
 Marks are addressed by source coordinates — `side`, a 1-based `line`, and a `[start, end)` range in UTF-16 code units of
-the raw line text — so they survive split vs stack layout, wrapping, horizontal scrolling, and collapsed-context
+the raw line text — so they survive split vs unified layout, wrapping, horizontal scrolling, and collapsed-context
 expansion. A mark paints terminal columns, so a range covering only zero-width characters (bidi controls, ZWSP) paints
 nothing. Tones (`match`, `current`, `info`, `warning`, `error`, `dim`) rather than colors: Hunk resolves each tinted tone
 against the actual background of each marked line with a minimum-contrast guarantee stronger than its own word-diff
@@ -374,7 +374,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 | `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk               |
 | `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                   |
 | `theme_changed`        | `{ themeId }`           | when the user commits a new theme                        |
-| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes            |
+| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/unified layout changes          |
 | `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check        |
 | `note_created`         | `{ note }`              | a user saves an inline review note                       |
 | `note_edited`          | `{ note }`              | an in-progress inline note's body changes                |
@@ -383,6 +383,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 | `shutdown`             | `{}`                    | on exit, best-effort within a short timeout              |
 
 - A newly mounted instance receives `startup` before its first `changeset_loaded`; reloads deliver `changeset_loaded` before `session_reload` after the matching review commits.
+- Starting with extension API v16, `layout_changed` emits `"auto"`, `"split"`, or `"unified"` for `mode` and `"split"` or `"unified"` for `layout`. The deprecated `"stack"` literal remains in the public types for source compatibility but is no longer emitted.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
 - `hunk_viewed` fires when the settled `(file, hunk)` pair changes, including `[`/`]` inside one file. Current-line movement within a hunk does not emit it. `file_viewed` still fires only when the selected file object changes.
 - `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.

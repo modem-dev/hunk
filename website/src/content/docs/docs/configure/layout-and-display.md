@@ -10,14 +10,14 @@ Hunk uses the same normalized review model in every layout.
 ```bash
 hunk diff --mode auto
 hunk diff --mode split
-hunk diff --mode stack
+hunk diff --mode unified
 ```
 
-- `auto` chooses split on wide terminals and stack on narrow ones.
+- `auto` chooses split on wide terminals and unified on narrow ones.
 - `split` keeps before and after columns side by side.
-- `stack` shows changed rows in a single-width flow.
+- `unified` shows changed rows in a single-width flow.
 
-Explicit split and stack choices override responsive behavior. Press `0`, `1`, or `2` to switch while reviewing.
+Explicit split and unified choices override responsive behavior. Press `0`, `1`, or `2` to switch while reviewing. The former `stack` value remains accepted as a deprecated input alias and normalizes to `unified`.
 
 ## Tune code rows
 

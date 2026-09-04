@@ -131,6 +131,32 @@ describe("compareBenchmarkRuns", () => {
     expect(comparison.rows[0]?.status).toBe("missing-base");
   });
 
+  test("compares historical stack metrics against the renamed unified series", () => {
+    const comparison = compareBenchmarkRuns(
+      runResult([
+        metric({
+          name: "render-layout/balanced_stream_stack_rows_ms",
+          source: "render-layout",
+          median: 100,
+        }),
+      ]),
+      runResult([
+        metric({
+          name: "render-layout/balanced_stream_unified_rows_ms",
+          source: "render-layout",
+          median: 110,
+        }),
+      ]),
+    );
+
+    expect(comparison.failed).toBe(false);
+    expect(comparison.rows).toHaveLength(1);
+    expect(comparison.rows[0]).toMatchObject({
+      name: "render-layout/balanced_stream_unified_rows_ms",
+      status: "pass",
+    });
+  });
+
   test("fails when a previously comparable metric disappears", () => {
     const comparison = compareBenchmarkRuns(runResult([metric({ median: 100 })]), runResult([]));
 

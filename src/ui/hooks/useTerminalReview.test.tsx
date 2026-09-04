@@ -196,7 +196,7 @@ function TerminalReviewHarness({
         visibleFiles.map((file) =>
           measureDiffSectionGeometry(
             file,
-            "stack",
+            "unified",
             true,
             resolveTheme("github-dark-default", null),
             [],
@@ -537,8 +537,8 @@ describe("useTerminalReview", () => {
   });
 
   test("live comments validate markup at the published live width", async () => {
-    const noteGeometry: { current: { layout: "split" | "stack"; width: number } | null } = {
-      current: { layout: "stack", width: 120 },
+    const noteGeometry: { current: { layout: "split" | "unified"; width: number } | null } = {
+      current: { layout: "unified", width: 120 },
     };
     const { controllerRef, setup } = await renderTerminalReview(
       [
@@ -587,7 +587,7 @@ describe("useTerminalReview", () => {
         );
       });
 
-      // stack at width 120 → content width 112; split dock is roughly half.
+      // unified at width 120 → content width 112; split dock is roughly half.
       expect(results[0]!.markupWidth).toBe(112);
       expect(results[1]!.markupWidth).toBeLessThan(70);
     } finally {
@@ -1799,7 +1799,7 @@ describe("useTerminalReview", () => {
       [
         measureDiffSectionGeometry(
           file,
-          "stack",
+          "unified",
           true,
           resolveTheme("github-dark-default", null),
           [],

@@ -1288,7 +1288,7 @@ export function DiffPane({
   );
 
   // In split layout, anchor the visible selection (and clipboard copy) to whichever side of
-  // the diff the drag began on. Stack layout has only one column, so the side stays undefined.
+  // the diff the drag began on. Unified layout has only one column, so the side stays undefined.
   const copySelectionSide: CopySelectionSide | undefined = useMemo(() => {
     if (!copySelectionDrag || copySelectionDrag.anchor.kind !== "review-row") {
       return undefined;

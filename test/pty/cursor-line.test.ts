@@ -26,7 +26,7 @@ describe("PTY current line", () => {
   test("stepping moves the current line before it moves the viewport", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -145,7 +145,7 @@ describe("PTY current line", () => {
     }
   });
 
-  test("a current-line pane pins old above new and hides in stack mode", async () => {
+  test("a current-line pane pins old above new and hides in unified mode", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: [
@@ -220,7 +220,7 @@ describe("PTY current line", () => {
   test("a held step key advances one line per press", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -255,7 +255,7 @@ describe("PTY current line", () => {
   test("stepping reaches the lines an expanded gap reveals", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 140,
       rows: 16,
     });
@@ -281,7 +281,7 @@ describe("PTY current line", () => {
   test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 140,
       rows: 16,
     });
@@ -322,7 +322,7 @@ describe("PTY current line", () => {
   test("paging leaves the current line on screen", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -344,7 +344,7 @@ describe("PTY current line", () => {
   test("a note after paging opens where the reviewer is looking", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -372,7 +372,7 @@ describe("PTY current line", () => {
   test("a note anchors at the current line instead of the top of the hunk", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

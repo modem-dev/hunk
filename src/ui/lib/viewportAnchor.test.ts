@@ -17,7 +17,7 @@ describe("viewport row anchors", () => {
     });
   }
 
-  test("honors a preferred stable key when a split change row can map to multiple stacked rows", () => {
+  test("honors a preferred stable key when a split change row can map to multiple unified rows", () => {
     const file = createChangedFile();
     const headerHeights = buildInStreamFileHeaderHeights([file]);
     const splitGeometry = measureDiffSectionGeometry(
@@ -30,9 +30,9 @@ describe("viewport row anchors", () => {
       true,
       false,
     );
-    const stackGeometry = measureDiffSectionGeometry(
+    const unifiedGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       false,
       theme,
       [],
@@ -41,27 +41,27 @@ describe("viewport row anchors", () => {
       false,
     );
     const splitChangeTop = splitGeometry.rowBounds.find((row) => row.key.includes(":change:"))?.top;
-    const stackDeletionTop = stackGeometry.rowBounds.find((row) =>
+    const unifiedDeletionTop = unifiedGeometry.rowBounds.find((row) =>
       row.key.includes(":deletion:"),
     )?.top;
-    const stackAdditionTop = stackGeometry.rowBounds.find((row) =>
+    const unifiedAdditionTop = unifiedGeometry.rowBounds.find((row) =>
       row.key.includes(":addition:"),
     )?.top;
 
     expect(splitChangeTop).toBeDefined();
-    expect(stackDeletionTop).toBeDefined();
-    expect(stackAdditionTop).toBeDefined();
+    expect(unifiedDeletionTop).toBeDefined();
+    expect(unifiedAdditionTop).toBeDefined();
 
     const deletionAnchor = findViewportRowAnchor(
       [file],
-      [stackGeometry],
-      stackDeletionTop!,
+      [unifiedGeometry],
+      unifiedDeletionTop!,
       headerHeights,
     );
     const additionAnchor = findViewportRowAnchor(
       [file],
-      [stackGeometry],
-      stackAdditionTop!,
+      [unifiedGeometry],
+      unifiedAdditionTop!,
       headerHeights,
     );
 
@@ -84,7 +84,7 @@ describe("viewport row anchors", () => {
     expect(splitAsAddition?.stableKey).toBe(additionAnchor?.stableKey);
   });
 
-  test("round-trips a stacked deletion row through split view without changing the viewport anchor", () => {
+  test("round-trips a unified deletion row through split view without changing the viewport anchor", () => {
     const file = createChangedFile();
     const headerHeights = buildInStreamFileHeaderHeights([file]);
     const splitGeometry = measureDiffSectionGeometry(
@@ -97,9 +97,9 @@ describe("viewport row anchors", () => {
       true,
       false,
     );
-    const stackGeometry = measureDiffSectionGeometry(
+    const unifiedGeometry = measureDiffSectionGeometry(
       file,
-      "stack",
+      "unified",
       false,
       theme,
       [],
@@ -107,25 +107,25 @@ describe("viewport row anchors", () => {
       true,
       false,
     );
-    const stackDeletionTop = stackGeometry.rowBounds.find((row) =>
+    const unifiedDeletionTop = unifiedGeometry.rowBounds.find((row) =>
       row.key.includes(":deletion:"),
     )?.top;
 
-    expect(stackDeletionTop).toBeDefined();
+    expect(unifiedDeletionTop).toBeDefined();
 
-    const stackDeletionAnchor = findViewportRowAnchor(
+    const unifiedDeletionAnchor = findViewportRowAnchor(
       [file],
-      [stackGeometry],
-      stackDeletionTop!,
+      [unifiedGeometry],
+      unifiedDeletionTop!,
       headerHeights,
     );
 
-    expect(stackDeletionAnchor).not.toBeNull();
+    expect(unifiedDeletionAnchor).not.toBeNull();
 
     const splitTop = resolveViewportRowAnchorTop(
       [file],
       [splitGeometry],
-      stackDeletionAnchor!,
+      unifiedDeletionAnchor!,
       headerHeights,
     );
     const splitAnchor = findViewportRowAnchor(
@@ -133,15 +133,15 @@ describe("viewport row anchors", () => {
       [splitGeometry],
       splitTop,
       headerHeights,
-      stackDeletionAnchor?.stableKey,
+      unifiedDeletionAnchor?.stableKey,
     );
     const roundTripTop = resolveViewportRowAnchorTop(
       [file],
-      [stackGeometry],
+      [unifiedGeometry],
       splitAnchor!,
       headerHeights,
     );
 
-    expect(roundTripTop).toBe(stackDeletionTop!);
+    expect(roundTripTop).toBe(unifiedDeletionTop!);
   });
 });

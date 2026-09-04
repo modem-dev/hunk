@@ -13,10 +13,10 @@ bun run website/scripts/capture-media.ts mouse      # one asset: stream|agent|mo
 
 Video assets need an ffmpeg with libx264 and libvpx-vp9 on PATH (or pointed at via `FFMPEG=`). Like the other rituals in this file it is optional and Unix-oriented; website builds and tests never run it.
 
-The two workflow captures in `public/docs/images/` are optimized copies of the current product screenshots embedded in the repository README:
+The two workflow captures in `public/docs/images/` are current product screenshots used by the docs and repository README:
 
 - `review-stream.webp` — `https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651`
-- `agent-comments.webp` — `https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de`
+- `agent-comments.webp` — `https://raw.githubusercontent.com/modem-dev/hunk/refs/heads/main/website/public/docs/images/agent-comments.webp`
 
 They teach the full review stream and inline agent-note workflows rather than serving as decorative art. Refresh them when those workflows visibly change.
 

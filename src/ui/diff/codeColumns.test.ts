@@ -84,10 +84,10 @@ describe("findMaxLineNumberInRows", () => {
     expect(findMaxLineNumberInRows(rows)).toBe(1000);
   });
 
-  test("accounts for synthesized stack expansion rows", () => {
+  test("accounts for synthesized unified expansion rows", () => {
     const rows: DiffRow[] = [
       {
-        type: "stack-line",
+        type: "unified-line",
         key: "file:expanded:trailing:0:0",
         fileId: "file",
         hunkIndex: 0,

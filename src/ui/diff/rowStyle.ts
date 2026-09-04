@@ -1,7 +1,7 @@
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { blendHex, contrastRatio, hexColorDistance } from "../lib/color";
 import type { ExtensionLineHighlightTone } from "../../extension-api/types";
-import type { SplitLineCell, StackLineCell } from "./diffRows";
+import type { SplitLineCell, UnifiedLineCell } from "./diffRows";
 
 const INACTIVE_RAIL_BLEND = 0.35;
 const SELECTION_BG_BLEND = 0.75;
@@ -29,7 +29,7 @@ function cachedRowBackground(
   return background;
 }
 
-/** The diff rail marker is always visible in Hunk stack and split rows. */
+/** The diff rail marker is always visible in Hunk unified and split rows. */
 export function diffRailMarker() {
   return "▌";
 }
@@ -77,8 +77,12 @@ export function dimRailColor(color: string, theme: AppTheme) {
   return blendHex(color, theme.panel, INACTIVE_RAIL_BLEND);
 }
 
-/** Pick the stack-view rail color for one rendered row. */
-export function stackRailColor(kind: StackLineCell["kind"], theme: AppTheme, selected: boolean) {
+/** Pick the unified-view rail color for one rendered row. */
+export function unifiedRailColor(
+  kind: UnifiedLineCell["kind"],
+  theme: AppTheme,
+  selected: boolean,
+) {
   let color: string;
 
   if (kind === "addition") {
@@ -153,11 +157,11 @@ export function splitCellPalette(
   };
 }
 
-/** Pick stack-view colors from the semantic diff cell kind. */
-export function stackCellPalette(
-  kind: StackLineCell["kind"],
+/** Pick unified-view colors from the semantic diff cell kind. */
+export function unifiedCellPalette(
+  kind: UnifiedLineCell["kind"],
   theme: AppTheme,
-  moveKind?: StackLineCell["moveKind"],
+  moveKind?: UnifiedLineCell["moveKind"],
 ) {
   if (kind === "addition") {
     return {
@@ -428,9 +432,9 @@ export function diffLineNumberText(value: number | undefined, width: number) {
   return value === undefined ? " ".repeat(width) : String(value).padStart(width, " ");
 }
 
-/** Build the stack-view gutter text shared by the TUI and static pager renderers. */
-export function stackGutterText(
-  cell: StackLineCell,
+/** Build the unified-view gutter text shared by the TUI and static pager renderers. */
+export function unifiedGutterText(
+  cell: UnifiedLineCell,
   lineNumberDigits: number,
   showLineNumbers: boolean,
 ) {

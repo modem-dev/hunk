@@ -46,7 +46,7 @@ function renderRow(
     );
   }
 
-  if (plannedRow.row.type === "split-line" || plannedRow.row.type === "stack-line") {
+  if (plannedRow.row.type === "split-line" || plannedRow.row.type === "unified-line") {
     return (
       <CodeRowView
         plannedRow={plannedRow as PlannedCodeReviewRow}

@@ -178,15 +178,28 @@ function comparableThreshold(
   return baseResult?.threshold;
 }
 
+/** Map historical stack-layout metric names onto the canonical unified series. */
+function canonicalBenchmarkMetricName(name: string) {
+  if (!name.startsWith("render-layout/")) {
+    return name;
+  }
+
+  return name.replace("_stack_rows", "_unified_rows");
+}
+
 /** Compare two benchmark snapshots and mark only material regressions as failures. */
 export function compareBenchmarkRuns(
   base: BenchmarkRunResult,
   head: BenchmarkRunResult,
 ): BenchmarkComparisonResult {
-  const baseByName = new Map(base.results.map((result) => [result.name, result]));
-  const headByName = new Map(head.results.map((result) => [result.name, result]));
+  const baseByName = new Map(
+    base.results.map((result) => [canonicalBenchmarkMetricName(result.name), result]),
+  );
+  const headByName = new Map(
+    head.results.map((result) => [canonicalBenchmarkMetricName(result.name), result]),
+  );
   const acceptedRegressionNames = new Set(
-    (head.acceptedRegressions ?? []).map((entry) => entry.name),
+    (head.acceptedRegressions ?? []).map((entry) => canonicalBenchmarkMetricName(entry.name)),
   );
   const names = [...new Set([...baseByName.keys(), ...headByName.keys()])].sort();
   const rows: BenchmarkComparisonRow[] = names.map((name) => {

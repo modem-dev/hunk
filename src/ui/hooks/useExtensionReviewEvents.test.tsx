@@ -2,10 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, Activity, StrictMode, useLayoutEffect, useState } from "react";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import type { LayoutMode } from "../../core/run/commandInputs";
 import type {
   ExtensionEventPayloads,
-  ExtensionLayoutMode,
-  ExtensionResolvedLayout,
   ExtensionReviewSnapshotNote,
 } from "../../extension-api/types";
 import {
@@ -129,8 +128,8 @@ function observeReviewEvents(extensions: ExtensionLoadResult, seen: SeenEvent[])
 interface ReviewEventFacts {
   extensions: ExtensionLoadResult;
   filter: string;
-  layoutMode: ExtensionLayoutMode;
-  resolvedLayout: ExtensionResolvedLayout;
+  layoutMode: LayoutMode;
+  resolvedLayout: Exclude<LayoutMode, "auto">;
   reviewGeneration?: string;
   reviewNotes?: readonly ExtensionReviewSnapshotNote[];
   selectedFile: ExtensionDiffFile | null;
@@ -360,8 +359,8 @@ describe("useExtensionReviewEvents", () => {
       await act(async () =>
         harness.updateFacts({
           filter: "src/",
-          layoutMode: "stack",
-          resolvedLayout: "stack",
+          layoutMode: "unified",
+          resolvedLayout: "unified",
           themeId: "github-light-default",
         }),
       );
@@ -369,7 +368,7 @@ describe("useExtensionReviewEvents", () => {
 
       expect(seen).toEqual([
         { event: "filter_changed", payload: { filter: "src/" } },
-        { event: "layout_changed", payload: { mode: "stack", layout: "stack" } },
+        { event: "layout_changed", payload: { mode: "unified", layout: "unified" } },
         { event: "theme_changed", payload: { themeId: "github-light-default" } },
       ]);
     } finally {
@@ -479,8 +478,8 @@ describe("useExtensionReviewEvents", () => {
         harness.updateFacts({
           extensions: secondExtensions,
           filter: "src/",
-          layoutMode: "stack",
-          resolvedLayout: "stack",
+          layoutMode: "unified",
+          resolvedLayout: "unified",
           themeId: "github-light-default",
         }),
       );

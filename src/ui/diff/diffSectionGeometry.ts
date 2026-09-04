@@ -366,7 +366,7 @@ export function measureDiffSectionGeometry(
       stableKey: row.stableKey,
       stableKeys,
       ...(row.kind === "diff-row" &&
-      (row.row.type === "split-line" || row.row.type === "stack-line") &&
+      (row.row.type === "split-line" || row.row.type === "unified-line") &&
       row.row.expandedGapKey
         ? { expandedGapKey: row.row.expandedGapKey }
         : {}),

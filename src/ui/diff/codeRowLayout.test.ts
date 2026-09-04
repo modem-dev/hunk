@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
-import type { DiffRow, SplitLineCell, StackLineCell } from "./diffRows";
+import type { DiffRow, SplitLineCell, UnifiedLineCell } from "./diffRows";
 import {
   measurePlannedRenderedRowHeight,
   planCodeRowLayout,
@@ -40,17 +40,17 @@ function splitPlannedRow(noteGuideSide?: "old" | "new"): PlannedDiffRow {
   };
 }
 
-/** Build one complete planned stack row for width-boundary layout tests. */
-function stackPlannedRow(noteGuideSide?: "old" | "new"): PlannedDiffRow {
-  const cell: StackLineCell = {
+/** Build one complete planned unified row for width-boundary layout tests. */
+function unifiedPlannedRow(noteGuideSide?: "old" | "new"): PlannedDiffRow {
+  const cell: UnifiedLineCell = {
     kind: "addition",
     sign: "+",
     newLineNumber: 1,
     spans: [{ text: boundaryText }],
   };
   const row: DiffRow = {
-    type: "stack-line",
-    key: "file:stack:1",
+    type: "unified-line",
+    key: "file:unified:1",
     fileId: "file",
     hunkIndex: 0,
     cell,
@@ -103,24 +103,24 @@ describe("planned code-row layout", () => {
     expect(decoratedLines(guided, options).every((line) => line.endsWith("│"))).toBe(true);
   });
 
-  test("stack measurement and decorated rendering reserve a new-side guide at an exact wrap boundary", () => {
+  test("unified measurement and decorated rendering reserve a new-side guide at an exact wrap boundary", () => {
     const options = {
       width: 10,
       lineNumberDigits: 1,
       showLineNumbers: false,
       wrapLines: true,
     } as const;
-    const unguided = stackPlannedRow();
-    const guided = stackPlannedRow("new");
+    const unguided = unifiedPlannedRow();
+    const guided = unifiedPlannedRow("new");
 
     expect(planCodeRowLayout(unguided, options)).toMatchObject({
-      kind: "stack",
+      kind: "unified",
       cell: { contentWidth: 7, wrappedLineCount: 1 },
       trailingGuideWidth: 0,
       wrappedLineCount: 1,
     });
     expect(planCodeRowLayout(guided, options)).toMatchObject({
-      kind: "stack",
+      kind: "unified",
       cell: { contentWidth: 6, wrappedLineCount: 2 },
       trailingGuideWidth: 1,
       wrappedLineCount: 2,
@@ -131,8 +131,8 @@ describe("planned code-row layout", () => {
   });
 
   test("memoizes wrapped measurement while preserving lazy plan construction", () => {
-    for (const row of [splitPlannedRow(), stackPlannedRow()]) {
-      if (row.row.type !== "split-line" && row.row.type !== "stack-line") {
+    for (const row of [splitPlannedRow(), unifiedPlannedRow()]) {
+      if (row.row.type !== "split-line" && row.row.type !== "unified-line") {
         throw new Error("expected a code row");
       }
       const spans = row.row.type === "split-line" ? row.row.right.spans : row.row.cell.spans;
@@ -166,8 +166,8 @@ describe("planned code-row layout", () => {
     }
   });
 
-  test("guide, badge, and wrapping policies reserve the same total width in split and stack", () => {
-    for (const rowFactory of [splitPlannedRow, stackPlannedRow]) {
+  test("guide, badge, and wrapping policies reserve the same total width in split and unified", () => {
+    for (const rowFactory of [splitPlannedRow, unifiedPlannedRow]) {
       for (const noteGuideSide of [undefined, "old", "new"] as const) {
         for (const wrapLines of [false, true]) {
           for (const reserveAddNoteColumn of [false, true]) {

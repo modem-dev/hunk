@@ -90,7 +90,7 @@ describe("static diff pager", () => {
     expect(plain).not.toContain("▌  1 +  const value = 2;");
   });
 
-  test("keeps auto mode stacked in static pager output", async () => {
+  test("keeps auto mode unified in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
 
@@ -106,7 +106,7 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌  1 +  const value = 2;");
   });
 
-  test("extends stacked row backgrounds to the host panel edge", async () => {
+  test("extends unified row backgrounds to the host panel edge", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-short\n+also short\n";
 

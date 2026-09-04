@@ -9,7 +9,7 @@ import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
 import { expandCollapsedRows, type FileSourceStatus } from "./expandCollapsedRows";
 import {
   buildSplitRows,
-  buildStackRows,
+  buildUnifiedRows,
   type HighlightedDiffCode,
   type RenderSpan,
 } from "./diffRows";
@@ -47,7 +47,7 @@ function buildBaseRows(
 ) {
   return layout === "split"
     ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth)
-    : buildStackRows(file, highlightedDiff ?? null, theme, tabWidth);
+    : buildUnifiedRows(file, highlightedDiff ?? null, theme, tabWidth);
 }
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */

@@ -1,18 +1,20 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
-import type {
-  CliInput,
-  CommonOptions,
-  CursorLine,
-  ExtensionManageCommandInput,
-  HelpCommandInput,
-  LayoutMode,
-  PagerCommandInput,
-  ParsedCliInput,
-  SelfUpdateCommandInput,
-  SessionCommentListType,
-  SessionCommentApplyItemInput,
+import {
+  isLayoutModeInput,
+  normalizeLayoutModeInput,
+  type CliInput,
+  type CommonOptions,
+  type CursorLine,
+  type ExtensionManageCommandInput,
+  type HelpCommandInput,
+  type LayoutMode,
+  type PagerCommandInput,
+  type ParsedCliInput,
+  type SelfUpdateCommandInput,
+  type SessionCommentListType,
+  type SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
 import {
   isBuiltInCliCommandName,
@@ -89,7 +91,7 @@ export interface CliReferenceCommand {
 
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
-  { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
+  { flag: "--mode <mode>", description: "layout mode: auto, split, unified", parse: "layout" },
   {
     flag: "--cursor-line <style>",
     description: "current-line marker: row, number, off",
@@ -304,8 +306,8 @@ export const CLI_REFERENCE_COMMANDS = {
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
-  if (value === "auto" || value === "split" || value === "stack") {
-    return value;
+  if (isLayoutModeInput(value)) {
+    return normalizeLayoutModeInput(value);
   }
 
   throw new Error(`Invalid layout mode: ${value}`);
@@ -531,7 +533,7 @@ function renderCliHelp() {
     "  --fast                                  review working tree with experimental fast highlighting",
     "",
     "Common review options:",
-    "  --mode <mode>                           layout mode: auto, split, stack",
+    "  --mode <mode>                           layout mode: auto, split, unified",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
     "  --pager                                 use pager-style chrome",

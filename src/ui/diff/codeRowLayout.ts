@@ -3,7 +3,7 @@ import type { AppTheme } from "../themes/types";
 import {
   resolveSplitCellGeometry,
   resolveSplitPaneWidths,
-  resolveStackCellGeometry,
+  resolveUnifiedCellGeometry,
 } from "./codeColumns";
 import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
 import type { DiffRow, RenderSpan } from "./diffRowModel";
@@ -32,7 +32,7 @@ export interface CodeRowLayoutOptions {
   showAddNoteBadge?: boolean;
 }
 
-/** Concrete split or stack layout used to measure, copy, and paint one planned code row. */
+/** Concrete split or unified layout used to measure, copy, and paint one planned code row. */
 export type CodeRowLayoutPlan =
   | {
       kind: "split";
@@ -46,7 +46,7 @@ export type CodeRowLayoutPlan =
       wrappedLineCount: number;
     }
   | {
-      kind: "stack";
+      kind: "unified";
       cell: CodeCellLayoutPlan;
       noteGuideSide?: "old" | "new";
       trailingGuideWidth: number;
@@ -95,7 +95,7 @@ export function planCodeRowLayout(
   }
 
   const row = plannedRow.row;
-  if (row.type !== "split-line" && row.type !== "stack-line") {
+  if (row.type !== "split-line" && row.type !== "unified-line") {
     return null;
   }
 
@@ -152,7 +152,7 @@ export function planCodeRowLayout(
   }
 
   const cellWidth = Math.max(0, width - trailingGuideWidth - addNoteBadgeWidth);
-  const cellGeometry = resolveStackCellGeometry(
+  const cellGeometry = resolveUnifiedCellGeometry(
     cellWidth,
     lineNumberDigits,
     showLineNumbers,
@@ -168,7 +168,7 @@ export function planCodeRowLayout(
 
   let measuredWrappedLineCount: number | undefined;
   return {
-    kind: "stack",
+    kind: "unified",
     cell,
     noteGuideSide: plannedRow.noteGuideSide,
     trailingGuideWidth,

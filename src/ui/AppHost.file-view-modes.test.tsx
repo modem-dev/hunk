@@ -252,8 +252,8 @@ async function renderWithExtension(
   const bootstrap = createTestVcsAppBootstrap({
     changesetId: "changeset:file-view-mode",
     files,
-    initialMode: "stack",
-    inputMode: "stack",
+    initialMode: "unified",
+    inputMode: "unified",
     vcsOptions: { extensionPaths: [extension] },
   });
   bootstrap.extensions = extensions;
@@ -325,7 +325,7 @@ async function renderWatchedWithExtension({
     kind: "diff",
     left,
     right,
-    options: { mode: "stack", watch: true },
+    options: { mode: "unified", watch: true },
   });
   const extensions = await loadStartupExtensions({
     cliExtensionPaths: [extension],
