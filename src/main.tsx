@@ -88,6 +88,18 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "history-static") {
+    const { runStaticHistory } = await import("./ui/history/runStaticHistory");
+    await runStaticHistory(startupPlan.bootstrap);
+    return;
+  }
+
+  if (startupPlan.kind === "history-interactive") {
+    const { runInteractiveHistory } = await import("./ui/history/runInteractiveHistory");
+    await runInteractiveHistory(startupPlan.bootstrap);
+    return;
+  }
+
   if (startupPlan.kind === "plain-text-pager") {
     await pagePlainText(startupPlan.text);
     process.exit(0);

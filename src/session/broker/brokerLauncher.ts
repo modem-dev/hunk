@@ -13,9 +13,8 @@ import {
   parseBrokerString,
   parseExactBrokerRecord,
 } from "@hunk/session-broker-core";
+import { resolveCurrentHunkCommand } from "../../core/process/relaunch";
 import { resolveSessionBrokerConfig, type ResolvedSessionBrokerConfig } from "./brokerConfig";
-
-const SCRIPT_ENTRYPOINT_PATTERN = /[\\/]|\.(?:[cm]?js|tsx?)$/;
 const DEFAULT_DAEMON_LOCK_STALE_MS = 15_000;
 const DEFAULT_DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS = 100;
@@ -78,22 +77,6 @@ export interface EnsureSessionBrokerAvailableOptions {
     argv?: string[];
     execPath?: string;
   }) => ChildProcess;
-}
-
-/** Detect Bun's virtual filesystem prefix used inside compiled single-file executables. */
-const BUNFS_PREFIX = "/$bunfs/";
-/** Bun's Windows equivalent mounts the compiled bundle on a virtual B: drive. */
-const BUNFS_WINDOWS_PREFIX = "b:/~bun/";
-
-/** True when argv[1] is a Bun single-file-executable virtual path on any platform. */
-function isBunfsEntrypoint(entrypoint: string) {
-  if (entrypoint.startsWith(BUNFS_PREFIX)) {
-    return true;
-  }
-
-  // Windows reports the virtual path with either separator depending on the shell, so
-  // normalize before comparing (e.g. "B:\\~BUN\\root\\hunk.exe" or "B:/~BUN/root/hunk.exe").
-  return entrypoint.replaceAll("\\", "/").toLowerCase().startsWith(BUNFS_WINDOWS_PREFIX);
 }
 
 function safeRuntimeToken(value: string) {
@@ -358,35 +341,8 @@ export function resolveDaemonLaunchCommand(
   argv = process.argv,
   execPath = process.execPath,
 ): DaemonLaunchCommand {
-  const entrypoint = argv[1];
-
-  // Bun-compiled single-file executables report argv as
-  //   ["bun", "/$bunfs/root/<name>", ...userArgs]         (Unix)
-  //   ["bun", "B:/~BUN/root/<name>.exe", ...userArgs]     (Windows)
-  // with execPath pointing to the real binary on disk.
-  // Detect the virtual path and use execPath directly; letting the Windows form fall through
-  // to the script-entrypoint branch would relaunch the binary with the virtual path as a bogus
-  // first argument and the daemon would never start (#502).
-  if (entrypoint && isBunfsEntrypoint(entrypoint)) {
-    return {
-      command: execPath,
-      args: ["daemon", "serve"],
-    };
-  }
-
-  // Running from source or a JS wrapper (bun src/main.tsx, node bin/hunk.cjs):
-  // reuse the runtime + script entrypoint.
-  if (entrypoint && !entrypoint.startsWith("-") && SCRIPT_ENTRYPOINT_PATTERN.test(entrypoint)) {
-    return {
-      command: execPath,
-      args: [entrypoint, "daemon", "serve"],
-    };
-  }
-
-  return {
-    command: execPath,
-    args: ["daemon", "serve"],
-  };
+  const current = resolveCurrentHunkCommand(argv, execPath);
+  return { command: current.command, args: [...current.args, "daemon", "serve"] };
 }
 
 /** Resolve the runtime paths used to coordinate one broker daemon per loopback host/port. */

@@ -64,6 +64,7 @@ export interface CliReferenceOption {
     | "layout"
     | "cursorLine"
     | "positiveInt"
+    | "nonNegativeInt"
     | "tabWidth"
     | "fileGap"
     | "hunkGap"
@@ -96,6 +97,11 @@ export const COMMON_REVIEW_OPTIONS = [
     parse: "cursorLine",
   },
   { flag: "--theme <theme>", description: "named theme override" },
+  {
+    flag: "--vcs <id>",
+    description: "select a VCS provider",
+    hidden: true,
+  },
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
@@ -187,6 +193,49 @@ export const CLI_REFERENCE_COMMANDS = {
     synopsis: ["hunk show [target] [-- <pathspec...>]"],
     commonReviewOptions: true,
     watch: true,
+  },
+  log: {
+    path: "log",
+    summary: "print an attractive Git commit history",
+    synopsis: ["hunk log [revision-or-range] [-- <pathspec...>]"],
+    details: [
+      "Static output is the default. Use --interactive for the experimental history browser.",
+      "This is an opinionated Git log subset, not a parser for arbitrary git-log options.",
+    ],
+    options: [
+      { flag: "--all", description: "include commits reachable from every ref" },
+      { flag: "--first-parent", description: "follow only the first parent of merge commits" },
+      {
+        flag: "-n, --max-count <count>",
+        description: "stop after this many commits",
+        parse: "nonNegativeInt",
+      },
+      { flag: "--author <pattern>", description: "limit commits by author" },
+      { flag: "--grep <pattern>", description: "limit commits by subject or message" },
+      { flag: "--since <date>", description: "show commits newer than a Git date" },
+      { flag: "--until <date>", description: "show commits older than a Git date" },
+      {
+        flag: "--color <mode>",
+        description: "color output: auto, always, never",
+        commanderDefault: "auto",
+      },
+      {
+        flag: "--format <format>",
+        description: "record format: medium or compact",
+        commanderDefault: "medium",
+      },
+      { flag: "--oneline", description: "alias for --format compact" },
+      { flag: "--theme <id>", description: "use the same theme as Hunk review" },
+      { flag: "--ascii", description: "use an ASCII graph" },
+      { flag: "--interactive", description: "browse history and open commits in Hunk" },
+      { flag: "--vcs <id>", description: "select a VCS history provider" },
+      {
+        flag: "--extension <path>",
+        description: "load an extension entry file or directory (repeatable)",
+        parse: "collect",
+      },
+      { flag: "--no-extensions", description: "disable user extensions for this run" },
+    ],
   },
   "stash-show": {
     path: "stash show",
@@ -379,6 +428,7 @@ function buildCommonOptions(
     mode?: LayoutMode;
     cursorLine?: CursorLine;
     theme?: string;
+    vcs?: string;
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
@@ -396,6 +446,7 @@ function buildCommonOptions(
     mode: options.mode,
     cursorLine: options.cursorLine,
     theme: options.theme,
+    vcs: options.vcs,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
@@ -435,6 +486,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
     commanderOption.argParser(parseCursorLine);
   } else if (option.parse === "positiveInt") {
     commanderOption.argParser(parsePositiveInt);
+  } else if (option.parse === "nonNegativeInt") {
+    commanderOption.argParser(parseNonNegativeInt);
   } else if (option.parse === "tabWidth") {
     commanderOption.argParser(parseTabWidth);
   } else if (option.parse === "fileGap") {
@@ -512,6 +565,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
+    "  hunk log [target] [-- <pathspec...>]    print an attractive Git commit history",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
@@ -869,6 +923,63 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
   };
 }
 
+/** Parse the deliberately small static-first `hunk log` grammar. */
+async function parseHistoryCommand(
+  tokens: string[],
+  extensionsEnabled: boolean,
+): Promise<ParsedCliInput> {
+  const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
+  const command = createCliReferenceCommand("log").argument("[revision]");
+  let revision: string | undefined;
+  let options: Record<string, unknown> = {};
+
+  command.action((parsedRevision: string | undefined, parsedOptions: Record<string, unknown>) => {
+    revision = parsedRevision;
+    options = parsedOptions;
+  });
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+  await parseStandaloneCommand(command, commandTokens);
+
+  const color = options.color;
+  if (color !== "auto" && color !== "always" && color !== "never") {
+    throw new Error(`Invalid color mode: ${String(color)}`);
+  }
+  const requestedFormat = options.format;
+  if (requestedFormat !== "medium" && requestedFormat !== "compact") {
+    throw new Error(`Invalid history format: ${String(requestedFormat)}`);
+  }
+  const format = options.oneline ? "compact" : requestedFormat;
+  if (revision && options.all) {
+    throw new Error("`hunk log` accepts either a revision/range or --all, not both.");
+  }
+  const extensionPaths = Array.isArray(options.extension)
+    ? options.extension.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    kind: "history",
+    ...(revision ? { revision } : {}),
+    ...(options.all ? { all: true } : {}),
+    ...(options.firstParent ? { firstParent: true } : {}),
+    ...(typeof options.maxCount === "number" ? { maxCount: options.maxCount } : {}),
+    ...(typeof options.author === "string" ? { author: options.author } : {}),
+    ...(typeof options.grep === "string" ? { grep: options.grep } : {}),
+    ...(typeof options.since === "string" ? { since: options.since } : {}),
+    ...(typeof options.until === "string" ? { until: options.until } : {}),
+    ...(pathspecs.length ? { pathspecs } : {}),
+    color,
+    format,
+    ascii: Boolean(options.ascii),
+    interactive: Boolean(options.interactive),
+    ...(typeof options.theme === "string" ? { theme: options.theme } : {}),
+    ...(typeof options.vcs === "string" ? { vcs: options.vcs } : {}),
+    extensionsEnabled: extensionsEnabled && options.extensions !== false,
+    extensionPaths,
+  };
+}
+
 /** Parse the patch-file / stdin patch entrypoint. */
 async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const command = createCliReferenceCommand("patch").argument("[file]");
@@ -963,6 +1074,7 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "markup-guide" ||
     input.kind === "extension-manage" ||
     input.kind === "extension-cli" ||
+    input.kind === "history" ||
     input.kind === "update"
   ) {
     throw new Error(
@@ -1966,6 +2078,7 @@ async function parseStashCommand(
 }
 
 const REVIEW_COMMAND_NAMES = new Set(["diff", "show", "patch", "pager", "difftool", "stash"]);
+const EXTENSION_AWARE_COMMAND_NAMES = new Set([...REVIEW_COMMAND_NAMES, "log"]);
 
 interface LeadingCliFlags {
   args: string[];
@@ -2080,7 +2193,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   if (
     extensionFlagTokens.length > 0 &&
     isBuiltInCliCommandName(commandName) &&
-    !REVIEW_COMMAND_NAMES.has(commandName)
+    !EXTENSION_AWARE_COMMAND_NAMES.has(commandName)
   ) {
     throw new Error(
       `\`${extensionFlagTokens[0]}\` must be used with a Hunk review command or an ` +
@@ -2095,6 +2208,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseDiffCommand(reviewRest, argv);
     case "show":
       return parseShowCommand(reviewRest, argv);
+    case "log":
+      return parseHistoryCommand(reviewRest, extensionsEnabled);
     case "patch":
       return parsePatchCommand(reviewRest, argv);
     case "pager":

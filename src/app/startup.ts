@@ -18,6 +18,7 @@ import type {
   CliInput,
   ExtensionCliInvocationInput,
   ExtensionManageCommandInput,
+  HistoryCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
   SelfUpdateCommandInput,
@@ -57,6 +58,11 @@ export type StartupPlan =
   | {
       kind: "session-command";
       input: SessionCommandInput;
+    }
+  | {
+      kind: "history-static" | "history-interactive";
+      bootstrap: import("./historyBootstrap").HistoryBootstrap;
+      input: HistoryCommandInput;
     }
   | {
       kind: "plain-text-pager";
@@ -136,6 +142,13 @@ function applyDelegatedExtensionFlags(
   input: ParsedCliInput,
   invocation: ExtensionCliInvocationInput,
 ): ParsedCliInput {
+  if (input.kind === "history") {
+    return {
+      ...input,
+      extensionsEnabled: invocation.extensionsEnabled,
+      extensionPaths: [...invocation.extensionPaths],
+    };
+  }
   if (!("options" in input)) return input;
   return {
     ...input,
@@ -371,6 +384,26 @@ export async function prepareStartupPlan(
       kind: "self-update",
       input: parsedCliInput,
     });
+  }
+
+  if (parsedCliInput.kind === "history") {
+    const baseVcsCatalog = await loadBaseVcsCatalog();
+    const { loadHistoryBootstrap } = await import("./historyBootstrap");
+    const bootstrap = await loadHistoryBootstrap({
+      input: parsedCliInput,
+      cwd: startupCwd,
+      env,
+      baseVcsCatalog,
+      previousLoad: preloadedExtensions,
+    });
+    // The runner owns source/extension retirement; unlike ordinary headless plans, history must
+    // retain its provider cursor until every page has been consumed.
+    preloadedExtensions = undefined;
+    return {
+      kind: parsedCliInput.interactive ? "history-interactive" : "history-static",
+      bootstrap,
+      input: parsedCliInput,
+    };
   }
 
   if (parsedCliInput.kind === "pager") {

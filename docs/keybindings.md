@@ -45,6 +45,12 @@ deleted until its replies are removed.
 
 The built-in commands and the keys they ship with:
 
+`hunk log --interactive` is a separate, fixed read-only history entry point rather than part of
+the configurable review command table. It uses `Up`/`Down` or `j`/`k` to move, `PageUp`/`PageDown`,
+`g`/`G` or `Home`/`End` to jump, `/` to search, `n`/`N` for matches, `y` to copy the full commit id,
+`Enter` to open the commit in normal Hunk review, and `q` to quit. Quitting the opened review
+returns to the retained history selection and viewport.
+
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |

@@ -27,8 +27,13 @@ import {
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
-import type { ExtensionVcsOperation } from "../extension-api/types";
-import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
+import type {
+  ExtensionVcsHistoryCommit,
+  ExtensionVcsHistorySource,
+  ExtensionVcsOperation,
+} from "../extension-api/types";
+import type { VcsAdapter, VcsHistorySource, VcsOperation, VcsReviewInput } from "../core/vcs/types";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
 import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
 import {
   isReservedExtensionCliCommandName,
@@ -170,6 +175,191 @@ function toInternalVcsOperation(
   };
 }
 
+/** Snapshot named properties once so accessors cannot change values after validation. */
+function snapshotProperties(value: Record<string, unknown>, keys: readonly string[]) {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of keys) snapshot[key] = value[key];
+  return snapshot;
+}
+
+/** Snapshot an array's length and each accepted element once, including for proxied arrays. */
+function snapshotArray(value: unknown[], maximum = Number.MAX_SAFE_INTEGER) {
+  const length = value.length;
+  if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
+    throw new Error("VCS history returned more values than allowed.");
+  }
+  const snapshot: unknown[] = [];
+  for (let index = 0; index < length; index += 1) snapshot.push(value[index]);
+  return snapshot;
+}
+
+/** Copy and validate one extension-provided history commit before it reaches core or UI. */
+function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
+  if (!isPlainObject(value)) {
+    throw new Error("VCS history returned a commit that is not an object.");
+  }
+  const snapshot = snapshotProperties(value, [
+    "revisionId",
+    "displayId",
+    "parentRevisionIds",
+    "subject",
+    "body",
+    "authorName",
+    "authorEmail",
+    "authoredAt",
+    "decorations",
+    "logicalId",
+  ]);
+  const required = (key: string) =>
+    assertNonEmptyString(snapshot[key], `VCS history commit ${key} must be a non-empty string.`);
+  const safeRevision = (revision: unknown, label: string) => {
+    const text = assertNonEmptyString(revision, `${label} must be a non-empty string.`);
+    if (text.startsWith("-") || sanitizeTerminalLine(text) !== text) {
+      throw new Error(`${label} must be a terminal-safe immutable revision id.`);
+    }
+    return text;
+  };
+  const revisionId = safeRevision(snapshot.revisionId, "VCS history commit revisionId");
+  const displayId = required("displayId");
+  const authoredAt = required("authoredAt");
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(authoredAt) ||
+    Number.isNaN(Date.parse(authoredAt))
+  ) {
+    throw new Error("VCS history commit authoredAt must be an ISO timestamp.");
+  }
+  if (!Array.isArray(snapshot.parentRevisionIds)) {
+    throw new Error("VCS history commit parentRevisionIds must be an array.");
+  }
+  if (!Array.isArray(snapshot.decorations)) {
+    throw new Error("VCS history commit decorations must be an array.");
+  }
+
+  const parentValues = snapshotArray(snapshot.parentRevisionIds, 256);
+  const decorationValues = snapshotArray(snapshot.decorations, 256);
+  const parentRevisionIds = parentValues.map((parent) =>
+    safeRevision(parent, "VCS history parent revision id"),
+  );
+  const decorationKinds = new Set(["head", "local-branch", "remote-branch", "tag", "ref"]);
+  const decorations = decorationValues.map((decoration) => {
+    if (!isPlainObject(decoration)) {
+      throw new Error("VCS history returned an invalid decoration.");
+    }
+    const fields = snapshotProperties(decoration, ["kind", "label"]);
+    if (typeof fields.kind !== "string" || !decorationKinds.has(fields.kind)) {
+      throw new Error("VCS history returned an invalid decoration.");
+    }
+    return {
+      kind: fields.kind as ExtensionVcsHistoryCommit["decorations"][number]["kind"],
+      label: sanitizeTerminalLine(
+        assertNonEmptyString(fields.label, "VCS history decoration labels must be non-empty."),
+      ).replaceAll("\t", " "),
+    };
+  });
+
+  return {
+    revisionId,
+    displayId: sanitizeTerminalLine(displayId).replaceAll("\t", " "),
+    parentRevisionIds,
+    subject: sanitizeTerminalLine(required("subject")).replaceAll("\t", " "),
+    ...(typeof snapshot.body === "string"
+      ? {
+          body: sanitizeTerminalText(snapshot.body, {
+            preserveNewlines: true,
+            preserveTabs: false,
+          }),
+        }
+      : {}),
+    authorName: sanitizeTerminalLine(required("authorName")).replaceAll("\t", " "),
+    ...(typeof snapshot.authorEmail === "string"
+      ? { authorEmail: sanitizeTerminalLine(snapshot.authorEmail).replaceAll("\t", " ") }
+      : {}),
+    authoredAt,
+    decorations,
+    ...(typeof snapshot.logicalId === "string"
+      ? { logicalId: sanitizeTerminalLine(snapshot.logicalId).replaceAll("\t", " ") }
+      : {}),
+  };
+}
+
+/** Wrap an extension history source with bounded reads, copying, cleanup, and error translation. */
+async function toInternalHistorySource(
+  source: ExtensionVcsHistorySource,
+): Promise<VcsHistorySource> {
+  if (!isPlainObject(source)) {
+    throw new Error("VCS history open() must return a source object.");
+  }
+  const sourceFields = snapshotProperties(source, ["read", "close"]);
+  const sourceRead = sourceFields.read;
+  const sourceClose = sourceFields.close;
+  if (typeof sourceRead !== "function" || typeof sourceClose !== "function") {
+    if (typeof sourceClose === "function") {
+      try {
+        await sourceClose.call(source);
+      } catch {
+        // The malformed shape remains the primary failure.
+      }
+    }
+    throw new Error("VCS history open() must return a source with read() and close().");
+  }
+  let closed = false;
+  let done = false;
+  const acceptedIds = new Set<string>();
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    try {
+      await sourceClose.call(source);
+    } catch (error) {
+      throw toUserFacingError(error);
+    }
+  };
+
+  return {
+    async read({ limit, signal }) {
+      if (closed || done) return { commits: [], done: true };
+      if (!Number.isSafeInteger(limit) || limit <= 0) {
+        throw new Error("VCS history reads require a positive integer limit.");
+      }
+      try {
+        if (signal?.aborted) throw signal.reason ?? new Error("History read aborted.");
+        const page = await sourceRead.call(source, { limit, signal });
+        if (!isPlainObject(page)) {
+          throw new Error("VCS history returned an invalid page.");
+        }
+        const pageFields = snapshotProperties(page, ["commits", "done"]);
+        if (!Array.isArray(pageFields.commits) || typeof pageFields.done !== "boolean") {
+          throw new Error("VCS history returned an invalid page.");
+        }
+        let commitValues: unknown[];
+        try {
+          commitValues = snapshotArray(pageFields.commits, limit);
+        } catch {
+          throw new Error("VCS history returned more commits than the requested page limit.");
+        }
+        const commits = commitValues.map(normalizeHistoryCommit);
+        for (const commit of commits) {
+          if (acceptedIds.has(commit.revisionId)) {
+            throw new Error(`VCS history returned duplicate revision ${commit.revisionId}.`);
+          }
+          acceptedIds.add(commit.revisionId);
+        }
+        done = pageFields.done;
+        if (done) await close();
+        return { commits, done };
+      } catch (error) {
+        try {
+          await close();
+        } catch {
+          // Preserve the read/validation failure as the primary error.
+        }
+        throw toUserFacingError(error);
+      }
+    },
+    close,
+  };
+}
+
 /**
  * Accept the public adapter shape as the internal one.
  *
@@ -199,7 +389,22 @@ export function toInternalVcsAdapter(
   /** Diagnostic sink for a `detect()` result whose id was rewritten. */
   reportDetectionIdMismatch?: (returnedId: string) => void,
 ): VcsAdapter {
-  const operations = adapter.operations;
+  const adapterFields = snapshotProperties(adapter as unknown as Record<string, unknown>, [
+    "id",
+    "name",
+    "operations",
+    "history",
+    "detect",
+    "detectionPriority",
+  ]);
+  const adapterId = assertNonEmptyString(adapterFields.id, "registerVcsAdapter requires an id.");
+  if (sanitizeTerminalLine(adapterId) !== adapterId || adapterId.startsWith("-")) {
+    throw new Error("registerVcsAdapter requires a terminal-safe id.");
+  }
+  const adapterName = sanitizeTerminalLine(
+    assertNonEmptyString(adapterFields.name, "registerVcsAdapter requires a name."),
+  ).replaceAll("\t", " ");
+  const operations = adapterFields.operations;
   if (operations !== undefined && !isPlainObject(operations)) {
     throw new Error("registerVcsAdapter requires operations to be an object of review operations.");
   }
@@ -213,39 +418,68 @@ export function toInternalVcsAdapter(
     }
   }
 
-  const detect = adapter.detect;
+  const history = adapterFields.history;
+  const historyFields = isPlainObject(history) ? snapshotProperties(history, ["open"]) : undefined;
+  const historyOpen = historyFields?.open;
+  if (history !== undefined && (!isPlainObject(history) || typeof historyOpen !== "function")) {
+    throw new Error("registerVcsAdapter history must provide an open() function.");
+  }
+
+  const openHistory = historyOpen as NonNullable<ExtensionVcsAdapter["history"]>["open"];
+  const detect = adapterFields.detect;
+  if (typeof detect !== "function") {
+    throw new Error("registerVcsAdapter requires a detect() function.");
+  }
   // Report once per adapter: detection runs on every session and reload, and a
   // repeated diagnostic for one authoring mistake is noise, not information.
   let reportedMismatch = false;
 
   return {
-    ...adapter,
+    id: adapterId,
+    name: adapterName,
+    detectionPriority:
+      typeof adapterFields.detectionPriority === "number"
+        ? adapterFields.detectionPriority
+        : undefined,
     detect(cwd: string) {
       const detected = detect(cwd);
       if (!detected || !isPlainObject(detected)) {
         return null;
       }
 
-      // `repoRoot` is a path every caller measures distance against, and the
-      // measurement happens outside detection's own error handling — so a
-      // detection missing it throws past `detectVcs` and aborts startup rather
-      // than being skipped. Treat it as "did not recognize this directory".
-      if (typeof detected.repoRoot !== "string" || detected.repoRoot.length === 0) {
+      // Snapshot detection metadata before validation so accessors cannot change it later.
+      const detectionFields = snapshotProperties(detected, ["id", "repoRoot"]);
+      if (typeof detectionFields.repoRoot !== "string" || detectionFields.repoRoot.length === 0) {
         return null;
       }
 
-      if (detected.id === adapter.id) {
-        return detected;
-      }
-
-      if (!reportedMismatch) {
+      if (detectionFields.id !== adapterId && !reportedMismatch) {
         reportedMismatch = true;
-        reportDetectionIdMismatch?.(String(detected.id));
+        reportDetectionIdMismatch?.(sanitizeTerminalLine(String(detectionFields.id)));
       }
 
-      return { ...detected, id: adapter.id };
+      return { id: adapterId, repoRoot: detectionFields.repoRoot };
     },
     operations: internalOperations,
+    ...(history && {
+      history: {
+        async open(input, context) {
+          try {
+            const source = await openHistory.call(
+              history,
+              {
+                ...input,
+                ...(input.pathspecs ? { pathspecs: [...input.pathspecs] } : {}),
+              },
+              context,
+            );
+            return await toInternalHistorySource(source);
+          } catch (error) {
+            throw toUserFacingError(error);
+          }
+        },
+      },
+    }),
   };
 }
 

@@ -833,8 +833,22 @@ describe("toInternalVcsAdapter detection ids", () => {
       (returnedId) => mismatches.push(returnedId),
     );
 
-    expect(adapter.detect("/repo")).toBe(detection);
+    expect(adapter.detect("/repo")).toEqual(detection);
     expect(mismatches).toEqual([]);
+  });
+
+  test("snapshots and sanitizes adapter metadata before it reaches diagnostics", () => {
+    let nameReads = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      get name() {
+        nameReads += 1;
+        return nameReads === 1 ? "Demo\x1b[2J" : "Changed";
+      },
+      detect: () => null,
+    });
+    expect(adapter.name).toBe("Demo");
+    expect(nameReads).toBe(1);
   });
 
   test("treats a detection without a usable repoRoot as no detection", () => {
@@ -945,5 +959,111 @@ describe("toInternalVcsAdapter detection ids", () => {
           'VCS adapter "hg" returned detection id "mercurial" • using the registered id instead',
       },
     ]);
+  });
+});
+
+describe("toInternalVcsAdapter history boundary", () => {
+  test("copies and sanitizes bounded history pages", async () => {
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "safe\x1b]52;c;cHdu\x07\nspoof",
+      authorName: "Ada\rLovelace",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [{ kind: "head" as const, label: "HEAD\x1b[2J" }],
+    };
+    let closed = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [commit], done: true }),
+          close: () => {
+            closed += 1;
+          },
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    const page = await source.read({ limit: 1 });
+
+    expect(page.commits[0]?.subject).toBe("safespoof");
+    expect(page.commits[0]?.authorName).toBe("AdaLovelace");
+    expect(page.commits[0]?.decorations[0]?.label).toBe("HEAD");
+    expect(page.commits[0]).not.toBe(commit);
+    expect(closed).toBe(1);
+  });
+
+  test("snapshots source, page, commit, and decoration accessors exactly once", async () => {
+    const reads = { sourceRead: 0, commits: 0, subject: 0, label: 0 };
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [],
+      get subject() {
+        reads.subject += 1;
+        return reads.subject === 1 ? "Stable" : "Changed";
+      },
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [
+        {
+          kind: "tag",
+          get label() {
+            reads.label += 1;
+            return reads.label === 1 ? "v1" : "changed";
+          },
+        },
+      ],
+    };
+    const page = {
+      get commits() {
+        reads.commits += 1;
+        return reads.commits === 1 ? [commit] : [{}, {}];
+      },
+      done: true,
+    };
+    const publicSource = {
+      get read() {
+        reads.sourceRead += 1;
+        return async () => page;
+      },
+      close() {},
+    };
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: { open: () => publicSource as never },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    const result = await source.read({ limit: 1 });
+    expect(result.commits[0]?.subject).toBe("Stable");
+    expect(result.commits[0]?.decorations[0]?.label).toBe("v1");
+    expect(reads).toEqual({ sourceRead: 1, commits: 1, subject: 1, label: 1 });
+  });
+
+  test("closes malformed and over-limit sources once", async () => {
+    let closed = 0;
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [{}, {}], done: false }) as never,
+          close: () => {
+            closed += 1;
+          },
+        }),
+      },
+    });
+    const source = await adapter.history!.open({}, { cwd: "/repo" });
+    await expect(source.read({ limit: 1 })).rejects.toThrow("more commits");
+    await source.close();
+    expect(closed).toBe(1);
   });
 });
