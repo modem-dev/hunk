@@ -67,6 +67,8 @@ async function main() {
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
+        stdoutIsTTY: Boolean(process.stdout.isTTY),
+        output: process.stdout,
       }),
     );
   }
