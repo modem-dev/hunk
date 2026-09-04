@@ -580,7 +580,7 @@ describe("Hunk session daemon client", () => {
       appId: "dev.hunk",
       appRevision: HUNK_SESSION_DAEMON_VERSION,
       producerEndpoint: `ws://127.0.0.1:${port}/session`,
-      idleTimeoutMs: 150,
+      idleTimeoutMs: 0,
       helloAuthenticator: {
         async issueChallenge() {
           helloAttempts += 1;
@@ -608,7 +608,7 @@ describe("Hunk session daemon client", () => {
       try {
         if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return;
       } catch {
-        // Launch the successor after the incumbent's short test-only quiescent lifetime.
+        // Launch the successor after the test retires the incompatible incumbent.
       }
       successor ??= await serveHunkSessionBrokerDaemon({ idleTimeoutMs: 0 });
     };
@@ -619,6 +619,11 @@ describe("Hunk session daemon client", () => {
       await waitUntil("first incompatible websocket", () => helloAttempts === 1);
       await Bun.sleep(35);
       expect(helloAttempts).toBe(1);
+
+      incumbentDaemon.shutdown();
+      await incumbentDaemon.stopped;
+      incumbent.stop(true);
+      await incumbent.stopped;
 
       await waitUntil(
         "successor session registration",
@@ -667,6 +672,7 @@ describe("Hunk session daemon client", () => {
       expect(clientTestAccess(client).connection).toBe(retainedConnection);
     } finally {
       client.stop();
+      incumbentDaemon.shutdown();
       incumbent.stop(true);
       const runningSuccessor = successor as Awaited<
         ReturnType<typeof serveHunkSessionBrokerDaemon>
