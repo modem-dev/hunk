@@ -5,6 +5,7 @@ import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./diffRows";
 import { createHighlightedDiffCache } from "./highlightedDiffCache";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
+import { activeSyntaxGrammarDigest } from "./syntaxGrammarRuntime";
 
 const SHARED_HIGHLIGHTED_DIFF_CACHE = createHighlightedDiffCache();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
@@ -61,7 +62,7 @@ function sourceFetcherFingerprint(file: DiffFile) {
 
 /** Cache key that includes every content and source-provider input to highlighted rendering. */
 export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${file.language ?? "text"}:${highlightedContentFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
+  return `${activeSyntaxGrammarDigest()}:${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${file.language ?? "text"}:${highlightedContentFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
 /**

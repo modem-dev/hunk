@@ -39,6 +39,7 @@ import type {
   ExtensionPaneSize,
   ExtensionReviewSelection,
   ExtensionSessionOptions,
+  ExtensionSyntaxGrammar,
   ExtensionVerticalPane,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
@@ -86,6 +87,12 @@ export default function (hunk: HunkExtensionAPI) {
     target: "path",
   };
   hunk.registerFileLanguage(generatedTypeScript, "typescript");
+  const grammar: ExtensionSyntaxGrammar = {
+    id: "mydsl",
+    scopeName: "source.mydsl",
+    patterns: [{ match: "component", name: "keyword.control.mydsl" }],
+  };
+  hunk.registerSyntaxGrammar(grammar);
 
   const pane = (props: ExtensionPaneProps) => {
     hunk.log(\`\${props.placement}:\${props.width}x\${props.height}\`);

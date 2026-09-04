@@ -15,6 +15,7 @@ import { HUNK_FILES_PANE_KEY } from "./extensionIds";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionFileLanguages,
+  applyExtensionSyntaxGrammars,
   createExtensionApplyNotices,
   reportExtensionApplyIssues,
   createUnknownVcsNotice,
@@ -709,5 +710,43 @@ describe("resolveSessionVcsId", () => {
     const notice = createUnknownVcsNotice("h\u001b[31mg", "git");
 
     expect(notice.message).not.toContain("\u001b");
+  });
+});
+
+describe("extension syntax grammars", () => {
+  const registered = (extensionId: string, id: string) => ({
+    extensionId,
+    grammar: Object.freeze({
+      id,
+      scopeName: `source.${id}`,
+      patterns: Object.freeze([{ match: "x", name: `keyword.${id}` }]),
+    }),
+  });
+
+  test("keeps the first owner and refuses bundled language ids", async () => {
+    const { syntaxGrammarSnapshot } = await import("../core/changeset/syntaxGrammar");
+    const registry = createEmptyExtensionLoadResult("/repo").registry;
+    registry.syntaxGrammars.push(
+      registered("first", "custom"),
+      registered("second", "custom"),
+      registered("shadow", "typescript"),
+    );
+
+    const issues = applyExtensionSyntaxGrammars(registry);
+    expect(syntaxGrammarSnapshot().grammars.map(({ id }) => id)).toEqual(["custom"]);
+    expect(issues.map(({ extensionId }) => extensionId)).toEqual(["second", "shadow"]);
+  });
+
+  test("atomically removes retired grammar data", async () => {
+    const { syntaxGrammarSnapshot } = await import("../core/changeset/syntaxGrammar");
+    const registry = createEmptyExtensionLoadResult("/repo").registry;
+    registry.syntaxGrammars.push(registered("temporary", "temporary"));
+    applyExtensionSyntaxGrammars(registry);
+    const previous = syntaxGrammarSnapshot();
+    expect(previous.grammars).toHaveLength(1);
+
+    applyExtensionSyntaxGrammars(createEmptyExtensionLoadResult("/repo").registry);
+    expect(syntaxGrammarSnapshot().grammars).toEqual([]);
+    expect(syntaxGrammarSnapshot().generation).toBeGreaterThan(previous.generation);
   });
 });

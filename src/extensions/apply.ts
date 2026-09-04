@@ -3,11 +3,17 @@ import {
   replaceExtensionFileLanguages,
   type FileLanguageRegistration,
 } from "../core/changeset/fileLanguage";
+import { BUNDLED_SYNTAX_LANGUAGE_IDS } from "../core/changeset/bundledSyntaxLanguages.generated";
+import {
+  replaceExtensionSyntaxGrammars,
+  type SyntaxGrammarRegistration,
+} from "../core/changeset/syntaxGrammar";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
 import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
+import { SYNTAX_GRAMMAR_LIMITS } from "./syntaxGrammars";
 import type {
   ExtensionContext,
   ExtensionLoadResult,
@@ -64,6 +70,43 @@ export function applyExtensionFileLanguages(registry: ExtensionRegistry): Extens
   }
 
   replaceExtensionFileLanguages(registrations);
+  return issues;
+}
+
+/** Apply data-only custom grammars with deterministic first-owner-wins semantics. */
+export function applyExtensionSyntaxGrammars(registry: ExtensionRegistry): ExtensionApplyIssue[] {
+  const issues: ExtensionApplyIssue[] = [];
+  const registrations: SyntaxGrammarRegistration[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.syntaxGrammars) {
+    const { id } = registered.grammar;
+    if (BUNDLED_SYNTAX_LANGUAGE_IDS.has(id) || id === "text" || id === "ansi") {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped syntax grammar "${id}" from extension ${registered.extensionId} • Pierre bundles or reserves that language id`,
+      });
+      continue;
+    }
+    if (claimed.has(id)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped syntax grammar "${id}" from extension ${registered.extensionId} • another extension already registered it`,
+      });
+      continue;
+    }
+    if (registrations.length >= SYNTAX_GRAMMAR_LIMITS.grammarsPerSession) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped syntax grammar "${id}" from extension ${registered.extensionId} • the session grammar limit was reached`,
+      });
+      continue;
+    }
+    claimed.add(id);
+    registrations.push(registered);
+  }
+
+  replaceExtensionSyntaxGrammars(registrations);
   return issues;
 }
 
@@ -355,9 +398,11 @@ export function applyExtensionRegistrations(
 ): AppliedExtensionRegistrations {
   if (!result) {
     replaceExtensionFileLanguages([]);
+    replaceExtensionSyntaxGrammars([]);
     return { vcsAdapters: [], vcsCatalog: baseCatalog, issues: [] };
   }
 
+  const grammarIssues = applyExtensionSyntaxGrammars(result.registry);
   const languageIssues = applyExtensionFileLanguages(result.registry);
   const vcs = resolveExtensionVcsAdapters(result.registry, baseCatalog);
   // Resolved again where the UI consumes them; consulted here so skipped
@@ -372,6 +417,7 @@ export function applyExtensionRegistrations(
     vcsAdapters: vcs.adapters,
     vcsCatalog: extendVcsCatalog(baseCatalog, vcs.adapters),
     issues: [
+      ...grammarIssues,
       ...languageIssues,
       ...vcs.issues,
       ...panes.issues,

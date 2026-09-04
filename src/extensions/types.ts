@@ -17,6 +17,7 @@ import type {
   ExtensionNotifyType,
   ExtensionPane,
   ExtensionSessionOptions,
+  ExtensionSyntaxGrammar,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -71,6 +72,9 @@ export type {
   ExtensionPaneControls,
   ExtensionSidebarView,
   ExtensionSessionOptions,
+  ExtensionSyntaxGrammar,
+  ExtensionSyntaxGrammarCapture,
+  ExtensionSyntaxGrammarRule,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   ExtensionWorkspace,
@@ -121,6 +125,11 @@ export interface RegisteredFileLanguage {
   extensionId: string;
   matcher: ExtensionFileLanguageMatcher;
   language: string;
+}
+
+export interface RegisteredSyntaxGrammar {
+  extensionId: string;
+  grammar: ExtensionSyntaxGrammar;
 }
 
 export interface RegisteredVcsAdapter {
@@ -208,6 +217,7 @@ export interface ExtensionRegistry {
   sessionOptions: RegisteredSessionOptions[];
   themes: RegisteredTheme[];
   fileLanguages: RegisteredFileLanguage[];
+  syntaxGrammars: RegisteredSyntaxGrammar[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
   panes: RegisteredPane[];
@@ -297,6 +307,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     sessionOptions: [],
     themes: [],
     fileLanguages: [],
+    syntaxGrammars: [],
     vcsAdapters: [],
     changesetTransforms: [],
     panes: [],

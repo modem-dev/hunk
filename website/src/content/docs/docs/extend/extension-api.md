@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds bounded data-only custom TextMate
+syntax grammars; version 16 added pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
@@ -122,7 +123,33 @@ hunk.registerFileLanguage(
 
 Filename and glob matching is case-sensitive. Filename selectors match at any directory depth; globs explicitly target the basename or review path exactly as decoded. `/` is the path separator, backslashes stay literal, and filename/glob whitespace is preserved. Globs reject NUL and skip NUL-bearing decoded patch paths; exact filenames can still match them. VCS review paths are normally repo-relative, while generic patches may carry absolute paths. Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact filenames take precedence over globs, then extensions. Later registrations win ties.
 
-This selects a grammar already available to Pierre/Shiki; it does not load a new syntax grammar.
+This selects a grammar already available to Pierre/Shiki or registered by the same load pass.
+
+## `hunk.registerSyntaxGrammar(grammar)`
+
+Register a bounded data-only TextMate grammar, then map files to it separately:
+
+```ts
+hunk.registerSyntaxGrammar({
+  id: "mydsl",
+  scopeName: "source.mydsl",
+  patterns: [
+    { match: "\\b(component|contract)\\b", name: "keyword.control.mydsl" },
+    { include: "#strings" },
+  ],
+  repository: {
+    strings: { begin: '"', end: '"', name: "string.quoted.double.mydsl" },
+  },
+});
+hunk.registerFileLanguage(".mydsl", "mydsl");
+```
+
+The v17 subset supports ordinary match and begin/end/while rules, captures, nested patterns, and
+local `#name`, `$self`, or `$base` includes. Hunk rejects external includes, embeddings, injections,
+loaders, unknown keys, oversized/deep grammars, and bundled language ids. Grammar regexes run only
+inside the bounded highlight worker; failures and unsupported compiled-Windows offload render plain
+text without affecting built-in languages. Reload replaces the full grammar generation and drops
+stale cached results. See `examples/extensions/archlang-syntax/` for a complete example.
 
 ## `hunk.registerVcsAdapter(adapter)`
 

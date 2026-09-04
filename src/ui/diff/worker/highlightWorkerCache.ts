@@ -64,6 +64,12 @@ export class HighlightWorkerCache {
     return true;
   }
 
+  /** Drop every retained result when grammar configuration changes. */
+  clear() {
+    this.entries.clear();
+    this.cachedBytes = 0;
+  }
+
   /** Reports retained payload bytes for focused cache tests. */
   getCachedBytes() {
     return this.cachedBytes;

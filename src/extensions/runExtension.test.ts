@@ -947,3 +947,89 @@ describe("toInternalVcsAdapter detection ids", () => {
     ]);
   });
 });
+
+describe("registerSyntaxGrammar", () => {
+  const grammar = () => ({
+    id: "archlang",
+    scopeName: "source.archlang",
+    patterns: [
+      { match: "\\b(component|contract|property)\\b", name: "keyword.control.archlang" },
+      { include: "#strings" },
+    ],
+    repository: {
+      strings: { begin: '"', end: '"', name: "string.quoted.double.archlang" },
+    },
+  });
+
+  test("deeply copies and freezes bounded data registrations", () => {
+    const registry = createEmptyExtensionRegistry();
+    const source = grammar();
+    runExtensionFactory({
+      metadata: bundledMetadata("archlang"),
+      registry,
+      issues: [],
+      factory: (hunk) => hunk.registerSyntaxGrammar(source),
+    });
+
+    source.patterns[0]!.name = "changed";
+    const stored = registry.syntaxGrammars[0]!.grammar;
+    expect(stored.patterns[0]?.name).toBe("keyword.control.archlang");
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored.patterns)).toBe(true);
+    expect(Object.isFrozen(stored.patterns[0])).toBe(true);
+  });
+
+  test("rejects unsafe grammar features, external includes, and excessive input", () => {
+    const registry = createEmptyExtensionRegistry();
+    const failures: string[] = [];
+    for (const candidate of [
+      { ...grammar(), injections: {} },
+      { ...grammar(), patterns: [{ include: "source.typescript" }] },
+      { ...grammar(), patterns: [{ match: "x".repeat(40_000) }] },
+      { ...grammar(), id: "text" },
+    ]) {
+      runExtensionFactory({
+        metadata: bundledMetadata(`bad-${failures.length}`),
+        registry,
+        issues: [],
+        factory: (hunk) => {
+          try {
+            hunk.registerSyntaxGrammar(candidate as never);
+          } catch (error) {
+            failures.push(String(error));
+          }
+        },
+      });
+    }
+    expect(failures).toHaveLength(4);
+    expect(failures.join("\n")).toContain("does not support grammar.injections");
+    expect(failures.join("\n")).toContain("#local");
+    expect(failures.join("\n")).toContain("string-size limit");
+    expect(registry.syntaxGrammars).toEqual([]);
+  });
+
+  test("rolls back and seals grammar registration with the rest of the factory", () => {
+    const registry = createEmptyExtensionRegistry();
+    let escaped: ((value: ReturnType<typeof grammar>) => void) | undefined;
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-grammar"),
+      registry,
+      issues: [],
+      factory: (hunk) => {
+        hunk.registerSyntaxGrammar(grammar());
+        throw new Error("rollback");
+      },
+    });
+    expect(registry.syntaxGrammars).toEqual([]);
+
+    runExtensionFactory({
+      metadata: bundledMetadata("sealed-grammar"),
+      registry,
+      issues: [],
+      factory: (hunk) => {
+        escaped = hunk.registerSyntaxGrammar.bind(hunk);
+      },
+    });
+    expect(() => escaped?.(grammar())).toThrow("can only be called while the extension is loading");
+  });
+});

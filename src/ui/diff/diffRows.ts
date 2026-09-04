@@ -48,6 +48,8 @@ import {
   ensureSyntaxHighlightThemeRegistered,
   syntaxHighlightThemeName,
 } from "./syntaxHighlightTheme";
+import { isCustomSyntaxLanguage } from "../../core/changeset/syntaxGrammar";
+import { activeSyntaxGrammarDigest } from "./syntaxGrammarRuntime";
 
 type HighlightThemeInput = AppTheme | AppTheme["appearance"];
 
@@ -443,7 +445,7 @@ function collapsedGapRow(
 async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
   const resolvedLanguage = language ?? "text";
   const syntaxTheme = ensureSyntaxHighlightThemeRegistered(theme);
-  const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;
+  const cacheKey = `${activeSyntaxGrammarDigest()}:${syntaxTheme}:${resolvedLanguage}`;
   const options =
     highlighterOptionsByKey.get(cacheKey) ??
     getHighlighterOptions(resolvedLanguage, {
@@ -600,15 +602,18 @@ export function shouldOffloadHighlight(
   metadata: FileDiffMetadata,
   theme: HighlightThemeInput,
   options: LoadHighlightedDiffOptions,
+  language: string | undefined = metadata.lang,
 ) {
+  const customLanguage = isCustomSyntaxLanguage(language);
   return (
-    options.offloadLargeDiff === true &&
+    (options.offloadLargeDiff === true || customLanguage) &&
     supportsHighlightWorkerOffload() &&
     typeof theme !== "string" &&
     Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0 &&
     shouldHighlightMetadata(metadata) &&
-    Math.max(metadata.deletionLines.length, metadata.additionLines.length) >=
-      HIGHLIGHT_WORKER_MIN_LINES
+    (customLanguage ||
+      Math.max(metadata.deletionLines.length, metadata.additionLines.length) >=
+        HIGHLIGHT_WORKER_MIN_LINES)
   );
 }
 
@@ -668,7 +673,10 @@ export async function loadHighlightedDiff(
     sourcePlan && shouldHighlightMetadata(sourcePlan.metadata) ? sourcePlan : null;
   const metadata = highlightSourcePlan?.metadata ?? file.metadata;
 
-  if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
+  if (
+    typeof theme !== "string" &&
+    shouldOffloadHighlight(metadata, theme, options, file.language)
+  ) {
     try {
       return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
     } catch {
@@ -676,6 +684,13 @@ export async function loadHighlightedDiff(
       // plain rows now, but leave a later file visit free to retry a recreated worker.
       return { deletionLines: [], additionLines: [], retryable: true };
     }
+  }
+
+  // Extension regexes run only in the killable worker. Compiled Windows builds and custom syntax
+  // themes keep the existing main-thread fallback for bundled languages, but custom grammars stay
+  // plaintext rather than gaining authority over the terminal event loop.
+  if (isCustomSyntaxLanguage(file.language)) {
+    return UNHIGHLIGHTED_DIFF;
   }
 
   try {
@@ -714,6 +729,9 @@ export async function loadHighlightedSourceLines({
   text: string;
   theme?: HighlightThemeInput;
 }): Promise<HighlightedSourceCode> {
+  if (isCustomSyntaxLanguage(file.language)) {
+    return { lines: [] };
+  }
   try {
     const highlighter = await prepareHighlighter(file.language, theme);
     return queueHighlightedWork(() => {

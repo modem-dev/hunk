@@ -1,0 +1,12 @@
+{
+  "name": "hunk-archlang-syntax-example",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example data-only Archlang syntax grammar for Hunk",
+  "hunk": {
+    "apiVersion": 17,
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

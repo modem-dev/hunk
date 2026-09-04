@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
 import type { DiffFile } from "../../core/changeset/model";
+import { replaceExtensionSyntaxGrammars } from "../../core/changeset/syntaxGrammar";
 import {
   buildSplitRows,
   buildStackRows,
@@ -315,6 +316,55 @@ describe("Pierre diff rows", () => {
       false,
     );
   });
+
+  test("offloads a small custom language and returns colored compact spans", async () => {
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "archlang",
+        grammar: Object.freeze({
+          id: "archlang",
+          scopeName: "source.archlang",
+          patterns: Object.freeze([
+            { match: "\\b(?:component|property|export)\\b", name: "keyword.control.archlang" },
+          ]),
+        }),
+      },
+    ]);
+    const file = createDiffFile();
+    file.language = "archlang";
+    file.path = "architecture.arch";
+    file.metadata.lang = "archlang" as never;
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(shouldOffloadHighlight(file.metadata, theme, {}, file.language)).toBe(true);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    expect(highlighted.compact?.payload.foregroundPalette.length).toBeGreaterThan(0);
+    replaceExtensionSyntaxGrammars([]);
+  }, 30_000);
+
+  test("keeps bundled worker highlighting healthy after custom grammar use", async () => {
+    replaceExtensionSyntaxGrammars([
+      {
+        extensionId: "broken",
+        grammar: Object.freeze({
+          id: "broken",
+          scopeName: "source.broken",
+          patterns: Object.freeze([{ match: "(", name: "keyword.broken" }]),
+        }),
+      },
+    ]);
+    const broken = createDiffFile();
+    broken.language = "broken";
+    broken.metadata.lang = "broken" as never;
+    const theme = resolveTheme("github-dark-default", null);
+    await expect(loadHighlightedDiff(broken, theme)).resolves.toHaveProperty("compact");
+
+    const bundled = await loadHighlightedDiff(createWorkerEligibleDiffFile(), theme, {
+      offloadLargeDiff: true,
+    });
+    expect(bundled.compact).toBeDefined();
+    replaceExtensionSyntaxGrammars([]);
+  }, 30_000);
 
   test("matches inline spans when an eligible bundled-theme diff uses the worker", async () => {
     const file = createWorkerEligibleDiffFile();

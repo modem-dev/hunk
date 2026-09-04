@@ -2,15 +2,19 @@
 /**
  * Highlights diff metadata away from the terminal event loop.
  *
- * This worker accepts only bundled Pierre themes. The main thread keeps custom-theme registration,
- * source loading, result mapping, and every terminal rendering concern local.
+ * The main thread sends bounded data-only custom grammars before matching highlight jobs. Grammar
+ * changes dispose the worker-local shared highlighter and cache before any new result is produced.
  */
 import {
+  RegisteredCustomLanguages,
+  disposeHighlighter,
   getHighlighterOptions,
   getSharedHighlighter,
+  registerCustomLanguage,
   renderDiffWithHighlighter,
   type FileDiffMetadata,
 } from "@pierre/diffs";
+import type { ExtensionSyntaxGrammar } from "../../../extension-api/types";
 import { aliasContextHighlightLines } from "./highlightContext";
 import {
   cloneCompactHighlightedDiff,
@@ -22,26 +26,36 @@ import {
 import { HighlightWorkerCache } from "./highlightWorkerCache";
 import { highlightWorkerCacheKey } from "./highlightWorkerIdentity";
 
-interface HighlightWorkerRequest {
-  version: 3;
-  id: number;
-  aliasContext: boolean;
-  metadata: FileDiffMetadata;
-  appearance: "dark" | "light";
-  language: string;
-  theme: string;
-}
+type HighlightWorkerRequest =
+  | {
+      version: 4;
+      type: "configure";
+      generation: number;
+      digest: string;
+      grammars: readonly ExtensionSyntaxGrammar[];
+    }
+  | {
+      version: 4;
+      type: "highlight";
+      id: number;
+      grammarGeneration: number;
+      aliasContext: boolean;
+      metadata: FileDiffMetadata;
+      appearance: "dark" | "light";
+      language: string;
+      theme: string;
+    };
 
 type HighlightWorkerResponse =
-  | {
-      version: 3;
-      id: number;
-      ok: true;
-      code: CompactHighlightedDiff;
-    }
-  | { version: 3; id: number; ok: false; message: string };
+  | { version: 4; type: "configured"; generation: number; ok: true }
+  | { version: 4; type: "configured"; generation: number; ok: false; message: string }
+  | { version: 4; type: "highlight"; id: number; ok: true; code: CompactHighlightedDiff }
+  | { version: 4; type: "highlight"; id: number; ok: false; message: string };
 
 const highlightedDiffCache = new HighlightWorkerCache();
+let grammarGeneration = -1;
+let grammarDigest = "";
+let customGrammarIds: readonly string[] = [];
 
 /** Build the fixed Pierre render options shared with the terminal highlighter. */
 function workerRenderOptions(theme: string) {
@@ -59,17 +73,87 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Reject malformed internal configuration instead of corrupting the worker registry. */
+function assertGrammarConfiguration(
+  grammars: unknown,
+): asserts grammars is ExtensionSyntaxGrammar[] {
+  if (!Array.isArray(grammars) || grammars.length > 64) {
+    throw new Error("Invalid syntax grammar configuration.");
+  }
+  const ids = new Set<string>();
+  for (const grammar of grammars) {
+    if (
+      typeof grammar !== "object" ||
+      grammar === null ||
+      typeof grammar.id !== "string" ||
+      typeof grammar.scopeName !== "string" ||
+      !Array.isArray(grammar.patterns) ||
+      ids.has(grammar.id)
+    ) {
+      throw new Error("Invalid syntax grammar configuration.");
+    }
+    ids.add(grammar.id);
+  }
+}
+
+/** Apply one complete grammar generation to this worker. */
+async function configureGrammars(request: Extract<HighlightWorkerRequest, { type: "configure" }>) {
+  if (request.generation === grammarGeneration && request.digest === grammarDigest) return;
+  assertGrammarConfiguration(request.grammars);
+  await disposeHighlighter();
+  for (const id of customGrammarIds) RegisteredCustomLanguages.delete(id);
+  for (const grammar of request.grammars) {
+    const registration = {
+      name: grammar.id,
+      scopeName: grammar.scopeName,
+      patterns: grammar.patterns,
+      repository: grammar.repository ?? {},
+    };
+    registerCustomLanguage(grammar.id, async () => ({ default: [registration] as never[] }));
+  }
+  customGrammarIds = request.grammars.map(({ id }) => id);
+  grammarGeneration = request.generation;
+  grammarDigest = request.digest;
+  highlightedDiffCache.clear();
+}
+
 declare const self: Worker;
 
 self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
-  const { aliasContext, appearance, id, language, metadata, theme, version } = event.data;
+  const request = event.data;
+  if (request.version !== 4) return;
 
-  if (version !== 3) {
+  if (request.type === "configure") {
+    try {
+      await configureGrammars(request);
+      const response: HighlightWorkerResponse = {
+        version: 4,
+        type: "configured",
+        generation: request.generation,
+        ok: true,
+      };
+      self.postMessage(response);
+    } catch (error) {
+      const response: HighlightWorkerResponse = {
+        version: 4,
+        type: "configured",
+        generation: request.generation,
+        ok: false,
+        message: errorMessage(error),
+      };
+      self.postMessage(response);
+    }
+    return;
+  }
+
+  const { aliasContext, appearance, id, language, metadata, theme } = request;
+  if (request.grammarGeneration !== grammarGeneration) {
     const response: HighlightWorkerResponse = {
-      version: 3,
+      version: 4,
+      type: "highlight",
       id,
       ok: false,
-      message: `Unsupported highlight worker protocol version: ${String(version)}`,
+      message: "Syntax grammar configuration changed before highlighting.",
     };
     self.postMessage(response);
     return;
@@ -83,8 +167,6 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
       metadata,
       theme,
     });
-    // A transferred response detaches its buffers. Cache hits therefore return a fresh typed-array
-    // copy, while the worker retains its own compact payload for a later request.
     let code = highlightedDiffCache.get(cacheKey);
     if (!code) {
       const highlighter = await getSharedHighlighter({
@@ -100,24 +182,16 @@ self.onmessage = async (event: MessageEvent<HighlightWorkerRequest>) => {
         aliasContext ? aliasContextHighlightLines(metadata, highlighted) : highlighted,
         appearance,
       );
-
-      // Oversized payloads stay uncached and transfer their only copy, avoiding a temporary
-      // second typed-array payload that would violate the worker cache's memory bound.
       code = highlightedDiffCache.set(cacheKey, cachedCode)
         ? cloneCompactHighlightedDiff(cachedCode)
         : cachedCode;
     }
-
-    const response: HighlightWorkerResponse = {
-      version: 3,
-      id,
-      ok: true,
-      code,
-    };
+    const response: HighlightWorkerResponse = { version: 4, type: "highlight", id, ok: true, code };
     self.postMessage(response, compactHighlightTransferList(code));
   } catch (error) {
     const response: HighlightWorkerResponse = {
-      version: 3,
+      version: 4,
+      type: "highlight",
       id,
       ok: false,
       message: errorMessage(error),

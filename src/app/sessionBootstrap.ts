@@ -3,6 +3,11 @@ import {
   restoreFileLanguageRegistrations,
   type FileLanguageRegistrationSnapshot,
 } from "../core/changeset/fileLanguage";
+import {
+  restoreSyntaxGrammars,
+  syntaxGrammarSnapshot,
+  type SyntaxGrammarSnapshot,
+} from "../core/changeset/syntaxGrammar";
 import type { HunkConfigResolution } from "../core/run/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
@@ -37,6 +42,8 @@ export interface SessionBootstrapResult {
   bootstrap: AppBootstrap;
   /** Selector set to restore if a live reload fails before its commit gate. */
   previousFileLanguages: FileLanguageRegistrationSnapshot;
+  /** Grammar set to restore if a live reload fails before its commit gate. */
+  previousSyntaxGrammars: SyntaxGrammarSnapshot;
   input: CliInput;
   sessionThemes: ReturnType<typeof collectSessionCustomThemes>;
   sessionVcs: ReturnType<typeof resolveSessionVcsId>;
@@ -59,6 +66,7 @@ export async function loadConfiguredSessionBootstrap({
   baseVcsCatalog = getBundledVcsCatalog(),
 }: SessionBootstrapOptions): Promise<SessionBootstrapResult> {
   const previousFileLanguages = fileLanguageRegistrationSnapshot();
+  const previousSyntaxGrammars = syntaxGrammarSnapshot();
 
   try {
     const sessionThemes = collectSessionCustomThemes(
@@ -91,9 +99,18 @@ export async function loadConfiguredSessionBootstrap({
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
     bootstrap.keybindings = configured.keybindings;
 
-    return { applied, bootstrap, input, previousFileLanguages, sessionThemes, sessionVcs };
+    return {
+      applied,
+      bootstrap,
+      input,
+      previousFileLanguages,
+      previousSyntaxGrammars,
+      sessionThemes,
+      sessionVcs,
+    };
   } catch (error) {
     restoreFileLanguageRegistrations(previousFileLanguages);
+    restoreSyntaxGrammars(previousSyntaxGrammars);
     throw error;
   }
 }

@@ -17,6 +17,7 @@ import {
   type ExtensionPane,
   type ExtensionSidebarView,
   type ExtensionSessionOptions,
+  type ExtensionSyntaxGrammar,
   type ExtensionFileView,
   type ExtensionKeyboardMode,
   type ExtensionLineHighlighter,
@@ -35,6 +36,7 @@ import {
   isValidExtensionCliCommandName,
 } from "../core/run/cliCommandNames";
 import { copyExtensionCliCommand } from "./cliCommands";
+import { normalizeSyntaxGrammar, SYNTAX_GRAMMAR_LIMITS } from "./syntaxGrammars";
 
 /**
  * Running one extension factory into the shared registry.
@@ -270,6 +272,7 @@ interface RegistrySnapshot {
   sessionOptions: number;
   themes: number;
   fileLanguages: number;
+  syntaxGrammars: number;
   vcsAdapters: number;
   changesetTransforms: number;
   panes: number;
@@ -294,6 +297,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     sessionOptions: registry.sessionOptions.length,
     themes: registry.themes.length,
     fileLanguages: registry.fileLanguages.length,
+    syntaxGrammars: registry.syntaxGrammars.length,
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
     panes: registry.panes.length,
@@ -318,6 +322,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.sessionOptions.length = snapshot.sessionOptions;
   registry.themes.length = snapshot.themes;
   registry.fileLanguages.length = snapshot.fileLanguages;
+  registry.syntaxGrammars.length = snapshot.syntaxGrammars;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
   registry.panes.length = snapshot.panes;
@@ -412,6 +417,19 @@ export function createExtensionApi(
         extensionId: metadata.id,
         matcher: normalizeFileLanguageMatcher(matcher),
         language,
+      });
+    },
+    registerSyntaxGrammar(grammar: ExtensionSyntaxGrammar) {
+      assertOpen("registerSyntaxGrammar");
+      if (
+        registry.syntaxGrammars.filter(({ extensionId }) => extensionId === metadata.id).length >=
+        SYNTAX_GRAMMAR_LIMITS.grammarsPerExtension
+      ) {
+        throw new Error("registerSyntaxGrammar exceeds the per-extension grammar limit.");
+      }
+      registry.syntaxGrammars.push({
+        extensionId: metadata.id,
+        grammar: normalizeSyntaxGrammar(grammar),
       });
     },
     registerVcsAdapter(adapter: ExtensionVcsAdapter) {
