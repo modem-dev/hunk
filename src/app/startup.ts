@@ -7,6 +7,7 @@ import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
+import { themeSelectionNeedsTerminalMode } from "../core/theme/selection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -485,7 +486,7 @@ export async function prepareStartupPlan(
   }
 
   let initialThemeMode: AppBootstrap["initialThemeMode"];
-  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+  if (themeSelectionNeedsTerminalMode(cliInput.options.theme) && stdoutIsTTY) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =

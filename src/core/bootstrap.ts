@@ -17,6 +17,7 @@ import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/
 import type { UserKeyBinding } from "./run/config";
 import type { StartupNotice } from "./process/startupNotice";
 import type { TerminalThemeMode } from "./theme/detection";
+import type { ThemeSelection } from "./theme/selection";
 import type { VcsCatalog } from "./vcs/types";
 
 /** Where a review was loaded from, retained so the session can reload and watch it. */
@@ -39,7 +40,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   reloadContext: ReloadContext;
   changeset: Changeset;
   initialMode: LayoutMode;
-  initialTheme?: string;
+  initialTheme?: ThemeSelection;
   initialThemeMode?: TerminalThemeMode;
   /** Selectable custom themes for this session, in menu order. */
   customThemes?: readonly NamedCustomThemeConfig[];

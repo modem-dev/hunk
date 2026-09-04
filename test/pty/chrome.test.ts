@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { availableThemes } from "../../src/ui/themes";
@@ -158,6 +158,60 @@ describe("PTY chrome", () => {
       }
 
       expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
+    } finally {
+      session.close();
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  });
+
+  test("an adaptive [theme] table stays committed until a theme is picked", async () => {
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-tuistory-adaptive-theme-"));
+    const configPath = join(configHome, "hunk", "config.toml");
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      ["[theme]", 'dark = "vitesse-dark"', 'light = "one-light"', ""].join("\n"),
+    );
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/line60/, { timeout: 15_000 });
+
+      // The pair resolves to one of its own ids, not a Hunk default.
+      await session.press("t");
+      const selector = await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      expect(selector).toMatch(/(vitesse-dark|one-light)\s+active/);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Theme selector"), 5_000);
+
+      // Picking a theme collapses the pair, and the prompt shows that before writing.
+      await session.press("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Theme selector"), 5_000);
+
+      await session.press("q");
+      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      expect(prompt).toContain('- theme = { dark = "vitesse-dark", light = "one-light" }');
+
+      await session.click(/enter\/s save/);
+
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && readFileSync(configPath, "utf8").includes("[theme]")) {
+        await sleep(50);
+      }
+
+      const saved = readFileSync(configPath, "utf8");
+      expect(saved).not.toContain("[theme]");
+      expect(saved).toMatch(/^theme = "[a-z0-9-]+"$/m);
     } finally {
       session.close();
       rmSync(configHome, { recursive: true, force: true });

@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TerminalThemeMode } from "../../core/theme/detection";
+import {
+  AUTO_THEME_ID,
+  chooseThemeSelectionId,
+  type ThemeSelection,
+} from "../../core/theme/selection";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { ThemeSelectorItem } from "../components/chrome/ThemeSelectorDialog";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "../themes";
 
 interface ThemeSelectorControllerState {
-  committedThemeId: string;
+  committedThemeSelection: ThemeSelection;
   open: boolean;
   previewThemeId: string | null;
   selectedThemeId: string | null;
@@ -13,7 +18,7 @@ interface ThemeSelectorControllerState {
 
 export interface UseThemeSelectorControllerOptions {
   customThemes?: readonly NamedCustomThemeConfig[];
-  initialTheme?: string;
+  initialTheme?: ThemeSelection;
   initialThemeMode?: TerminalThemeMode | null;
   onTransientNotice: (text: string) => void;
   transparentBackground: boolean;
@@ -31,7 +36,7 @@ export function useThemeSelectorController({
   // incoming record, but they must not reinterpret an in-session theme choice.
   const [detectedThemeMode] = useState(initialThemeMode);
   const [state, setState] = useState<ThemeSelectorControllerState>(() => ({
-    committedThemeId: resolveTheme(initialTheme, initialThemeMode ?? null, customThemes).id,
+    committedThemeSelection: initialTheme ?? resolveTheme(undefined, initialThemeMode ?? null).id,
     open: false,
     previewThemeId: null,
     selectedThemeId: null,
@@ -39,9 +44,13 @@ export function useThemeSelectorController({
 
   const themeOptions = useMemo(() => availableThemes(customThemes), [customThemes]);
   const committedTheme = useMemo(
-    () => resolveTheme(state.committedThemeId, detectedThemeMode ?? null, customThemes),
-    [customThemes, detectedThemeMode, state.committedThemeId],
+    () => resolveTheme(state.committedThemeSelection, detectedThemeMode ?? null, customThemes),
+    [customThemes, detectedThemeMode, state.committedThemeSelection],
   );
+  const committedThemeId = useMemo(() => {
+    const chosen = chooseThemeSelectionId(state.committedThemeSelection, detectedThemeMode ?? null);
+    return chosen === undefined || chosen === AUTO_THEME_ID ? committedTheme.id : chosen;
+  }, [committedTheme.id, detectedThemeMode, state.committedThemeSelection]);
   const committedIndex = themeOptions.findIndex((theme) => theme.id === committedTheme.id);
   const storedSelectedIndex = themeOptions.findIndex((theme) => theme.id === state.selectedThemeId);
   const selectedIndex =
@@ -172,7 +181,7 @@ export function useThemeSelectorController({
       selectedThemeIdRef.current = item.id;
       setState((current) => ({
         ...current,
-        committedThemeId: item.id,
+        committedThemeSelection: item.id,
         open: false,
         previewThemeId: null,
         selectedThemeId: item.id,
@@ -200,7 +209,8 @@ export function useThemeSelectorController({
   return {
     activeTheme,
     baseTheme,
-    themeId: state.committedThemeId,
+    themeId: committedThemeId,
+    themeSelection: state.committedThemeSelection,
     themeSelectorItems: items,
     themeSelectorOpen: state.open,
     themeSelectorSelectedIndex: selectedIndex,

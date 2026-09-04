@@ -11,6 +11,21 @@ theme = "github-dark-default"
 
 Use `theme = "auto"` to query the terminal background at startup. Hunk chooses `github-light-default` for light terminals, `github-dark-default` for dark terminals, and falls back to dark if the terminal does not answer.
 
+## Follow the terminal between two themes you chose
+
+Write `theme` as a table to name the theme for each background yourself:
+
+```toml
+[theme]
+dark = "catppuccin-mocha"
+light = "catppuccin-latte"
+fallback = "github-dark-default"
+```
+
+`dark` and `light` are required. Hunk queries the terminal background the way `auto` does, then draws the matching side. The optional `fallback` covers sessions where Hunk never gets an answer: terminals that ignore the query, and captured pager hosts such as LazyGit, where Hunk never asks. Without it those sessions use `dark`. Both sides accept built-in ids, custom theme ids, and the compatibility aliases.
+
+A `--theme <id>` flag overrides the table for one run. Picking a theme in the app replaces the pair with that single id, and the save-on-quit prompt shows the change before writing it.
+
 ## Create a custom theme
 
 ```toml

@@ -1,5 +1,6 @@
 import type { ThemeMode } from "@opentui/core";
 import { LEGACY_CUSTOM_THEME_ID } from "../core/theme/customThemes";
+import { chooseThemeSelectionId, type ThemeSelection } from "../core/theme/selection";
 import { resolveSyntaxScopeOverrides } from "../core/theme/legacySyntaxScopes";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import { blendHex, contrastRatio, hexColorDistance, relativeLuminance } from "./lib/color";
@@ -365,17 +366,18 @@ export function availableThemes(customThemes: readonly NamedCustomThemeConfig[] 
 }
 
 /**
- * Resolve a named theme, including terminal-background auto mode and custom themes.
+ * Resolve a theme selection, including terminal-background auto mode and custom themes.
  *
  * Custom themes are matched before bundled ids so a custom theme that reuses a
  * deprecated built-in alias still resolves to what the user actually defined.
  */
 export function resolveTheme(
-  requested: string | undefined,
+  selection: ThemeSelection | undefined,
   themeMode: ThemeMode | null,
   customThemes: readonly NamedCustomThemeConfig[] = [],
 ) {
-  if (requested === "auto") {
+  const requested = chooseThemeSelectionId(selection, themeMode);
+  if (requested === undefined || requested === "auto") {
     return fallbackTheme(themeMode);
   }
 

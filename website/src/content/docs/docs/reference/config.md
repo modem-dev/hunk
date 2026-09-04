@@ -52,10 +52,10 @@ Select the version-control adapter explicitly. An explicit id outranks detection
 
 **`theme`**
 
-Select the active color theme.
+Select the active color theme, or one theme per terminal background. A `[theme]` table follows the terminal between its `dark` and `light` ids, using `fallback` (else `dark`) when the terminal does not report a background.
 
-- **Type:** string
-- **Accepted:** a built-in theme id or `custom`
+- **Type:** string or table
+- **Accepted:** a built-in theme id, `custom`, `auto`, or a `[theme]` table setting `dark` and `light` (plus an optional `fallback`)
 - **Built-in default:** `github-dark-default`
 
 ---
