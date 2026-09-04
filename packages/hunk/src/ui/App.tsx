@@ -904,7 +904,7 @@ export function App({
       sourceLabel: bootstrap.changeset.sourceLabel,
       view: {
         layoutMode,
-        themeId,
+        themeSelection,
         showAgentNotes,
         showHunkHeaders,
         showLineNumbers,
