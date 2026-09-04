@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { measureTextWidth } from "../text";
 import { layoutStml, layoutStmlCached, type StmlLine } from "./layout";
 
 function lineText(line: StmlLine): string {
@@ -102,10 +103,24 @@ describe("layoutStml", () => {
     expect(top.length).toBe(20);
   });
 
-  test("degrades a too-narrow row to stacked blocks with a note", () => {
-    const { lines, errors } = layoutStml("<row>" + "<box border>x</box>".repeat(6) + "</row>", 9);
+  test("stacks overcommitted fixed-width columns within the row width", () => {
+    const width = 20;
+    const { lines, errors } = layoutStml(
+      '<row><box border width="15">a</box><box border width="15">b</box></row>',
+      width,
+    );
+
     expect(errors.some((error) => error.includes("too narrow"))).toBe(true);
-    expect(lines.length).toBeGreaterThan(6);
+    expect(lines.every((line) => measureTextWidth(lineText(line)) <= width)).toBe(true);
+  });
+
+  test("preserves loose text when a too-narrow row stacks its blocks", () => {
+    const markup = "<row>prefix" + "<box border>x</box>".repeat(6) + "</row>";
+    const { lines, errors } = layoutStml(markup, 9);
+
+    expect(errors.some((error) => error.includes("too narrow"))).toBe(true);
+    expect(frameText(lines)[0]).toBe("prefix");
+    expect(lines.length).toBeGreaterThan(7);
   });
 
   test("renders ordered and unordered lists with hanging indents", () => {
