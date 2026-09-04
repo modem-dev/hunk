@@ -43,6 +43,11 @@ function normalizeComparablePath(path: string) {
   return resolvedPath.replace(/\\/g, "/");
 }
 
+/** Remove Git's optional moved-line colors before asserting patch text semantics. */
+function stripAnsi(text: string) {
+  return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
 function git(cwd: string, ...cmd: string[]) {
   const proc = Bun.spawnSync(["git", ...cmd], {
     cwd,
@@ -169,6 +174,59 @@ describe("GitVcsAdapter", () => {
     expect(result.untrackedPaths).toEqual([]);
     expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("old\ncontext\n");
     expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("new\ncontext\n");
+  });
+
+  test("preserves per-path line-ending attributes in worktree diffs", async () => {
+    const repo = createTempRepo("hunk-git-adapter-crlf-");
+    git(repo, "config", "core.autocrlf", "false");
+    mkdirSync(join(repo, "fixtures"));
+    writeFileSync(join(repo, ".gitattributes"), "*.ts text eol=crlf\nfixtures/*.http -text\n");
+    writeFileSync(
+      join(repo, "fixtures", "request.http"),
+      "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+    );
+    const originalLines = Array.from(
+      { length: 10_001 },
+      (_, index) => `export const value${index} = ${index};`,
+    );
+    writeFileSync(join(repo, "example.ts"), `${originalLines.join("\n")}\n`);
+    git(repo, "add", ".gitattributes", "example.ts", "fixtures/request.http");
+    git(repo, "commit", "-m", "initial");
+
+    // Make Git materialize the committed attributes, then preserve CRLF while editing one line.
+    writeFileSync(join(repo, "example.ts"), "dirty\n");
+    git(repo, "checkout", "--", "example.ts");
+
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
+    const operation = GitVcsAdapter.operations["working-tree-diff"]!;
+    expect(operation.watchSignature!(input, { cwd: repo })).toBe("");
+
+    const changedLines = [...originalLines];
+    changedLines[5_000] = "export const value5000 = 50_000;";
+    writeFileSync(join(repo, "example.ts"), `${changedLines.join("\r\n")}\r\n`);
+    writeFileSync(join(repo, "fixtures", "request.http"), "GET / HTTP/1.1\nHost: example.com\n\n");
+
+    const result = await operation.load(input, { cwd: repo });
+    const plainPatch = stripAnsi(result.patchText);
+    const patchLines = plainPatch.split("\n");
+    const stats = {
+      additions: patchLines.filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+        .length,
+      deletions: patchLines.filter((line) => line.startsWith("-") && !line.startsWith("---"))
+        .length,
+    };
+
+    expect(stats).toEqual({ additions: 4, deletions: 4 });
+    expect(result.extraFiles ?? []).toHaveLength(0);
+    expect(plainPatch).toContain("-export const value5000 = 5000;");
+    expect(plainPatch).toContain("+export const value5000 = 50_000;");
+    expect(plainPatch).toContain("diff --git a/fixtures/request.http b/fixtures/request.http");
+    expect(plainPatch).toContain("-GET / HTTP/1.1\r");
+    expect(operation.watchSignature!(input, { cwd: repo })).toBe(plainPatch);
   });
 
   test("loads revision and stash patches through adapter operations", async () => {
