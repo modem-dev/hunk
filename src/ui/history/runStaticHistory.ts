@@ -95,12 +95,13 @@ export async function runStaticHistory(
       );
       commitCount += planned.rows.length;
       if (stdoutIsTTY) {
-        if (pager) await pager.write(`${lines.join("\n")}\n`);
-        else {
+        if (pager) {
+          if ((await pager.write(`${lines.join("\n")}\n`)) === false) return;
+        } else {
           bufferedLines.push(...lines);
           if (deps.openPager && bufferedLines.length > availableRows) {
             pager = deps.openPager(deps.env);
-            await pager.write(`${bufferedLines.join("\n")}\n`);
+            if ((await pager.write(`${bufferedLines.join("\n")}\n`)) === false) return;
             bufferedLines.length = 0;
           }
         }

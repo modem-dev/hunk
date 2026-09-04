@@ -142,7 +142,8 @@ export interface PlainTextPagerDeps {
 }
 
 export interface PlainTextPagerWriter {
-  write(text: string): Promise<void>;
+  /** Return false when the pager closed early and the producer should stop reading. */
+  write(text: string): Promise<boolean | void>;
   close(): Promise<void>;
 }
 
@@ -167,11 +168,15 @@ export function openPlainTextPager(
   let spawnError: unknown;
   let stdinError: NodeJS.ErrnoException | undefined;
   let closed = false;
+  let pagerExited = false;
   const closeCode = new Promise<number | null>((resolve) => {
     pager.once("error", (error) => {
       spawnError = error;
     });
-    pager.once("close", (code) => resolve(typeof code === "number" ? code : null));
+    pager.once("close", (code) => {
+      pagerExited = true;
+      resolve(typeof code === "number" ? code : null);
+    });
   });
   pager.stdin?.once("error", (error: NodeJS.ErrnoException) => {
     stdinError = error;
@@ -179,7 +184,7 @@ export function openPlainTextPager(
 
   return {
     async write(text) {
-      if (closed || stdinError?.code === "EPIPE") return;
+      if (closed || pagerExited || stdinError?.code === "EPIPE") return false;
       const safeText = sanitizeTerminalText(text, { preserveAnsiStyle: true });
       if (!pager.stdin?.write(safeText)) {
         await new Promise<void>((resolve) => {
@@ -194,6 +199,7 @@ export function openPlainTextPager(
           pager.once("close", finish);
         });
       }
+      return !pagerExited && stdinError?.code !== "EPIPE";
     },
     async close() {
       if (closed) return;

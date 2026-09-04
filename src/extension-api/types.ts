@@ -746,6 +746,11 @@ export interface ExtensionVcsHistoryCommit {
   revisionId: string;
   displayId: string;
   parentRevisionIds: string[];
+  /**
+   * Parent ids used only for graph topology when traversal filters omit intermediate commits.
+   * Omit this field when graph parents are identical to `parentRevisionIds`.
+   */
+  graphParentRevisionIds?: string[];
   subject: string;
   /** Commit message content after the subject, preserving paragraph breaks. */
   body?: string;
@@ -753,6 +758,12 @@ export interface ExtensionVcsHistoryCommit {
   authorEmail?: string;
   authoredAt: string;
   decorations: ExtensionVcsHistoryDecoration[];
+  /**
+   * Optional logical identity that remains stable when the provider rewrites a revision.
+   *
+   * A Jujutsu change id is the canonical example. This is metadata only: Hunk
+   * continues to key graph and review operations by the immutable `revisionId`.
+   */
   logicalId?: string;
 }
 

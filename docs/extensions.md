@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `18`). Branch on it if you want
+one file to support several Hunk versions. Version 18 adds provider-owned history
+enumeration and review planning; version 16 added pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
@@ -495,6 +496,11 @@ hunk.registerVcsAdapter({
 });
 ```
 
+The snippet above demonstrates static history production only; it is not a complete interactive
+adapter. Add a `revision-show` operation for `revision-show` actions and a `working-tree-diff`
+operation that accepts `rangeEndpoints` for `revision-range` actions before advertising interactive
+opening. Otherwise Enter reports that the corresponding review operation is unsupported.
+
 History is deliberately separate from patch-producing `operations`. The built-in host owns command
 routing, graph planning, themes, terminal lifecycle, and static/interactive presentation. The
 adapter owns every repository semantic: traversal and filtering, immutable identities, refs, and
@@ -502,9 +508,11 @@ adapter owns every repository semantic: traversal and filtering, immutable ident
 operations. Hunk treats revision ids as opaque strings and never invents provider revision syntax.
 
 Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
-message body, author (and optional email), ISO authored time, and structured ref decorations. A
-`head` decoration carries an optional `attachedLocalBranch`; use that field rather than embedding an
-arrow or branch identity in its display label.
+message body, author (and optional email), ISO authored time, and structured ref decorations. The
+optional `logicalId` identifies the same logical change across provider rewrites (for example, a
+Jujutsu change id); Hunk treats it as metadata and continues to key graph and review operations by
+immutable `revisionId`. A `head` decoration carries an optional `attachedLocalBranch`; use that field
+rather than embedding an arrow or branch identity in its display label.
 
 Every source must emit commits in **child-before-parent topological order**. If both a child and one
 of its parents are included, the child appears first. This invariant spans the source's complete
@@ -514,8 +522,10 @@ boundary from repository end with `done`. Hunk copies and validates every page, 
 controls from display metadata, rejects duplicate revisions and parent-before-child output across
 pages, forwards cancellation, and closes the source at EOF or failure.
 
-The bundled Git extension implements this public capability today; the bundled jj and Sapling
-adapters currently report it as unsupported. Third-party adapters use exactly the same contract.
+The bundled Git and Jujutsu extensions implement this public capability today; Sapling currently
+reports it as unsupported. Jujutsu supplies commit/change identities, bookmarks, tags, traversal,
+and native merge-review semantics without routing through a colocated Git repository. Third-party
+adapters use exactly the same contract.
 
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:

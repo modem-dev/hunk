@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createGitVcsAdapter } from "./index";
-import { buildGitHistoryArgs, parseGitHistory } from "./history";
+import { buildGitHistoryArgs, gitHistoryUsesBoundaryTopology, parseGitHistory } from "./history";
 
 describe("Git history production", () => {
   test("builds the strict supported query with literal pathspec separation", () => {
     expect(
       buildGitHistoryArgs({
         revision: "main..feature",
+        all: true,
         firstParent: true,
         maxCount: 12,
         author: "Ada",
@@ -24,6 +25,7 @@ describe("Git history production", () => {
       "--abbrev=8",
       "-z",
       "--format=%H%x00%h%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%b",
+      "--all",
       "--first-parent",
       "--max-count=12",
       "--author=Ada",
@@ -68,6 +70,36 @@ describe("Git history production", () => {
         decorations: [{ kind: "head", label: "HEAD" }],
       },
     ]);
+  });
+
+  test("marks repeated filtered gaps as graph boundaries without losing review parents", () => {
+    expect(gitHistoryUsesBoundaryTopology({ author: "Ada" })).toBe(true);
+    expect(gitHistoryUsesBoundaryTopology({ grep: "fix" })).toBe(true);
+    expect(gitHistoryUsesBoundaryTopology({})).toBe(false);
+
+    const record = (revision: string, parent: string, subject: string) =>
+      [
+        revision.repeat(40),
+        revision.repeat(8),
+        parent.repeat(40),
+        "Ada",
+        "ada@example.com",
+        "2026-01-01T00:00:00Z",
+        subject,
+        "",
+      ].join("\0");
+    const commits = parseGitHistory(
+      `${record("a", "d", "match one")}\0${record("b", "e", "match two")}\0${record("c", "f", "match three")}`,
+      new Map(),
+      false,
+      true,
+    );
+    expect(commits.map((commit) => commit.parentRevisionIds)).toEqual([
+      ["d".repeat(40)],
+      ["e".repeat(40)],
+      ["f".repeat(40)],
+    ]);
+    expect(commits.map((commit) => commit.graphParentRevisionIds)).toEqual([[], [], []]);
   });
 
   test("drops excluded secondary parents for first-parent topology", () => {

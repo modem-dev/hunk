@@ -203,6 +203,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
     "revisionId",
     "displayId",
     "parentRevisionIds",
+    "graphParentRevisionIds",
     "subject",
     "body",
     "authorName",
@@ -213,15 +214,22 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
   ]);
   const required = (key: string) =>
     assertNonEmptyString(snapshot[key], `VCS history commit ${key} must be a non-empty string.`);
+  const safeDisplay = (key: "displayId" | "subject" | "authorName") => {
+    const text = sanitizeTerminalLine(required(key)).replaceAll("\t", " ");
+    if (text.trim().length === 0) {
+      throw new Error(`VCS history commit ${key} must remain non-empty after sanitization.`);
+    }
+    return text;
+  };
   const safeRevision = (revision: unknown, label: string) => {
     const text = assertNonEmptyString(revision, `${label} must be a non-empty string.`);
-    if (sanitizeTerminalLine(text) !== text) {
+    if (text.includes("\t") || sanitizeTerminalLine(text) !== text) {
       throw new Error(`${label} must be a terminal-safe immutable revision id.`);
     }
     return text;
   };
   const revisionId = safeRevision(snapshot.revisionId, "VCS history commit revisionId");
-  const displayId = required("displayId");
+  const displayId = safeDisplay("displayId");
   const authoredAt = required("authoredAt");
   if (
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(authoredAt) ||
@@ -232,14 +240,26 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
   if (!Array.isArray(snapshot.parentRevisionIds)) {
     throw new Error("VCS history commit parentRevisionIds must be an array.");
   }
+  if (
+    snapshot.graphParentRevisionIds !== undefined &&
+    !Array.isArray(snapshot.graphParentRevisionIds)
+  ) {
+    throw new Error("VCS history commit graphParentRevisionIds must be an array when present.");
+  }
   if (!Array.isArray(snapshot.decorations)) {
     throw new Error("VCS history commit decorations must be an array.");
   }
 
   const parentValues = snapshotArray(snapshot.parentRevisionIds, 256);
+  const graphParentValues = Array.isArray(snapshot.graphParentRevisionIds)
+    ? snapshotArray(snapshot.graphParentRevisionIds, 256)
+    : undefined;
   const decorationValues = snapshotArray(snapshot.decorations, 256);
   const parentRevisionIds = parentValues.map((parent) =>
     safeRevision(parent, "VCS history parent revision id"),
+  );
+  const graphParentRevisionIds = graphParentValues?.map((parent) =>
+    safeRevision(parent, "VCS history graph parent revision id"),
   );
   const decorationKinds = new Set(["head", "local-branch", "remote-branch", "tag", "ref"]);
   const decorations = decorationValues.map((decoration) => {
@@ -274,9 +294,10 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
 
   return {
     revisionId,
-    displayId: sanitizeTerminalLine(displayId).replaceAll("\t", " "),
+    displayId,
     parentRevisionIds,
-    subject: sanitizeTerminalLine(required("subject")).replaceAll("\t", " "),
+    ...(graphParentRevisionIds ? { graphParentRevisionIds } : {}),
+    subject: safeDisplay("subject"),
     ...(typeof snapshot.body === "string"
       ? {
           body: sanitizeTerminalText(snapshot.body, {
@@ -285,7 +306,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
           }),
         }
       : {}),
-    authorName: sanitizeTerminalLine(required("authorName")).replaceAll("\t", " "),
+    authorName: safeDisplay("authorName"),
     ...(typeof snapshot.authorEmail === "string"
       ? { authorEmail: sanitizeTerminalLine(snapshot.authorEmail).replaceAll("\t", " ") }
       : {}),
@@ -310,7 +331,7 @@ function normalizeHistoryReviewAction(value: unknown): ExtensionVcsHistoryReview
   ]);
   const revision = (candidate: unknown, label: string) => {
     const text = assertNonEmptyString(candidate, `${label} must be a non-empty string.`);
-    if (sanitizeTerminalLine(text) !== text) {
+    if (text.includes("\t") || sanitizeTerminalLine(text) !== text) {
       throw new Error(`${label} must be a terminal-safe immutable revision id.`);
     }
     return text;

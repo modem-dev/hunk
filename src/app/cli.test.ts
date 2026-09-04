@@ -59,6 +59,8 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
     expect(parsed.text).toContain("hunk log");
+    expect(parsed.text).toContain("attractive repository history");
+    expect(parsed.text).not.toContain("Git commit history");
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");

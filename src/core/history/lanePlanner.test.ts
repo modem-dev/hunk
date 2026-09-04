@@ -33,6 +33,29 @@ describe("history lane planning", () => {
     expect(planned.checkpoint.lanes).toEqual([]);
   });
 
+  test("draws the side branch converging into an already-active first parent", () => {
+    const planned = planHistoryPage([
+      commit("merge", ["main", "side"]),
+      commit("side", ["main"]),
+      commit("main"),
+    ]);
+
+    expect(planned.rows[1]!.convergences).toEqual([{ from: 1, to: 0 }]);
+    expect(planned.checkpoint.lanes).toEqual([]);
+  });
+
+  test("uses explicit graph parents without changing review parents", () => {
+    const filtered = { ...commit("match", ["omitted"]), graphParentRevisionIds: [] };
+    const olderFiltered = {
+      ...commit("older-match", ["another-omitted"]),
+      graphParentRevisionIds: [],
+    };
+    const planned = planHistoryPage([filtered, olderFiltered]);
+
+    expect(planned.rows.map((row) => row.lanesAfter)).toEqual([[], []]);
+    expect(filtered.parentRevisionIds).toEqual(["omitted"]);
+  });
+
   test("produces identical rows across every page partition", () => {
     const commits = [
       commit("merge", ["main", "side"]),

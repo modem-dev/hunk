@@ -8,6 +8,7 @@ import { runStaticHistory } from "./runStaticHistory";
 function runtime(commits: HistoryCommit[], maxCount?: number) {
   let offset = 0;
   let closed = 0;
+  let reads = 0;
   const value: HistoryRuntime = {
     input: {
       kind: "history",
@@ -29,6 +30,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
     },
     source: {
       async read({ limit }) {
+        reads += 1;
         const page = commits.slice(offset, offset + limit);
         offset += page.length;
         return { commits: page, done: offset >= commits.length };
@@ -39,7 +41,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
       closed += 1;
     },
   };
-  return { value, closed: () => closed };
+  return { value, closed: () => closed, reads: () => reads };
 }
 
 const commits: HistoryCommit[] = ["a", "b"].map((id, index) => ({
@@ -139,6 +141,34 @@ describe("static history runner", () => {
     });
     expect(written).toContain("Commit a");
     expect(written).toContain("Commit b");
+    expect(closes).toBe(1);
+  });
+
+  test("stops traversing history when the pager closes early", async () => {
+    const manyCommits = Array.from({ length: 600 }, (_, index) => ({
+      ...commits[1]!,
+      revisionId: `commit-${index}`,
+      displayId: `c${index}`,
+      subject: `Commit ${index}`,
+    }));
+    const history = runtime(manyCommits);
+    let closes = 0;
+    await runStaticHistory(history.value, {
+      stdout: { isTTY: true, columns: 80, rows: 2, write: () => true },
+      stderr: { write: () => true },
+      env: { TERM: "xterm" },
+      pageText: async () => {},
+      openPager: () => ({
+        async write() {
+          return false;
+        },
+        async close() {
+          closes += 1;
+        },
+      }),
+    });
+    expect(history.reads()).toBe(1);
+    expect(history.closed()).toBe(1);
     expect(closes).toBe(1);
   });
 
