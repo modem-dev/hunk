@@ -71,7 +71,10 @@ are not rerun merely for the handoff. A delegated patch may attach a validated, 
 provider-neutral review descriptor. Startup carries it beside the input on `AppBootstrap`; it does
 not enter the changeset transform pipeline or `ReviewDocumentV1`. The host preserves it only while
 the same file-backed patch identity reloads and clears it when a reload selects another input.
-Headless delegation retires before executing the built-in plan. Terminal probing occurs only after
+Session registration projects the same optional bounded descriptor into list, selected-context, and
+review exports through strict app-wire validation. It remains registration metadata rather than a
+`ReviewDocumentV1` field and does not imply any provider or remote-reload capability. Headless
+delegation retires before executing the built-in plan. Terminal probing occurs only after
 the handler releases I/O.
 
 ## Host-served runtime modules

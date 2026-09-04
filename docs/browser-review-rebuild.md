@@ -63,7 +63,9 @@ untouched (rung 4).
 `reviewProtocol.ts`, broker `wire.ts` validation, broker review mirror, `reviewResourceCache`
 (bounded in-flight budget). Patch reconstruction for `hunk session review --include-patch` uses
 bounded-parallel loads from day one. Valuable without any web UI: agents get chunked,
-digest-verified, memory-bounded resource access. The wire vocabulary is derived from
+digest-verified, memory-bounded resource access. Optional extension-delegated review identity rides
+in bounded registration metadata and projects into list, context, and review snapshots; it never
+enters `ReviewDocumentV1` or creates a remote reload/provider capability. The wire vocabulary is derived from
 `ReviewIntent` (B12) and carries `expandedLineProof` (B10) and actor identity (G2) from its
 first version so the browser never needs a schema break.
 

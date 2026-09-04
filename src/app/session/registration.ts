@@ -97,6 +97,7 @@ export function createSessionRegistration(
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
+      ...(bootstrap.review ? { review: bootstrap.review } : {}),
       files: buildSessionFiles(publication),
       reviewCatalog: buildReviewCatalog(publication),
       // The verifier, not the secret: the daemon can check a presented capability and can
@@ -121,6 +122,7 @@ export function updateSessionRegistration(
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
       experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
+      ...(bootstrap.review ? { review: bootstrap.review } : {}),
       files: buildSessionFiles(publication),
       reviewCatalog: buildReviewCatalog(publication),
       // The verifier, not the secret: the daemon can check a presented capability and can

@@ -134,6 +134,28 @@ describe("session registration", () => {
     expect(updated.info.reviewCapabilityDigest).toBe(current.info.reviewCapabilityDigest);
   });
 
+  test("registration create and update project delegated review metadata atomically", () => {
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Add session metadata",
+      id: "#123",
+      repository: "modem-dev/hunk",
+      state: "open" as const,
+    };
+    const bootstrap = createBootstrap({ review });
+    const created = createSessionRegistration(bootstrap, publish(bootstrap));
+    expect(created.info.review).toEqual(review);
+
+    const preserved = updateSessionRegistration(created, bootstrap, publish(bootstrap));
+    expect(preserved.info.review).toEqual(review);
+
+    const unrelated = createBootstrap();
+    const cleared = updateSessionRegistration(preserved, unrelated, publish(unrelated));
+    expect(cleared.info.review).toBeUndefined();
+    expect(cleared.info.files).toHaveLength(1);
+  });
+
   test("registration advertises STML only for opted-in launches", () => {
     const experimental = createBootstrap({
       input: { kind: "vcs", staged: false, options: { experimental: true } },

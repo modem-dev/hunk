@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { z } from "zod";
 import type { CliInput } from "../core/run/commandInputs";
 import {
+  createTestSessionRegistration,
+  createTestSessionSnapshot,
+} from "../../test/helpers/session-daemon-fixtures";
+import { buildListedHunkSession } from "./broker/projections";
+import {
   HUNK_SESSION_API_VERSION,
   HUNK_SESSION_DAEMON_VERSION,
   type SessionDaemonRequest,
@@ -39,7 +44,7 @@ void _dualSelectorIsNotCliInput;
 
 describe("session daemon request validation", () => {
   test("uses the daemon revision for structured two-endpoint reload payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(12);
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(13);
   });
 
   test("strictly parses cross-process capabilities", () => {
@@ -178,6 +183,33 @@ describe("session daemon request validation", () => {
     for (const request of requests) {
       expect(() => parseSessionDaemonRequest(request)).not.toThrow();
     }
+  });
+
+  test("accepts bounded delegated review metadata and rejects malformed descriptors", () => {
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Protocol metadata",
+      id: "#123",
+    };
+    const session = buildListedHunkSession({
+      registration: createTestSessionRegistration({ info: { review } }),
+      snapshot: createTestSessionSnapshot(),
+    });
+    expect(parseSessionDaemonResponse("list", { sessions: [session] })).toEqual({
+      sessions: [session],
+    });
+
+    expect(() =>
+      parseSessionDaemonResponse("list", {
+        sessions: [{ ...session, review: { ...review, unknown: true } }],
+      }),
+    ).toThrow("Invalid Hunk session daemon response for list.");
+    expect(() =>
+      parseSessionDaemonResponse("list", {
+        sessions: [{ ...session, review: { ...review, title: "x".repeat(2 * 1024 + 1) } }],
+      }),
+    ).toThrow("Invalid Hunk session daemon response for list.");
   });
 
   test("accepts zero-based ranges in navigation responses", () => {

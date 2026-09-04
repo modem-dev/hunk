@@ -42,6 +42,27 @@ describe("hunk session projections", () => {
     );
   });
 
+  test("projects delegated review metadata through list, context, and review snapshots", () => {
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Review session metadata",
+      id: "#123",
+    };
+    const entry = {
+      registration: createTestSessionRegistration({ info: { review } }),
+      snapshot: createTestSessionSnapshot(),
+    };
+
+    const listed = buildListedHunkSession(entry);
+    expect(listed.review).toEqual(review);
+    expect(buildSelectedHunkSessionContext(listed).review).toEqual(review);
+    expect(buildHunkSessionReview(entry).review).toEqual(review);
+
+    const ordinary = buildListedHunkSession(createEntry());
+    expect(ordinary).not.toHaveProperty("review");
+  });
+
   test("buildSelectedHunkSessionContext projects the current file and selected ranges", () => {
     const session = buildListedHunkSession({
       registration: createTestSessionRegistration({ experimentalFeatures: ["stml"] }),

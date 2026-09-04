@@ -43,6 +43,10 @@ hunk session review --repo . --json
 - `get --repo .` confirms which live session matches the current repo
 - `review --json` returns the loaded file and hunk structure without dumping the full raw patch
 
+When a CLI extension delegated the review, JSON list, context, and review outputs may also include a
+bounded `review` descriptor with provider, title, URL, and kind-specific identity. It is descriptive
+context only and does not add remote provider or reload capabilities.
+
 Only add `--include-patch` when an agent truly needs raw unified diff text:
 
 ```bash

@@ -1,5 +1,9 @@
 import type { ExperimentalFeature } from "../core/run/experimental";
-import type { ExtensionLineHighlightTone, SessionReloadReason } from "../extension-api/types";
+import type {
+  ExtensionLineHighlightTone,
+  ExtensionReviewDescriptor,
+  SessionReloadReason,
+} from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
@@ -62,6 +66,8 @@ export interface HunkSessionInfo {
   title: string;
   sourceLabel: string;
   experimentalFeatures?: ExperimentalFeature[];
+  /** Provider-neutral metadata attached by the CLI extension that delegated this review. */
+  review?: ExtensionReviewDescriptor;
   files: SessionReviewFile[];
   /**
    * The generation this registration projects, and every resource it offers.
@@ -296,6 +302,7 @@ export interface ListedSession {
   title: string;
   sourceLabel: string;
   experimentalFeatures?: ExperimentalFeature[];
+  review?: ExtensionReviewDescriptor;
   fileCount: number;
   files: SessionFileSummary[];
   snapshot: HunkSessionSnapshot;
@@ -309,6 +316,7 @@ export interface SelectedSessionContext {
   repoRoot?: string;
   inputKind: CliInput["kind"];
   experimentalFeatures?: ExperimentalFeature[];
+  review?: ExtensionReviewDescriptor;
   selectedFile: SessionFileSummary | null;
   selectedHunk: SelectedHunkSummary | null;
   showAgentNotes: boolean;
@@ -325,6 +333,7 @@ export interface SessionReview {
   repoRoot?: string;
   inputKind: CliInput["kind"];
   experimentalFeatures?: ExperimentalFeature[];
+  review?: ExtensionReviewDescriptor;
   selectedFile: SessionReviewFile | null;
   selectedHunk: SessionReviewHunk | null;
   showAgentNotes: boolean;

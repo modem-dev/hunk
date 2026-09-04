@@ -18,6 +18,7 @@ import {
   parseHunkReviewResourceCatalog,
 } from "../reviewProtocol";
 import { isReviewSha256Digest } from "../../core/review/validation";
+import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
 import type {
   HunkSessionInfo,
@@ -249,7 +250,7 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
   const record = exactRecord(
     value,
     ["inputKind", "title", "sourceLabel", "files"],
-    ["experimentalFeatures", "reviewCatalog", "reviewCapabilityDigest"],
+    ["experimentalFeatures", "review", "reviewCatalog", "reviewCapabilityDigest"],
   );
   if (!Array.isArray(record.files) || record.files.length > MAX_REGISTRATION_FILES) return null;
 
@@ -285,12 +286,16 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
   if (reviewCapabilityDigest !== undefined && !isReviewSha256Digest(reviewCapabilityDigest)) {
     return null;
   }
+  const review =
+    record.review === undefined ? undefined : parseExtensionReviewDescriptor(record.review);
+  if (record.review !== undefined && review === null) return null;
 
   return {
     inputKind,
     title,
     sourceLabel,
     experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
+    ...(review ? { review } : {}),
     files: files as SessionReviewFile[],
     ...(reviewCatalog ? { reviewCatalog } : {}),
     ...(reviewCapabilityDigest ? { reviewCapabilityDigest } : {}),

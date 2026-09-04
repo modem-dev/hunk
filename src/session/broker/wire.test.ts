@@ -113,6 +113,32 @@ describe("hunk session wire parsing", () => {
     });
   });
 
+  test("registration accepts absent metadata and exact bounded delegated review descriptors", () => {
+    const absent = parseSessionRegistration(createRegistration([]));
+    expect(absent?.info.review).toBeUndefined();
+
+    const review = {
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Review broker metadata",
+      id: "#123",
+      repository: "modem-dev/hunk",
+      state: "open" as const,
+    };
+    const registration = createRegistration([]);
+    const input = { ...registration, info: { ...registration.info, review } };
+    expect(parseSessionRegistration(input)?.info.review).toEqual(review);
+
+    for (const review of [
+      { ...input.info.review, unknown: true },
+      { ...input.info.review, title: "x".repeat(2 * 1024 + 1) },
+      { ...input.info.review, title: "bad\u001b[31m" },
+      { ...input.info.review, url: "http://github.com/modem-dev/hunk/pull/123" },
+    ]) {
+      expect(parseSessionRegistration({ ...input, info: { ...input.info, review } })).toBeNull();
+    }
+  });
+
   test("registration rejects malformed or unknown experimental feature ids", () => {
     const registration = parseSessionRegistration({
       registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,

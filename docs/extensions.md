@@ -353,7 +353,9 @@ Change requests may also carry `state` (`open`, `closed`, or `merged`) and boole
 The descriptor describes the review source rather than its diff contents: it stays on the app
 bootstrap and does not enter changeset transforms or `ReviewDocumentV1`. Refreshing the same
 file-backed patch preserves it, including watch and manual refresh; an explicit reload to a
-different patch path or input kind clears it.
+different patch path or input kind clears it. Live-session list, context, and review JSON snapshots
+project the same optional descriptor from registration metadata; it remains outside the semantic
+review document and grants no remote reload or provider capability.
 
 Delegation cannot target another extension command or change extension bootstrap
 flags. Do not write stdout or read stdin before delegating; use stderr for

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CliInput } from "../core/run/commandInputs";
 import { EXPERIMENTAL_FEATURES } from "../core/run/experimental";
+import { parseExtensionReviewDescriptor } from "../core/reviewDescriptor";
+import type { ExtensionReviewDescriptor } from "../extension-api/types";
 import {
   HUNK_SESSION_API_VERSION,
   HUNK_SESSION_DAEMON_VERSION,
@@ -228,6 +230,9 @@ const positive = z.int().positive();
 const lineRangeSchema = z.tuple([nonnegative, nonnegative]);
 const inputKindSchema = z.enum(["vcs", "show", "stash-show", "diff", "patch", "difftool"]);
 const experimentalFeaturesSchema = z.array(z.enum(EXPERIMENTAL_FEATURES));
+const reviewDescriptorSchema = z.custom<ExtensionReviewDescriptor>(
+  (value) => parseExtensionReviewDescriptor(value) !== null,
+);
 const terminalLocationSchema = z.strictObject({
   source: z.string(),
   tty: z.string().optional(),
@@ -316,6 +321,7 @@ const listedSessionSchema = z.strictObject({
   title: z.string(),
   sourceLabel: z.string(),
   experimentalFeatures: experimentalFeaturesSchema.optional(),
+  review: reviewDescriptorSchema.optional(),
   fileCount: nonnegative,
   files: z.array(fileSummarySchema),
   snapshot: snapshotSchema,
@@ -328,6 +334,7 @@ const selectedContextSchema = z.strictObject({
   repoRoot: z.string().optional(),
   inputKind: inputKindSchema,
   experimentalFeatures: experimentalFeaturesSchema.optional(),
+  review: reviewDescriptorSchema.optional(),
   selectedFile: fileSummarySchema.nullable(),
   selectedHunk: selectedHunkSchema.nullable(),
   showAgentNotes: z.boolean(),
@@ -342,6 +349,7 @@ const reviewSchema = z.strictObject({
   repoRoot: z.string().optional(),
   inputKind: inputKindSchema,
   experimentalFeatures: experimentalFeaturesSchema.optional(),
+  review: reviewDescriptorSchema.optional(),
   selectedFile: reviewFileSchema.nullable(),
   selectedHunk: reviewHunkSchema.nullable(),
   showAgentNotes: z.boolean(),

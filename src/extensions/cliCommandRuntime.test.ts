@@ -315,7 +315,9 @@ describe("extension CLI command runtime", () => {
       });
 
     const valid = { kind: "commit", provider: "GitHub", title: "Commit", revision: "abc" };
-    await expect(execute({ ...valid, extra: true })).rejects.toThrow("unknown fields");
+    await expect(execute({ ...valid, extra: true })).rejects.toThrow(
+      'Extension tools CLI command "tools" failed: delegate review contains unknown fields',
+    );
     await expect(execute({ ...valid, title: "bad\u001b[31m" })).rejects.toThrow(
       "control characters",
     );

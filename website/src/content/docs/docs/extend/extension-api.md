@@ -69,7 +69,9 @@ then copies and freezes it. `provider` and change-request `id` allow 256 bytes; 
 `author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB. Change requests
 may also carry `state` (`open`, `closed`, or `merged`) and boolean `draft`. The descriptor remains app-bootstrap metadata rather than entering
 changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
-reloads clear it. Exit results and non-`patch` delegation cannot carry one.
+reloads clear it. Live-session list, context, and review JSON snapshots project the same optional
+bounded descriptor without granting provider or remote-reload capabilities. Exit results and
+non-`patch` delegation cannot carry one.
 
 Delegation cannot follow stdout output or any stdin read, target another extension command, or
 change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension

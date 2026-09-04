@@ -15,6 +15,7 @@ const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // not the tree — `extension-api/index.ts` is the runtime boundary and imports freely.
 const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
+const REVIEW_DESCRIPTOR_PATH = join(CORE_ROOT, "reviewDescriptor.ts");
 const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
 
 // Session modules a browser bundle imports verbatim: the wire schema, the HTTP surface's
@@ -200,6 +201,16 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "src/ui/lib/agentAnnotations.ts", symbol: "annotationOverlapsHunk", finding: "B1" },
   { file: "src/ui/lib/agentAnnotations.ts", symbol: "getAnnotatedHunkIndices", finding: "B1" },
   { file: "src/ui/lib/reviewState.ts", symbol: "buildReviewAnnotationIndex", finding: "B1" },
+  {
+    file: "src/extensions/cliCommandRuntime.ts",
+    symbol: "validateReviewDescriptor",
+    finding: "delegated-review-descriptor",
+  },
+  {
+    file: "src/extensions/cliCommandRuntime.ts",
+    symbol: "validateDescriptorString",
+    finding: "delegated-review-descriptor",
+  },
 ];
 
 describe("source architecture boundaries", () => {
@@ -304,6 +315,22 @@ describe("shared review primitives seam", () => {
     expect(
       unexpectedExternalImports(REVIEW_MODEL_ROOT, REVIEW_MODEL_EXTERNALS, REVIEW_MODEL_NODE_DEBT),
     ).toEqual([]);
+  });
+
+  test("keeps delegated review descriptor validation browser-safe", () => {
+    const escapedImports = importSpecifiers(REVIEW_DESCRIPTOR_PATH).flatMap((specifier) => {
+      const target = resolveImport(REVIEW_DESCRIPTOR_PATH, specifier);
+      return target && !isWithin(EXTENSION_API_TYPES_PATH, target)
+        ? [`${repoPath(REVIEW_DESCRIPTOR_PATH)} -> ${specifier}`]
+        : [];
+    });
+    expect(escapedImports).toEqual([]);
+    const violations = [...reachableSourceFiles([REVIEW_DESCRIPTOR_PATH])].flatMap((path) =>
+      valueImportSpecifiers(path)
+        .filter((specifier) => specifier.startsWith("node:") || specifier.startsWith("bun:"))
+        .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+    );
+    expect(violations).toEqual([]);
   });
 
   test("keeps the browser-safe session modules browser-safe", () => {
