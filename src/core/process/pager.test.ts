@@ -20,6 +20,7 @@ function createClosingPager(code = 0) {
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
 const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+const DEFAULT_TEXT_PAGER = process.platform === "win32" ? "more" : "less -R";
 
 function expectNoUnsafeTerminalControls(text: string) {
   expect(text).not.toContain(OSC52_CLIPBOARD);
@@ -116,17 +117,17 @@ describe("general pager detection", () => {
 
 describe("plain text pager fallback", () => {
   test("falls back to less when no pager is configured", () => {
-    expect(resolveTextPagerCommand({})).toBe("less -R");
+    expect(resolveTextPagerCommand({})).toBe(DEFAULT_TEXT_PAGER);
   });
 
   test("prefers HUNK_TEXT_PAGER and avoids recursive hunk launches", () => {
     expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "bat --paging=always" })).toBe(
       "bat --paging=always",
     );
-    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "hunk pager" })).toBe("less -R");
-    expect(resolveTextPagerCommand({ PAGER: "env FOO=1 hunk pager" })).toBe("less -R");
+    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "hunk pager" })).toBe(DEFAULT_TEXT_PAGER);
+    expect(resolveTextPagerCommand({ PAGER: "env FOO=1 hunk pager" })).toBe(DEFAULT_TEXT_PAGER);
     expect(resolveTextPagerCommand({ PAGER: String.raw`"C:\tools\hunk.exe" pager` })).toBe(
-      "less -R",
+      DEFAULT_TEXT_PAGER,
     );
   });
 
@@ -305,7 +306,7 @@ describe("plain text pager fallback", () => {
   });
 
   test("supports simple env wrappers while still blocking recursive hunk pagers", async () => {
-    expect(resolveTextPagerCommand({ PAGER: "env LESS=FRX hunk pager" })).toBe("less -R");
+    expect(resolveTextPagerCommand({ PAGER: "env LESS=FRX hunk pager" })).toBe(DEFAULT_TEXT_PAGER);
 
     await pagePlainText(
       "plain text",

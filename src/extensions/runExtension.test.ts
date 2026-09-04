@@ -825,6 +825,17 @@ describe("toInternalVcsAdapter detection ids", () => {
     expect(mismatches).toEqual(["mercurial"]);
   });
 
+  test("preserves terminal-safe adapter ids that begin with a dash", () => {
+    const adapter = toInternalVcsAdapter({
+      id: "-custom",
+      name: "Custom",
+      detect: () => ({ id: "-custom", repoRoot: "/repo" }),
+    });
+
+    expect(adapter.id).toBe("-custom");
+    expect(adapter.detect("/repo")).toEqual({ id: "-custom", repoRoot: "/repo" });
+  });
+
   test("passes a matching detection through untouched, with no diagnostic", () => {
     const mismatches: string[] = [];
     const detection = { id: "hg", repoRoot: "/repo" };

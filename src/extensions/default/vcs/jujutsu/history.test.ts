@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJjVcsAdapter } from "./index";
-import { buildJjHistoryArgs, buildJjHistoryRevset, openJjHistory, parseJjHistory } from "./history";
+import {
+  buildJjHistoryArgs,
+  buildJjHistoryRevset,
+  jjHistoryUsesBoundaryTopology,
+  openJjHistory,
+  parseJjHistory,
+} from "./history";
 
 const tempDirs: string[] = [];
 const jjTest = Bun.which("jj") ? test : test.skip;
@@ -120,6 +126,32 @@ describe("Jujutsu history production", () => {
     ]);
   });
 
+  test("keeps review parents but marks filtered topology as a boundary", () => {
+    expect(jjHistoryUsesBoundaryTopology({})).toBe(false);
+    expect(jjHistoryUsesBoundaryTopology({ revision: "main..@" })).toBe(false);
+    expect(jjHistoryUsesBoundaryTopology({ pathspecs: ["src"] })).toBe(true);
+    expect(jjHistoryUsesBoundaryTopology({ author: "Ada" })).toBe(true);
+
+    const raw = [
+      "a".repeat(40),
+      "aaaaaaaa",
+      "k".repeat(32),
+      "b".repeat(40),
+      "Ada",
+      "",
+      "2026-01-01T00:00:00+00:00",
+      "Commit\n",
+      "0",
+      "",
+      "",
+      "",
+      "",
+    ].join("\0");
+    const parsed = parseJjHistory(raw, false, true)[0]!;
+    expect(parsed.parentRevisionIds).toEqual(["b".repeat(40)]);
+    expect(parsed.graphParentRevisionIds).toEqual([]);
+  });
+
   test("drops JJ's synthetic root and excluded merge parents", () => {
     const raw = [
       "a".repeat(40),
@@ -197,6 +229,15 @@ describe("Jujutsu history production", () => {
           if (parentIndex >= 0) expect(parentIndex).toBeGreaterThan(index);
         }
       }
+
+      const filtered = openJjHistory({ pathspecs: ["history.txt"] }, { cwd: repo });
+      const filteredPage = await filtered.read({ limit: 4 });
+      await filtered.close();
+      const filteredWithParent = filteredPage.commits.find(
+        (commit) => commit.parentRevisionIds.length > 0,
+      );
+      expect(filteredWithParent?.parentRevisionIds).toHaveLength(1);
+      expect(filteredWithParent?.graphParentRevisionIds).toEqual([]);
 
       const cancelled = openJjHistory({}, { cwd: repo });
       const abort = new AbortController();

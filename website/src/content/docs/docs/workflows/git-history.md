@@ -54,6 +54,7 @@ panes. Use:
 - `/` to search and `n`/`N` for the next or previous match
 - `y` to copy the full immutable commit id
 - `Enter` to open the selected commit in Hunk's normal review
+- click a visible commit id to open it immediately, or double-click elsewhere on a row
 - `q` to quit
 
 When you quit the opened review, Hunk returns to the retained history selection, viewport, and

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { TerminalInputTokenizer } from "./terminalInput";
+import { PassThrough } from "node:stream";
+import { TerminalInputReader, TerminalInputTokenizer } from "./terminalInput";
 
 describe("TerminalInputTokenizer", () => {
   test("queues multiple navigation and action keys from one chunk", () => {
@@ -32,5 +33,21 @@ describe("TerminalInputTokenizer", () => {
     expect(tokenizer.hasStandaloneEscape()).toBe(true);
     expect(tokenizer.flushStandaloneEscape()).toEqual(["\x1b"]);
     expect(tokenizer.push("q")).toEqual(["q"]);
+  });
+});
+
+describe("TerminalInputReader", () => {
+  test("cancels a temporary wait without losing restored input", async () => {
+    const stream = new PassThrough() as unknown as NodeJS.ReadStream;
+    const reader = new TerminalInputReader(stream);
+    const abort = new AbortController();
+    const waiting = reader.next(abort.signal);
+
+    abort.abort(new Error("stop waiting"));
+    await expect(waiting).rejects.toThrow("stop waiting");
+    reader.prepend(["j", "q"]);
+    expect(await reader.next()).toBe("j");
+    expect(await reader.next()).toBe("q");
+    reader.close();
   });
 });

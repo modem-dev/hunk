@@ -89,12 +89,50 @@ export async function runInteractiveHistory(
   let loading = false;
   const theme = resolveHistoryTheme(bootstrap.input.theme, bootstrap.customThemes);
 
+  /** Read one page while letting quit interrupt an exhaustive traversal. */
+  const readInterruptibly = async () => {
+    const pending = bootstrap.source.read({ limit: 256, signal: abort.signal });
+    const settled = pending.then(
+      (page) => ({ kind: "page" as const, page }),
+      (error: unknown) => ({ kind: "error" as const, error }),
+    );
+    const deferredKeys: string[] = [];
+    for (;;) {
+      const keyWait = new AbortController();
+      // Put input first so a queued `q` wins when a fast provider page and
+      // coalesced `Gq` input are both already ready.
+      const result = await Promise.race([
+        input.next(keyWait.signal).then((key) => ({ kind: "key" as const, key })),
+        settled,
+      ]);
+      if (result.kind === "page") {
+        keyWait.abort();
+        input.prepend(deferredKeys);
+        return result.page;
+      }
+      if (result.kind === "error") {
+        keyWait.abort();
+        input.prepend(deferredKeys);
+        throw result.error;
+      }
+      if (result.key === "q" || result.key === "\x03") {
+        cleanup();
+        await settled;
+        return undefined;
+      }
+      deferredKeys.push(result.key);
+    }
+  };
+
   /** Fetch one bounded continuation page and preserve graph state across it. */
-  const loadMore = async () => {
+  const loadMore = async (interruptible = false) => {
     if (historyDone || loading || stopped) return;
     loading = true;
     try {
-      const page = await bootstrap.source.read({ limit: 256, signal: abort.signal });
+      const page = interruptible
+        ? await readInterruptibly()
+        : await bootstrap.source.read({ limit: 256, signal: abort.signal });
+      if (!page) return;
       if (!page.done && page.commits.length === 0)
         throw new Error("VCS history returned an empty page before EOF.");
       const planned = planHistoryPage(page.commits, checkpoint);
@@ -107,7 +145,7 @@ export async function runInteractiveHistory(
     }
   };
   const loadAll = async () => {
-    while (!historyDone && !stopped) await loadMore();
+    while (!historyDone && !stopped) await loadMore(true);
   };
 
   const terminalWidth = () => (stdout.columns && stdout.columns > 0 ? stdout.columns : 80);

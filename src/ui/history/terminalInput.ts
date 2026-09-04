@@ -107,12 +107,38 @@ export class TerminalInputReader {
     this.stream.pause();
   }
 
-  /** Return the next complete terminal token, retaining later tokens in order. */
-  next() {
+  /** Return the next complete token, allowing a temporary caller to cancel its wait. */
+  next(signal?: AbortSignal) {
     const token = this.queued.shift();
     if (token !== undefined) return Promise.resolve(token);
     if (this.endedError) return Promise.reject(this.endedError);
-    return new Promise<string>((resolve, reject) => this.waiting.push({ resolve, reject }));
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? new Error("Terminal input wait aborted."));
+    }
+    return new Promise<string>((resolve, reject) => {
+      const waiter = {
+        resolve: (value: string) => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        reject: (error: Error) => {
+          signal?.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      };
+      const onAbort = () => {
+        const index = this.waiting.indexOf(waiter);
+        if (index >= 0) this.waiting.splice(index, 1);
+        waiter.reject(signal?.reason ?? new Error("Terminal input wait aborted."));
+      };
+      this.waiting.push(waiter);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  /** Restore temporarily consumed tokens to the front of the input queue. */
+  prepend(tokens: readonly string[]) {
+    this.queued.unshift(...tokens);
   }
 
   /** Drop typeahead before transferring terminal ownership to a child process. */

@@ -7,8 +7,8 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `18`). Branch on it if you want
-one file to support several Hunk versions. Version 18 adds provider-owned history
+The API generation this Hunk speaks (currently `17`). Branch on it if you want
+one file to support several Hunk versions. Version 17 adds provider-owned history
 enumeration and review planning; version 16 added pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision

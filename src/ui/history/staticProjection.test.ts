@@ -7,6 +7,7 @@ import {
   getHistoryCommitIdBounds,
   projectHistoryRecord,
   projectHistoryRow,
+  renderHistoryContinuation,
   renderHistoryConvergence,
   renderHistoryGraph,
   resolveHistoryColor,
@@ -74,6 +75,12 @@ describe("static history projection", () => {
     expect(lines.join("\n")).toContain("Author: AdaLovelace");
     expect(lines.join("\n")).toContain("Date:   2026-01-02 03:04:05Z");
     expect(lines.join("\n")).toContain("First paragraph.");
+    const continuation = renderHistoryContinuation(row, false);
+    expect(lines[3]).toBe(continuation);
+    expect(lines[4]).toBe(`${continuation}      Improve 日本語 renderingspoof`);
+    expect(lines[5]).toBe(continuation);
+    expect(lines[6]).toBe(`${continuation}      First paragraph.`);
+    expect(lines.at(-1)).toBe(continuation);
     expect(formatHistoryDecorations(row)).toBe(" (HEAD -> main, origin/main, tag: v1.0.0)");
   });
 

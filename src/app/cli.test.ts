@@ -566,12 +566,12 @@ describe("parseCli", () => {
           toRevisionId: "opaque:commit/β",
         }),
         "--vcs",
-        "demo",
+        "-custom",
       ]),
     ).toMatchObject({
       kind: "vcs",
       rangeEndpoints: { from: "-opaque:parent/α", to: "opaque:commit/β" },
-      options: { vcs: "demo" },
+      options: { vcs: "-custom" },
     });
     expect(
       await parseCli([
