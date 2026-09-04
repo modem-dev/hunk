@@ -27,6 +27,7 @@ const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
 const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
+const { ThemeSelectorDialog } = await import("./chrome/ThemeSelectorDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
 const { DiffPane, storedReviewNoteActions } = await import("./panes/DiffPane");
@@ -3533,6 +3534,33 @@ describe("UI components", () => {
     expect(frame).toContain("┘");
   });
 
+  test("MenuDropdown windows the active item inside a narrow terminal", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const entries = Array.from({ length: 8 }, (_, index) => ({
+      kind: "item" as const,
+      label: `Item ${index}`,
+      action: () => {},
+    }));
+    const frame = await captureFrame(
+      <MenuDropdown
+        activeMenuId="view"
+        activeMenuEntries={entries}
+        activeMenuItemIndex={7}
+        activeMenuSpec={{ id: "view", left: 15, width: 6, label: "View" }}
+        activeMenuWidth={30}
+        terminalHeight={6}
+        terminalWidth={16}
+        theme={theme}
+        onHoverItem={() => {}}
+        onSelectItem={() => {}}
+      />,
+      16,
+      6,
+    );
+    expect(frame).toContain("Item 7");
+    expect(frame.split("\n").every((line) => line.length <= 16)).toBe(true);
+  });
+
   test("StatusBar renders filter mode affordance", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -3749,6 +3777,60 @@ describe("UI components", () => {
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(frame).not.toContain("linese/Awrapt/smetadata");
+  });
+
+  test("HelpDialog renders surface-supplied sections without review controls", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <HelpDialog
+        sections={[{ title: "Commit", rows: [{ keys: "Enter", description: "open commit" }] }]}
+        terminalHeight={16}
+        terminalWidth={60}
+        theme={theme}
+        onClose={() => {}}
+      />,
+      60,
+      16,
+    );
+
+    expect(frame).toContain("Commit");
+    expect(frame).toContain("Enter");
+    expect(frame).toContain("open commit");
+    expect(frame).not.toContain("Review");
+  });
+
+  test("shared help and theme dialogs clamp into narrow terminals", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const help = await captureFrame(
+      <HelpDialog
+        sections={[{ title: "Commit", rows: [{ keys: "Enter", description: "open commit" }] }]}
+        terminalHeight={8}
+        terminalWidth={20}
+        theme={theme}
+        onClose={() => {}}
+      />,
+      20,
+      8,
+    );
+    const selector = await captureFrame(
+      <ThemeSelectorDialog
+        items={[{ id: "dark", label: "Dark", description: "Built-in", active: true }]}
+        selectedIndex={0}
+        terminalHeight={8}
+        terminalWidth={20}
+        theme={theme}
+        onAcceptItem={() => {}}
+        onClose={() => {}}
+        onPreviewItem={() => {}}
+      />,
+      20,
+      8,
+    );
+    expect(help).toContain("Commit");
+    expect(selector).toContain("Dark");
+    expect([...help.split("\n"), ...selector.split("\n")].every((line) => line.length <= 20)).toBe(
+      true,
+    );
   });
 
   test("HelpDialog shows the keys a remapped command actually answers to", async () => {

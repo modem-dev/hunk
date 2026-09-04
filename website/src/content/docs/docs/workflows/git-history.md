@@ -47,7 +47,9 @@ hunk log --interactive
 ```
 
 The browser remains one minimal history list—there are no status, staging, branch, or preview
-panes. Use:
+panes. Its File, View, Navigate, Commit, and Help menus reuse Hunk's desktop chrome; press `F10`
+to open them. The View menu opens the same live-preview theme picker as review and offers
+session-local compact/medium, graph, Unicode, author, date, and decoration controls. Use:
 
 - `Up`/`Down` or `j`/`k` to move
 - `PageUp`/`PageDown`, `g`/`G`, or `Home`/`End` for larger jumps
@@ -55,9 +57,10 @@ panes. Use:
 - `y` to copy the full immutable commit id
 - `Enter` to open the selected commit in Hunk's normal review
 - click a visible commit id to open it immediately, or double-click elsewhere on a row
+- `r` to refresh while retaining the selected immutable commit when it still exists
 - `q` to quit
 
-When you quit the opened review, Hunk returns to the retained history selection, viewport, and
+Theme choices made in the browser carry into commits opened for review. When you quit the opened review, Hunk returns to the retained history selection, viewport, and
 search. Opening a commit starts a fresh review process, so review notes and drafts cannot leak from
 one commit into another.
 

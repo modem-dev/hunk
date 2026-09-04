@@ -159,6 +159,60 @@ describe("useMenuController", () => {
     }
   });
 
+  test("skips disabled entries and refuses direct activation", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+    const ran: string[] = [];
+    const menus: AppMenus = {
+      commit: [
+        { kind: "item", label: "Root parent", disabled: true, action: () => ran.push("disabled") },
+        { kind: "item", label: "Open diff", action: () => ran.push("open") },
+      ],
+    };
+
+    function Probe() {
+      controller = useMenuController(menus);
+      return null;
+    }
+
+    const setup = await testRender(<Probe />, { width: 80, height: 24 });
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+        controller.openMenu("commit");
+      });
+      expect(controller.activeMenuItemIndex).toBe(1);
+      await act(async () => controller.activateCurrentMenuItem());
+      expect(ran).toEqual(["open"]);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keeps rapid menu switch and activation sequential before a rerender", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+    const ran: string[] = [];
+    const menus: AppMenus = {
+      file: [{ kind: "item", label: "Open", action: () => ran.push("file") }],
+      view: [{ kind: "item", label: "Theme", action: () => ran.push("view") }],
+    };
+    function Probe() {
+      controller = useMenuController(menus);
+      return null;
+    }
+    const setup = await testRender(<Probe />, { width: 80, height: 24 });
+    try {
+      await act(async () => setup.renderOnce());
+      await act(async () => {
+        controller.openMenu("file");
+        controller.switchMenu(1);
+        controller.activateCurrentMenuItem();
+      });
+      expect(ran).toEqual(["view"]);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("cycling skips menus the session does not show", async () => {
     let controller!: ReturnType<typeof useMenuController>;
 

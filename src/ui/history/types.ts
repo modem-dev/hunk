@@ -3,6 +3,7 @@ import type { VcsHistorySource } from "../../core/vcs/types";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
   NamedCustomThemeConfig,
 } from "../../extension-api/types";
 
@@ -15,6 +16,11 @@ export interface HistoryRuntime {
   repoRoot: string;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
-  planReview(commit: ExtensionVcsHistoryCommit): Promise<ExtensionVcsHistoryReviewAction>;
+  planReview(
+    commit: ExtensionVcsHistoryCommit,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): Promise<ExtensionVcsHistoryReviewAction>;
+  /** Replace the current provider cursor for an explicit interactive refresh. */
+  reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;
 }

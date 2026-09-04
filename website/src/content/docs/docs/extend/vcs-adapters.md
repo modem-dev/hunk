@@ -41,11 +41,12 @@ history: {
   async open(input, ctx) {
     return openHgHistory(input, ctx);
   },
-  planReview(commit) {
-    return commit.parentRevisionIds[0]
+  planReview(commit, _context, options) {
+    const parent = options?.parentRevisionId ?? commit.parentRevisionIds[0];
+    return parent
       ? {
           kind: "revision-range",
-          fromRevisionId: commit.parentRevisionIds[0],
+          fromRevisionId: parent,
           toRevisionId: commit.revisionId,
         }
       : { kind: "revision-show", revisionId: commit.revisionId };
@@ -58,11 +59,13 @@ must also register a `revision-show` operation for `revision-show` actions and a
 operation that accepts `rangeEndpoints` for `revision-range` actions. Otherwise Enter reports the
 missing review operation as unsupported.
 
-`planReview` is provider-owned because roots, merges, and revision syntax differ. Hunk treats every
+`planReview` is provider-owned because roots, merges, and revision syntax differ. If the user picks
+one ordered parent, the host passes its opaque id as `options.parentRevisionId`. Hunk treats every
 revision id as opaque and routes the returned action through the same adapter's `revision-show` or
 `working-tree-diff` operation.
 
-History pages must remain in **child-before-parent topological order across the complete source**.
+History setup receives `context.signal`; abort promptly when it fires, including during interactive
+refresh. History pages must remain in **child-before-parent topological order across the complete source**.
 When both commits are returned, a child must precede its parent even when they fall on different
 pages. Each read may return at most its requested limit, and `done` distinguishes a page boundary
 from repository end. Hunk validates these invariants across pages.

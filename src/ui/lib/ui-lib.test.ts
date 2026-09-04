@@ -124,11 +124,11 @@ describe("ui helpers", () => {
     ]);
   });
 
-  test("nextMenuItemIndex skips separators in both directions", () => {
+  test("nextMenuItemIndex skips separators and disabled items in both directions", () => {
     const entries: MenuEntry[] = [
       { kind: "separator" },
       { kind: "item", label: "One", action: () => {} },
-      { kind: "separator" },
+      { kind: "item", label: "Unavailable", disabled: true, action: () => {} },
       { kind: "item", label: "Two", action: () => {} },
     ];
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   buildMenuSpecs,
   menuEntries,
@@ -12,6 +12,14 @@ import {
 export function useMenuController(menus: AppMenus) {
   const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
   const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
+  // OpenTUI can deliver several decoded keys before React commits a render.
+  // These mirrors preserve sequential menu semantics within that input burst.
+  const liveMenuId = useRef<MenuId | null>(activeMenuId);
+  const liveItemIndex = useRef(activeMenuItemIndex);
+  const liveMenus = useRef(menus);
+  liveMenuId.current = activeMenuId;
+  liveItemIndex.current = activeMenuItemIndex;
+  liveMenus.current = menus;
 
   // Plain derivation, not a memo: `menus` is rebuilt every render on purpose
   // (hints and checked marks must stay live), so a memo keyed on it never hits.
@@ -35,12 +43,16 @@ export function useMenuController(menus: AppMenus) {
   }, [activeMenuId, openMenuId]);
 
   const closeMenu = () => {
+    liveMenuId.current = null;
     setActiveMenuId(null);
   };
 
   const openMenu = (menuId: MenuId) => {
+    const firstIndex = nextMenuItemIndex(menuEntries(liveMenus.current, menuId), -1, 1);
+    liveMenuId.current = menuId;
+    liveItemIndex.current = firstIndex;
     setActiveMenuId(menuId);
-    setActiveMenuItemIndex(nextMenuItemIndex(menuEntries(menus, menuId), -1, 1));
+    setActiveMenuItemIndex(firstIndex);
   };
 
   const toggleMenu = (menuId: MenuId) => {
@@ -59,9 +71,10 @@ export function useMenuController(menus: AppMenus) {
       return;
     }
 
+    const currentMenuId = liveMenuId.current;
     const currentIndex = Math.max(
       0,
-      openMenuId ? menuSpecs.findIndex((menu) => menu.id === openMenuId) : 0,
+      currentMenuId ? menuSpecs.findIndex((menu) => menu.id === currentMenuId) : 0,
     );
     const nextIndex = (currentIndex + delta + menuSpecs.length) % menuSpecs.length;
     openMenu(menuSpecs[nextIndex]!.id);
@@ -76,7 +89,7 @@ export function useMenuController(menus: AppMenus) {
   // so the visible highlight and Enter always agree on a real entry.
   const resolveItemIndex = (index: number) => {
     const entry = activeMenuEntries[index];
-    return entry?.kind === "item"
+    return entry?.kind === "item" && !entry.disabled
       ? index
       : nextMenuItemIndex(activeMenuEntries, Math.min(index, activeMenuEntries.length) - 1, 1);
   };
@@ -87,19 +100,24 @@ export function useMenuController(menus: AppMenus) {
   // highlight visibly is, not from the stale position.
   useEffect(() => {
     if (openMenuId !== null && openMenuItemIndex !== activeMenuItemIndex) {
+      liveItemIndex.current = openMenuItemIndex;
       setActiveMenuItemIndex(openMenuItemIndex);
     }
   }, [openMenuId, openMenuItemIndex, activeMenuItemIndex]);
 
   const moveMenuItem = (delta: number) => {
-    setActiveMenuItemIndex((current) =>
-      nextMenuItemIndex(activeMenuEntries, resolveItemIndex(current), delta),
-    );
+    const menuId = liveMenuId.current;
+    const entries = menuId ? menuEntries(liveMenus.current, menuId) : [];
+    const next = nextMenuItemIndex(entries, liveItemIndex.current, delta);
+    liveItemIndex.current = next;
+    setActiveMenuItemIndex(next);
   };
 
   const activateCurrentMenuItem = () => {
-    const entry = activeMenuEntries[openMenuItemIndex];
-    if (!entry || entry.kind !== "item") {
+    const menuId = liveMenuId.current;
+    const entries = menuId ? menuEntries(liveMenus.current, menuId) : [];
+    const entry = entries[liveItemIndex.current];
+    if (!entry || entry.kind !== "item" || entry.disabled) {
       return;
     }
 
@@ -118,6 +136,7 @@ export function useMenuController(menus: AppMenus) {
     activeMenuWidth,
     activateCurrentMenuItem,
     closeMenu,
+    getActiveMenuId: () => liveMenuId.current,
     menuSpecs,
     moveMenuItem,
     openMenu,

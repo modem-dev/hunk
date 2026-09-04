@@ -137,7 +137,7 @@ export function buildAppMenus({
   showMenuBar,
   wrapLines,
 }: BuildAppMenusOptions): AppMenus {
-  const specs: Record<Exclude<MenuId, "extensions">, MenuEntrySpec[]> = {
+  const specs: Record<Exclude<MenuId, "extensions" | "commit">, MenuEntrySpec[]> = {
     file: [
       { commandId: "hunk.app.toggleFocusArea", label: "Toggle files/filter focus" },
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },

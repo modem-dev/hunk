@@ -5,6 +5,7 @@ import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
 } from "../../extension-api/types";
 import type { CliInput } from "../run/commandInputs";
 import type {
@@ -182,13 +183,14 @@ export async function planVcsHistoryReview(
   adapter: VcsAdapter,
   commit: ExtensionVcsHistoryCommit,
   context: VcsLoadContext,
+  options?: ExtensionVcsHistoryReviewOptions,
 ): Promise<ExtensionVcsHistoryReviewAction> {
   if (!adapter.history) {
     throw new HunkUserError(`\`hunk log\` is not supported by ${adapter.name}.`, [
       "Use a VCS adapter that implements history browsing.",
     ]);
   }
-  return await adapter.history.planReview(commit, context);
+  return await adapter.history.planReview(commit, context, options);
 }
 
 /** Build an adapter event plan, falling back to signature polling. */

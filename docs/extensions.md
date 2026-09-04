@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `17`). Branch on it if you want
-one file to support several Hunk versions. Version 17 adds provider-owned history
+The API generation this Hunk speaks (currently `18`). Branch on it if you want
+one file to support several Hunk versions. Version 18 adds provider-owned parent
+selection to history review planning; version 17 added provider-owned history
 enumeration and review planning; version 16 added pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
@@ -466,7 +467,7 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
-API version 17 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
+API version 17 adds the optional, read-only `history` capability used by the built-in `hunk log` surface. API version 18 lets the host pass an optional selected parent to `planReview`:
 
 ```ts
 hunk.registerVcsAdapter({
@@ -483,11 +484,12 @@ hunk.registerVcsAdapter({
         close() {},
       };
     },
-    planReview(commit) {
-      return commit.parentRevisionIds[0]
+    planReview(commit, _context, options) {
+      const parent = options?.parentRevisionId ?? commit.parentRevisionIds[0];
+      return parent
         ? {
             kind: "revision-range",
-            fromRevisionId: commit.parentRevisionIds[0],
+            fromRevisionId: parent,
             toRevisionId: commit.revisionId,
           }
         : { kind: "revision-show", revisionId: commit.revisionId };
@@ -505,7 +507,9 @@ History is deliberately separate from patch-producing `operations`. The built-in
 routing, graph planning, themes, terminal lifecycle, and static/interactive presentation. The
 adapter owns every repository semantic: traversal and filtering, immutable identities, refs, and
 `planReview`'s decision about how roots and merges open through that adapter's ordinary review
-operations. Hunk treats revision ids as opaque strings and never invents provider revision syntax.
+operations. When the user chooses one ordered parent, Hunk passes its opaque id as
+`options.parentRevisionId`; providers validate and translate that selection. Hunk never invents
+provider revision syntax.
 
 Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
 message body, author (and optional email), ISO authored time, and structured ref decorations. The
@@ -514,7 +518,9 @@ Jujutsu change id); Hunk treats it as metadata and continues to key graph and re
 immutable `revisionId`. A `head` decoration carries an optional `attachedLocalBranch`; use that field
 rather than embedding an arrow or branch identity in its display label.
 
-Every source must emit commits in **child-before-parent topological order**. If both a child and one
+History setup receives `context.signal`; abort promptly when it fires, including while replacing a
+cursor during interactive refresh. Every source must emit commits in **child-before-parent
+topological order**. If both a child and one
 of its parents are included, the child appears first. This invariant spans the source's complete
 lifetime: page boundaries do not reset it, and a parent returned on one page cannot be followed by
 its child on a later page. Reads may return at most the requested limit and must distinguish a page

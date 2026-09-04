@@ -149,8 +149,10 @@ describe("useThemeSelectorController", () => {
 
   test("pointer and keyboard acceptance commit atomically and preserve notices", async () => {
     const notices: string[] = [];
+    const committed: string[] = [];
     const harness = await renderThemeSelectorController({
       initialTheme: "github-dark-default",
+      onThemeCommitted: (themeId) => committed.push(themeId),
       onTransientNotice: (notice) => notices.push(notice),
       transparentBackground: false,
     });
@@ -175,6 +177,7 @@ describe("useThemeSelectorController", () => {
       expect(harness.controller.themeId).toBe(keyboardItem.id);
       expect(harness.controller.baseTheme.id).toBe(keyboardItem.id);
       expect(notices.at(-1)).toBe(`Theme: ${keyboardItem.label}`);
+      expect(committed).toEqual([pointerItem.id, keyboardItem.id]);
     } finally {
       await destroyController(harness.setup);
     }

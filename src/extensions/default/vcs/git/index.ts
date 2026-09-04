@@ -284,12 +284,15 @@ export function createGitVcsAdapter({
       open(input, { cwd }) {
         return openGitHistory(input, { cwd, gitExecutable });
       },
-      planReview(commit) {
-        const firstParent = commit.parentRevisionIds[0];
-        return firstParent
+      planReview(commit, _context?: unknown, options?: { parentRevisionId?: string }) {
+        const parent = options?.parentRevisionId ?? commit.parentRevisionIds[0];
+        if (parent && !commit.parentRevisionIds.includes(parent)) {
+          throw new Error("The selected revision is not a parent of this Git commit.");
+        }
+        return parent
           ? {
               kind: "revision-range" as const,
-              fromRevisionId: firstParent,
+              fromRevisionId: parent,
               toRevisionId: commit.revisionId,
             }
           : { kind: "revision-show" as const, revisionId: commit.revisionId };

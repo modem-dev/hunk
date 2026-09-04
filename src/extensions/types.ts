@@ -79,6 +79,7 @@ export type {
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsHistoryReviewOptions,
   ExtensionVcsHistorySource,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,

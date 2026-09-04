@@ -28,6 +28,9 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
     async planReview(commit) {
       return { kind: "revision-show", revisionId: commit.revisionId };
     },
+    async reopenSource() {
+      return value.source;
+    },
     source: {
       async read({ limit }) {
         reads += 1;

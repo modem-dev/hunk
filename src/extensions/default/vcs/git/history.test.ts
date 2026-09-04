@@ -142,6 +142,21 @@ describe("Git history production", () => {
       fromRevisionId: "c".repeat(40),
       toRevisionId: "b".repeat(40),
     });
+    expect(
+      await history.planReview(
+        {
+          ...root,
+          revisionId: "b".repeat(40),
+          parentRevisionIds: ["c".repeat(40), "d".repeat(40)],
+        },
+        undefined,
+        { parentRevisionId: "d".repeat(40) },
+      ),
+    ).toEqual({
+      kind: "revision-range",
+      fromRevisionId: "d".repeat(40),
+      toRevisionId: "b".repeat(40),
+    });
   });
 
   test("rejects truncated records and invalid SHA object ids", () => {

@@ -20,6 +20,10 @@ export function MenuBar({
   onHoverMenu: (menuId: MenuId) => void;
   onToggleMenu: (menuId: MenuId) => void;
 }) {
+  const visibleMenuSpecs = menuSpecs.filter(
+    (menu) => menu.left + menu.width <= Math.max(1, terminalWidth - 1),
+  );
+  const title = visibleMenuSpecs.length === 0 ? "F10 menu" : topTitle;
   return (
     // The outer row paints the app background so the bar keeps the same
     // one-column gutter the body panes have; only the inner band is chrome.
@@ -42,7 +46,7 @@ export function MenuBar({
           alignItems: "center",
         }}
       >
-        {menuSpecs.map((menu) => {
+        {visibleMenuSpecs.map((menu) => {
           const active = activeMenuId === menu.id;
           return (
             <box
@@ -63,7 +67,7 @@ export function MenuBar({
         <box style={{ flexGrow: 1, height: 1, alignItems: "center", justifyContent: "flex-end" }}>
           <text
             fg={theme.muted}
-          >{` ${fitText(topTitle, menuBarTitleWidth(menuSpecs, terminalWidth))}`}</text>
+          >{` ${fitText(title, menuBarTitleWidth(visibleMenuSpecs, terminalWidth))}`}</text>
         </box>
       </box>
     </box>

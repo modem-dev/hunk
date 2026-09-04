@@ -1,6 +1,6 @@
 import { measureTextWidth } from "../../lib/text";
 
-export type MenuId = "file" | "view" | "navigate" | "agent" | "extensions" | "help";
+export type MenuId = "file" | "view" | "navigate" | "commit" | "agent" | "extensions" | "help";
 
 export type MenuEntry =
   | {
@@ -10,6 +10,8 @@ export type MenuEntry =
       commandId?: string;
       hint?: string;
       checked?: boolean;
+      /** Keep a context-dependent action visible while preventing activation. */
+      disabled?: boolean;
       action: () => void;
     }
   | {
@@ -36,6 +38,7 @@ const MENU_LABELS: Record<MenuId, string> = {
   file: "File",
   view: "View",
   navigate: "Navigate",
+  commit: "Commit",
   agent: "Agent",
   extensions: "Extensions",
   help: "Help",
@@ -84,7 +87,7 @@ export function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, de
   for (let remaining = entries.length; remaining > 0; remaining -= 1) {
     candidate = (candidate + delta + entries.length) % entries.length;
     const entry = entries[candidate];
-    if (entry?.kind === "item") {
+    if (entry?.kind === "item" && !entry.disabled) {
       return candidate;
     }
   }
