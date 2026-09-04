@@ -93,15 +93,15 @@ hunk log --interactive         # browse history; Enter opens a commit in Hunk
 
 `hunk log` is a static-first, read-only history surface, not a repository manager. The selected VCS
 adapter owns traversal, filtering, refs, and how a history item opens for review; the bundled Git
-adapter offers a deliberate `git log`-style subset today. Default output keeps full commit, author,
-date, message, branch, remote, and tag details; `--oneline` provides compact rows, and `--theme`
+and Jujutsu adapters both implement that public capability. Default output keeps full commit,
+author, date, message, branch/bookmark, remote, and tag details; `--oneline` provides compact rows, and `--theme`
 uses the same palette as Hunk review. Static output remains safe for pipes, redirects, and normal
 terminal scrollback. The explicit interactive mode stays a single history list; after opening a
 commit, quit its normal Hunk review to return to the same selection.
 
 ### Working with Jujutsu and Sapling
 
-Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
+Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. `hunk log --vcs jj` also reads JJ history directly, including in a non-colocated workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
 
 ### Working with raw files and patches
 

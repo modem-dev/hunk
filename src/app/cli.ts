@@ -74,6 +74,8 @@ export interface CliReferenceOption {
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
   readonly hidden?: boolean;
+  /** Additional generated-documentation context for a hidden option. */
+  readonly hiddenNote?: string;
 }
 
 /** Structured command metadata used by runtime parsers and generated CLI docs. */
@@ -166,6 +168,7 @@ const DIFF_OPTIONS = [
     flag: `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
     description: "include untracked files in working tree reviews",
     hidden: true,
+    hiddenNote: "Compatibility inverse; omitted from `--help`.",
   },
 ] as const satisfies readonly CliReferenceOption[];
 
@@ -204,7 +207,7 @@ export const CLI_REFERENCE_COMMANDS = {
       "The selected VCS provider defines revision, filtering, and review semantics.",
     ],
     options: [
-      { flag: "--all", description: "include commits reachable from every ref" },
+      { flag: "--all", description: "include history from every provider-visible head" },
       { flag: "--first-parent", description: "follow only the first parent of merge commits" },
       {
         flag: "-n, --max-count <count>",
@@ -566,7 +569,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
-    "  hunk log [target] [-- <pathspec...>]    print an attractive Git commit history",
+    "  hunk log [target] [-- <pathspec...>]    print an attractive repository history",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",

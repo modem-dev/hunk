@@ -69,13 +69,14 @@ describe("static history projection", () => {
     expect(formatHistoryDecorations(row)).toBe(" (HEAD -> main, origin/main, tag: v1.0.0)");
   });
 
-  test("renders explicit convergence transitions", () => {
+  test("renders the golden no-fast-forward merge convergence", () => {
     const planned = planHistoryPage([
       { ...commit, revisionId: "merge", parentRevisionIds: ["main", "side"] },
-      { ...commit, revisionId: "side", parentRevisionIds: ["base"], decorations: [] },
-      { ...commit, revisionId: "main", parentRevisionIds: ["base"], decorations: [] },
+      { ...commit, revisionId: "side", parentRevisionIds: ["main"], decorations: [] },
+      { ...commit, revisionId: "main", parentRevisionIds: [], decorations: [] },
     ]);
-    expect(renderHistoryConvergence(planned.rows[2]!, false)).not.toBe("");
+    expect(renderHistoryConvergence(planned.rows[1]!, false)).toBe("│╯");
+    expect(renderHistoryConvergence(planned.rows[1]!, true)).toBe("|/");
   });
 
   test("resolves colors through the shared Hunk theme catalog", () => {
@@ -87,6 +88,9 @@ describe("static history projection", () => {
       resolveHistoryColor({ mode: "always", stdoutIsTTY: false, env: { NO_COLOR: "1" } }),
     ).toBe(true);
     expect(resolveHistoryColor({ mode: "auto", stdoutIsTTY: true, env: { NO_COLOR: "1" } })).toBe(
+      false,
+    );
+    expect(resolveHistoryColor({ mode: "auto", stdoutIsTTY: true, env: { NO_COLOR: "" } })).toBe(
       false,
     );
     expect(resolveHistoryColor({ mode: "auto", stdoutIsTTY: true, env: { TERM: "dumb" } })).toBe(

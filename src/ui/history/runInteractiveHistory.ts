@@ -132,6 +132,7 @@ export async function runInteractiveHistory(
     top = Math.max(0, Math.min(top, Math.max(0, rows.length - height)));
   };
   const render = () => {
+    if (!active) return;
     clampViewport();
     const width = Math.max(1, terminalWidth());
     const height = Math.max(1, terminalHeight() - 1);
@@ -204,6 +205,10 @@ export async function runInteractiveHistory(
         return;
       }
       if (key === "\x1b") return;
+      if (key === "\x03") {
+        cleanup();
+        return;
+      }
       if (key === "\x7f") draft = Array.from(draft).slice(0, -1).join("");
       else if (/^[^\x00-\x1f\x7f]+$/u.test(key)) draft += key;
     }
@@ -214,7 +219,9 @@ export async function runInteractiveHistory(
     abort.abort(new Error("History browser stopped."));
     leaveTerminal();
   };
-  const onResize = () => render();
+  const onResize = () => {
+    if (active) render();
+  };
   const stopForSignal = (exitCode: number) => {
     cleanup();
     process.exitCode = exitCode;

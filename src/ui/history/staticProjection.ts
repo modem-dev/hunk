@@ -248,5 +248,5 @@ export function resolveHistoryColor({
 }) {
   if (mode === "always") return true;
   if (mode === "never") return false;
-  return stdoutIsTTY && env.TERM !== "dumb" && !env.NO_COLOR;
+  return stdoutIsTTY && env.TERM !== "dumb" && !("NO_COLOR" in env);
 }

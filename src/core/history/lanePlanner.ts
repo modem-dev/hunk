@@ -10,10 +10,10 @@ export function createHistoryLaneCheckpoint(): HistoryLaneCheckpoint {
   return { lanes: [] };
 }
 
-/** Return unique parent ids in the provider's declared order. */
+/** Return unique graph parent ids in the provider's declared order. */
 function orderedUniqueParents(commit: HistoryCommit) {
   const seen = new Set<string>();
-  return commit.parentRevisionIds.filter((parent) => {
+  return (commit.graphParentRevisionIds ?? commit.parentRevisionIds).filter((parent) => {
     if (seen.has(parent)) return false;
     seen.add(parent);
     return true;
@@ -45,6 +45,10 @@ export function planHistoryPage(
 
     const lanesBefore = [...lanes];
     const parents = orderedUniqueParents(commit);
+    const existingParents = parents.filter((parent) => {
+      const index = lanesBefore.indexOf(parent);
+      return index >= 0 && index !== lane;
+    });
     lanes.splice(lane, 1, ...parents);
 
     // A merge parent can already be active through another child. Keep its leftmost lane and
@@ -60,6 +64,16 @@ export function planHistoryPage(
       const to = lanes.indexOf(revisionId);
       return to >= 0 && to !== from ? [{ from, to }] : [];
     });
+    for (const parent of existingParents) {
+      const to = lanes.indexOf(parent);
+      if (
+        to >= 0 &&
+        lane !== to &&
+        !convergences.some((edge) => edge.from === lane && edge.to === to)
+      ) {
+        convergences.push({ from: lane, to });
+      }
+    }
     const width = Math.max(lanesBefore.length, lanes.length, lane + 1);
     const cells: HistoryGraphCell[] = Array.from({ length: width }, (_, index) => ({
       kind: index === lane ? "node" : index < lanesBefore.length ? "vertical" : "empty",

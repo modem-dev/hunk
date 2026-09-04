@@ -53,6 +53,11 @@ history: {
 },
 ```
 
+This history fragment demonstrates static listing only. For interactive opening, the same adapter
+must also register a `revision-show` operation for `revision-show` actions and a `working-tree-diff`
+operation that accepts `rangeEndpoints` for `revision-range` actions. Otherwise Enter reports the
+missing review operation as unsupported.
+
 `planReview` is provider-owned because roots, merges, and revision syntax differ. Hunk treats every
 revision id as opaque and routes the returned action through the same adapter's `revision-show` or
 `working-tree-diff` operation.
@@ -64,7 +69,14 @@ from repository end. Hunk validates these invariants across pages.
 
 Decorations are structured. A `head` decoration may set `attachedLocalBranch`; do not encode branch
 attachment or arrow punctuation in its label. This lets Hunk render and deduplicate decorations
-without parsing provider display text.
+without parsing provider display text. An optional `logicalId` names one logical change across
+provider rewrites (such as a Jujutsu change id); it is metadata, while graph and review operations
+continue to use immutable `revisionId` values.
+
+The bundled Git and Jujutsu adapters both implement this contract. Jujutsu emits immutable commit
+IDs plus logical change IDs, maps bookmarks/remotes/tags to structured decorations, and uses JJ's
+native single-revision diff for ordinary, merge, and root reviews. It works in both colocated and
+JJ-only workspaces; no Git command or `.git` worktree is required.
 
 A `load` result is patch text plus how to label it. Everything else on it is optional, and each optional field buys one thing:
 

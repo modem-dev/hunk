@@ -1017,6 +1017,75 @@ describe("toInternalVcsAdapter history boundary", () => {
     expect(closed).toBe(1);
   });
 
+  test("rejects unsafe revision ids and required display fields erased by sanitization", async () => {
+    const validCommit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "Safe subject",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const readCommit = async (commit: typeof validCommit) => {
+      const adapter = toInternalVcsAdapter({
+        id: "adversarial",
+        name: "Adversarial",
+        detect: () => null,
+        history: {
+          open: () => ({
+            read: async () => ({ commits: [commit], done: true }),
+            close() {},
+          }),
+          planReview: (selected) => ({
+            kind: "revision-show",
+            revisionId: selected.revisionId,
+          }),
+        },
+      });
+      return adapter
+        .history!.open({}, { cwd: "/repo" })
+        .then((source) => source.read({ limit: 1 }));
+    };
+
+    await expect(readCommit({ ...validCommit, revisionId: `unsafe\tid` })).rejects.toThrow(
+      "terminal-safe immutable revision id",
+    );
+    for (const field of ["displayId", "subject", "authorName"] as const) {
+      await expect(readCommit({ ...validCommit, [field]: "\x1b[2J" })).rejects.toThrow(
+        `${field} must remain non-empty after sanitization`,
+      );
+    }
+  });
+
+  test("rejects tabs in provider-owned review action revision ids", async () => {
+    const commit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "Safe subject",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const adapter = toInternalVcsAdapter({
+      id: "adversarial-plan",
+      name: "Adversarial plan",
+      detect: () => null,
+      history: {
+        open: () => ({
+          read: async () => ({ commits: [], done: true }),
+          close() {},
+        }),
+        planReview: () => ({ kind: "revision-show", revisionId: "unsafe\tid" }),
+      },
+    });
+
+    await expect(adapter.history!.planReview(commit, { cwd: "/repo" })).rejects.toThrow(
+      "terminal-safe immutable revision id",
+    );
+  });
+
   test("snapshots source, page, commit, and decoration accessors exactly once", async () => {
     const reads = { sourceRead: 0, commits: 0, subject: 0, label: 0 };
     const commit = {

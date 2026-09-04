@@ -10,6 +10,7 @@ import {
   runJjText,
   type JjDiffEndpoints,
 } from "./commands";
+import { openJjHistory } from "./history";
 import { readJjFileSource } from "./source";
 import { describeDiffRange } from "../diffRange";
 import {
@@ -131,6 +132,16 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
     // Above Git: a colocated jj repository carries a `.git` directory too, and
     // reviewing it as plain Git would show the wrong working copy.
     detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 200,
+    history: {
+      open(input, { cwd }) {
+        return openJjHistory(input, { cwd, jjExecutable });
+      },
+      // JJ's single-revision diff compares ordinary commits with their parent,
+      // merges with their merged-parent tree, and first commits with the root.
+      planReview(commit) {
+        return { kind: "revision-show" as const, revisionId: commit.revisionId };
+      },
+    },
     operations: {
       "working-tree-diff": {
         async load(input, { cwd }) {

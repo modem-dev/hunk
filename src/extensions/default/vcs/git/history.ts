@@ -11,6 +11,9 @@ import {
 const HISTORY_FIELDS_PER_COMMIT = 8;
 const FULL_OBJECT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const ABBREVIATED_OBJECT_ID_PATTERN = /^[0-9a-f]{4,64}$/;
+const MAX_SYNC_OUTPUT_BYTES = 8 * 1024 * 1024;
+const MAX_DECORATION_REFS = 10_000;
+const MAX_HISTORY_STDERR_BYTES = 16 * 1024;
 
 interface GitHistoryOptions {
   cwd: string;
@@ -30,6 +33,7 @@ function runGit(
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      maxBuffer: MAX_SYNC_OUTPUT_BYTES,
       env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
     });
   } catch {
@@ -87,6 +91,7 @@ function readDecorations(options: GitHistoryOptions) {
   const raw = runGit(
     [
       "for-each-ref",
+      `--count=${MAX_DECORATION_REFS + 1}`,
       "--format=%(objectname)%00%(objecttype)%00%(refname)%00%(*objectname)%00",
       "refs/heads",
       "refs/remotes",
@@ -94,8 +99,14 @@ function readDecorations(options: GitHistoryOptions) {
     ],
     options,
   );
-  for (const record of raw.split("\n")) {
-    if (!record) continue;
+  const records = raw.split("\n").filter(Boolean);
+  if (records.length > MAX_DECORATION_REFS) {
+    throw new HunkExtensionUserError(
+      `Git history has more than ${MAX_DECORATION_REFS.toLocaleString("en-US")} decorated refs.`,
+      { suggestions: ["Reduce repository refs before running `hunk log`."] },
+    );
+  }
+  for (const record of records) {
     const [objectId, objectType, refName, peeledId] = record.split("\0");
     if (!objectId || !objectType || !refName) continue;
     const revisionId = objectType === "tag" && peeledId ? peeledId : objectId;
@@ -165,6 +176,7 @@ export function parseGitHistory(
   text: string,
   decorations: ReadonlyMap<string, ExtensionVcsHistoryDecoration[]> = new Map(),
   firstParent = false,
+  omitGraphParents = false,
 ): ExtensionVcsHistoryCommit[] {
   if (!text) return [];
   const fields = text.split("\0");
@@ -199,6 +211,7 @@ export function parseGitHistory(
       revisionId,
       displayId,
       parentRevisionIds,
+      ...(omitGraphParents ? { graphParentRevisionIds: [] } : {}),
       subject: subject || "(no commit message)",
       ...(body ? { body } : {}),
       authorName: authorName || "Unknown author",
@@ -210,6 +223,17 @@ export function parseGitHistory(
   return commits;
 }
 
+/** Return whether traversal filters can omit direct parents from the emitted commit stream. */
+export function gitHistoryUsesBoundaryTopology(input: ExtensionVcsHistoryInput) {
+  return Boolean(
+    input.author !== undefined ||
+    input.grep !== undefined ||
+    input.since !== undefined ||
+    input.until !== undefined ||
+    input.pathspecs?.length,
+  );
+}
+
 /** Open a cancellable streaming history cursor over one long-lived Git process. */
 export function openGitHistory(
   input: ExtensionVcsHistoryInput,
@@ -217,7 +241,6 @@ export function openGitHistory(
 ): ExtensionVcsHistorySource & { repoRoot: string } {
   const repoRoot = resolveHistoryRepoRoot({ cwd, gitExecutable });
   const queryOptions = { cwd: repoRoot, gitExecutable };
-  const decorations = readDecorations(queryOptions);
   const empty = input.maxCount === 0 || (!input.revision && !input.all && !hasHead(queryOptions));
   if (empty) {
     return {
@@ -228,6 +251,9 @@ export function openGitHistory(
       close() {},
     };
   }
+
+  const decorations = readDecorations(queryOptions);
+  const omitGraphParents = gitHistoryUsesBoundaryTopology(input);
 
   let child: ReturnType<typeof spawn>;
   try {
@@ -265,7 +291,14 @@ export function openGitHistory(
       fields.push(buffered.slice(0, delimiter));
       buffered = buffered.slice(delimiter + 1);
       if (fields.length === HISTORY_FIELDS_PER_COMMIT) {
-        queue.push(...parseGitHistory(`${fields.join("\0")}\0`, decorations, input.firstParent));
+        queue.push(
+          ...parseGitHistory(
+            `${fields.join("\0")}\0`,
+            decorations,
+            input.firstParent,
+            omitGraphParents,
+          ),
+        );
         fields.length = 0;
       }
     }
@@ -278,7 +311,9 @@ export function openGitHistory(
   });
   child.stderr!.setEncoding("utf8");
   child.stderr!.on("data", (chunk: string) => {
-    stderr += chunk;
+    if (stderr.length < MAX_HISTORY_STDERR_BYTES) {
+      stderr += chunk.slice(0, MAX_HISTORY_STDERR_BYTES - stderr.length);
+    }
   });
   child.once("error", (error) => {
     failure = error;
