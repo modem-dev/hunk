@@ -64,6 +64,12 @@ describe("review event names and ids", () => {
       type: "publication",
       address: ADDRESS,
     });
+
+    const maximumAddress = { ...ADDRESS, stateRevision: Number.MAX_SAFE_INTEGER };
+    expect(parseReviewEventId(reviewEventId("publication", maximumAddress))).toEqual({
+      type: "publication",
+      address: maximumAddress,
+    });
   });
 
   // A client echoes `Last-Event-ID` back at the server, so the parser is the boundary an
@@ -74,6 +80,9 @@ describe("review event names and ids", () => {
     expect(parseReviewEventId("generation:test:3@1")).toBeUndefined();
     expect(
       parseReviewEventId(`revent:publication:generation:test:3@${"9".repeat(40)}`),
+    ).toBeUndefined();
+    expect(
+      parseReviewEventId("revent:publication:generation:test:3@9007199254740992"),
     ).toBeUndefined();
     expect(parseReviewEventId(42)).toBeUndefined();
   });
