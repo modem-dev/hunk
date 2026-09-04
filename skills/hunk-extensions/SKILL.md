@@ -163,8 +163,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed), and
   `ctx.workspace` (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
 - **Pane components** get frozen `files`, selection, placement, exact dimensions,
-  optional `currentLine` paint (with `{ side, line }` when opted in), semantic `theme`, resolved `keybindings`, and
-  guarded navigation/notification `actions`.
+  nullable immutable delegated-source `review` metadata, optional `currentLine` paint
+  (with `{ side, line }` when opted in), semantic `theme`, resolved `keybindings`, and
+  guarded navigation/notification `actions`. Availability callbacks receive the same
+  `review` value, so a pane can consume no geometry for ordinary reviews.
 - **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
   `readDocument(side)`.
 - **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey`,

@@ -4,6 +4,7 @@ import { act, StrictMode, useLayoutEffect, useState } from "react";
 import type {
   ExtensionPaneAvailabilityContext,
   ExtensionPanePlacement,
+  ExtensionReviewDescriptor,
   ExtensionPaneSize,
 } from "../../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../../extensions/extensionIds";
@@ -88,6 +89,7 @@ async function renderController({
   let setExtensions!: (value: ReturnType<typeof createEmptyExtensionLoadResult>) => void;
   let setCurrentLineCursor!: (value: { fileId: string; stableKey: string } | null) => void;
   let setResponsiveShowsSidebar!: (value: boolean) => void;
+  let setReview!: (value: ExtensionReviewDescriptor | null) => void;
   let setSelectedFileId!: (value: string | null) => void;
   let setSize!: (value: { width: number; height: number }) => void;
   const committedFreshOpen: boolean[] = [];
@@ -105,15 +107,22 @@ async function renderController({
       fileId: string;
       stableKey: string;
     } | null>(null);
+    const [review, updateReview] = useState<ExtensionReviewDescriptor | null>(null);
     const [selectedFileId, updateSelectedFileId] = useState<string | null>(null);
     const [size, updateSize] = useState({ width: initialWidth, height: initialHeight });
     setCurrentLineCursor = updateCurrentLineCursor;
     setExtensions = updateExtensions;
     setResponsiveShowsSidebar = updateResponsiveShowsSidebar;
+    setReview = updateReview;
     setSelectedFileId = updateSelectedFileId;
     setSize = updateSize;
     controller = useExtensionPaneController({
-      availabilityContext: { files: emptyFiles, selectedFileId, selectedHunkIndex: null },
+      availabilityContext: {
+        review,
+        files: emptyFiles,
+        selectedFileId,
+        selectedHunkIndex: null,
+      },
       bodyHeight: size.height,
       bodyWidth: size.width,
       canForceShowSidebar: size.width >= 71,
@@ -163,6 +172,7 @@ async function renderController({
     setCurrentLineCursor,
     setExtensions,
     setResponsiveShowsSidebar,
+    setReview,
     setSelectedFileId,
     setSize,
     settle,
@@ -208,6 +218,48 @@ describe("useExtensionPaneController", () => {
       expect(
         harness.current().paneLayout.panes.some(({ pane }) => pane.key === "meta:detail"),
       ).toBeTrue();
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  test("re-probes availability when only delegated review metadata changes", async () => {
+    let calls = 0;
+    const pane = registeredPane("meta", "review", {
+      placement: "top",
+      height: { preferred: 2, min: 2, max: 2 },
+      defaultOpen: true,
+      available: ({ review }) => {
+        calls += 1;
+        return review?.kind === "change-request";
+      },
+    });
+    const harness = await renderController({ extensions: loadResultWith([pane]) });
+    const descriptor: ExtensionReviewDescriptor = {
+      kind: "change-request",
+      provider: "GitHub",
+      title: "Review metadata",
+      id: "#123",
+    };
+    try {
+      expect(calls).toBe(1);
+      expect(
+        harness.current().paneLayout.panes.some(({ pane }) => pane.key === "meta:review"),
+      ).toBeFalse();
+
+      await act(async () => harness.setReview(descriptor));
+      await harness.settle();
+      expect(calls).toBe(2);
+      expect(
+        harness.current().paneLayout.panes.some(({ pane }) => pane.key === "meta:review"),
+      ).toBeTrue();
+
+      await act(async () => harness.setReview(null));
+      await harness.settle();
+      expect(calls).toBe(3);
+      expect(
+        harness.current().paneLayout.panes.some(({ pane }) => pane.key === "meta:review"),
+      ).toBeFalse();
     } finally {
       await destroy(harness.setup);
     }

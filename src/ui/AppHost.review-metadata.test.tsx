@@ -80,9 +80,13 @@ async function createTestBootstrap({ watch = false }: { watch?: boolean } = {}) 
   bootstrap.review = Object.freeze({
     kind: "change-request",
     provider: "GitHub",
-    title: "PR #123 · Metadata",
+    title: "Metadata pane",
     id: "#123",
-    head: "abc123",
+    repository: "modem-dev/hunk",
+    author: "octocat",
+    base: "main",
+    head: "feature/review-info",
+    state: "open",
   });
   return { bootstrap, directory, firstPatch, secondPatch };
 }
@@ -104,6 +108,39 @@ async function flushUntil(
 }
 
 describe("delegated review metadata reloads", () => {
+  test("the bundled review pane occupies exactly two rows only for delegated change requests", async () => {
+    const delegated = await createTestBootstrap();
+    const ordinary = await createTestBootstrap();
+    delete ordinary.bootstrap.review;
+
+    const renderFrame = async (bootstrap: AppBootstrap) => {
+      let committed = false;
+      const setup = await testRender(
+        <AppHost bootstrap={bootstrap} onActiveBootstrapChange={() => (committed = true)} />,
+        { width: 100, height: 12 },
+      );
+      try {
+        await flushUntil(setup, () => committed, "the review to mount");
+        return setup.captureCharFrame();
+      } finally {
+        await act(async () => setup.renderer.destroy());
+      }
+    };
+
+    try {
+      const delegatedFrame = await renderFrame(delegated.bootstrap);
+      const ordinaryFrame = await renderFrame(ordinary.bootstrap);
+      const firstFileRow = (frame: string) =>
+        frame.split("\n").findIndex((line) => line.includes("example.txt"));
+      expect(delegatedFrame).toContain("OPEN · #123 · Metadata pane");
+      expect(ordinaryFrame).not.toContain("OPEN · #123 · Metadata pane");
+      expect(firstFileRow(delegatedFrame)).toBe(firstFileRow(ordinaryFrame) + 2);
+    } finally {
+      rmSync(delegated.directory, { recursive: true, force: true });
+      rmSync(ordinary.directory, { recursive: true, force: true });
+    }
+  });
+
   test("manual refresh preserves the same patch metadata and unrelated reloads clear it durably", async () => {
     const fixture = await createTestBootstrap();
     const committed: AppBootstrap[] = [];
@@ -119,6 +156,12 @@ describe("delegated review metadata reloads", () => {
 
     try {
       await flushUntil(setup, () => committed.length === 1, "the delegated review to mount");
+      const initialFrame = setup.captureCharFrame();
+      expect(initialFrame).toContain("OPEN · #123 · Metadata pane");
+      expect(initialFrame).toContain(
+        "octocat · GitHub · modem-dev/hunk · main ← feature/review-info",
+      );
+      expect(initialFrame.indexOf("OPEN · #123")).toBeLessThan(initialFrame.indexOf("example.txt"));
 
       writeTestPatch(fixture.firstPatch, "manually refreshed");
       await act(async () => setup.mockInput.typeText("r"));

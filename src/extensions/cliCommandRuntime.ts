@@ -188,6 +188,7 @@ const REVIEW_DESCRIPTOR_FIELD_LIMITS = Object.freeze({
   title: 2 * 1024,
   url: 2 * 1024,
   id: 256,
+  repository: 512,
   author: 512,
   base: 512,
   head: 512,
@@ -236,6 +237,20 @@ function copyOptionalDescriptorFields(
   return copied;
 }
 
+/** Validate optional provider change-request state. */
+function validateChangeRequestState(value: unknown): "open" | "closed" | "merged" | undefined {
+  if (value === undefined || value === "open" || value === "closed" || value === "merged") {
+    return value;
+  }
+  throw new Error('delegate review state must be "open", "closed", or "merged"');
+}
+
+/** Validate an optional boolean descriptor field. */
+function validateOptionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined || typeof value === "boolean") return value;
+  throw new Error(`delegate review ${field} must be a boolean`);
+}
+
 /** Validate, copy, and deeply freeze provider-neutral delegated review metadata. */
 function validateReviewDescriptor(value: unknown): ExtensionReviewDescriptor {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -257,7 +272,7 @@ function validateReviewDescriptor(value: unknown): ExtensionReviewDescriptor {
   const common = ["kind", "provider", "title", "url"];
   const kindFields =
     kind === "change-request"
-      ? ["id", "author", "base", "head"]
+      ? ["id", "repository", "author", "base", "head", "state", "draft"]
       : kind === "commit"
         ? ["revision", "author"]
         : ["base", "head"];
@@ -284,13 +299,17 @@ function validateReviewDescriptor(value: unknown): ExtensionReviewDescriptor {
 
   let descriptor: ExtensionReviewDescriptor;
   if (kind === "change-request") {
+    const state = validateChangeRequestState(candidate.state);
+    const draft = validateOptionalBoolean(candidate.draft, "draft");
     descriptor = {
       kind,
       provider,
       title,
       ...(url === undefined ? {} : { url }),
       id: validateDescriptorString(candidate, "id", true)!,
-      ...copyOptionalDescriptorFields(candidate, ["author", "base", "head"]),
+      ...copyOptionalDescriptorFields(candidate, ["repository", "author", "base", "head"]),
+      ...(state === undefined ? {} : { state }),
+      ...(draft === undefined ? {} : { draft }),
     };
   } else if (kind === "commit") {
     descriptor = {

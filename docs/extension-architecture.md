@@ -20,11 +20,11 @@ object and registry collection (`src/extensions/runExtension.ts`):
   by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
   before config resolution, so backends exist without making core import the
   extension host. `default/ui/index.ts` is deliberately not part of that list:
-  it synchronously loads the bundled files pane through `runExtensionFactory`
-  only where the app resolves UI panes.
+  it synchronously loads the bundled files and delegated review-info panes through
+  `runExtensionFactory` only where the app resolves UI panes.
 
-Git and the built-in file navigation use the public `registerVcsAdapter` and
-`registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
+Git, built-in file navigation, and delegated change-request identity use the public
+`registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
 extension exercises current-line pane paint through that same public contract.
 
 Bundled extensions are implicitly trusted and stay loaded under
@@ -95,8 +95,10 @@ stream coordinates. Pane registrations may opt into a body-axis `fraction`;
 the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
-`src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions and
-failure containment. `DiffPane` exposes optional current-line paint — the row
+`src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
+immutable delegated review metadata, and failure containment. The fixed two-row
+`hunk:review-info` top pane is available only for delegated change requests, so
+ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
 painter plus the public `{ side, line }` address — without publishing Pierre
 rows, plans, cursor keys, or caches. Deprecated sidebar APIs
 normalize into this same registry and layout path.

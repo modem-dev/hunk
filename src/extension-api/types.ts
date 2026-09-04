@@ -1144,6 +1144,8 @@ export interface ExtensionCurrentLinePaint {
 /** Immutable state used to decide whether an open pane is meaningful this frame. */
 export interface ExtensionPaneAvailabilityContext {
   readonly placement: ExtensionPanePlacement;
+  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1152,6 +1154,8 @@ export interface ExtensionPaneAvailabilityContext {
 
 /** Everything a custom pane component receives, refreshed as the app changes. */
 export interface ExtensionPaneProps {
+  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1294,9 +1298,13 @@ export interface ExtensionChangeRequestReviewDescriptor extends ExtensionReviewD
   readonly kind: "change-request";
   /** Provider-local identifier, such as `#123`. */
   readonly id: string;
+  /** Provider repository slug, such as `owner/repo`. */
+  readonly repository?: string;
   readonly author?: string;
   readonly base?: string;
   readonly head?: string;
+  readonly state?: "open" | "closed" | "merged";
+  readonly draft?: boolean;
 }
 
 /** Metadata for one reviewed commit. */

@@ -266,9 +266,12 @@ describe("extension CLI command runtime", () => {
       title: "Add review metadata",
       url: "https://github.com/modem-dev/hunk/pull/123",
       id: "#123",
+      repository: "modem-dev/hunk",
       author: "octocat",
       base: "main",
       head: "metadata",
+      state: "open" as const,
+      draft: false,
     };
     const execution = await runExtensionCliCommand({
       extensionId: "tools",
@@ -323,6 +326,11 @@ describe("extension CLI command runtime", () => {
       "credential-free HTTPS URL",
     );
     await expect(execute({ ...valid, title: "x".repeat(2049) })).rejects.toThrow("byte limit");
+    const request = { kind: "change-request", provider: "GitHub", title: "PR", id: "#1" };
+    await expect(execute({ ...request, state: "pending" })).rejects.toThrow(
+      'state must be "open", "closed", or "merged"',
+    );
+    await expect(execute({ ...request, draft: "yes" })).rejects.toThrow("draft must be a boolean");
     await expect(
       execute({
         kind: "change-request",

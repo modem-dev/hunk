@@ -77,6 +77,7 @@ class ExtensionPaneErrorBoundary extends Component<
 
 export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
+  review?: ExtensionPaneProps["review"];
   files: DiffFile[];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
@@ -98,6 +99,7 @@ export interface ExtensionPaneHostProps {
 /** Mount a public pane component inside the exact rectangle planned by the host. */
 function ExtensionPaneHostView({
   registered,
+  review = null,
   files,
   fileViews,
   selectedFileId,
@@ -143,6 +145,7 @@ function ExtensionPaneHostView({
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {
+    review,
     files: fileViews,
     selectedFileId,
     selectedHunkIndex,
@@ -209,6 +212,7 @@ export const ExtensionPaneHost = memo(
   ExtensionPaneHostView,
   (previous, next) =>
     previous.registered === next.registered &&
+    previous.review === next.review &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
     previous.selectedFileId === next.selectedFileId &&

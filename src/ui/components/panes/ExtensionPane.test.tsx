@@ -62,6 +62,45 @@ async function withPane(
   }
 }
 
+describe("ExtensionPaneHost props", () => {
+  test("passes the immutable delegated review descriptor to the component", async () => {
+    const files = createTestFiles();
+    const review = Object.freeze({
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Metadata",
+      id: "#1",
+    });
+    let received: ExtensionPaneProps["review"] | undefined;
+    await withPane(
+      <ExtensionPaneHost
+        registered={registeredView((props) => {
+          received = props.review;
+          return <text content="probe" />;
+        })}
+        review={review}
+        files={files}
+        fileViews={toReadOnlyFileViews(files)}
+        selectedFileId={null}
+        selectedHunkIndex={null}
+        theme={resolveTheme("github-dark-default", null)}
+        width={30}
+        height={10}
+        placement="top"
+        currentLine={null}
+        keybindings={TEST_KEYBINDINGS}
+        notify={() => {}}
+        onSelectFile={() => {}}
+        onSelectHunk={() => {}}
+        onRevealLine={() => "line"}
+      />,
+      async () => {
+        expect(received).toBe(review);
+      },
+    );
+  });
+});
+
 describe("ExtensionPaneHost actions", () => {
   test("refuses garbage hunk indices and clamps the rest into the file's range", async () => {
     const files = createTestFiles();

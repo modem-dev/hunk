@@ -455,6 +455,7 @@ export function App({
     updatePaneResize,
   } = useExtensionPaneController({
     availabilityContext: {
+      review: bootstrap.review ?? null,
       files: getRenderExtensionFileViews(),
       selectedFileId,
       selectedHunkIndex,
@@ -1192,6 +1193,7 @@ export function App({
       >
         <ExtensionPaneHost
           registered={pane.registered}
+          review={bootstrap.review ?? null}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}

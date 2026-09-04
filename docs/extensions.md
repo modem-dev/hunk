@@ -282,7 +282,7 @@ new instances and run that shutdown/startup pair around the replacement.
 
 The API generation this Hunk speaks (currently `17`). Branch on it if you want
 one file to support several Hunk versions. Version 17 adds structured review metadata to delegated
-patch commands; version 16 adds pane-wide
+patch commands and projects it into pane availability and component props; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
 to two-revision VCS diff requests; version 13 added saved-note parent identities and
@@ -322,9 +322,12 @@ hunk.registerCliCommand(
         title: "Add structured review metadata",
         url: "https://github.com/acme/project/pull/123",
         id: "#123",
+        repository: "acme/project",
         author: "octocat",
         base: "main",
         head: "review-metadata",
+        state: "open",
+        draft: false,
       },
     };
   },
@@ -343,7 +346,8 @@ A delegated built-in `patch` command may include a provider-neutral `review` des
 strings with an optional credential-free HTTPS URL. Hunk rejects unknown fields, control
 characters, invalid types, unsafe URLs, fields over their byte limits, and descriptors over 4 KiB,
 then copies and freezes the accepted value. `provider` and change-request `id` allow 256 bytes;
-`author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB. Exit results and delegation to any built-in other than
+`repository`, `author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB.
+Change requests may also carry `state` (`open`, `closed`, or `merged`) and boolean `draft`. Exit results and delegation to any built-in other than
 `patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
 
 The descriptor describes the review source rather than its diff contents: it stays on the app
@@ -773,6 +777,12 @@ hide it conditionally. One pane may replace each named target; the first
 registration owns that slot and later claims are skipped with a warning.
 `replaces` may also name another pane by its fully qualified
 `"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+Both `available(context)` and the mounted component receive `review`: immutable
+metadata supplied by a delegated patch command, or `null` for ordinary reviews.
+The bundled `hunk:review-info` top pane uses this to show change-request identity
+without taking any rows when no change-request descriptor exists. Pane extensions that read
+`review` should declare `"hunk": { "apiVersion": 17 }` in their manifest so older Hunk versions
+refuse them cleanly instead of mounting with an incomplete prop contract.
 
 `onActivate()` observes a primary mouse press anywhere in the pane's content,
 including content nested in a `<scrollbox>`. Use it to focus an extension-owned
@@ -808,6 +818,7 @@ The component receives fresh props as the app changes:
 
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review`            | immutable delegated review metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                         |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |

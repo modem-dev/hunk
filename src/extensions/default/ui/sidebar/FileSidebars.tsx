@@ -17,8 +17,11 @@ import {
   FileListItem,
 } from "../../../../ui/components/panes/FileListItem";
 
-export type BuiltInSidebarProps = Omit<ExtensionPaneProps, "placement" | "height" | "currentLine"> &
-  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine">>;
+export type BuiltInSidebarProps = Omit<
+  ExtensionPaneProps,
+  "placement" | "height" | "currentLine" | "review"
+> &
+  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
 
 type FileSidebarVariantProps = Pick<
   BuiltInSidebarProps,

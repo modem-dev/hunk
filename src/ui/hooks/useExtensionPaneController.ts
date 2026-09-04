@@ -354,6 +354,7 @@ export function useExtensionPaneController({
         : {}),
     }),
     [
+      availabilityContext.review,
       availabilityContext.files,
       availabilityContext.selectedFileId,
       availabilityContext.selectedHunkIndex,

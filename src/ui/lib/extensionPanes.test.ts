@@ -50,8 +50,8 @@ function loadResultWith(panes: RegisteredPane[]) {
 describe("extension panes", () => {
   test("offers the bundled files pane before user panes", () => {
     const panes = buildSessionPanes(undefined);
-    expect(panes.map((pane) => pane.key)).toEqual([HUNK_FILES_PANE_KEY]);
-    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true]);
+    expect(panes.map((pane) => pane.key)).toEqual([HUNK_FILES_PANE_KEY, "hunk:review-info"]);
+    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true, true]);
   });
 
   test("a replacement changes only the initial bundled files default", () => {
@@ -60,6 +60,7 @@ describe("extension panes", () => {
     );
     expect(panes.map((pane) => [pane.key, pane.defaultOpen])).toEqual([
       [HUNK_FILES_PANE_KEY, false],
+      ["hunk:review-info", true],
       ["meta:files", true],
     ]);
   });
@@ -141,6 +142,37 @@ describe("extension panes", () => {
     expect(resolvePaneKey(panes, "other", "meta:extra")).toBe("meta:extra");
   });
 
+  test("anchors delegated review info above the review and beside the files pane", () => {
+    const panes = buildSessionPanes(undefined);
+    const probe = probeExtensionPaneAvailability({
+      panes,
+      context: {
+        review: { kind: "change-request", provider: "GitHub", title: "Title", id: "#1" },
+        files: [],
+        selectedFileId: null,
+        selectedHunkIndex: null,
+      },
+      currentLine: null,
+    });
+    const layout = planExtensionPanes({
+      panes,
+      openKeys: panes
+        .filter((pane) => probe.available.has(pane.registered))
+        .map((pane) => pane.key),
+      sizes: {},
+      bodyWidth: 240,
+      bodyHeight: 30,
+      minReviewWidth: 40,
+      minReviewHeight: 5,
+    });
+    const files = layout.panes.find((pane) => pane.pane.key === HUNK_FILES_PANE_KEY)!;
+    const info = layout.panes.find((pane) => pane.pane.key === "hunk:review-info")!;
+    expect(files.bounds).toEqual({ x: 0, y: 0, width: 38, height: 30 });
+    expect(info.bounds).toEqual({ x: 39, y: 0, width: 201, height: 2 });
+    expect(info.divider).toBeUndefined();
+    expect(layout.reviewBounds).toEqual({ x: 39, y: 2, width: 201, height: 28 });
+  });
+
   test("plans all four edges around one review rectangle", () => {
     const session = (
       key: string,
@@ -195,7 +227,12 @@ describe("extension panes", () => {
       },
     });
     const panes = buildSessionPanes(loadResultWith([registered]));
-    const context = { files: [], selectedFileId: null, selectedHunkIndex: null } as const;
+    const context = {
+      review: null,
+      files: [],
+      selectedFileId: null,
+      selectedHunkIndex: null,
+    } as const;
     const geometry = {
       panes,
       sizes: {},
@@ -227,6 +264,30 @@ describe("extension panes", () => {
     expect(availabilityCalls).toBe(callsBeforePending);
   });
 
+  test("passes delegated review metadata into pane availability", () => {
+    const review = Object.freeze({
+      kind: "change-request" as const,
+      provider: "GitHub",
+      title: "Metadata",
+      id: "#1",
+    });
+    let received: unknown;
+    const registered = registeredPane("a", "review", {
+      available: (context) => {
+        received = context.review;
+        return context.review?.kind === "change-request";
+      },
+    });
+    const panes = buildSessionPanes(loadResultWith([registered]));
+    const probe = probeExtensionPaneAvailability({
+      panes,
+      context: { review, files: [], selectedFileId: null, selectedHunkIndex: null },
+      currentLine: null,
+    });
+    expect(received).toBe(review);
+    expect(probe.available.has(registered)).toBeTrue();
+  });
+
   test("does not retain a same-key replacement by stale registration identity", () => {
     const previous = registeredPane("a", "detail", {
       currentLine: true,
@@ -243,7 +304,7 @@ describe("extension panes", () => {
     const panes = buildSessionPanes(loadResultWith([replacement]));
     const probe = probeExtensionPaneAvailability({
       panes,
-      context: { files: [], selectedFileId: null, selectedHunkIndex: null },
+      context: { review: null, files: [], selectedFileId: null, selectedHunkIndex: null },
       currentLine: null,
       retainCurrentLineRegistrations: new Set([previous]),
     });
@@ -264,7 +325,7 @@ describe("extension panes", () => {
     const panes = buildSessionPanes(loadResultWith([throwing, asyncPane]));
     const probe = probeExtensionPaneAvailability({
       panes,
-      context: { files: [], selectedFileId: null, selectedHunkIndex: null },
+      context: { review: null, files: [], selectedFileId: null, selectedHunkIndex: null },
       currentLine: null,
     });
 

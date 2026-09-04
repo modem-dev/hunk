@@ -9,7 +9,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 The API generation this Hunk speaks (currently `17`). Branch on it if you want
 one file to support several Hunk versions. Version 17 adds structured review metadata to delegated
-patch commands; version 16 adds pane-wide
+patch commands and projects it into pane availability and component props; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
@@ -47,9 +47,12 @@ hunk.registerCliCommand(
         title: "Add structured review metadata",
         url: "https://github.com/acme/project/pull/123",
         id: "#123",
+        repository: "acme/project",
         author: "octocat",
         base: "main",
         head: "review-metadata",
+        state: "open",
+        draft: false,
       },
     };
   },
@@ -62,8 +65,9 @@ services, processes, and files. Return a validated exit status or delegate once
 to a built-in Hunk command. A delegated `patch` command may also carry a provider-neutral
 `review` descriptor whose exact shape is `change-request`, `commit`, or `comparison`. Hunk bounds
 all strings and the 4 KiB payload, rejects control characters, unknown fields, and unsafe URLs,
-then copies and freezes it. `provider` and change-request `id` allow 256 bytes; `author`, `base`,
-`head`, and `revision` allow 512; `title` and `url` allow 2 KiB. The descriptor remains app-bootstrap metadata rather than entering
+then copies and freezes it. `provider` and change-request `id` allow 256 bytes; `repository`,
+`author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB. Change requests
+may also carry `state` (`open`, `closed`, or `merged`) and boolean `draft`. The descriptor remains app-bootstrap metadata rather than entering
 changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
 reloads clear it. Exit results and non-`patch` delegation cannot carry one.
 
@@ -154,7 +158,7 @@ Full contract: [VCS adapters](/docs/extend/vcs-adapters/).
 
 ## `hunk.registerPane(pane)`
 
-Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `registerSidebarView` remains a deprecated alias.
+Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `props.review` and `available(context).review` expose immutable metadata supplied by a delegated patch command, or `null` for ordinary reviews. `registerSidebarView` remains a deprecated alias.
 
 Full contract: [Custom panes](/docs/extend/custom-sidebars/).
 
