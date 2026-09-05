@@ -161,6 +161,19 @@ function applyDelegatedExtensionFlags(
   } as ParsedCliInput;
 }
 
+/** Choose the history surface from terminal ownership unless static output was forced. */
+export function shouldUseInteractiveHistory({
+  forceStatic,
+  stdinIsTTY,
+  stdoutIsTTY,
+}: {
+  forceStatic: boolean;
+  stdinIsTTY: boolean;
+  stdoutIsTTY: boolean;
+}) {
+  return !forceStatic && stdinIsTTY && stdoutIsTTY;
+}
+
 /** Normalize startup work so help, pager, and app-bootstrap paths can be tested directly. */
 export async function prepareStartupPlan(
   argv: string[] = process.argv,
@@ -399,8 +412,13 @@ export async function prepareStartupPlan(
     // The runner owns source/extension retirement; unlike ordinary headless plans, history must
     // retain its provider cursor until every page has been consumed.
     preloadedExtensions = undefined;
+    const useInteractiveHistory = shouldUseInteractiveHistory({
+      forceStatic: parsedCliInput.static,
+      stdinIsTTY,
+      stdoutIsTTY,
+    });
     return {
-      kind: parsedCliInput.interactive ? "history-interactive" : "history-static",
+      kind: useInteractiveHistory ? "history-interactive" : "history-static",
       bootstrap,
       input: parsedCliInput,
     };

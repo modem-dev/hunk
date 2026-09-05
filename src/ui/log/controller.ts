@@ -5,7 +5,6 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { HistoryRuntime } from "../history/types";
 
 export interface LogPresentation {
-  format: "compact" | "medium";
   graph: boolean;
   unicode: boolean;
   author: boolean;
@@ -54,7 +53,6 @@ export class LogController {
       notice: runtime.notices[0] ?? "",
       themeId: runtime.input.theme,
       presentation: {
-        format: runtime.input.format,
         graph: true,
         unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
         author: true,
@@ -244,14 +242,10 @@ export class LogController {
     this.publish({ themeId });
   }
 
-  togglePresentation(key: keyof Omit<LogPresentation, "format">) {
+  togglePresentation(key: keyof LogPresentation) {
     this.publish({
       presentation: { ...this.snapshot.presentation, [key]: !this.snapshot.presentation[key] },
     });
-  }
-
-  setFormat(format: LogPresentation["format"]) {
-    this.publish({ presentation: { ...this.snapshot.presentation, format } });
   }
 
   /** Refresh the provider cursor while reconciling selection by immutable revision id. */

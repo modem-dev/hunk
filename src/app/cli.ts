@@ -207,10 +207,11 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "log",
     // Release preparation enables this when an installable build contains history browsing.
     publicDocs: false,
-    summary: "print an attractive repository history",
+    summary: "browse an attractive repository history",
     synopsis: ["hunk log [revision-expression] [-- <pathspec...>]"],
     details: [
-      "Static output is the default. Use --interactive for the experimental history browser.",
+      "A terminal opens the responsive browser; pipes and redirects receive static output.",
+      "Use --static to force static output, paging when it exceeds the terminal.",
       "The selected VCS provider defines revision, filtering, and review semantics.",
     ],
     options: [
@@ -232,13 +233,13 @@ export const CLI_REFERENCE_COMMANDS = {
       },
       {
         flag: "--format <format>",
-        description: "record format: medium or compact",
+        description: "static record format: medium or compact",
         commanderDefault: "medium",
       },
-      { flag: "--oneline", description: "alias for --format compact" },
+      { flag: "--oneline", description: "alias for static --format compact" },
       { flag: "--theme <id>", description: "use the same theme as Hunk review" },
       { flag: "--ascii", description: "use an ASCII graph" },
-      { flag: "--interactive", description: "browse history and open commits in Hunk" },
+      { flag: "--static", description: "print static output, paging when needed" },
       { flag: "--vcs <id>", description: "select a VCS history provider" },
       {
         flag: "--extension <path>",
@@ -576,7 +577,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
-    "  hunk log [target] [-- <pathspec...>]    print an attractive repository history",
+    "  hunk log [target] [-- <pathspec...>]    browse an attractive repository history",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
@@ -1003,13 +1004,16 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
   };
 }
 
-/** Parse the deliberately small static-first `hunk log` grammar. */
+/** Parse the deliberately small auto-responsive `hunk log` grammar. */
 async function parseHistoryCommand(
   tokens: string[],
   extensionsEnabled: boolean,
 ): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCliReferenceCommand("log").argument("[revision]");
+  const command = createCliReferenceCommand("log")
+    .argument("[revision]")
+    // Accept the former opt-in spelling during migration without presenting two experiences.
+    .addOption(new Option("--interactive").hideHelp());
   let revision: string | undefined;
   let options: Record<string, unknown> = {};
 
@@ -1052,7 +1056,7 @@ async function parseHistoryCommand(
     color,
     format,
     ascii: Boolean(options.ascii),
-    interactive: Boolean(options.interactive),
+    static: Boolean(options.static),
     ...(typeof options.theme === "string" ? { theme: options.theme } : {}),
     ...(typeof options.vcs === "string" ? { vcs: options.vcs } : {}),
     extensionsEnabled: extensionsEnabled && options.extensions !== false,

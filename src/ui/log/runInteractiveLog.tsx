@@ -109,8 +109,8 @@ export async function runInteractiveLog(
 ) {
   if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== "function") {
     await runtime.close();
-    throw new HunkUserError("`hunk log --interactive` requires a terminal.", [
-      "Use plain `hunk log` for pipes and redirected output.",
+    throw new HunkUserError("The `hunk log` browser requires a terminal.", [
+      "Use `hunk log --static` to force scrollback output.",
     ]);
   }
 

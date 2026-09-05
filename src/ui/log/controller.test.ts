@@ -31,7 +31,7 @@ function createRuntime(subjects = ["first", "second", "third"]) {
       color: "never",
       format: "compact",
       ascii: false,
-      interactive: true,
+      static: false,
       extensionsEnabled: false,
       extensionPaths: [],
     },
@@ -93,11 +93,9 @@ describe("LogController", () => {
     }
   });
 
-  test("initializes format from CLI input and loads enough pages for navigation", async () => {
+  test("loads enough bounded pages for responsive navigation", async () => {
     const { runtime } = createRuntime(["one", "two", "three", "four", "five"]);
-    runtime.input.format = "medium";
     const controller = new LogController(runtime);
-    expect(controller.getSnapshot().presentation.format).toBe("medium");
     await controller.loadMore();
     await controller.page(1, 4);
     expect(controller.getSnapshot().selected).toBe(4);

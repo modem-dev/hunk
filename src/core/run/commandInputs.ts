@@ -113,7 +113,7 @@ export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 export type HistoryColorMode = "auto" | "always" | "never";
 export type HistoryFormat = "medium" | "compact";
 
-/** Static-first VCS history invocation, deliberately separate from review view options. */
+/** Auto-responsive VCS history invocation, deliberately separate from review view options. */
 export interface HistoryCommandInput {
   kind: "history";
   revision?: string;
@@ -128,7 +128,8 @@ export interface HistoryCommandInput {
   color: HistoryColorMode;
   format: HistoryFormat;
   ascii: boolean;
-  interactive: boolean;
+  /** Force scrollback output even when stdin and stdout are terminals. */
+  static: boolean;
   theme?: string;
   vcs?: string;
   extensionsEnabled: boolean;
