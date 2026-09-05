@@ -87,6 +87,28 @@ describe("parseKeyChord", () => {
     expect(parseKeyChord("")).toHaveProperty("error");
   });
 
+  test("refuses chords with an empty segment around +", () => {
+    expect(parseKeyChord("s+")).toHaveProperty("error");
+    expect(parseKeyChord("+s")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl++s")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl+s+")).toHaveProperty("error");
+  });
+
+  test("keeps the literal plus key valid, with or without surrounding whitespace", () => {
+    expect(parsed("+")).toEqual({
+      base: "+",
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+    });
+    expect(parsed(" + ")).toEqual(parsed("+"));
+  });
+
+  test("tolerates whitespace around otherwise valid chord components", () => {
+    expect(parsed("ctrl + s")).toEqual(parsed("ctrl+s"));
+  });
+
   test("refuses shift on symbols and digits, keeps it for letters and named keys", () => {
     // Shifted symbols have no layout-independent identity; the binding must
     // name the character shift produces instead.

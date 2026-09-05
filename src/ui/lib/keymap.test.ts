@@ -106,6 +106,16 @@ describe("resolveCommandKeys", () => {
     expect(issues[0]?.message).toContain("not a usable key chord");
   });
 
+  test("a malformed chord with an empty + segment does not claim another command's shortcut", () => {
+    const { keys, issues } = resolve({ "hunk.app.quit": ["s+", "ctrl+q"] });
+
+    expect(keys.get("hunk.app.quit")).toEqual(["ctrl+q"]);
+    // "s+" must not be normalized into "s" and steal it from its default owner.
+    expect(keys.get("hunk.view.toggleFilesPane")).toEqual(["s"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain("not a usable key chord");
+  });
+
   test("unknown ids are reported, softly when they look like extension commands", () => {
     const { keys, issues } = resolve({ "hunk.app.quti": "x", "ghost.command": "z" });
 
