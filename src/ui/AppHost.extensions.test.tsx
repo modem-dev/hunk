@@ -1050,7 +1050,11 @@ describe("mounted lifecycle ordering", () => {
       expect(events).toContain("result:ok");
       expect(events).toContain("trailing:ok");
       expect(events.filter((event) => event === "reload:extension")).toHaveLength(2);
-      expect(setup.captureCharFrame()).toContain("four");
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("four"),
+        "the successor extension reload frame to render",
+      );
     });
   });
 
