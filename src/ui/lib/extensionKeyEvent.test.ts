@@ -11,6 +11,7 @@ describe("toExtensionKeyEvent", () => {
       meta: false,
       option: true,
       shift: true,
+      source: "kitty",
       preventDefault() {},
       stopPropagation() {},
     } as unknown as KeyEvent;
@@ -24,6 +25,7 @@ describe("toExtensionKeyEvent", () => {
       meta: false,
       option: true,
       shift: true,
+      source: "kitty",
     });
     expect(snapshot).not.toBe(host);
     expect(Object.isFrozen(snapshot)).toBe(true);
