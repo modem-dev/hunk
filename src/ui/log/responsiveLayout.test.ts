@@ -33,18 +33,18 @@ describe("responsive log layout", () => {
   test("selects one automatic density from actual width", () => {
     expect(resolveLogResponsiveLayout(120, 30)).toMatchObject({
       density: "wide",
-      rowHeight: 3,
-      visibleRows: 9,
+      rowHeight: 4,
+      visibleRows: 6,
     });
     expect(resolveLogResponsiveLayout(80, 24)).toMatchObject({
       density: "medium",
-      rowHeight: 2,
-      visibleRows: 10,
+      rowHeight: 3,
+      visibleRows: 7,
     });
     expect(resolveLogResponsiveLayout(42, 18)).toMatchObject({
       density: "narrow",
-      rowHeight: 2,
-      visibleRows: 7,
+      rowHeight: 3,
+      visibleRows: 5,
     });
   });
 
