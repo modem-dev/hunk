@@ -28,7 +28,12 @@ import { projectResponsiveLogRow, resolveLogResponsiveLayout } from "./responsiv
 
 export type LogAppOutcome =
   | { kind: "quit"; exitCode?: number }
-  | { kind: "open-review"; action: ExtensionVcsHistoryReviewAction; themeId: string };
+  | {
+      kind: "open-review";
+      action: ExtensionVcsHistoryReviewAction;
+      themeId: string;
+      themeMode: "dark" | "light";
+    };
 
 /** Render the bounded history list inside Hunk's shared desktop chrome. */
 export function LogApp({
@@ -39,7 +44,7 @@ export function LogApp({
 }: {
   controller: LogController;
   runtime: HistoryRuntime;
-  onOutcome: (outcome: LogAppOutcome) => void;
+  onOutcome: (outcome: LogAppOutcome) => void | Promise<void>;
   useColor: boolean;
 }) {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
@@ -48,6 +53,7 @@ export function LogApp({
   const [showHelp, setShowHelp] = useState(false);
   const [parentSelectorIndex, setParentSelectorIndex] = useState<number | null>(null);
   const [transientNotice, setTransientNotice] = useState("");
+  const [openingCommit, setOpeningCommit] = useState<{ id: string; subject: string } | null>(null);
   const lastClick = useRef({ index: -1, at: 0 });
   // Lock synchronously before awaiting provider planning so coalesced Enter+q input cannot
   // quit the log or leak the trailing command into the child review.
@@ -86,14 +92,25 @@ export function LogApp({
     const planned = controller.planSelectedReview(parentRevisionId);
     if (!planned) return;
     reviewPending.current = true;
+    const currentRow = controller.getSelectedRow();
+    setOpeningCommit(
+      currentRow
+        ? {
+            id: sanitizeTerminalLine(currentRow.commit.displayId),
+            subject: sanitizeTerminalLine(currentRow.commit.subject),
+          }
+        : null,
+    );
     try {
-      onOutcome({
+      await onOutcome({
         kind: "open-review",
         action: await planned,
         themeId: themeController.themeId,
+        themeMode: terminalThemeMode,
       });
     } catch (error) {
       reviewPending.current = false;
+      setOpeningCommit(null);
       controller.setNotice(error instanceof Error ? error.message : String(error));
     }
   };
@@ -372,91 +389,112 @@ export function LogApp({
           else if (direction === "down") controller.move(3, viewportHeight);
         }}
       >
-        {visible.map((row, offset) => {
-          const index = snapshot.top + offset;
-          const selected = index === snapshot.selected;
-          const projected = projectResponsiveLogRow({
-            row,
-            presentation: snapshot.presentation,
-            layout: responsiveLayout,
-            width: terminal.width,
-          });
-          return (
-            <box
-              key={row.commit.revisionId}
-              style={{
-                height: responsiveLayout.rowHeight,
-                width: "100%",
-                flexDirection: "row",
-                backgroundColor: selected ? theme.selectedHunk : theme.background,
-              }}
-              onMouseUp={() => {
-                clearTransientNotice();
-                const now = Date.now();
-                const shouldOpen =
-                  lastClick.current.index === index && now - lastClick.current.at < 400;
-                void controller.select(index, viewportHeight).then(() => {
-                  if (shouldOpen) void openSelected();
-                });
-                lastClick.current = { index, at: now };
-              }}
-            >
-              {projected.graphWidth ? (
+        {openingCommit ? (
+          <box
+            style={{
+              width: "100%",
+              height: responsiveLayout.bodyHeight,
+              flexDirection: "column",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <text fg={theme.text}>Opening commit</text>
+            <text fg={theme.accent}>
+              {fitText(
+                `${openingCommit.id} · ${openingCommit.subject}`,
+                Math.max(1, terminal.width - 4),
+              )}
+            </text>
+            <text fg={theme.muted}>Preparing review…</text>
+          </box>
+        ) : (
+          visible.map((row, offset) => {
+            const index = snapshot.top + offset;
+            const selected = index === snapshot.selected;
+            const projected = projectResponsiveLogRow({
+              row,
+              presentation: snapshot.presentation,
+              layout: responsiveLayout,
+              width: terminal.width,
+            });
+            return (
+              <box
+                key={row.commit.revisionId}
+                style={{
+                  height: responsiveLayout.rowHeight,
+                  width: "100%",
+                  flexDirection: "row",
+                  backgroundColor: selected ? theme.selectedHunk : theme.background,
+                }}
+                onMouseUp={() => {
+                  clearTransientNotice();
+                  const now = Date.now();
+                  const shouldOpen =
+                    lastClick.current.index === index && now - lastClick.current.at < 400;
+                  void controller.select(index, viewportHeight).then(() => {
+                    if (shouldOpen) void openSelected();
+                  });
+                  lastClick.current = { index, at: now };
+                }}
+              >
+                {projected.graphWidth ? (
+                  <box
+                    style={{
+                      width: projected.graphWidth,
+                      height: responsiveLayout.rowHeight,
+                      flexDirection: "column",
+                    }}
+                  >
+                    <text fg={theme.muted}>{projected.graph}</text>
+                    {Array.from({ length: responsiveLayout.rowHeight - 1 }, (_, line) => (
+                      <text key={line} fg={theme.muted}>
+                        {projected.continuation}
+                      </text>
+                    ))}
+                  </box>
+                ) : null}
                 <box
                   style={{
-                    width: projected.graphWidth,
+                    width: projected.leftWidth,
                     height: responsiveLayout.rowHeight,
                     flexDirection: "column",
                   }}
                 >
-                  <text fg={theme.muted}>{projected.graph}</text>
-                  {Array.from({ length: responsiveLayout.rowHeight - 1 }, (_, line) => (
-                    <text key={line} fg={theme.muted}>
-                      {projected.continuation}
-                    </text>
-                  ))}
+                  <text fg={theme.text}>{projected.title}</text>
+                  {responsiveLayout.showDescription ? (
+                    <text fg={theme.muted}>{projected.description}</text>
+                  ) : null}
+                  <text fg={theme.muted}>{projected.metadata}</text>
                 </box>
-              ) : null}
-              <box
-                style={{
-                  width: projected.leftWidth,
-                  height: responsiveLayout.rowHeight,
-                  flexDirection: "column",
-                }}
-              >
-                <text fg={theme.text}>{projected.title}</text>
-                {responsiveLayout.showDescription ? (
-                  <text fg={theme.muted}>{projected.description}</text>
-                ) : null}
-                <text fg={theme.muted}>{projected.metadata}</text>
-              </box>
-              {projected.columnGap ? <box style={{ width: projected.columnGap }} /> : null}
-              <box
-                style={{
-                  width: projected.rightWidth,
-                  height: responsiveLayout.rowHeight,
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                }}
-                onMouseUp={(event: TuiMouseEvent) => {
-                  event.stopPropagation();
-                  clearTransientNotice();
-                  const copyIconStart = terminal.width - 1 - measureTextWidth(projected.copyIcon);
-                  void controller.select(index, viewportHeight).then(() => {
-                    if (event.x >= copyIconStart) copySelected(row);
-                    else void openSelected();
-                  });
-                }}
-              >
-                <box style={{ flexDirection: "row", gap: 1 }}>
-                  <text fg={theme.accent}>{projected.displayId}</text>
-                  <text fg={theme.muted}>{projected.copyIcon}</text>
+                {projected.columnGap ? <box style={{ width: projected.columnGap }} /> : null}
+                <box
+                  style={{
+                    width: projected.rightWidth,
+                    height: responsiveLayout.rowHeight,
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                  }}
+                  onMouseUp={(event: TuiMouseEvent) => {
+                    event.stopPropagation();
+                    clearTransientNotice();
+                    const copyIconStart = terminal.width - 1 - measureTextWidth(projected.copyIcon);
+                    void controller.select(index, viewportHeight).then(() => {
+                      if (event.x >= copyIconStart) copySelected(row);
+                      else void openSelected();
+                    });
+                  }}
+                >
+                  <box style={{ flexDirection: "row", gap: 1 }}>
+                    <text fg={theme.accent}>{projected.displayId}</text>
+                    <text fg={theme.muted}>{projected.copyIcon}</text>
+                  </box>
+                  {projected.secondary ? <text fg={theme.muted}>{projected.secondary}</text> : null}
                 </box>
-                {projected.secondary ? <text fg={theme.muted}>{projected.secondary}</text> : null}
               </box>
-            </box>
-          );
-        })}
+            );
+          })
+        )}
       </box>
       <box
         style={{

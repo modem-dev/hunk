@@ -5,6 +5,7 @@ import { resolveConfiguredCliInput } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
 import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
+import { terminalHandoffThemeMode } from "../core/process/terminalHandoff";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
 import {
@@ -543,8 +544,10 @@ export async function prepareStartupPlan(
     controllingTerminal = openControllingTerminalImpl();
   }
 
-  let initialThemeMode: AppBootstrap["initialThemeMode"];
-  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+  // A handoff child inherits the parent's detected mode so bootstrap never queries a terminal
+  // whose input and renderer are still exclusively owned by the history process.
+  let initialThemeMode: AppBootstrap["initialThemeMode"] = terminalHandoffThemeMode(env);
+  if (!initialThemeMode && cliInput.options.theme === "auto" && stdoutIsTTY) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =

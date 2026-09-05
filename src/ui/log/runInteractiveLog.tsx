@@ -14,7 +14,7 @@ import {
 } from "../../core/process/terminal";
 import { LogApp, type LogAppOutcome } from "./LogApp";
 import { LogController } from "./controller";
-import { launchHistoryReview } from "./reviewLaunch";
+import { prepareHistoryReview, type PreparedHistoryReview } from "./reviewLaunch";
 import type { HistoryRuntime } from "../history/types";
 import { interactiveLogUsesColor } from "./colorPolicy";
 
@@ -28,7 +28,11 @@ export function logSignalExitCode(signal: NodeJS.Signals) {
   return signal === "SIGINT" ? 130 : signal === "SIGHUP" ? 129 : 143;
 }
 
-/** Mount one OpenTUI log surface and resolve only after it requests quit or review. */
+type MountedLogOutcome =
+  | Extract<LogAppOutcome, { kind: "quit" }>
+  | { kind: "open-review"; launch: PreparedHistoryReview };
+
+/** Mount one OpenTUI log surface and keep it visible while the selected review bootstraps. */
 async function mountLogSurface(
   controller: LogController,
   runtime: HistoryRuntime,
@@ -52,14 +56,34 @@ async function mountLogSurface(
     throw error;
   }
   let settled = false;
-  let settle!: (outcome: LogAppOutcome) => void;
-  const outcome = new Promise<LogAppOutcome>((resolve) => {
+  let settle!: (outcome: MountedLogOutcome) => void;
+  const outcome = new Promise<MountedLogOutcome>((resolve) => {
     settle = resolve;
   });
-  const finish = (value: LogAppOutcome) => {
+  const launchAbort = new AbortController();
+  let preparedLaunch: PreparedHistoryReview | undefined;
+  const finish = (value: MountedLogOutcome) => {
     if (settled) return;
     settled = true;
     settle(value);
+  };
+  const handleOutcome = async (value: LogAppOutcome) => {
+    if (value.kind === "quit") {
+      launchAbort.abort();
+      finish(value);
+      return;
+    }
+    const launch = await prepareHistoryReview(runtime, value.action, {
+      themeId: value.themeId,
+      themeMode: value.themeMode,
+      signal: launchAbort.signal,
+    });
+    if (settled) {
+      await launch.abort();
+      return;
+    }
+    preparedLaunch = launch;
+    finish({ kind: "open-review", launch });
   };
   const requestQuit = () => finish({ kind: "quit" });
   const requestInterrupt = () => finish({ kind: "quit", exitCode: 130 });
@@ -86,11 +110,12 @@ async function mountLogSurface(
         controller={controller}
         runtime={runtime}
         useColor={interactiveLogUsesColor(runtime.input.color, process.env)}
-        onOutcome={finish}
+        onOutcome={handleOutcome}
       />,
     );
     return await outcome;
   } finally {
+    if (!preparedLaunch) launchAbort.abort();
     for (const [signal, handler] of signalHandlers) process.off(signal, handler);
     interrupt.dispose();
     suspend.dispose();
@@ -124,7 +149,7 @@ export async function runInteractiveLog(
         return;
       }
       try {
-        const code = await launchHistoryReview(runtime, outcome.action, outcome.themeId);
+        const code = await outcome.launch.run();
         controller.setNotice(code === 0 ? "" : "Could not open the selected commit.");
       } catch (error) {
         controller.setNotice(error instanceof Error ? error.message : String(error));

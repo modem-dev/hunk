@@ -108,6 +108,10 @@ describe("interactive hunk log", () => {
       session.writeRaw(
         `\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}M\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}m`,
       );
+      const preparing = await session.waitForText(/Opening commit[\s\S]*Preparing review…/, {
+        timeout: 5_000,
+      });
+      expect(preparing).not.toContain("historyValue = 'second'");
       const review = await session.waitForText(/historyValue = 'second'/, {
         timeout: 15_000,
       });

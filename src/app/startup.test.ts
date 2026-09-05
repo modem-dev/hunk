@@ -749,6 +749,35 @@ describe("startup planning", () => {
     expect(opened).toBe(1);
   });
 
+  test("inherits handoff theme mode without querying the parent-owned terminal", async () => {
+    const cliInput: CliInput = {
+      kind: "show",
+      ref: "opaque:id",
+      options: { theme: "auto" },
+    };
+    let detected = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "show", "opaque:id"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      detectTerminalThemeModeFromBackgroundImpl: async () => {
+        detected += 1;
+        return "light";
+      },
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+      env: {
+        HUNK_TERMINAL_HANDOFF: "1",
+        HUNK_TERMINAL_HANDOFF_THEME_MODE: "dark",
+      },
+    });
+
+    expect(plan).toMatchObject({ kind: "app", bootstrap: { initialThemeMode: "dark" } });
+    expect(detected).toBe(0);
+  });
+
   test("opens the controlling terminal for piped patch startup", async () => {
     const cliInput: CliInput = {
       kind: "patch",
