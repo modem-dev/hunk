@@ -34,13 +34,13 @@ describe("bundled UI registry", () => {
     expect(reviewInfo).toMatchObject({
       placement: "top",
       defaultOpen: true,
-      height: { preferred: 3, min: 3, max: 3 },
+      height: { preferred: 2, min: 2, max: 2 },
     });
     expect(comparisonReviewInfo).toMatchObject({
       placement: "top",
       defaultOpen: true,
       resizable: false,
-      height: { preferred: 3, min: 3, max: 10 },
+      height: { preferred: 2, min: 2, max: 9 },
     });
     expect(
       reviewInfo.available?.({
@@ -101,7 +101,7 @@ describe("bundled UI registry", () => {
       currentLine: null,
     };
     expect(comparisonReviewInfo.available?.(comparisonContext)).toBeTrue();
-    expect(comparisonReviewInfo.preferredSize?.(comparisonContext)).toBe(4);
+    expect(comparisonReviewInfo.preferredSize?.(comparisonContext)).toBe(3);
     expect(
       reviewInfo.available?.({
         review: null,

@@ -4,12 +4,14 @@ import type { AppTheme } from "../../themes";
 const PANE_DIVIDER_HIT_AREA_SIZE = 5;
 const PANE_DIVIDER_HIT_AREA_OFFSET = Math.floor(PANE_DIVIDER_HIT_AREA_SIZE / 2);
 
-/** Render a one-cell pane divider with a larger pointer target on either axis. */
+/** Render a one-cell pane separator, adding a larger pointer target when it is resizable. */
 export function PaneDivider({
   orientation,
   width,
   height,
+  isActive,
   isResizing,
+  resizable,
   theme,
   onMouseDown,
   onMouseDrag,
@@ -19,13 +21,18 @@ export function PaneDivider({
   orientation: "vertical" | "horizontal";
   width: number;
   height: number;
+  isActive: boolean;
   isResizing: boolean;
+  resizable: boolean;
   theme: AppTheme;
   onMouseDown: (event: TuiMouseEvent) => void;
   onMouseDrag: (event: TuiMouseEvent) => void;
   onMouseDragEnd: (event: TuiMouseEvent) => void;
   onMouseUp: (event: TuiMouseEvent) => void;
 }) {
+  const emphasized = isActive || isResizing;
+  const horizontal = emphasized ? "━" : "─";
+  const vertical = emphasized ? "┃" : "│";
   const handlers = { onMouseDown, onMouseDrag, onMouseUp, onMouseDragEnd };
   const hitAreaStyle =
     orientation === "vertical"
@@ -54,15 +61,15 @@ export function PaneDivider({
           flexShrink: 0,
           backgroundColor: isResizing ? theme.accentMuted : theme.panel,
           border: orientation === "vertical" ? ["left"] : ["top"],
-          borderColor: isResizing ? theme.accent : theme.border,
+          borderColor: emphasized ? theme.accent : theme.border,
         }}
         customBorderChars={{
-          topLeft: orientation === "vertical" ? "│" : "─",
-          topRight: "─",
-          bottomLeft: "│",
-          bottomRight: "─",
-          horizontal: "─",
-          vertical: "│",
+          topLeft: orientation === "vertical" ? vertical : horizontal,
+          topRight: horizontal,
+          bottomLeft: vertical,
+          bottomRight: horizontal,
+          horizontal,
+          vertical,
           topT: "┬",
           bottomT: "┴",
           leftT: "├",
@@ -70,7 +77,7 @@ export function PaneDivider({
           cross: "┼",
         }}
       />
-      <box style={hitAreaStyle} {...handlers} />
+      {resizable ? <box style={hitAreaStyle} {...handlers} /> : null}
     </>
   );
 }

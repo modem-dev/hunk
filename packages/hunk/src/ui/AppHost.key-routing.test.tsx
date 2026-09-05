@@ -295,16 +295,22 @@ describe("UI key routing with a focused scroll box", () => {
       join(extension, "index.tsx"),
       `import { createElement, useState } from "react";
 export default function (hunk) {
+  let showPrompt = () => {};
   hunk.registerPane({
     id: "prompt",
     placement: "bottom",
     defaultOpen: true,
     height: { preferred: 3, min: 3, max: 3 },
     component: () => {
+      const [visible, setVisible] = useState(false);
       const [value, setValue] = useState("");
-      return createElement("input", { value, focused: true, onInput: setValue });
+      showPrompt = () => setVisible(true);
+      return visible
+        ? createElement("input", { value, focused: true, onInput: setValue })
+        : createElement("text", { content: "PROMPT CLOSED" });
     },
   });
+  hunk.registerCommand({ id: "focus", title: "Focus prompt", key: "o" }, () => showPrompt());
   hunk.registerCommand({ id: "letter", title: "Letter command", key: "j" }, (ctx) => {
     ctx.notify("COMMAND FIRED");
   });
@@ -325,6 +331,9 @@ export default function (hunk) {
     });
 
     try {
+      await waitForFrame(setup, () => setup.captureCharFrame().includes("PROMPT CLOSED"), 12);
+      expect(setup.renderer.currentFocusedEditor).toBeNull();
+      await act(async () => setup.mockInput.typeText("o"));
       await waitForFrame(setup, () => setup.renderer.currentFocusedEditor !== null, 12);
       expect(setup.renderer.currentFocusedEditor).not.toBeNull();
 
@@ -333,6 +342,7 @@ export default function (hunk) {
 
       const frame = setup.captureCharFrame();
       expect(frame).toContain("j?");
+      expect(frame).toContain("━");
       expect(frame).not.toContain("COMMAND FIRED");
       expect(frame).not.toContain("Controls help");
     } finally {

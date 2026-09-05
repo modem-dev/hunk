@@ -3,6 +3,7 @@ import type {
   MouseEvent as TuiMouseEvent,
   ScrollBoxRenderable,
 } from "@opentui/core";
+import { MouseButton } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import {
   Suspense,
@@ -125,6 +126,7 @@ import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout, resolveResponsiveViewport } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
+import { useActivePaneController } from "./hooks/useActivePaneController";
 import { ThemeController } from "./theme/controller";
 import {
   createExtensionPromptControls,
@@ -623,6 +625,13 @@ export function App({
     paneLayoutSettled,
     resizing: resizingPaneKey !== null,
   });
+
+  const visiblePaneKeys = useMemo(
+    () => paneLayout.panes.map(({ pane }) => pane.key),
+    [paneLayout.panes],
+  );
+  const { activePaneKey, activatePane, activateReview, paneSurfaceRef, reviewSurfaceRef } =
+    useActivePaneController({ renderer, visiblePaneKeys });
 
   useEffect(() => {
     if (resizingPaneKey === null) {
@@ -1580,6 +1589,7 @@ export function App({
     return (
       <box
         key={pane.key}
+        ref={paneSurfaceRef(pane.key)}
         style={{
           position: "absolute",
           left: bodyPadding / 2 + bounds.x,
@@ -1629,6 +1639,7 @@ export function App({
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
+          onActivateSurface={activatePane}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY
               ? undefined
@@ -1646,6 +1657,7 @@ export function App({
   // so a fast motion or a sidebar projection swap cannot transfer the gesture to a transient row.
   const beginCapturedPaneResize = (planned: PlannedPane, event: TuiMouseEvent) => {
     if (!beginPaneResize(planned, event)) return;
+    activatePane(planned.pane.key);
     if (paneResizeCaptureRef.current) {
       setMouseCapture(renderer, paneResizeCaptureRef.current);
     }
@@ -1653,7 +1665,7 @@ export function App({
   };
 
   const renderDivider = (planned: PlannedPane) =>
-    planned.divider && !paneLayoutAnimating ? (
+    !paneLayoutAnimating ? (
       <box
         key={`${planned.pane.key}:divider`}
         style={{
@@ -1668,7 +1680,9 @@ export function App({
           orientation={planned.divider.width === 1 ? "vertical" : "horizontal"}
           width={planned.divider.width}
           height={planned.divider.height}
+          isActive={activePaneKey === planned.pane.key}
           isResizing={resizingPaneKey === planned.pane.key}
+          resizable={planned.resizable}
           theme={activeTheme}
           onMouseDown={(event) => beginCapturedPaneResize(planned, event)}
           onMouseDrag={updatePaneResize}
@@ -1734,6 +1748,10 @@ export function App({
         {presentedPaneLayout.panes.map(renderPane)}
         {presentedPaneLayout.panes.map(renderDivider)}
         <box
+          ref={reviewSurfaceRef}
+          onMouseDown={(event) => {
+            if (event.button === MouseButton.LEFT) activateReview();
+          }}
           style={{
             position: "absolute",
             left: bodyPadding / 2 + presentedPaneLayout.reviewBounds.x,
@@ -1818,6 +1836,7 @@ export function App({
               scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
             }}
             onCopyFeedback={showTransientNotice}
+            onActivateSurface={activateReview}
             onFileViewRowFailure={reportFileViewRowFailure}
             onSelectFile={jumpToFile}
             onToggleGap={review.toggleGap}

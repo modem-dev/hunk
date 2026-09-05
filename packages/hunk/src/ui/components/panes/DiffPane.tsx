@@ -1,4 +1,8 @@
-import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import {
+  MouseButton,
+  type MouseEvent as TuiMouseEvent,
+  type ScrollBoxRenderable,
+} from "@opentui/core";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -359,6 +363,7 @@ export function DiffPane({
   onFocusDraftNote,
   onCopyFeedback,
   onCopySelectionText,
+  onActivateSurface,
   onFileViewRowFailure,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
@@ -455,6 +460,7 @@ export function DiffPane({
   onFocusDraftNote?: () => void;
   onCopyFeedback?: (text: string) => void;
   onCopySelectionText?: (text: string) => void | boolean;
+  onActivateSurface?: () => void;
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
@@ -1506,7 +1512,7 @@ export function DiffPane({
 
   const {
     actionBarModel: selectionActionBarModel,
-    beginSelection: beginCopySelection,
+    beginSelection,
     clearSelection: clearCopySelection,
     commentOnCommittedSelection,
     copyCommittedSelection,
@@ -1534,6 +1540,12 @@ export function DiffPane({
     selectionCommentKeyLabel,
     selectionCopyKeyLabel,
   });
+
+  /** Activate the review before selection consumes the primary mouse gesture. */
+  const beginCopySelection = (event: TuiMouseEvent) => {
+    if (event.button === MouseButton.LEFT) onActivateSurface?.();
+    beginSelection(event);
+  };
 
   /** Clamp one requested review scroll target against the latest planned content height. */
   const clampReviewScrollTop = useCallback(
@@ -2527,6 +2539,9 @@ export function DiffPane({
         ...(renderTopChrome
           ? { paddingY: 1 }
           : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
+      }}
+      onMouseDown={(event) => {
+        if (event.button === MouseButton.LEFT) onActivateSurface?.();
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}
