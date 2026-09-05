@@ -9,6 +9,7 @@ import {
   resolveCanonicalPath,
   resolveGlobalConfigPath,
   resolveAppStatePath,
+  resolveGlobalExtensionsDir,
 } from "./paths";
 
 function createTempRoot(prefix: string) {
@@ -17,10 +18,25 @@ function createTempRoot(prefix: string) {
 
 describe("paths", () => {
   test("resolves XDG config and state paths", () => {
-    const env = { XDG_CONFIG_HOME: join("/tmp", "xdg-home") } as NodeJS.ProcessEnv;
+    const env = {
+      XDG_CONFIG_HOME: join("/tmp", "xdg-config"),
+      XDG_STATE_HOME: join("/tmp", "xdg-state"),
+    } as NodeJS.ProcessEnv;
 
-    expect(resolveGlobalConfigPath(env)).toBe(join("/tmp", "xdg-home", "hunk", "config.toml"));
-    expect(resolveAppStatePath(env)).toBe(join("/tmp", "xdg-home", "hunk", "state.json"));
+    expect(resolveGlobalConfigPath(env)).toBe(join("/tmp", "xdg-config", "hunk", "config.toml"));
+    expect(resolveAppStatePath(env)).toBe(join("/tmp", "xdg-state", "hunk", "state.json"));
+    expect(resolveGlobalExtensionsDir(env)).toBe(join("/tmp", "xdg-state", "hunk", "extensions"));
+  });
+
+  test("falls back to the platform-independent XDG state location", () => {
+    const env = { HOME: join("/tmp", "home") } as NodeJS.ProcessEnv;
+
+    expect(resolveAppStatePath(env)).toBe(
+      join("/tmp", "home", ".local", "state", "hunk", "state.json"),
+    );
+    expect(resolveGlobalExtensionsDir(env)).toBe(
+      join("/tmp", "home", ".local", "state", "hunk", "extensions"),
+    );
   });
 
   test("falls back to HOME for config and state paths", () => {
@@ -29,7 +45,9 @@ describe("paths", () => {
     expect(resolveGlobalConfigPath(env)).toBe(
       join("/tmp", "home", ".config", "hunk", "config.toml"),
     );
-    expect(resolveAppStatePath(env)).toBe(join("/tmp", "home", ".config", "hunk", "state.json"));
+    expect(resolveAppStatePath(env)).toBe(
+      join("/tmp", "home", ".local", "state", "hunk", "state.json"),
+    );
   });
 
   test("falls back to USERPROFILE when HOME is unavailable", () => {
@@ -39,7 +57,7 @@ describe("paths", () => {
       join("/tmp", "windows-profile", ".config", "hunk", "config.toml"),
     );
     expect(resolveAppStatePath(env)).toBe(
-      join("/tmp", "windows-profile", ".config", "hunk", "state.json"),
+      join("/tmp", "windows-profile", ".local", "state", "hunk", "state.json"),
     );
   });
 
