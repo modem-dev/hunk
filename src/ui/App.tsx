@@ -135,6 +135,7 @@ function clamp(value: number, min: number, max: number) {
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
+  canReloadExtensions = true,
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
@@ -150,6 +151,8 @@ export function App({
   workspaceFileWriter,
 }: {
   bootstrap: AppBootstrap;
+  /** Whether this surface may replace the session-owned extension registry. */
+  canReloadExtensions?: boolean;
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
@@ -918,7 +921,7 @@ export function App({
     extensionTrustPromptRoot,
     trustRepoExtensions,
   } = useExtensionTrustController({
-    canRefreshCurrentInput,
+    canRefreshCurrentInput: canRefreshCurrentInput && canReloadExtensions,
     pagerMode,
     pendingRepoRoot: pendingTrustRepoRoot,
     refreshCurrentInput,

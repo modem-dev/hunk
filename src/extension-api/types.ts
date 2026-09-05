@@ -667,6 +667,8 @@ export interface ExtensionVcsDetection {
 /** Ambient information an operation may need to shell out. */
 export interface ExtensionVcsLoadContext {
   cwd: string;
+  /** Abort provider setup or work when the owning host generation ends. */
+  signal?: AbortSignal;
 }
 
 /**

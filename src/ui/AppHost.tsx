@@ -631,6 +631,7 @@ export function AppHost({
     <App
       key={appVersion}
       bootstrap={activeBootstrap}
+      canReloadExtensions={extensionOwnership === "owned"}
       hostClient={hostClient}
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
