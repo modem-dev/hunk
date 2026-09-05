@@ -62,9 +62,12 @@ author, date, and decoration controls. Use:
 - `r` to refresh while retaining the selected immutable commit when it still exists
 - `q` to quit
 
-Theme choices made in the browser carry into commits opened for review. When you quit the opened review, Hunk returns to the retained history selection, viewport, and
-search. Opening a commit starts a fresh review process, so review notes and drafts cannot leak from
-one commit into another.
+Theme choices made in the browser carry into commits opened for review. While the fresh review
+process prepares, the browser keeps terminal ownership and shows the selected commit in a loading
+state; it yields only when review is ready to render, so previous shell output does not appear during
+startup. When you quit the opened review, Hunk returns to the retained history selection, viewport,
+and search. Opening a commit starts a fresh review process, so review notes and drafts cannot leak
+from one commit into another.
 
 History enumeration and selected-item review semantics come from the public VCS adapter contract;
 Hunk itself only presents and orchestrates them. Jujutsu works directly in colocated and JJ-only
