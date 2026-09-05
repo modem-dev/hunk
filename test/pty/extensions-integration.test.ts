@@ -384,7 +384,7 @@ describe("PTY extensions", () => {
       );
       expect(frame).toContain("octocat · GitHub · modem-dev/hunk · main ← feature/pane");
       const infoLine = lineIndexOf(frame, "OPEN · #123");
-      expect(frame.split("\n")[infoLine - 1]).toContain("─");
+      expect(frame.split("\n")[infoLine + 2]).toContain("─");
       expect(infoLine).toBeLessThan(lineIndexOf(frame, "after"));
     } finally {
       session.close();
@@ -667,9 +667,17 @@ describe("PTY extensions", () => {
     try {
       const frame = await session.waitForText(/PANE ACTIVATE TARGET/, { timeout: 20_000 });
       const targetRow = lineIndexOf(frame, "PANE ACTIVATE TARGET");
-      const targetColumn = frame.split("\n")[targetRow]!.indexOf("PANE ACTIVATE TARGET") + 5;
+      const targetStart = frame.split("\n")[targetRow]!.indexOf("PANE ACTIVATE TARGET");
+      const targetColumn = targetStart + 5;
+      expect(frame.split("\n")[targetRow]![targetStart - 1]).toBe("│");
       // Stay clear of the pane divider's intentional multi-cell resize hit area.
       await session.clickAt(targetColumn, targetRow);
+
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.split("\n")[targetRow]?.[targetStart - 1] === "┃",
+        5_000,
+      );
 
       const deadline = Date.now() + 5_000;
       while (!existsSync(activationLog) && Date.now() < deadline) {

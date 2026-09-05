@@ -115,7 +115,7 @@ function activeResizePane(
       planned.pane.key === resize.key &&
       planned.pane.registered === resize.registered &&
       planned.pane.placement === resize.placement &&
-      planned.divider !== undefined,
+      planned.resizable,
   );
 }
 
@@ -524,13 +524,13 @@ export function useExtensionPaneController({
   // Start a drag only for the divider still owned by this exact pane registration.
   const beginPaneResize = useCallback(
     (planned: PlannedPane, event: TuiMouseEvent): boolean => {
-      if (event.button !== MouseButton.LEFT || !planned.divider) return false;
+      if (event.button !== MouseButton.LEFT || !planned.resizable) return false;
       const committed = paneLayoutRef.current?.panes.find(
         (entry) =>
           entry.pane.key === planned.pane.key &&
           entry.pane.registered === planned.pane.registered &&
           entry.pane.placement === planned.pane.placement &&
-          entry.divider !== undefined,
+          entry.resizable,
       );
       if (!committed) return false;
       const vertical = committed.pane.placement === "left" || committed.pane.placement === "right";

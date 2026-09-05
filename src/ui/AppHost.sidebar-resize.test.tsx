@@ -69,7 +69,17 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 /** Column of the vertical sidebar/diff divider on the probe row, or -1 when absent. */
 function dividerColumn(setup: Awaited<ReturnType<typeof testRender>>) {
   const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
-  return row.indexOf("│");
+  const normal = row.indexOf("│");
+  const active = row.indexOf("┃");
+  if (normal < 0) return active;
+  if (active < 0) return normal;
+  return Math.min(normal, active);
+}
+
+/** Read the sidebar divider's normal or emphasized vertical glyph. */
+function dividerGlyph(setup: Awaited<ReturnType<typeof testRender>>) {
+  const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
+  return row[dividerColumn(setup)] ?? "";
 }
 
 /** Return only the file-sidebar columns so diff headers cannot satisfy sidebar assertions. */
@@ -139,6 +149,20 @@ afterEach(() => {
 });
 
 describe("AppHost sidebar resize", () => {
+  test("moves active emphasis between the built-in files pane and review", async () => {
+    setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
+    await flush(setup);
+    expect(dividerGlyph(setup)).toBe("│");
+
+    await act(async () => setup!.mockMouse.click(8, PROBE_ROW));
+    await flush(setup);
+    expect(dividerGlyph(setup)).toBe("┃");
+
+    await act(async () => setup!.mockMouse.click(INITIAL_DIVIDER_COLUMN + 8, PROBE_ROW));
+    await flush(setup);
+    expect(dividerGlyph(setup)).toBe("│");
+  });
+
   test("resizes the default sidebar with the terminal until the user drags it", async () => {
     setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
     await flush(setup);
@@ -166,6 +190,7 @@ describe("AppHost sidebar resize", () => {
 
     // The divider follows the new width: startWidth + (currentX - originX).
     expect(dividerColumn(setup)).toBeGreaterThan(INITIAL_DIVIDER_COLUMN);
+    expect(dividerGlyph(setup)).toBe("┃");
   });
 
   test("resizing across the content-width threshold switches the file projection", async () => {

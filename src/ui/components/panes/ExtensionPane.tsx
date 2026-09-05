@@ -93,6 +93,7 @@ export interface ExtensionPaneHostProps {
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
+  onActivateSurface?: (paneKey: string) => void;
   onRenderFailure?: () => void;
 }
 
@@ -115,6 +116,7 @@ function ExtensionPaneHostView({
   onSelectFile,
   onSelectHunk,
   onRevealLine,
+  onActivateSurface,
   onRenderFailure,
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
@@ -159,7 +161,9 @@ function ExtensionPaneHostView({
   };
   const filesChrome = paneKey(registered) === HUNK_FILES_PANE_KEY;
   const onMouseDown = (event: TuiMouseEvent) => {
-    if (event.button === MouseButton.LEFT) activatePane(registered, notify);
+    if (event.button !== MouseButton.LEFT) return;
+    onActivateSurface?.(paneKey(registered));
+    activatePane(registered, notify);
   };
   const box = (children: ReactNode) => (
     <box
@@ -223,5 +227,6 @@ export const ExtensionPaneHost = memo(
     previous.height === next.height &&
     previous.showTopChrome === next.showTopChrome &&
     previous.keybindings === next.keybindings &&
+    previous.onActivateSurface === next.onActivateSurface &&
     (!next.registered.pane.currentLine || previous.currentLine === next.currentLine),
 );

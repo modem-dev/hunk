@@ -9,7 +9,7 @@ import type {
 import { extensionPaneSize } from "../../extensions/panes";
 import type { ExtensionLoadResult, RegisteredPane } from "../../extensions/types";
 
-/** One cell reserved between each resizable pane and its neighbor. */
+/** One cell reserved between each pane and its neighbor. */
 export const EXTENSION_PANE_DIVIDER_SIZE = 1;
 /** Smallest review height preserved while edge panes are open or resized. */
 export const MIN_EXTENSION_REVIEW_HEIGHT = 5;
@@ -134,7 +134,8 @@ export interface PaneBounds {
 export interface PlannedPane {
   pane: SessionPane;
   bounds: PaneBounds;
-  divider?: PaneBounds;
+  divider: PaneBounds;
+  resizable: boolean;
 }
 export interface ExtensionPaneLayoutPlan {
   panes: readonly PlannedPane[];
@@ -232,7 +233,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
       target: options.sizes[pane.key] ?? automaticSize,
       min,
       max,
-      fixed: min === max,
+      resizable: min !== max,
     };
   };
 
@@ -240,7 +241,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     (pane) => pane.placement === "left" || pane.placement === "right",
   )) {
     const spec = sizeSpec(pane);
-    const dividerSize = spec.fixed ? 0 : EXTENSION_PANE_DIVIDER_SIZE;
+    const dividerSize = EXTENSION_PANE_DIVIDER_SIZE;
     const remaining = right - left - options.minReviewWidth - dividerSize;
     const width = Math.min(Math.max(spec.target, spec.min), spec.max, remaining);
     if (width < spec.min) {
@@ -249,27 +250,23 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     }
     if (pane.placement === "left") {
       const bounds = { x: left, y: 0, width, height: options.bodyHeight };
-      const divider = dividerSize
-        ? {
-            x: left + width,
-            y: 0,
-            width: EXTENSION_PANE_DIVIDER_SIZE,
-            height: options.bodyHeight,
-          }
-        : undefined;
-      planned.set(pane.key, { pane, bounds, ...(divider ? { divider } : {}) });
+      const divider = {
+        x: left + width,
+        y: 0,
+        width: EXTENSION_PANE_DIVIDER_SIZE,
+        height: options.bodyHeight,
+      };
+      planned.set(pane.key, { pane, bounds, divider, resizable: spec.resizable });
       left += width + dividerSize;
     } else {
       const bounds = { x: right - width, y: 0, width, height: options.bodyHeight };
-      const divider = dividerSize
-        ? {
-            x: right - width - EXTENSION_PANE_DIVIDER_SIZE,
-            y: 0,
-            width: EXTENSION_PANE_DIVIDER_SIZE,
-            height: options.bodyHeight,
-          }
-        : undefined;
-      planned.set(pane.key, { pane, bounds, ...(divider ? { divider } : {}) });
+      const divider = {
+        x: right - width - EXTENSION_PANE_DIVIDER_SIZE,
+        y: 0,
+        width: EXTENSION_PANE_DIVIDER_SIZE,
+        height: options.bodyHeight,
+      };
+      planned.set(pane.key, { pane, bounds, divider, resizable: spec.resizable });
       right -= width + dividerSize;
     }
   }
@@ -278,7 +275,7 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     (pane) => pane.placement === "top" || pane.placement === "bottom",
   )) {
     const spec = sizeSpec(pane);
-    const dividerSize = spec.fixed ? 0 : EXTENSION_PANE_DIVIDER_SIZE;
+    const dividerSize = EXTENSION_PANE_DIVIDER_SIZE;
     const remaining = bottom - top - options.minReviewHeight - dividerSize;
     const height = Math.min(Math.max(spec.target, spec.min), spec.max, remaining);
     if (height < spec.min) {
@@ -287,27 +284,23 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     }
     if (pane.placement === "top") {
       const bounds = { x: left, y: top, width: right - left, height };
-      const divider = dividerSize
-        ? {
-            x: left,
-            y: top + height,
-            width: right - left,
-            height: EXTENSION_PANE_DIVIDER_SIZE,
-          }
-        : undefined;
-      planned.set(pane.key, { pane, bounds, ...(divider ? { divider } : {}) });
+      const divider = {
+        x: left,
+        y: top + height,
+        width: right - left,
+        height: EXTENSION_PANE_DIVIDER_SIZE,
+      };
+      planned.set(pane.key, { pane, bounds, divider, resizable: spec.resizable });
       top += height + dividerSize;
     } else {
       const bounds = { x: left, y: bottom - height, width: right - left, height };
-      const divider = dividerSize
-        ? {
-            x: left,
-            y: bottom - height - EXTENSION_PANE_DIVIDER_SIZE,
-            width: right - left,
-            height: EXTENSION_PANE_DIVIDER_SIZE,
-          }
-        : undefined;
-      planned.set(pane.key, { pane, bounds, ...(divider ? { divider } : {}) });
+      const divider = {
+        x: left,
+        y: bottom - height - EXTENSION_PANE_DIVIDER_SIZE,
+        width: right - left,
+        height: EXTENSION_PANE_DIVIDER_SIZE,
+      };
+      planned.set(pane.key, { pane, bounds, divider, resizable: spec.resizable });
       bottom -= height + dividerSize;
     }
   }
