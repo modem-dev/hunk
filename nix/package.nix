@@ -12,19 +12,19 @@
   bunCompilerArchives = {
     "aarch64-darwin" = fetchurl {
       url = "https://registry.npmjs.org/@oven/bun-darwin-aarch64/-/bun-darwin-aarch64-${bunVersion}.tgz";
-      hash = "sha512-XDvoYbH1rH3fpFYM/9U6y3nSk9KPTqeDvAcCfseSbfu2iXerF0pX7dh0lAwevi2VooHjc6MsyyWwmRiaN33s/A==";
+      hash = "sha512-MXdZkP1featqxZ+/VTXWG1BVjM4OGBehVY2Q88EeUj/7L0UMeCGItmyPYTN+wxvlGJ6F66JEtzsw+GvQWewnag==";
     };
     "x86_64-darwin" = fetchurl {
       url = "https://registry.npmjs.org/@oven/bun-darwin-x64/-/bun-darwin-x64-${bunVersion}.tgz";
-      hash = "sha512-i+eEXD6cUu7/pP3QGvfUlkOkY+J7O8XKggkSKS77yg++EUk1p1vqfG0loQXwHBIEycPYL9Tp7mKcixiARAT9nQ==";
+      hash = "sha512-gZTxZuLjkUhAWjTETu3tw0WhsEdNkJ64daj60ybhPf835a2yollV3yTkK9JozvzKPx4TRFzLSl8C+U525pxVbw==";
     };
     "aarch64-linux" = fetchurl {
       url = "https://registry.npmjs.org/@oven/bun-linux-aarch64/-/bun-linux-aarch64-${bunVersion}.tgz";
-      hash = "sha512-QLY/skFymGa6vv9xPhxWwGh4QQzXvPhA3ocFVXaoB1Lcepcwo9dZ5TyMmAXIW/I4XImUsppUVGml0dp6QqwO9Q==";
+      hash = "sha512-3BBP9ovJ2RGHFH6Ae1CAtxNtG1+YY6GD6rmYbsUosoAk9+OEl6zeDQ/k4fBkc6dYOJCtWnx8hUxzNzQATSmvYQ==";
     };
     "x86_64-linux" = fetchurl {
       url = "https://registry.npmjs.org/@oven/bun-linux-x64/-/bun-linux-x64-${bunVersion}.tgz";
-      hash = "sha512-ma2AO7f/0YZ1KLU7IHO0BFd41zryMbPA2hzgyIw5MWG64MVUvCfbKUc7+nQ+pLgJOIHuA9r075i0TWWlBGE+BA==";
+      hash = "sha512-9/E/UXOTpSo3YsV5g+FhtTd/qTpiWoKuxS12cqtuYA1ssu9fRAoPQnipFgGyck3tWO63iUdxBiygq+kELFawng==";
     };
   };
   bunCompilerArchive = bunCompilerArchives.${stdenv.hostPlatform.system};
