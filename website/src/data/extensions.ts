@@ -219,6 +219,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 1,
   },
+  {
+    repo: "victor-software-house/hunk-history",
+    name: "hunk-history",
+    summary:
+      "Browses live Git history in Files/History tabs, with immediate commit review, double-click ranges, and staged or unstaged comparisons.",
+    categories: ["Pane", "Command", "Changeset transform"],
+    version: "0.0.4",
+    apiVersion: 16,
+  },
 ];
 
 /** GitHub account that publishes one listing. */
