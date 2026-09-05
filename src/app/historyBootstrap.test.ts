@@ -11,7 +11,7 @@ const input: HistoryCommandInput = {
   color: "never",
   format: "compact",
   ascii: false,
-  interactive: true,
+  static: false,
   vcs: "test",
   extensionsEnabled: false,
   extensionPaths: [],

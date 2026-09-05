@@ -11,8 +11,7 @@ import type { AppMenus, MenuEntry } from "../components/chrome/menu";
 import { ThemeSelectorDialog } from "../components/chrome/ThemeSelectorDialog";
 import { useMenuController } from "../hooks/useMenuController";
 import { useThemeSelectorController } from "../hooks/useThemeSelectorController";
-import { fitText } from "../lib/text";
-import { formatHistoryDecorations, renderHistoryGraph } from "../history/staticProjection";
+import { fitText, measureTextWidth } from "../lib/text";
 import type { HistoryRuntime } from "../history/types";
 import type { LogController } from "./controller";
 import { LOG_HELP_SECTIONS } from "./logHelp";
@@ -25,6 +24,7 @@ import {
 } from "./commands";
 import { ParentSelectorDialog } from "./ParentSelectorDialog";
 import { monochromeLogTheme } from "./colorPolicy";
+import { projectResponsiveLogRow, resolveLogResponsiveLayout } from "./responsiveLayout";
 
 export type LogAppOutcome =
   | { kind: "quit"; exitCode?: number }
@@ -68,9 +68,8 @@ export function LogApp({
     ? themeController.baseTheme
     : monochromeLogTheme(themeController.baseTheme, terminalThemeMode);
   const selectedRow = snapshot.rows[snapshot.selected];
-  const detailHeight =
-    snapshot.presentation.format === "medium" && selectedRow && terminal.height >= 9 ? 5 : 0;
-  const viewportHeight = Math.max(1, terminal.height - 2 - detailHeight);
+  const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
+  const viewportHeight = responsiveLayout.visibleRows;
 
   const copySelected = () => {
     const currentRow = controller.getSelectedRow();
@@ -124,12 +123,6 @@ export function LogApp({
         break;
       case "theme":
         themeController.openThemeSelector();
-        break;
-      case "format-medium":
-        controller.setFormat("medium");
-        break;
-      case "format-compact":
-        controller.setFormat("compact");
         break;
       case "toggle-graph":
         controller.togglePresentation("graph");
@@ -214,9 +207,6 @@ export function LogApp({
     ],
     view: [
       commandItem("theme"),
-      { kind: "separator" },
-      commandItem("format-medium", { checked: snapshot.presentation.format === "medium" }),
-      commandItem("format-compact", { checked: snapshot.presentation.format === "compact" }),
       { kind: "separator" },
       commandItem("toggle-graph", { checked: snapshot.presentation.graph }),
       commandItem("toggle-unicode", { checked: snapshot.presentation.unicode }),
@@ -340,9 +330,11 @@ export function LogApp({
   });
 
   const visible = snapshot.rows.slice(snapshot.top, snapshot.top + viewportHeight);
-  const rowWidth = Math.max(1, terminal.width - 2);
-  const statusHint = terminal.width >= 48 ? "↑↓ move · Enter open · / search · F10 menu" : "";
-  const statusTextWidth = Math.max(1, terminal.width - (statusHint ? 42 : 2));
+  const statusHint = terminal.width >= 60 ? "↑↓ move · Enter open · / search · F10 menu" : "";
+  const statusTextWidth = Math.max(
+    1,
+    terminal.width - measureTextWidth(statusHint) - (statusHint ? 3 : 2),
+  );
   return (
     <box
       style={{
@@ -366,7 +358,7 @@ export function LogApp({
       <box
         style={{
           width: "100%",
-          height: viewportHeight,
+          height: responsiveLayout.bodyHeight,
           flexDirection: "column",
           paddingLeft: 1,
           paddingRight: 1,
@@ -382,27 +374,17 @@ export function LogApp({
         {visible.map((row, offset) => {
           const index = snapshot.top + offset;
           const selected = index === snapshot.selected;
-          const graph = snapshot.presentation.graph
-            ? `${renderHistoryGraph(row, !snapshot.presentation.unicode)}  `
-            : "";
-          const decorations = snapshot.presentation.decorations
-            ? formatHistoryDecorations(row)
-            : "";
-          const author = snapshot.presentation.author
-            ? `  ${sanitizeTerminalLine(row.commit.authorName)}`
-            : "";
-          const date = snapshot.presentation.date
-            ? `  ${sanitizeTerminalLine(row.commit.authoredAt).slice(0, 10)}`
-            : "";
-          const subject = fitText(
-            `${sanitizeTerminalLine(row.commit.subject)}${decorations}${author}${date}`,
-            Math.max(1, rowWidth - graph.length - row.commit.displayId.length - 2),
-          );
+          const projected = projectResponsiveLogRow({
+            row,
+            presentation: snapshot.presentation,
+            layout: responsiveLayout,
+            width: terminal.width,
+          });
           return (
             <box
               key={row.commit.revisionId}
               style={{
-                height: 1,
+                height: responsiveLayout.rowHeight,
                 width: "100%",
                 flexDirection: "row",
                 backgroundColor: selected ? theme.selectedHunk : theme.background,
@@ -418,54 +400,58 @@ export function LogApp({
                 lastClick.current = { index, at: now };
               }}
             >
-              {graph ? <text fg={theme.muted}>{graph}</text> : null}
+              {projected.graphWidth ? (
+                <box
+                  style={{
+                    width: projected.graphWidth,
+                    height: responsiveLayout.rowHeight,
+                    flexDirection: "column",
+                  }}
+                >
+                  <text fg={theme.muted}>{projected.graph}</text>
+                  {Array.from({ length: responsiveLayout.rowHeight - 1 }, (_, line) => (
+                    <text key={line} fg={theme.muted}>
+                      {projected.continuation}
+                    </text>
+                  ))}
+                </box>
+              ) : null}
               <box
+                style={{
+                  width: projected.leftWidth,
+                  height: responsiveLayout.rowHeight,
+                  flexDirection: "column",
+                }}
+              >
+                <text fg={theme.text}>{projected.title}</text>
+                {responsiveLayout.showDescription ? (
+                  <text fg={theme.muted}>{projected.description}</text>
+                ) : null}
+                <text fg={theme.muted}>{projected.metadata}</text>
+              </box>
+              {projected.columnGap ? <box style={{ width: projected.columnGap }} /> : null}
+              <box
+                style={{
+                  width: projected.rightWidth,
+                  height: responsiveLayout.rowHeight,
+                  flexDirection: "column",
+                  alignItems: "flex-end",
+                }}
                 onMouseUp={(event: TuiMouseEvent) => {
                   event.stopPropagation();
                   clearTransientNotice();
                   void controller.select(index, viewportHeight).then(() => openSelected());
                 }}
               >
-                <text fg={theme.accent}>{row.commit.displayId}</text>
+                <box>
+                  <text fg={theme.accent}>{projected.displayId}</text>
+                </box>
+                {projected.secondary ? <text fg={theme.muted}>{projected.secondary}</text> : null}
               </box>
-              <text fg={theme.text}>{`  ${subject}`}</text>
             </box>
           );
         })}
       </box>
-      {detailHeight && selectedRow ? (
-        <box
-          style={{
-            height: detailHeight,
-            width: "100%",
-            paddingLeft: 2,
-            flexDirection: "column",
-            backgroundColor: theme.panel,
-          }}
-        >
-          <text fg={theme.text}>{fitText(selectedRow.commit.subject, rowWidth)}</text>
-          <text fg={theme.muted}>
-            {fitText(
-              sanitizeTerminalLine(
-                `${selectedRow.commit.authorName}${selectedRow.commit.authorEmail ? ` <${selectedRow.commit.authorEmail}>` : ""}`,
-              ),
-              rowWidth,
-            )}
-          </text>
-          <text fg={theme.muted}>
-            {fitText(sanitizeTerminalLine(selectedRow.commit.authoredAt), rowWidth)}
-          </text>
-          <text fg={theme.text}>
-            {fitText(
-              sanitizeTerminalLine((selectedRow.commit.body ?? "").replaceAll("\n", " ")),
-              rowWidth,
-            )}
-          </text>
-          <text fg={theme.muted}>
-            {fitText(sanitizeTerminalLine(selectedRow.commit.revisionId), rowWidth)}
-          </text>
-        </box>
-      ) : null}
       <box
         style={{
           height: 1,

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, rightmostColumnOf } from "./harness";
 
 const harness = createPtyHarness();
 const tempDirs: string[] = [];
@@ -35,7 +35,7 @@ function createHistoryRepo() {
   git(cwd, ["add", "history.ts"]);
   git(cwd, ["commit", "-qm", "First history commit"]);
   writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'second';\n");
-  git(cwd, ["commit", "-qam", "Second history commit"]);
+  git(cwd, ["commit", "-qam", "Second history commit", "-m", "Responsive description"]);
   return cwd;
 }
 
@@ -74,7 +74,7 @@ describe("interactive hunk log", () => {
   test("opens the selected immutable commit and returns to the retained history", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({
-      args: ["log", "--interactive", "--color", "never", "--no-extensions"],
+      args: ["log", "--color", "never", "--no-extensions"],
       cwd,
       cols: 100,
       rows: 20,
@@ -98,9 +98,16 @@ describe("interactive hunk log", () => {
       await session.press("enter");
       await session.waitForText(/Second history commit/, { timeout: 5_000 });
 
-      // The menu occupies row one; x=5 on the first history row lands inside
-      // its commit id and opens immediately without a double-click.
-      session.writeRaw("\x1b[<0;5;2M\x1b[<0;5;2m");
+      // The first row's right-aligned commit id opens immediately without a double-click.
+      const firstRowIndex = history
+        .split("\n")
+        .findIndex((line) => line.includes("Second history commit"));
+      const firstRow = history.split("\n")[firstRowIndex] ?? "";
+      const commitColumn = firstRow.search(/[0-9a-f]{8}\s*$/);
+      expect(commitColumn).toBeGreaterThan(0);
+      session.writeRaw(
+        `\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}M\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}m`,
+      );
       const review = await session.waitForText(/historyValue = 'second'/, {
         timeout: 15_000,
       });
@@ -123,7 +130,7 @@ describe("interactive hunk log", () => {
       );
 
       // Clicking outside the id selects the second row without opening it.
-      session.writeRaw("\x1b[<0;50;3M\x1b[<0;50;3m");
+      session.writeRaw("\x1b[<0;50;5M\x1b[<0;50;5m");
       await session.press("enter");
       const rootReview = await session.waitForText(/historyValue = 'first'/, {
         timeout: 15_000,
@@ -152,10 +159,69 @@ describe("interactive hunk log", () => {
     }
   });
 
+  test("adapts GitHub-style row density and right-aligned ids on resize", async () => {
+    const cwd = createHistoryRepo();
+    const displayId = Bun.spawnSync(["git", "rev-parse", "--short=8", "HEAD"], {
+      cwd,
+      stdout: "pipe",
+    })
+      .stdout.toString()
+      .trim();
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 110,
+      rows: 20,
+    });
+    try {
+      const wide = await session.waitForText(/Responsive description/, { timeout: 15_000 });
+      expect(rightmostColumnOf(wide, displayId)).toBeGreaterThan(95);
+      session.resize({ cols: 70, rows: 20 });
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("Second history commit") && !text.includes("Responsive description"),
+        5_000,
+      );
+      const medium = await session.text({ immediate: true });
+      expect(medium).toContain("History Tester");
+      expect(rightmostColumnOf(medium, displayId)).toBeGreaterThan(55);
+      session.resize({ cols: 42, rows: 18 });
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Second history commit") && !text.includes("2026-"),
+        5_000,
+      );
+      const narrow = await session.text({ immediate: true });
+      expect(narrow).toContain("History Tester");
+      expect(rightmostColumnOf(narrow, displayId)).toBeGreaterThan(30);
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("forces static scrollback output on a terminal", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--static", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 80,
+      rows: 24,
+    });
+    try {
+      const output = await session.waitForText(/Author: History Tester/, { timeout: 15_000 });
+      expect(output).toContain("Second history commit");
+      expect(output).not.toContain("File  View  Navigate");
+    } finally {
+      session.close();
+    }
+  });
+
   test("uses an ASCII graph in a dumb terminal", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({
-      args: ["log", "--interactive", "--ascii", "--no-extensions"],
+      args: ["log", "--ascii", "--no-extensions"],
       cwd,
       cols: 80,
       rows: 16,
@@ -174,7 +240,7 @@ describe("interactive hunk log", () => {
   test("refreshes from a new provider cursor and reveals a new commit", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({
-      args: ["log", "--interactive", "--color", "never", "--no-extensions"],
+      args: ["log", "--color", "never", "--no-extensions"],
       cwd,
       cols: 90,
       rows: 18,
@@ -195,7 +261,7 @@ describe("interactive hunk log", () => {
   test("opens a merge against the provider-selected parent", async () => {
     const cwd = createMergeHistoryRepo();
     const session = await harness.launchHunk({
-      args: ["log", "--interactive", "--color", "never", "--no-extensions"],
+      args: ["log", "--color", "never", "--no-extensions"],
       cwd,
       cols: 100,
       rows: 20,

@@ -9,8 +9,6 @@ export type LogCommandId =
   | "refresh"
   | "quit"
   | "theme"
-  | "format-medium"
-  | "format-compact"
   | "toggle-graph"
   | "toggle-unicode"
   | "toggle-author"
@@ -74,8 +72,6 @@ export const LOG_COMMANDS: readonly LogCommandDefinition[] = [
     helpSection: "Application",
   },
   { id: "theme", label: "Theme…", menu: "view" },
-  { id: "format-medium", label: "Medium format", menu: "view" },
-  { id: "format-compact", label: "Compact format", menu: "view" },
   { id: "toggle-graph", label: "Graph", menu: "view" },
   { id: "toggle-unicode", label: "Unicode graph", menu: "view" },
   { id: "toggle-author", label: "Show author", menu: "view" },

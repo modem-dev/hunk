@@ -3,7 +3,7 @@ title: Git pager and difftool
 description: Use Hunk automatically for Git diff output or as an explicit Git difftool.
 ---
 
-Pager mode inspects stdin: patch-like content opens the review UI, while ordinary pager text uses Hunk's plain-text fallback. To browse commit history directly, use the static-first [`hunk log`](/docs/workflows/git-history) command instead; it does not change pager input detection.
+Pager mode inspects stdin: patch-like content opens the review UI, while ordinary pager text uses Hunk's plain-text fallback. To browse commit history directly, use the auto-responsive [`hunk log`](/docs/workflows/git-history) command instead; it does not change pager input detection.
 
 ## Configure the Git pager
 

@@ -491,7 +491,7 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses static and interactive log options without review flags", async () => {
+  test("parses automatic and forced-static log options without review flags", async () => {
     expect(
       await parseCli([
         "bun",
@@ -520,9 +520,13 @@ describe("parseCli", () => {
       color: "never",
       format: "medium",
       ascii: true,
-      interactive: true,
+      static: false,
       extensionsEnabled: true,
       extensionPaths: [],
+    });
+    expect(await parseCli(["bun", "hunk", "log", "--static"])).toMatchObject({
+      kind: "history",
+      static: true,
     });
   });
 
@@ -1757,6 +1761,10 @@ describe("parseCli command help text", () => {
     expect(await expectHelp(["patch", "--help"])).toContain("review a patch file");
     expect(await expectHelp(["pager", "--help"])).toContain("general Git pager wrapper");
     expect(await expectHelp(["difftool", "--help"])).toContain("review Git difftool file pairs");
+    const logHelp = await expectHelp(["log", "--help"]);
+    expect(logHelp).toContain("browse an attractive repository history");
+    expect(logHelp).toContain("--static");
+    expect(logHelp).not.toContain("--interactive");
   });
 
   test("renders the stash command overview and the stash show command help", async () => {

@@ -93,7 +93,7 @@ Also accepts every [common review option](#common-review-options).
 
 ## `hunk log`
 
-print an attractive repository history
+browse an attractive repository history
 
 ### Usage
 
@@ -101,7 +101,9 @@ print an attractive repository history
 hunk log [revision-expression] [-- <pathspec...>]
 ```
 
-Static output is the default. Use --interactive for the experimental history browser.
+A terminal opens the responsive browser; pipes and redirects receive static output.
+
+Use --static to force static output, paging when it exceeds the terminal.
 
 The selected VCS provider defines revision, filtering, and review semantics.
 
@@ -117,11 +119,11 @@ The selected VCS provider defines revision, filtering, and review semantics.
 | `--since <date>`          | show commits newer than a provider date                |
 | `--until <date>`          | show commits older than a provider date                |
 | `--color <mode>`          | color output: auto, always, never                      |
-| `--format <format>`       | record format: medium or compact                       |
-| `--oneline`               | alias for --format compact                             |
+| `--format <format>`       | static record format: medium or compact                |
+| `--oneline`               | alias for static --format compact                      |
 | `--theme <id>`            | use the same theme as Hunk review                      |
 | `--ascii`                 | use an ASCII graph                                     |
-| `--interactive`           | browse history and open commits in Hunk                |
+| `--static`                | print static output, paging when needed                |
 | `--vcs <id>`              | select a VCS history provider                          |
 | `--extension <path>`      | load an extension entry file or directory (repeatable) |
 | `--no-extensions`         | disable user extensions for this run                   |

@@ -45,8 +45,8 @@ deleted until its replies are removed.
 
 The built-in commands and the keys they ship with:
 
-`hunk log --interactive` is a separate, fixed read-only history entry point rather than part of
-the configurable review command table. `F10` opens its File, View, Navigate, Commit, and Help menus;
+On a terminal, `hunk log` opens its read-only history browser automatically. Its controls are
+separate from the configurable review command table. `F10` opens File, View, Navigate, Commit, and Help menus;
 View includes Hunk's shared theme selector. It uses `Up`/`Down` or `j`/`k` to move, `PageUp`/`PageDown`,
 `g`/`G` or `Home`/`End` to jump, `/` to search, `n`/`N` for matches, `r` to refresh, `y` to copy
 the full commit id, `Enter` to open the commit in normal Hunk review, and `q` to quit. With a mouse, click a commit

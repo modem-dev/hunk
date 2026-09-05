@@ -15,7 +15,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
       color: "never",
       format: "medium",
       ascii: false,
-      interactive: false,
+      static: true,
       extensionsEnabled: true,
       extensionPaths: [],
       ...(maxCount !== undefined ? { maxCount } : {}),

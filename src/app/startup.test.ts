@@ -3,7 +3,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveExtensionCliCommands } from "../extensions/cliCommands";
 import type { HunkConfigResolution } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
-import { prepareStartupPlan } from "./startup";
+import { prepareStartupPlan, shouldUseInteractiveHistory } from "./startup";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
@@ -40,6 +40,23 @@ function createBootstrap(input: CliInput): AppBootstrap {
     initialMode: input.options.mode ?? "auto",
   };
 }
+
+describe("history surface selection", () => {
+  test("opens one automatic browser only when both standard streams are terminals", () => {
+    expect(
+      shouldUseInteractiveHistory({ forceStatic: false, stdinIsTTY: true, stdoutIsTTY: true }),
+    ).toBe(true);
+    expect(
+      shouldUseInteractiveHistory({ forceStatic: false, stdinIsTTY: false, stdoutIsTTY: true }),
+    ).toBe(false);
+    expect(
+      shouldUseInteractiveHistory({ forceStatic: false, stdinIsTTY: true, stdoutIsTTY: false }),
+    ).toBe(false);
+    expect(
+      shouldUseInteractiveHistory({ forceStatic: true, stdinIsTTY: true, stdoutIsTTY: true }),
+    ).toBe(false);
+  });
+});
 
 describe("startup planning", () => {
   test("runs an extension CLI command and retires its registry before returning", async () => {

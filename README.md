@@ -87,17 +87,19 @@ hunk --fast                    # experimentally offload eligible syntax highligh
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
-hunk log                       # print the selected provider's repository history
-hunk log --interactive         # browse history; Enter opens a commit in Hunk
+hunk log                       # browse history on a terminal; print when redirected
+hunk log --static              # force static output, paging when needed
 ```
 
-`hunk log` is a static-first, read-only history surface, not a repository manager. The selected VCS
-adapter owns traversal, filtering, refs, and how a history item opens for review; the bundled Git
-and Jujutsu adapters both implement that public capability. Default output keeps full commit,
-author, date, message, branch/bookmark, remote, and tag details; `--oneline` provides compact rows, and `--theme`
-uses the same palette as Hunk review. Static output remains safe for pipes, redirects, and normal
-terminal scrollback. The explicit interactive mode stays a single history list; after opening a
-commit, quit its normal Hunk review to return to the same selection.
+`hunk log` is one auto-responsive, read-only history surface, not a repository manager. On a
+terminal it opens the desktop history browser; pipes and redirects receive shell-native static
+records automatically, and `--static` forces static output that pages only when needed. The selected VCS adapter
+owns traversal, filtering, refs, and how a history item opens for review; the bundled Git and
+Jujutsu adapters both implement that public capability. Static output keeps full commit, author,
+date, message, branch/bookmark, remote, and tag details; `--oneline` provides compact records, and
+`--theme` uses the same palette as Hunk review. Interactive rows adapt their information density to
+the available width and keep commit ids right-aligned and clickable. After opening a commit, quit
+its normal Hunk review to return to the same selection.
 
 ### Working with Jujutsu and Sapling
 

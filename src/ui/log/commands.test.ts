@@ -39,7 +39,6 @@ const snapshot = (parents: string[] = []): LogSnapshot => ({
   loading: false,
   notice: "",
   presentation: {
-    format: "compact",
     graph: true,
     unicode: true,
     author: true,

@@ -3,11 +3,13 @@ title: Repository history
 description: Read attractive Git or Jujutsu history and open any commit in Hunk.
 ---
 
-`hunk log` is Hunk's built-in, provider-neutral, static-first history surface. The bundled Git and
-Jujutsu adapters both feed it through the public extension contract. Its default `medium` format
-keeps the full commit id, author name and email, authored date, complete message, branches or bookmarks,
-remotes, and tags while adding a faithful graph and Hunk's visual hierarchy. It is an alternative
-entry point into Hunk, not a repository dashboard or a replacement for Hunk's normal diff commands.
+`hunk log` is Hunk's built-in, provider-neutral history surface. On a terminal it opens one
+auto-responsive browser; pipes and redirects receive shell-native static output automatically. The
+bundled Git and Jujutsu adapters both feed it through the public extension contract. Static output's
+default `medium` format keeps the full commit id, author name and email, authored date, complete
+message, branches or bookmarks, remotes, and tags while adding a faithful graph and Hunk's visual
+hierarchy. It is an alternative entry point into Hunk, not a repository dashboard or a replacement
+for Hunk's normal diff commands.
 
 ```bash
 hunk log
@@ -17,8 +19,9 @@ hunk log main..feature
 hunk log --first-parent
 hunk log --author Ada --since 2.weeks
 hunk log -- src/session
-hunk log --oneline                 # compact rows
-hunk log --format medium           # explicit default
+hunk log --static --oneline        # compact static records
+hunk log --static --format medium  # explicit static default
+hunk log --static                  # static output, paging when needed
 ```
 
 The graph uses actual ordered parent ids. Ref labels decorate commits but do not assign commits to
@@ -40,16 +43,14 @@ rather than silently forwarding arbitrary provider flags.
 
 ## Browse and open commits
 
-Interaction is explicit so plain `hunk log` always remains predictable static output:
-
-```bash
-hunk log --interactive
-```
-
-The browser remains one minimal history list—there are no status, staging, branch, or preview
-panes. Its File, View, Navigate, Commit, and Help menus reuse Hunk's desktop chrome; press `F10`
-to open them. The View menu opens the same live-preview theme picker as review and offers
-session-local compact/medium, graph, Unicode, author, date, and decoration controls. Use:
+Run plain `hunk log` on a terminal. The browser remains one minimal history list—there are no
+status, staging, branch, or preview panes. Its File, View, Navigate, Commit, and Help menus reuse
+Hunk's desktop chrome; press `F10` to open them. Rows adapt automatically: wide terminals show a
+description and complete metadata on the left with the commit id and merge state aligned right;
+medium and narrow terminals progressively remove secondary detail while keeping the title, identity,
+and useful refs legible. Resizing changes information density without switching modes. The View
+menu opens the same live-preview theme picker as review and offers session-local graph, Unicode,
+author, date, and decoration controls. Use:
 
 - `Up`/`Down` or `j`/`k` to move
 - `PageUp`/`PageDown`, `g`/`G`, or `Home`/`End` for larger jumps
