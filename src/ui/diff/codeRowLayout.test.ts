@@ -76,7 +76,7 @@ function decoratedLines(row: PlannedReviewRow, options: CodeRowLayoutOptions) {
 }
 
 describe("planned code-row layout", () => {
-  test("split measurement and decorated rendering reserve a new-side guide at an exact wrap boundary", () => {
+  test("split measurement keeps an external new-side guide outside canonical row text", () => {
     const options = {
       width: 20,
       lineNumberDigits: 1,
@@ -94,16 +94,16 @@ describe("planned code-row layout", () => {
     });
     expect(planCodeRowLayout(guided, options)).toMatchObject({
       kind: "split",
-      right: { contentWidth: 6, wrappedLineCount: 2 },
-      trailingGuideWidth: 1,
-      wrappedLineCount: 2,
+      right: { contentWidth: 7, wrappedLineCount: 1 },
+      trailingGuideWidth: 0,
+      wrappedLineCount: 1,
     });
-    expect(measurePlannedRenderedRowHeight(guided, { ...options, showHunkHeaders: true })).toBe(2);
-    expect(decoratedLines(guided, options)).toHaveLength(2);
-    expect(decoratedLines(guided, options).every((line) => line.endsWith("│"))).toBe(true);
+    expect(measurePlannedRenderedRowHeight(guided, { ...options, showHunkHeaders: true })).toBe(1);
+    expect(decoratedLines(guided, options)).toHaveLength(1);
+    expect(decoratedLines(guided, options).some((line) => line.endsWith("│"))).toBe(false);
   });
 
-  test("stack measurement and decorated rendering reserve a new-side guide at an exact wrap boundary", () => {
+  test("stack measurement keeps an external new-side guide outside canonical row text", () => {
     const options = {
       width: 10,
       lineNumberDigits: 1,
@@ -121,13 +121,13 @@ describe("planned code-row layout", () => {
     });
     expect(planCodeRowLayout(guided, options)).toMatchObject({
       kind: "stack",
-      cell: { contentWidth: 6, wrappedLineCount: 2 },
-      trailingGuideWidth: 1,
-      wrappedLineCount: 2,
+      cell: { contentWidth: 7, wrappedLineCount: 1 },
+      trailingGuideWidth: 0,
+      wrappedLineCount: 1,
     });
-    expect(measurePlannedRenderedRowHeight(guided, { ...options, showHunkHeaders: true })).toBe(2);
-    expect(decoratedLines(guided, options)).toHaveLength(2);
-    expect(decoratedLines(guided, options).every((line) => line.endsWith("│"))).toBe(true);
+    expect(measurePlannedRenderedRowHeight(guided, { ...options, showHunkHeaders: true })).toBe(1);
+    expect(decoratedLines(guided, options)).toHaveLength(1);
+    expect(decoratedLines(guided, options).some((line) => line.endsWith("│"))).toBe(false);
   });
 
   test("memoizes wrapped measurement while preserving lazy plan construction", () => {
@@ -191,9 +191,9 @@ describe("planned code-row layout", () => {
                   ? CODE_ROW_ADD_NOTE_BADGE_WIDTH
                   : 0;
               expect(plan.addNoteBadgeWidth).toBe(expectedBadgeWidth);
-              expect(plan.trailingGuideWidth).toBe(noteGuideSide === "new" ? 1 : 0);
+              expect(plan.trailingGuideWidth).toBe(0);
 
-              const reservedWidth = plan.trailingGuideWidth + plan.addNoteBadgeWidth;
+              const reservedWidth = plan.addNoteBadgeWidth;
               if (plan.kind === "split") {
                 expect(plan.left.width + plan.right.width + reservedWidth).toBe(options.width);
                 expect(plan.left.prefixWidth).toBe(1);

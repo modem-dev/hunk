@@ -1,4 +1,6 @@
 import type { DiffFile } from "../../../core/changeset/model";
+import { reviewRangeTargetCoverageIssue } from "../../../core/review/geometry";
+import type { ReviewRangeTargetV1, ReviewSide } from "../../../core/review/types";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import { planCodeRowLayout } from "../../diff/codeRowLayout";
@@ -11,11 +13,16 @@ import {
   type DiffSectionRowBounds,
 } from "../../diff/diffSectionGeometry";
 import type { CopySelectedRowRange } from "../../lib/diffSpatial";
-import type { FileSectionLayout } from "../../lib/fileSectionLayout";
+import { findFileSectionAtOffset, type FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
-import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth } from "../../lib/text";
+import { cellRangeToCharRange, measureTextWidth, sliceTextByWidth, wrapText } from "../../lib/text";
 import type { LineCursor } from "../../lib/lineCursors";
-import { contextLineStableKeySides, type PlannedReviewRow } from "../../diff/reviewRenderPlan";
+import {
+  contextLineStableKeySides,
+  contextLineStableKeyTarget,
+  lineStableKeyTarget,
+  type PlannedReviewRow,
+} from "../../diff/reviewRenderPlan";
 
 export type CopySelectionPoint =
   | {
@@ -41,6 +48,16 @@ export interface CopySelectionDrag {
   /** Double/triple-click expansion always copies, even when its range is within click slop. */
   expanded?: boolean;
 }
+
+export interface CommentableSelection {
+  fileId: string;
+  hunkIndex: number;
+  target: ReviewRangeTargetV1;
+}
+
+export type CommentSelectionProjection =
+  | { ok: true; selection: CommentableSelection }
+  | { ok: false; reason: string };
 
 export interface CopySelectionContext {
   codeHorizontalOffset: number;
@@ -706,6 +723,227 @@ export function expandSelectionPoint(
   }
 
   return null;
+}
+
+/** Project rendered selection rows into contiguous source ranges for one file. */
+export function projectCommentSelection({
+  drag,
+  fileSectionLayouts,
+  sectionGeometry,
+  side,
+}: {
+  drag: CopySelectionDrag | null;
+  fileSectionLayouts: FileSectionLayout[];
+  sectionGeometry: DiffSectionGeometry[];
+  side?: CopySelectionSide;
+}): CommentSelectionProjection {
+  const invalid = (): CommentSelectionProjection => ({
+    ok: false,
+    reason: "Comment requires contiguous code from one file",
+  });
+  if (!drag?.moved || drag.anchor.kind !== "review-row" || drag.focus.kind !== "review-row") {
+    return invalid();
+  }
+
+  const { start, end } = normalizeCopySelectionRange(drag.anchor, drag.focus);
+  const { startRow, endRow } = copySelectionBodyRange(start, end);
+  const startSection = findFileSectionAtOffset(fileSectionLayouts, startRow);
+  const endSection = findFileSectionAtOffset(fileSectionLayouts, endRow);
+  if (!startSection || !endSection || startSection.fileId !== endSection.fileId) return invalid();
+  const selected: Array<{
+    fileId: string;
+    hunkIndex: number;
+    side: ReviewSide;
+    line: number;
+    visualRow: number;
+    visualEndRow: number;
+  }> = [];
+  let selectedInvalidRow = false;
+  let selectedGeometry: DiffSectionGeometry | undefined;
+  for (const section of fileSectionLayouts) {
+    if (section.bodyTop + section.bodyHeight <= startRow || section.bodyTop > endRow) continue;
+    const geometry = sectionGeometry[section.sectionIndex];
+    if (!geometry || geometry.fileViewRows !== undefined) return invalid();
+    selectedGeometry = geometry;
+    const plannedRowsByKey = new Map(geometry.plannedRows.map((row) => [row.key, row] as const));
+
+    for (const bounds of geometry.rowBounds) {
+      const rowTop = section.bodyTop + bounds.top;
+      const rowBottom = rowTop + bounds.height;
+      if (bounds.height <= 0 || rowBottom <= startRow || rowTop > endRow) continue;
+
+      if (bounds.expandedGapKey) {
+        selectedInvalidRow = true;
+        continue;
+      }
+
+      const context = contextLineStableKeySides(bounds.stableKey);
+      if (context) {
+        const targetSide: ReviewSide = side === "left" ? "old" : "new";
+        selected.push({
+          fileId: section.fileId,
+          hunkIndex: context.hunkIndex,
+          side: targetSide,
+          line: targetSide === "old" ? context.oldLine : context.newLine,
+          visualRow: rowTop,
+          visualEndRow: rowBottom,
+        });
+        continue;
+      }
+
+      const fallbackContext = contextLineStableKeyTarget(bounds.stableKey);
+      if (fallbackContext && side !== "left") {
+        selected.push({
+          fileId: section.fileId,
+          ...fallbackContext,
+          visualRow: rowTop,
+          visualEndRow: rowBottom,
+        });
+        continue;
+      }
+
+      const targets = bounds.stableKeys
+        .map(lineStableKeyTarget)
+        .filter((target): target is NonNullable<typeof target> => target !== null)
+        .filter((target) =>
+          side === undefined ? true : target.side === (side === "left" ? "old" : "new"),
+        );
+      if (targets.length === 0) {
+        const plannedRow = plannedRowsByKey.get(bounds.key);
+        const presentationOnly =
+          plannedRow?.kind === "inline-note" ||
+          plannedRow?.kind === "hunk-gap" ||
+          (plannedRow?.kind === "diff-row" && plannedRow.row.type === "hunk-header");
+        if (!presentationOnly) selectedInvalidRow = true;
+        continue;
+      }
+      for (const target of targets) {
+        selected.push({
+          fileId: section.fileId,
+          ...target,
+          visualRow: rowTop,
+          visualEndRow: rowBottom,
+        });
+      }
+    }
+  }
+
+  if (selectedInvalidRow || selected.length === 0 || !selectedGeometry) return invalid();
+  const endpointsAreCode = [drag.anchor.visualRow, drag.focus.visualRow].every((visualRow) =>
+    selected.some((target) => visualRow >= target.visualRow && visualRow < target.visualEndRow),
+  );
+  if (!endpointsAreCode) return invalid();
+  const fileIds = new Set(selected.map((target) => target.fileId));
+  if (fileIds.size !== 1) return invalid();
+
+  const rangeForSide = (targetSide: ReviewSide) => {
+    const lines = [
+      ...new Set(
+        selected.filter((target) => target.side === targetSide).map((target) => target.line),
+      ),
+    ].sort((a, b) => a - b);
+    if (lines.length === 0) return undefined;
+    if (lines.some((line, index) => index > 0 && line !== lines[index - 1]! + 1)) return null;
+    return [lines[0]!, lines.at(-1)!] as const;
+  };
+  const oldRange = rangeForSide("old");
+  const newRange = rangeForSide("new");
+  if (oldRange === null || newRange === null || (!oldRange && !newRange)) return invalid();
+
+  const focusVisualRow = drag.focus.visualRow;
+  const distanceFromVisualRange = (candidate: (typeof selected)[number]) => {
+    if (focusVisualRow < candidate.visualRow) return candidate.visualRow - focusVisualRow;
+    if (focusVisualRow >= candidate.visualEndRow) {
+      return focusVisualRow - (candidate.visualEndRow - 1);
+    }
+    return 0;
+  };
+  const preferred = [...selected].sort(
+    (left, right) => distanceFromVisualRange(left) - distanceFromVisualRange(right),
+  )[0]!;
+  const target: ReviewRangeTargetV1 = {
+    ...(oldRange ? { oldRange } : {}),
+    ...(newRange ? { newRange } : {}),
+    preferred: { side: preferred.side, line: preferred.line },
+  };
+  if (reviewRangeTargetCoverageIssue(selectedGeometry.hunkSpans, target)) return invalid();
+  return {
+    ok: true,
+    selection: {
+      fileId: preferred.fileId,
+      hunkIndex: preferred.hunkIndex,
+      target,
+    },
+  };
+}
+
+export interface SelectionInvalidationFacts {
+  layout: Exclude<LayoutMode, "auto">;
+  wrapLines: boolean;
+  width: number;
+  viewportHeight: number;
+  codeHorizontalOffset: number;
+  showLineNumbers: boolean;
+  showHunkHeaders: boolean;
+  fileIdentities: readonly string[];
+  rowIdentities: readonly string[];
+}
+
+/** Identify geometry and semantic content changes that retire a committed selection. */
+export function selectionInvalidationIdentity(facts: SelectionInvalidationFacts) {
+  return JSON.stringify(facts);
+}
+
+export interface SelectionActionBarPlacement {
+  top: number;
+  left: number;
+  height: number;
+  compact: boolean;
+  reasonLines?: readonly string[];
+}
+
+/** Place the contextual action bar beside a visible focus row. */
+export function planSelectionActionBar({
+  focusVisualRow,
+  scrollTop,
+  viewportHeight,
+  paneWidth,
+  preferredWidth,
+  reason,
+}: {
+  focusVisualRow: number;
+  scrollTop: number;
+  viewportHeight: number;
+  paneWidth: number;
+  preferredWidth: number;
+  reason?: string;
+}): SelectionActionBarPlacement | null {
+  const focusRow = focusVisualRow - scrollTop;
+  // Eleven inner cells fit the longest compact label (` Esc Clear `); the border needs two.
+  if (focusRow < 0 || focusRow >= viewportHeight || viewportHeight <= 0 || paneWidth < 13) {
+    return null;
+  }
+  const compact = paneWidth < preferredWidth;
+  const width = Math.min(paneWidth, preferredWidth);
+  const reasonLines = reason === undefined ? [] : wrapText(reason, Math.max(1, width - 4));
+  // The outer two rows belong to the border; action and reason rows occupy its interior.
+  const height = (compact ? 3 : 1) + reasonLines.length + 2;
+  if (height > viewportHeight) return null;
+  const below = focusRow + 1;
+  const above = focusRow - height;
+  const top =
+    below + height <= viewportHeight
+      ? below
+      : above >= 0
+        ? above
+        : Math.max(0, Math.min(below, viewportHeight - height));
+  return {
+    top,
+    left: Math.max(0, paneWidth - width),
+    height,
+    compact,
+    ...(reasonLines.length > 0 ? { reasonLines } : {}),
+  };
 }
 
 /** Build file-local row key ranges for the visible copy-selection highlight. */

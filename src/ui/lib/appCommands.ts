@@ -130,6 +130,10 @@ export interface BuildAppCommandsOptions {
   stepDiffLine: (delta: number) => void;
   selectCursorLine: (style: CursorLine) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  hasVisualSelection?: () => boolean;
+  startVisualSelection?: () => void;
+  copySelection?: () => void;
+  clearSelection?: () => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
   toggleCopyDecorations: () => void;
@@ -182,6 +186,15 @@ function builtinCommandHandlers(
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.startVisualSelection": { run: () => options.startVisualSelection?.() },
+    "hunk.review.copySelection": {
+      isEnabled: () => options.hasVisualSelection?.() ?? false,
+      run: () => options.copySelection?.(),
+    },
+    "hunk.review.clearSelection": {
+      isEnabled: () => options.hasVisualSelection?.() ?? false,
+      run: () => options.clearSelection?.(),
+    },
     "hunk.review.startNote": { run: () => options.startUserNote() },
     "hunk.review.editActiveNote": {
       isEnabled: () => Boolean(options.canEditActiveNote),
@@ -335,6 +348,10 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     stepDiffLine: noop,
     selectCursorLine: noop,
     selectLayoutMode: noop,
+    hasVisualSelection: () => false,
+    startVisualSelection: noop,
+    copySelection: noop,
+    clearSelection: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
     toggleCopyDecorations: noop,

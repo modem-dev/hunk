@@ -1,6 +1,7 @@
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile } from "../../core/changeset/model";
+import type { ReviewHunkSpan } from "../../core/review/geometry";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -36,6 +37,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
  * implementations keep that row stream lazy so ordinary scrolling/navigation retain only bounds.
  */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
+  /** Visible patch extents used by shared comment-range coverage validation. */
+  hunkSpans: readonly ReviewHunkSpan[];
   lineNumberDigits: number;
   plannedRows: PlannedReviewRow[];
   /** Alternate-view rows consume the same measured bounds while raw copy remains unavailable. */
@@ -294,6 +297,7 @@ export function measureDiffSectionGeometry(
       bodyHeight: 1,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
+      hunkSpans: file.metadata.hunks,
       lineNumberDigits: String(findMaxLineNumber(file)).length,
       plannedRows: [],
       rowBounds: [],
@@ -418,6 +422,7 @@ export function measureDiffSectionGeometry(
     bodyHeight,
     hunkAnchorRows,
     hunkBounds,
+    hunkSpans: file.metadata.hunks,
     lineNumberDigits,
     get plannedRows() {
       return resolvePlannedRows();

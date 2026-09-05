@@ -280,8 +280,8 @@ describe("useUserNoteComposer", () => {
     let reviewFocusCount = 0;
     const harness = await renderComposer(
       baseOptions({
-        draftNote,
-        saveDraft: () => (++saveCount === 1 ? savedNote : null),
+        draftNote: { ...draftNote, newRange: [41, 43] },
+        saveDraft: () => (++saveCount === 1 ? { ...savedNote, newRange: [41, 43] } : null),
         focus: {
           draft: () => {},
           review: () => {
@@ -312,6 +312,7 @@ describe("useUserNoteComposer", () => {
               hunkIndex: 1,
               side: "new",
               line: 42,
+              newRange: [41, 43],
               body: "saved body",
               draft: false,
             },
@@ -369,7 +370,7 @@ describe("useUserNoteComposer", () => {
     const events: Array<{ event: string; payload: unknown }> = [];
     const harness = await renderComposer(
       baseOptions({
-        draftNote,
+        draftNote: { ...draftNote, newRange: [41, 43] },
         updateDraft: (body) => bodies.push(body),
         publishEvent: (event, payload) => events.push({ event, payload }),
       }),
@@ -390,6 +391,7 @@ describe("useUserNoteComposer", () => {
               hunkIndex: 1,
               side: "new",
               line: 42,
+              newRange: [41, 43],
               body: "current editor body",
               draft: true,
             },
@@ -543,6 +545,9 @@ describe("projectExtensionReviewNote", () => {
       body: draftNote.body,
       draft: true,
     });
+    expect(
+      projectExtensionReviewNote({ ...draftNote, oldRange: [40, 42], newRange: [41, 43] }, true),
+    ).toMatchObject({ oldRange: [40, 42], newRange: [41, 43] });
     expect(
       projectExtensionReviewNote(
         { ...savedNote, parentId: "user:parent", fileId: "runtime-alpha" },

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../../core/changeset/model";
 import { resolveTheme } from "../../themes";
-import { measureDiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import {
+  measureDiffSectionGeometry,
+  type DiffSectionGeometry,
+} from "../../diff/diffSectionGeometry";
 import { planCodeRowLayout } from "../../diff/codeRowLayout";
 import { buildFileSectionLayouts } from "../../lib/fileSectionLayout";
 import {
@@ -15,8 +18,11 @@ import {
   findCopySelectionPoint,
   findLineCursorForClick,
   normalizeCopySelectionRange,
+  planSelectionActionBar,
+  projectCommentSelection,
   renderCopySelectionText,
   resolveCopySelectionSide,
+  selectionInvalidationIdentity,
   type CopySelectionContext,
   type CopySelectionDrag,
   type CopySelectionPoint,
@@ -30,6 +36,102 @@ import {
 } from "../../diff/codeColumns";
 import { measureTextWidth } from "../../lib/text";
 import { buildLineCursors } from "../../lib/lineCursors";
+
+describe("planSelectionActionBar", () => {
+  test("accounts for horizontal, compact vertical, and disabled-reason heights", () => {
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 12,
+        scrollTop: 10,
+        viewportHeight: 8,
+        paneWidth: 80,
+        preferredWidth: 34,
+      }),
+    ).toEqual({ top: 3, left: 46, height: 3, compact: false });
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 17,
+        scrollTop: 10,
+        viewportHeight: 8,
+        paneWidth: 20,
+        preferredWidth: 34,
+      }),
+    ).toEqual({ top: 2, left: 0, height: 5, compact: true });
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 15,
+        scrollTop: 10,
+        viewportHeight: 8,
+        paneWidth: 80,
+        preferredWidth: 34,
+        reason: "Unavailable",
+      }),
+    ).toEqual({
+      top: 1,
+      left: 46,
+      height: 4,
+      compact: false,
+      reasonLines: ["Unavailable"],
+    });
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 17,
+        scrollTop: 10,
+        viewportHeight: 12,
+        paneWidth: 20,
+        preferredWidth: 34,
+        reason: "Comment requires contiguous code from one file",
+      }),
+    ).toEqual({
+      top: 4,
+      left: 0,
+      height: 8,
+      compact: true,
+      reasonLines: ["Comment requires", "contiguous code", "from one file"],
+    });
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 9,
+        scrollTop: 10,
+        viewportHeight: 8,
+        paneWidth: 80,
+        preferredWidth: 34,
+      }),
+    ).toBeNull();
+    expect(
+      planSelectionActionBar({
+        focusVisualRow: 12,
+        scrollTop: 10,
+        viewportHeight: 8,
+        paneWidth: 12,
+        preferredWidth: 34,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("selectionInvalidationIdentity", () => {
+  const base = {
+    layout: "stack" as const,
+    wrapLines: false,
+    width: 80,
+    viewportHeight: 20,
+    codeHorizontalOffset: 0,
+    showLineNumbers: true,
+    showHunkHeaders: true,
+    fileIdentities: ["file:key:content-a"],
+    rowIdentities: ["row:a:1"],
+  };
+
+  test("changes for semantic content and height-only resize facts", () => {
+    expect(selectionInvalidationIdentity({ ...base, viewportHeight: 19 })).not.toBe(
+      selectionInvalidationIdentity(base),
+    );
+    expect(
+      selectionInvalidationIdentity({ ...base, fileIdentities: ["file:key:content-b"] }),
+    ).not.toBe(selectionInvalidationIdentity(base));
+  });
+});
 
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
@@ -387,6 +489,409 @@ describe("findLineCursorForClick", () => {
       }),
     ).toBeNull();
   });
+});
+
+describe("projectCommentSelection", () => {
+  test("projects split context rows onto the explicitly selected side", () => {
+    const file = createDiffFile();
+    const { fileSectionLayouts, sectionGeometry } = buildContext("split", 120, file);
+    const geometry = sectionGeometry[0]!;
+    const section = fileSectionLayouts[0]!;
+    const contextBounds = geometry.rowBounds.find((bounds) =>
+      bounds.stableKey.includes(":context:"),
+    )!;
+    const context = contextBounds.stableKey.split(":");
+    const oldLine = Number(context[3]);
+    const newLine = Number(context[4]);
+    const drag: CopySelectionDrag = {
+      anchor: {
+        kind: "review-row",
+        visualRow: section.bodyTop + contextBounds.top,
+        column: 8,
+      },
+      focus: {
+        kind: "review-row",
+        visualRow: section.bodyTop + contextBounds.top,
+        column: 14,
+      },
+      moved: true,
+    };
+
+    expect(
+      projectCommentSelection({
+        drag,
+        fileSectionLayouts,
+        sectionGeometry,
+        side: "left",
+      }),
+    ).toMatchObject({
+      ok: true,
+      selection: { target: { oldRange: [oldLine, oldLine] } },
+    });
+    expect(
+      projectCommentSelection({
+        drag,
+        fileSectionLayouts,
+        sectionGeometry,
+        side: "right",
+      }),
+    ).toMatchObject({
+      ok: true,
+      selection: { target: { newRange: [newLine, newLine] } },
+    });
+  });
+
+  test("uses the wrapped focus row as preferred in forward and reverse selections", () => {
+    const file = createTestDiffFile({
+      id: "wrapped-preferred",
+      path: "wrapped-preferred.ts",
+      before: "",
+      after: `${"first-line-content-".repeat(5)}\n${"second-line-content-".repeat(5)}\n`,
+    });
+    const { fileSectionLayouts, sectionGeometry } = buildMultiFileTestContext({
+      files: [file],
+      width: 24,
+      wrapLines: true,
+    });
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const cursors = buildLineCursors([file], sectionGeometry).filter(
+      (cursor) => cursor.target.side === "new",
+    );
+    const boundsForLine = (line: number) => {
+      const cursor = cursors.find((candidate) => candidate.target.line === line)!;
+      return geometry.rowBounds.find(
+        (bounds) =>
+          bounds.stableKey === cursor.stableKey || bounds.stableKeys.includes(cursor.stableKey),
+      )!;
+    };
+    const first = boundsForLine(1);
+    const second = boundsForLine(2);
+    expect(first.height).toBeGreaterThan(1);
+    expect(second.height).toBeGreaterThan(1);
+    const point = (bounds: typeof first) => ({
+      kind: "review-row" as const,
+      visualRow: section.bodyTop + bounds.top + bounds.height - 1,
+      column: 12,
+    });
+
+    const forward = projectCommentSelection({
+      drag: { anchor: point(first), focus: point(second), moved: true },
+      fileSectionLayouts,
+      sectionGeometry,
+    });
+    const reverse = projectCommentSelection({
+      drag: { anchor: point(second), focus: point(first), moved: true },
+      fileSectionLayouts,
+      sectionGeometry,
+    });
+
+    expect(forward).toMatchObject({
+      ok: true,
+      selection: { target: { preferred: { side: "new", line: 2 } } },
+    });
+    expect(reverse).toMatchObject({
+      ok: true,
+      selection: { target: { preferred: { side: "new", line: 1 } } },
+    });
+  });
+
+  test("projects contiguous code and rejects selected non-code rows", () => {
+    const file = createDiffFile();
+    const { fileSectionLayouts, sectionGeometry } = buildContext("stack", 120, file);
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const cursors = buildLineCursors([file], sectionGeometry);
+    const rows = (cursor: (typeof cursors)[number]) => {
+      const bounds = geometry.rowBounds.find(
+        (candidate) =>
+          candidate.stableKey === cursor.stableKey ||
+          candidate.stableKeys.includes(cursor.stableKey),
+      )!;
+      return section.bodyTop + bounds.top;
+    };
+    const sameSide = cursors.find((cursor, index) => {
+      const next = cursors[index + 1];
+      return (
+        next?.target.side === cursor.target.side && next.target.line === cursor.target.line + 1
+      );
+    })!;
+    const next = cursors[cursors.indexOf(sameSide) + 1]!;
+    const projected = projectCommentSelection({
+      drag: {
+        anchor: { kind: "review-row", visualRow: rows(sameSide), column: 1 },
+        focus: { kind: "review-row", visualRow: rows(next), column: 8 },
+        moved: true,
+      },
+      fileSectionLayouts,
+      sectionGeometry,
+    });
+    expect(projected.ok).toBe(true);
+
+    const sideTransitionIndex = cursors.findIndex((cursor, index) => {
+      const following = cursors[index + 1];
+      return following !== undefined && following.target.side !== cursor.target.side;
+    });
+    const transitionStart = cursors[sideTransitionIndex]!;
+    const transitionEnd = cursors[sideTransitionIndex + 1]!;
+    const mixedProjection = projectCommentSelection({
+      drag: {
+        anchor: { kind: "review-row", visualRow: rows(transitionStart), column: 8 },
+        focus: { kind: "review-row", visualRow: rows(transitionEnd), column: 12 },
+        moved: true,
+      },
+      fileSectionLayouts,
+      sectionGeometry,
+    });
+    expect(mixedProjection).toEqual({
+      ok: true,
+      selection: {
+        fileId: file.id,
+        hunkIndex: transitionEnd.hunkIndex,
+        target: {
+          oldRange:
+            transitionStart.target.side === "old"
+              ? [transitionStart.target.line, transitionStart.target.line]
+              : [transitionEnd.target.line, transitionEnd.target.line],
+          newRange:
+            transitionStart.target.side === "new"
+              ? [transitionStart.target.line, transitionStart.target.line]
+              : [transitionEnd.target.line, transitionEnd.target.line],
+          preferred: transitionEnd.target,
+        },
+      },
+    });
+
+    expect(
+      projectCommentSelection({
+        drag: {
+          anchor: { kind: "review-row", visualRow: rows(sameSide), column: 1 },
+          focus: { kind: "review-row", visualRow: rows(next), column: 8 },
+          moved: true,
+        },
+        fileSectionLayouts,
+        sectionGeometry: [{ ...geometry, fileViewRows: [] }],
+      }),
+    ).toEqual({
+      ok: false,
+      reason: "Comment requires contiguous code from one file",
+    });
+
+    const cursorKeys = new Set(cursors.map((cursor) => cursor.stableKey));
+    const nonCode = geometry.rowBounds.find(
+      (bounds) =>
+        ![bounds.stableKey, ...bounds.stableKeys].some((stableKey) => cursorKeys.has(stableKey)),
+    )!;
+    expect(
+      projectCommentSelection({
+        drag: {
+          anchor: { kind: "review-row", visualRow: section.bodyTop + nonCode.top, column: 1 },
+          focus: { kind: "review-row", visualRow: section.bodyTop + nonCode.top, column: 8 },
+          moved: true,
+        },
+        fileSectionLayouts,
+        sectionGeometry,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: "Comment requires contiguous code from one file",
+    });
+  });
+});
+
+describe("projectCommentSelection presentation crossings", () => {
+  const linePlan = (key: string, stableKey: string, hunkIndex: number) =>
+    ({
+      kind: "diff-row",
+      key,
+      stableKey,
+      fileId: "synthetic",
+      hunkIndex,
+      row: {
+        type: "stack-line",
+        key,
+        fileId: "synthetic",
+        hunkIndex,
+        cell: { kind: "addition", sign: "+", newLineNumber: hunkIndex + 1, spans: [] },
+      },
+    }) as const;
+  const first = linePlan("line-1", "line:0:new:1", 0);
+  const second = linePlan("line-2", "line:1:new:2", 1);
+  const inline = {
+    kind: "inline-note",
+    key: "note",
+    stableKey: "inline-note:note",
+    fileId: "synthetic",
+    hunkIndex: 0,
+  } as never;
+  const gap = {
+    kind: "hunk-gap",
+    key: "gap",
+    stableKey: "hunk-gap:1",
+    fileId: "synthetic",
+    hunkIndex: 1,
+    height: 1,
+  } as const;
+  const header = {
+    kind: "diff-row",
+    key: "header",
+    stableKey: "hunk:1",
+    fileId: "synthetic",
+    hunkIndex: 1,
+    row: { type: "hunk-header", key: "header", fileId: "synthetic", hunkIndex: 1, text: "@@" },
+  } as const;
+  const plannedRows = [first, inline, gap, header, second] as DiffSectionGeometry["plannedRows"];
+  const rowBounds = plannedRows.map((row, top) => ({
+    key: row.key,
+    stableKey: row.stableKey,
+    stableKeys: [row.stableKey],
+    top,
+    height: 1,
+  }));
+  const geometry: DiffSectionGeometry = {
+    bodyHeight: 5,
+    hunkAnchorRows: new Map(),
+    hunkBounds: new Map(),
+    hunkSpans: [
+      { additionStart: 1, additionCount: 1, deletionStart: 1, deletionCount: 1 },
+      { additionStart: 2, additionCount: 1, deletionStart: 2, deletionCount: 1 },
+    ],
+    lineNumberDigits: 1,
+    plannedRows,
+    rowBounds,
+    rowBoundsByKey: new Map(rowBounds.map((row) => [row.key, row])),
+    rowBoundsByStableKey: new Map(rowBounds.map((row) => [row.stableKey, row])),
+  };
+  const layouts = [
+    {
+      fileId: "synthetic",
+      sectionIndex: 0,
+      sectionTop: 0,
+      headerTop: 0,
+      bodyTop: 0,
+      bodyHeight: 5,
+      sectionBottom: 5,
+    },
+  ];
+
+  test("ignores inline notes, hunk gaps, and headers between contiguous code endpoints", () => {
+    for (const reverse of [false, true]) {
+      expect(
+        projectCommentSelection({
+          drag: {
+            anchor: { kind: "review-row", visualRow: reverse ? 4 : 0, column: 8 },
+            focus: { kind: "review-row", visualRow: reverse ? 0 : 4, column: 12 },
+            moved: true,
+          },
+          fileSectionLayouts: layouts,
+          sectionGeometry: [geometry],
+        }),
+      ).toEqual({
+        ok: true,
+        selection: {
+          fileId: "synthetic",
+          hunkIndex: reverse ? 0 : 1,
+          target: {
+            newRange: [1, 2],
+            preferred: { side: "new", line: reverse ? 1 : 2 },
+          },
+        },
+      });
+    }
+  });
+
+  test("rejects presentation endpoints and expanded or collapsed source gaps", () => {
+    expect(
+      projectCommentSelection({
+        drag: {
+          anchor: { kind: "review-row", visualRow: 3, column: 1 },
+          focus: { kind: "review-row", visualRow: 4, column: 8 },
+          moved: true,
+        },
+        fileSectionLayouts: layouts,
+        sectionGeometry: [geometry],
+      }).ok,
+    ).toBe(false);
+
+    const expandedGeometry: DiffSectionGeometry = {
+      ...geometry,
+      rowBounds: geometry.rowBounds.map((row, index) =>
+        index === 2 ? { ...row, expandedGapKey: "before:1" } : row,
+      ),
+    };
+    const selectionAcross = (candidate: DiffSectionGeometry) =>
+      projectCommentSelection({
+        drag: {
+          anchor: { kind: "review-row", visualRow: 0, column: 8 },
+          focus: { kind: "review-row", visualRow: 4, column: 8 },
+          moved: true,
+        },
+        fileSectionLayouts: layouts,
+        sectionGeometry: [candidate],
+      });
+    expect(selectionAcross(expandedGeometry).ok).toBe(false);
+
+    const collapsedGeometry: DiffSectionGeometry = {
+      ...geometry,
+      plannedRows: geometry.plannedRows.map((row, index) =>
+        index === 2
+          ? ({
+              kind: "diff-row",
+              key: "gap",
+              stableKey: "hunk-gap:1",
+              fileId: "synthetic",
+              hunkIndex: 1,
+              row: {
+                type: "collapsed",
+                key: "gap",
+                fileId: "synthetic",
+                hunkIndex: 1,
+                text: "collapsed",
+                position: "before",
+                oldRange: [2, 2],
+                newRange: [2, 2],
+              },
+            } as const)
+          : row,
+      ),
+    };
+    expect(selectionAcross(collapsedGeometry).ok).toBe(false);
+  });
+});
+
+test("projectCommentSelection rejects code endpoints from different files", () => {
+  const files = [
+    createTestDiffFile({
+      id: "one",
+      path: "one.ts",
+      before: "export const one = 1;\n",
+      after: "export const one = 2;\n",
+    }),
+    createTestDiffFile({
+      id: "two",
+      path: "two.ts",
+      before: "export const two = 1;\n",
+      after: "export const two = 2;\n",
+    }),
+  ];
+  const { fileSectionLayouts, sectionGeometry } = buildMultiFileTestContext({ files });
+  const endpoint = (index: number) => {
+    const bounds = sectionGeometry[index]!.rowBounds.find((row) =>
+      row.stableKeys.some((key) => key.startsWith("line:")),
+    )!;
+    return fileSectionLayouts[index]!.bodyTop + bounds.top;
+  };
+  expect(
+    projectCommentSelection({
+      drag: {
+        anchor: { kind: "review-row", visualRow: endpoint(0), column: 8 },
+        focus: { kind: "review-row", visualRow: endpoint(1), column: 12 },
+        moved: true,
+      },
+      fileSectionLayouts,
+      sectionGeometry,
+    }).ok,
+  ).toBe(false);
 });
 
 describe("copySelectionDragIsClick", () => {
@@ -932,6 +1437,7 @@ describe("buildCopySelectedRowKeys", () => {
         bodyHeight: 20,
         hunkAnchorRows: new Map(),
         hunkBounds: new Map(),
+        hunkSpans: [],
         lineNumberDigits: 1,
         plannedRows: [],
         rowBounds: [rowBounds],

@@ -415,6 +415,7 @@ export function DiffSectionBody({
                 layout={layout}
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
+                rangeGuideConnection={plannedRow.rangeGuideConnection}
                 theme={theme}
                 width={width}
               />

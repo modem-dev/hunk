@@ -65,11 +65,18 @@ function renderAddNoteButton(
   hunkIndex: number,
   target: UserNoteLineTarget | undefined,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  overlayColumn?: number,
 ) {
   return (
     <box
       key={key}
-      style={{ width: CODE_ROW_ADD_NOTE_BADGE_WIDTH, height: 1 }}
+      style={{
+        width: CODE_ROW_ADD_NOTE_BADGE_WIDTH,
+        height: 1,
+        ...(overlayColumn !== undefined
+          ? { position: "absolute" as const, left: overlayColumn, top: 0 }
+          : {}),
+      }}
       onMouseUp={(event) => {
         markNestedRowMouseAction(event);
         onStartUserNoteAtHunk?.(hunkIndex, target);
@@ -77,6 +84,17 @@ function renderAddNoteButton(
     >
       <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
         {CODE_ROW_ADD_NOTE_BADGE_TEXT}
+      </text>
+    </box>
+  );
+}
+
+/** Paint one range guide in the annotation gutter immediately outside diff content. */
+function renderExternalRangeGuide(key: string, width: number, theme: AppTheme) {
+  return (
+    <box key={key} style={{ position: "absolute", left: width, top: 0, width: 1, height: 1 }}>
+      <text fg={theme.noteBorder} bg={theme.panel}>
+        │
       </text>
     </box>
   );
@@ -124,7 +142,9 @@ export function CodeRowView({
   const codeRowLayout = planCodeRowLayout(plannedRow, {
     lineNumberDigits,
     reserveAddNoteColumn: Boolean(onStartUserNoteAtHunk),
-    showAddNoteBadge,
+    // Nowrap rows paint the hover affordance over their trailing cells so the note guide stays
+    // fixed. Wrapped rows reserve the column because overlaying continuation text would hide code.
+    showAddNoteBadge: wrapLines && showAddNoteBadge,
     showLineNumbers,
     width,
     wrapLines,
@@ -173,8 +193,7 @@ export function CodeRowView({
   if (row.type === "split-line") {
     // The planner and row type are derived from the same complete planned row.
     const splitLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "split" }>;
-    const guideOnOldSide = splitLayout.noteGuideSide === "old";
-    const guideOnNewSide = splitLayout.noteGuideSide === "new";
+    const hasRangeGuide = splitLayout.noteGuideSide !== undefined;
     const addNoteTarget: UserNoteLineTarget | undefined =
       row.right.lineNumber !== undefined
         ? { side: "new", line: row.right.lineNumber }
@@ -184,15 +203,13 @@ export function CodeRowView({
 
     const addBadgeWidth = splitLayout.addNoteBadgeWidth;
     const leftPrefix = {
-      text: guideOnOldSide ? "│" : diffRailMarker(),
-      fg: guideOnOldSide
-        ? theme.noteBorder
-        : splitLeftRailColor(row.left.kind, theme, selected || hasCopySelection),
+      text: diffRailMarker(),
+      fg: splitLeftRailColor(row.left.kind, theme, selected),
       bg: theme.panel,
     };
     const rightPrefix = {
       text: "▌",
-      fg: splitRightRailColor(row.right.kind, theme, selected || hasCopySelection),
+      fg: splitRightRailColor(row.right.kind, theme, selected),
       bg: theme.panel,
     };
 
@@ -200,15 +217,16 @@ export function CodeRowView({
       return (
         <box
           id={anchorId}
-          style={{ width: "100%", height: 1, flexDirection: "row" }}
+          style={{
+            position: "relative",
+            width: "100%",
+            height: 1,
+            flexDirection: "row",
+            overflow: "visible",
+          }}
           onMouseMove={() => onHoverRow?.(row.key)}
         >
-          <box
-            style={{
-              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
-              height: 1,
-            }}
-          >
+          <box style={{ width: "100%", height: 1 }}>
             {codeCellView.renderNowrapSplit({
               row,
               layout: splitLayout,
@@ -220,7 +238,7 @@ export function CodeRowView({
               rightPrefix,
               leftHighlight,
               rightHighlight,
-              guideOnNewSide,
+              guideOnNewSide: false,
             })}
           </box>
           {showAddNoteBadge
@@ -230,8 +248,10 @@ export function CodeRowView({
                 row.hunkIndex,
                 addNoteTarget,
                 onStartUserNoteAtHunk,
+                Math.max(0, width - CODE_ROW_ADD_NOTE_BADGE_WIDTH),
               )
             : null}
+          {hasRangeGuide ? renderExternalRangeGuide(`${row.key}:range-guide`, width, theme) : null}
         </box>
       );
     }
@@ -246,40 +266,46 @@ export function CodeRowView({
       rightPrefix,
       leftHighlight,
       rightHighlight,
-      guideOnNewSide,
+      guideOnNewSide: false,
     });
 
     return (
-      <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
+      <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
         {Array.from({ length: wrapped.lineCount }, (_, index) => {
           const showBadgeOnLine = showAddNoteBadge && index === 0;
           const styledRow = wrapped.paintLine(index, showBadgeOnLine ? 0 : addBadgeWidth);
 
-          if (!showBadgeOnLine) {
-            return (
-              <text
-                key={`${row.key}:wrap:${index}`}
-                content={styledRow}
-                onMouseMove={() => onHoverRow?.(row.key)}
-              />
-            );
-          }
           return (
             <box
               key={`${row.key}:wrap:${index}`}
-              style={{ width: "100%", height: 1, flexDirection: "row" }}
+              style={{
+                position: "relative",
+                width: "100%",
+                height: 1,
+                flexDirection: "row",
+                overflow: "visible",
+              }}
               onMouseMove={() => onHoverRow?.(row.key)}
             >
-              <box style={{ width: Math.max(0, width - addBadgeWidth), height: 1 }}>
+              {showBadgeOnLine ? (
+                <>
+                  <box style={{ width: Math.max(0, width - addBadgeWidth), height: 1 }}>
+                    <text content={styledRow} />
+                  </box>
+                  {renderAddNoteButton(
+                    `${row.key}:add-note:${index}`,
+                    theme,
+                    row.hunkIndex,
+                    addNoteTarget,
+                    onStartUserNoteAtHunk,
+                  )}
+                </>
+              ) : (
                 <text content={styledRow} />
-              </box>
-              {renderAddNoteButton(
-                `${row.key}:add-note:${index}`,
-                theme,
-                row.hunkIndex,
-                addNoteTarget,
-                onStartUserNoteAtHunk,
               )}
+              {hasRangeGuide
+                ? renderExternalRangeGuide(`${row.key}:range-guide:${index}`, width, theme)
+                : null}
             </box>
           );
         })}
@@ -289,8 +315,7 @@ export function CodeRowView({
 
   // The planner and row type are derived from the same complete planned row.
   const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
-  const guideOnOldSide = stackLayout.noteGuideSide === "old";
-  const guideOnNewSide = stackLayout.noteGuideSide === "new";
+  const hasRangeGuide = stackLayout.noteGuideSide !== undefined;
   const addNoteTarget: UserNoteLineTarget | undefined =
     row.cell.newLineNumber !== undefined
       ? { side: "new", line: row.cell.newLineNumber }
@@ -299,10 +324,8 @@ export function CodeRowView({
         : undefined;
   const addBadgeWidth = stackLayout.addNoteBadgeWidth;
   const prefix = {
-    text: guideOnOldSide ? "│" : diffRailMarker(),
-    fg: guideOnOldSide
-      ? theme.noteBorder
-      : stackRailColor(row.cell.kind, theme, selected || hasCopySelection),
+    text: diffRailMarker(),
+    fg: stackRailColor(row.cell.kind, theme, selected),
     bg: theme.panel,
   };
 
@@ -310,15 +333,16 @@ export function CodeRowView({
     return (
       <box
         id={anchorId}
-        style={{ width: "100%", height: 1, flexDirection: "row" }}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: 1,
+          flexDirection: "row",
+          overflow: "visible",
+        }}
         onMouseMove={() => onHoverRow?.(row.key)}
       >
-        <box
-          style={{
-            width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
-            height: 1,
-          }}
-        >
+        <box style={{ width: "100%", height: 1 }}>
           {codeCellView.renderNowrapStack({
             row,
             layout: stackLayout,
@@ -328,7 +352,7 @@ export function CodeRowView({
             horizontalOffset: codeHorizontalOffset,
             prefix,
             highlight: cellHighlight,
-            guideOnNewSide,
+            guideOnNewSide: false,
           })}
         </box>
         {showAddNoteBadge
@@ -338,8 +362,10 @@ export function CodeRowView({
               row.hunkIndex,
               addNoteTarget,
               onStartUserNoteAtHunk,
+              Math.max(0, width - CODE_ROW_ADD_NOTE_BADGE_WIDTH),
             )
           : null}
+        {hasRangeGuide ? renderExternalRangeGuide(`${row.key}:range-guide`, width, theme) : null}
       </box>
     );
   }
@@ -352,11 +378,11 @@ export function CodeRowView({
     theme,
     prefix,
     highlight: cellHighlight,
-    guideOnNewSide,
+    guideOnNewSide: false,
   });
 
   return (
-    <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
+    <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
       {Array.from({ length: wrapped.lineCount }, (_, index) => {
         const showBadgeOnLine = showAddNoteBadge && index === 0;
         const styledRow = wrapped.paintLine(index);
@@ -364,7 +390,13 @@ export function CodeRowView({
         return (
           <box
             key={`${row.key}:wrap:${index}`}
-            style={{ width: "100%", height: 1, flexDirection: "row" }}
+            style={{
+              position: "relative",
+              width: "100%",
+              height: 1,
+              flexDirection: "row",
+              overflow: "visible",
+            }}
             onMouseMove={() => onHoverRow?.(row.key)}
           >
             <box
@@ -388,6 +420,9 @@ export function CodeRowView({
                   addBadgeWidth,
                   wrapped.contentBackground,
                 )}
+            {hasRangeGuide
+              ? renderExternalRangeGuide(`${row.key}:range-guide:${index}`, width, theme)
+              : null}
           </box>
         );
       })}

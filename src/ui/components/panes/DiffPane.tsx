@@ -17,7 +17,8 @@ import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../../../core/run/reviewGap"
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
-import type { UserNoteLineTarget } from "../../../core/liveComments";
+import { resolveSplitPaneWidths } from "../../diff/codeColumns";
+import type { ReviewNoteTargetV1 } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
@@ -47,7 +48,7 @@ import {
   type CurrentLineAlignment,
   type LineRevealPlacement,
 } from "../../lib/hunkScroll";
-import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
+import { contextLineStableKeySides, inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
@@ -113,8 +114,11 @@ import {
   findCopySelectionPoint,
   findLineCursorForClick,
   normalizeCopySelectionRange,
+  planSelectionActionBar,
+  projectCommentSelection,
   renderCopySelectionText,
   resolveCopySelectionSide,
+  selectionInvalidationIdentity,
   type CopySelectionContext,
   type CopySelectionDrag,
   type CopySelectionPoint,
@@ -122,6 +126,21 @@ import {
 } from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const SELECTION_ACTION_BAR_WIDTH = 34;
+
+type StartUserNoteAtHunk = {
+  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
+}["bivarianceHack"];
+
+/** Commands App may route to the pane's active persistent selection. */
+export interface ReviewSelectionActionsHandle {
+  hasSelection: () => boolean;
+  beginKeyboardSelection: () => boolean;
+  copy: () => boolean;
+  comment: () => boolean;
+  clear: () => boolean;
+  move: (delta: number) => boolean;
+}
 
 /** Read terminal-only semantic note metadata without granting it to static sidecars. */
 function storedReviewNoteMetadata(
@@ -130,6 +149,26 @@ function storedReviewNoteMetadata(
   const candidate = annotation as AgentAnnotation & Partial<StoredReviewNoteRenderMetadata>;
   return candidate.semanticallyStored === true && typeof candidate.reviewNoteId === "string"
     ? (candidate as AgentAnnotation & StoredReviewNoteRenderMetadata)
+    : undefined;
+}
+
+/** Read the semantic placement retained on stored terminal note projections. */
+function storedReviewNoteTarget(
+  annotation: AgentAnnotation,
+): { hunkIndex: number; side: "old" | "new"; line: number } | undefined {
+  const candidate = annotation as AgentAnnotation & {
+    hunkIndex?: unknown;
+    side?: unknown;
+    line?: unknown;
+  };
+  return Number.isInteger(candidate.hunkIndex) &&
+    (candidate.side === "old" || candidate.side === "new") &&
+    Number.isInteger(candidate.line)
+    ? {
+        hunkIndex: candidate.hunkIndex as number,
+        side: candidate.side,
+        line: candidate.line as number,
+      }
     : undefined;
 }
 
@@ -301,6 +340,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
+  semanticFileIdentities,
   offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   headerLabelWidth,
@@ -339,6 +379,7 @@ export function DiffPane({
   width,
   height,
   cancelCopySelectionRef,
+  selectionActionsRef,
   onActiveAddNoteAffordanceChange,
   onEditUserNote,
   onReplyToNote,
@@ -368,6 +409,8 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
+  /** Already-projected semantic identities for selection invalidation. */
+  semanticFileIdentities?: readonly string[];
   /** Offload eligible syntax highlighting for this launch. */
   offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
@@ -408,6 +451,7 @@ export function DiffPane({
   width: number;
   height?: number;
   cancelCopySelectionRef?: RefObject<(() => void) | null>;
+  selectionActionsRef?: RefObject<ReviewSelectionActionsHandle | null>;
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
@@ -416,7 +460,7 @@ export function DiffPane({
   onRemoveLiveNote?: (noteId: string) => void;
   onRemoveUserNote?: (noteId: string) => void;
   onSaveDraftNote?: () => void;
-  onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onStartUserNoteAtHunk?: StartUserNoteAtHunk;
   onUpdateDraftNote?: (body: string) => void;
   onBlurDraftNote?: () => void;
   onCancelDraftNote?: () => void;
@@ -490,7 +534,7 @@ export function DiffPane({
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
   const startUserNoteAtHunkCallbacksRef = useRef(
-    new Map<string, (hunkIndex: number, target?: UserNoteLineTarget) => void>(),
+    new Map<string, (hunkIndex: number, target?: ReviewNoteTargetV1) => void>(),
   );
   const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
     let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
@@ -589,6 +633,7 @@ export function DiffPane({
       const notes: VisibleAgentNote[] = annotations.flatMap((annotation, index) => {
         const source = reviewNoteSource(annotation);
         const metadata = storedReviewNoteMetadata(annotation);
+        const storedTarget = metadata ? storedReviewNoteTarget(annotation) : undefined;
         if (
           metadata &&
           draftNote?.kind === "edit" &&
@@ -622,6 +667,7 @@ export function DiffPane({
             annotation,
             source,
             editable: source === "user" && annotation.editable === true,
+            ...(storedTarget ? { target: storedTarget } : {}),
             ...(metadata
               ? {
                   thread: {
@@ -796,9 +842,24 @@ export function DiffPane({
   const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
-  // Mirror the drag state in a ref so updateCopySelection can suppress native selection
-  // on the very first drag event, before React has re-rendered with the new state.
+  // Pointer gestures and committed selections are separate: mouse-up retires capture while
+  // the committed range remains painted and available to Comment/Copy/Clear.
   const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
+  const committedCopySelectionRef = useRef<CopySelectionDrag | null>(null);
+  const keyboardSelectionAnchorRef = useRef<{
+    top: number;
+    bottom: number;
+    side: "old" | "new";
+  } | null>(null);
+  const clearCopySelection = useCallback(() => {
+    const hadSelection =
+      copySelectionDragRef.current !== null || committedCopySelectionRef.current !== null;
+    copySelectionDragRef.current = null;
+    committedCopySelectionRef.current = null;
+    keyboardSelectionAnchorRef.current = null;
+    setCopySelectionDrag(null);
+    return hadSelection;
+  }, []);
   const lastClickTimeRef = useRef(0);
   const clickCountRef = useRef(0);
   const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
@@ -1193,6 +1254,47 @@ export function DiffPane({
     supersedePendingSelectionReveal,
     totalContentHeight,
   ]);
+
+  const selectionContentIdentities = useMemo(
+    () => semanticFileIdentities ?? files.map((file) => file.id),
+    [files, semanticFileIdentities],
+  );
+  const selectionGeometryKey = useMemo(
+    () =>
+      selectionInvalidationIdentity({
+        layout,
+        wrapLines,
+        width: diffContentWidth,
+        viewportHeight: scrollViewport.height || height || 0,
+        codeHorizontalOffset,
+        showLineNumbers,
+        showHunkHeaders,
+        fileIdentities: selectionContentIdentities,
+        rowIdentities: sectionGeometry.flatMap((geometry) =>
+          geometry.rowBounds.map((row) => `${row.key}:${row.height}`),
+        ),
+      }),
+    [
+      codeHorizontalOffset,
+      diffContentWidth,
+      height,
+      layout,
+      scrollViewport.height,
+      sectionGeometry,
+      selectionContentIdentities,
+      showHunkHeaders,
+      showLineNumbers,
+      wrapLines,
+    ],
+  );
+  const previousSelectionGeometryKeyRef = useRef(selectionGeometryKey);
+  useEffect(() => {
+    if (previousSelectionGeometryKeyRef.current !== selectionGeometryKey) {
+      clearCopySelection();
+      previousSelectionGeometryKeyRef.current = selectionGeometryKey;
+    }
+  }, [clearCopySelection, selectionGeometryKey]);
+
   const fileSectionIndexById = useMemo(
     () => buildFileSectionIndexById(fileSectionLayouts),
     [fileSectionLayouts],
@@ -1448,6 +1550,178 @@ export function DiffPane({
     [onCopyFeedback, onCopySelectionText, renderer],
   );
 
+  const commentSelection = useMemo(
+    () =>
+      projectCommentSelection({
+        drag: copySelectionDrag,
+        fileSectionLayouts,
+        sectionGeometry,
+        side: copySelectionSide,
+      }),
+    [copySelectionDrag, copySelectionSide, fileSectionLayouts, sectionGeometry],
+  );
+  const selectionActionPlacement = useMemo(() => {
+    if (!copySelectionDrag || committedCopySelectionRef.current === null) return null;
+    const focusVisualRow =
+      copySelectionDrag.focus.kind === "review-row"
+        ? copySelectionDrag.focus.visualRow
+        : copySelectionDrag.focus.nextVisualRow - 1;
+    const splitWidths = layout === "split" ? resolveSplitPaneWidths(diffContentWidth) : null;
+    const selectedPaneLeft =
+      splitWidths && copySelectionSide === "right" ? splitWidths.leftWidth : 0;
+    const selectedPaneWidth = splitWidths
+      ? copySelectionSide === "right"
+        ? splitWidths.rightWidth
+        : splitWidths.leftWidth
+      : diffContentWidth;
+    const placement = planSelectionActionBar({
+      focusVisualRow,
+      scrollTop: effectiveScrollTop,
+      viewportHeight:
+        scrollViewport.height ||
+        scrollRef.current?.viewport.height ||
+        Math.max(0, (height ?? 0) - 1),
+      paneWidth: selectedPaneWidth,
+      preferredWidth: SELECTION_ACTION_BAR_WIDTH,
+      reason: commentSelection.ok ? undefined : commentSelection.reason,
+    });
+    return placement ? { ...placement, left: placement.left + selectedPaneLeft } : null;
+  }, [
+    copySelectionDrag,
+    commentSelection,
+    copySelectionSide,
+    diffContentWidth,
+    effectiveScrollTop,
+    height,
+    layout,
+    scrollRef,
+    scrollViewport.height,
+  ]);
+
+  /** Copy the committed range without coupling selection acquisition to clipboard support. */
+  const copyCommittedSelection = useCallback(() => {
+    const selection = committedCopySelectionRef.current;
+    if (!selection) return false;
+    const { start, end } = normalizeCopySelectionRange(selection.anchor, selection.focus);
+    copySelectionText(
+      renderCopySelectionText({
+        context: copySelectionContext,
+        end,
+        side: resolveCopySelectionSide(selection.anchor.column, layout, diffContentWidth),
+        start,
+      }),
+    );
+    return true;
+  }, [copySelectionContext, copySelectionText, diffContentWidth, layout]);
+
+  /** Start a range note when the committed visual selection has one semantic projection. */
+  const commentOnCommittedSelection = useCallback(() => {
+    if (!committedCopySelectionRef.current) return false;
+    if (!commentSelection.ok) {
+      onCopyFeedback?.(commentSelection.reason);
+      return true;
+    }
+    onStartUserNoteAtHunk?.(
+      commentSelection.selection.fileId,
+      commentSelection.selection.hunkIndex,
+      commentSelection.selection.target,
+    );
+    clearCopySelection();
+    return true;
+  }, [clearCopySelection, commentSelection, onCopyFeedback, onStartUserNoteAtHunk]);
+
+  /** Return full-line terminal columns for one source side in the active layout. */
+  const keyboardSelectionColumns = useCallback(
+    (side: "old" | "new") => {
+      if (layout !== "split") return { start: 0, end: Math.max(0, diffContentWidth - 1) };
+      const { leftWidth } = resolveSplitPaneWidths(diffContentWidth);
+      return side === "old"
+        ? { start: 0, end: Math.max(0, leftWidth - 1) }
+        : { start: leftWidth, end: Math.max(leftWidth, diffContentWidth - 1) };
+    },
+    [diffContentWidth, layout],
+  );
+
+  /** Begin keyboard range acquisition at the current measured source row. */
+  const beginKeyboardSelection = useCallback(() => {
+    if (!renderedLineCursor) return false;
+    const bounds = lineCursorBoundsOf(renderedLineCursor);
+    if (!bounds) return false;
+    const columns = keyboardSelectionColumns(renderedLineCursor.target.side);
+    const selection: CopySelectionDrag = {
+      anchor: { kind: "review-row", visualRow: bounds.top, column: columns.start },
+      focus: {
+        kind: "review-row",
+        visualRow: bounds.top + Math.max(0, bounds.height - 1),
+        column: columns.end,
+      },
+      moved: true,
+      expanded: true,
+    };
+    keyboardSelectionAnchorRef.current = {
+      top: bounds.top,
+      bottom: bounds.top + Math.max(0, bounds.height - 1),
+      side: renderedLineCursor.target.side,
+    };
+    copySelectionDragRef.current = null;
+    committedCopySelectionRef.current = selection;
+    setCopySelectionDrag(selection);
+    return true;
+  }, [keyboardSelectionColumns, lineCursorBoundsOf, renderedLineCursor]);
+
+  /** Move the keyboard selection focus through source rows on its anchored side. */
+  const moveKeyboardSelection = useCallback(
+    (delta: number) => {
+      const anchor = keyboardSelectionAnchorRef.current;
+      if (!anchor || !renderedLineCursor || !onViewportLineCursorChange) return false;
+      const candidates = lineCursors.flatMap((cursor) => {
+        if (cursor.target.side === anchor.side) return [cursor];
+        const context = contextLineStableKeySides(cursor.stableKey);
+        return anchor.side === "old" && context
+          ? [{ ...cursor, target: { side: "old" as const, line: context.oldLine } }]
+          : [];
+      });
+      const currentIndex = candidates.findIndex(
+        (cursor) =>
+          cursor.fileId === renderedLineCursor.fileId &&
+          cursor.stableKey === renderedLineCursor.stableKey,
+      );
+      if (currentIndex < 0) return false;
+      const next = candidates[Math.min(candidates.length - 1, Math.max(0, currentIndex + delta))];
+      if (!next) return true;
+      onViewportLineCursorChange(next);
+      return true;
+    },
+    [lineCursors, onViewportLineCursorChange, renderedLineCursor],
+  );
+
+  useEffect(() => {
+    const anchor = keyboardSelectionAnchorRef.current;
+    if (!anchor || !renderedLineCursor || renderedLineCursor.target.side !== anchor.side) return;
+    const bounds = lineCursorBoundsOf(renderedLineCursor);
+    if (!bounds) return;
+    const focusTop = bounds.top;
+    const focusBottom = bounds.top + Math.max(0, bounds.height - 1);
+    const columns = keyboardSelectionColumns(anchor.side);
+    const movingDown = focusTop >= anchor.top;
+    const selection: CopySelectionDrag = {
+      anchor: {
+        kind: "review-row",
+        visualRow: movingDown ? anchor.top : anchor.bottom,
+        column: movingDown ? columns.start : columns.end,
+      },
+      focus: {
+        kind: "review-row",
+        visualRow: movingDown ? focusBottom : focusTop,
+        column: movingDown ? columns.end : columns.start,
+      },
+      moved: true,
+      expanded: true,
+    };
+    committedCopySelectionRef.current = selection;
+    setCopySelectionDrag(selection);
+  }, [keyboardSelectionColumns, lineCursorBoundsOf, renderedLineCursor]);
+
   /** Convert one mouse event into a review-stream copy-selection point. */
   const resolveCopySelectionPoint = useCallback(
     (event: TuiMouseEvent): CopySelectionPoint | null => {
@@ -1515,12 +1789,14 @@ export function DiffPane({
 
       const point = resolveCopySelectionPoint(event);
       if (!point) {
-        copySelectionDragRef.current = null;
+        clearCopySelection();
         clickCountRef.current = 0;
         lastClickPointRef.current = null;
-        setCopySelectionDrag(null);
         return;
       }
+
+      committedCopySelectionRef.current = null;
+      keyboardSelectionAnchorRef.current = null;
 
       // Detect double-click and triple-click for word/line selection.
       const now = Date.now();
@@ -1566,7 +1842,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
+    [clearCopySelection, copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
   );
 
   /** Extend the active diff text selection while the pointer moves. */
@@ -1641,11 +1917,12 @@ export function DiffPane({
         : pending;
 
       copySelectionDragRef.current = null;
-      setCopySelectionDrag(null);
       event?.preventDefault();
       event?.stopPropagation();
 
       if (copySelectionDragIsClick(current)) {
+        committedCopySelectionRef.current = null;
+        setCopySelectionDrag(null);
         if (event && isNestedRowMouseAction(event)) {
           return;
         }
@@ -1666,19 +1943,12 @@ export function DiffPane({
         }
       }
 
-      const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
-      const text = renderCopySelectionText({
-        context: copySelectionContext,
-        end,
-        side: copySelectionSide,
-        start,
-      });
-      copySelectionText(text);
+      // Mouse-up commits the range without choosing an action. Copy and Comment are
+      // explicit so the same acquired selection works for pointer and keyboard users.
+      committedCopySelectionRef.current = current;
+      setCopySelectionDrag(current);
     },
     [
-      copySelectionContext,
-      copySelectionSide,
-      copySelectionText,
       diffContentWidth,
       fileSectionLayouts,
       layout,
@@ -1695,13 +1965,37 @@ export function DiffPane({
     if (!cancelCopySelectionRef) {
       return;
     }
-    cancelCopySelectionRef.current = () => endCopySelection();
+    cancelCopySelectionRef.current = () => {
+      if (copySelectionDragRef.current) endCopySelection();
+    };
     return () => {
       if (cancelCopySelectionRef.current) {
         cancelCopySelectionRef.current = null;
       }
     };
-  }, [cancelCopySelectionRef, endCopySelection]);
+  }, [cancelCopySelectionRef, clearCopySelection, endCopySelection]);
+
+  useEffect(() => {
+    if (!selectionActionsRef) return;
+    selectionActionsRef.current = {
+      hasSelection: () => committedCopySelectionRef.current !== null,
+      beginKeyboardSelection,
+      copy: copyCommittedSelection,
+      comment: commentOnCommittedSelection,
+      clear: clearCopySelection,
+      move: moveKeyboardSelection,
+    };
+    return () => {
+      selectionActionsRef.current = null;
+    };
+  }, [
+    beginKeyboardSelection,
+    clearCopySelection,
+    commentOnCommittedSelection,
+    copyCommittedSelection,
+    moveKeyboardSelection,
+    selectionActionsRef,
+  ]);
 
   /** Clamp one requested review scroll target against the latest planned content height. */
   const clampReviewScrollTop = useCallback(
@@ -2815,6 +3109,86 @@ export function DiffPane({
                   })}
                 </box>
               </scrollbox>
+              {selectionActionPlacement ? (
+                <box
+                  style={{
+                    position: "absolute",
+                    top: selectionActionPlacement.top,
+                    left: selectionActionPlacement.left,
+                    width: Math.min(
+                      layout === "split"
+                        ? copySelectionSide === "right"
+                          ? resolveSplitPaneWidths(diffContentWidth).rightWidth
+                          : resolveSplitPaneWidths(diffContentWidth).leftWidth
+                        : diffContentWidth,
+                      SELECTION_ACTION_BAR_WIDTH,
+                    ),
+                    height: selectionActionPlacement.height,
+                    flexDirection: "column",
+                    border: true,
+                    borderColor: theme.accent,
+                    backgroundColor: theme.panelAlt,
+                    zIndex: 20,
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onMouseUp={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  <box
+                    style={{
+                      height: selectionActionPlacement.compact ? 3 : 1,
+                      flexDirection: selectionActionPlacement.compact ? "column" : "row",
+                    }}
+                  >
+                    <box
+                      style={{ height: 1 }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onMouseUp={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        commentOnCommittedSelection();
+                      }}
+                    >
+                      <text fg={commentSelection.ok ? theme.accent : theme.muted}> c Comment </text>
+                    </box>
+                    <box
+                      style={{ height: 1 }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onMouseUp={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        copyCommittedSelection();
+                      }}
+                    >
+                      <text fg={theme.text}> y Copy </text>
+                    </box>
+                    <box
+                      style={{ height: 1 }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onMouseUp={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        clearCopySelection();
+                      }}
+                    >
+                      <text fg={theme.muted}> Esc Clear </text>
+                    </box>
+                  </box>
+                  {selectionActionPlacement.reasonLines?.map((line, index) => (
+                    <box
+                      key={`selection-reason:${index}`}
+                      style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}
+                    >
+                      <text fg={theme.muted}>{line}</text>
+                    </box>
+                  ))}
+                </box>
+              ) : null}
               <VerticalScrollbar
                 ref={scrollbarRef}
                 scrollRef={scrollRef}

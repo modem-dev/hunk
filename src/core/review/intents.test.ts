@@ -276,6 +276,21 @@ describe("user note creation", () => {
     ).toThrow(ReviewIntentPlanningError);
   });
 
+  test("rejects saving after reconciliation changes the draft file's content", () => {
+    const reloaded = reduceReviewState(stateWithDraft("body"), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", contentIdentity: "content:alpha:changed" },
+        { key: "beta" },
+      ]),
+    });
+
+    expect(reloaded.draftNote).toBeNull();
+    expect(() =>
+      planReviewIntent(reloaded, { type: "notes/create-user", consumeDraft: true }, FACTS),
+    ).toThrow(new ReviewIntentPlanningError("draft-missing", "No user note draft is active."));
+  });
+
   test("rejects a draft anchored to a hunk the file no longer has", () => {
     const reloaded = reduceReviewState(stateWithDraft("body"), {
       type: "document/reconcile",
@@ -332,6 +347,44 @@ describe("user note editing", () => {
       updatedAt: FACTS.timestamp,
     });
     expect(next.userNotes[0]?.note.anchor).toEqual(original.note.anchor);
+  });
+
+  test("preserves a multiline anchor and preferred endpoint through editing", () => {
+    const original = createTestStoredNote({
+      id: "user-range",
+      fileKey: "alpha",
+      source: "user",
+      editable: true,
+    });
+    original.note.anchor = {
+      oldRange: [1, 2],
+      newRange: [11, 12],
+      preferred: { side: "new", line: 12 },
+      intersectingHunkIndices: [0, 1],
+      ownerHunkIndex: 1,
+    };
+    const state = { ...createTestReviewState(), userNotes: [original] };
+    const started = planReviewIntent(
+      state,
+      { type: "notes/start-edit", noteId: original.note.id },
+      { draftId: "draft:range-edit" },
+    ).actions.reduce(reduceReviewState, state);
+
+    expect(started.draftNote).toMatchObject({
+      targetKind: "range",
+      hunkIndex: 1,
+      side: "new",
+      line: 12,
+      anchor: original.note.anchor,
+    });
+    const written = reduceReviewState(started, { type: "draft/update", body: "edited range" });
+    const saved = planReviewIntent(
+      written,
+      { type: "notes/update-user", noteId: original.note.id, consumeDraft: true },
+      { timestamp: FACTS.timestamp },
+    ).actions.reduce(reduceReviewState, written);
+
+    expect(saved.userNotes[0]?.note.anchor).toEqual(original.note.anchor);
   });
 
   test("reopens retained notes after reload clamps away their former hunk", () => {
@@ -415,6 +468,42 @@ describe("threaded replies", () => {
     expect(
       plan.outcome?.type === "notes/created" ? plan.outcome.note.note.anchor : undefined,
     ).toEqual(parent.note.anchor);
+  });
+
+  test("preserves a multiline parent anchor through a nested reply", () => {
+    const parent = createTestStoredNote({ id: "live-range", fileKey: "alpha" });
+    parent.note.anchor = {
+      oldRange: [1, 2],
+      newRange: [11, 12],
+      preferred: { side: "new", line: 12 },
+      intersectingHunkIndices: [0, 1],
+      ownerHunkIndex: 1,
+    };
+    const state = { ...createTestReviewState(), liveNotes: [parent] };
+    const started = planReviewIntent(
+      state,
+      { type: "notes/start-reply", noteId: parent.note.id },
+      { draftId: "draft:range-reply" },
+    ).actions.reduce(reduceReviewState, state);
+
+    expect(started.draftNote).toMatchObject({
+      targetKind: "range",
+      hunkIndex: 1,
+      side: "new",
+      line: 12,
+      anchor: parent.note.anchor,
+    });
+    const written = reduceReviewState(started, { type: "draft/update", body: "range reply" });
+    const saved = planReviewIntent(
+      written,
+      { type: "notes/create-user", consumeDraft: true },
+      FACTS,
+    );
+
+    expect(saved.outcome).toMatchObject({
+      type: "notes/created",
+      note: { note: { parentId: parent.note.id, anchor: parent.note.anchor } },
+    });
   });
 });
 
@@ -575,6 +664,13 @@ describe("notes/start-draft", () => {
           // The second test hunk starts at line 11 with one context line before the change.
           side: "new",
           line: 12,
+          targetKind: "line",
+          anchor: {
+            newRange: [12, 12],
+            preferred: { side: "new", line: 12 },
+            intersectingHunkIndices: [1],
+            ownerHunkIndex: 1,
+          },
           body: "",
         },
       },
@@ -594,6 +690,13 @@ describe("notes/start-draft", () => {
         hunkIndex: 1,
         side: "new",
         line: 12,
+        targetKind: "line",
+        anchor: {
+          newRange: [12, 12],
+          preferred: { side: "new", line: 12 },
+          intersectingHunkIndices: [1],
+          ownerHunkIndex: 1,
+        },
         body: "",
       },
     });
@@ -614,9 +717,122 @@ describe("notes/start-draft", () => {
 
     expect(plan.actions[0]).toMatchObject({
       type: "draft/start",
-      draft: { side: "old", line: 2 },
+      draft: { side: "old", line: 2, targetKind: "line" },
     });
     expect(plan.actions[1]).toMatchObject({ reveal: { anchor: "none", scrollToNote: false } });
+  });
+
+  test("preserves a legacy line target in an expanded gap with its source authority", () => {
+    const plan = planReviewIntent(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+      ]),
+      {
+        type: "notes/start-draft",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        target: { side: "new", line: 7 },
+      },
+      { draftId: "draft:gap-line" },
+    );
+
+    expect(plan.outcome).toMatchObject({
+      type: "notes/draft-started",
+      draft: {
+        targetKind: "line",
+        side: "new",
+        line: 7,
+        expandedLineSource: {
+          sourceIdentity: "source:alpha",
+          sourceAttested: true,
+        },
+        anchor: { newRange: [7, 7], ownerHunkIndex: 1 },
+      },
+    });
+  });
+
+  test("does not attach source authority to an ordinary patch line", () => {
+    const plan = planReviewIntent(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+      ]),
+      {
+        type: "notes/start-draft",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        target: { side: "new", line: 2 },
+      },
+      { draftId: "draft:patch-line" },
+    );
+
+    expect(plan.outcome?.type).toBe("notes/draft-started");
+    if (plan.outcome?.type !== "notes/draft-started") throw new Error("draft not started");
+    expect(plan.outcome.draft.expandedLineSource).toBeUndefined();
+  });
+
+  test("rejects a range target that includes a line omitted from the patch", () => {
+    expect(() =>
+      planReviewIntent(
+        createTestReviewState(),
+        {
+          type: "notes/start-draft",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          target: { newRange: [7, 7], preferred: { side: "new", line: 7 } },
+        },
+        { draftId: "draft:gap-range" },
+      ),
+    ).toThrow("Review range target is not covered by the current patch (new).");
+  });
+
+  test("rejects a covered range whose requested hunk is not its resolved owner", () => {
+    expect(() =>
+      planReviewIntent(
+        createTestReviewState(),
+        {
+          type: "notes/start-draft",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          target: { newRange: [11, 13], preferred: { side: "new", line: 12 } },
+        },
+        { draftId: "draft:wrong-owner" },
+      ),
+    ).toThrow("Review range resolves to hunk 1, not requested hunk 0.");
+  });
+
+  test("retains a multiline range unchanged through draft creation and save", () => {
+    const initial = createTestReviewState();
+    const startPlan = planReviewIntent(
+      initial,
+      {
+        type: "notes/start-draft",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        target: { newRange: [11, 13], preferred: { side: "new", line: 13 } },
+      },
+      { draftId: "draft:range" },
+    );
+    if (startPlan.outcome?.type !== "notes/draft-started") throw new Error("draft not started");
+    const started = startPlan.outcome;
+    expect(started.draft.targetKind).toBe("range");
+    expect(started.draft.anchor).toEqual({
+      newRange: [11, 13],
+      preferred: { side: "new", line: 13 },
+      intersectingHunkIndices: [1],
+      ownerHunkIndex: 1,
+    });
+
+    const withDraft = {
+      ...initial,
+      draftNote: { ...started.draft, body: "Range feedback" },
+    };
+    const saved = planReviewIntent(
+      withDraft,
+      { type: "notes/create-user", consumeDraft: true },
+      { noteId: "user:range", timestamp: "2026-01-01T00:00:00.000Z" },
+    );
+    if (saved.outcome?.type !== "notes/created") throw new Error("note not created");
+    expect(saved.outcome.note.note.anchor).toEqual(started.draft.anchor!);
   });
 
   test("requires the caller to own the draft's identity", () => {

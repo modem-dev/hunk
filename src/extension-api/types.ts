@@ -1991,6 +1991,10 @@ export interface ExtensionReviewNote {
   hunkIndex: number;
   side: "old" | "new";
   line: number;
+  /** Inclusive old-side source range when the note covers more than one line. */
+  oldRange?: readonly [number, number];
+  /** Inclusive new-side source range when the note covers more than one line. */
+  newRange?: readonly [number, number];
   body: string;
   /** True while the note is still being composed rather than saved. */
   draft: boolean;

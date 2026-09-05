@@ -20,6 +20,17 @@ export interface ReviewLineAddressV1 {
   line: number;
 }
 
+/** A caller-supplied range before hunk intersections and ownership are resolved. */
+export interface ReviewRangeTargetV1 {
+  oldRange?: ReviewLineRange;
+  newRange?: ReviewLineRange;
+  /** The active endpoint used for placement and owner-hunk resolution. */
+  preferred: ReviewLineAddressV1;
+}
+
+/** A note target may address one line or one inclusive source range. */
+export type ReviewNoteTargetV1 = ReviewLineAddressV1 | ReviewRangeTargetV1;
+
 export interface ReviewRangeAnchorV1 {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;

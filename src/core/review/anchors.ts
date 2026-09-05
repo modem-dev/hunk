@@ -12,7 +12,12 @@
  * reading a verdict out of the anchor.
  */
 import { reviewHunkRange, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
-import type { ReviewLineRange, ReviewRangeAnchorV1, ReviewSide } from "./types";
+import type {
+  ReviewLineRange,
+  ReviewRangeAnchorV1,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "./types";
 
 /**
  * Names the hunk a line outside every hunk hangs from.
@@ -89,6 +94,19 @@ export function resolveReviewNoteAnchor(
     intersectingHunkIndices,
     ...(ownerHunkIndex !== undefined ? { ownerHunkIndex } : {}),
   };
+}
+
+/** Resolve a caller-supplied range while retaining its declared fallback owner. */
+export function reviewRangeAnchor(
+  hunks: readonly ReviewHunkSpan[],
+  target: ReviewRangeTargetV1 & { hunkIndex: number },
+): ReviewRangeAnchorV1 {
+  return resolveReviewNoteAnchor(hunks, {
+    ...(target.oldRange ? { oldRange: target.oldRange } : {}),
+    ...(target.newRange ? { newRange: target.newRange } : {}),
+    preferred: target.preferred,
+    fallbackOwnerHunkIndex: target.hunkIndex,
+  });
 }
 
 /**

@@ -6,6 +6,8 @@
  * Timestamps and ids never originate here — callers put them on the action.
  */
 import type { ReviewAction } from "./actions";
+import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex, reviewLineAnchor } from "./anchors";
+import { reviewHunkIndexForLine, reviewRangeTargetCoverageIssue } from "./geometry";
 import { clamp } from "./navigation";
 import {
   isReviewNoteWithinClearScope,
@@ -15,6 +17,7 @@ import {
 import {
   applyReviewRevealRequest,
   reviewRevealIntentsEqual,
+  type ReviewDraftNote,
   type ReviewSourceStatus,
   type ReviewState,
   type ReviewStoredNote,
@@ -45,6 +48,75 @@ function withoutNote(notes: ReviewStoredNote[], noteId: string) {
   return next;
 }
 
+/** Preserve and re-resolve a draft only while its addressed content still exists. */
+function reconcileDraftNote(
+  state: ReviewState,
+  document: ReviewState["document"],
+): ReviewDraftNote | null {
+  const draft = state.draftNote;
+  if (!draft) return null;
+  const previousFile = state.document.files.find((file) => file.key === draft.fileKey);
+  const file = document.files.find((candidate) => candidate.key === draft.fileKey);
+  if (!previousFile || !file || previousFile.contentIdentity !== file.contentIdentity) return null;
+
+  const oldRange = draft.anchor?.oldRange;
+  const newRange = draft.anchor?.newRange;
+  const legacyRangeDraft =
+    draft.targetKind === undefined &&
+    ((oldRange !== undefined && newRange !== undefined) ||
+      (oldRange !== undefined && oldRange[0] !== oldRange[1]) ||
+      (newRange !== undefined && newRange[0] !== newRange[1]));
+  const isRangeDraft = draft.targetKind === "range" || legacyRangeDraft;
+
+  if (!isRangeDraft) {
+    const wasExpandedLine = reviewHunkIndexForLine(previousFile.hunks, draft.side, draft.line) < 0;
+    if (wasExpandedLine) {
+      const source = draft.expandedLineSource;
+      if (
+        !source ||
+        source.sourceIdentity !== file.sourceIdentity ||
+        source.sourceAttested !== (file.sourceAttested === true)
+      ) {
+        return null;
+      }
+    }
+    if (!file.hunks[draft.hunkIndex]) return null;
+    const fallbackOwnerHunkIndex = reviewGapOwnerHunkIndex(file.hunks, draft.side, draft.line);
+    if (fallbackOwnerHunkIndex === undefined) return null;
+    const anchor = reviewLineAnchor(file.hunks, {
+      hunkIndex: fallbackOwnerHunkIndex,
+      side: draft.side,
+      line: draft.line,
+    });
+    if (anchor.ownerHunkIndex === undefined) return null;
+    return { ...draft, targetKind: "line", hunkIndex: anchor.ownerHunkIndex, anchor };
+  }
+
+  const preferred = draft.anchor?.preferred ?? { side: draft.side, line: draft.line };
+  const target = {
+    ...(oldRange ? { oldRange } : {}),
+    ...(newRange ? { newRange } : {}),
+    preferred,
+  };
+  if (reviewRangeTargetCoverageIssue(file.hunks, target)) return null;
+
+  const anchor = resolveReviewNoteAnchor(file.hunks, {
+    ...(target.oldRange ? { oldRange: target.oldRange } : {}),
+    ...(target.newRange ? { newRange: target.newRange } : {}),
+    preferred: target.preferred,
+    fallbackOwnerHunkIndex: draft.hunkIndex,
+  });
+  if (anchor.ownerHunkIndex === undefined) return null;
+  return {
+    ...draft,
+    targetKind: "range",
+    hunkIndex: anchor.ownerHunkIndex,
+    side: target.preferred.side,
+    line: target.preferred.line,
+    anchor,
+  };
+}
+
 /** Apply one named semantic action without renderer or framework dependencies. */
 export function reduceReviewState(state: ReviewState, action: ReviewAction): ReviewState {
   switch (action.type) {
@@ -69,7 +141,14 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
           ([fileKey]) => !retired.has(fileKey) && attested.has(fileKey),
         ),
       );
-      return { ...state, document: action.document, expandedGaps, sourceStatusByFileKey };
+      const draftNote = reconcileDraftNote(state, action.document);
+      return {
+        ...state,
+        document: action.document,
+        draftNote,
+        expandedGaps,
+        sourceStatusByFileKey,
+      };
     }
     case "selection/select": {
       const file = selectReviewFileByKey(state, action.fileKey);

@@ -53,7 +53,13 @@ import {
   type ReviewPublicationAddress,
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
-import type { ReviewLineAddressV1, ReviewSide } from "../core/review/types";
+import type {
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewNoteTargetV1,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "../core/review/types";
 import {
   asRecord,
   hasExactKeys,
@@ -166,7 +172,10 @@ interface HunkReviewActionWireFields {
      * A precondition, not a relocation: the producer rejects the save when the draft has
      * moved, so two clients cannot silently save each other's drafts.
      */
-    target?: ReviewLineAddressV1;
+    target?: ReviewNoteTargetV1;
+    /** Stable file and owner-hunk identity; protocol-v1 clients may omit both. */
+    fileKey?: string;
+    hunkIndex?: number;
     expandedLineProof?: HunkReviewExpandedLineProofV1;
   };
 }
@@ -313,6 +322,45 @@ function parseLineAddress(value: unknown): ReviewLineAddressV1 | undefined {
     : undefined;
 }
 
+/** Parse one inclusive 1-based source line range. */
+function parseLineRange(value: unknown): ReviewLineRange | undefined {
+  return Array.isArray(value) &&
+    value.length === 2 &&
+    isLineNumber(value[0]) &&
+    isLineNumber(value[1]) &&
+    value[0] <= value[1]
+    ? ([value[0], value[1]] as const)
+    : undefined;
+}
+
+/** Parse a single-line or range note target without deriving its hunk ownership. */
+function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
+  const line = parseLineAddress(value);
+  if (line) return line;
+
+  const record = asRecord(value);
+  if (
+    !record ||
+    !hasExactKeys(
+      record,
+      keysWith(["preferred"], { oldRange: record.oldRange, newRange: record.newRange }),
+    )
+  ) {
+    return undefined;
+  }
+  const preferred = parseLineAddress(record.preferred);
+  const oldRange = record.oldRange === undefined ? undefined : parseLineRange(record.oldRange);
+  const newRange = record.newRange === undefined ? undefined : parseLineRange(record.newRange);
+  if (!preferred || (!oldRange && !newRange)) return undefined;
+  if (record.oldRange !== undefined && !oldRange) return undefined;
+  if (record.newRange !== undefined && !newRange) return undefined;
+  const preferredRange = preferred.side === "old" ? oldRange : newRange;
+  if (!preferredRange || preferred.line < preferredRange[0] || preferred.line > preferredRange[1]) {
+    return undefined;
+  }
+  return record as unknown as ReviewRangeTargetV1;
+}
+
 /** Parse one expanded-line proof. Its fields are exactly what core resolves it by. */
 export function parseHunkReviewExpandedLineProof(
   value: unknown,
@@ -389,12 +437,13 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     ) &&
     isIdentifier(record.fileKey) &&
     isIndex(record.hunkIndex) &&
-    (record.target === undefined || parseLineAddress(record.target) !== undefined) &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
     (record.reveal === undefined || parseReveal(record.reveal) !== undefined) &&
     (record.expandedLineProof === undefined ||
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
-    // A proof is evidence about a line, so it is meaningless without one to be about.
-    (record.expandedLineProof === undefined || record.target !== undefined),
+    // Expanded-line proofs remain line-specific; ranges spanning source gaps are not
+    // remotely writable until the protocol can attest every covered line.
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
   "notes/start-edit": (record) =>
     hasExactKeys(record, keysWith(["type", "noteId"], { reveal: record.reveal })) &&
     isIdentifier(record.noteId) &&
@@ -413,14 +462,22 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
       record,
       keysWith(["type", "consumeDraft"], {
         target: record.target,
+        fileKey: record.fileKey,
+        hunkIndex: record.hunkIndex,
         expandedLineProof: record.expandedLineProof,
       }),
     ) &&
     record.consumeDraft === true &&
-    (record.target === undefined || parseLineAddress(record.target) !== undefined) &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
+    (record.target === undefined
+      ? record.fileKey === undefined && record.hunkIndex === undefined
+      : (record.fileKey === undefined &&
+          record.hunkIndex === undefined &&
+          parseLineAddress(record.target) !== undefined) ||
+        (isIdentifier(record.fileKey) && isIndex(record.hunkIndex))) &&
     (record.expandedLineProof === undefined ||
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
-    (record.expandedLineProof === undefined || record.target !== undefined),
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
   "notes/update-user": (record) =>
     hasExactKeys(record, ["type", "noteId", "consumeDraft"]) &&
     isIdentifier(record.noteId) &&
@@ -478,7 +535,13 @@ export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
     return intent;
   }
   if (action.type === "notes/create-user") {
-    const { expandedLineProof: _proof, target: _target, ...intent } = action;
+    const {
+      expandedLineProof: _proof,
+      target: _target,
+      fileKey: _fileKey,
+      hunkIndex: _hunkIndex,
+      ...intent
+    } = action;
     return intent;
   }
   return action;

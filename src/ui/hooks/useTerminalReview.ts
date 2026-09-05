@@ -23,7 +23,6 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
-  type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
   builtinAppCommand,
@@ -50,6 +49,7 @@ import {
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
+import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
@@ -188,6 +188,8 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
 
 export interface TerminalReview {
   allFiles: DiffFile[];
+  /** Projected content and source identities keyed by runtime file id. */
+  semanticFileIdentityByFileId: ReadonlyMap<string, string>;
   /**
    * The semantic review store this controller owns.
    *
@@ -273,7 +275,7 @@ export interface TerminalReview {
   startUserNote: (
     fileId?: string,
     hunkIndex?: number,
-    target?: UserNoteLineTarget,
+    target?: ReviewNoteTargetV1,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
@@ -405,6 +407,19 @@ export function useTerminalReview({
 
   const keyByFileId = useMemo(
     () => new Map(document.files.map((file) => [file.runtimeId, file.key] as const)),
+    [document],
+  );
+  const semanticFileIdentityByFileId = useMemo(
+    () =>
+      new Map(
+        document.files.map(
+          (file) =>
+            [
+              file.runtimeId,
+              `${file.key}:${file.contentIdentity}:${file.sourceIdentity ?? ""}`,
+            ] as const,
+        ),
+      ),
     [document],
   );
   const fileByKey = useMemo(() => {
@@ -1291,7 +1306,7 @@ export function useTerminalReview({
     (
       fileId = selectedFile?.id,
       hunkIndex = selectedHunkIndex,
-      requestedTarget?: UserNoteLineTarget,
+      requestedTarget?: ReviewNoteTargetV1,
       options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
       const file = allFiles.find((candidate) => candidate.id === fileId);
@@ -1512,6 +1527,7 @@ export function useTerminalReview({
 
   return {
     allFiles,
+    semanticFileIdentityByFileId,
     store,
     stateRevision: state.stateRevision,
     draftNote,

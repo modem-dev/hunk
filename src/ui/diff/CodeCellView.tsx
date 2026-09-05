@@ -270,6 +270,13 @@ function isChunkCompatibleWrappedHighlight(highlight: CodeCellHighlight | undefi
   return !highlight?.colRange || highlight.colRange === FULL_CODE_CELL_COL_RANGE;
 }
 
+/** Whether a highlight paints cell chrome as well as source-text columns. */
+function highlightsWholeCell(highlight: CodeCellHighlight | undefined) {
+  return Boolean(
+    highlight && (!highlight.colRange || highlight.colRange === FULL_CODE_CELL_COL_RANGE),
+  );
+}
+
 /** Append one wrapped cell without constructing intermediate React span elements. */
 function appendWrappedCellChunks(
   chunks: TextChunk[],
@@ -626,7 +633,9 @@ const SplitCellContent = memo(function SplitCellContent({
   paneOffset: number;
 }) {
   const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const palette = highlightsWholeCell(highlight)
+    ? applyHighlightPalette(basePalette, highlight!.bg)
+    : basePalette;
   const gutterText = splitGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth);
   const globalContentStart = paneOffset + prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
@@ -674,7 +683,8 @@ function renderSplitCell(
   highlight?: CodeCellHighlight,
   paneOffset = 0,
 ) {
-  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const resolvedPrefix =
+    highlightsWholeCell(highlight) && prefix ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
 
   return (
@@ -727,7 +737,9 @@ const StackCellContent = memo(function StackCellContent({
   highlight?: CodeCellHighlight;
 }) {
   const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  const palette = highlight ? applyHighlightPalette(basePalette, highlight.bg) : basePalette;
+  const palette = highlightsWholeCell(highlight)
+    ? applyHighlightPalette(basePalette, highlight!.bg)
+    : basePalette;
   const globalContentStart = prefixWidth + gutterWidth;
   const colRange = highlight?.colRange;
   const localColRange =
@@ -773,7 +785,8 @@ function renderStackCell(
   },
   highlight?: CodeCellHighlight,
 ) {
-  const resolvedPrefix = highlight && prefix ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const resolvedPrefix =
+    highlightsWholeCell(highlight) && prefix ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
 
   return (
@@ -815,8 +828,11 @@ function renderWrappedSplitCellLine(
   highlight?: CodeCellHighlight,
   paneOffset = 0,
 ) {
-  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
-  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const wholeCellHighlight = highlightsWholeCell(highlight);
+  const resolvedPalette = wholeCellHighlight
+    ? applyHighlightPalette(palette, highlight!.bg)
+    : palette;
+  const resolvedPrefix = wholeCellHighlight ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;
@@ -871,8 +887,11 @@ function renderWrappedStackCellLine(
   },
   highlight?: CodeCellHighlight,
 ) {
-  const resolvedPalette = highlight ? applyHighlightPalette(palette, highlight.bg) : palette;
-  const resolvedPrefix = highlight ? applyHighlightPrefix(prefix, highlight.bg) : prefix;
+  const wholeCellHighlight = highlightsWholeCell(highlight);
+  const resolvedPalette = wholeCellHighlight
+    ? applyHighlightPalette(palette, highlight!.bg)
+    : palette;
+  const resolvedPrefix = wholeCellHighlight ? applyHighlightPrefix(prefix, highlight!.bg) : prefix;
 
   const prefixWidth = prefix.text.length;
   const gutterWidth = line.gutterText.length;

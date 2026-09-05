@@ -34,7 +34,7 @@ import {
   selectReviewGapForSelection,
 } from "../review/selectors";
 import type { ReviewState } from "../review/state";
-import type { ReviewLineAddressV1 } from "../review/types";
+import type { ReviewNoteTargetV1 } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
@@ -155,6 +155,30 @@ const BUILTIN_COMMANDS = [
     defaultKeys: ["/"],
     // Moving keyboard focus is this client's business; the filter value it edits is
     // shared review state, changed through `filter/set` rather than by this command.
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.startVisualSelection",
+    title: "Start visual selection",
+    category: "review",
+    defaultKeys: ["v"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.copySelection",
+    title: "Copy selection",
+    category: "review",
+    defaultKeys: ["y"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.clearSelection",
+    title: "Clear selection",
+    category: "review",
+    defaultKeys: [],
     locus: "client-local",
     publicToExtensions: true,
   },
@@ -582,7 +606,7 @@ export interface AppCommandLoweringContext {
    * knows which line the reviewer's cursor was on. Omitted, the note lands on the shared
    * default for the whole hunk.
    */
-  noteTarget?: ReviewLineAddressV1;
+  noteTarget?: ReviewNoteTargetV1;
   /**
    * The file and hunk the invoking client's note affordance addressed.
    *
