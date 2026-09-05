@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { renderStaticDiff } from "../static";
 import { renderStaticDiffPager } from "./staticDiffPager";
+import { resolveTheme } from "./themes";
 
 function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
@@ -30,7 +35,25 @@ function expectNoUnsafeTerminalControls(text: string) {
   expect(text).not.toContain("\x1b");
 }
 
+function ansiBackground(hex: string) {
+  const value = hex.replace(/^#/, "");
+  return `\x1b[48;2;${Number.parseInt(value.slice(0, 2), 16)};${Number.parseInt(
+    value.slice(2, 4),
+    16,
+  )};${Number.parseInt(value.slice(4, 6), 16)}m`;
+}
+
 describe("static diff pager", () => {
+  test("renders a patch through the public static API", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const output = await renderStaticDiff(patchText, { layout: "stack", width: 80 });
+
+    expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
+    expect(output).toContain("\x1b[38;2;");
+  });
+
   test("renders diff-like stdin as non-interactive ANSI output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
@@ -45,6 +68,61 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌  1 +  const value = 2;");
     expect(output).toContain("\x1b[38;2;");
     expect(output).not.toContain("\x1b[?1049h");
+  });
+
+  test("preserves Git moved-line colors in pager output", async () => {
+    const patchText = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1 +1 @@",
+      "\x1b[35m-const value = 1;\x1b[m",
+      "\x1b[36m+const value = 2;\x1b[m",
+      "",
+    ].join("\n");
+
+    const output = await renderStaticDiffPager(patchText);
+    const theme = resolveTheme(undefined, null);
+
+    expect(output).toContain(ansiBackground(theme.movedRemovedBg));
+    expect(output).toContain(ansiBackground(theme.movedAddedBg));
+  });
+
+  test("preserves agent-sidecar file order in pager output", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "hunk-static-agent-order-"));
+    const sidecar = join(directory, "agent.json");
+    writeFileSync(
+      sidecar,
+      JSON.stringify({
+        version: 1,
+        files: [
+          { path: "beta.ts", annotations: [] },
+          { path: "alpha.ts", annotations: [] },
+        ],
+      }),
+    );
+    const patchText = [
+      "diff --git a/alpha.ts b/alpha.ts",
+      "--- a/alpha.ts",
+      "+++ b/alpha.ts",
+      "@@ -1 +1 @@",
+      "-export const alpha = 1;",
+      "+export const alpha = 2;",
+      "diff --git a/beta.ts b/beta.ts",
+      "--- a/beta.ts",
+      "+++ b/beta.ts",
+      "@@ -1 +1 @@",
+      "-export const beta = 1;",
+      "+export const beta = 2;",
+      "",
+    ].join("\n");
+
+    try {
+      const output = stripAnsi(await renderStaticDiffPager(patchText, { agentContext: sidecar }));
+      expect(output.indexOf("beta.ts modified")).toBeLessThan(output.indexOf("alpha.ts modified"));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test("honors configured hidden line numbers and hunk headers", async () => {

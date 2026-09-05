@@ -256,7 +256,7 @@ async function loadVcsChangeset(
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */
-async function loadPatchChangeset(
+export async function loadPatchChangeset(
   input: PatchCommandInput,
   sidecar: SidecarContext | null,
   cwd = process.cwd(),
