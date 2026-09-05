@@ -552,6 +552,7 @@ function mergeColumns(columns: StmlLine[][], widths: number[], gap: number): Stm
   return merged;
 }
 
+/** Lay out one row horizontally when its columns fit, otherwise stack every child. */
 function layoutRow(
   el: StmlElement,
   width: number,
@@ -571,25 +572,28 @@ function layoutRow(
   if (looseInline.some((node) => node.type !== "text" || node.value.trim() !== "")) {
     errors.add("<row> mixes bare text with block children; text laid out above the row");
   }
+  const inlinePrefix =
+    looseInline.length > 0 ? layoutBlockNodes(looseInline, width, style, errors) : [];
 
   const gap = Math.max(0, numAttr(el.attrs.gap) ?? 1);
   const totalGap = gap * (children.length - 1);
   const available = width - totalGap;
 
-  // Fixed-width columns claim their space first; the rest share what remains.
+  // Fixed-width columns claim their space first; flex columns need at least one cell each.
   const fixed = children.map((child) => widthAttr(child.attrs.width, available));
   const fixedTotal = fixed.reduce<number>((total, w) => total + (w ?? 0), 0);
   const flexCount = fixed.filter((w) => w === undefined).length;
-  const flexSpace = Math.max(flexCount, available - fixedTotal);
-  const flexWidth = flexCount > 0 ? Math.floor(flexSpace / flexCount) : 0;
-  let flexRemainder = flexCount > 0 ? flexSpace - flexWidth * flexCount : 0;
-
-  if (available < children.length) {
-    // Too narrow to sit side by side — degrade to stacked blocks.
+  if (fixedTotal + flexCount > available) {
     errors.add("<row> too narrow for its columns; stacking vertically");
-    return children.flatMap((child) => layoutBlock(child, width, style, errors));
+    return [
+      ...inlinePrefix,
+      ...children.flatMap((child) => layoutBlock(child, width, style, errors)),
+    ];
   }
 
+  const flexSpace = available - fixedTotal;
+  const flexWidth = flexCount > 0 ? Math.floor(flexSpace / flexCount) : 0;
+  let flexRemainder = flexCount > 0 ? flexSpace - flexWidth * flexCount : 0;
   const widths = fixed.map((w) => {
     if (w !== undefined) {
       return Math.max(1, Math.min(w, available));
@@ -598,9 +602,6 @@ function layoutRow(
     flexRemainder -= extra;
     return Math.max(1, flexWidth + extra);
   });
-
-  const inlinePrefix =
-    looseInline.length > 0 ? layoutBlockNodes(looseInline, width, style, errors) : [];
   const columns = children.map((child, index) => layoutBlock(child, widths[index]!, style, errors));
   return [...inlinePrefix, ...mergeColumns(columns, widths, gap)];
 }
