@@ -280,8 +280,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `17`). Branch on it if you want
-one file to support several Hunk versions. Version 17 adds structured review metadata to delegated
+The API generation this Hunk speaks (currently `18`). Branch on it if you want
+one file to support several Hunk versions. Version 18 lets lifecycle and custom-event handlers
+request a host-owned review reload; version 17 adds structured review metadata to delegated
 patch commands and projects it into pane availability and component props; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured `rangeEndpoints`
@@ -1832,9 +1833,8 @@ the metadata actually parses to.
 
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks
 the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
-`ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs`, the same
-controls command handlers receive. `ctx.sidebars` is a deprecated alias for
-`ctx.panes`. That means a `startup` handler can present
+`ctx.panes`, live `ctx.navigation`, attributed `ctx.dialogs`, and review reload
+controls. `ctx.sidebars` is a deprecated alias for `ctx.panes`. That means a `startup` handler can present
 one focused welcome question and navigate to its first example, while a
 `changeset_loaded` handler can reveal a pane when it finds something worth
 showing — no keypress required. Dialog calls made before the mounted app is
@@ -1888,8 +1888,9 @@ commands and do not emit this event. Modal widget keys such as Escape, Enter, no
 and F10 menu navigation are also not commands.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
-`"daemon"` (an agent command through the session broker), or `"manual"` (the
-refresh key, or the reload after granting extension trust).
+`"daemon"` (an agent command through the session broker), `"extension"` (an
+in-process extension request), or `"manual"` (the refresh key, or the reload
+after granting extension trust).
 
 `note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
 session. `note_edited` carries `note.draft: true` for composer changes and
@@ -1904,8 +1905,9 @@ either. Use them for incremental UI reactions only.
 returns. It fires for user saves and deletes and for agent session comments.
 Drafts never appear. A TUI save therefore emits both `note_created` (or
 `note_edited`) and `note_changed`. Reloads that remap or drop notes do not emit
-`note_changed`; listen for `session_reload` and read `ctx.review.snapshot()`
-when a command needs the complete current saved-note record.
+`note_changed`; listen for `session_reload` to invalidate extension-owned state,
+then read `ctx.review.snapshot()` from a later command when it needs the complete
+current saved-note record.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.
@@ -1918,8 +1920,8 @@ The replacement instance receives `startup` after its review is mounted.
 `hunk.events` is a small bus shared by every loaded extension. Use it to
 coordinate extensions without coupling them through a command or global state.
 Names are open-ended, so namespace them with your extension id. Listeners get
-the same `ctx.panes`, `ctx.navigation`, and `ctx.dialogs` controls as lifecycle
-handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
+the same `ctx.panes`, `ctx.navigation`, `ctx.dialogs`, and `ctx.review` reload
+controls as lifecycle handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
 fire-and-forget and one listener's failure is reported without stopping the
 others. Events an
 extension emits while factories are loading are queued until every extension
@@ -1942,6 +1944,36 @@ export default function (hunk: HunkExtensionAPI) {
 
 Bus payloads are shallow-frozen copies when they are objects. Keep nested data
 immutable if multiple extensions will read it.
+
+### `ctx.review.requestReload()` in event handlers
+
+Request a soft reload of the currently mounted review after an external agent,
+service, or process changes its inputs. This does not require `--watch`. Hunk
+reuses the current input and live view options, preserves mounted UI state and
+selection where possible, serializes the work with every other reload, and
+coalesces concurrent extension requests into one operation.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.events.on("agent:files-changed", async (_payload, ctx) => {
+    const result = await ctx.review.requestReload();
+    if (!result.ok) ctx.notify(result.detail, "warning");
+  });
+}
+```
+
+Success resolves `{ ok: true }` after the replacement review commits and emits
+`session_reload` with reason `"extension"`. Non-reloadable inputs and controls
+retained from an expired review resolve `unavailable`; a reload that starts but
+cannot complete resolves `failed` with a displayable `detail`. Factory-time bus
+events can run before the app mounts, so their reload requests are unavailable.
+Once a live request starts, it reports that operation's actual result even
+though a successful reload expires the context that requested it.
+Requests made from the successor's lifecycle handlers are a new generation and
+can schedule a trailing reload. Check `session_reload.reason` before requesting
+from that event so an extension does not create its own reload loop.
 
 ### `hunk.config`
 
@@ -1971,7 +2003,7 @@ const patterns = (hunk.config.patterns as string[] | undefined) ?? ["*.lock"];
 ### `ctx.notify(message, type?)`
 
 Every handler and transform receives a context object with `cwd` and `notify`.
-Event and bus handlers additionally receive `panes` and `events.emit`; command
+Event and bus handlers additionally receive `panes`, `review.requestReload`, and `events.emit`; command
 handlers receive `panes`, `selection`, `navigation`, and `dialogs`. The deprecated
 `sidebars` alias remains available during the API-v4 compatibility window. `notify`
 shows a single unobtrusive line at the bottom of the app that clears

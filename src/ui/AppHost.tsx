@@ -10,6 +10,7 @@ import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput } from "../core/run/commandInputs";
+import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import type { ExtensionLoadResult } from "../extensions/types";
 import {
   createUnknownVcsNotice,
@@ -46,6 +47,12 @@ interface PendingExtensionReplacement {
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
 function reloadRefusedDuringShutdown() {
   return new Error("The review session is shutting down and cannot reload.");
+}
+
+/** Describe a host reload failure without assuming it is an Error instance. */
+function describeExtensionReloadFailure(error: unknown) {
+  const detail = error instanceof Error ? error.message || error.name : String(error);
+  return `Failed to reload the current review: ${detail}`;
 }
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
@@ -133,6 +140,10 @@ export function AppHost({
   const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
   const initialExtensionStartupPendingRef = useRef(true);
   const reloadTailRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingExtensionReloadRef = useRef<{
+    reviewGeneration: AppBootstrap;
+    promise: Promise<ExtensionReviewReloadResult>;
+  } | null>(null);
   const quitRequestedRef = useRef(false);
   const pendingExtensionReplacementRef = useRef<PendingExtensionReplacement | undefined>(undefined);
   const pendingExtensionRetirementsRef = useRef<Set<Promise<void>>>(new Set());
@@ -509,6 +520,56 @@ export function AppHost({
     });
   }, [enqueueReload, performReloadSession]);
 
+  /** Coalesce extension requests and resolve their descriptor at the front of the host queue. */
+  const requestExtensionReviewReload = useCallback(
+    (reviewGeneration: AppBootstrap): Promise<ExtensionReviewReloadResult> => {
+      const existing = pendingExtensionReloadRef.current;
+      if (existing?.reviewGeneration === reviewGeneration) return existing.promise;
+
+      const promise = enqueueReload(async () => {
+        if (quitRequestedRef.current) {
+          return {
+            ok: false,
+            reason: "unavailable",
+            detail: "The review session is shutting down and cannot reload.",
+          } as const;
+        }
+        const request = workspaceRefreshRequestRef.current;
+        if (!request) {
+          return {
+            ok: false,
+            reason: "unavailable",
+            detail: "The current review cannot be reloaded from its original input.",
+          } as const;
+        }
+
+        try {
+          await performReloadSession(request.nextInput, {
+            reason: "extension",
+            resetApp: false,
+            sourcePath: request.sourcePath,
+          });
+          return { ok: true } as const;
+        } catch (error) {
+          return {
+            ok: false,
+            reason: "failed",
+            detail: describeExtensionReloadFailure(error),
+          } as const;
+        }
+      });
+      const pending = { reviewGeneration, promise };
+      pendingExtensionReloadRef.current = pending;
+      void promise.finally(() => {
+        if (pendingExtensionReloadRef.current === pending) {
+          pendingExtensionReloadRef.current = null;
+        }
+      });
+      return promise;
+    },
+    [enqueueReload, performReloadSession],
+  );
+
   /** Revoke all extension authority, finish started writes, then leave. */
   const quitAfterShutdownEvent = useCallback(() => {
     if (quitRequestedRef.current) return;
@@ -554,6 +615,7 @@ export function AppHost({
       onQuit={quitAfterShutdownEvent}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
+      onRequestExtensionReviewReload={requestExtensionReviewReload}
       onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={producer}
       runWorkspaceWrite={runWorkspaceWrite}

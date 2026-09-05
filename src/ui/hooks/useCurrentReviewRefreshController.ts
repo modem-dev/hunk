@@ -1,8 +1,8 @@
 /**
  * Coordinates every in-session refresh of the currently mounted review.
  *
- * Watch changes, manual commands, editor return, extension trust grants, and completed workspace
- * writes converge on the same reloadable review descriptor. This hook derives and registers that
+ * Watch changes, manual commands, editor return, extension trust grants, external extension
+ * requests, and completed workspace writes converge on the same reloadable review descriptor. This hook derives and registers that
  * descriptor, connects watch notifications to refreshes, and exposes stable refresh callbacks to
  * App.
  *

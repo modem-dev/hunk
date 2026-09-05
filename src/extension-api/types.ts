@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 17;
+export const HUNK_EXTENSION_API_VERSION = 18;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1648,6 +1648,31 @@ export interface ExtensionReviewControls {
   snapshot(): ExtensionReviewSnapshot | null;
 }
 
+/** How an extension-requested reload of the mounted review settled. */
+export type ExtensionReviewReloadResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly reason: "unavailable" | "failed";
+      readonly detail: string;
+    };
+
+/** Ask Hunk to rebuild the currently mounted review after external work changes its inputs. */
+export interface ExtensionReviewReloadControls {
+  /**
+   * Request the same soft reload as Hunk's refresh command without requiring watch mode.
+   *
+   * Hunk preserves mounted UI state, reapplies live view options, serializes the operation with
+   * every other reload, and coalesces concurrent extension requests. A successful replacement
+   * emits `session_reload` with reason `"extension"`.
+   *
+   * Resolves `"unavailable"` when the current input cannot be rebuilt or these controls expired
+   * on reload/teardown. A reload that starts and then fails resolves `"failed"` with a displayable
+   * detail. The result reports the shared host operation even when another extension requested it.
+   */
+  requestReload(): Promise<ExtensionReviewReloadResult>;
+}
+
 /** One question put to the user as a modal confirm dialog. */
 export interface ExtensionConfirmOptions {
   title: string;
@@ -1934,6 +1959,8 @@ export interface ExtensionEventContext extends ExtensionContext {
   readonly navigation: ExtensionReviewNavigation;
   /** Ask attributed, FIFO-queued questions from lifecycle and bus handlers. */
   readonly dialogs: ExtensionDialogs;
+  /** Request a host-owned reload after an external service changes the reviewed inputs. */
+  readonly review: ExtensionReviewReloadControls;
   events: Pick<ExtensionEventBus, "emit">;
 }
 
@@ -1945,10 +1972,10 @@ export interface ExtensionEventContext extends ExtensionContext {
  * Why a session reload happened.
  *
  * `watch` is a file/VCS change Hunk noticed itself, `daemon` is an agent
- * command routed through the session broker, and `manual` is a user action
- * (the refresh key, or reloading after granting repo-extension trust).
+ * command routed through the session broker, `extension` is an in-process extension request,
+ * and `manual` is a user action (the refresh key, or reloading after granting repo-extension trust).
  */
-export type SessionReloadReason = "watch" | "daemon" | "manual";
+export type SessionReloadReason = "watch" | "daemon" | "extension" | "manual";
 
 /** Payload delivered with each lifecycle event, keyed by event name. */
 export type ExtensionLayoutMode = "auto" | "split" | "stack";

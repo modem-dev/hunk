@@ -26,6 +26,7 @@ import {
   resolveDetectedVcsIdWithExtensions,
 } from "../extensions/apply";
 import { loadStartupExtensions } from "../extensions/startup";
+import { emitExtensionCustomEvent } from "../extensions/events";
 import { AppHost } from "./AppHost";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
@@ -146,6 +147,20 @@ function writeProbeExtension(path: string, logPath: string, languageExtension?: 
       `  });\n` +
       `  hunk.on("shutdown", () => {\n` +
       `    appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n");\n` +
+      `  });\n` +
+      `}\n`,
+  );
+}
+
+/** Write an extension that records the settled result of one startup reload request. */
+function writeStartupReloadResultExtension(path: string, logPath: string) {
+  writeFileSync(
+    path,
+    `import { appendFileSync } from "node:fs";\n` +
+      `export default function (hunk) {\n` +
+      `  hunk.on("startup", async (_event, ctx) => {\n` +
+      `    const result = await ctx.review.requestReload();\n` +
+      `    appendFileSync(${JSON.stringify(logPath)}, result.ok ? "ok\\n" : result.reason + ":" + result.detail + "\\n");\n` +
       `  });\n` +
       `}\n`,
   );
@@ -850,6 +865,65 @@ describe("reload keeps launch extension authority", () => {
 });
 
 describe("mounted lifecycle ordering", () => {
+  test("reports unavailable when the mounted review cannot reload its input", async () => {
+    const root = createTempDir("hunk-apphost-extension-unavailable-reload-");
+    const logPath = join(root, "extension-reload.log");
+    const extPath = join(root, "extension-reload.ts");
+    writeStartupReloadResultExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      {
+        kind: "patch",
+        text: "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-before\n+after\n",
+        options: { mode: "stack", extensionPaths: [extPath] },
+      },
+      { cwd: root },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: root,
+      cliExtensionPaths: [extPath],
+    });
+
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(setup, () => existsSync(logPath), "the unavailable reload result");
+      expect(readProbeLog(logPath)).toEqual([
+        "unavailable:The current review cannot be reloaded from its original input.",
+      ]);
+    });
+  });
+
+  test("reports failed when a started extension reload cannot commit", async () => {
+    const repo = createTestRepo("hunk-apphost-extension-failed-reload-");
+    const logPath = join(repo, "extension-reload.log");
+    const extPath = join(repo, "extension-reload.ts");
+    writeStartupReloadResultExtension(extPath, logPath);
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { cwd: repo },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: repo,
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient({ replaceSessionError: new Error("broker exploded") });
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(setup, () => existsSync(logPath), "the failed reload result");
+        expect(readProbeLog(logPath)).toEqual([
+          "failed:Failed to reload the current review: broker exploded",
+        ]);
+      },
+      broker.client,
+    );
+  });
+
   test("delivers same-runtime reload events after the new review commits", async () => {
     const repo = createTestRepo("hunk-apphost-lifecycle-order-");
     const logPath = join(repo, "lifecycle.log");
@@ -910,6 +984,128 @@ describe("mounted lifecycle ordering", () => {
           "lifecycle:changeset_loaded",
           "lifecycle:session_reload",
         ]);
+      },
+      broker.client,
+    );
+  });
+
+  test("lets a custom extension event reload externally changed review input", async () => {
+    const repo = createTestRepo("hunk-apphost-extension-request-reload-");
+    const reviewedPath = join(repo, "sub", "a.txt");
+    const logPath = join(repo, "extension-reload.log");
+    const extPath = join(repo, "extension-reload.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync, writeFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+        `  let retainedReview;\n` +
+        `  let successorRequested = false;\n` +
+        `  hunk.events.on("reload-probe:changed", async (_payload, ctx) => {\n` +
+        `    retainedReview = ctx.review;\n` +
+        `    const first = ctx.review.requestReload();\n` +
+        `    const second = ctx.review.requestReload();\n` +
+        `    log("coalesced:" + String(first === second));\n` +
+        `    const result = await first;\n` +
+        `    log(result.ok ? "result:ok" : "result:" + result.reason);\n` +
+        `  });\n` +
+        `  hunk.on("startup", () => {\n` +
+        `    writeFileSync(${JSON.stringify(reviewedPath)}, "one\\ntwo\\nthree\\n");\n` +
+        `    hunk.events.emit("reload-probe:changed", {});\n` +
+        `  });\n` +
+        `  hunk.on("session_reload", async ({ reason }, ctx) => {\n` +
+        `    log("reload:" + reason);\n` +
+        `    if (reason !== "extension" || successorRequested) return;\n` +
+        `    successorRequested = true;\n` +
+        `    const stale = await retainedReview.requestReload();\n` +
+        `    log(stale.ok ? "stale:ok" : "stale:" + stale.reason);\n` +
+        `    writeFileSync(${JSON.stringify(reviewedPath)}, "one\\ntwo\\nthree\\nfour\\n");\n` +
+        `    const trailing = await ctx.review.requestReload();\n` +
+        `    log(trailing.ok ? "trailing:ok" : "trailing:" + trailing.reason);\n` +
+        `  });\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { cwd: repo },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: repo,
+      cliExtensionPaths: [extPath],
+    });
+
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("trailing:ok"),
+        "the successor extension reload to commit",
+      );
+
+      const events = readProbeLog(logPath);
+      expect(events).toContain("coalesced:true");
+      expect(events).toContain("stale:unavailable");
+      expect(events).toContain("result:ok");
+      expect(events).toContain("trailing:ok");
+      expect(events.filter((event) => event === "reload:extension")).toHaveLength(2);
+      expect(setup.captureCharFrame()).toContain("four");
+    });
+  });
+
+  test("reloads the review current when a queued extension request begins", async () => {
+    const repo = createTestRepo("hunk-apphost-extension-current-reload-");
+    const stagedPath = join(repo, "staged.txt");
+    writeFileSync(stagedPath, "before\n");
+    execSync("git add staged.txt", { cwd: repo, stdio: "ignore" });
+    execSync("git commit -m staged-base", { cwd: repo, stdio: "ignore" });
+    writeFileSync(stagedPath, "before\nafter\n");
+    execSync("git add staged.txt", { cwd: repo, stdio: "ignore" });
+
+    const logPath = join(repo, "extension-current-reload.log");
+    const extPath = join(repo, "extension-current-reload.ts");
+    writeFileSync(
+      extPath,
+      `import { appendFileSync } from "node:fs";\n` +
+        `export default function (hunk) {\n` +
+        `  const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+        `  hunk.events.on("reload-probe:queued", async (_payload, ctx) => {\n` +
+        `    const result = await ctx.review.requestReload();\n` +
+        `    log(result.ok ? "result:ok" : "result:" + result.reason);\n` +
+        `  });\n` +
+        `  hunk.on("session_reload", ({ reason }) => log("reload:" + reason));\n` +
+        `}\n`,
+    );
+    useTempConfigHome();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+      { cwd: repo },
+    );
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: repo,
+      cliExtensionPaths: [extPath],
+    });
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        const daemonReload = broker.reload({ kind: "vcs", staged: true, options: {} }, repo);
+        emitExtensionCustomEvent(bootstrap.extensions!, "reload-probe:queued", {});
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("result:ok"),
+          "the queued extension reload to settle",
+        );
+        await daemonReload;
+
+        expect(readProbeLog(logPath)).toEqual(["reload:daemon", "reload:extension", "result:ok"]);
+        const frame = setup.captureCharFrame();
+        expect(frame).toContain("staged.txt");
+        expect(frame).not.toContain("a.txt");
       },
       broker.client,
     );

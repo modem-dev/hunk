@@ -108,9 +108,10 @@ bad or duplicate id is skipped with a startup notice.
 | Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
 | React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
+| Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `15`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `18`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -149,7 +150,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 `matches` and `layout` get no context at all. Beyond that:
 
 - **Event and bus handlers** also get `ctx.panes` (open/close/toggle/isOpen on
-  any pane), live `ctx.navigation`, attributed `ctx.dialogs`, and
+  any pane), live `ctx.navigation`, attributed `ctx.dialogs`, review reloads through
+  `ctx.review.requestReload()`, and
   `ctx.events.emit`. `ctx.sidebars` is a deprecated alias for `ctx.panes`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.highlights` (refresh prepared line marks,

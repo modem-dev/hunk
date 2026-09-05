@@ -266,13 +266,16 @@ same terminal width; body/options yield rows to a pinned mouse-clickable action
 footer on short terminals.
 
 Lifecycle and bus handlers receive that same attributed dialog queue plus the
-same guarded live navigation commands use. `App` installs both through the
+same guarded live navigation commands use. They can also request a current-input soft reload;
+the current-review controller registers the latest reloadable descriptor, then AppHost resolves
+that descriptor at queue execution and coalesces extension requests while serializing them with
+manual, watch, workspace, and daemon reloads. `App` installs these controls through the
 per-extension event-context provider, while `AppHost` publishes mounted
 lifecycle order (`startup`, then `changeset_loaded`; reloads add
 `session_reload`) only after the matching child commit. Headless or pre-mount delivery resolves
 dialogs to their cancel values and refuses navigation with a warning.
 `src/ui/lib/extensionCapabilityLease.ts` binds retained pane, navigation,
-dialog, and workspace controls to one App, extension registry, and review
+dialog, review-reload, and workspace controls to one App, extension registry, and review
 generation. Soft
 reload or registry retirement therefore makes old host-mediated capabilities
 inert before shutdown begins. Session behavior requests are registry data too:

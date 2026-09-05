@@ -61,6 +61,8 @@ export type {
   ExtensionLineHighlighter,
   ExtensionReviewDescriptor,
   ExtensionReviewControls,
+  ExtensionReviewReloadControls,
+  ExtensionReviewReloadResult,
   ExtensionReviewNote,
   ExtensionReviewSnapshot,
   ExtensionReviewSnapshotFile,

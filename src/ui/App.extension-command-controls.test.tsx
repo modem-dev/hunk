@@ -59,6 +59,11 @@ describe("extension command control authority", () => {
             fileCount: bootstrap.changeset.files.length,
             selectedHunkIndex: 0,
           })}
+          onRequestExtensionReviewReload={async () => ({
+            ok: false,
+            reason: "unavailable",
+            detail: "The test host does not reload reviews.",
+          })}
           onWorkspaceWriteCompleted={() => {}}
           runWorkspaceWrite={async (write) => {
             await write();

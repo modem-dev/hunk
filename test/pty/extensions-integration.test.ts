@@ -21,6 +21,24 @@ const GITHUB_PR_EXTENSION_ENTRY = resolve(
   fileURLToPath(new URL("../../examples/extensions/github-pr/index.ts", import.meta.url)),
 );
 
+/** An external-event workflow that changes a reviewed file and requests a host reload. */
+const REVIEW_RELOAD_EXTENSION_SOURCE = `
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export default function (hunk) {
+  hunk.events.on("reload-fixture:changed", async (_payload, ctx) => {
+    const result = await ctx.review.requestReload();
+    if (!result.ok) ctx.notify(result.detail, "error");
+  });
+
+  hunk.on("startup", (_event, ctx) => {
+    writeFileSync(join(ctx.cwd, "alpha.ts"), "export const agentReloaded = 3;\\n");
+    hunk.events.emit("reload-fixture:changed", {});
+  });
+}
+`;
+
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
 setDefaultTimeout(30_000);
 
@@ -314,6 +332,32 @@ const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
 `;
 
 describe("PTY extensions", () => {
+  test("an extension event reloads agent changes without watch mode", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(REVIEW_RELOAD_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+        "diff",
+        "--mode",
+        "stack",
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/agentReloaded/, { timeout: 20_000 });
+      expect(frame).toContain("alpha.ts");
+      expect(frame).not.toContain("alphaValue");
+    } finally {
+      session.close();
+    }
+  });
+
   test("shows delegated change-request info above the review beside the files pane", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(DELEGATED_REVIEW_EXTENSION_SOURCE);

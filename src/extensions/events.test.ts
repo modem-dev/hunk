@@ -124,6 +124,32 @@ describe("extension event dispatch", () => {
     expect(notices).toEqual(["Extension slow failed handling changeset_loaded • async failure"]);
   });
 
+  test("refuses review reloads before the mounted app installs live controls", async () => {
+    let reloadResult:
+      | Awaited<
+          ReturnType<Parameters<ExtensionEventHandler<"startup">>[1]["review"]["requestReload"]>
+        >
+      | undefined;
+    const { result, notices } = createTestLoadResult([
+      {
+        extensionId: "agent",
+        event: "startup",
+        handler: async (_payload, ctx) => {
+          reloadResult = await ctx.review.requestReload();
+        },
+      },
+    ]);
+
+    await emitExtensionEventBounded(result, "startup", { cwd: "/repo" });
+
+    expect(reloadResult).toEqual({
+      ok: false,
+      reason: "unavailable",
+      detail: "The review is not ready to reload.",
+    });
+    expect(notices).toEqual(["Extension agent cannot reload the review before the app is ready"]);
+  });
+
   test("does not wait on async handlers when emitting fire-and-forget", async () => {
     let resolveHandler = () => {};
     const finished: string[] = [];
@@ -196,6 +222,7 @@ describe("extension event dispatch", () => {
           select: async () => null,
           input: async () => null,
         },
+        review: { requestReload: async () => ({ ok: true }) },
         events: { emit: () => {} },
       };
     };

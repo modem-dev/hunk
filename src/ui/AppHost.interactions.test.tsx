@@ -1118,6 +1118,11 @@ describe("App interactions", () => {
           onReloadSession={async () => {
             throw new Error("Theme event test does not reload the session.");
           }}
+          onRequestExtensionReviewReload={async () => ({
+            ok: false,
+            reason: "unavailable",
+            detail: "The test host does not reload reviews.",
+          })}
           onWorkspaceWriteCompleted={() => {}}
           runWorkspaceWrite={async (write) => {
             await write();

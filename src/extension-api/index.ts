@@ -94,6 +94,8 @@ export type {
   ExtensionCommandHandler,
   ExtensionReviewSelection,
   ExtensionReviewControls,
+  ExtensionReviewReloadControls,
+  ExtensionReviewReloadResult,
   ExtensionReviewSnapshot,
   ExtensionReviewSnapshotFile,
   ExtensionReviewSnapshotLineAddress,

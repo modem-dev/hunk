@@ -11,6 +11,7 @@ import type {
   ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
+  ExtensionReviewReloadControls,
   ExtensionReviewNavigation,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
@@ -346,6 +347,26 @@ function unavailableDialogs(result: ExtensionLoadResult, extensionId: string): E
   };
 }
 
+/** Review reload controls used before the mounted app can rebuild its current input. */
+function unavailableReviewReloadControls(
+  result: ExtensionLoadResult,
+  extensionId: string,
+): ExtensionReviewReloadControls {
+  return {
+    requestReload: async () => {
+      result.context.notify(
+        `Extension ${extensionId} cannot reload the review before the app is ready`,
+        "warning",
+      );
+      return {
+        ok: false,
+        reason: "unavailable",
+        detail: "The review is not ready to reload.",
+      };
+    },
+  };
+}
+
 /** Build the runtime event context for one owning extension. */
 function createEventContext(
   result: ExtensionLoadResult,
@@ -364,6 +385,7 @@ function createEventContext(
     sidebars: panes,
     navigation: unavailableReviewNavigation(result, extensionId),
     dialogs: unavailableDialogs(result, extensionId),
+    review: unavailableReviewReloadControls(result, extensionId),
     events: {
       emit(event, payload) {
         emitExtensionCustomEvent(result, event, payload);

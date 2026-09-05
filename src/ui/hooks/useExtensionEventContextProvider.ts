@@ -12,6 +12,7 @@ import type {
   ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
+  ExtensionReviewReloadControls,
   ExtensionReviewNavigation,
 } from "../../extension-api/types";
 import { emitExtensionCustomEvent } from "../../extensions/events";
@@ -22,11 +23,13 @@ export function useExtensionEventContextProvider({
   createDialogs,
   createNavigation,
   createPaneControls,
+  createReviewReloadControls,
   extensions,
 }: {
   createDialogs: (extensionId: string) => ExtensionDialogs;
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
+  createReviewReloadControls: () => ExtensionReviewReloadControls;
   extensions?: ExtensionLoadResult;
 }) {
   useLayoutEffect(() => {
@@ -41,6 +44,7 @@ export function useExtensionEventContextProvider({
         sidebars: panes,
         navigation: createNavigation(extensionId),
         dialogs: createDialogs(extensionId),
+        review: createReviewReloadControls(),
         events: {
           emit(event, payload) {
             emitExtensionCustomEvent(extensions, event, payload);
@@ -57,5 +61,5 @@ export function useExtensionEventContextProvider({
         delete extensions.eventContextProvider;
       }
     };
-  }, [createDialogs, createNavigation, createPaneControls, extensions]);
+  }, [createDialogs, createNavigation, createPaneControls, createReviewReloadControls, extensions]);
 }

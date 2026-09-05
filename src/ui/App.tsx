@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
+import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
@@ -86,6 +87,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -137,6 +139,7 @@ export function App({
   onQuit = () => process.exit(0),
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
   reviewProducer,
   runWorkspaceWrite,
@@ -153,6 +156,10 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Queue a coalesced reload against the review current when host execution begins. */
+  onRequestExtensionReviewReload: (
+    reviewGeneration: AppBootstrap,
+  ) => Promise<ExtensionReviewReloadResult>;
   /** Reconcile the currently mounted review after a consented filesystem write succeeds. */
   onWorkspaceWriteCompleted: () => void;
   /** The producer publishing this review's generations, when the host mounted one. */
@@ -518,10 +525,19 @@ export function App({
     workspaceFileWriter,
   });
 
+  const createEventReviewReloadControls = useCallback(() => {
+    const lease = createReviewCapabilityLease();
+    return createExtensionReviewReloadControls({
+      isLive: lease.isLive,
+      requestReload: () => onRequestExtensionReviewReload(bootstrap),
+    });
+  }, [bootstrap, createReviewCapabilityLease, onRequestExtensionReviewReload]);
+
   useExtensionEventContextProvider({
     createDialogs: createExtensionDialogs,
     createNavigation: createExtensionNavigation,
     createPaneControls,
+    createReviewReloadControls: createEventReviewReloadControls,
     extensions,
   });
 
