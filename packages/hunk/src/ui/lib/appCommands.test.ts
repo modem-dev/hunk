@@ -108,6 +108,35 @@ describe("built-in command chords", () => {
     );
     expect(actions).toHaveLength(2);
   });
+  test("file discard and stash defaults override paging and pane toggle only when actionable", () => {
+    const actions: string[] = [];
+    const options = {
+      canDiscardSelectedFile: true,
+      canStashSelectedFile: true,
+      discardSelectedFile: () => actions.push("discard"),
+      stashSelectedFile: () => actions.push("stash"),
+    };
+    const { commands } = createTestCommands(undefined, options);
+    expect(dispatchAppCommand(commands, keyEvent({ name: "d", sequence: "d" }))?.id).toBe(
+      "hunk.review.discardSelectedFile",
+    );
+    expect(dispatchAppCommand(commands, keyEvent({ name: "s", sequence: "s" }))?.id).toBe(
+      "hunk.review.stashSelectedFile",
+    );
+    expect(actions).toEqual(["discard", "stash"]);
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.halfPageDown": "d", "hunk.view.toggleFilesPane": "s" },
+    });
+    const remapped = createTestCommands(keys, options);
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "d", sequence: "d" }))?.id).toBe(
+      "hunk.review.halfPageDown",
+    );
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "s", sequence: "s" }))?.id).toBe(
+      "hunk.view.toggleFilesPane",
+    );
+  });
+
   test("focused hunk staging owns Space without invoking file staging", () => {
     const actions: string[] = [];
     const { commands } = createTestCommands(undefined, {
@@ -304,6 +333,8 @@ describe("builtinCommandKeyDefaults", () => {
     expect(
       commands.filter((command) => !command.publicToExtensions).map((command) => command.id),
     ).toEqual([
+      "hunk.review.discardSelectedFile",
+      "hunk.review.stashSelectedFile",
       "hunk.review.toggleHunkStaged",
       "hunk.review.toggleFileStaged",
       "hunk.review.toggleStagedView",

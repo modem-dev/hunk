@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 20;
+export const HUNK_EXTENSION_API_VERSION = 21;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1106,12 +1106,29 @@ export type ExtensionVcsHunkMutation = (
   context: ExtensionVcsLoadContext,
 ) => Promise<void>;
 
-/** Load a working-tree review and optionally offer explicit index mutations. */
+/** Choose which reviewed changes to discard from one file. */
+export type ExtensionVcsDiscardScope = "all" | "unstaged";
+
+/** Load a working-tree review and optionally offer explicit local mutations. */
 export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<ExtensionVcsDiffInput> {
   stageFile?: ExtensionVcsFileMutation;
   unstageFile?: ExtensionVcsFileMutation;
   stageHunk?: ExtensionVcsHunkMutation;
   unstageHunk?: ExtensionVcsHunkMutation;
+  /** Discard only the confirmed file and scope, rejecting stale attestations. */
+  discardFile?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    scope: ExtensionVcsDiscardScope,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
+  /** Stash only this file, preserving its partial staging and excluding unrelated stash content. */
+  stashFile?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    message: string,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
 }
 
 /** Navigate and stage the host's current working-tree inventory from a mounted pane. */

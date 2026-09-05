@@ -108,6 +108,10 @@ interface BuiltinCommandHandler {
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
 export interface BuildAppCommandsOptions {
+  canDiscardSelectedFile?: boolean;
+  canStashSelectedFile?: boolean;
+  discardSelectedFile?: () => void;
+  stashSelectedFile?: () => void;
   canToggleFileStaged?: boolean;
   canToggleHunkStaged?: boolean;
   toggleHunkStaged?: () => void;
@@ -181,6 +185,14 @@ function builtinCommandHandlers(
   options: BuildAppCommandsOptions,
 ): Record<AppCommandId, BuiltinCommandHandler> {
   return {
+    "hunk.review.discardSelectedFile": {
+      isEnabled: () => Boolean(options.canDiscardSelectedFile),
+      run: () => options.discardSelectedFile?.(),
+    },
+    "hunk.review.stashSelectedFile": {
+      isEnabled: () => Boolean(options.canStashSelectedFile),
+      run: () => options.stashSelectedFile?.(),
+    },
     "hunk.review.toggleHunkStaged": {
       isEnabled: () => Boolean(options.canToggleHunkStaged),
       run: () => options.toggleHunkStaged?.(),

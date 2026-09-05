@@ -471,7 +471,7 @@ describe("reload keeps launch extension authority", () => {
         `  });\n` +
         `}\n`,
     );
-    useTempConfigHome();
+    useTempConfigHome('[keybindings]\n"hunk.view.toggleFilesPane" = "s"\n');
 
     const bootstrap = await launchInSubdirectory(repo, { extensionPaths: [extPath] });
     bootstrap.extensions = await loadStartupExtensions({

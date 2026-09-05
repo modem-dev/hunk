@@ -1,3 +1,4 @@
+import { WorkingTreeDialog } from "./components/chrome/WorkingTreeDialog";
 import { recordMousePress } from "./lib/mousePressSequence";
 import type {
   BoxRenderable,
@@ -1098,6 +1099,10 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
+        canDiscardSelectedFile: workingTree.canDiscardSelected,
+        canStashSelectedFile: workingTree.canStashSelected,
+        discardSelectedFile: workingTree.discardSelected,
+        stashSelectedFile: workingTree.stashSelected,
         canToggleFileStaged: !hunkActionFocused && workingTree.canToggleSelected,
         canToggleHunkStaged: hunkActionFocused && workingTree.canToggleSelectedHunk,
         toggleHunkStaged: workingTree.toggleSelectedHunk,
@@ -1209,6 +1214,7 @@ export function App({
   } = useMenuController(menus);
 
   useAppKeyboardShortcuts({
+    workingTreeDialog: workingTree,
     activeMenuId,
     activateCurrentMenuItem,
     closeAgentSkill,
@@ -1591,6 +1597,19 @@ export function App({
           onCancel={cancelExtensionDialog}
           onChangeInput={setExtensionDialogInputValue}
           onPickOption={setExtensionDialogSelectedIndex}
+        />
+      ) : null}
+
+      {workingTree.prompt ? (
+        <WorkingTreeDialog
+          prompt={workingTree.prompt}
+          message={workingTree.message}
+          onChangeMessage={workingTree.setMessage}
+          onAccept={workingTree.acceptPrompt}
+          onCancel={workingTree.cancelPrompt}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
         />
       ) : null}
 

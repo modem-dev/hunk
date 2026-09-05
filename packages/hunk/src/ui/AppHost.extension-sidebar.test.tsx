@@ -125,6 +125,8 @@ async function launchWithExtension(repo: string, extPath: string): Promise<AppBo
     cliExtensionPaths: [extPath],
   });
   expect(bootstrap.extensions.issues).toEqual([]);
+  // Pane tests explicitly retain s; working-tree sessions otherwise use it for stash.
+  bootstrap.keybindings = { ...bootstrap.keybindings, "hunk.view.toggleFilesPane": "s" };
   return bootstrap;
 }
 

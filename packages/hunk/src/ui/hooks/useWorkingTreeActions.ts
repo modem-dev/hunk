@@ -1,5 +1,5 @@
 /**
- * Coordinates file staging and staged/unstaged stream tabs against the mounted review.
+ * Coordinates file and hunk mutations, scoped discard/stash prompts, and stream tabs against the mounted review.
  * Sidebar paths survive tab changes; shared review navigation still owns the active diff.
  * AppHost tracks writes through shutdown and serializes their authoritative refreshes.
  */
@@ -10,9 +10,20 @@ import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { getConfiguredVcsAdapter } from "../../core/vcs";
 import { HunkUserError } from "../../core/run/errors";
 import { summarizeHunk } from "../../core/changeset/hunkSummary";
-import type { ExtensionWorkingTreeFile, ExtensionWorkingTreePane } from "../../extension-api/types";
+import type {
+  ExtensionVcsDiscardScope,
+  ExtensionWorkingTreeFile,
+  ExtensionWorkingTreePane,
+} from "../../extension-api/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import type { WorkspaceWriteRunner } from "./useExtensionWorkspaceControls";
+
+/** Capture the exact file and generation the user is being asked to change. */
+export interface WorkingTreePrompt {
+  kind: "discard" | "stash";
+  file: ExtensionWorkingTreeFile;
+  lease: ExtensionCapabilityLease;
+}
 
 /** Keep working-tree UI absent from historical, pager and non-provider reviews. */
 export function hasWorkingTreeInventory(bootstrap: AppBootstrap) {
@@ -78,6 +89,25 @@ export function useWorkingTreeActions({
     files[0]?.path ??
     null;
   const lease = useMemo(() => createLease(), [bootstrap, createLease]);
+  const [promptState, setPromptState] = useState<WorkingTreePrompt | null>(null);
+  const promptRef = useRef<WorkingTreePrompt | null>(null);
+  const [message, setMessageState] = useState("");
+  const messageRef = useRef("");
+  const cancelPrompt = useCallback(() => {
+    promptRef.current = null;
+    setPromptState(null);
+  }, []);
+  useEffect(() => {
+    cancelPrompt();
+  }, [bootstrap, cancelPrompt]);
+  const getPrompt = useCallback(() => {
+    const pending = promptRef.current;
+    return pending?.lease.isLive() ? pending : null;
+  }, []);
+  const setMessage = useCallback((value: string) => {
+    messageRef.current = value;
+    setMessageState(value);
+  }, []);
 
   useEffect(() => {
     const pending = pendingPathRef.current;
@@ -266,6 +296,54 @@ export function useWorkingTreeActions({
     [canToggleHunk, bootstrap, files, operation, staged, startMutation],
   );
 
+  const selectedStatus = files.find((file) => file.path === selectedPath);
+  const actionableFile =
+    enabled && selectedStatus && !selectedStatus.conflicted && !selectedStatus.unavailableReason;
+  const canDiscardSelected = Boolean(actionableFile && operation?.discardFile);
+  const canStashSelected = Boolean(actionableFile && operation?.stashFile);
+
+  /** Open a generation-bound prompt; rapid repeated keys cannot replace its captured target. */
+  const openPrompt = (kind: WorkingTreePrompt["kind"]) => {
+    if (
+      !lease.isLive() ||
+      busyRef.current ||
+      getPrompt() ||
+      !selectedStatus ||
+      !(kind === "discard" ? canDiscardSelected : canStashSelected)
+    )
+      return;
+    const pending = { kind, file: selectedStatus, lease };
+    setMessage("");
+    promptRef.current = pending;
+    setPromptState(pending);
+  };
+
+  /** Accept the shown scope once, retaining the shared mutation and authoritative refresh lifecycle. */
+  const acceptPrompt = (scope: ExtensionVcsDiscardScope = "all") => {
+    const pending = getPrompt();
+    if (!pending || busyRef.current || bootstrap.input.kind !== "vcs") return;
+    const { file, kind } = pending;
+    if (kind === "discard" && scope === "unstaged" && !(file.staged && file.unstaged)) return;
+    const input = bootstrap.input;
+    const context = { cwd: bootstrap.changeset.sourceLabel };
+    const discard = operation?.discardFile;
+    const stash = operation?.stashFile;
+    if (kind === "discard" ? !discard : !stash) return;
+    const stashMessage = messageRef.current;
+    cancelPrompt();
+    startMutation(file, {
+      mutate: () =>
+        kind === "discard"
+          ? discard!(input, file, scope, context)
+          : stash!(input, file, stashMessage, context),
+      progress: `${kind === "discard" ? "Discarding" : "Stashing"} ${file.path}…`,
+      complete:
+        kind === "discard"
+          ? `Discarded ${scope} changes in ${file.path}.`
+          : `Stashed ${file.path}.`,
+    });
+  };
+
   const pane = useMemo<ExtensionWorkingTreePane | undefined>(
     () =>
       enabled
@@ -282,6 +360,16 @@ export function useWorkingTreeActions({
   );
 
   return {
+    prompt: promptState?.lease.isLive() ? promptState : null,
+    getPrompt,
+    cancelPrompt,
+    acceptPrompt,
+    message,
+    setMessage,
+    canDiscardSelected,
+    canStashSelected,
+    discardSelected: () => openPrompt("discard"),
+    stashSelected: () => openPrompt("stash"),
     pane,
     busy,
     staged,

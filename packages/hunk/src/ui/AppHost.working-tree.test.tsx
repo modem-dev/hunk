@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { rmSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../../../../test/helpers/working-tree";
 import { loadAppBootstrap } from "../core/changeset/loaders";
@@ -101,6 +101,17 @@ afterEach(async () => {
 });
 
 describe("working-tree stream actions", () => {
+  test("an external edit after discard consent is shown refuses the stale target", async () => {
+    const root = await createReview();
+    await press("d");
+    await waitForReview(() => setup!.captureCharFrame().includes("Discard changes"));
+    writeFileSync(join(root, "alpha.txt"), "changed after prompt\n");
+    await press("x");
+    await waitForReview(() => setup!.captureCharFrame().includes("changed since"));
+    expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe("changed after prompt\n");
+    expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
+  });
+
   test("hunk navigation makes Space mutate only the active hunk on either stream side", async () => {
     const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
     const root = await createReview({

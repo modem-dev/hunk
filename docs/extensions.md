@@ -545,6 +545,15 @@ attestation, including its comparison base. Apply original patch bytes, never de
 text-converted source. Preserve all other hunks and worktree content; reject unsupported textual changes.
 Hunk actions use the currently reviewed side rather than the file's combined staged status.
 
+API v19 adds optional `discardFile(input, file, scope, ctx)` and
+`stashFile(input, file, message, ctx)`. Discard scope is `"all"` or `"unstaged"`;
+the host obtains exact-file confirmation before calling either operation. Unstaged-only discard
+preserves the index and is offered when both status sides have changes. Stash receives the entered
+message (possibly empty) and must preserve the selected file's partial staging in the stash while
+excluding unrelated changes from every stash tree and from live cleanup. Revalidate the attestation
+before writes, retain a published stash if cleanup fails, and report partial completion explicitly.
+These optional operations remain absent for read-only providers and revision comparisons.
+
 Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`, `staged`,
 `busy`, `selectFile(path)`, and `toggleStaged(path)`. These controls expire on review reload.
 Selecting an inactive-side file switches stream tabs without reducing the review to one file.

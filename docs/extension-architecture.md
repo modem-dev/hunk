@@ -347,7 +347,11 @@ binds status paths to the existing review navigation and AppHost's tracked mutat
 refresh lifecycle. The bundled sidebar consumes `ExtensionPaneProps.workingTree` through the public
 pane contract; inactive-side files never become fabricated review-document entries. Stream tabs
 replace the active canonical diff, not the sidebar inventory. Browser/session exports remain
-read-only with respect to Git state.
+read-only with respect to Git state. The same leased mutation controller owns exact-file
+discard/stash prompts; keyboard routing remains in the App keyboard hook and mouse choices reuse
+ConfirmDialog. Git builds file-only stash trees through an isolated index and publishes a normal
+stash before cleaning the selected live paths. Cleanup failure retains that stash and reports
+partial completion.
 
 `packages/hunk/src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
 detection, and operation dispatch. `packages/hunk/src/app/vcsCatalog.ts` composes bundled

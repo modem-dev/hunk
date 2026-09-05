@@ -58,6 +58,12 @@ The target uses `ExtensionDiffHunk`'s numbered summary. Recover and validate the
 patch and comparison base before applying original bytes, not text-converted output; leave other hunks and worktree bytes untouched. These actions address
 the active stream side, even when the file has both staged and unstaged changes.
 
+API v19 adds `discardFile(input, file, scope, ctx)` and `stashFile(input, file, message, ctx)`.
+The host confirms one exact file; discard scope is `"all"` or `"unstaged"`. Revalidate the file,
+preserve its staged content for unstaged-only discard, and exclude unrelated changes from both
+live cleanup and every stash tree. Retain a published stash and report partial completion if
+cleanup fails. Messages may be empty. Omit unsupported operations.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.

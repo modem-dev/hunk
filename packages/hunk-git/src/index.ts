@@ -1,3 +1,4 @@
+import { discardGitFile, stashGitFile } from "./fileActions";
 import { mutateGitHunkStaging } from "./hunkStaging";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -409,6 +410,10 @@ export function createGitVcsAdapter({
             untrackedPaths,
           };
         },
+        discardFile: (input, file, scope, { cwd }) =>
+          discardGitFile(input, file, scope, { cwd, gitExecutable }),
+        stashFile: (input, file, message, { cwd }) =>
+          stashGitFile(input, file, message, { cwd, gitExecutable }),
         stageFile: (input, file, { cwd }) =>
           mutateGitFileStaging(input, file, { cwd, gitExecutable }, true),
         unstageFile: (input, file, { cwd }) =>

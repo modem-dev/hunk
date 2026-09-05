@@ -564,18 +564,23 @@ export async function runGitMutation({
   cwd = process.cwd(),
   gitExecutable = "git",
   stdin,
-}: RunGitTextOptions & { stdin?: string | Uint8Array }): Promise<string> {
+  env,
+}: RunGitTextOptions & {
+  stdin?: string | Uint8Array;
+  env?: Record<string, string | undefined>;
+}): Promise<string> {
   try {
-    const process = Bun.spawn([gitExecutable, ...args], {
+    const child = Bun.spawn([gitExecutable, ...args], {
       cwd,
+      env: env ? { ...process.env, ...env } : undefined,
       stdin: typeof stdin === "string" ? new TextEncoder().encode(stdin) : (stdin ?? "ignore"),
       stdout: "pipe",
       stderr: "pipe",
     });
     const [exitCode, stdout, stderr] = await Promise.all([
-      process.exited,
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
     ]);
     if (exitCode !== 0) throw translateGitExitFailure(input, stderr);
     return stdout;

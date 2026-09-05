@@ -161,6 +161,7 @@ export type {
   ExtensionVcsWorkingTreeOperation,
   ExtensionVcsFileMutation,
   ExtensionVcsHunkMutation,
+  ExtensionVcsDiscardScope,
   ExtensionWorkingTreeFile,
   ExtensionWorkingTreePane,
   ExtensionVcsOperations,

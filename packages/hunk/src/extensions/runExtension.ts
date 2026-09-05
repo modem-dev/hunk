@@ -499,7 +499,7 @@ export function toInternalVcsAdapter(
     | (VcsOperation<VcsReviewInput> &
         Pick<
           ExtensionVcsWorkingTreeOperation,
-          "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk"
+          "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk" | "discardFile" | "stashFile"
         >)
     | undefined;
   if (workingTree && internalWorkingTree) {
@@ -523,6 +523,29 @@ export function toInternalVcsAdapter(
       internalWorkingTree[name] = async (input, file, hunk, context) => {
         try {
           await mutate(input, file, hunk, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+  }
+
+  if (workingTree && internalWorkingTree) {
+    if (typeof workingTree.discardFile === "function") {
+      const discard = workingTree.discardFile;
+      internalWorkingTree.discardFile = async (input, file, scope, context) => {
+        try {
+          await discard(input, file, scope, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+    if (typeof workingTree.stashFile === "function") {
+      const stash = workingTree.stashFile;
+      internalWorkingTree.stashFile = async (input, file, message, context) => {
+        try {
+          await stash(input, file, message, context);
         } catch (error) {
           throw toUserFacingError(error);
         }

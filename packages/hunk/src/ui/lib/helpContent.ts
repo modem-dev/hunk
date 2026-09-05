@@ -99,6 +99,14 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         ],
         description: "lines / wrap / metadata / menu",
       },
+      {
+        commandIds: ["hunk.review.discardSelectedFile"],
+        description: "discard selected file changes (confirmed)",
+      },
+      {
+        commandIds: ["hunk.review.stashSelectedFile"],
+        description: "stash selected file with a message",
+      },
       { commandIds: ["hunk.review.editSelectedFile"], description: "open file in $EDITOR" },
     ],
   },

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../helpers/working-tree";
 import { createPtyHarness } from "./harness";
@@ -42,6 +42,127 @@ function doubleClickSidebarFile(session: Session, path: string) {
 }
 
 describe("PTY working-tree staging", () => {
+  test("discard offers exact-file choices, cancels safely, and preserves staged content with u", async () => {
+    const root = createFixture();
+    runTestGit(root, "add", "alpha.txt");
+    writeFileSync(join(root, "alpha.txt"), "later alpha\n");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("later alpha", { timeout: 15_000 });
+      await session.press("d");
+      await session.waitForText("Discard changes");
+      await session.press("escape");
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe("later alpha\n");
+      await session.press("d");
+      await session.waitForText("unstaged only");
+      await session.press("u");
+      await session.waitForText("Discarded unstaged changes in alpha.txt.");
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toContain("changed alpha");
+      await session.press("d");
+      await session.waitForText("Discard changes");
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line) => line.includes("discard all"));
+      const col = lines[row]!.indexOf("discard all") + 1;
+      for (const button of [1, 2]) {
+        session.writeRaw(`\x1b[<${button};${col};${row + 1}M\x1b[<${button};${col};${row + 1}m`);
+        await session.waitIdle();
+        expect(readFileSync(join(root, "alpha.txt"), "utf8")).toContain("changed alpha");
+        expect(await session.text()).toContain("Discard changes");
+      }
+      await session.click("discard all");
+      await session.waitForText("Discarded all changes in alpha.txt.");
+      expect(runTestGit(root, "diff", "HEAD", "--", "alpha.txt")).toBe("");
+      expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("compact discard keeps every available choice and cancellation visible", async () => {
+    const root = createFixture();
+    runTestGit(root, "add", "alpha.txt");
+    writeFileSync(join(root, "alpha.txt"), "later alpha\n");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--no-extensions", "--mode", "stack"],
+      cols: 40,
+      rows: 18,
+    });
+    try {
+      await session.waitForText("later alpha", { timeout: 15_000 });
+      await session.press("d");
+      const frame = await session.waitForText("Discard changes");
+      expect(frame).toContain("alpha.txt");
+      expect(frame).toContain("x all");
+      expect(frame).toContain("u unstaged");
+      expect(frame).toContain("esc");
+      await session.press("escape");
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe("later alpha\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("compact confirmation preserves filename spaces and keeps the warning visible", async () => {
+    for (const path of ["a  b.txt", `long-${"x".repeat(180)}.txt`]) {
+      const root = createFixture();
+      writeFileSync(join(root, path), "new spaced file\n");
+      const session = await harness.launchHunk({
+        cwd: root,
+        args: ["diff", "--no-extensions", "--mode", "stack", "--", path],
+        cols: 40,
+        rows: 14,
+      });
+      try {
+        await session.waitForText("new spaced file", { timeout: 15_000 });
+        await session.press("d");
+        const frame = await session.waitForText("Discard changes");
+        if (path === "a  b.txt") expect(frame).toContain('"a  b.txt"');
+        else expect(frame).toContain("…");
+        expect(frame).toContain("Cannot undo");
+        await session.press("escape");
+        expect(readFileSync(join(root, path), "utf8")).toBe("new spaced file\n");
+      } finally {
+        session.close();
+      }
+    }
+  });
+
+  test("stash message input keeps command letters as text and stashes only the selected file", async () => {
+    const root = createFixture();
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("changed alpha", { timeout: 15_000 });
+      await session.press("s");
+      await session.waitForText("Stash selected file");
+      await session.press("escape");
+      expect(runTestGit(root, "stash", "list")).toBe("");
+      await session.press("s");
+      await session.waitForText("Stash selected file");
+      session.writeRaw("saved draft d s q");
+      await session.waitForText("saved draft d s q");
+      await session.press("enter");
+      await session.waitForText("Stashed alpha.txt.");
+      expect(runTestGit(root, "log", "-1", "--format=%s", "stash")).toContain("saved draft d s q");
+      expect(runTestGit(root, "diff", "--name-only", "stash^1", "stash").trim()).toBe("alpha.txt");
+      expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
+    } finally {
+      session.close();
+    }
+  });
+
   test("double-clicking a hunk without a mutation capability still copies a word", async () => {
     const root = createFixture();
     const index = runTestGit(root, "ls-files", "--stage");

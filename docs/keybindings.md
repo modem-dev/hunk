@@ -70,6 +70,14 @@ Double-clicking a code line applies its hunk on release, provided the pointer di
 use Tab to review the other side. Clicking a sidebar file or file header, or using `,` / `.` returns to file scope.
 The action beside the tabs names the current scope. Drag-to-copy remains available; hunks without an available staging action and non-working-tree
 reviews retain word/line selection on repeated clicks. Binary, text-converted, and metadata-only changes use file actions.
+**d** opens discard choices for the selected file: Enter or **x** discards all its changes,
+**u** discards only unstaged changes when both sides have changes, and Escape cancels.
+**s** opens a selected-file stash message input; Enter stashes and Escape cancels. The stash
+contains only that file's changes, including its staged/unstaged split, not unrelated staged files.
+These actions always target the selected file, even in hunk scope. They reject stale targets and
+renames whose former path has been recreated. Stashing requires an initial commit. Outside an
+actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
+**Ctrl+d** and the View menu remain available in working-tree reviews.
 **Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
 has changes on the other side switches automatically. Use `/` to focus the filter.
 Actions wait for Git and its refreshed diff before accepting another mutation. Outside this
@@ -86,6 +94,7 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
+| `hunk.review.discardSelectedFile`              | Discard selected file changes                  | `d`                          |
 | `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
@@ -107,6 +116,7 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
+| `hunk.review.stashSelectedFile`                | Stash selected file                            | `s`                          |
 | `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
 | `hunk.review.toggleFileStaged`                 | Stage / unstage selected file                  | `space`                      |

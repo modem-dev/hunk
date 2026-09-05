@@ -99,6 +99,24 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
+    id: "hunk.review.discardSelectedFile",
+    title: "Discard selected file changes",
+    category: "review",
+    defaultKeys: ["d"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.stashSelectedFile",
+    title: "Stash selected file",
+    category: "review",
+    defaultKeys: ["s"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.toggleHunkStaged",
     title: "Stage / unstage selected hunk",
     category: "review",
