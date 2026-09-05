@@ -168,6 +168,7 @@ describe("ExtensionPaneHost activation", () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
     let activations = 0;
+    const surfaceActivations: string[] = [];
     let childPresses = 0;
     const registered = registeredView(() => (
       <scrollbox width="100%" height="100%" scrollY={true} focused={false}>
@@ -203,14 +204,17 @@ describe("ExtensionPaneHost activation", () => {
         onSelectFile={() => {}}
         onSelectHunk={() => {}}
         onRevealLine={() => "line"}
+        onActivateSurface={(key) => surfaceActivations.push(key)}
       />,
       async (setup) => {
         await act(async () => setup.mockMouse.click(2, 0, MouseButtons.LEFT));
         expect(activations).toBe(1);
+        expect(surfaceActivations).toEqual(["probe:probe-view"]);
         expect(childPresses).toBe(1);
 
         await act(async () => setup.mockMouse.click(2, 0, MouseButtons.RIGHT));
         expect(activations).toBe(1);
+        expect(surfaceActivations).toEqual(["probe:probe-view"]);
         expect(childPresses).toBe(2);
       },
     );

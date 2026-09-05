@@ -352,6 +352,7 @@ export function DiffPane({
   onFocusDraftNote,
   onCopyFeedback,
   onCopySelectionText,
+  onActivateSurface,
   onFileViewRowFailure,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
@@ -423,6 +424,7 @@ export function DiffPane({
   onFocusDraftNote?: () => void;
   onCopyFeedback?: (text: string) => void;
   onCopySelectionText?: (text: string) => void | boolean;
+  onActivateSurface?: () => void;
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
@@ -449,6 +451,8 @@ export function DiffPane({
   const hoveredFileIdRef = useRef<string | null>(null);
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
+  const onActivateSurfaceRef = useRef(onActivateSurface);
+  onActivateSurfaceRef.current = onActivateSurface;
 
   /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
   const clearAddNoteHoverForScroll = useCallback(() => {
@@ -1512,6 +1516,7 @@ export function DiffPane({
       if (event.button !== MouseButton.LEFT) {
         return;
       }
+      onActivateSurfaceRef.current?.();
 
       const point = resolveCopySelectionPoint(event);
       if (!point) {
@@ -2678,6 +2683,9 @@ export function DiffPane({
         ...(renderTopChrome
           ? { paddingY: 1 }
           : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
+      }}
+      onMouseDown={(event) => {
+        if (event.button === MouseButton.LEFT) onActivateSurfaceRef.current?.();
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}

@@ -168,8 +168,9 @@ describe("extension panes", () => {
     const files = layout.panes.find((pane) => pane.pane.key === HUNK_FILES_PANE_KEY)!;
     const info = layout.panes.find((pane) => pane.pane.key === "hunk:review-info")!;
     expect(files.bounds).toEqual({ x: 0, y: 0, width: 38, height: 30 });
-    expect(info.bounds).toEqual({ x: 39, y: 0, width: 201, height: 3 });
-    expect(info.divider).toBeUndefined();
+    expect(info.bounds).toEqual({ x: 39, y: 0, width: 201, height: 2 });
+    expect(info.divider).toEqual({ x: 39, y: 2, width: 201, height: 1 });
+    expect(info.resizable).toBeFalse();
     expect(layout.reviewBounds).toEqual({ x: 39, y: 3, width: 201, height: 27 });
   });
 
@@ -205,12 +206,19 @@ describe("extension panes", () => {
       minReviewWidth: 40,
       minReviewHeight: 5,
     });
-    expect(plan.reviewBounds).toEqual({ x: 20, y: 4, width: 65, height: 23 });
+    expect(plan.reviewBounds).toEqual({ x: 21, y: 5, width: 63, height: 21 });
     expect(plan.panes.map((entry) => entry.pane.placement)).toEqual([
       "left",
       "right",
       "top",
       "bottom",
+    ]);
+    expect(plan.panes.map((entry) => entry.resizable)).toEqual([false, false, false, false]);
+    expect(plan.panes.map((entry) => entry.divider)).toEqual([
+      { x: 20, y: 0, width: 1, height: 30 },
+      { x: 84, y: 0, width: 1, height: 30 },
+      { x: 21, y: 4, width: 63, height: 1 },
+      { x: 21, y: 26, width: 63, height: 1 },
     ]);
   });
 
@@ -474,7 +482,7 @@ describe("extension panes", () => {
     expect(heights(60)).toEqual([15, 15]);
   });
 
-  test("uses explicit height overrides and reserves a divider only for resizable panes", () => {
+  test("uses explicit height overrides and marks resizable pane dividers", () => {
     const registered = registeredPane("a", "top", {
       placement: "top",
       height: { preferred: 4, min: 2, max: 8 },
@@ -493,6 +501,7 @@ describe("extension panes", () => {
     const top = plan.panes.find((entry) => entry.pane.key === "a:top");
     expect(top?.bounds).toEqual({ x: 0, y: 0, width: 100, height: 7 });
     expect(top?.divider).toEqual({ x: 0, y: 7, width: 100, height: 1 });
+    expect(top?.resizable).toBeTrue();
     expect(plan.reviewBounds).toEqual({ x: 0, y: 8, width: 100, height: 12 });
   });
 
