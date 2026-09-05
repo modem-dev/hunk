@@ -799,6 +799,12 @@ export interface ExtensionVcsHistorySource {
   close(): void | Promise<void>;
 }
 
+/** Optional provider-neutral selection facts for reviewing one history item. */
+export interface ExtensionVcsHistoryReviewOptions {
+  /** One ordered parent id returned on the commit, when the caller chooses a specific parent. */
+  parentRevisionId?: string;
+}
+
 /** A provider-owned declaration of how Hunk should review one history item. */
 export type ExtensionVcsHistoryReviewAction =
   | {
@@ -826,6 +832,7 @@ export interface ExtensionVcsHistoryCapability {
   planReview(
     commit: ExtensionVcsHistoryCommit,
     context: ExtensionVcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
   ): ExtensionVcsHistoryReviewAction | Promise<ExtensionVcsHistoryReviewAction>;
 }
 
