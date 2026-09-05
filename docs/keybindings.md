@@ -35,7 +35,10 @@ shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`).
 `shift` applies to letters and named keys only — for a shifted symbol or digit,
 write the character the shift produces (`"!"`, not `"shift+1"`), since that is
 what terminals report. `ctrl+<letter>` also matches an unnamed bare control
-byte; named Tab and Enter events stay distinct.
+byte; named Tab and Enter events stay distinct. `alt`/`option` matches both
+explicit Alt events and the Escape-prefixed form used by legacy terminals. A
+legacy terminal cannot distinguish Alt from Meta, so `alt+n` and `meta+n` may
+overlap there; Kitty keyboard events keep them distinct.
 
 Inline saved notes also expose clickable **Edit**, **Reply**, and (for reply-free user notes)
 **Delete** actions. `E` edits the first editable user note in the selected hunk and `R` replies

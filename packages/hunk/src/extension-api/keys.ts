@@ -192,6 +192,24 @@ function matchesNamedKey(base: string, key: ExtensionKeyEvent) {
   return base === "space" && (name === " " || key.sequence === " ");
 }
 
+/** Report whether an event carries the chord's modifiers across terminal protocols. */
+function matchesModifiers(parsed: ParsedKeyChord, key: ExtensionKeyEvent) {
+  if (Boolean(key.ctrl) !== parsed.ctrl) {
+    return false;
+  }
+
+  const meta = Boolean(key.meta);
+  const option = Boolean(key.option);
+
+  // Legacy terminals encode Alt as an Escape-prefixed key and can only report
+  // `meta`. Kitty distinguishes that legacy shape from a true Meta key.
+  if (parsed.option && !parsed.meta) {
+    return option || (meta && key.source !== "kitty");
+  }
+
+  return meta === parsed.meta && option === parsed.option;
+}
+
 /**
  * Report whether one key event is the parsed chord.
  *
@@ -216,11 +234,7 @@ export function matchesKeyChord(parsed: ParsedKeyChord, key: ExtensionKeyEvent):
     return true;
   }
 
-  if (Boolean(key.ctrl) !== parsed.ctrl || Boolean(key.meta) !== parsed.meta) {
-    return false;
-  }
-
-  if (Boolean(key.option) !== parsed.option) {
+  if (!matchesModifiers(parsed, key)) {
     return false;
   }
 
