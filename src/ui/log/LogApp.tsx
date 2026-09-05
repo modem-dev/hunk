@@ -71,8 +71,8 @@ export function LogApp({
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportHeight = responsiveLayout.visibleRows;
 
-  const copySelected = () => {
-    const currentRow = controller.getSelectedRow();
+  const copySelected = (row = controller.getSelectedRow()) => {
+    const currentRow = row;
     if (!currentRow) return;
     if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
       renderer.copyToClipboardOSC52(currentRow.commit.revisionId);
@@ -440,11 +440,16 @@ export function LogApp({
                 onMouseUp={(event: TuiMouseEvent) => {
                   event.stopPropagation();
                   clearTransientNotice();
-                  void controller.select(index, viewportHeight).then(() => openSelected());
+                  const copyIconStart = terminal.width - 1 - measureTextWidth(projected.copyIcon);
+                  void controller.select(index, viewportHeight).then(() => {
+                    if (event.x >= copyIconStart) copySelected(row);
+                    else void openSelected();
+                  });
                 }}
               >
-                <box>
+                <box style={{ flexDirection: "row", gap: 1 }}>
                   <text fg={theme.accent}>{projected.displayId}</text>
+                  <text fg={theme.muted}>{projected.copyIcon}</text>
                 </box>
                 {projected.secondary ? <text fg={theme.muted}>{projected.secondary}</text> : null}
               </box>

@@ -58,7 +58,7 @@ author, date, and decoration controls. Use:
 - `y` to copy the full immutable commit id
 - `Enter` to open the selected commit in Hunk's normal review
 - use Commit → **Compare with first parent** for the ordered first parent, or **Compare with parent…** to choose another merge parent; these compare the selected commit against that parent rather than opening the parent itself
-- click a visible commit id to open it immediately, or double-click elsewhere on a row
+- click a visible commit id to open it immediately, click its adjacent copy icon to copy the full immutable id, or double-click elsewhere on a row
 - `r` to refresh while retaining the selected immutable commit when it still exists
 - `q` to quit
 

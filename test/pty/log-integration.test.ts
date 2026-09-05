@@ -103,7 +103,7 @@ describe("interactive hunk log", () => {
         .split("\n")
         .findIndex((line) => line.includes("Second history commit"));
       const firstRow = history.split("\n")[firstRowIndex] ?? "";
-      const commitColumn = firstRow.search(/[0-9a-f]{8}\s*$/);
+      const commitColumn = firstRow.search(/[0-9a-f]{8}\s+⧉\s*$/);
       expect(commitColumn).toBeGreaterThan(0);
       session.writeRaw(
         `\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}M\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}m`,
@@ -118,6 +118,12 @@ describe("interactive hunk log", () => {
         timeout: 15_000,
       });
       expect(returned).toContain("Enter open");
+
+      // The adjacent icon copies without opening the review.
+      session.writeRaw(
+        `\x1b[<0;${commitColumn + 10};${firstRowIndex + 1}M\x1b[<0;${commitColumn + 10};${firstRowIndex + 1}m`,
+      );
+      await session.waitForText(/Copied [0-9a-f]{8}/, { timeout: 5_000 });
 
       // Scrolling the history body dismisses an open dropdown before moving selection.
       await session.press("f10");

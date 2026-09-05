@@ -30,6 +30,7 @@ export interface LogResponsiveRow {
   description: string;
   metadata: string;
   displayId: string;
+  copyIcon: string;
   secondary: string;
 }
 
@@ -84,11 +85,13 @@ export function projectResponsiveLogRow({
     Math.min(measureTextWidth(safeId), Math.floor(contentWidth * 0.35)),
   );
   const displayId = fitText(safeId, maxIdWidth, "…");
+  const copyIcon = presentation.unicode ? "⧉" : "c";
   const secondary =
     layout.showSecondary && row.commit.parentRevisionIds.length > 1
       ? `${row.commit.parentRevisionIds.length} parents`
       : "";
-  const rightWidth = Math.max(measureTextWidth(displayId), measureTextWidth(secondary));
+  const idActionWidth = measureTextWidth(displayId) + 1 + measureTextWidth(copyIcon);
+  const rightWidth = Math.max(idActionWidth, measureTextWidth(secondary));
   const minimumLeftWidth = Math.min(12, Math.max(1, contentWidth - rightWidth));
   const desiredGap = contentWidth > rightWidth + minimumLeftWidth ? 2 : 0;
   const maximumGraphWidth = Math.max(0, contentWidth - rightWidth - minimumLeftWidth - desiredGap);
@@ -125,6 +128,7 @@ export function projectResponsiveLogRow({
       : "",
     metadata: fitText(metadataParts.join(" · "), leftWidth),
     displayId,
+    copyIcon,
     secondary,
   };
 }

@@ -63,6 +63,8 @@ describe("responsive log layout", () => {
     expect(wide.metadata).toContain("tag: v1.0.0");
     expect(wide.secondary).toBe("2 parents");
     expect(measureTextWidth(wide.displayId)).toBe(8);
+    expect(wide.copyIcon).toBe("⧉");
+    expect(wide.rightWidth).toBeGreaterThan(measureTextWidth(wide.displayId));
     expect(wide.graphWidth + wide.leftWidth + wide.rightWidth + 2).toBeLessThanOrEqual(118);
   });
 
@@ -88,6 +90,7 @@ describe("responsive log layout", () => {
       projected.graphWidth + projected.leftWidth + projected.rightWidth + projected.columnGap,
     ).toBeLessThanOrEqual(40);
     expect(projected.displayId).not.toBe("");
+    expect(projected.copyIcon).toBe("⧉");
   });
 
   test("removes description and secondary state as room contracts", () => {
