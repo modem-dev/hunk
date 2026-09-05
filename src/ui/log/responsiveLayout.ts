@@ -12,7 +12,7 @@ export type LogResponsiveDensity = "wide" | "medium" | "narrow";
 
 export interface LogResponsiveLayout {
   density: LogResponsiveDensity;
-  rowHeight: 2 | 3;
+  rowHeight: 3 | 4;
   bodyHeight: number;
   visibleRows: number;
   showDescription: boolean;
@@ -41,7 +41,8 @@ export function resolveLogResponsiveLayout(width: number, height: number): LogRe
   const bodyHeight = Math.max(1, height - 3);
   const density: LogResponsiveDensity =
     safeWidth >= 96 ? "wide" : safeWidth >= 60 ? "medium" : "narrow";
-  const rowHeight = density === "wide" ? 3 : 2;
+  // Keep one graph-continuation row of breathing room between commit entries.
+  const rowHeight = density === "wide" ? 4 : 3;
   return {
     density,
     rowHeight,
