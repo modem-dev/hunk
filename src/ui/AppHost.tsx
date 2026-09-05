@@ -62,6 +62,8 @@ export function AppHost({
   hostClient,
   onQuit = () => process.exit(0),
   onActiveBootstrapChange,
+  onFirstFrameReady,
+  returnToHistory = false,
   reviewProducer,
   startupNoticeResolver,
   watchRuntime,
@@ -75,6 +77,10 @@ export function AppHost({
   onQuit?: () => void;
   /** Observe the bootstrap after its matching App commit; used by mounted host tests. */
   onActiveBootstrapChange?: (bootstrap: AppBootstrap) => void;
+  /** Report once the dynamically mounted review has committed its first requested frame. */
+  onFirstFrameReady?: () => void;
+  /** Present quit as returning to an owning history surface. */
+  returnToHistory?: boolean;
   /**
    * The producer whose generations this host publishes. Supplied by the process that
    * built the initial registration from its first publication; a host mounted without one
@@ -613,6 +619,8 @@ export function AppHost({
       hostClient={hostClient}
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
+      onFirstFrameReady={onFirstFrameReady}
+      returnToHistory={returnToHistory}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
       onRequestExtensionReviewReload={requestExtensionReviewReload}

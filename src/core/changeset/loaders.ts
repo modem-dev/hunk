@@ -45,6 +45,8 @@ export interface LoadAppBootstrapOptions {
   customThemes?: readonly NamedCustomThemeConfig[];
   /** Complete adapter catalog composed by the app for this session. */
   vcsCatalog?: VcsCatalog;
+  /** Cancel provider-backed review loading before it mutates mounted state. */
+  signal?: AbortSignal;
 }
 
 /** Return the final path segment for display-oriented labels. */
@@ -216,10 +218,11 @@ async function loadVcsChangeset(
   sidecar: SidecarContext | null,
   cwd: string,
   vcsCatalog: VcsCatalog,
+  signal?: AbortSignal,
 ) {
   const adapter = getConfiguredVcsAdapter(input.options.vcs, vcsCatalog);
   const operation = operationFromInput(input);
-  const result = await loadVcsReview(adapter, operation, { cwd }, vcsCatalog);
+  const result = await loadVcsReview(adapter, operation, { cwd, signal }, vcsCatalog);
   const parsedChangeset = changesetFromPatch(
     result.patchText,
     result.title,
@@ -274,8 +277,9 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  { cwd = process.cwd(), customThemes, vcsCatalog }: LoadAppBootstrapOptions = {},
+  { cwd = process.cwd(), customThemes, vcsCatalog, signal }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
+  signal?.throwIfAborted();
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
@@ -289,6 +293,7 @@ export async function loadAppBootstrap(
   }
 
   const sidecar = await loadSidecarContext(input.options.agentContext, { cwd });
+  signal?.throwIfAborted();
 
   let changeset: Changeset;
   let repoRoot: string | undefined;
@@ -301,7 +306,7 @@ export async function loadAppBootstrap(
         if (!vcsCatalog) {
           throw new Error("VCS-backed reviews require a composed VCS catalog.");
         }
-        const result = await loadVcsChangeset(input, sidecar, cwd, vcsCatalog);
+        const result = await loadVcsChangeset(input, sidecar, cwd, vcsCatalog, signal);
         changeset = result.changeset;
         repoRoot = result.repoRoot;
       }
@@ -317,6 +322,7 @@ export async function loadAppBootstrap(
       break;
   }
 
+  signal?.throwIfAborted();
   changeset = {
     ...changeset,
     files: orderDiffFiles(changeset.files, sidecar),

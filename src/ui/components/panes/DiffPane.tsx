@@ -29,6 +29,7 @@ import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
 import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
+import { useIntermediateRenderAfterMount } from "../../hooks/useIntermediateRenderAfterMount";
 import { setMouseCapture } from "../../lib/mouseCapture";
 import type { DraftReviewNote, StoredReviewNoteRenderMetadata } from "../../lib/reviewNoteMapping";
 import {
@@ -321,6 +322,7 @@ export function DiffPane({
   copyDecorations = false,
   screenTop = 0,
   showTopChrome,
+  skipInitialIntermediateRender = false,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -390,6 +392,8 @@ export function DiffPane({
   copyDecorations?: boolean;
   screenTop?: number;
   showTopChrome?: boolean;
+  /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
+  skipInitialIntermediateRender?: boolean;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -1826,9 +1830,7 @@ export function DiffPane({
     selectedHunkIndex,
   ]);
 
-  useLayoutEffect(() => {
-    renderer.intermediateRender();
-  }, [renderer, pinnedHeaderFileId]);
+  useIntermediateRenderAfterMount(renderer, [pinnedHeaderFileId], skipInitialIntermediateRender);
 
   const fullFileRenderItems = useMemo(
     (): FileRenderWindowItem[] =>

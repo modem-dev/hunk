@@ -7,10 +7,6 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
-import {
-  awaitTerminalHandoffRelease,
-  reportTerminalHandoffFailure,
-} from "./core/process/terminalHandoff";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -132,17 +128,10 @@ async function main() {
   }
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
-  // native library. Load it before declaring a delegated review ready so terminal release is
-  // followed immediately by renderer creation rather than another module-loading gap.
+  // native library. The highlighting client starts the compiled worker only when an opted-in,
+  // eligible diff needs it, so normal sessions do not pay its startup cost. The interactive app
+  // owns that worker's disposal: this call returns once the app is mounted, not once it exits.
   const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-
-  // A history parent keeps its loading frame mounted until review bootstrap and renderer code are
-  // ready. Wait for exclusive terminal ownership before mounting the child renderer.
-  await awaitTerminalHandoffRelease();
-
-  // The highlighting client starts the compiled worker only when an opted-in, eligible diff needs
-  // it, so normal sessions do not pay its startup cost. The interactive app owns that worker's
-  // disposal: this call returns once the app is mounted, not once it exits.
   try {
     await runInteractiveApp(startupPlan);
   } catch (error) {
@@ -154,7 +143,7 @@ async function main() {
   }
 }
 
-await main().catch(async (error) => {
-  if (!(await reportTerminalHandoffFailure(error))) process.stderr.write(formatCliError(error));
+await main().catch((error) => {
+  process.stderr.write(formatCliError(error));
   process.exitCode = 1;
 });

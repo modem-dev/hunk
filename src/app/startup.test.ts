@@ -749,7 +749,7 @@ describe("startup planning", () => {
     expect(opened).toBe(1);
   });
 
-  test("inherits handoff theme mode without querying the parent-owned terminal", async () => {
+  test("inherits an embedded renderer theme mode without querying the shared terminal", async () => {
     const cliInput: CliInput = {
       kind: "show",
       ref: "opaque:id",
@@ -768,10 +768,7 @@ describe("startup planning", () => {
       },
       stdinIsTTY: true,
       stdoutIsTTY: true,
-      env: {
-        HUNK_TERMINAL_HANDOFF: "1",
-        HUNK_TERMINAL_HANDOFF_THEME_MODE: "dark",
-      },
+      terminalThemeMode: "dark",
     });
 
     expect(plan).toMatchObject({ kind: "app", bootstrap: { initialThemeMode: "dark" } });

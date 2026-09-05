@@ -28,6 +28,7 @@ export interface HistoryBootstrap {
   source: VcsHistorySource;
   providerId: string;
   providerName: string;
+  startupCwd: string;
   repoRoot: string;
   extensions: ExtensionLoadResult;
   notices: readonly string[];
@@ -129,6 +130,7 @@ export async function loadHistoryBootstrap({
     source,
     providerId: sanitizeTerminalLine(adapter.id),
     providerName: sanitizeTerminalLine(adapter.name),
+    startupCwd: cwd,
     repoRoot,
     extensions: resolved.extensions,
     customThemes: sessionThemes.themes,

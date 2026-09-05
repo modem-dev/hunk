@@ -81,6 +81,7 @@ function buildReviewCatalog(publication: ReviewPublication): HunkReviewResourceC
 export function createSessionRegistration(
   bootstrap: AppBootstrap,
   publication: ReviewPublication,
+  cwd = process.cwd(),
 ): HunkSessionRegistration {
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
@@ -88,7 +89,7 @@ export function createSessionRegistration(
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: randomUUID(),
     pid: process.pid,
-    cwd: process.cwd(),
+    cwd,
     repoRoot: inferRepoRoot(bootstrap),
     launchedAt: new Date().toISOString(),
     terminal,

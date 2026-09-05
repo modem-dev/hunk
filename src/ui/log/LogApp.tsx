@@ -102,9 +102,12 @@ export function LogApp({
         : null,
     );
     try {
+      const action = await planned;
+      // Commit the loading surface before in-process provider startup performs synchronous probes.
+      await new Promise<void>((resolve) => setImmediate(resolve));
       await onOutcome({
         kind: "open-review",
-        action: await planned,
+        action,
         themeId: themeController.themeId,
         themeMode: terminalThemeMode,
       });

@@ -211,6 +211,12 @@ describe("session registration", () => {
   // Intent: the daemon can address every resource of the generation it mirrors, and can
   // map the renderer file ids the session surface uses onto the semantic keys resources
   // are addressed by.
+  test("createSessionRegistration accepts the owning surface's authoritative cwd", () => {
+    const bootstrap = createBootstrap();
+    const registration = createSessionRegistration(bootstrap, publish(bootstrap), "embedded-cwd");
+    expect(registration.cwd).toBe("embedded-cwd");
+  });
+
   test("createSessionRegistration advertises the generation's resource catalog", () => {
     const bootstrap = createBootstrap();
     const publication = publish(bootstrap);
