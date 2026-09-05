@@ -25,6 +25,7 @@ import {
 } from "./commands";
 import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import { loadGitWorkingTreeFiles, mutateGitFileStaging } from "./workingTree";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -378,6 +379,7 @@ export function createGitVcsAdapter({
             repoRoot,
             sourceLabel: repoRoot,
             title,
+            workingTreeFiles: loadGitWorkingTreeFiles(input, { cwd, gitExecutable }),
             patchText: await runGitTextAsync({
               input,
               args: buildGitDiffArgs(
@@ -406,6 +408,10 @@ export function createGitVcsAdapter({
             untrackedPaths,
           };
         },
+        stageFile: (input, file, { cwd }) =>
+          mutateGitFileStaging(input, file, { cwd, gitExecutable }, true),
+        unstageFile: (input, file, { cwd }) =>
+          mutateGitFileStaging(input, file, { cwd, gitExecutable }, false),
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
@@ -428,7 +434,9 @@ export function createGitVcsAdapter({
             gitExecutable,
             preventOptionalLocks: true,
           }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
-          return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+          // Both sidebar sides stay live even when the active patch is unchanged.
+          const inventory = loadGitWorkingTreeFiles(input, { cwd, gitExecutable });
+          return [trackedPatch, JSON.stringify(inventory), ...untrackedSignatures].join("\n---\n");
         },
       },
       "revision-show": {

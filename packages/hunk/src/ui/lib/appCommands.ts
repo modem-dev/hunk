@@ -108,6 +108,10 @@ interface BuiltinCommandHandler {
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
 export interface BuildAppCommandsOptions {
+  canToggleFileStaged?: boolean;
+  canSwitchStagedView?: boolean;
+  toggleFileStaged?: () => void;
+  toggleStagedView?: () => void;
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
   canEditActiveNote?: boolean;
@@ -175,6 +179,14 @@ function builtinCommandHandlers(
   options: BuildAppCommandsOptions,
 ): Record<AppCommandId, BuiltinCommandHandler> {
   return {
+    "hunk.review.toggleFileStaged": {
+      isEnabled: () => Boolean(options.canToggleFileStaged),
+      run: () => options.toggleFileStaged?.(),
+    },
+    "hunk.review.toggleStagedView": {
+      isEnabled: () => Boolean(options.canSwitchStagedView),
+      run: () => options.toggleStagedView?.(),
+    },
     "hunk.review.jumpToBottom": { run: () => options.scrollDiff(1, "content") },
     "hunk.review.jumpToTop": { run: () => options.scrollDiff(-1, "content") },
     "hunk.app.quit": { run: () => options.requestQuit() },

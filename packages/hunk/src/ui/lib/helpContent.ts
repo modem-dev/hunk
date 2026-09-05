@@ -105,6 +105,14 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
   {
     title: "Review",
     entries: [
+      {
+        commandIds: ["hunk.review.toggleFileStaged"],
+        description: "stage / unstage selected file",
+      },
+      {
+        commandIds: ["hunk.review.toggleStagedView"],
+        description: "switch unstaged / staged stream",
+      },
       { commandIds: ["hunk.review.focusFilter"], description: "focus file filter" },
       { commandIds: ["hunk.review.startNote"], description: "create review note" },
       {

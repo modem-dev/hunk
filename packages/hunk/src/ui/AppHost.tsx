@@ -155,6 +155,7 @@ export function AppHost({
   } | null>(null);
   const quitRequestedRef = useRef(false);
   const pendingWorkspaceWritesRef = useRef<Set<Promise<void>>>(new Set());
+  const vcsMutationPendingRef = useRef(false);
   const workspaceRefreshRequestRef = useRef<WorkspaceRefreshRequest | undefined>(undefined);
   const pendingReloadLifecycleRef = useRef<{
     extensions: ExtensionLoadResult;
@@ -228,6 +229,20 @@ export function AppHost({
       pendingWorkspaceWritesRef.current.delete(pending);
     }
   }, []);
+
+  /** Hold one index-changing action through its refresh, including across App remounts. */
+  const runVcsMutation = useCallback<WorkspaceWriteRunner>(
+    async (write) => {
+      if (vcsMutationPendingRef.current || pendingWorkspaceWritesRef.current.size > 0) return false;
+      vcsMutationPendingRef.current = true;
+      try {
+        return await runWorkspaceWrite(write);
+      } finally {
+        vcsMutationPendingRef.current = false;
+      }
+    },
+    [runWorkspaceWrite],
+  );
 
   const performReloadSession = useCallback(
     async (nextInput: CliInput, options?: ReloadSessionOptions) => {
@@ -477,20 +492,29 @@ export function AppHost({
   }, []);
 
   /** Reconcile a completed write against whichever review owns the queue when it reaches the front. */
-  const reloadAfterWorkspaceWrite = useCallback(() => {
-    void enqueueReload(async () => {
-      if (quitRequestedRef.current) return;
-      const request = workspaceRefreshRequestRef.current;
-      if (!request) return;
-      await performReloadSession(request.nextInput, {
-        reason: "manual",
-        resetApp: false,
-        sourcePath: request.sourcePath,
+  const reloadAfterWorkspaceWrite = useCallback(
+    (follow?: { root: string; staged: boolean }) => {
+      return enqueueReload(async () => {
+        if (quitRequestedRef.current) return;
+        const request = workspaceRefreshRequestRef.current;
+        if (!request) return;
+        const nextInput =
+          follow &&
+          request.sourcePath === follow.root &&
+          request.nextInput.kind === "vcs" &&
+          request.nextInput.range === undefined &&
+          request.nextInput.rangeEndpoints === undefined
+            ? { ...request.nextInput, staged: follow.staged }
+            : request.nextInput;
+        await performReloadSession(nextInput, {
+          reason: "manual",
+          resetApp: false,
+          sourcePath: request.sourcePath,
+        });
       });
-    }).catch((error) => {
-      console.error("Failed to reload after an extension workspace write.", error);
-    });
-  }, [enqueueReload, performReloadSession]);
+    },
+    [enqueueReload, performReloadSession],
+  );
 
   /** Coalesce extension requests and resolve their descriptor at the front of the host queue. */
   const requestExtensionReviewReload = useCallback(
@@ -580,9 +604,15 @@ export function AppHost({
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
       onRequestExtensionReviewReload={requestExtensionReviewReload}
-      onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
+      onWorkspaceWriteCompleted={() => {
+        void reloadAfterWorkspaceWrite().catch((error) =>
+          console.error("Failed to reload after a workspace write.", error),
+        );
+      }}
+      onVcsMutationCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={producer}
       runWorkspaceWrite={runWorkspaceWrite}
+      runVcsMutation={runVcsMutation}
       watchRuntime={watchRuntime}
       workspaceFileWriter={workspaceFileWriter}
     />

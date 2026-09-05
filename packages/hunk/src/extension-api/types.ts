@@ -969,6 +969,8 @@ export interface ExtensionVcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Status inventory for both sides of a plain working-tree review, in sidebar order. */
+  workingTreeFiles?: readonly ExtensionWorkingTreeFile[];
   /**
    * Untracked files to review beside the patch, as repo-root-relative paths.
    *
@@ -1068,9 +1070,50 @@ export interface ExtensionVcsOperation<Input> {
  * "not supported" error for that command instead of a crash.
  */
 export interface ExtensionVcsOperations {
-  "working-tree-diff"?: ExtensionVcsOperation<ExtensionVcsDiffInput>;
+  "working-tree-diff"?: ExtensionVcsWorkingTreeOperation;
   "revision-show"?: ExtensionVcsOperation<ExtensionVcsShowInput>;
   "stash-show"?: ExtensionVcsOperation<ExtensionVcsStashShowInput>;
+}
+
+/** Describe one working-tree path independently of the currently displayed diff side. */
+export interface ExtensionWorkingTreeFile {
+  readonly path: string;
+  readonly previousPath?: string;
+  /** Optional review-context summary consumed by the shared file filter. */
+  readonly agentSummary?: string;
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly untracked: boolean;
+  readonly conflicted: boolean;
+  /** Provider-owned refusal for paths that cannot be mutated as ordinary files. */
+  readonly unavailableReason?: string;
+  /** Opaque state attestation checked by the provider immediately before a mutation. */
+  readonly version: string;
+}
+
+/** Mutate an attested file without interpreting host IDs or renderer rows. */
+export type ExtensionVcsFileMutation = (
+  input: ExtensionVcsDiffInput,
+  file: ExtensionWorkingTreeFile,
+  context: ExtensionVcsLoadContext,
+) => Promise<void>;
+
+/** Load a working-tree review and optionally offer explicit index mutations. */
+export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<ExtensionVcsDiffInput> {
+  stageFile?: ExtensionVcsFileMutation;
+  unstageFile?: ExtensionVcsFileMutation;
+}
+
+/** Navigate and stage the host's current working-tree inventory from a mounted pane. */
+export interface ExtensionWorkingTreePane {
+  readonly files: readonly ExtensionWorkingTreeFile[];
+  readonly selectedPath: string | null;
+  readonly staged: boolean;
+  readonly busy: boolean;
+  /** Select a path, switching diff sides if needed, without reducing the review to one file. */
+  selectFile(path: string): void;
+  /** Stage remaining unstaged changes, or unstage a fully staged file; inert after reload. */
+  toggleStaged(path: string): void;
 }
 
 /**
@@ -1276,6 +1319,8 @@ export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
+  /** Optional status-aware navigation and index actions for a plain working-tree review. */
+  readonly workingTree?: ExtensionWorkingTreePane;
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
   readonly placement: ExtensionPanePlacement;

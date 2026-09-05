@@ -1,3 +1,4 @@
+import { recordMousePress } from "../../lib/mousePressSequence";
 import {
   MouseButton,
   type MouseEvent as TuiMouseEvent,
@@ -1513,6 +1514,7 @@ export function DiffPane({
   /** Start selecting diff text when the user drags inside the review stream. */
   const beginCopySelection = useCallback(
     (event: TuiMouseEvent) => {
+      recordMousePress(renderer, event);
       if (event.button !== MouseButton.LEFT) {
         return;
       }
@@ -1570,7 +1572,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
+    [copySelectionContext, renderer, resolveCopySelectionPoint, suppressNativeSelection],
   );
 
   /** Extend the active diff text selection while the pointer moves. */

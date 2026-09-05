@@ -337,6 +337,16 @@ none — which is why the visible menu list is derived from the menus record
 
 ## VCS adapters
 
+Plain working-tree reviews additionally carry an optional provider-owned status inventory beside
+the active diff changeset. `packages/hunk/src/extensions/default/vcs/git/workingTree.ts` derives both
+index/worktree status and attestations, and implements the public file-staging methods. The
+conversion boundary preserves these optional methods and normalizes their errors.
+`packages/hunk/src/ui/hooks/useWorkingTreeActions.ts` binds status paths to the existing review
+navigation and AppHost's tracked mutation/serialized refresh lifecycle. The bundled sidebar consumes
+`ExtensionPaneProps.workingTree` through the public pane contract; inactive-side files never become
+fabricated review-document entries. Stream tabs replace the active canonical diff, not the sidebar
+inventory. Browser/session exports remain read-only with respect to Git state.
+
 `packages/hunk/src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
 detection, and operation dispatch. `packages/hunk/src/app/vcsCatalog.ts` composes bundled
 registrations, while `packages/hunk/src/app/sessionBootstrap.ts` extends that catalog with

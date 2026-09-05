@@ -58,7 +58,7 @@ describe("PTY navigation", () => {
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
-      rows: 12,
+      rows: 13,
     });
 
     try {
@@ -136,7 +136,7 @@ describe("PTY navigation", () => {
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
-      rows: 12,
+      rows: 13,
     });
 
     try {
@@ -220,7 +220,7 @@ describe("PTY navigation", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 12,
+      rows: 13,
     });
 
     try {
@@ -232,7 +232,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("betaValue = 2");
       expect(initial).not.toContain("deltaOnly = true");
 
-      await session.click(/M delta\.ts\s+\+2 -1/);
+      await session.click(/U delta\.ts\s+\+2 -1/);
       const jumped = await harness.waitForSnapshot(
         session,
         (text) =>
@@ -280,7 +280,7 @@ describe("PTY navigation", () => {
 
       expect(scrolled).toContain("first.ts");
 
-      await session.click(/M second\.ts\s+\+16 -16/);
+      await session.click(/U second\.ts\s+\+16 -16/);
       const pinned = await harness.waitForSnapshot(
         session,
         (text) =>

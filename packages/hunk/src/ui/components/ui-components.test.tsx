@@ -557,6 +557,59 @@ describe("UI components", () => {
     expect(frame).not.toContain("M +2 -1 AI");
   });
 
+  test("working-tree sidebar requires consecutive clicks on one row to stage", async () => {
+    const files = toReadOnlyFileViews([
+      createTestDiffFile("alpha", "alpha.ts", "a\n", "aa\n"),
+      createTestDiffFile("beta", "beta.ts", "b\n", "bb\n"),
+    ]);
+    const selectFile = mock(() => {});
+    const toggleStaged = mock(() => {});
+    const setup = await testRender(
+      <FlexFileSidebar
+        files={files}
+        selectedFileId="alpha"
+        selectedHunkIndex={0}
+        theme={resolveTheme("github-dark-default", null)}
+        width={40}
+        keybindings={{ matches: () => false, getKeys: () => [] }}
+        actions={{ selectFile, selectHunk: () => {}, revealLine: () => {}, notify: () => {} }}
+        workingTree={{
+          files: files.map((file) => ({
+            path: file.path,
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+            version: "test",
+          })),
+          selectedPath: "alpha.ts",
+          staged: false,
+          busy: false,
+          selectFile,
+          toggleStaged,
+        }}
+      />,
+      { width: 40, height: 8 },
+    );
+    const time = spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      await act(async () => setup.renderOnce());
+      const lines = setup.captureCharFrame().split("\n");
+      const alpha = lines.findIndex((line) => line.includes("alpha.ts"));
+      const beta = lines.findIndex((line) => line.includes("beta.ts"));
+      for (const row of [alpha, beta, alpha]) {
+        await act(async () => setup.mockMouse.click(5, row));
+      }
+      expect(selectFile.mock.calls).toHaveLength(3);
+      expect(toggleStaged).not.toHaveBeenCalled();
+      await act(async () => setup.mockMouse.click(5, alpha));
+      expect(toggleStaged).toHaveBeenCalledWith("alpha.ts");
+    } finally {
+      time.mockRestore();
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("the bundled sidebar switches to its expanded tree at 32 content columns", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = toReadOnlyFileViews([

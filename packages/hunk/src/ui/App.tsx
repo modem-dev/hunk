@@ -1,3 +1,4 @@
+import { recordMousePress } from "./lib/mousePressSequence";
 import type {
   BoxRenderable,
   MouseEvent as TuiMouseEvent,
@@ -45,6 +46,8 @@ import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
+import { WorkingTreeBar } from "./components/chrome/WorkingTreeBar";
+import { hasWorkingTreeInventory, useWorkingTreeActions } from "./hooks/useWorkingTreeActions";
 import { DiffPane } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
@@ -145,9 +148,11 @@ export function App({
   onReloadSession,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
+  onVcsMutationCompleted,
   reviewProducer,
   runWorkspaceWrite,
   returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
+  runVcsMutation,
   watchRuntime,
   workspaceFileWriter,
 }: {
@@ -171,12 +176,14 @@ export function App({
   ) => Promise<ExtensionReviewReloadResult>;
   /** Reconcile the currently mounted review after a consented filesystem write succeeds. */
   onWorkspaceWriteCompleted: () => void;
+  onVcsMutationCompleted: (follow?: { root: string; staged: boolean }) => Promise<void>;
   /** The producer publishing this review's generations, when the host mounted one. */
   reviewProducer?: ReviewProducer;
   /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
   runWorkspaceWrite: WorkspaceWriteRunner;
   /** Present quit as returning to the owning history surface. */
   returnToHistory?: boolean;
+  runVcsMutation: WorkspaceWriteRunner;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
 }) {
@@ -185,6 +192,7 @@ export function App({
   const BODY_PADDING = 2;
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
+  const workingTreeBarHeight = hasWorkingTreeInventory(bootstrap) ? 1 : 0;
   const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
   const fileGap = bootstrap.initialFileGap ?? DEFAULT_FILE_GAP;
   const hunkGap = bootstrap.initialHunkGap ?? DEFAULT_HUNK_GAP;
@@ -450,7 +458,11 @@ export function App({
     );
   const bodyHeight = Math.max(
     0,
-    terminal.height - (showMenuBar ? 1 : 0) - (extensionToast ? 1 : 0) - (statusBarVisible ? 1 : 0),
+    terminal.height -
+      (showMenuBar ? 1 : 0) -
+      workingTreeBarHeight -
+      (extensionToast ? 1 : 0) -
+      (statusBarVisible ? 1 : 0),
   );
   const showPaneWarning = useCallback(
     (message: string) => extensions?.context.notify(message, "warning"),
@@ -893,7 +905,7 @@ export function App({
     setShowMenuBar((current) => !current);
   };
 
-  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
+  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput, setStagedView } =
     useCurrentReviewRefreshController({
       input: bootstrap.input,
       onRegisterWorkspaceRefreshRequest,
@@ -991,6 +1003,19 @@ export function App({
     setFocusArea("files");
   }, []);
 
+  const workingTree = useWorkingTreeActions({
+    bootstrap,
+    selectedFile,
+    filter: review.filter,
+    createLease: createReviewCapabilityLease,
+    selectReviewFile: jumpToFile,
+    focusFiles,
+    setStagedView,
+    runMutation: runVcsMutation,
+    refreshAfterMutation: onVcsMutationCompleted,
+    showNotice: showSessionNotice,
+  });
+
   /** Focus the file filter input in the status bar. */
   const focusFilter = useCallback(() => {
     setFocusArea("filter");
@@ -1065,6 +1090,10 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
+        canToggleFileStaged: workingTree.canToggleSelected,
+        canSwitchStagedView: Boolean(workingTree.pane),
+        toggleFileStaged: workingTree.toggleSelected,
+        toggleStagedView: () => workingTree.switchView(!workingTree.staged),
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
@@ -1079,7 +1108,10 @@ export function App({
         replyToActiveNote: () => {
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
-        moveSelection: review.moveSelection,
+        moveSelection: (scope, delta) => {
+          if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
+          else review.moveSelection(scope, delta);
+        },
         openAgentSkill,
         openThemeSelector,
         requestQuit,
@@ -1220,7 +1252,8 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
+  const diffPaneScreenTop =
+    (showMenuBar ? 1 : 0) + workingTreeBarHeight + paneLayout.reviewBounds.y;
 
   /** Render one pane from the exact accepted host rectangle. */
   const renderPane = (planned: PlannedPane) => {
@@ -1242,6 +1275,7 @@ export function App({
           review={bootstrap.review ?? null}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
+          workingTree={workingTree.pane}
           selectedFileId={selection.file?.id ?? null}
           selectedHunkIndex={selection.hunkIndex}
           placement={pane.placement}
@@ -1287,6 +1321,7 @@ export function App({
   // OpenTUI normally chooses a drag target only after the pointer first moves. Capture on press
   // so a fast motion or a sidebar projection swap cannot transfer the gesture to a transient row.
   const beginCapturedPaneResize = (planned: PlannedPane, event: TuiMouseEvent) => {
+    recordMousePress(renderer, event);
     if (!beginPaneResize(planned, event)) return;
     if (paneResizeCaptureRef.current) {
       setMouseCapture(renderer, paneResizeCaptureRef.current);
@@ -1322,6 +1357,7 @@ export function App({
 
   return (
     <box
+      onMouseDown={(event) => recordMousePress(renderer, event)}
       style={{
         width: "100%",
         height: "100%",
@@ -1344,6 +1380,17 @@ export function App({
           onToggleMenu={toggleMenu}
         />
       ) : null}
+
+      {workingTree.pane && (
+        <WorkingTreeBar
+          pane={workingTree.pane}
+          theme={activeTheme}
+          width={terminal.width}
+          canToggle={workingTree.canToggleSelected}
+          switchView={workingTree.switchView}
+          toggleSelected={workingTree.toggleSelected}
+        />
+      )}
 
       <box
         ref={paneResizeCaptureRef}

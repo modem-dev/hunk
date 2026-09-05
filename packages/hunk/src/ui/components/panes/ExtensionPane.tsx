@@ -79,6 +79,7 @@ export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
   files: DiffFile[];
+  workingTree?: ExtensionPaneProps["workingTree"];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
@@ -103,6 +104,7 @@ function ExtensionPaneHostView({
   review = null,
   files,
   fileViews,
+  workingTree,
   selectedFileId,
   selectedHunkIndex,
   placement,
@@ -152,6 +154,7 @@ function ExtensionPaneHostView({
   const viewProps: ExtensionPaneProps = {
     review,
     files: fileViews,
+    workingTree,
     selectedFileId,
     selectedHunkIndex,
     placement,
@@ -218,6 +221,7 @@ export const ExtensionPaneHost = memo(
   (previous, next) =>
     previous.registered === next.registered &&
     previous.review === next.review &&
+    previous.workingTree === next.workingTree &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
     previous.selectedFileId === next.selectedFileId &&

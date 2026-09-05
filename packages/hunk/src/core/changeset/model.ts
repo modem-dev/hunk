@@ -8,7 +8,7 @@
  * app-facing types above them.
  */
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { AgentFileContext } from "../../extension-api/types";
+import type { AgentFileContext, ExtensionWorkingTreeFile } from "../../extension-api/types";
 import type { FileSourceFetcher } from "./fileSource";
 
 /** One loaded review sidecar: the changeset summary plus every annotated file it names. */
@@ -54,4 +54,6 @@ export interface Changeset {
   summary?: string;
   agentSummary?: string;
   files: DiffFile[];
+  /** Host-only VCS inventory; the review document contains only the active side's diff files. */
+  workingTreeFiles?: readonly ExtensionWorkingTreeFile[];
 }

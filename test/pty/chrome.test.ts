@@ -181,7 +181,7 @@ describe("PTY chrome", () => {
       expect(initial).toContain("add = true");
       expect(initial).toContain("betaValue");
 
-      await session.press("tab");
+      await session.press("/");
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
@@ -205,7 +205,7 @@ describe("PTY chrome", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 12,
+      rows: 13,
     });
 
     try {

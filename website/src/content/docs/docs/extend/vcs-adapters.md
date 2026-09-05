@@ -40,6 +40,19 @@ A `load` result is patch text plus how to label it. Everything else on it is opt
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS reports as unknown and Hunk synthesizes the added-file diffs for you, skipping binaries and files too large to render. Honor `input.options.excludeUntracked` when you do, so `--exclude-untracked` still means what it says. The other two are covered below.
 
+## Working-tree status and staging
+
+Working-tree `load` results may include `workingTreeFiles`: ordered status entries with `path`,
+optional `previousPath`, independent `staged`/`unstaged` flags, `untracked`, `conflicted`, an opaque
+`version`, and an optional `unavailableReason`. The inventory covers both stream tabs, not only
+the side selected by `input.staged`; omit it for revision comparisons.
+
+The same operation may implement `stageFile(input, file, ctx)` and `unstageFile(input, file, ctx)`.
+Validate the exact path and attestation before writing, preserve disk contents when unstaging,
+and throw `HunkExtensionUserError` for failures. The host tracks started writes through shutdown
+and refreshes status and diff before allowing another action. These are terminal-host actions,
+not implicit remote capabilities.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.

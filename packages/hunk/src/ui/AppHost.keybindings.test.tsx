@@ -414,7 +414,7 @@ describe("user keybindings", () => {
 
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
       });
       await flush(setup);
       seen.length = 0;

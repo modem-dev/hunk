@@ -1,5 +1,6 @@
+import { mousePressSequence, recordMousePress } from "../../../../ui/lib/mousePressSequence";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import {
@@ -12,6 +13,7 @@ import {
   sidebarEntryStatsWidth,
   toggleCollapsedDirectoryPath,
   type SidebarEntry,
+  type SidebarFileSource,
 } from "../../../../ui/lib/files";
 import { fileRowId } from "../../../../ui/lib/ids";
 import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
@@ -27,10 +29,8 @@ export type BuiltInSidebarProps = Omit<
 > &
   Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
 
-type FileSidebarVariantProps = Pick<
-  BuiltInSidebarProps,
-  "actions" | "files" | "selectedFileId" | "theme"
-> & {
+type FileSidebarVariantProps = Pick<BuiltInSidebarProps, "actions" | "selectedFileId" | "theme"> & {
+  files: readonly SidebarFileSource[];
   estimatedViewportRows: number;
   scrollTop: number;
   textWidth: number;
@@ -171,12 +171,54 @@ export function TreeFileSidebar({
  * the same review-stream behavior.
  */
 export function FlexFileSidebar({
-  files,
-  selectedFileId,
+  files: reviewFiles,
+  selectedFileId: reviewSelectedFileId,
   theme,
   width,
   actions,
+  workingTree,
 }: BuiltInSidebarProps): ReactNode {
+  const renderer = useRenderer();
+  const statusFiles = workingTree?.files;
+  const files = useMemo<readonly SidebarFileSource[]>(() => {
+    if (!statusFiles) return reviewFiles;
+    const reviewedByPath = new Map(reviewFiles.map((file) => [file.path, file]));
+    return statusFiles.map((status) => {
+      const reviewed = reviewedByPath.get(status.path);
+      return {
+        ...reviewed,
+        id: status.path,
+        path: status.path,
+        previousPath: status.previousPath,
+        stats: reviewed?.stats ?? { additions: 0, deletions: 0 },
+        isUntracked: status.untracked,
+        stageStatus: status.conflicted
+          ? "!!"
+          : `${status.staged ? "S" : " "}${status.unstaged ? "U" : " "}`,
+      };
+    });
+  }, [reviewFiles, statusFiles]);
+  const lastClickRef = useRef<{ path: string; time: number; press: number } | null>(null);
+  /** Only consecutive clicks on the same file may mutate the index. */
+  const selectFile = (path: string) => {
+    const now = Date.now();
+    const previous = lastClickRef.current;
+    const press = mousePressSequence(renderer);
+    if (
+      workingTree &&
+      previous?.path === path &&
+      press === previous.press + 1 &&
+      now - previous.time < 350
+    ) {
+      lastClickRef.current = null;
+      workingTree.toggleStaged(path);
+      return;
+    }
+    lastClickRef.current = { path, time: now, press };
+    if (workingTree) workingTree.selectFile(path);
+    else actions.selectFile(path);
+  };
+  const selectedFileId = workingTree?.selectedPath ?? reviewSelectedFileId;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const previousSelectedFileIdRef = useRef(selectedFileId);
   const skipSelectedFileRevealRef = useRef(false);
@@ -189,7 +231,7 @@ export function FlexFileSidebar({
   const textWidth = Math.max(8, width - 2);
   const mode = resolveFileSidebarMode(textWidth);
   const variantProps: FileSidebarVariantProps = {
-    actions,
+    actions: { ...actions, selectFile },
     estimatedViewportRows: terminal.height,
     files,
     scrollTop: scrollViewport.top,
@@ -289,6 +331,7 @@ export function FlexFileSidebar({
 
   return (
     <scrollbox
+      onMouseDown={(event) => recordMousePress(renderer, event)}
       ref={scrollRef}
       width="100%"
       height="100%"

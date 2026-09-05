@@ -144,6 +144,7 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
     sourceLabel: result.sourceLabel,
     title: result.title,
     patchText: result.patchText,
+    workingTreeFiles: result.workingTreeFiles?.map((file) => Object.freeze({ ...file })),
     untrackedPaths: result.untrackedPaths,
     sourceFetcherBuilder,
     extraFiles: result.extraFiles?.map((entry, index) =>

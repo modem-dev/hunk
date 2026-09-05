@@ -527,6 +527,24 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
+Plain working-tree `load` results may return `workingTreeFiles`, an ordered inventory covering both
+staged and unstaged files, independent of `input.staged`. Each entry supplies `path`, optional
+`previousPath`, `staged`, `unstaged`, `untracked`, `conflicted`, an opaque `version` attestation, and
+optionally an `unavailableReason`. Do not return this inventory for revision comparisons.
+
+The working-tree operation may implement `stageFile(input, file, ctx)` and
+`unstageFile(input, file, ctx)`. Revalidate the supplied attestation and exact path before writing;
+unstaging must leave worktree contents unchanged. Throw `HunkExtensionUserError` on refusal or
+failure. Hunk tracks started mutations through shutdown, blocks repeated actions until refresh,
+and reloads authoritative state even after a failed mutation.
+
+Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`, `staged`,
+`busy`, `selectFile(path)`, and `toggleStaged(path)`. These controls expire on review reload.
+Selecting an inactive-side file switches stream tabs without reducing the review to one file.
+File toggling stages remaining unstaged changes first, otherwise unstages the file. Existing
+`props.files` and review navigation still describe only the active diff stream. These host-only
+actions are not exposed through browser/session commands or `ctx.commands`.
+
 API version 19 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
 
 ```ts

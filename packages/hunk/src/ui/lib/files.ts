@@ -16,6 +16,7 @@ export interface FileListEntry {
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
+  stageStatus?: string;
 }
 
 /**
@@ -37,6 +38,7 @@ export interface SidebarFileSource {
   agent?: { annotations: readonly unknown[] } | null;
   changeType?: FileDiffMetadata["type"];
   metadata?: unknown;
+  stageStatus?: string;
 }
 
 export interface FileGroupEntry {
@@ -154,6 +156,7 @@ function buildSidebarFileEntry(file: SidebarFileSource, depth: number): FileList
     deletionsText: formatSidebarStat("-", file.stats.deletions),
     changeType: file.changeType ?? readMetadataChangeType(file.metadata) ?? "change",
     isUntracked: file.isUntracked ?? false,
+    stageStatus: file.stageStatus,
   };
 }
 

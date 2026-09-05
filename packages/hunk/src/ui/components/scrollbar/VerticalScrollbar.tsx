@@ -1,3 +1,5 @@
+import { useRenderer } from "@opentui/react";
+import { recordMousePress } from "../../lib/mousePressSequence";
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import {
   forwardRef,
@@ -60,6 +62,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
     },
     ref,
   ) {
+    const renderer = useRenderer();
     const [isVisible, setIsVisible] = useState(false);
     const [isDraggingState, setIsDraggingState] = useState(false);
     const isDraggingRef = useRef(false);
@@ -123,6 +126,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
     const thumbY = Math.floor(scrollPercent * maxThumbY);
 
     const handleMouseDown = (event: TuiMouseEvent) => {
+      recordMousePress(renderer, event);
       if (event.button !== 0) return;
 
       const currentScrollTop = scrollRef.current?.scrollTop ?? 0;
@@ -156,6 +160,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
     };
 
     const handleTrackClick = (event: TuiMouseEvent) => {
+      recordMousePress(renderer, event);
       if (event.button !== 0) return;
 
       // Calculate where on the track was clicked

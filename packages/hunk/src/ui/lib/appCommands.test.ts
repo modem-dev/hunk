@@ -35,7 +35,10 @@ function keyEvent(fields: Partial<ParsedKey>): KeyEvent {
 }
 
 /** Build the built-in table over recording callbacks, plus the log it writes. */
-function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
+function createTestCommands(
+  resolvedKeys?: ResolvedCommandKeys,
+  overrides: Partial<BuildAppCommandsOptions> = {},
+) {
   const ran: string[] = [];
   const record =
     (name: string) =>
@@ -72,12 +75,39 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: record("triggerEditSelectedFile"),
     triggerRefreshCurrentInput: record("triggerRefreshCurrentInput"),
+    ...overrides,
   };
 
   return { commands: buildAppCommands(options), ran };
 }
 
 describe("built-in command chords", () => {
+  test("contextual staging consumes Space and Tab while explicit remaps keep ownership", () => {
+    const actions: string[] = [];
+    const options = {
+      canToggleFileStaged: true,
+      canSwitchStagedView: true,
+      toggleFileStaged: () => actions.push("stage"),
+      toggleStagedView: () => actions.push("tab"),
+    };
+    const { commands } = createTestCommands(undefined, options);
+    expect(dispatchAppCommand(commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.toggleFileStaged",
+    );
+    expect(dispatchAppCommand(commands, keyEvent({ name: "tab" }))?.id).toBe(
+      "hunk.review.toggleStagedView",
+    );
+    expect(actions).toEqual(["stage", "tab"]);
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.pageDown": "space" },
+    });
+    const remapped = createTestCommands(keys, options);
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.pageDown",
+    );
+    expect(actions).toHaveLength(2);
+  });
   test("every alias of the scroll shortcuts still dispatches", () => {
     const { commands, ran } = createTestCommands();
     const press = (fields: Partial<ParsedKey>) =>
@@ -257,7 +287,9 @@ describe("builtinCommandKeyDefaults", () => {
     const { commands } = createTestCommands();
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
-    expect(commands.every((command) => command.publicToExtensions)).toBe(true);
+    expect(
+      commands.filter((command) => !command.publicToExtensions).map((command) => command.id),
+    ).toEqual(["hunk.review.toggleFileStaged", "hunk.review.toggleStagedView"]);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",

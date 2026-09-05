@@ -60,6 +60,16 @@ Quitting the opened review returns to the retained history selection and viewpor
 **Compare with first parent** and **Compare with parent…** actions compare the selected commit against
 an ordered provider-owned parent; they do not navigate the history selection to that parent.
 
+In plain working-tree reviews, **Space** stages the selected file's remaining unstaged changes,
+or unstages it when fully staged. File-row double-click and the clickable action beside the
+stream tabs do the same. The sidebar shows independent `S` (staged) and `U` (unstaged) indicators,
+including partially staged files. A successful file action follows the file to the other tab.
+**Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
+has changes on the other side switches automatically. Use `/` to focus the filter.
+Actions wait for Git and its refreshed diff before accepting another mutation. Outside this
+context, Space still pages and Tab retains its files/filter focus behavior. All these commands
+remain remappable, and an explicit user binding takes precedence over contextual defaults.
+
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
@@ -93,7 +103,9 @@ an ordered provider-owned parent; they do not navigate the history selection to 
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
 | `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.toggleFileStaged`                 | Stage / unstage selected file                  | `space`                      |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.review.toggleStagedView`                 | Switch unstaged / staged stream                | `tab`                        |
 | `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |
 | `hunk.view.cursorLineOff`                      | Hide the current-line marker                   | _(none)_                     |

@@ -32,6 +32,7 @@ import type {
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistorySource,
   ExtensionVcsOperation,
+  ExtensionVcsWorkingTreeOperation,
 } from "../extension-api/types";
 import type { VcsAdapter, VcsHistorySource, VcsOperation, VcsReviewInput } from "../core/vcs/types";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
@@ -488,6 +489,27 @@ export function toInternalVcsAdapter(
       internalOperations[kind] = toInternalVcsOperation(
         operation as unknown as ExtensionVcsOperation<VcsReviewInput>,
       );
+    }
+  }
+
+  const workingTree = isPlainObject(operations)
+    ? (operations as { "working-tree-diff"?: ExtensionVcsWorkingTreeOperation })["working-tree-diff"]
+    : undefined;
+  const internalWorkingTree = internalOperations["working-tree-diff"] as
+    | (VcsOperation<VcsReviewInput> &
+        Pick<ExtensionVcsWorkingTreeOperation, "stageFile" | "unstageFile">)
+    | undefined;
+  if (workingTree && internalWorkingTree) {
+    for (const name of ["stageFile", "unstageFile"] as const) {
+      const mutate = workingTree[name];
+      if (typeof mutate !== "function") continue;
+      internalWorkingTree[name] = async (input, file, context) => {
+        try {
+          await mutate(input, file, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
     }
   }
 

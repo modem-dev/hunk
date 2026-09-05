@@ -1,5 +1,6 @@
 import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { memo } from "react";
+import { MouseButton } from "@opentui/core";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
 import { diffRailMarker } from "../../diff/rowStyle";
 import { fileRowId } from "../../lib/ids";
@@ -23,6 +24,7 @@ function getFileStateIcon(
   entry: FileListEntry,
   theme: ExtensionSidebarTheme,
 ): { icon: string; color: string } {
+  if (entry.stageStatus) return { icon: entry.stageStatus, color: theme.text };
   if (entry.isUntracked) {
     return { icon: "?", color: theme.fileUntracked };
   }
@@ -169,7 +171,7 @@ export const FileListItem = memo(function FileListItem({
   const rowBackground = selected ? theme.panelAlt : theme.panel;
   const stats = sidebarEntryStats(entry);
   const { icon, color } = getFileStateIcon(entry, theme);
-  const iconWidth = icon ? 2 : 0; // icon + space
+  const iconWidth = icon ? icon.length + 1 : 0;
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const indentWidth = fileSidebarIndentWidth(
     entry.depth,
@@ -187,7 +189,10 @@ export const FileListItem = memo(function FileListItem({
         backgroundColor: rowBackground,
         flexDirection: "row",
       }}
-      onMouseUp={() => onSelectFile(entry.id)}
+      onMouseUp={(event) => {
+        if (event.button !== MouseButton.LEFT) return;
+        onSelectFile(entry.id);
+      }}
     >
       <text fg={selected ? theme.accent : rowBackground} bg={rowBackground}>
         {selected ? diffRailMarker() : " "}

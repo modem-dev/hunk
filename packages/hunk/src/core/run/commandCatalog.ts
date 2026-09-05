@@ -99,6 +99,24 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
+    id: "hunk.review.toggleFileStaged",
+    title: "Stage / unstage selected file",
+    category: "review",
+    defaultKeys: ["space"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.toggleStagedView",
+    title: "Switch unstaged / staged stream",
+    category: "review",
+    defaultKeys: ["tab"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.jumpToBottom",
     title: "Jump to end",
     category: "review",

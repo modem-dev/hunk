@@ -549,6 +549,33 @@ export async function runGitTextAsync(options: RunGitTextOptions): Promise<strin
   return (await runGitCommandAsync(options)).stdout;
 }
 
+/** Run an interactive mutation without blocking terminal input or progress painting. */
+export async function runGitMutation({
+  input,
+  args,
+  cwd = process.cwd(),
+  gitExecutable = "git",
+  stdinText,
+}: RunGitTextOptions & { stdinText?: string }): Promise<string> {
+  try {
+    const process = Bun.spawn([gitExecutable, ...args], {
+      cwd,
+      stdin: stdinText === undefined ? "ignore" : new TextEncoder().encode(stdinText),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      process.exited,
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+    ]);
+    if (exitCode !== 0) throw translateGitExitFailure(input, stderr);
+    return stdout;
+  } catch (error) {
+    throw translateGitSpawnFailure(input, error, gitExecutable);
+  }
+}
+
 const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
 const GIT_BOOLEAN_FALSE_VALUES = new Set(["false", "no", "off", "0", "never"]);
 
