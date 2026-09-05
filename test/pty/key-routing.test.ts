@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createPtyHarness, lineIndexOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
@@ -26,6 +28,36 @@ afterEach(() => {
  * the scroll box focus directly.
  */
 describe("PTY key routing", () => {
+  test("an alt binding accepts the Escape-prefixed form from legacy terminals", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const configDir = join(configHome, "hunk");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.toml"),
+      '[keybindings]\n"hunk.app.toggleHelp" = "alt+n"\n',
+    );
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("f10");
+      await session.waitForText(/Reload/, { timeout: 5_000 });
+      await session.press("escape");
+
+      session.writeRaw("\u001bn");
+      await session.waitForText(/Controls help/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("one Escape closes the help overlay without wiping typed filter text", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

@@ -240,6 +240,8 @@ export interface ExtensionKeyEvent {
   /** The alt/option modifier. */
   option?: boolean;
   shift?: boolean;
+  /** The terminal protocol that decoded the key, when the host exposes it. */
+  source?: "raw" | "kitty";
 }
 
 /* -------------------------------------------------------------------------- */

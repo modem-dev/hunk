@@ -10,5 +10,6 @@ export function toExtensionKeyEvent(key: KeyEvent): ExtensionKeyEvent {
     meta: key.meta,
     option: key.option,
     shift: key.shift,
+    source: key.source,
   });
 }
