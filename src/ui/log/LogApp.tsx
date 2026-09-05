@@ -355,6 +355,7 @@ export function LogApp({
         }}
         onToggleMenu={menu.toggleMenu}
       />
+      <box style={{ width: "100%", height: 1 }} />
       <box
         style={{
           width: "100%",
