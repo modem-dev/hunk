@@ -36,7 +36,7 @@ Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bund
 - The two repo-local sources are one group: one trust decision, one sort order.
 - A directory source matches `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs` directly inside it, plus one level of folder extensions.
 - `--no-extensions` disables user extensions for one run; nothing on disk is read.
-- `--extension` is explicit intent: it loads immediately, without a trust prompt, even from inside the reviewed repo — so never pass a path you have not read.
+- `--extension` is explicit intent: it loads immediately, without a trust prompt, even from inside the reviewed repo — but it cannot bypass a persistent package denial, including through a symlink. Never pass a path you have not read.
 
 ### Folder extensions
 
@@ -52,6 +52,7 @@ A folder is an extension if its `package.json` declares entries under the `hunk`
 ```
 
 - Manifest paths resolve against the folder and may list several entries; each loads as its own extension, in manifest order.
+- The package `name` is the stable activation identity shared by those entries; optional `hunk.packageId` overrides it. Package ids are bounded lowercase npm-style names, while legacy folder names are deterministically lowercased and sanitized.
 - The manifest is a real `package.json`, so a folder extension can depend on npm packages installed into its own `node_modules`.
 - Pointing `--extension` or `[extensions] paths` at a directory works either way: a folder extension loads as one extension; any other directory is scanned as a directory _of_ extensions.
 
@@ -77,8 +78,9 @@ hunk extension install git:codeberg.org/acme/ext    # any host; https:// is assu
 hunk extension install ~/dev/hunk-word-diff         # a local checkout, for testing
 ```
 
-- `hunk extension list` shows every managed install with its version, commit, and source.
-- `hunk extension update [name]` re-clones one install (or all of them) from its recorded source; an `@ref` pin stays put until you re-install with a different one.
+- `hunk extension list` shows each managed install's stable package identity, ordered entry ids, activation, version, commit, and source.
+- `hunk extension disable <name-or-package-id>` skips all entries in that package before imports and trust checks; `hunk extension enable ...` re-enables them. This preference is stored separately from installation metadata.
+- `hunk extension update [name]` re-clones one install (or all of them) from its recorded source; an `@ref` pin stays put until you re-install with a different one. Updates preserve per-package activation and refuse new or ambiguous identities while an affected package is disabled.
 - `hunk extension remove <name>` deletes the install and its record. Hand-copied extensions in `~/.config/hunk/extensions/` are never touched.
 
 Installing is the consent step: extensions run with your full user permissions, so a fresh install asks for confirmation (or takes `--yes`) after naming the repository. Only install repositories you trust. Managed installs then load through the global group above — same precedence, no further prompts.
@@ -98,7 +100,7 @@ Test the exact layout users will get with `hunk extension install /path/to/check
 
 ## Bundled extensions
 
-Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
+Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. The VCS providers are private, statically bundled workspaces rather than independently installable packages. Bundled extensions differ from yours in three ways:
 
 - statically imported, so they load before config resolution picks the session's VCS
 - implicitly trusted, with no `[extension.<id>]` config table

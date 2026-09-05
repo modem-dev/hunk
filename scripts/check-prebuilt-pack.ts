@@ -75,7 +75,7 @@ if (!existsSync(metaDir)) {
   throw new Error(`Missing staged top-level package at ${metaDir}`);
 }
 
-const rootManifest = readPackageManifest(repoRoot);
+const rootManifest = readPackageManifest(path.join(repoRoot, "packages", "hunk"));
 const stagedManifest = readPackageManifest(metaDir);
 assertOptionalPeerDependencyContract(rootManifest, stagedManifest, "@pierre/diffs");
 assertNoMandatoryBunDependency(stagedManifest);

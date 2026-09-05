@@ -2,8 +2,8 @@
 import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
-import { AppHost } from "../src/ui/AppHost";
-import { VIEWPORT_READ_COALESCE_MS } from "../src/ui/lib/viewportTiming";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
+import { VIEWPORT_READ_COALESCE_MS } from "../packages/hunk/src/ui/lib/viewportTiming";
 import {
   createLargeSplitStreamBootstrap,
   DEFAULT_FILE_COUNT,

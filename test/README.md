@@ -1,6 +1,6 @@
 # Test layout
 
-Most Hunk tests are colocated in `src/` beside the code they cover.
+Most Hunk tests are colocated in `packages/hunk/src/` beside the code they cover.
 
 The top-level `test/` tree is reserved for cases that intentionally exercise the product across module, process, repo, or terminal boundaries.
 
@@ -33,5 +33,5 @@ These tests do not belong to a single source file. They usually verify product-l
 - PTY / terminal rendering behavior
 - full review-flow interactions across multiple modules
 
-If a test mainly targets one module or helper, keep it colocated in `src/`.
+If a test mainly targets one module or helper, keep it colocated in `packages/hunk/src/`.
 If it needs a real repo, subprocess, daemon, PTY, or transcript-level assertion, it likely belongs under `test/`.

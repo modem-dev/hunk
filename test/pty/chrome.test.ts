@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { availableThemes } from "../../src/ui/themes";
+import { availableThemes } from "../../packages/hunk/src/ui/themes";
 import { createPtyHarness, lineIndexOf, rowCellBackgrounds, sleep } from "./harness";
 
 const harness = createPtyHarness();

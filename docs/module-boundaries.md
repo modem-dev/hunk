@@ -3,7 +3,7 @@
 Defines the target import boundaries between Hunk's top-level source trees and records what the
 dependency graph actually looks like today. The boundaries are enforced by
 [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) over the production import
-graph (`src/` plus `packages/`, tests excluded):
+graph (`packages/`, including the app at `packages/hunk/src/`, tests excluded):
 
 - `bun run deps:check` — fails CI on any boundary violation not in the baseline.
 - `bun run deps:baseline` — regenerates `.dependency-cruiser-known-violations.json` after fixing
@@ -20,28 +20,24 @@ tier-level complement, with real module resolution instead of regex import scann
 Tiers, bottom to top. A tier may import anything strictly below it and nothing above it:
 
 ```text
-src/extension-api      published contract; imports nothing
-src/lib                dependency-free helpers; may import extension-api only
-src/core               domain model (changesets, review, vcs catalog, config)
-packages/*             standalone publishable units (session broker, term-video);
-                       never import src/; the per-app broker contract is in
-                       docs/session-broker-sdk.md
-src/extensions         extension host + bundled extensions; consume core, never surfaces
-src/session            daemon/broker transport + protocol; consumes core and packages
-src/app                startup composition: CLI parsing plus the wiring of core,
-                       extensions, and the session broker; no rendering
-src/ui                 terminal surface; only the composition shell (App, AppHost,
-                       runInteractiveApp), the named session adapter hooks
-                       (useTerminalReview, useHunkSessionBridge), and their shared
-                       navigation helper (ui/lib/reviewState) may import app/session
-src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`
-src/main.tsx           CLI entry
+packages/hunk/src/extension-api  published `hunkdiff/extension` contract; imports nothing
+packages/hunk-vcs          private provider-neutral leaf utilities
+packages/hunk-{git,jj,sapling}   private bundled providers; public extension API only
+packages/hunk/src/lib            app leaf helpers
+packages/hunk/src/core           domain model (changesets, review, VCS catalog, config)
+packages/session-broker*         private standalone broker workspaces
+packages/hunk/src/extensions     extension host and bundled UI composition
+packages/hunk/src/session        daemon/broker transport and protocol
+packages/hunk/src/app            startup composition; no rendering
+packages/hunk/src/ui             terminal surface and named app/session adapters
+packages/hunk/src/opentui        published `hunkdiff/opentui` facade
+packages/hunk/src/main.tsx       CLI entry
 ```
 
 Intentional exceptions, allowed by the rules:
 
-- `src/opentui` imports `src/ui` internals: it is a packaging facade whose job is re-export.
-- `src/hunk-review` imports `src/session/agent`: the skill document is generated from the agent
+- `packages/hunk/src/opentui` imports UI internals: it is a packaging facade whose job is re-export.
+- `packages/hunk/src/hunk-review` imports session agent modules: the skill document is generated from the agent
   surface by design.
 - Tests are excluded: they are colocated and free to reach across boundaries.
 
@@ -54,7 +50,7 @@ accidental reach-in fails `bun run deps:check` instead of quietly becoming API.
 
 Two supporting rules keep the interiors honest:
 
-- **`no-dead-modules`** flags any module under `src/` that no entry point reaches
+- **`no-dead-modules`** flags any module under `packages/hunk/src/` that no entry point reaches
   (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, and the
   skill generator). It uses `reachable: false` rather than `orphan`, which only catches fully
   disconnected files and so misses dead code that still imports. A hit is deleted, or — when
@@ -156,7 +152,7 @@ module that owns their behaviour, one home each:
   is the line a user note hangs on, and every consumer reaches it through note code.
 
 Deleting the re-exports made one hidden dependency visible: `core/review/annotations.ts` names
-`AgentAnnotation`, which is declared in `src/extension-api/types.ts` because it is
+`AgentAnnotation`, which is declared in `packages/hunk/src/extension-api/types.ts` because it is
 simultaneously an internal model type and part of the published contract. Routing that through
 `core/types.ts` had disguised it as a core-local import, and `scripts/source-boundaries.test.ts`
 ("keeps the review model contained in core") caught it the moment the disguise came off. The

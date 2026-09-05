@@ -15,6 +15,7 @@ import {
   verifyInstallVmFixtures,
 } from "./prepare-fixtures";
 import { validateInstallVmReleaseResult } from "./results";
+import { resolveHunkProtocolPath } from "./repo-layout";
 
 const repoRoot = path.resolve(import.meta.dir, "../../..");
 const resultPath = process.argv[2];
@@ -59,9 +60,7 @@ if (scenarios.some((scenario) => scenario.id === "authenticated-daemon-upgrade")
     );
   }
   daemonUpgradeBuildInputIdentity = computeDaemonUpgradeBuildInputIdentity(repoRoot);
-  daemonRevision = readDaemonRevision(
-    readFileSync(path.join(repoRoot, "src", "session", "protocol.ts"), "utf8"),
-  );
+  daemonRevision = readDaemonRevision(readFileSync(resolveHunkProtocolPath(repoRoot), "utf8"));
 }
 const result = validateInstallVmReleaseResult(
   JSON.parse(readFileSync(resolvedResultPath, "utf8")),

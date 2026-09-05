@@ -9,10 +9,10 @@ import type {
   ExtensionKeyEvent,
   ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
-} from "../src/extension-api/types";
-import { validateFileViewLayout } from "../src/ui/fileViews/layout";
-import { buildFileViewRenderPlan } from "../src/ui/fileViews/renderPlan";
-import { createVisibleAgentNote } from "../src/ui/lib/agentAnnotations";
+} from "../packages/hunk/src/extension-api/types";
+import { validateFileViewLayout } from "../packages/hunk/src/ui/fileViews/layout";
+import { buildFileViewRenderPlan } from "../packages/hunk/src/ui/fileViews/renderPlan";
+import { createVisibleAgentNote } from "../packages/hunk/src/ui/lib/agentAnnotations";
 import inlineEditExtension from "../examples/extensions/inline-edit";
 
 const TEST_FILE = {

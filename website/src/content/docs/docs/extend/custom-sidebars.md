@@ -168,7 +168,7 @@ That is enough to window a long list yourself: the built-in files pane renders o
 
 One honest caveat: this contract rides on OpenTUI's renderable API, served at whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself. The built-in files pane exercising the exact same calls is the compatibility guarantee: a change that breaks your scroll code breaks Hunk's own files pane first. Still, keep scroll handling small and behind your own helpers.
 
-The built-in files pane is itself a bundled extension (`src/extensions/default/ui/sidebar/` in the Hunk repository): it registers through this exact call, its component consumes exactly the props documented above, and its windowing and selection follow run on exactly the ref contract above — so it doubles as the reference implementation for everything a third-party pane can build, from grouping and stat badges down to scroll behavior.
+The built-in files pane is itself a bundled extension (`packages/hunk/src/extensions/default/ui/sidebar/` in the Hunk repository): it registers through this exact call, its component consumes exactly the props documented above, and its windowing and selection follow run on exactly the ref contract above — so it doubles as the reference implementation for everything a third-party pane can build, from grouping and stat badges down to scroll behavior.
 
 ## Pane state from events
 

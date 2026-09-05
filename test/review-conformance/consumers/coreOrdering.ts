@@ -5,7 +5,7 @@
  * indirectly: whatever a mirror, a client, or a server does with a publication, this is
  * what the rule says.
  */
-import { classifyReviewPublication } from "../../../src/core/review/generationOrder";
+import { classifyReviewPublication } from "../../../packages/hunk/src/core/review/generationOrder";
 import type { ReviewOrderingConsumer } from "../types";
 
 export const coreOrderingConsumer: ReviewOrderingConsumer = {

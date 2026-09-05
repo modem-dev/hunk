@@ -2,7 +2,7 @@
 
 ## Feature showcase captures
 
-`public/feature-*.{webp,mp4,webm}` are captured from the real TUI by `scripts/capture-media.ts`: it drives `bun run src/main.tsx` inside a PTY (tuistory), renders styled terminal frames to retina images at devicePixelRatio 2 (ghostty-opentui), composites a synthetic mouse pointer where the storyboard moves one (`scripts/assets/pointer.png`), and assembles clips into looping mp4 + webm with ffmpeg. Regenerate after user-visible changes to the review stream, layouts, mouse affordances, or themes:
+`public/feature-*.{webp,mp4,webm}` are captured from the real TUI by `scripts/capture-media.ts`: it drives `bun run packages/hunk/src/main.tsx` inside a PTY (tuistory), renders styled terminal frames to retina images at devicePixelRatio 2 (ghostty-opentui), composites a synthetic mouse pointer where the storyboard moves one (`scripts/assets/pointer.png`), and assembles clips into looping mp4 + webm with ffmpeg. Regenerate after user-visible changes to the review stream, layouts, mouse affordances, or themes:
 
 ```bash
 bun run website/scripts/capture-media.ts            # everything

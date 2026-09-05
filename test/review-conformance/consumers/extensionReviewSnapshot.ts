@@ -1,4 +1,4 @@
-import { buildExtensionReviewSnapshot } from "../../../src/extensions/reviewSnapshot";
+import { buildExtensionReviewSnapshot } from "../../../packages/hunk/src/extensions/reviewSnapshot";
 import type { ReviewSnapshotConsumer } from "../types";
 
 /** Drive fixtures through the real public extension-snapshot projection. */

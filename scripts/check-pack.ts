@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { checkExtensionConsumerTypes } from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
+import { checkOpenTuiConsumerTypes } from "./opentui-consumer-check";
 import { npmCommand } from "./script-helpers";
+import { stageSourceNpmPackage } from "./stage-source-npm-package";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 
@@ -364,8 +366,10 @@ interface PackResult {
   files: PackedFile[];
 }
 
-const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json"], {
-  cwd: process.cwd(),
+const appRoot = path.join(repoRoot, "packages", "hunk");
+const packRoot = stageSourceNpmPackage();
+const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json", "--ignore-scripts"], {
+  cwd: packRoot,
   stdin: "ignore",
   stdout: "pipe",
   stderr: "pipe",
@@ -460,7 +464,7 @@ for (const file of pack.files) {
   ) {
     throw new Error(
       `Unexpected file in the published extension surface: ${file.path}. ` +
-        "The hunkdiff/extension entry must only reach src/extension-api.",
+        "The hunkdiff/extension entry must only reach packages/hunk/src/extension-api.",
     );
   }
 }
@@ -469,8 +473,37 @@ if (pack.name !== "hunkdiff") {
   throw new Error(`Expected npm package name to be hunkdiff, got ${pack.name}.`);
 }
 
+const sourceManifest = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
+  devDependencies?: Record<string, string>;
+};
+for (const packageName of [
+  "@hunk/git",
+  "@hunk/jj",
+  "@hunk/sapling",
+  "@hunk/session-broker",
+  "@hunk/session-broker-bun",
+  "@hunk/session-broker-core",
+  "@hunk/vcs",
+]) {
+  if (sourceManifest.devDependencies?.[packageName] !== "workspace:*") {
+    throw new Error(`packages/hunk must declare its bundled build dependency on ${packageName}.`);
+  }
+}
+const packedManifest = readFileSync(path.join(packRoot, "package.json"), "utf8");
+if (packedManifest.includes("workspace:") || packedManifest.includes('"@hunk/')) {
+  throw new Error("The published hunkdiff manifest must not contain private workspace references.");
+}
+for (const fileName of ["README.md", "LICENSE"]) {
+  if (
+    readFileSync(path.join(repoRoot, fileName), "utf8") !==
+    readFileSync(path.join(appRoot, fileName), "utf8")
+  ) {
+    throw new Error(`${fileName} in packages/hunk must match the repository canonical copy.`);
+  }
+}
+
 const extensionTypes = readFileSync(
-  path.join(repoRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
+  path.join(appRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
   "utf8",
 );
 if (/^\s*import\b/m.test(extensionTypes)) {
@@ -498,6 +531,7 @@ for (const removedType of [
 const docsMarkdown = readFileSync(path.join(repoRoot, "docs", "extensions.md"), "utf8");
 const docExamples = buildDocExamples(docsMarkdown);
 
+const opentuiModes = checkOpenTuiConsumerTypes(repoRoot);
 const { modes } = checkExtensionConsumerTypes({
   repoRoot,
   sources: [
@@ -508,6 +542,11 @@ const { modes } = checkExtensionConsumerTypes({
 
 console.log(
   `Verified npm pack output for ${pack.name}@${pack.version} (${pack.entryCount} files).`,
+);
+console.log(
+  `Verified hunkdiff/opentui typechecks for consumers using ${opentuiModes
+    .map((mode) => `moduleResolution: "${mode}"`)
+    .join(" and ")}.`,
 );
 console.log(
   `Verified hunkdiff/extension typechecks for consumers using ${modes

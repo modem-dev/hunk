@@ -10,8 +10,8 @@ import {
   HunkReviewStream,
   createHunkDiffFilesFromPatch,
   type HunkDiffLayout,
-} from "../../src/opentui";
-import { fitText, padText } from "../../src/ui/lib/text";
+} from "../../packages/hunk/src/opentui";
+import { fitText, padText } from "../../packages/hunk/src/ui/lib/text";
 
 const PATCH = `diff --git a/src/search.ts b/src/search.ts
 --- a/src/search.ts

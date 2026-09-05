@@ -6,7 +6,7 @@ import {
   detectTerminalThemeModeFromBackground,
   parseOsc11BackgroundColor,
   themeModeForBackgroundColor,
-} from "../src/core/theme/detection";
+} from "../packages/hunk/src/core/theme/detection";
 
 const inputFd = fs.openSync("/dev/tty", "r");
 const input = new tty.ReadStream(inputFd);

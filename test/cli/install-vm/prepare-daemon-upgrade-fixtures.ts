@@ -15,6 +15,7 @@ import {
 import path from "node:path";
 import { delimiter } from "node:path";
 import { createHash } from "node:crypto";
+import { resolveHunkProtocolPath } from "./repo-layout";
 
 export const DAEMON_UPGRADE_VERSION_A = "899.0.0";
 export const DAEMON_UPGRADE_VERSION_B = "899.0.1";
@@ -57,7 +58,19 @@ function checkoutFiles(repoRoot: string) {
       `Unable to enumerate daemon fixture checkout: ${new TextDecoder().decode(listed.stderr).trim()}`,
     );
   }
-  return new TextDecoder().decode(listed.stdout).split("\0").filter(Boolean);
+  return new TextDecoder()
+    .decode(listed.stdout)
+    .split("\0")
+    .filter(Boolean)
+    .filter((relativePath) => {
+      try {
+        lstatSync(path.join(repoRoot, relativePath));
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    });
 }
 
 /** Frame one build-input value so paths and contents cannot concatenate ambiguously. */
@@ -79,14 +92,26 @@ export function computeDaemonUpgradeBuildInputIdentity(
   } = {},
 ) {
   const realRepoRoot = realpathSync(repoRoot);
-  const dependenciesRoot = options.dependenciesRoot ?? path.join(repoRoot, "node_modules");
+  const dependencyRoots = options.dependenciesRoot
+    ? [{ path: options.dependenciesRoot, label: "node_modules" }]
+    : [
+        { path: path.join(repoRoot, "node_modules"), label: "node_modules" },
+        ...readdirSync(path.join(repoRoot, "packages"), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .sort((left, right) => left.name.localeCompare(right.name))
+          .map((entry) => ({
+            path: path.join(repoRoot, "packages", entry.name, "node_modules"),
+            label: path.posix.join("packages", entry.name, "node_modules"),
+          }))
+          .filter((entry) => existsSync(entry.path)),
+      ];
   const bunExecutable = options.bunExecutable ?? process.execPath;
   const bunVersion = options.bunVersion ?? Bun.version;
-  if (!existsSync(dependenciesRoot) || !existsSync(bunExecutable)) {
+  if (dependencyRoots.some((entry) => !existsSync(entry.path)) || !existsSync(bunExecutable)) {
     throw new Error("Daemon upgrade build-input attestation requires dependencies and Bun.");
   }
   const hash = createHash("sha256");
-  updateFramed(hash, "hunk-daemon-upgrade-build-input-v1");
+  updateFramed(hash, "hunk-daemon-upgrade-build-input-v2");
   updateFramed(hash, bunVersion);
   updateFramed(hash, readFileSync(bunExecutable));
   const walk = (directory: string, relativeDirectory: string) => {
@@ -117,7 +142,10 @@ export function computeDaemonUpgradeBuildInputIdentity(
       }
     }
   };
-  walk(dependenciesRoot, "node_modules");
+  for (const dependencyRoot of dependencyRoots) {
+    updateFramed(hash, `root:${dependencyRoot.label}`);
+    walk(dependencyRoot.path, dependencyRoot.label);
+  }
   return hash.digest("hex");
 }
 
@@ -271,8 +299,11 @@ export function rewriteDaemonUpgradeVariantSources(
   packageVersion: string,
   daemonRevision: number,
 ) {
-  const packagePath = daemonUpgradeRewriteFile(destination, "package.json");
-  const protocolPath = daemonUpgradeRewriteFile(destination, "src/session/protocol.ts");
+  const packagePath = daemonUpgradeRewriteFile(destination, "packages/hunk/package.json");
+  const protocolPath = daemonUpgradeRewriteFile(
+    destination,
+    "packages/hunk/src/session/protocol.ts",
+  );
   const packageManifest = JSON.parse(readFileSync(packagePath, "utf8")) as Record<string, unknown>;
   packageManifest.version = packageVersion;
   writeFileSync(packagePath, `${JSON.stringify(packageManifest, null, 2)}\n`);
@@ -287,6 +318,15 @@ export function rewriteDaemonUpgradeVariantSources(
 function copyCheckout(repoRoot: string, destination: string) {
   copyDaemonUpgradeCheckoutFiles(repoRoot, destination);
   snapshotDaemonUpgradeDependencies(repoRoot, path.join(destination, "node_modules"));
+  for (const entry of readdirSync(path.join(repoRoot, "packages"), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const workspaceRoot = path.join(repoRoot, "packages", entry.name);
+    if (!existsSync(path.join(workspaceRoot, "node_modules"))) continue;
+    snapshotDaemonUpgradeDependencies(
+      workspaceRoot,
+      path.join(destination, "packages", entry.name, "node_modules"),
+    );
+  }
 }
 
 /** Build one fully functional fixture binary with only version/revision bytes changed. */
@@ -340,7 +380,7 @@ export async function prepareDaemonUpgradeBinaries(repoRoot: string, buildRoot: 
   rmSync(buildRoot, { recursive: true, force: true });
   mkdirSync(buildRoot, { recursive: true });
   const daemonUpgradeBuildInputIdentity = computeDaemonUpgradeBuildInputIdentity(repoRoot);
-  const protocolSource = readFileSync(path.join(repoRoot, "src", "session", "protocol.ts"), "utf8");
+  const protocolSource = readFileSync(resolveHunkProtocolPath(repoRoot), "utf8");
   const revisionB = readDaemonRevision(protocolSource);
   const revisionA = revisionB - 1;
   const binaryA = await buildVariant(

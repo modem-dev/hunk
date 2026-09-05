@@ -3,7 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { performance } from "node:perf_hooks";
 import React from "react";
 import { act } from "react";
-import { AppHost } from "../src/ui/AppHost";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
 type MemorySample = {

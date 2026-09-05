@@ -10,10 +10,13 @@
  * Driving the shared fixtures through the mirror's own update path is what proves it has
  * no comparison rules of its own (`docs/browser-review-seam-audit.md`, C1).
  */
-import type { ReviewPublicationAddress } from "../../../src/core/review/generationOrder";
-import { ReviewMirror } from "../../../src/session/broker/reviewMirror";
-import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../../src/core/review/resources";
-import type { HunkReviewResourceCatalogV1 } from "../../../src/session/reviewProtocol";
+import type { ReviewPublicationAddress } from "../../../packages/hunk/src/core/review/generationOrder";
+import { ReviewMirror } from "../../../packages/hunk/src/session/broker/reviewMirror";
+import {
+  REVIEW_PATCH_CONTENT_TYPE,
+  reviewResourceId,
+} from "../../../packages/hunk/src/core/review/resources";
+import type { HunkReviewResourceCatalogV1 } from "../../../packages/hunk/src/session/reviewProtocol";
 import type { ReviewOrderingConsumer } from "../types";
 
 const FILE_KEY = "file:0123456789abcdef";

@@ -215,6 +215,30 @@ hunk extension list
 
 **Aliases:** `hunk ext list`.
 
+## `hunk extension enable`
+
+enable every entry in one managed extension package
+
+### Usage
+
+```bash
+hunk extension enable <name-or-package-id>
+```
+
+**Aliases:** `hunk ext enable`.
+
+## `hunk extension disable`
+
+disable every entry in one managed extension package
+
+### Usage
+
+```bash
+hunk extension disable <name-or-package-id>
+```
+
+**Aliases:** `hunk ext disable`.
+
 ## `hunk extension update`
 
 re-clone managed extension installs from their recorded sources

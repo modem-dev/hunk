@@ -113,7 +113,7 @@ function writeConsumerTsconfig(
 export function checkExtensionConsumerTypes(options: CheckExtensionConsumerOptions) {
   const { repoRoot, sources } = options;
   const modes = options.moduleResolutions ?? (["nodenext", "bundler"] as const);
-  const extensionDist = path.join(repoRoot, "dist", "npm", "extension");
+  const extensionDist = path.join(repoRoot, "packages", "hunk", "dist", "npm", "extension");
 
   if (!existsSync(path.join(extensionDist, "index.d.ts"))) {
     throw new Error(

@@ -7,7 +7,7 @@
  *
  * Verdicts are written by hand from the invariant, never captured from the classifier.
  */
-import type { ReviewPublicationOrder } from "../../src/core/review/generationOrder";
+import type { ReviewPublicationOrder } from "../../packages/hunk/src/core/review/generationOrder";
 
 /** One arriving publication judged against the position a receiver already holds. */
 export interface ReviewPublicationOrderFixture {

@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
-import { loadAppBootstrap } from "../src/core/changeset/loaders";
-import { AppHost } from "../src/ui/AppHost";
+import { loadAppBootstrap } from "../packages/hunk/src/core/changeset/loaders";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
 
 function runGit(cwd: string, ...args: string[]) {
   const proc = Bun.spawnSync(["git", ...args], {

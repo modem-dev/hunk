@@ -73,7 +73,14 @@ try {
 
   const result = spawnSync(
     process.execPath,
-    [join(repoRoot, "src/main.tsx"), "diff", "--extension", galleryRoot, "--mode", "stack"],
+    [
+      join(repoRoot, "packages/hunk/src/main.tsx"),
+      "diff",
+      "--extension",
+      galleryRoot,
+      "--mode",
+      "stack",
+    ],
     { cwd: demoRepo, stdio: "inherit", env: process.env },
   );
   if (result.error) throw result.error;

@@ -3,10 +3,10 @@ import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { buildSplitRows } from "../src/ui/diff/diffRows";
-import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
-import { resolveTheme } from "../src/ui/themes";
-import { AppHost } from "../src/ui/AppHost";
+import { buildSplitRows } from "../packages/hunk/src/ui/diff/diffRows";
+import { buildReviewRenderPlan } from "../packages/hunk/src/ui/diff/reviewRenderPlan";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
 const viewport = { width: 240, height: 28 } as const;

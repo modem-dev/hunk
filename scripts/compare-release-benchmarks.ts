@@ -38,7 +38,9 @@ export function releaseBenchmarkDir(root = repoRoot) {
 
 /** Parse the package version used by release benchmark filenames. */
 export async function readPackageVersion(root = repoRoot) {
-  const packageJson = JSON.parse(await Bun.file(path.join(root, "package.json")).text()) as {
+  const packageJson = JSON.parse(
+    await Bun.file(path.join(root, "packages", "hunk", "package.json")).text(),
+  ) as {
     version: string;
   };
   return packageJson.version;

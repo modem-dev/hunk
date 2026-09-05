@@ -3,9 +3,9 @@ import path from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot, useTerminalDimensions } from "@opentui/react";
 import { useState } from "react";
-import type { HunkDiffFile, HunkDiffLayout } from "../../src/opentui";
-import { HunkDiffView } from "../../src/opentui";
-import { fitText } from "../../src/ui/lib/text";
+import type { HunkDiffFile, HunkDiffLayout } from "../../packages/hunk/src/opentui";
+import { HunkDiffView } from "../../packages/hunk/src/opentui";
+import { fitText } from "../../packages/hunk/src/ui/lib/text";
 
 interface ExampleProps {
   title: string;

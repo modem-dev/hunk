@@ -2,28 +2,48 @@
 
 import {
   chmodSync,
-  copyFileSync,
   cpSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { HUNK_NPM_DIST, HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT, REPO_ROOT } from "./package-paths";
 
-const repoRoot = path.resolve(import.meta.dir, "..");
-const outdir = path.join(repoRoot, "dist", "npm");
-const typesOutdir = path.join(repoRoot, "dist", "npm-types");
+const repoRoot = REPO_ROOT;
+const outdir = HUNK_NPM_DIST;
+const typesOutdir = path.join(HUNK_PACKAGE_ROOT, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
-const opentuiTypesDir = path.join(typesOutdir, "opentui");
+const opentuiTypesDir = path.join(typesOutdir, "hunk", "src", "opentui");
 const extensionOutdir = path.join(outdir, "extension");
-const extensionTypesOutdir = path.join(repoRoot, "dist", "npm-extension-types");
+const extensionTypesOutdir = path.join(HUNK_PACKAGE_ROOT, "dist", "npm-extension-types");
 
 const bunEnv = {
   ...process.env,
   BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
   BUN_INSTALL: path.join(repoRoot, ".bun-install"),
 };
+
+/** Rewrite emitted ESM declaration imports for NodeNext consumers. */
+function rewriteDeclarationSpecifiers(dir: string) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      rewriteDeclarationSpecifiers(entryPath);
+      continue;
+    }
+    if (!entry.name.endsWith(".d.ts")) continue;
+    const source = readFileSync(entryPath, "utf8");
+    const rewritten = source.replace(
+      /(\bfrom\s+["']|\bimport\s*\(\s*["'])(\.{1,2}\/[^"']+?)(["'])/g,
+      (match, prefix: string, specifier: string, quote: string) =>
+        /\.(?:js|json|d\.ts)$/.test(specifier) ? match : `${prefix}${specifier}.js${quote}`,
+    );
+    if (rewritten !== source) writeFileSync(entryPath, rewritten);
+  }
+}
 
 function runBun(args: string[]) {
   const proc = Bun.spawnSync(["bun", ...args], {
@@ -58,7 +78,7 @@ const opentuiNativePackages = [
 
 runBun([
   "build",
-  path.join(repoRoot, "src", "main.tsx"),
+  path.join(HUNK_SOURCE_ROOT, "main.tsx"),
   "--target",
   "bun",
   "--format",
@@ -78,7 +98,7 @@ if (process.platform !== "win32") {
 
 runBun([
   "build",
-  path.join(repoRoot, "src", "opentui", "index.ts"),
+  path.join(HUNK_SOURCE_ROOT, "opentui", "index.ts"),
   "--target",
   "node",
   "--format",
@@ -107,17 +127,17 @@ runBun([
 
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.opentui.json")]);
 
-for (const entry of readdirSync(opentuiTypesDir)) {
-  if (entry.endsWith(".d.ts")) {
-    copyFileSync(path.join(opentuiTypesDir, entry), path.join(opentuiOutdir, entry));
-  }
-}
+// Ship the complete declaration tree reached by the public OpenTUI entry. The
+// compiler strips @internal adapters so this contains the public component
+// surface without leaking the app's core model.
+cpSync(opentuiTypesDir, opentuiOutdir, { recursive: true });
+rewriteDeclarationSpecifiers(opentuiOutdir);
 
 rmSync(typesOutdir, { recursive: true, force: true });
 
 runBun([
   "build",
-  path.join(repoRoot, "src", "extension-api", "index.ts"),
+  path.join(HUNK_SOURCE_ROOT, "extension-api", "index.ts"),
   "--target",
   "node",
   "--format",

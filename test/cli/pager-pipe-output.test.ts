@@ -38,7 +38,7 @@ describe("pager output through a pipe", () => {
     const document = createGitLogDocument(6_000);
     expect(document.length).toBeGreaterThan(PIPE_BUFFER_BYTES * 3);
 
-    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "--", "pager"], {
+    const proc = Bun.spawn(["bun", "run", "packages/hunk/src/main.tsx", "--", "pager"], {
       cwd: process.cwd(),
       stdin: new TextEncoder().encode(document),
       stdout: "pipe",

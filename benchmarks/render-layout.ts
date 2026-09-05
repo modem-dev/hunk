@@ -1,9 +1,9 @@
 // Benchmark pure diff row/layout planning across split, stack, and size-shape cases.
 import { performance } from "perf_hooks";
-import { buildSplitRows, buildStackRows } from "../src/ui/diff/diffRows";
-import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
-import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
-import { resolveTheme } from "../src/ui/themes";
+import { buildSplitRows, buildStackRows } from "../packages/hunk/src/ui/diff/diffRows";
+import { buildReviewRenderPlan } from "../packages/hunk/src/ui/diff/reviewRenderPlan";
+import { measureDiffSectionGeometry } from "../packages/hunk/src/ui/diff/diffSectionGeometry";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
 import { createLargeSplitStreamFiles } from "./large-stream-fixture";
 
 const theme = resolveTheme("midnight", null);

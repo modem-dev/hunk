@@ -7,7 +7,7 @@ import type { Key, Session } from "tuistory";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Hunk renders atomically and tests wait on concrete UI predicates, so the safer 200ms default is unnecessary.
 const tuistoryIdleDelayMs = 60;
 

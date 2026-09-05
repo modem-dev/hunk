@@ -87,8 +87,9 @@ function commandDirectory(command: string) {
 }
 
 const repoRoot = path.resolve(import.meta.dir, "..");
-const packageVersion = JSON.parse(await Bun.file(path.join(repoRoot, "package.json")).text())
-  .version as string;
+const packageVersion = JSON.parse(
+  await Bun.file(path.join(repoRoot, "packages", "hunk", "package.json")).text(),
+).version as string;
 const releaseRoot = releaseNpmDir(repoRoot);
 const hostSpec = getHostPlatformPackageSpec();
 const tempRoot = path.join(repoRoot, "tmp");

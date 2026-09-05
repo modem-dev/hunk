@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { InstallSource } from "../../src/core/install/installSource";
+import type { InstallSource } from "../../packages/hunk/src/core/install/installSource";
 
 /**
  * Runs `hunk update` as a black box with a forced install source.
@@ -9,7 +9,7 @@ import type { InstallSource } from "../../src/core/install/installSource";
  * paths reports and stops before any release lookup.
  */
 function runUpdate(args: string[], installSource?: InstallSource) {
-  const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "update", ...args], {
+  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "update", ...args], {
     cwd: process.cwd(),
     stdin: "ignore",
     stdout: "pipe",
@@ -28,7 +28,7 @@ function runUpdate(args: string[], installSource?: InstallSource) {
 
 describe("hunk update CLI contract", () => {
   test("top-level help lists the update command", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "--help"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "--help"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",

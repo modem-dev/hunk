@@ -39,7 +39,7 @@ function uncapturedPagerEnv() {
 
 describe("CLI entrypoint contracts", () => {
   test("bare hunk prints standard help without terminal takeover sequences", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -74,7 +74,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("prints daemon help without terminal takeover sequences", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "daemon", "--help"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "daemon", "--help"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -92,7 +92,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("prints session help with the review command without terminal takeover sequences", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", "--help"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "session", "--help"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -114,12 +114,15 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("prints session reload help without terminal takeover sequences", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", "reload", "--help"], {
-      cwd: process.cwd(),
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawnSync(
+      ["bun", "run", "packages/hunk/src/main.tsx", "session", "reload", "--help"],
+      {
+        cwd: process.cwd(),
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     const stdout = Buffer.from(proc.stdout).toString("utf8");
     const stderr = Buffer.from(proc.stderr).toString("utf8");
@@ -132,8 +135,8 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("prints the package version for --version without terminal takeover sequences", () => {
-    const expectedVersion = require("../../package.json").version;
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "--version"], {
+    const expectedVersion = require("../../packages/hunk/package.json").version;
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "--version"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -150,7 +153,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("prints the bundled skill path for hunk skill path without terminal takeover sequences", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "skill", "path"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "skill", "path"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -169,7 +172,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("bin wrapper prints the bundled skill path for hunk skill path", () => {
-    const proc = Bun.spawnSync(["node", "bin/hunk.cjs", "skill", "path"], {
+    const proc = Bun.spawnSync(["node", "packages/hunk/bin/hunk.cjs", "skill", "path"], {
       cwd: process.cwd(),
       stdin: "ignore",
       stdout: "pipe",
@@ -188,7 +191,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("package manifest exposes hunkdiff as an npm exec alias", () => {
-    const packageJson = require("../../package.json");
+    const packageJson = require("../../packages/hunk/package.json");
     expect(packageJson.bin).toEqual({
       hunk: "./bin/hunk.cjs",
       hunkdiff: "./bin/hunk.cjs",
@@ -202,7 +205,7 @@ describe("CLI entrypoint contracts", () => {
 
     try {
       mkdirSync(tempBinDir, { recursive: true });
-      copyFileSync(join(process.cwd(), "bin", "hunk.cjs"), tempWrapperPath);
+      copyFileSync(join(process.cwd(), "packages", "hunk", "bin", "hunk.cjs"), tempWrapperPath);
 
       const proc = Bun.spawnSync(["node", tempWrapperPath, "skill", "path"], {
         cwd: tempDir,
@@ -225,7 +228,7 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("general pager mode falls back to plain text for non-diff stdin", () => {
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "pager"], {
       cwd: process.cwd(),
       stdin: Buffer.from("* main\n  feature/demo\n"),
       stdout: "pipe",
@@ -246,7 +249,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("general pager mode keeps Git colors in non-diff stdin for captured pager hosts", () => {
     const coloredLog = "\u001b[33m*\u001b[m \u001b[32mabc1234\u001b[m feat: thing\n";
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "pager"], {
       cwd: process.cwd(),
       stdin: Buffer.from(coloredLog),
       stdout: "pipe",
@@ -263,7 +266,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("general pager mode strips colors from non-diff stdin outside captured pager hosts", () => {
     const coloredLog = "\u001b[33m*\u001b[m \u001b[32mabc1234\u001b[m feat: thing\n";
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "pager"], {
       cwd: process.cwd(),
       stdin: Buffer.from(coloredLog),
       stdout: "pipe",
@@ -280,7 +283,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("general pager mode passes diff stdin through when stdout is not a terminal", () => {
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+    const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "pager"], {
       cwd: process.cwd(),
       stdin: Buffer.from(patchText),
       stdout: "pipe",
@@ -299,7 +302,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("prints a friendly git-repo error without a Bun stack trace", () => {
     const nonRepoDir = mkdtempSync(join(tmpdir(), "hunk-nonrepo-"));
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       const proc = Bun.spawnSync(["bun", "run", sourceEntrypoint, "diff"], {
@@ -328,7 +331,7 @@ describe("CLI entrypoint contracts", () => {
   test("runs an explicit generic extension CLI command with raw args and stdin", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-cli-"));
     const extensionPath = join(root, "tools.ts");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -370,7 +373,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("runs the self-contained GitHub PR extension help through generic CLI discovery", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-help-"));
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
     const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
 
     try {
@@ -395,7 +398,7 @@ describe("CLI entrypoint contracts", () => {
 
   test("discovers the installed-shape GitHub extension for literal hunk gh", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-global-"));
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
     const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
     const installedPath = join(root, "config", "hunk", "extensions", "github-pr");
 
@@ -421,7 +424,7 @@ describe("CLI entrypoint contracts", () => {
   test("warns before repo config steers an extension CLI provider", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-cli-config-"));
     const extensionPath = join(root, "tools.ts");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       mkdirSync(join(root, ".git"), { recursive: true });
@@ -460,7 +463,7 @@ describe("CLI entrypoint contracts", () => {
   test("allows stderr progress before delegating to a built-in command", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-delegate-"));
     const extensionPath = join(root, "delegate.ts");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -496,7 +499,7 @@ describe("CLI entrypoint contracts", () => {
   test("cancels a pending stdin read when an extension command exits", async () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-pending-stdin-"));
     const extensionPath = join(root, "stdin.ts");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -534,7 +537,7 @@ describe("CLI entrypoint contracts", () => {
   test("rejects delegation when both the extension and built-in need stdin", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-stdin-delegate-"));
     const extensionPath = join(root, "stdin.ts");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -573,7 +576,7 @@ describe("CLI entrypoint contracts", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-review-delegate-"));
     const extensionPath = join(root, "delegate.ts");
     const countPath = join(root, "factory-count");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -614,7 +617,7 @@ export default function (hunk) {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-invalid-command-"));
     const extensionPath = join(root, "provider.ts");
     const markerPath = join(root, "imported");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -644,7 +647,7 @@ export default function (hunk) {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-missing-path-"));
     const extensionPath = join(root, "provider.ts");
     const markerPath = join(root, "imported");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -685,7 +688,7 @@ export default function (hunk) {
     const root = mkdtempSync(join(tmpdir(), "hunk-extension-disabled-"));
     const extensionPath = join(root, "disabled.ts");
     const markerPath = join(root, "imported");
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       writeFileSync(
@@ -724,7 +727,7 @@ export default function (hunk) {
 
   test("prints a friendly invalid-ref error without a Bun stack trace", () => {
     const repoDir = mkdtempSync(join(tmpdir(), "hunk-show-cli-"));
-    const sourceEntrypoint = join(process.cwd(), "src/main.tsx");
+    const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
 
     try {
       git(repoDir, "init");

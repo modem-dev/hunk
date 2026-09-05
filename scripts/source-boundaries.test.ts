@@ -3,10 +3,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const SRC_ROOT = join(REPO_ROOT, "src");
+const SRC_ROOT = join(REPO_ROOT, "packages", "hunk", "src");
 const CORE_ROOT = join(SRC_ROOT, "core");
 const EXTENSIONS_ROOT = join(SRC_ROOT, "extensions");
-const BUNDLED_PROVIDER_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
+const BUNDLED_PROVIDER_ROOTS = ["hunk-git", "hunk-jj", "hunk-sapling"].map((name) =>
+  join(REPO_ROOT, "packages", name, "src"),
+);
+const VCS_DOMAIN_ROOT = join(REPO_ROOT, "packages", "hunk-vcs", "src");
 const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // The published extension contract, which the review model may name for the annotation shapes
 // that are simultaneously internal model types and part of `hunkdiff/extension`. It cannot widen
@@ -157,7 +160,7 @@ function unexpectedExternalImports(
 
 /** Find bundled provider imports that bypass the published extension barrel. */
 function privateProviderApiImports() {
-  return sourceFiles(BUNDLED_PROVIDER_ROOT).flatMap((path) =>
+  return BUNDLED_PROVIDER_ROOTS.flatMap((root) => sourceFiles(root)).flatMap((path) =>
     importSpecifiers(path).some((specifier) => specifier.includes("extension-api"))
       ? [repoPath(path)]
       : [],
@@ -169,7 +172,7 @@ function privateProviderApiImports() {
 // with the finding id, and this gate keeps them deleted — a reappearing path means the
 // duplication came back. Entries are repo-relative with forward slashes.
 const EXTRACTED_DUPLICATE_TOMBSTONES: readonly string[] = [
-  "src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
+  "packages/hunk/src/ui/lib/hunks.ts", // B1: replaced by core/review selection/move planning
 ];
 
 // Function-level deletions the file tombstones cannot see: each entry bans one named
@@ -181,33 +184,69 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   symbol: string;
   finding: string;
 }> = [
-  { file: "src/ui/diff/diffRows.ts", symbol: "leadingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedRanges", finding: "A1" },
-  { file: "src/ui/diff/diffRows.ts", symbol: "trailingCollapsedLines", finding: "A2" },
-  { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "sliceLines", finding: "A4" },
-  { file: "src/ui/diff/expandCollapsedRows.ts", symbol: "gapKey", finding: "A1" },
-  { file: "src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
-  { file: "src/core/liveComments.ts", symbol: "firstCommentTargetForHunk", finding: "A10" },
-  { file: "src/core/review/state.ts", symbol: "reviewLineAnchor", finding: "A3" },
-  { file: "src/ui/lib/files.ts", symbol: "filterReviewFiles", finding: "B5" },
-  { file: "src/ui/lib/reviewState.ts", symbol: "findNextAnnotatedFile", finding: "B2" },
-  { file: "src/ui/lib/reviewState.ts", symbol: "resolveSelectedFile", finding: "B4" },
-  { file: "src/ui/lib/agentAnnotations.ts", symbol: "alwaysShowReviewNote", finding: "B9" },
   {
-    file: "src/ui/diff/expandCollapsedRows.ts",
+    file: "packages/hunk/src/ui/diff/diffRows.ts",
+    symbol: "leadingCollapsedRanges",
+    finding: "A1",
+  },
+  {
+    file: "packages/hunk/src/ui/diff/diffRows.ts",
+    symbol: "trailingCollapsedRanges",
+    finding: "A1",
+  },
+  {
+    file: "packages/hunk/src/ui/diff/diffRows.ts",
+    symbol: "trailingCollapsedLines",
+    finding: "A2",
+  },
+  { file: "packages/hunk/src/ui/diff/expandCollapsedRows.ts", symbol: "sliceLines", finding: "A4" },
+  { file: "packages/hunk/src/ui/diff/expandCollapsedRows.ts", symbol: "gapKey", finding: "A1" },
+  { file: "packages/hunk/src/core/liveComments.ts", symbol: "hunkLineRange", finding: "A3" },
+  {
+    file: "packages/hunk/src/core/liveComments.ts",
+    symbol: "firstCommentTargetForHunk",
+    finding: "A10",
+  },
+  { file: "packages/hunk/src/core/review/state.ts", symbol: "reviewLineAnchor", finding: "A3" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "filterReviewFiles", finding: "B5" },
+  {
+    file: "packages/hunk/src/ui/lib/reviewState.ts",
+    symbol: "findNextAnnotatedFile",
+    finding: "B2",
+  },
+  { file: "packages/hunk/src/ui/lib/reviewState.ts", symbol: "resolveSelectedFile", finding: "B4" },
+  {
+    file: "packages/hunk/src/ui/lib/agentAnnotations.ts",
+    symbol: "alwaysShowReviewNote",
+    finding: "B9",
+  },
+  {
+    file: "packages/hunk/src/ui/diff/expandCollapsedRows.ts",
     symbol: "selectGapForKeyboardToggle",
     finding: "F2",
   },
-  { file: "src/ui/lib/agentAnnotations.ts", symbol: "annotationOverlapsHunk", finding: "B1" },
-  { file: "src/ui/lib/agentAnnotations.ts", symbol: "getAnnotatedHunkIndices", finding: "B1" },
-  { file: "src/ui/lib/reviewState.ts", symbol: "buildReviewAnnotationIndex", finding: "B1" },
   {
-    file: "src/extensions/cliCommandRuntime.ts",
+    file: "packages/hunk/src/ui/lib/agentAnnotations.ts",
+    symbol: "annotationOverlapsHunk",
+    finding: "B1",
+  },
+  {
+    file: "packages/hunk/src/ui/lib/agentAnnotations.ts",
+    symbol: "getAnnotatedHunkIndices",
+    finding: "B1",
+  },
+  {
+    file: "packages/hunk/src/ui/lib/reviewState.ts",
+    symbol: "buildReviewAnnotationIndex",
+    finding: "B1",
+  },
+  {
+    file: "packages/hunk/src/extensions/cliCommandRuntime.ts",
     symbol: "validateReviewDescriptor",
     finding: "delegated-review-descriptor",
   },
   {
-    file: "src/extensions/cliCommandRuntime.ts",
+    file: "packages/hunk/src/extensions/cliCommandRuntime.ts",
     symbol: "validateDescriptorString",
     finding: "delegated-review-descriptor",
   },
@@ -249,8 +288,28 @@ describe("source architecture boundaries", () => {
   });
 
   test("keeps bundled providers on their public host contract", () => {
-    expect(forbiddenImports(BUNDLED_PROVIDER_ROOT, CORE_ROOT)).toEqual([]);
+    expect(BUNDLED_PROVIDER_ROOTS.flatMap((root) => forbiddenImports(root, CORE_ROOT))).toEqual([]);
     expect(privateProviderApiImports()).toEqual([]);
+  });
+
+  test("keeps the actual hunk-vcs workspace provider-neutral", () => {
+    expect(existsSync(join(VCS_DOMAIN_ROOT, "diffRange.ts"))).toBe(true);
+    expect(forbiddenImports(VCS_DOMAIN_ROOT, SRC_ROOT)).toEqual([]);
+    for (const root of BUNDLED_PROVIDER_ROOTS) {
+      expect(forbiddenImports(VCS_DOMAIN_ROOT, root)).toEqual([]);
+    }
+    expect(
+      sourceFiles(VCS_DOMAIN_ROOT).flatMap((path) =>
+        importSpecifiers(path)
+          .filter(
+            (specifier) =>
+              !specifier.startsWith(".") &&
+              !specifier.startsWith("node:") &&
+              specifier !== "hunkdiff/extension",
+          )
+          .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -271,7 +330,7 @@ describe("shared review primitives seam", () => {
   // handling at all, so those three entries are gone for good.
   // Repaid in Phase 2: the last entry, `jsonStream.ts`, is gone. Serializing and hashing a
   // review resource needs a platform encoder, so that work lives in the producer tier
-  // (`src/app/review/`) instead, and core takes hashing as an injected `ReviewDigestFn`
+  // (`packages/hunk/src/app/review/`) instead, and core takes hashing as an injected `ReviewDigestFn`
   // (`core/review/validation.ts`) — it names the algorithm, validates the digest shape, and
   // compares two values without ever computing one. The map is now empty and stays that way.
   const REVIEW_MODEL_NODE_DEBT = new Map<string, readonly string[]>();

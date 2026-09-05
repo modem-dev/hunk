@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { HUNK_EXTENSION_API_VERSION } from "../src/extension-api/types";
-import { parseExtensionInstallSource } from "../src/extensions/manage/source";
+import { HUNK_EXTENSION_API_VERSION } from "../packages/hunk/src/extension-api/types";
+import { parseExtensionInstallSource } from "../packages/hunk/src/extensions/manage/source";
 import {
   EXTENSION_CATALOG,
   avatarUrl,

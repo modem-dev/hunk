@@ -1,6 +1,9 @@
-import type { AppBootstrap } from "../../src/core/bootstrap";
-import type { DiffFile } from "../../src/core/changeset/model";
-import type { VcsDiffCommandInput, LayoutMode } from "../../src/core/run/commandInputs";
+import type { AppBootstrap } from "../../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type {
+  VcsDiffCommandInput,
+  LayoutMode,
+} from "../../packages/hunk/src/core/run/commandInputs";
 
 export function createTestVcsAppBootstrap({
   agentSummary,

@@ -73,6 +73,13 @@ Because the manifest is a real `package.json`, a folder extension may depend on
 npm packages: declare them, install them into the folder's own `node_modules`,
 and imports resolve from the entry file the way they do in any other package.
 
+The package `name` is the stable activation identity shared by every entry.
+`hunk.packageId` may override it when the install identity must remain independent
+of an npm name. Package ids are at most 128 characters: an optional lowercase npm
+scope plus `/`, followed by a lowercase name using letters, digits, `.`, `_`, or
+`-`. Legacy folder/install names are trimmed, lowercased, and replace other
+character runs with `-`, so an existing uppercase folder remains manageable.
+Entry ids remain separate and continue to own configuration and registration namespaces.
 The `hunk` field may also state the minimum extension API version the folder
 needs:
 
@@ -81,7 +88,11 @@ needs:
   "name": "my-ext",
   "version": "1.0.0",
   "description": "What the extension does",
-  "hunk": { "extensions": ["./src/index.ts"], "apiVersion": 3 }
+  "hunk": {
+    "packageId": "my-ext",
+    "extensions": ["./src/index.ts"],
+    "apiVersion": 3
+  }
 }
 ```
 
@@ -121,9 +132,10 @@ same way, since one id cannot own two config tables.
 read, let alone executed. Use it when triaging a bug.
 
 `--extension` is explicit user intent: the file loads immediately, with no
-trust prompt, even when the path points inside the repository under review.
-Never pass a path you have not read — including one copy-pasted from a
-repository's own README.
+trust prompt, even when the path points inside the repository under review. A
+persistently disabled package remains disabled when its directory, declared entry,
+or a symlink to that entry is passed explicitly. Never pass a path you have not
+read — including one copy-pasted from a repository's own README.
 
 ## Sharing and installing extensions
 
@@ -146,13 +158,27 @@ precedence, no trust prompt — because installing one is the explicit consent:
 the install asks for confirmation (or `--yes`) after stating that extensions
 run with your full user permissions. Only install repositories you trust.
 
-`hunk extension list` shows every managed install with its version, commit, and
-source. `hunk extension update [name]` re-clones one install (or all of them)
-from its recorded source — an install pinned with `@ref` stays at that ref
-until you re-install with a different one. `hunk extension remove <name>`
-deletes the install and its record. Managed installs never collide with
-extensions you copied into `~/.config/hunk/extensions/` by hand, and the
-installer refuses to overwrite an unmanaged directory of the same name.
+`hunk extension list` shows every managed install with its stable package
+identity, ordered entry ids, activation state, version, commit, and source.
+`hunk extension disable <name-or-package-id>` disables every entry in that
+package before import or repo trust checks; `hunk extension enable ...`
+re-enables it. Activation preferences are stored separately from install
+records, so update and reinstall cannot silently reset a user's safety choice.
+A repository exposing several packages may be toggled by install name as one
+unit, while a multi-entry package always toggles all its entries together. Hunk
+refuses a selector that could mean both an install and a different package, or a
+package id exposed by multiple installs, instead of guessing which code to toggle.
+
+`hunk extension update [name]` re-clones one install (or all of them) from its
+recorded source — an install pinned with `@ref` stays at that ref until you
+re-install with a different one. Unchanged package ids keep their individual
+activation choices, and an unambiguous rename carries a denial forward. If an
+update would add or ambiguously replace identities while an affected package is
+disabled, Hunk refuses it rather than silently enabling new code; enable first,
+update, then disable the intended new identities. `hunk extension remove <name>` deletes the
+install and its record. Managed installs never collide with extensions you
+copied into `~/.config/hunk/extensions/` by hand, and the installer refuses to
+overwrite an unmanaged directory of the same name.
 
 ### Publishing an extension
 
@@ -192,8 +218,9 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. They live in
-`src/extensions/default/`, are compiled into the binary, and register through
+and so is the **built-in file-navigation pane**. The private provider sources live
+in `packages/hunk-git`, `packages/hunk-jj`, and `packages/hunk-sapling`; they are
+not independently installable or published. They are compiled into the binary and register through
 the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
 documents. There is no private registration path.
 
@@ -394,7 +421,7 @@ removes the patch on extension shutdown. Run it
 from this checkout with:
 
 ```bash
-bun run src/main.tsx --extension ./examples/extensions/github-pr gh 123
+bun run start -- --extension ./examples/extensions/github-pr gh 123
 ```
 
 ### `hunk.configureSession(options)`
@@ -968,7 +995,7 @@ whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself.
 The built-in files pane uses the same calls, so changes that break this contract
 break Hunk first. Keep scroll handling small and behind your own helpers.
 
-Its implementation lives in `src/extensions/default/ui/sidebar/` and serves as
+Its implementation lives in `packages/hunk/src/extensions/default/ui/sidebar/` and serves as
 the reference for third-party panes.
 
 #### Pane state from events
@@ -2065,16 +2092,18 @@ hunk diff --no-extensions                  # disable user extensions for this re
 ```toml
 # ~/.config/hunk/config.toml or .hunk/config.toml
 [extensions]
-enabled = true                      # false disables loading for this layer
+enabled = true                      # user false cannot be overridden by a repo
 paths = ["~/dev/hunk-ext/index.ts"] # extra entry files or directories
 
 [extension.my-extension]            # opaque payload handed to that extension
 some_key = "some value"
 ```
 
-`[extensions] enabled` layers like every other option: a repo `.hunk/config.toml`
-overrides your user config. `--no-extensions` is a hard off switch that no config
-layer can re-enable. Both govern **user** extensions only — Hunk's bundled
+A repo may disable `[extensions] enabled`, but it cannot override `enabled = false`
+in your user config. `--no-extensions` is the strongest hard-off switch and no config
+layer can re-enable it. A package disabled with `hunk extension disable` is filtered
+before repo trust and imports, and repo configuration cannot re-enable it. These
+controls govern **user** extensions only — Hunk's bundled
 Git, Jujutsu, and Sapling backends load either way. `[extensions] paths` from a repo
 config is trust-gated the same way `.hunk/extensions` is, because it is
 repo-controlled either way.

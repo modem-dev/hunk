@@ -7,7 +7,7 @@ import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-
 import { removeTestDirectory } from "../helpers/filesystem";
 
 const repoRoot = process.cwd();
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-cli-runtime-"));
@@ -307,7 +307,7 @@ async function cleanupHunkSession(
 }
 
 function runSessionCli(args: string[], port: number, stdinText?: string) {
-  const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", ...args], {
+  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "session", ...args], {
     cwd: repoRoot,
     stdin: stdinText === undefined ? "ignore" : Buffer.from(stdinText),
     stdout: "pipe",

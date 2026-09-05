@@ -10,8 +10,11 @@
  * It also runs the note-size corpus, because "may this note cross a boundary" is a wire
  * question as much as a producer one, and both must answer it the same way (D1).
  */
-import { reviewNoteWithinSizeLimit } from "../../../src/core/review/noteSize";
-import { parseHunkReviewAction, toReviewIntent } from "../../../src/session/reviewProtocol";
+import { reviewNoteWithinSizeLimit } from "../../../packages/hunk/src/core/review/noteSize";
+import {
+  parseHunkReviewAction,
+  toReviewIntent,
+} from "../../../packages/hunk/src/session/reviewProtocol";
 import type { ReviewWireConsumer } from "../types";
 
 export const reviewWireConsumer: ReviewWireConsumer = {

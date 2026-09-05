@@ -53,11 +53,15 @@
     url = "https://registry.npmjs.org/@hono/node-ws/-/node-ws-1.3.1.tgz";
     hash = "sha512-vo/MwCnpJAVHBkGzWjCJ28wF45fYHAfbPZcH2rodZODHtch2GHA94KtMfusmVycTUtsLAsaNsHhtY6P8X3RQsA==";
   };
+  "@hunk/git" = copyPathToStore ../packages/hunk-git;
+  "@hunk/jj" = copyPathToStore ../packages/hunk-jj;
+  "@hunk/sapling" = copyPathToStore ../packages/hunk-sapling;
   "@hunk/session-broker" = copyPathToStore ../packages/session-broker;
   "@hunk/session-broker-bun" = copyPathToStore ../packages/session-broker-bun;
   "@hunk/session-broker-core" = copyPathToStore ../packages/session-broker-core;
   "@hunk/session-broker-node" = copyPathToStore ../packages/session-broker-node;
   "@hunk/term-video" = copyPathToStore ../packages/term-video;
+  "@hunk/vcs" = copyPathToStore ../packages/hunk-vcs;
   "@napi-rs/wasm-runtime@1.2.2" = fetchurl {
     url = "https://registry.npmjs.org/@napi-rs/wasm-runtime/-/wasm-runtime-1.2.2.tgz";
     hash = "sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw==";
@@ -878,6 +882,7 @@
     url = "https://registry.npmjs.org/human-signals/-/human-signals-8.0.1.tgz";
     hash = "sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==";
   };
+  "hunkdiff" = copyPathToStore ../packages/hunk;
   "ignore@7.0.6" = fetchurl {
     url = "https://registry.npmjs.org/ignore/-/ignore-7.0.6.tgz";
     hash = "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==";

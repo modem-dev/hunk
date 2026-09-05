@@ -31,7 +31,7 @@ export function isGeneratedReleasePath(filePath: string) {
   return (
     filePath === ".changeset/pre.json" ||
     filePath === "CHANGELOG.md" ||
-    filePath === "package.json" ||
+    filePath === "packages/hunk/package.json" ||
     CHANGESET_PATTERN.test(filePath) ||
     RELEASE_BENCHMARK_PATTERN.test(filePath)
   );
@@ -179,7 +179,9 @@ export async function verifyPrReleaseNotes(
   }
 
   const [packageJson, pre, changelog] = await Promise.all([
-    Bun.file(path.join(root, "package.json")).json() as Promise<PackageManifest>,
+    Bun.file(
+      path.join(root, "packages", "hunk", "package.json"),
+    ).json() as Promise<PackageManifest>,
     Bun.file(prePath).json() as Promise<PrereleaseState>,
     Bun.file(path.join(root, "CHANGELOG.md")).text(),
   ]);

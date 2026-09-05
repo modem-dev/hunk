@@ -9,7 +9,7 @@ This example is **not bundled or loaded by Hunk**. Install it explicitly if you 
 The repository's root install supplies the example's development dependency:
 
 ```bash
-bun run src/main.tsx -- diff \
+bun run start -- -- diff \
   --extension ./examples/extensions/rendered-markdown \
   before.md after.md
 ```
