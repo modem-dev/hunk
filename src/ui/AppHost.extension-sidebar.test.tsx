@@ -239,6 +239,34 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("a legacy sidebar can sort its mutable files array", async () => {
+    const repo = createTestRepo("hunk-ext-legacy-sidebar-");
+    const extPath = join(createTempDir("hunk-ext-legacy-sidebar-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "legacy-sort",\n` +
+        `    defaultOpen: true,\n` +
+        `    component: (props) => {\n` +
+        `      props.files.sort((left, right) => right.path.localeCompare(left.path));\n` +
+        `      return createElement("text", { content: "LEGACY " + props.files[0]?.path });\n` +
+        `    },\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("LEGACY beta.txt"),
+        "the legacy sidebar to sort its private files array",
+      );
+    });
+  });
+
   test("injects the user's resolved command bindings into a sidebar view", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-keybindings-");
     const extPath = join(createTempDir("hunk-ext-sidebar-keybindings-ext-"), "ext.ts");
