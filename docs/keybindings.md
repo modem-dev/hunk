@@ -81,9 +81,9 @@ code/code-insiders/cursor, and hx; unknown editor syntax is refused instead of o
 **u** discards only unstaged changes when both sides have changes, and Escape cancels.
 **s** opens a selected-file stash message input; Enter stashes and Escape cancels. The stash
 contains only that file's changes, including its staged/unstaged split, not unrelated staged files.
-These actions always target the selected file, even in hunk scope. They reject stale targets and
-renames whose former path has been recreated. Stashing requires an initial commit. Outside an
-actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
+These actions require a selected actionable file in the visible, focused file panel. They reject stale targets and
+renames whose former path has been recreated. Stashing requires an initial commit. While reviewing a hunk,
+with the file panel hidden, or outside an actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
 **Ctrl+d** and the View menu remain available in working-tree reviews.
 **Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
 has changes on the other side switches automatically. Use `/` to focus the filter.

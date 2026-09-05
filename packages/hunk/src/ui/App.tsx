@@ -354,6 +354,7 @@ export function App({
     getSelection: getExtensionSelection,
   } = extensionRuntime;
   const [hunkActionFocused, setHunkActionFocused] = useState(false);
+  const [filePanelFocused, setFilePanelFocused] = useState(true);
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
       setHunkActionFocused(false);
@@ -1041,6 +1042,7 @@ export function App({
   /** Focus the file list/sidebar navigation area. */
   const focusFiles = useCallback(() => {
     setFocusArea("files");
+    setFilePanelFocused(true);
   }, []);
 
   const workingTree = useWorkingTreeActions({
@@ -1129,6 +1131,9 @@ export function App({
 
   const activeEditableNoteId = selectActiveEditableReviewNoteId(review.store.getSnapshot());
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
+  // Diff headers select file staging scope without giving the sidebar keyboard ownership.
+  const fileQuickActionsFocused =
+    filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1136,8 +1141,8 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
-        canDiscardSelectedFile: workingTree.canDiscardSelected,
-        canStashSelectedFile: workingTree.canStashSelected,
+        canDiscardSelectedFile: fileQuickActionsFocused && workingTree.canDiscardSelected,
+        canStashSelectedFile: fileQuickActionsFocused && workingTree.canStashSelected,
         discardSelectedFile: workingTree.discardSelected,
         stashSelectedFile: workingTree.stashSelected,
         canToggleFileStaged: !hunkActionFocused && workingTree.canToggleSelected,
@@ -1161,6 +1166,7 @@ export function App({
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
         moveSelection: (scope, delta) => {
+          setFilePanelFocused(scope === "file");
           setHunkActionFocused(scope === "hunk" || scope === "annotated-hunk");
           if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
           else review.moveSelection(scope, delta);
@@ -1466,6 +1472,7 @@ export function App({
         {paneLayout.panes.map(renderPane)}
         {paneLayout.panes.map(renderDivider)}
         <box
+          onMouseDown={() => setFilePanelFocused(false)}
           style={{
             position: "absolute",
             left: bodyPadding / 2 + paneLayout.reviewBounds.x,
@@ -1535,7 +1542,10 @@ export function App({
             }}
             onCopyFeedback={showTransientNotice}
             onFileViewRowFailure={reportFileViewRowFailure}
-            onSelectFile={jumpToFile}
+            onSelectFile={(fileId) => {
+              setFilePanelFocused(false);
+              jumpToFile(fileId);
+            }}
             onToggleGap={review.toggleGap}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
               review.anchorSelection(fileId, hunkIndex)
@@ -1544,7 +1554,10 @@ export function App({
             currentLinePaintRequested={currentLinePaintRequested}
             onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}
-            onHunkFocus={() => setHunkActionFocused(true)}
+            onHunkFocus={() => {
+              setFilePanelFocused(false);
+              setHunkActionFocused(true);
+            }}
             canToggleHunkStaged={workingTree.canToggleHunk}
             onToggleHunkStaged={workingTree.pane ? workingTree.toggleHunk : undefined}
           />

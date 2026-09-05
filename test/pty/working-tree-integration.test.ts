@@ -42,6 +42,48 @@ function doubleClickSidebarFile(session: Session, path: string) {
 }
 
 describe("PTY working-tree staging", () => {
+  test("file quick actions yield to built-ins outside the visible file panel's scope", async () => {
+    const root = createFixture();
+    const before = readFileSync(join(root, "alpha.txt"), "utf8");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--no-sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("changed alpha", { timeout: 15_000 });
+      await session.press("d");
+      expect(await session.text()).not.toContain("Discard changes");
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => /M\s+alpha\.txt/.test(text), 5_000);
+      expect(await session.text()).not.toContain("Stash selected file");
+
+      // Hunk navigation leaves the sidebar visible but gives review shortcuts ownership.
+      await session.press("]");
+      await session.press("d");
+      expect(await session.text()).not.toContain("Discard changes");
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => !/M\s+alpha\.txt/.test(text), 5_000);
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => /M\s+alpha\.txt/.test(text), 5_000);
+
+      session.writeRaw(sidebarFileClick(session, "alpha.txt"));
+      await session.waitIdle();
+      await session.press("s");
+      await session.waitForText("Stash selected file");
+      await session.press("escape");
+      await session.press("d");
+      await session.waitForText("Discard changes");
+      await session.press("escape");
+
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe(before);
+      expect(runTestGit(root, "stash", "list")).toBe("");
+    } finally {
+      session.close();
+    }
+  });
+
   test("the sidebar changes an untracked marker into a staged addition", async () => {
     const root = createTestWorkingTreeRepo();
     roots.push(root);
@@ -119,13 +161,16 @@ describe("PTY working-tree staging", () => {
     writeFileSync(join(root, "alpha.txt"), "later alpha\n");
     const session = await harness.launchHunk({
       cwd: root,
-      args: ["diff", "--no-extensions", "--mode", "stack"],
-      cols: 40,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
       rows: 18,
     });
     try {
       await session.waitForText("later alpha", { timeout: 15_000 });
       await session.press("d");
+      await session.waitForText("Discard changes");
+      session.resize({ cols: 40, rows: 18 });
+      await session.waitIdle();
       const frame = await session.waitForText("Discard changes");
       expect(frame).toContain("alpha.txt");
       expect(frame).toContain("x all");
@@ -144,13 +189,16 @@ describe("PTY working-tree staging", () => {
       writeFileSync(join(root, path), "new spaced file\n");
       const session = await harness.launchHunk({
         cwd: root,
-        args: ["diff", "--no-extensions", "--mode", "stack", "--", path],
-        cols: 40,
+        args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack", "--", path],
+        cols: 150,
         rows: 14,
       });
       try {
         await session.waitForText("new spaced file", { timeout: 15_000 });
         await session.press("d");
+        await session.waitForText("Discard changes");
+        session.resize({ cols: 40, rows: 14 });
+        await session.waitIdle();
         const frame = await session.waitForText("Discard changes");
         if (path === "a  b.txt") expect(frame).toContain('"a  b.txt"');
         else expect(frame).toContain("…");
@@ -315,6 +363,14 @@ describe("PTY working-tree staging", () => {
       const column = lines[row]!.indexOf("alpha.txt", 35) + 1;
       session.writeRaw(`\x1b[<0;${column};${row + 1}M\x1b[<0;${column};${row + 1}m`);
       await session.waitForText("Stage file");
+      // A diff header selects whole-file staging, not sidebar quick-action focus.
+      await session.press("d");
+      expect(await session.text()).not.toContain("Discard changes");
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => !/M\s+alpha\.txt/.test(text), 5_000);
+      expect(await session.text()).not.toContain("Stash selected file");
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => /M\s+alpha\.txt/.test(text), 5_000);
       await session.press("space");
       await session.waitForText("Staged alpha.txt.");
       expect(runTestGit(root, "show", ":alpha.txt")).toBe(changed);
