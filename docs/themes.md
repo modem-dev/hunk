@@ -18,6 +18,25 @@ Hunk chooses `github-light-default` for light backgrounds and
 `github-dark-default` for dark backgrounds, falling back to
 `github-dark-default` when the terminal does not answer.
 
+To pick the two themes yourself, write `theme` as a table instead of an id:
+
+```toml
+[theme]
+dark = "catppuccin-mocha"    # required
+light = "catppuccin-latte"   # required
+fallback = "github-dark-default"  # optional
+```
+
+Hunk queries the terminal background the same way `auto` does, then draws
+`dark` or `light`. `fallback` covers sessions where Hunk never gets an answer:
+terminals that ignore the query, and captured pager hosts such as LazyGit,
+where Hunk never asks. Without it those sessions use `dark`. Both sides accept
+any built-in id, a custom theme id, and the compatibility aliases.
+
+A `--theme <id>` flag overrides the table for that run, and picking a theme in
+the app (`t`, or `View -> Themes…`) replaces the pair with the single id you
+chose — the save-on-quit prompt shows that before writing anything.
+
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility
 aliases.
 

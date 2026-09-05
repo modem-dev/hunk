@@ -16,6 +16,13 @@ import {
   LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
   resolveSyntaxScopeOverrides,
 } from "../theme/legacySyntaxScopes";
+import {
+  ADAPTIVE_THEME_SELECTION_KEYS,
+  isAdaptiveThemeSelection,
+  readThemeSelection,
+  themeSelectionsEqual,
+  type ThemeSelection,
+} from "../theme/selection";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../process/startupNotice";
 import {
@@ -74,7 +81,7 @@ export type UserKeyBinding = string | readonly string[] | false;
 /** The view options a session persists back to config when the reader saves them. */
 export interface PersistedViewPreferences {
   mode: LayoutMode;
-  theme?: string;
+  theme?: ThemeSelection;
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
@@ -100,11 +107,25 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
 };
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
+
+type PersistedPreferenceValue = string | boolean | ThemeSelection | undefined;
+
 const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   configKey: string;
-  value: (preferences: PersistedViewPreferences) => string | boolean | undefined;
+  value: (preferences: PersistedViewPreferences) => PersistedPreferenceValue;
+  equals?: (previous: PersistedPreferenceValue, next: PersistedPreferenceValue) => boolean;
+  upsert?: (source: string, value: PersistedPreferenceValue) => string;
 }> = [
-  { configKey: "theme", value: (preferences) => preferences.theme },
+  {
+    configKey: "theme",
+    value: (preferences) => preferences.theme,
+    equals: (previous, next) =>
+      themeSelectionsEqual(
+        previous as ThemeSelection | undefined,
+        next as ThemeSelection | undefined,
+      ),
+    upsert: (source, value) => upsertThemeTomlValue(source, value as ThemeSelection),
+  },
   { configKey: "mode", value: (preferences) => preferences.mode },
   { configKey: "line_numbers", value: (preferences) => preferences.showLineNumbers },
   { configKey: "wrap_lines", value: (preferences) => preferences.wrapLines },
@@ -172,34 +193,93 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Serialize one primitive TOML preference value. */
-function serializeTomlPreferenceValue(value: string | boolean) {
+/** Serialize one primitive or inline-table TOML preference value. */
+function serializeTomlPreferenceValue(value: string | boolean | ThemeSelection) {
   if (typeof value === "boolean") {
     return value ? "true" : "false";
+  }
+
+  if (isAdaptiveThemeSelection(value)) {
+    const entries = ADAPTIVE_THEME_SELECTION_KEYS.filter((key) => value[key] !== undefined).map(
+      (key) => `${key} = ${JSON.stringify(value[key])}`,
+    );
+    return `{ ${entries.join(", ")} }`;
   }
 
   return JSON.stringify(value);
 }
 
-/** Update one top-level TOML key while preserving sections and unrelated comments. */
-function upsertTopLevelTomlValue(source: string, key: string, value: string | boolean) {
-  const lines = source.length > 0 ? source.split("\n") : [];
-  const serialized = serializeTomlPreferenceValue(value);
-  const assignment = `${key} = ${serialized}`;
-  let firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
-  if (firstTableIndex < 0) {
-    firstTableIndex = lines.length;
-  }
+function tomlKeyPattern(key: string) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*(?:${escaped}|"${escaped}"|'${escaped}')\\s*(?:\\.|=)`);
+}
 
-  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
-  for (let index = 0; index < firstTableIndex; index += 1) {
-    if (keyPattern.test(lines[index] ?? "")) {
-      lines[index] = assignment;
-      return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+function findTrailingTomlComment(line: string) {
+  let inSingle = false;
+  let inDouble = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === "\\" && inDouble) {
+      index += 1;
+      continue;
+    }
+    if (char === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (char === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (char === "#" && !inSingle && !inDouble) {
+      return line.slice(index).trimEnd();
     }
   }
 
+  return "";
+}
+
+function rewriteAssignmentLine(existing: string, assignment: string) {
+  const indent = existing.match(/^\s*/)?.[0] ?? "";
+  const comment = findTrailingTomlComment(existing);
+  return `${indent}${assignment}${comment ? ` ${comment}` : ""}`;
+}
+
+/** Update one top-level TOML key while preserving sections and unrelated comments. */
+function upsertTopLevelTomlValue(
+  source: string,
+  key: string,
+  value: string | boolean | ThemeSelection,
+) {
+  const lines = source.length > 0 ? source.split("\n") : [];
+  const serialized = serializeTomlPreferenceValue(value);
+  const assignment = `${key} = ${serialized}`;
+  const tableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
+  const firstTableIndex = tableIndex < 0 ? lines.length : tableIndex;
+
+  const keyPattern = tomlKeyPattern(key);
+  const matches: number[] = [];
+  for (let index = 0; index < firstTableIndex; index += 1) {
+    if (keyPattern.test(lines[index] ?? "")) {
+      matches.push(index);
+    }
+  }
+
+  const [first, ...duplicates] = matches;
+  if (first !== undefined) {
+    lines[first] = rewriteAssignmentLine(lines[first] ?? "", assignment);
+    for (const index of duplicates.reverse()) {
+      lines.splice(index, 1);
+    }
+    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+  }
+
   let insertAt = firstTableIndex;
+  if (tableIndex >= 0) {
+    while (insertAt > 0 && (lines[insertAt - 1] ?? "").trim().startsWith("#")) {
+      insertAt -= 1;
+    }
+  }
   const hasTableSpacer = insertAt > 0 && lines[insertAt - 1] === "";
   if (hasTableSpacer) {
     insertAt -= 1;
@@ -211,6 +291,107 @@ function upsertTopLevelTomlValue(source: string, key: string, value: string | bo
     ...(hasTableSpacer || insertAt === lines.length ? [] : [""]),
   );
   return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+}
+
+function findThemeTableRange(lines: readonly string[]) {
+  const headerIndex = lines.findIndex((line) => /^\s*\[\s*theme\s*\]\s*(?:#.*)?$/.test(line));
+  if (headerIndex < 0) {
+    return null;
+  }
+
+  const nextHeaderOffset = lines.slice(headerIndex + 1).findIndex((line) => /^\s*\[/.test(line));
+  let end = nextHeaderOffset < 0 ? lines.length : headerIndex + 1 + nextHeaderOffset;
+  while (end > headerIndex + 1) {
+    const line = (lines[end - 1] ?? "").trim();
+    if (line.length > 0 && !line.startsWith("#")) {
+      break;
+    }
+    end -= 1;
+  }
+
+  return { headerIndex, end };
+}
+
+function collapseBlankSeam(lines: string[], index: number) {
+  let start = index;
+  while (start > 0 && (lines[start - 1] ?? "").trim().length === 0) {
+    start -= 1;
+  }
+
+  let end = index;
+  while (end < lines.length && (lines[end] ?? "").trim().length === 0) {
+    end += 1;
+  }
+
+  const separators = start > 0 && end < lines.length ? [""] : [];
+  lines.splice(start, end - start, ...separators);
+}
+
+function applyThemeTableKey(
+  lines: string[],
+  range: { headerIndex: number; end: number },
+  key: string,
+  value: string | undefined,
+) {
+  const keyPattern = tomlKeyPattern(key);
+  const existingIndex = lines
+    .slice(range.headerIndex + 1, range.end)
+    .findIndex((line) => keyPattern.test(line));
+  if (existingIndex >= 0) {
+    const absolute = range.headerIndex + 1 + existingIndex;
+    if (value === undefined) {
+      lines.splice(absolute, 1);
+      range.end -= 1;
+      return;
+    }
+    lines[absolute] = rewriteAssignmentLine(
+      lines[absolute] ?? "",
+      `${key} = ${JSON.stringify(value)}`,
+    );
+    return;
+  }
+
+  if (value === undefined) {
+    return;
+  }
+
+  const indent = (lines[range.end - 1] ?? "").match(/^\s*/)?.[0] ?? "";
+  lines.splice(range.end, 0, `${indent}${key} = ${JSON.stringify(value)}`);
+  range.end += 1;
+}
+
+function upsertThemeTomlValue(source: string, value: ThemeSelection | undefined) {
+  if (value === undefined) {
+    return source;
+  }
+
+  const lines = source.length > 0 ? source.split("\n") : [];
+  const range = findThemeTableRange(lines);
+  if (!range) {
+    return upsertTopLevelTomlValue(source, "theme", value);
+  }
+
+  if (isAdaptiveThemeSelection(value)) {
+    for (const key of ADAPTIVE_THEME_SELECTION_KEYS) {
+      applyThemeTableKey(lines, range, key, value[key]);
+    }
+    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+  }
+
+  const firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (firstTableIndex === range.headerIndex) {
+    lines.splice(
+      range.headerIndex,
+      range.end - range.headerIndex,
+      `theme = ${serializeTomlPreferenceValue(value)}`,
+    );
+    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+  }
+
+  lines.splice(range.headerIndex, range.end - range.headerIndex);
+  collapseBlankSeam(lines, range.headerIndex);
+  const remaining = lines.join("\n").replace(/^\n+/, "").replace(/\n*$/, "");
+  return upsertTopLevelTomlValue(remaining.length > 0 ? `${remaining}\n` : "", "theme", value);
 }
 
 /** Accept only the layout names Hunk already supports. */
@@ -248,6 +429,19 @@ function normalizeSidebarVisibility(value: unknown): SidebarVisibility | undefin
 /** Accept only plain booleans from config files. */
 function normalizeBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeThemeSelection(value: unknown, origin: ConfigValueOrigin = {}) {
+  const read = readThemeSelection(value, `${origin.section ?? ""}theme`);
+  if (read === undefined) {
+    return undefined;
+  }
+
+  if ("issue" in read) {
+    throw new Error(origin.file ? `${read.issue} (${origin.file})` : read.issue);
+  }
+
+  return read.selection;
 }
 
 /** Accept only plain strings from config files. */
@@ -333,10 +527,12 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
   {
     key: "theme",
     property: "theme",
-    type: "string",
-    accepted: "a built-in theme id or `custom`",
+    type: "string or table",
+    accepted:
+      "a built-in theme id, `custom`, `auto`, or a `[theme]` table setting `dark` and `light` (plus an optional `fallback`)",
     runtimeDefault: DEFAULT_THEME_ID,
-    description: "Select the active color theme.",
+    description:
+      "Select the active color theme, or one theme per terminal background. A `[theme]` table follows the terminal between its `dark` and `light` ids, using `fallback` (else `dark`) when the terminal does not report a background.",
   },
   {
     key: "watch",
@@ -947,8 +1143,17 @@ function resolveExtensionsConfig(
   };
 }
 
+interface ConfigValueOrigin {
+  file?: string;
+  section?: string;
+}
+
 /** Normalize one cataloged config value according to its runtime property. */
-function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
+function normalizeConfigReferenceValue(
+  property: keyof CommonOptions,
+  value: unknown,
+  origin: ConfigValueOrigin = {},
+) {
   switch (property) {
     case "mode":
       return normalizeLayoutMode(value);
@@ -957,7 +1162,7 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
     case "vcs":
       return normalizeVcsMode(value);
     case "theme":
-      return normalizeString(value);
+      return normalizeThemeSelection(value, origin);
     case "tabWidth":
       return normalizeTabWidth(value);
     case "fileGap":
@@ -972,7 +1177,10 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
 }
 
 /** Read the view preferences stored at one TOML object level. */
-function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
+function readConfigPreferences(
+  source: Record<string, unknown>,
+  origin: ConfigValueOrigin = {},
+): CommonOptions {
   const preferences: CommonOptions = {};
   const mutable = preferences as Record<string, unknown>;
 
@@ -983,7 +1191,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     ];
     let normalized: unknown;
     for (const key of runtimeKeys) {
-      normalized = normalizeConfigReferenceValue(option.property, source[key]);
+      normalized = normalizeConfigReferenceValue(option.property, source[key], origin);
       if (normalized !== undefined) {
         break;
       }
@@ -1040,17 +1248,27 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 }
 
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
-function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): CommonOptions {
-  let resolved = readConfigPreferences(source);
+function resolveConfigLayer(
+  source: Record<string, unknown>,
+  input: CliInput,
+  file?: string,
+): CommonOptions {
+  let resolved = readConfigPreferences(source, { file });
 
   const commandSection = CONFIG_COMMAND_SECTIONS[input.kind] ? source[input.kind] : undefined;
   if (isRecord(commandSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(commandSection));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(commandSection, { file, section: `${input.kind}.` }),
+    );
   }
 
   const pagerSection = source.pager;
   if (input.options.pager && isRecord(pagerSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(pagerSection));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(pagerSection, { file, section: "pager." }),
+    );
   }
 
   return resolved;
@@ -1116,7 +1334,10 @@ export function diffPersistedViewPreferences(
   for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
     const previousValue = key.value(previous);
     const nextValue = key.value(next);
-    if (previousValue === nextValue) {
+    const unchanged = key.equals
+      ? key.equals(previousValue, nextValue)
+      : previousValue === nextValue;
+    if (unchanged) {
       continue;
     }
 
@@ -1143,9 +1364,13 @@ export function saveGlobalViewPreferences(
   let nextSource = readConfigSource(configPath);
   for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
     const value = key.value(preferences);
-    if (value !== undefined) {
-      nextSource = upsertTopLevelTomlValue(nextSource, key.configKey, value);
+    if (value === undefined) {
+      continue;
     }
+
+    nextSource = key.upsert
+      ? key.upsert(nextSource, value)
+      : upsertTopLevelTomlValue(nextSource, key.configKey, value);
   }
 
   writeConfigSource(configPath, nextSource);
@@ -1266,7 +1491,7 @@ export function resolveConfiguredCliInput(
 
   if (userConfigPath && sources.userConfig) {
     const userConfig = sources.userConfig;
-    const userLayer = resolveConfigLayer(userConfig, input);
+    const userLayer = resolveConfigLayer(userConfig, input, userConfigPath);
     explicitVcsId = userLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
@@ -1276,7 +1501,7 @@ export function resolveConfiguredCliInput(
 
   if (repoConfigPath && sources.repoConfig) {
     const repoConfig = sources.repoConfig;
-    const repoLayer = resolveConfigLayer(repoConfig, input);
+    const repoLayer = resolveConfigLayer(repoConfig, input, repoConfigPath);
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
@@ -1313,8 +1538,12 @@ export function resolveConfiguredCliInput(
 
   // Only the legacy `custom` id is a hard error: every other unknown id may still name a theme an
   // extension contributes later, so those fall back to the default theme instead of failing startup.
+  const themeSelection = resolvedOptions.theme;
+  const selectedThemeIds = isAdaptiveThemeSelection(themeSelection)
+    ? ADAPTIVE_THEME_SELECTION_KEYS.map((key) => themeSelection[key])
+    : [themeSelection];
   if (
-    resolvedOptions.theme === LEGACY_CUSTOM_THEME_ID &&
+    selectedThemeIds.includes(LEGACY_CUSTOM_THEME_ID) &&
     !resolvedCustomThemes.some((theme) => theme.id === LEGACY_CUSTOM_THEME_ID)
   ) {
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');

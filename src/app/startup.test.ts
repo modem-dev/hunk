@@ -732,6 +732,63 @@ describe("startup planning", () => {
     expect(opened).toBe(1);
   });
 
+  test("detects the terminal background for an adaptive theme pair", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {
+        theme: { dark: "vitesse-dark", light: "one-light" },
+        pager: true,
+      },
+    };
+    const controllingTerminal = { stdin: {} as never, close: () => {} };
+    let probes = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      openControllingTerminalImpl: () => controllingTerminal,
+      detectTerminalThemeModeFromBackgroundImpl: async () => {
+        probes += 1;
+        return "light";
+      },
+      stdinIsTTY: false,
+      stdoutIsTTY: true,
+      stdout: { write: () => true } as never,
+    });
+
+    expect(plan).toMatchObject({ kind: "app", bootstrap: { initialThemeMode: "light" } });
+    expect(probes).toBe(1);
+  });
+
+  test("skips the background probe when one theme covers every terminal", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: { theme: "dracula", pager: true },
+    };
+    let probes = 0;
+
+    await prepareStartupPlan(["bun", "hunk", "patch", "-", "--theme", "dracula"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      openControllingTerminalImpl: () => ({ stdin: {} as never, close: () => {} }),
+      detectTerminalThemeModeFromBackgroundImpl: async () => {
+        probes += 1;
+        return "dark";
+      },
+      stdinIsTTY: false,
+      stdoutIsTTY: true,
+      stdout: { write: () => true } as never,
+    });
+
+    expect(probes).toBe(0);
+  });
+
   test("opens the controlling terminal for piped patch startup", async () => {
     const cliInput: CliInput = {
       kind: "patch",
