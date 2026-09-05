@@ -1,5 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { compileTargetForHost } from "./build-bin";
+import path from "node:path";
+import { bunCompilerCacheEnvironment, compileTargetForHost } from "./build-bin";
+
+describe("bunCompilerCacheEnvironment", () => {
+  test("keeps downloaded compile targets separate across Bun upgrades", () => {
+    const oldRuntime = bunCompilerCacheEnvironment("repo", "1.3.14");
+    const newRuntime = bunCompilerCacheEnvironment("repo", "1.4.1");
+
+    expect(newRuntime).toEqual({
+      BUN_INSTALL: path.join("repo", ".bun-install", "1.4.1"),
+      BUN_INSTALL_CACHE_DIR: path.join("repo", ".bun-install", "1.4.1", "install", "cache"),
+    });
+    expect(oldRuntime.BUN_INSTALL_CACHE_DIR).not.toBe(newRuntime.BUN_INSTALL_CACHE_DIR);
+  });
+});
 
 describe("compileTargetForHost", () => {
   test("compiles every x64 platform against Bun's baseline runtime", () => {

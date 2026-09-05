@@ -71,7 +71,7 @@ Keep the change focused on one user problem. Before adding another helper, state
 
 Requirements:
 
-- Bun 1.3.14+
+- Bun 1.4.1+
 - Node.js 22+ for npm package verification and release tasks
 - Git
 - macOS, Linux, or Windows
