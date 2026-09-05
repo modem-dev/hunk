@@ -8,20 +8,30 @@ export const BUNDLED_REVIEW_INFO_VIEW_ID = "review-info";
 /** Render delegated change-request identity above the review without duplicating diff facts. */
 export function ReviewInfoPane({ review, theme, width }: ExtensionPaneProps): ReactNode {
   if (review?.kind !== "change-request") return null;
-  const [primary, secondary] = reviewInfoLines(review, Math.max(0, width - 2));
+  const [primary, secondary] = reviewInfoLines(review, Math.max(0, width - 3));
   return (
     <box
       style={{
         width: "100%",
         height: 2,
-        paddingLeft: 1,
-        paddingRight: 1,
-        flexDirection: "column",
-        backgroundColor: theme.panelAlt,
+        flexDirection: "row",
+        backgroundColor: theme.panel,
       }}
     >
-      <text fg={theme.text}>{primary}</text>
-      <text fg={theme.muted}>{secondary}</text>
+      <box style={{ width: 1, height: 2, backgroundColor: theme.accent }} />
+      <box
+        style={{
+          flexGrow: 1,
+          height: 2,
+          paddingLeft: 1,
+          paddingRight: 1,
+          flexDirection: "column",
+          backgroundColor: theme.panel,
+        }}
+      >
+        <text fg={theme.text}>{primary}</text>
+        <text fg={theme.muted}>{secondary}</text>
+      </box>
     </box>
   );
 }
