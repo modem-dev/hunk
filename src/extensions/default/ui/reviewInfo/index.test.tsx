@@ -44,11 +44,11 @@ describe("ReviewInfoPane", () => {
         {...({
           review,
           width,
-          height: 2,
+          height: 3,
           theme,
         } as unknown as ExtensionPaneProps)}
       />,
-      { width, height: 2 },
+      { width, height: 3 },
     );
 
     try {
@@ -56,14 +56,17 @@ describe("ReviewInfoPane", () => {
         await setup.renderOnce();
       });
       expect(backgroundsAtColumn(setup, 0)).toEqual([
+        theme.panel.toLowerCase(),
         theme.accent.toLowerCase(),
         theme.accent.toLowerCase(),
       ]);
       expect(backgroundsAtColumn(setup, 1)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
+        theme.panel.toLowerCase(),
       ]);
       expect(backgroundsAtColumn(setup, width - 1)).toEqual([
+        theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
       ]);
@@ -71,8 +74,35 @@ describe("ReviewInfoPane", () => {
 
       const [primary, secondary] = reviewInfoLines(review, width - 3);
       const frame = setup.captureCharFrame();
+      expect(frame.split("\n")[0]).toBe("─".repeat(width));
+      const borderSpan = setup.captureSpans().lines[0]?.spans.find((span) => span.width > 0);
+      expect(capturedTestColorToHex(borderSpan?.fg)).toBe(theme.border.toLowerCase());
       expect(frame).toContain(` ${primary}`);
       expect(frame).toContain(` ${secondary}`);
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+
+  test("keeps the border deterministic when no metadata text fits", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <ReviewInfoPane
+        {...({
+          review,
+          width: 1,
+          height: 3,
+          theme,
+        } as unknown as ExtensionPaneProps)}
+      />,
+      { width: 1, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame().split("\n").slice(0, 3)).toEqual(["─", " ", " "]);
     } finally {
       setup.renderer.destroy();
     }

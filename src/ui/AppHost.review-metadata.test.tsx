@@ -108,7 +108,7 @@ async function flushUntil(
 }
 
 describe("delegated review metadata reloads", () => {
-  test("the bundled review pane occupies exactly two rows only for delegated change requests", async () => {
+  test("the bundled review pane occupies exactly three rows only for delegated change requests", async () => {
     const delegated = await createTestBootstrap();
     const ordinary = await createTestBootstrap();
     delete ordinary.bootstrap.review;
@@ -134,7 +134,7 @@ describe("delegated review metadata reloads", () => {
         frame.split("\n").findIndex((line) => line.includes("example.txt"));
       expect(delegatedFrame).toContain("OPEN · #123 · Metadata pane");
       expect(ordinaryFrame).not.toContain("OPEN · #123 · Metadata pane");
-      expect(firstFileRow(delegatedFrame)).toBe(firstFileRow(ordinaryFrame) + 2);
+      expect(firstFileRow(delegatedFrame)).toBe(firstFileRow(ordinaryFrame) + 3);
     } finally {
       rmSync(delegated.directory, { recursive: true, force: true });
       rmSync(ordinary.directory, { recursive: true, force: true });

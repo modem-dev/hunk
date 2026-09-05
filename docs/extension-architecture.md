@@ -99,9 +99,9 @@ the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
 `src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
-immutable delegated review metadata, and failure containment. The fixed two-row
-`hunk:review-info` top pane is available only for delegated change requests, so
-ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
+immutable delegated review metadata, and failure containment. The fixed three-row
+`hunk:review-info` top pane uses one border row above two metadata rows and is available only for
+delegated change requests, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
 painter plus the public `{ side, line }` address — without publishing Pierre
 rows, plans, cursor keys, or caches. Deprecated sidebar APIs
 normalize into this same registry and layout path.

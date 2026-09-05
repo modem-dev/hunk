@@ -339,7 +339,9 @@ describe("PTY extensions", () => {
         20_000,
       );
       expect(frame).toContain("octocat · GitHub · modem-dev/hunk · main ← feature/pane");
-      expect(lineIndexOf(frame, "OPEN · #123")).toBeLessThan(lineIndexOf(frame, "after"));
+      const infoLine = lineIndexOf(frame, "OPEN · #123");
+      expect(frame.split("\n")[infoLine - 1]).toContain("─");
+      expect(infoLine).toBeLessThan(lineIndexOf(frame, "after"));
     } finally {
       session.close();
     }

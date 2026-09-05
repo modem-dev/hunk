@@ -10,7 +10,7 @@ describe("bundled UI registry", () => {
     expect(reviewInfo).toMatchObject({
       placement: "top",
       defaultOpen: true,
-      height: { preferred: 2, min: 2, max: 2 },
+      height: { preferred: 3, min: 3, max: 3 },
     });
     expect(
       reviewInfo.available?.({
