@@ -41,7 +41,11 @@ describe("working-tree file staging", () => {
     writeFileSync(join(root, "alpha.txt"), "one\nstaged\nremaining\n");
     writeFileSync(join(root, "beta.txt"), "unrelated\n");
     runTestGit(root, "add", "beta.txt");
-    expect(status(root, "alpha.txt")).toMatchObject({ staged: true, unstaged: true });
+    expect(status(root, "alpha.txt")).toMatchObject({
+      staged: true,
+      unstaged: true,
+      statusCode: "MM",
+    });
     await mutateGitFileStaging(input, status(root, "alpha.txt"), { cwd: root }, true);
     expect(status(root, "alpha.txt")).toMatchObject({ staged: true, unstaged: false });
     await mutateGitFileStaging(input, status(root, "alpha.txt"), { cwd: root }, false);
@@ -55,10 +59,11 @@ describe("working-tree file staging", () => {
     async (unborn) => {
       const root = createRepo(unborn);
       writeFileSync(join(root, "new.txt"), "new file\n");
-      expect(status(root, "new.txt").untracked).toBe(true);
+      expect(status(root, "new.txt")).toMatchObject({ untracked: true, statusCode: "??" });
       await mutateGitFileStaging(input, status(root, "new.txt"), { cwd: root }, true);
+      expect(status(root, "new.txt")).toMatchObject({ untracked: false, statusCode: "A " });
       await mutateGitFileStaging(input, status(root, "new.txt"), { cwd: root }, false);
-      expect(status(root, "new.txt").untracked).toBe(true);
+      expect(status(root, "new.txt")).toMatchObject({ untracked: true, statusCode: "??" });
       expect(readFileSync(join(root, "new.txt"), "utf8")).toBe("new file\n");
     },
   );

@@ -532,6 +532,10 @@ staged and unstaged files, independent of `input.staged`. Each entry supplies `p
 `previousPath`, `staged`, `unstaged`, `untracked`, `conflicted`, an opaque `version` attestation, and
 optionally an `unavailableReason`. Do not return this inventory for revision comparisons.
 
+API v21 adds optional `statusCode`, a two-character Git-style index/worktree status (`??` for
+untracked files). The sidebar colors these columns independently and retains `S`/`U` indicators
+for providers that omit the code. This display field does not replace mutation attestations.
+
 The working-tree operation may implement `stageFile(input, file, ctx)` and
 `unstageFile(input, file, ctx)`. Revalidate the supplied attestation and exact path before writing;
 unstaging must leave worktree contents unchanged. Throw `HunkExtensionUserError` on refusal or

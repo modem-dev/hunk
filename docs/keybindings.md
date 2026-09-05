@@ -62,8 +62,9 @@ an ordered provider-owned parent; they do not navigate the history selection to 
 
 In plain working-tree reviews, **Space** stages the selected file's remaining unstaged changes,
 or unstages it when fully staged. File-row double-click and the clickable action beside the
-stream tabs do the same. The sidebar shows independent `S` (staged) and `U` (unstaged) indicators,
-including partially staged files. A successful file action follows the file to the other tab.
+stream tabs do the same. The sidebar shows Git-style status columns: green index changes and red worktree changes,
+including partially staged files. Untracked files show red `??`; staged additions show green `A`
+and a green filename. The selected file has a full-row highlight. A successful file action follows the file to the other tab.
 Clicking a code line or navigating with `[` / `]` selects **hunk** action scope: Space then stages
 that unstaged hunk, or unstages that staged hunk, without changing other hunks or disk contents.
 Double-clicking a code line applies its hunk on release, provided the pointer did not move. Hunk actions keep the current stream tab;

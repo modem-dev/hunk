@@ -557,6 +557,98 @@ describe("UI components", () => {
     expect(frame).not.toContain("M +2 -1 AI");
   });
 
+  test.each([30, 42])(
+    "working-tree sidebar colors status and the entire selected row at width %s",
+    async (width) => {
+      const theme = resolveTheme("github-dark-default", null);
+      const setup = await testRender(
+        <FlexFileSidebar
+          files={toReadOnlyFileViews([createTestDiffFile("added", "added.txt", "", "new\n", true)])}
+          selectedFileId={null}
+          selectedHunkIndex={0}
+          theme={theme}
+          width={width}
+          keybindings={{ matches: () => false, getKeys: () => [] }}
+          actions={{
+            selectFile: () => {},
+            selectHunk: () => {},
+            revealLine: () => {},
+            notify: () => {},
+          }}
+          workingTree={{
+            files: [
+              {
+                path: "new.txt",
+                staged: false,
+                unstaged: true,
+                untracked: true,
+                conflicted: false,
+                statusCode: "??",
+                version: "new",
+              },
+              {
+                path: "added.txt",
+                staged: true,
+                unstaged: false,
+                untracked: false,
+                conflicted: false,
+                statusCode: "A ",
+                version: "added",
+              },
+              {
+                path: "mixed.txt",
+                staged: true,
+                unstaged: true,
+                untracked: false,
+                conflicted: false,
+                statusCode: "MM",
+                version: "mixed",
+              },
+            ],
+            selectedPath: "added.txt",
+            staged: false,
+            busy: false,
+            selectFile: () => {},
+            toggleStaged: () => {},
+          }}
+        />,
+        { width, height: 8 },
+      );
+      try {
+        await act(async () => setup.renderOnce());
+        const rows = setup.captureSpans().lines;
+        const cellsFor = (name: string) => {
+          const row = rows.find((row) => row.spans.some((span) => span.text.includes(name)))!;
+          return row.spans.flatMap((span) =>
+            [...span.text].map((text) => ({
+              text,
+              fg: capturedTestColorToHex(span.fg),
+              bg: capturedTestColorToHex(span.bg),
+            })),
+          );
+        };
+        const untracked = cellsFor("new.txt");
+        expect(untracked.filter((cell) => cell.text === "?").map((cell) => cell.fg)).toEqual([
+          theme.badgeRemoved,
+          theme.badgeRemoved,
+        ]);
+        const added = cellsFor("added.txt");
+        expect(added.find((cell) => cell.text === "A")?.fg).toBe(theme.badgeAdded);
+        expect(added.find((cell) => cell.text === "a")?.fg).toBe(theme.badgeAdded);
+        expect(added.find((cell) => cell.text === "*")?.fg).toBe(theme.fileModified);
+        expect(added.length).toBe(width);
+        expect(added.every((cell) => cell.bg === theme.accentMuted)).toBe(true);
+        expect(
+          cellsFor("mixed.txt")
+            .filter((cell) => cell.text === "M")
+            .map((cell) => cell.fg),
+        ).toEqual([theme.badgeAdded, theme.badgeRemoved]);
+      } finally {
+        await act(async () => setup.renderer.destroy());
+      }
+    },
+  );
+
   test("working-tree sidebar requires consecutive clicks on one row to stage", async () => {
     const files = toReadOnlyFileViews([
       createTestDiffFile("alpha", "alpha.ts", "a\n", "aa\n"),

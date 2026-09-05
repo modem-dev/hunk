@@ -91,6 +91,7 @@ export function loadGitWorkingTreeFiles(
       unstaged: status[1] !== " ",
       untracked,
       conflicted,
+      statusCode: status,
       unavailableReason: conflicted
         ? "Resolve merge conflicts before staging here."
         : stat.directory || index.get(path)?.startsWith("160000 ")

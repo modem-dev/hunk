@@ -42,6 +42,34 @@ function doubleClickSidebarFile(session: Session, path: string) {
 }
 
 describe("PTY working-tree staging", () => {
+  test("the sidebar changes an untracked marker into a staged addition", async () => {
+    const root = createTestWorkingTreeRepo();
+    roots.push(root);
+    writeFileSync(join(root, "aaa-new.txt"), "new file content\n");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("new file content", { timeout: 15_000 });
+      await harness.waitForSnapshot(session, (text) => /\?\?\s+aaa-new\.txt/.test(text), 5_000);
+      await session.press("space");
+      await harness.waitForSnapshot(
+        session,
+        (text) => /A\s+aaa-new\.txt/.test(text) && !/\?\?\s+aaa-new\.txt/.test(text),
+        10_000,
+      );
+      expect(runTestGit(root, "show", ":aaa-new.txt")).toBe("new file content\n");
+      await session.press("space");
+      await harness.waitForSnapshot(session, (text) => /\?\?\s+aaa-new\.txt/.test(text), 10_000);
+      expect(readFileSync(join(root, "aaa-new.txt"), "utf8")).toBe("new file content\n");
+    } finally {
+      session.close();
+    }
+  });
+
   test("discard offers exact-file choices, cancels safely, and preserves staged content with u", async () => {
     const root = createFixture();
     runTestGit(root, "add", "alpha.txt");

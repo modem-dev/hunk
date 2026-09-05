@@ -69,6 +69,10 @@ read-only validation of a new-side source address and mapping staged addresses t
 attestation and refuse unmappable transforms. The host owns editor launch and drops results after
 review revocation; this method grants no remote write capability.
 
+API v21 adds optional inventory `statusCode`: two Git-style status columns (index, worktree),
+or `??` for untracked files. The sidebar colors index changes green and worktree changes red;
+providers that omit it retain the staged/unstaged letter indicators.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.

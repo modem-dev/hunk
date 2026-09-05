@@ -255,6 +255,21 @@ describe("themes", () => {
           background: theme.accentMuted,
         },
         ...sidebarPairs,
+        ...(
+          [
+            "badgeAdded",
+            "badgeRemoved",
+            "fileNew",
+            "fileDeleted",
+            "fileRenamed",
+            "fileModified",
+            "fileUntracked",
+          ] as const
+        ).map((field) => ({
+          label: `${theme.id} ${field}/accentMuted`,
+          foreground: theme[field],
+          background: theme.accentMuted,
+        })),
       ]);
     });
 

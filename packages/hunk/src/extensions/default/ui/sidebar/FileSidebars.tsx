@@ -192,9 +192,11 @@ export function FlexFileSidebar({
         previousPath: status.previousPath,
         stats: reviewed?.stats ?? { additions: 0, deletions: 0 },
         isUntracked: status.untracked,
-        stageStatus: status.conflicted
-          ? "!!"
-          : `${status.staged ? "S" : " "}${status.unstaged ? "U" : " "}`,
+        stageStatus: status.untracked
+          ? "??"
+          : status.conflicted
+            ? "!!"
+            : (status.statusCode ?? `${status.staged ? "S" : " "}${status.unstaged ? "U" : " "}`),
       };
     });
   }, [reviewFiles, statusFiles]);

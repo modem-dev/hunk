@@ -500,11 +500,11 @@ describe("extension sidebar views", () => {
 
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
-      // The sidebar file rows carry the "U <name>" unstaged-status prefix; the diff
+      // The sidebar file rows carry the "M <name>" modified-status prefix; the diff
       // pane's own headers do not, so the prefix marks the area's visibility.
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("U alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the built-in sidebar to render",
       );
 
@@ -513,7 +513,7 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => !setup.captureCharFrame().includes("U alpha.txt"),
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
         "the s key to hide the sidebar area",
       );
 
@@ -526,7 +526,7 @@ describe("extension sidebar views", () => {
         setup,
         () => {
           const frame = setup.captureCharFrame();
-          return frame.includes("EXTSIDEBAR") && !frame.includes("U alpha.txt");
+          return frame.includes("EXTSIDEBAR") && !frame.includes("M alpha.txt");
         },
         "the command to open only the extension pane",
       );
@@ -538,7 +538,7 @@ describe("extension sidebar views", () => {
         setup,
         () => {
           const frame = setup.captureCharFrame();
-          return frame.includes("EXTSIDEBAR") && frame.includes("U alpha.txt");
+          return frame.includes("EXTSIDEBAR") && frame.includes("M alpha.txt");
         },
         "the s key to reopen files without closing the extension pane",
       );
@@ -550,7 +550,7 @@ describe("extension sidebar views", () => {
         setup,
         () => {
           const frame = setup.captureCharFrame();
-          return frame.includes("EXTSIDEBAR") && !frame.includes("U alpha.txt");
+          return frame.includes("EXTSIDEBAR") && !frame.includes("M alpha.txt");
         },
         "the s key to close files without closing the extension pane",
       );
@@ -837,7 +837,7 @@ describe("extension sidebar views", () => {
       );
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("U alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the built-in sidebar to reopen after the crash",
       );
 
@@ -846,7 +846,7 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => !setup.captureCharFrame().includes("U alpha.txt"),
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
         "the s key to close the visible built-in fallback",
       );
 
@@ -855,7 +855,7 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("U alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the s key to reopen the built-in fallback",
       );
     });
@@ -887,7 +887,7 @@ describe("extension sidebar views", () => {
       );
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("U alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the built-in files fallback to appear",
       );
 
@@ -896,7 +896,7 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => !setup.captureCharFrame().includes("U alpha.txt"),
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
         "the files toggle to close the injected fallback",
       );
 
@@ -905,7 +905,7 @@ describe("extension sidebar views", () => {
       });
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("U alpha.txt"),
+        () => setup.captureCharFrame().includes("M alpha.txt"),
         "the files toggle to reopen the built-in files pane",
       );
     });

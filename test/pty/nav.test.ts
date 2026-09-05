@@ -232,7 +232,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("betaValue = 2");
       expect(initial).not.toContain("deltaOnly = true");
 
-      await session.click(/U delta\.ts\s+\+2 -1/);
+      await session.click(/M delta\.ts\s+\+2 -1/);
       const jumped = await harness.waitForSnapshot(
         session,
         (text) =>
@@ -280,7 +280,7 @@ describe("PTY navigation", () => {
 
       expect(scrolled).toContain("first.ts");
 
-      await session.click(/U second\.ts\s+\+16 -16/);
+      await session.click(/M second\.ts\s+\+16 -16/);
       const pinned = await harness.waitForSnapshot(
         session,
         (text) =>
