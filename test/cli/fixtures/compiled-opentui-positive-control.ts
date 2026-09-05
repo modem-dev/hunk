@@ -1,3 +1,3 @@
-import { RGBA } from "@opentui/core";
+import { resolveRenderLib } from "@opentui/core";
 
-process.stdout.write(RGBA.fromHex("#ffffff").toString());
+process.stdout.write(resolveRenderLib() ? "loaded" : "missing");

@@ -37,6 +37,15 @@ export function compileTargetForHost(
   return null;
 }
 
+/** Returns compiler cache variables scoped to the Bun version that populates them. */
+export function bunCompilerCacheEnvironment(repoRoot: string, runtimeVersion: string) {
+  const installRoot = path.join(repoRoot, ".bun-install", runtimeVersion);
+  return {
+    BUN_INSTALL: installRoot,
+    BUN_INSTALL_CACHE_DIR: path.join(installRoot, "install", "cache"),
+  };
+}
+
 if (import.meta.main) {
   const repoRoot = path.resolve(import.meta.dir, "..");
   const distDir = path.join(repoRoot, "dist");
@@ -69,7 +78,7 @@ if (import.meta.main) {
       env: {
         ...process.env,
         BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
-        BUN_INSTALL: path.join(repoRoot, ".bun-install"),
+        ...bunCompilerCacheEnvironment(repoRoot, Bun.version),
       },
     },
   );

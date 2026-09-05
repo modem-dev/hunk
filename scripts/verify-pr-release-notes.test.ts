@@ -198,6 +198,7 @@ describe("verifyPrReleaseNotes", () => {
     expect(existsSync(path.join(root, "status-call.json"))).toBe(false);
   });
 
+  // Hosted Windows can spend more than Bun's default deadline on the two fixture commits.
   test("routes a stable promotion that removes prerelease state through Changesets", async () => {
     const { root } = createTestRepo();
     writeGeneratedPrerelease(root);
@@ -218,7 +219,7 @@ describe("verifyPrReleaseNotes", () => {
     expect(JSON.parse(readFileSync(path.join(root, "status-call.json"), "utf8"))).toEqual([
       `--since=${prereleaseBase}`,
     ]);
-  });
+  }, 10_000);
 
   test("rejects an initial version older than the carried stable changelog", async () => {
     const { root, base } = createTestRepo();
