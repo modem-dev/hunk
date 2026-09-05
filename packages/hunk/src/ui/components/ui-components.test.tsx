@@ -837,6 +837,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+        true,
       );
 
       await act(async () => {
@@ -844,6 +845,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "new", line: 1 } }),
+        true,
       );
 
       selectLine.mockClear();
@@ -852,6 +854,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "new", line: 2 } }),
+        true,
       );
 
       await act(async () => {
@@ -861,6 +864,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+        true,
       );
       expect(copyText).not.toHaveBeenCalled();
 
@@ -3962,7 +3966,7 @@ describe("UI components", () => {
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
       "l / w / m / M            lines / wrap / metadata / menu",
-      "e                        open file in $EDITOR",
+      "e                        edit selected line in $EDITOR",
       "Review",
       "/                        focus file filter",
       "c                        create review note",

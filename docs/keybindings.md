@@ -70,6 +70,12 @@ Double-clicking a code line applies its hunk on release, provided the pointer di
 use Tab to review the other side. Clicking a sidebar file or file header, or using `,` / `.` returns to file scope.
 The action beside the tabs names the current scope. Drag-to-copy remains available; hunks without an available staging action and non-working-tree
 reviews retain word/line selection on repeated clicks. Binary, text-converted, and metadata-only changes use file actions.
+**e** opens `$EDITOR` at a deliberately clicked, stepped-to, or revealed source line. Otherwise it
+uses the active hunk's first changed line, not its leading context. From the staged view, Git maps
+that index line through further unstaged insertions, replacements, and deletions to the current
+working-tree location. Missing files, stale source state, and text-converted lines produce
+a notice instead of a guessed location. Supported line-jump syntax covers vi/vim/nvim,
+code/code-insiders/cursor, and hx; unknown editor syntax is refused instead of opening at file start.
 **d** opens discard choices for the selected file: Enter or **x** discards all its changes,
 **u** discards only unstaged changes when both sides have changes, and Escape cancels.
 **s** opens a selected-file stash message input; Enter stashes and Escape cancels. The stash

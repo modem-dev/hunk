@@ -1,3 +1,4 @@
+import { resolveGitWorkingTreeLine } from "./editorLine";
 import { discardGitFile, stashGitFile } from "./fileActions";
 import { mutateGitHunkStaging } from "./hunkStaging";
 import { createHash } from "node:crypto";
@@ -410,6 +411,8 @@ export function createGitVcsAdapter({
             untrackedPaths,
           };
         },
+        resolveWorkingTreeLine: (input, file, line, { cwd }) =>
+          resolveGitWorkingTreeLine(input, file, line, { cwd, gitExecutable }),
         discardFile: (input, file, scope, { cwd }) =>
           discardGitFile(input, file, scope, { cwd, gitExecutable }),
         stashFile: (input, file, message, { cwd }) =>

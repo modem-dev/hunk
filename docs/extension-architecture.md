@@ -351,7 +351,10 @@ read-only with respect to Git state. The same leased mutation controller owns ex
 discard/stash prompts; keyboard routing remains in the App keyboard hook and mouse choices reuse
 ConfirmDialog. Git builds file-only stash trees through an isolated index and publishes a normal
 stash before cleaning the selected live paths. Cleanup failure retains that stash and reports
-partial completion.
+partial completion. The terminal cursor adapter distinguishes deliberate source selection from
+automatic viewport rows; editor fallback consumes the shared first-change target. Git's optional
+read-only line resolver validates source coordinates and maps staged addresses through later
+worktree edits, while App retains editor launch and refresh ownership.
 
 `packages/hunk/src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
 detection, and operation dispatch. `packages/hunk/src/app/vcsCatalog.ts` composes bundled

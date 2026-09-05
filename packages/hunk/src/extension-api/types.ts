@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 21;
+export const HUNK_EXTENSION_API_VERSION = 22;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1115,6 +1115,13 @@ export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<
   unstageFile?: ExtensionVcsFileMutation;
   stageHunk?: ExtensionVcsHunkMutation;
   unstageHunk?: ExtensionVcsHunkMutation;
+  /** Validate a new-side source line and map staged addresses to the worktree without modifying files. */
+  resolveWorkingTreeLine?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    line: number,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<number>;
   /** Discard only the confirmed file and scope, rejecting stale attestations. */
   discardFile?: (
     input: ExtensionVcsDiffInput,

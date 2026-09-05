@@ -118,7 +118,7 @@ describe("buildAppMenus", () => {
     expect(items(menus.file).map((item) => item.label)).toEqual([
       "Toggle files/filter focus",
       "Focus filter",
-      "Open file in editor",
+      "Edit selected or changed line",
       "Reload",
       "Quit",
     ]);
@@ -231,7 +231,7 @@ describe("buildAppMenus", () => {
     expect(items(menus.file).map((item) => item.label)).toEqual([
       "Toggle files/filter focus",
       "Focus filter",
-      "Open file in editor",
+      "Edit selected or changed line",
       "Quit",
     ]);
   });

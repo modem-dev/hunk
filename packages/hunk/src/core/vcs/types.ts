@@ -47,7 +47,13 @@ export interface VcsOperations {
   "working-tree-diff"?: VcsOperation<VcsDiffCommandInput> &
     Pick<
       ExtensionVcsWorkingTreeOperation,
-      "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk" | "discardFile" | "stashFile"
+      | "stageFile"
+      | "unstageFile"
+      | "stageHunk"
+      | "unstageHunk"
+      | "discardFile"
+      | "stashFile"
+      | "resolveWorkingTreeLine"
     >;
   "revision-show"?: VcsOperation<VcsShowCommandInput>;
   "stash-show"?: VcsOperation<VcsStashShowCommandInput>;

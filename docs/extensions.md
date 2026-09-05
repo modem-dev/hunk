@@ -554,6 +554,12 @@ excluding unrelated changes from every stash tree and from live cleanup. Revalid
 before writes, retain a published stash if cleanup fails, and report partial completion explicitly.
 These optional operations remain absent for read-only providers and revision comparisons.
 
+API v20 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>`.
+This read-only operation validates a new-side source line and maps staged addresses into the actual
+worktree before an external editor is launched. Validate the reviewed file's source attestation, account for later
+unstaged edits, and refuse unmappable source transforms rather than guessing. Hunk drops a result
+when its review lease has expired. This capability does not launch an editor or grant remote writes.
+
 Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`, `staged`,
 `busy`, `selectFile(path)`, and `toggleStaged(path)`. These controls expire on review reload.
 Selecting an inactive-side file switches stream tabs without reducing the review to one file.

@@ -1,3 +1,4 @@
+import { getConfiguredVcsAdapter } from "../core/vcs";
 import { WorkingTreeDialog } from "./components/chrome/WorkingTreeDialog";
 import { recordMousePress } from "./lib/mousePressSequence";
 import type {
@@ -111,7 +112,7 @@ import {
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
-import { openSelectedFileInEditor } from "./lib/openInEditor";
+import { openSelectedFileInEditor, resolveSelectedEditorLine } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
@@ -942,34 +943,70 @@ export function App({
     showNotice: showSessionNotice,
   });
 
-  const triggerEditSelectedFile = useCallback(() => {
-    const basePath = isVcsReviewInput(bootstrap.input)
-      ? bootstrap.changeset.sourceLabel
-      : undefined;
-    const message = openSelectedFileInEditor({
-      basePath,
-      file: selectedFile,
-      lineCursor: activeLineCursor,
-      renderer,
-      selectedHunk: review.selectedHunk,
-    });
-
-    if (message) {
-      showSessionNotice(message);
-      return;
-    }
-
-    if (canRefreshCurrentInput) {
-      triggerRefreshCurrentInput();
+  const editorPendingRef = useRef<{ lease: ReturnType<typeof createReviewCapabilityLease> } | null>(
+    null,
+  );
+  const triggerEditSelectedFile = useCallback(async () => {
+    if (editorPendingRef.current?.lease.isLive()) return;
+    const request = { lease: createReviewCapabilityLease() };
+    editorPendingRef.current = request;
+    const { lease } = request;
+    const lineCursor = review.getExplicitLineCursor();
+    const selection = review.getSelection();
+    const file = bootstrap.changeset.files.find((candidate) => candidate.id === selection.fileId);
+    const hunk = file?.metadata.hunks[selection.hunkIndex ?? 0];
+    try {
+      const basePath = isVcsReviewInput(bootstrap.input)
+        ? bootstrap.changeset.sourceLabel
+        : undefined;
+      let mappedLine: number | undefined;
+      if (file && bootstrap.input.kind === "vcs" && bootstrap.reloadContext.vcsCatalog) {
+        const status = bootstrap.changeset.workingTreeFiles?.find(
+          (candidate) => candidate.path === file.path,
+        );
+        const resolveLine = getConfiguredVcsAdapter(
+          bootstrap.input.options.vcs,
+          bootstrap.reloadContext.vcsCatalog,
+        ).operations["working-tree-diff"]?.resolveWorkingTreeLine;
+        if (status && resolveLine) {
+          showSessionNotice(`Locating ${file.path} in the working tree…`);
+          mappedLine = await resolveLine(
+            bootstrap.input,
+            status,
+            Math.max(1, resolveSelectedEditorLine(file, hunk, lineCursor)),
+            { cwd: bootstrap.changeset.sourceLabel },
+          );
+          if (!lease.isLive()) return;
+        }
+      }
+      const message = openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor,
+        mappedLine,
+        renderer,
+        selectedHunk: hunk,
+      });
+      if (message) {
+        showSessionNotice(message);
+        return;
+      }
+      if (canRefreshCurrentInput) triggerRefreshCurrentInput();
+    } catch (error) {
+      if (lease.isLive())
+        showSessionNotice(
+          `Cannot open editor: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    } finally {
+      if (editorPendingRef.current === request) editorPendingRef.current = null;
     }
   }, [
-    activeLineCursor,
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input.kind,
+    bootstrap,
     canRefreshCurrentInput,
+    createReviewCapabilityLease,
     renderer,
-    review.selectedHunk,
-    selectedFile,
+    review.getExplicitLineCursor,
+    review.getSelection,
     showSessionNotice,
     triggerRefreshCurrentInput,
   ]);

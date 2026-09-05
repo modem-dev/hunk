@@ -1993,6 +1993,35 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("distinguishes deliberate source selection from seeded and viewport-clamped cursor rows", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).getExplicitLineCursor()).toBeNull();
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+      const selected = expectValue(expectValue(controllerRef.current).getExplicitLineCursor());
+      await act(async () => {
+        expectValue(controllerRef.current).anchorLineCursor(selected);
+      });
+      expect(expectValue(controllerRef.current).getExplicitLineCursor()).toBeNull();
+      await act(async () => {
+        expectValue(controllerRef.current).anchorLineCursor(selected, true);
+      });
+      expect(expectValue(controllerRef.current).getExplicitLineCursor()).toEqual(selected);
+      await act(async () => {
+        expectValue(controllerRef.current).selectFile("alpha");
+      });
+      expect(expectValue(controllerRef.current).getExplicitLineCursor()).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("carries the current line along when hunk navigation moves the selection", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 

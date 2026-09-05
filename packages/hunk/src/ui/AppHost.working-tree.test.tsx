@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
@@ -29,11 +29,13 @@ async function waitForReview(predicate: () => boolean) {
 /** Start a real provider-backed review with one unstaged file and one staged file. */
 async function createReview({
   beforeStage,
+  resolveEditorLine,
   onQuit,
   prepare,
   staged = false,
 }: {
   beforeStage?: () => Promise<void>;
+  resolveEditorLine?: () => Promise<number>;
   onQuit?: () => void;
   prepare?: (root: string) => void;
   staged?: boolean;
@@ -45,29 +47,31 @@ async function createReview({
   runTestGit(root, "add", "beta.txt");
   prepare?.(root);
   const catalog = getBundledVcsCatalog();
-  const vcsCatalog = beforeStage
-    ? {
-        ...catalog,
-        adapters: catalog.adapters.map((adapter) => {
-          const workingTree = adapter.operations["working-tree-diff"];
-          if (!workingTree?.stageFile) return adapter;
-          const stageFile = workingTree.stageFile;
-          return {
-            ...adapter,
-            operations: {
-              ...adapter.operations,
-              "working-tree-diff": {
-                ...workingTree,
-                stageFile: async (...args: Parameters<typeof stageFile>) => {
-                  await beforeStage();
-                  await stageFile(...args);
+  const vcsCatalog =
+    beforeStage || resolveEditorLine
+      ? {
+          ...catalog,
+          adapters: catalog.adapters.map((adapter) => {
+            const workingTree = adapter.operations["working-tree-diff"];
+            if (!workingTree?.stageFile) return adapter;
+            const stageFile = workingTree.stageFile;
+            return {
+              ...adapter,
+              operations: {
+                ...adapter.operations,
+                "working-tree-diff": {
+                  ...workingTree,
+                  resolveWorkingTreeLine: resolveEditorLine ?? workingTree.resolveWorkingTreeLine,
+                  stageFile: async (...args: Parameters<typeof stageFile>) => {
+                    await beforeStage?.();
+                    await stageFile(...args);
+                  },
                 },
               },
-            },
-          };
-        }),
-      }
-    : catalog;
+            };
+          }),
+        }
+      : catalog;
   const bootstrap = await loadAppBootstrap(
     { kind: "vcs", staged, options: { mode: "stack", sidebar: true, extensions: false } },
     { cwd: root, vcsCatalog },
@@ -101,6 +105,54 @@ afterEach(async () => {
 });
 
 describe("working-tree stream actions", () => {
+  test("a retired editor lookup neither blocks nor overwrites a reloaded review", async () => {
+    let rejectRetired!: (error: Error) => void;
+    const retired = new Promise<number>((_, reject) => {
+      rejectRetired = reject;
+    });
+    let lookups = 0;
+    const originalEditor = process.env.EDITOR;
+    const originalSpawn = Bun.spawnSync;
+    const editorCalls: string[][] = [];
+    const spawn = spyOn(Bun, "spawnSync");
+    spawn.mockImplementation(((command, options) => {
+      if (Array.isArray(command) && command[0] === "nvim") {
+        editorCalls.push(command);
+        return { exitCode: 0 };
+      }
+      return originalSpawn(command, options);
+    }) as typeof Bun.spawnSync);
+    process.env.EDITOR = "nvim";
+    try {
+      const root = await createReview({
+        staged: true,
+        prepare: (root) => runTestGit(root, "add", "alpha.txt"),
+        resolveEditorLine: () => (++lookups === 1 ? retired : Promise.resolve(2)),
+      });
+      await press("e");
+      expect(lookups).toBe(1);
+      writeFileSync(join(root, "alpha.txt"), "replacement generation\n");
+      runTestGit(root, "add", "alpha.txt");
+      await press("r");
+      await waitForReview(() => setup!.captureCharFrame().includes("replacement generation"));
+      await press("e");
+      await waitForReview(() => editorCalls.length === 1);
+      // Reload restores the bundled catalog; its real resolver must not wait for the old one.
+      expect(lookups).toBe(1);
+      expect(editorCalls[0]).toEqual(["nvim", "+1", join(root, "alpha.txt")]);
+      await act(async () => {
+        rejectRetired(new Error("retired lookup failure"));
+        await Bun.sleep(0);
+      });
+      expect(setup!.captureCharFrame()).not.toContain("retired lookup failure");
+      expect(editorCalls).toHaveLength(1);
+    } finally {
+      spawn.mockRestore();
+      if (originalEditor === undefined) delete process.env.EDITOR;
+      else process.env.EDITOR = originalEditor;
+    }
+  });
+
   test("an external edit after discard consent is shown refuses the stale target", async () => {
     const root = await createReview();
     await press("d");

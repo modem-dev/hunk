@@ -439,7 +439,7 @@ export function DiffPane({
   currentLinePaintRequested?: boolean;
   onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
-  onViewportLineCursorChange?: (cursor: LineCursor) => void;
+  onViewportLineCursorChange?: (cursor: LineCursor, explicit?: boolean) => void;
   onHunkFocus?: () => void;
   canToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
   onToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
@@ -1723,7 +1723,7 @@ export function DiffPane({
         });
         if (clickedCursor && onViewportLineCursorChange) {
           onHunkFocus?.();
-          onViewportLineCursorChange(clickedCursor);
+          onViewportLineCursorChange(clickedCursor, true);
           return;
         }
         if (!current.moved) {

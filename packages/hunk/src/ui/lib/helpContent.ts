@@ -107,7 +107,10 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.review.stashSelectedFile"],
         description: "stash selected file with a message",
       },
-      { commandIds: ["hunk.review.editSelectedFile"], description: "open file in $EDITOR" },
+      {
+        commandIds: ["hunk.review.editSelectedFile"],
+        description: "edit selected line in $EDITOR",
+      },
     ],
   },
   {

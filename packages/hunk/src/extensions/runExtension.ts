@@ -499,7 +499,13 @@ export function toInternalVcsAdapter(
     | (VcsOperation<VcsReviewInput> &
         Pick<
           ExtensionVcsWorkingTreeOperation,
-          "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk" | "discardFile" | "stashFile"
+          | "stageFile"
+          | "unstageFile"
+          | "stageHunk"
+          | "unstageHunk"
+          | "discardFile"
+          | "stashFile"
+          | "resolveWorkingTreeLine"
         >)
     | undefined;
   if (workingTree && internalWorkingTree) {
@@ -551,6 +557,21 @@ export function toInternalVcsAdapter(
         }
       };
     }
+  }
+
+  if (
+    workingTree &&
+    internalWorkingTree &&
+    typeof workingTree.resolveWorkingTreeLine === "function"
+  ) {
+    const resolveLine = workingTree.resolveWorkingTreeLine;
+    internalWorkingTree.resolveWorkingTreeLine = async (input, file, line, context) => {
+      try {
+        return await resolveLine(input, file, line, context);
+      } catch (error) {
+        throw toUserFacingError(error);
+      }
+    };
   }
 
   const history = adapterFields.history;

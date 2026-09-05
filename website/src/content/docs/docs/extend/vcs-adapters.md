@@ -64,6 +64,11 @@ preserve its staged content for unstaged-only discard, and exclude unrelated cha
 live cleanup and every stash tree. Retain a published stash and report partial completion if
 cleanup fails. Messages may be empty. Omit unsupported operations.
 
+API v20 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>` for
+read-only validation of a new-side source address and mapping staged addresses through later worktree changes. Revalidate the source
+attestation and refuse unmappable transforms. The host owns editor launch and drops results after
+review revocation; this method grants no remote write capability.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.
