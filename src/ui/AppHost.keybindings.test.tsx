@@ -10,6 +10,7 @@ import { resolveConfiguredCliInput } from "../core/run/config";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { AppBootstrap } from "../core/bootstrap";
+import { retireExtensionLoadResult } from "../extensions/events";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AppHost } from "./AppHost";
 
@@ -97,6 +98,7 @@ async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
   externalQuitSignal?: AbortSignal,
+  extensionOwnership: "owned" | "borrowed" = "owned",
 ) {
   let quitCount = 0;
   const setup = await testRender(
@@ -104,6 +106,7 @@ async function withAppHost(
       bootstrap={bootstrap}
       externalQuitSignal={externalQuitSignal}
       onQuit={() => (quitCount += 1)}
+      extensionOwnership={extensionOwnership}
     />,
     { width: 120, height: 24 },
   );
@@ -320,6 +323,49 @@ describe("user keybindings", () => {
       expect(seen).toEqual(["command:hunk.app.quit", "shutdown"]);
       expect(quits()).toBe(1);
     });
+  });
+
+  test("borrows one history extension authority across repeated review mounts", async () => {
+    const repo = createTestRepo("hunk-keybindings-borrowed-extensions-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: string[] = [];
+    extensions.registry.eventHandlers.startup.push({
+      extensionId: "stateful",
+      handler: () => {
+        seen.push("startup");
+      },
+    });
+    extensions.registry.eventHandlers.changeset_loaded.push({
+      extensionId: "stateful",
+      handler: () => {
+        seen.push("changeset");
+      },
+    });
+    extensions.registry.eventHandlers.shutdown.push({
+      extensionId: "stateful",
+      handler: () => {
+        seen.push("shutdown");
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    for (let generation = 0; generation < 2; generation += 1) {
+      await withAppHost(
+        bootstrap,
+        async (setup, quits) => {
+          await act(async () => setup.mockInput.typeText("q"));
+          await flush(setup);
+          expect(quits()).toBe(1);
+        },
+        undefined,
+        "borrowed",
+      );
+    }
+
+    expect(seen).toEqual(["changeset", "changeset"]);
+    await retireExtensionLoadResult(extensions);
+    expect(seen).toEqual(["changeset", "changeset", "shutdown"]);
   });
 
   test("retires extensions before an external terminal interrupt quits", async () => {

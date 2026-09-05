@@ -6,6 +6,7 @@ import {
 } from "hunkdiff/extension";
 import { normalizePathForOS } from "../../../../lib/osPath";
 import { describeDiffTargets } from "../diffRange";
+import { runAbortableCommand } from "../asyncProcess";
 
 export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -14,6 +15,7 @@ export interface RunJjTextOptions {
   args: string[];
   cwd?: string;
   jjExecutable?: string;
+  signal?: AbortSignal;
 }
 
 /** Identifies the reviewed new commit and every commit JJ used to build the old side. */
@@ -250,6 +252,31 @@ export function runJjText(options: RunJjTextOptions) {
   return runJjCommand(options).stdout;
 }
 
+/** Run a Jujutsu command asynchronously so embedded review preparation stays cancellable. */
+export async function runJjTextAsync({
+  input,
+  args,
+  cwd = process.cwd(),
+  jjExecutable = "jj",
+  signal,
+}: RunJjTextOptions): Promise<string> {
+  const command = [jjExecutable, "--no-pager", "--color", "never", ...args];
+  let result: Awaited<ReturnType<typeof runAbortableCommand>>;
+  try {
+    result = await runAbortableCommand(command, { cwd, signal });
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted();
+    throw translateJjSpawnFailure(input, error, jjExecutable);
+  }
+  if (result.exitCode !== 0) {
+    throw translateJjExitFailure(
+      input,
+      result.stderr.trim() || `Command failed: ${command.join(" ")}`,
+    );
+  }
+  return result.stdout;
+}
+
 /**
  * Resolve a JJ revset once so the patch and later source reads use the same commit.
  *
@@ -332,6 +359,61 @@ export function resolveJjRangeEndpoints(
   return { newCommitId: toCommitIds[0]!, oldCommitIds: [fromCommitIds[0]!] };
 }
 
+/** Resolve immutable JJ endpoints without blocking renderer input. */
+export async function resolveJjDiffEndpointsAsync(
+  input: JjBackedInput,
+  revset: string,
+  options: Omit<RunJjTextOptions, "input" | "args"> = {},
+): Promise<JjDiffEndpoints | undefined> {
+  const commitIds = parseJjCommitIds(
+    await runJjTextAsync({
+      input,
+      args: ["log", "--no-graph", "-r", revset, "-T", JjCommitIdTemplate],
+      ...options,
+    }),
+  );
+  if (commitIds.length !== 1) return undefined;
+  const commitId = commitIds[0]!;
+  const parentCommitIds = parseJjCommitIds(
+    await runJjTextAsync({
+      input,
+      args: [
+        "log",
+        "--no-graph",
+        "--ignore-working-copy",
+        "-r",
+        `${commitId}-`,
+        "-T",
+        JjCommitIdTemplate,
+      ],
+      ...options,
+    }),
+  );
+  return { newCommitId: commitId, oldCommitIds: parentCommitIds.sort() };
+}
+
+/** Resolve two immutable JJ range endpoints without blocking renderer input. */
+export async function resolveJjRangeEndpointsAsync(
+  input: ExtensionVcsDiffInput,
+  endpoints: ExtensionVcsRangeEndpoints,
+  options: Omit<RunJjTextOptions, "input" | "args"> = {},
+): Promise<JjDiffEndpoints | undefined> {
+  const from = requireJjRevisionArg(input, endpoints.from);
+  const to = requireJjRevisionArg(input, endpoints.to);
+  const resolveOne = async (revset: string) =>
+    parseJjCommitIds(
+      await runJjTextAsync({
+        input,
+        args: ["log", "--no-graph", "-r", revset, "-T", JjCommitIdTemplate],
+        ...options,
+      }),
+    );
+  const fromCommitIds = await resolveOne(from);
+  const toCommitIds = await resolveOne(to);
+  if (fromCommitIds.length !== 1 || toCommitIds.length !== 1) return undefined;
+  return { newCommitId: toCommitIds[0]!, oldCommitIds: [fromCommitIds[0]!] };
+}
+
 export function resolveJjRepoRoot(
   input: JjBackedInput,
   options: Omit<RunJjTextOptions, "input" | "args"> = {},
@@ -342,4 +424,12 @@ export function resolveJjRepoRoot(
     ...options,
   }).trim();
   return normalizePathForOS(repoRoot);
+}
+
+/** Resolve the JJ repository root without blocking renderer input. */
+export async function resolveJjRepoRootAsync(
+  input: JjBackedInput,
+  options: Omit<RunJjTextOptions, "input" | "args"> = {},
+) {
+  return normalizePathForOS((await runJjTextAsync({ input, args: ["root"], ...options })).trim());
 }

@@ -64,6 +64,7 @@ export function AppHost({
   onActiveBootstrapChange,
   onFirstFrameReady,
   returnToHistory = false,
+  extensionOwnership = "owned",
   reviewProducer,
   startupNoticeResolver,
   watchRuntime,
@@ -81,6 +82,8 @@ export function AppHost({
   onFirstFrameReady?: () => void;
   /** Present quit as returning to an owning history surface. */
   returnToHistory?: boolean;
+  /** Whether this surface may retire and restart its initial extension authority. */
+  extensionOwnership?: "owned" | "borrowed";
   /**
    * The producer whose generations this host publishes. Supplied by the process that
    * built the initial registration from its first publication; a host mounted without one
@@ -117,9 +120,14 @@ export function AppHost({
       }),
   );
   const [appVersion, setAppVersion] = useState(0);
-  // Extensions outlive App remounts, and a trust grant can replace the whole
-  // load result mid-session, so the host owns them rather than the bootstrap.
+  // Extensions outlive App remounts. Standalone hosts own replacement and shutdown;
+  // embedded reviews borrow the history workspace's initial authority.
   const extensionsRef = useRef(initialBootstrap.extensions as ExtensionLoadResult | undefined);
+  const borrowedExtensionRegistryRef = useRef(
+    extensionOwnership === "borrowed"
+      ? (initialBootstrap.extensions as ExtensionLoadResult | undefined)?.registry
+      : undefined,
+  );
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = initialBootstrap.input.options.experimental === true;
@@ -178,9 +186,11 @@ export function AppHost({
     // leases are live here; passive UI events still wait until this order lands.
     if (initialExtensionStartupPendingRef.current) {
       initialExtensionStartupPendingRef.current = false;
-      emitExtensionEvent(extensionsRef.current, "startup", {
-        cwd: initialBootstrap.reloadContext.cwd,
-      });
+      if (extensionOwnership === "owned") {
+        emitExtensionEvent(extensionsRef.current, "startup", {
+          cwd: initialBootstrap.reloadContext.cwd,
+        });
+      }
       emitExtensionEvent(extensionsRef.current, "changeset_loaded", {
         changeset: initialBootstrap.changeset,
       });
@@ -203,7 +213,7 @@ export function AppHost({
       reason: pending.reason,
     });
     pending.resolveMounted();
-  }, [activeBootstrap, initialBootstrap.reloadContext.cwd]);
+  }, [activeBootstrap, extensionOwnership, initialBootstrap.reloadContext.cwd]);
 
   /** Track one prepared registry until it is either adopted or fully retired. */
   const trackPreparedExtensionReplacement = useCallback((result: ExtensionLoadResult) => {
@@ -212,6 +222,7 @@ export function AppHost({
 
   /** Track every registry retirement until its shared shutdown completion settles. */
   const retireOwnedExtensionLoadResult = useCallback((result: ExtensionLoadResult | undefined) => {
+    if (result?.registry === borrowedExtensionRegistryRef.current) return Promise.resolve();
     const retirement = retireExtensionLoadResult(result);
     pendingExtensionRetirementsRef.current.add(retirement);
     void retirement.then(
@@ -303,7 +314,10 @@ export function AppHost({
       }
       let replacementExtensions: ExtensionLoadResult | undefined;
 
-      if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
+      if (
+        extensionOwnership === "owned" &&
+        (options?.reloadExtensions || cwd !== extensionsCwdRef.current)
+      ) {
         try {
           const resolvedExtensions = await resolveConfiguredExtensions({
             runtimeInput,
@@ -466,6 +480,7 @@ export function AppHost({
     },
     [
       adoptPreparedExtensionReplacement,
+      extensionOwnership,
       hostClient,
       launchExperimental,
       launchFast,

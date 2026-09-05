@@ -4,10 +4,11 @@ import {
   buildJjDiffArgs,
   buildJjShowArgs,
   createJjStagedError,
-  resolveJjDiffEndpoints,
-  resolveJjRangeEndpoints,
-  resolveJjRepoRoot,
+  resolveJjDiffEndpointsAsync,
+  resolveJjRangeEndpointsAsync,
+  resolveJjRepoRootAsync,
   runJjText,
+  runJjTextAsync,
   type JjDiffEndpoints,
 } from "./commands";
 import { openJjHistory } from "./history";
@@ -154,15 +155,23 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
     },
     operations: {
       "working-tree-diff": {
-        async load(input, { cwd }) {
+        async load(input, { cwd, signal }) {
           if (input.staged) {
             throw createJjStagedError(input);
           }
-          const repoRoot = resolveJjRepoRoot(input, { cwd, jjExecutable });
+          const repoRoot = await resolveJjRepoRootAsync(input, { cwd, jjExecutable, signal });
           const repoName = basename(repoRoot);
           const sourceEndpoints = input.rangeEndpoints
-            ? resolveJjRangeEndpoints(input, input.rangeEndpoints, { cwd, jjExecutable })
-            : resolveJjDiffEndpoints(input, input.range ?? "@", { cwd, jjExecutable });
+            ? await resolveJjRangeEndpointsAsync(input, input.rangeEndpoints, {
+                cwd,
+                jjExecutable,
+                signal,
+              })
+            : await resolveJjDiffEndpointsAsync(input, input.range ?? "@", {
+                cwd,
+                jjExecutable,
+                signal,
+              });
           const sourceCapability = sourceEndpoints
             ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
             : undefined;
@@ -179,11 +188,12 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
             repoRoot,
             sourceLabel: repoRoot,
             title: range ? `${repoName} ${range}` : `${repoName} working copy`,
-            patchText: runJjText({
+            patchText: await runJjTextAsync({
               input,
               args: buildJjDiffArgs(input, pinnedInput),
               cwd,
               jjExecutable,
+              signal,
             }),
             ...sourceCapability,
           };
@@ -198,13 +208,14 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
         },
       },
       "revision-show": {
-        async load(input, { cwd }) {
-          const repoRoot = resolveJjRepoRoot(input, { cwd, jjExecutable });
+        async load(input, { cwd, signal }) {
+          const repoRoot = await resolveJjRepoRootAsync(input, { cwd, jjExecutable, signal });
           const repoName = basename(repoRoot);
           const revset = input.ref ?? "@";
-          const sourceEndpoints = resolveJjDiffEndpoints(input, revset, {
+          const sourceEndpoints = await resolveJjDiffEndpointsAsync(input, revset, {
             cwd,
             jjExecutable,
+            signal,
           });
           const sourceCapability = sourceEndpoints
             ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
@@ -213,11 +224,12 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
             repoRoot,
             sourceLabel: repoRoot,
             title: `${repoName} show ${revset}`,
-            patchText: runJjText({
+            patchText: await runJjTextAsync({
               input,
               args: buildJjShowArgs(input, sourceEndpoints?.newCommitId),
               cwd,
               jjExecutable,
+              signal,
             }),
             ...sourceCapability,
           };

@@ -165,14 +165,29 @@ describe("SaplingVcsAdapter without the sl binary", () => {
   test("adapter range loads do not probe working-copy unknown files", async () => {
     const repo = createTempDir("hunk-sl-adapter-range-untracked-");
     const commands: string[][] = [];
-    const mutableBun = Bun as unknown as { spawnSync: typeof Bun.spawnSync };
+    const mutableBun = Bun as unknown as {
+      spawnSync: typeof Bun.spawnSync;
+      spawn: typeof Bun.spawn;
+    };
     const originalSpawnSync = mutableBun.spawnSync;
+    const originalSpawn = mutableBun.spawn;
     mutableBun.spawnSync = ((command: string[]) => {
       commands.push(command);
       const operation = command.slice(4);
       const stdout = operation[0] === "root" ? `${repo}\n` : "";
       return { exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.from("") };
     }) as typeof Bun.spawnSync;
+    mutableBun.spawn = ((command: string[]) => {
+      commands.push(command);
+      const operation = command.slice(4);
+      const stdout = operation[0] === "root" ? `${repo}\n` : "";
+      return {
+        stdout: new Blob([stdout]).stream(),
+        stderr: new Blob([""]).stream(),
+        exited: Promise.resolve(0),
+        kill() {},
+      };
+    }) as unknown as typeof Bun.spawn;
 
     try {
       const input = {
@@ -192,6 +207,7 @@ describe("SaplingVcsAdapter without the sl binary", () => {
       ).toBe(true);
     } finally {
       mutableBun.spawnSync = originalSpawnSync;
+      mutableBun.spawn = originalSpawn;
     }
   });
 

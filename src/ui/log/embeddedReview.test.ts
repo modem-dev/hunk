@@ -5,11 +5,13 @@ import { prepareEmbeddedHistoryReview } from "../runInteractiveApp";
 
 /** Provide only the provider-neutral fields embedded review startup consumes. */
 function createTestRuntime() {
+  const extensionSession = { registry: {} };
   return {
     repoRoot: resolve("repository"),
     startupCwd: resolve("invocation"),
     providerId: "opaque-vcs",
     input: { extensionPaths: ["extensions/provider.ts"], extensionsEnabled: true },
+    extensionSession,
   } as unknown as HistoryRuntime;
 }
 
@@ -17,8 +19,9 @@ describe("embedded history review bootstrap", () => {
   test("preserves opaque actions, invocation-relative extensions, cwd, theme, and signal", async () => {
     const abort = new AbortController();
     let captured: { argv: string[]; deps: Record<string, unknown> } | undefined;
+    const runtime = createTestRuntime();
     const result = await prepareEmbeddedHistoryReview(
-      createTestRuntime(),
+      runtime,
       { kind: "revision-show", revisionId: "--opaque:id" },
       {
         themeId: "github-dark",
@@ -29,7 +32,7 @@ describe("embedded history review bootstrap", () => {
           captured = { argv, deps };
           return {
             kind: "app",
-            bootstrap: { extensions: {} },
+            bootstrap: { extensions: runtime.extensionSession },
             cliInput: {},
             controllingTerminal: null,
           };
@@ -40,10 +43,12 @@ describe("embedded history review bootstrap", () => {
     expect(result.bootstrap).toBeDefined();
     expect(captured?.argv).toContain(resolve("invocation", "extensions/provider.ts"));
     expect(captured?.deps).toMatchObject({
-      cwd: resolve("repository"),
+      cwd: resolve("invocation"),
       terminalThemeMode: "dark",
       signal: abort.signal,
     });
+    expect(captured?.deps.borrowedExtensionLoad).toBe(runtime.extensionSession);
+    expect(result.borrowsExtensions).toBe(true);
     expect(captured?.argv.join(" ")).not.toContain("--opaque:id");
   });
 

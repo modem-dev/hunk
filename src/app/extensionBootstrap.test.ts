@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { HunkConfigResolution } from "../core/run/config";
 import type { CliInput } from "../core/run/commandInputs";
+import type { HunkExtensionAPI } from "../extension-api/types";
+import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
+import { loadExtensions } from "../extensions/host";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveConfiguredExtensions } from "./extensionBootstrap";
 import { getBundledVcsCatalog } from "./vcsCatalog";
@@ -16,6 +19,63 @@ function createTestConfig(input: CliInput): HunkConfigResolution {
 }
 
 describe("resolveConfiguredExtensions", () => {
+  test("borrows one stateful extension instance across repeated review generations", async () => {
+    const input: CliInput = { kind: "show", ref: "opaque", options: { vcs: "git" } };
+    const state = { factories: 0, startups: 0, changesets: 0, shutdowns: 0 };
+    const borrowed = await loadExtensions({
+      candidates: [{ id: "stateful", path: "/repo/stateful.ts", origin: "flag" }],
+      cwd: "/repo",
+      importExtensionModuleImpl: async () => ({
+        default(hunk: HunkExtensionAPI) {
+          state.factories += 1;
+          hunk.on("startup", () => {
+            state.startups += 1;
+          });
+          hunk.on("changeset_loaded", () => {
+            state.changesets += 1;
+          });
+          hunk.on("shutdown", () => {
+            state.shutdowns += 1;
+          });
+        },
+      }),
+    });
+    emitExtensionEvent(borrowed, "startup", { cwd: "/repo" });
+    let loaderCalls = 0;
+
+    for (let generation = 0; generation < 2; generation += 1) {
+      const resolved = await resolveConfiguredExtensions(
+        {
+          runtimeInput: input,
+          configured: createTestConfig(input),
+          cwd: "/repo",
+          baseVcsCatalog: getBundledVcsCatalog(),
+          borrowedLoad: borrowed,
+        },
+        {
+          loadStartupExtensionsImpl: async () => {
+            loaderCalls += 1;
+            throw new Error("borrowed extensions must not reload");
+          },
+        },
+      );
+      expect(resolved.extensions).toBe(borrowed);
+      emitExtensionEvent(resolved.extensions, "changeset_loaded", {
+        changeset: {
+          id: `generation-${generation}`,
+          title: "Stateful review",
+          files: [],
+          sourceLabel: `generation-${generation}`,
+        },
+      });
+    }
+
+    expect(state).toEqual({ factories: 1, startups: 1, changesets: 2, shutdowns: 0 });
+    expect(loaderCalls).toBe(0);
+    await retireExtensionLoadResult(borrowed);
+    expect(state.shutdowns).toBe(1);
+  });
+
   test("retires provisional authority when the loader rejects before returning it", async () => {
     const input: CliInput = { kind: "vcs", staged: false, options: { vcs: "git" } };
     const provisional = createEmptyExtensionLoadResult("/repo");

@@ -46,6 +46,8 @@ export interface ReviewSessionRuntime {
 
 export interface EmbeddedHistoryReview {
   bootstrap: AppBootstrap<ExtensionLoadResult>;
+  /** The history runtime owns this bootstrap's extension registry. */
+  borrowsExtensions: boolean;
 }
 
 /** Create broker and producer resources for one independently mountable review surface. */
@@ -109,23 +111,29 @@ export async function prepareEmbeddedHistoryReview(
     ...(runtime.input.extensionsEnabled ? extensionArgs : ["--no-extensions"]),
   ];
   const plan = await prepareStartupPlanImpl(["hunk", "hunk", ...args], {
-    cwd: runtime.repoRoot,
+    cwd: startupCwd,
     env,
     signal,
+    borrowedExtensionLoad: runtime.extensionSession,
     stdinIsTTY: true,
     stdoutIsTTY: true,
     terminalThemeMode: themeMode,
   });
   if (signal?.aborted && plan.kind === "app") {
     plan.controllingTerminal?.close();
-    await retireExtensionLoadResult(plan.bootstrap.extensions);
+    if (plan.bootstrap.extensions !== runtime.extensionSession) {
+      await retireExtensionLoadResult(plan.bootstrap.extensions);
+    }
     signal.throwIfAborted();
   }
   if (plan.kind !== "app") {
     throw new Error("The selected commit did not produce an interactive review.");
   }
   plan.controllingTerminal?.close();
-  return { bootstrap: plan.bootstrap as AppBootstrap<ExtensionLoadResult> };
+  return {
+    bootstrap: plan.bootstrap as AppBootstrap<ExtensionLoadResult>,
+    borrowsExtensions: plan.bootstrap.extensions === runtime.extensionSession,
+  };
 }
 
 // Leave fatal process faults to their default OS disposition.

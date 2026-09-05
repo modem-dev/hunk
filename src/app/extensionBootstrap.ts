@@ -21,6 +21,8 @@ export interface ResolveConfiguredExtensionsOptions {
   notifications?: ExtensionNotificationHub;
   /** Registry already loaded by an extension CLI command before built-in delegation. */
   previousLoad?: ExtensionLoadResult;
+  /** Session-owned registry borrowed by an embedded surface without lifecycle authority. */
+  borrowedLoad?: ExtensionLoadResult;
   /** Publish provisional ownership before imports or asynchronous factories can suspend. */
   onProvisionalLoad?: (result: ExtensionLoadResult) => void;
   /** Throw when the caller's lifetime ended so no later staged registry can be created. */
@@ -58,6 +60,24 @@ export async function resolveConfiguredExtensions(
       env: options.env,
       vcsCatalog: options.discoveryCatalog ?? options.baseVcsCatalog,
     });
+
+  if (options.borrowedLoad) {
+    const adapters = resolveExtensionVcsAdapters(
+      options.borrowedLoad.registry,
+      options.baseVcsCatalog,
+    ).adapters;
+    const catalog = extendVcsCatalog(options.baseVcsCatalog, adapters);
+    const projectRoot = findProjectRootCandidateImpl(options.cwd, catalog);
+    if (projectRoot !== configured.projectRoot) {
+      configured = resolveConfiguredCliInputImpl(options.runtimeInput, {
+        cwd: options.cwd,
+        env: options.env,
+        vcsCatalog: catalog,
+      });
+    }
+    options.assertActive?.();
+    return { configured, extensions: options.borrowedLoad };
+  }
 
   let extensions: ExtensionLoadResult | undefined;
   let provisionalExtensions: ExtensionLoadResult | undefined;

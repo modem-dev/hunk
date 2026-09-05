@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness, rightmostColumnOf } from "./harness";
@@ -71,6 +71,46 @@ afterEach(() => {
 });
 
 describe("interactive hunk log", () => {
+  test("cancels a slow bundled Git review without blocking terminal input", async () => {
+    const cwd = createHistoryRepo();
+    const binDir = mkdtempSync(join(tmpdir(), "hunk-slow-git-bin-"));
+    tempDirs.push(binDir);
+    const gitPath = Bun.which("git");
+    if (!gitPath) throw new Error("Git is required for the PTY history fixture.");
+    const wrapper = join(binDir, "git");
+    writeFileSync(
+      wrapper,
+      `#!/bin/sh\ncase " $* " in *" show "*|*" diff "*) sleep 10 ;; esac\nexec ${JSON.stringify(gitPath)} "$@"\n`,
+    );
+    chmodSync(wrapper, 0o755);
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+      env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+    });
+
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("enter");
+      await session.waitForText(/Preparing review/, { timeout: 5_000 });
+      const cancelledAt = Date.now();
+      session.writeRaw("\x03");
+      while (
+        !session.getRawOutput().slice(-2_000).includes("\x1b[?1049l") &&
+        Date.now() - cancelledAt < 3_000
+      ) {
+        await Bun.sleep(25);
+      }
+      expect(Date.now() - cancelledAt).toBeLessThan(3_000);
+      expect(session.getRawOutput().slice(-2_000)).toContain("\x1b[?1049l");
+      expect(session.getRawOutput()).not.toContain("historyValue = 'second'");
+    } finally {
+      session.writeRaw("\x03");
+    }
+  });
+
   test("opens the selected immutable commit and returns to the retained history", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({

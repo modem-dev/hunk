@@ -38,6 +38,7 @@ export function LogSessionHost({
   const preparingRef = useRef(preparing);
   preparingRef.current = preparing;
   const nextInstanceRef = useRef(1);
+  const preparationControllerRef = useRef<AbortController | null>(null);
 
   const retireReview = useCallback(() => {
     const current = reviewRef.current;
@@ -50,20 +51,26 @@ export function LogSessionHost({
 
   const handleLogOutcome = async (outcome: LogAppOutcome) => {
     if (outcome.kind === "quit") {
+      preparationControllerRef.current?.abort(
+        new Error("History review preparation was cancelled."),
+      );
       onQuit(outcome.exitCode);
       return;
     }
     if (preparingRef.current || reviewRef.current) return;
     preparingRef.current = true;
     setPreparing(true);
+    const preparationController = new AbortController();
+    preparationControllerRef.current = preparationController;
+    const preparationSignal = AbortSignal.any([externalQuitSignal, preparationController.signal]);
     let plan: EmbeddedHistoryReview | undefined;
     try {
       plan = await prepareEmbeddedHistoryReview(runtime, outcome.action, {
         themeId: outcome.themeId,
         themeMode: outcome.themeMode,
-        signal: externalQuitSignal,
+        signal: preparationSignal,
       });
-      externalQuitSignal.throwIfAborted();
+      preparationSignal.throwIfAborted();
       const reviewRuntime = createReviewSessionRuntime(
         plan.bootstrap,
         runtime.startupCwd ?? runtime.repoRoot,
@@ -76,16 +83,29 @@ export function LogSessionHost({
       reviewRef.current = mounted;
       setReview(mounted);
     } catch (error) {
-      if (plan && !reviewRef.current) {
+      if (plan && !plan.borrowsExtensions && !reviewRef.current) {
         await retireExtensionLoadResult(plan.bootstrap.extensions);
       }
-      if (externalQuitSignal.aborted) onQuit();
-      else throw error;
+      if (preparationSignal.aborted) {
+        if (externalQuitSignal.aborted) onQuit();
+      } else throw error;
     } finally {
+      if (preparationControllerRef.current === preparationController) {
+        preparationControllerRef.current = null;
+      }
       preparingRef.current = false;
       setPreparing(false);
     }
   };
+
+  useEffect(
+    () => () => {
+      preparationControllerRef.current?.abort(
+        new Error("History review host unmounted during preparation."),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     if (reviewRef.current || preparing) return;
@@ -105,6 +125,7 @@ export function LogSessionHost({
         onQuit={retireReview}
         onFirstFrameReady={() => undefined}
         returnToHistory
+        extensionOwnership={review.plan.borrowsExtensions ? "borrowed" : "owned"}
         reviewProducer={review.runtime.reviewProducer}
         startupNoticeResolver={resolveStartupUpdateNotice}
       />

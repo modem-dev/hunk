@@ -8,13 +8,17 @@ import {
   buildGitStashShowArgs,
   listGitIgnoredDirectoryRoots,
   listGitUntrackedFiles,
+  listGitUntrackedFilesAsync,
   parseGitNumstat,
-  resolveGitColorMovedOptions,
-  resolveGitCommitRef,
+  resolveGitColorMovedOptionsAsync,
+  resolveGitCommitRefAsync,
   resolveGitDiffEndpoints,
+  resolveGitDiffEndpointsAsync,
   resolveGitMetadata,
   resolveGitRepoRoot,
+  resolveGitRepoRootAsync,
   runGitText,
+  runGitTextAsync,
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
   type GitDiffEndpoints,
@@ -87,13 +91,19 @@ interface GitSourceCapability {
   sourceCacheKey: string;
 }
 
-/** Hash semantic index entries so filesystem-stat refreshes do not defeat cache reuse. */
-function gitIndexCacheKey(input: GitBackedInput, repoRoot: string, gitExecutable: string) {
-  const entries = runGitText({
+/** Hash index entries without blocking an embedded renderer. */
+async function gitIndexCacheKeyAsync(
+  input: GitBackedInput,
+  repoRoot: string,
+  gitExecutable: string,
+  signal?: AbortSignal,
+) {
+  const entries = await runGitTextAsync({
     input,
     args: ["ls-files", "--stage", "-z"],
     cwd: repoRoot,
     gitExecutable,
+    signal,
   });
   return createHash("sha256").update(entries).digest("hex");
 }
@@ -109,22 +119,40 @@ function gitEndpointCacheKey(endpoint: GitDiffEndpoints["old"], indexCacheKey: s
   return endpoint.kind;
 }
 
-/**
- * Build a source reader that answers from exact Git old/new endpoints.
- *
- * The endpoint key omits worktree contents because the per-file patch fingerprint
- * already describes their delta. Immutable refs and the index hash identify the
- * base, so unchanged files can safely retain highlighting across watch reloads.
- */
-function createGitSourceCapability(
+/** Build a pinned revision source capability without blocking renderer input. */
+async function createGitRevisionSourceCapabilityAsync(
+  input: GitBackedInput,
+  ref: string,
+  repoRoot: string,
+  gitExecutable: string,
+  signal?: AbortSignal,
+): Promise<GitSourceCapability> {
+  const newRef = await resolveGitCommitRefAsync(input, ref, {
+    cwd: repoRoot,
+    gitExecutable,
+    signal,
+  });
+  return createGitSourceCapabilityAsync(
+    input,
+    repoRoot,
+    { old: { kind: "git-ref", ref: `${newRef}^` }, new: { kind: "git-ref", ref: newRef } },
+    gitExecutable,
+    signal,
+  );
+}
+
+/** Build exact source capability data while asynchronously hashing a possible index. */
+async function createGitSourceCapabilityAsync(
   input: GitBackedInput,
   repoRoot: string,
   endpoints: GitDiffEndpoints,
   gitExecutable: string,
-): GitSourceCapability {
+  signal?: AbortSignal,
+): Promise<GitSourceCapability> {
   const needsIndex = endpoints.old.kind === "index" || endpoints.new.kind === "index";
-  const indexCacheKey = needsIndex ? gitIndexCacheKey(input, repoRoot, gitExecutable) : "unused";
-
+  const indexCacheKey = needsIndex
+    ? await gitIndexCacheKeyAsync(input, repoRoot, gitExecutable, signal)
+    : "unused";
   return {
     sourceCacheKey: [
       "git-source-v1",
@@ -132,19 +160,14 @@ function createGitSourceCapability(
       gitEndpointCacheKey(endpoints.new, indexCacheKey),
     ].join(":"),
     readFileSource: ({ path, previousPath, changeType, side }) => {
-      // An added file has no old side and a deleted one has no new side; asking
-      // Git for either would just be a failed lookup.
       if (side === "old") {
         return changeType === "new"
           ? Promise.resolve(null)
           : readGitFileSource(
               gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path),
-              {
-                gitExecutable,
-              },
+              { gitExecutable },
             );
       }
-
       return changeType === "deleted"
         ? Promise.resolve(null)
         : readGitFileSource(gitEndpointSourceSpec(endpoints.new, repoRoot, path), {
@@ -154,38 +177,22 @@ function createGitSourceCapability(
   };
 }
 
-/** Build a pinned source capability for a single-revision review. */
-function createGitRevisionSourceCapability(
-  input: GitBackedInput,
-  ref: string,
-  repoRoot: string,
-  gitExecutable: string,
-): GitSourceCapability {
-  const newRef = resolveGitCommitRef(input, ref, { cwd: repoRoot, gitExecutable });
-  return createGitSourceCapability(
-    input,
-    repoRoot,
-    { old: { kind: "git-ref", ref: `${newRef}^` }, new: { kind: "git-ref", ref: newRef } },
-    gitExecutable,
-  );
-}
-
-/**
- * Build a source capability for a working-tree review, when both sides are exact.
- *
- * Ranges that do not reduce to one old/new pair — octopus merges, multi-positive
- * revision sets — deliberately get no reader at all rather than a guess, so
- * expanded rows are never read from the wrong revision.
- */
-function createGitDiffSourceCapability(
+/** Build working-tree source capability without blocking renderer input. */
+async function createGitDiffSourceCapabilityAsync(
   input: ExtensionVcsDiffInput,
   repoRoot: string,
   cwd: string,
   gitExecutable: string,
-): GitSourceCapability | undefined {
-  const endpoints = resolveGitDiffEndpoints(input, { cwd, repoRoot, gitExecutable });
+  signal?: AbortSignal,
+): Promise<GitSourceCapability | undefined> {
+  const endpoints = await resolveGitDiffEndpointsAsync(input, {
+    cwd,
+    repoRoot,
+    gitExecutable,
+    signal,
+  });
   return endpoints
-    ? createGitSourceCapability(input, repoRoot, endpoints, gitExecutable)
+    ? createGitSourceCapabilityAsync(input, repoRoot, endpoints, gitExecutable, signal)
     : undefined;
 }
 
@@ -300,8 +307,8 @@ export function createGitVcsAdapter({
     },
     operations: {
       "working-tree-diff": {
-        async load(input, { cwd }) {
-          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+        async load(input, { cwd, signal }) {
+          const repoRoot = await resolveGitRepoRootAsync(input, { cwd, gitExecutable, signal });
           const repoName = basename(repoRoot);
           const range = describeDiffRange(input);
           const title = input.staged
@@ -311,22 +318,40 @@ export function createGitVcsAdapter({
               : `${repoName} working tree`;
           // Ask for stats before the patch so files too large to render can be
           // excluded from the diff instead of generating output nobody reads.
-          const largeTrackedFiles = parseGitNumstat(
-            runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
-          ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
-          const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
-          const sourceCapability = createGitDiffSourceCapability(
+          const numstat = await runGitTextAsync({
+            input,
+            args: buildGitDiffNumstatArgs(input),
+            cwd,
+            gitExecutable,
+            signal,
+          });
+          const colorMoved = await resolveGitColorMovedOptionsAsync(input, {
+            cwd,
+            gitExecutable,
+            signal,
+          });
+          const sourceCapability = await createGitDiffSourceCapabilityAsync(
             input,
             repoRoot,
             cwd,
             gitExecutable,
+            signal,
+          );
+          const untrackedPaths = await listGitUntrackedFilesAsync(input, {
+            cwd,
+            repoRoot,
+            gitExecutable,
+            signal,
+          });
+          const largeTrackedFiles = parseGitNumstat(numstat).filter((file) =>
+            shouldSkipLargeTrackedDiff(file, repoRoot),
           );
 
           return {
             repoRoot,
             sourceLabel: repoRoot,
             title,
-            patchText: runGitText({
+            patchText: await runGitTextAsync({
               input,
               args: buildGitDiffArgs(
                 input,
@@ -335,6 +360,7 @@ export function createGitVcsAdapter({
               ),
               cwd,
               gitExecutable,
+              signal,
             }),
             ...sourceCapability,
             extraFiles: largeTrackedFiles.map(
@@ -350,7 +376,7 @@ export function createGitVcsAdapter({
             // diff in-process. Rendering them through `git diff --no-index`
             // instead costs one subprocess per file, which made working-tree
             // review scale with the untracked file count.
-            untrackedPaths: listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }),
+            untrackedPaths,
           };
         },
         watchPlan(input, { cwd }) {
@@ -379,28 +405,30 @@ export function createGitVcsAdapter({
         },
       },
       "revision-show": {
-        async load(input, { cwd }) {
-          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+        async load(input, { cwd, signal }) {
+          const repoRoot = await resolveGitRepoRootAsync(input, { cwd, gitExecutable, signal });
           const repoName = basename(repoRoot);
-          const sourceCapability = createGitRevisionSourceCapability(
+          const sourceCapability = await createGitRevisionSourceCapabilityAsync(
             input,
             input.ref ?? "HEAD",
             repoRoot,
             gitExecutable,
+            signal,
           );
 
           return {
             repoRoot,
             sourceLabel: repoRoot,
             title: input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
-            patchText: runGitText({
+            patchText: await runGitTextAsync({
               input,
               args: buildGitShowArgs(
                 input,
-                resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+                await resolveGitColorMovedOptionsAsync(input, { cwd, gitExecutable, signal }),
               ),
               cwd,
               gitExecutable,
+              signal,
             }),
             ...sourceCapability,
           };
@@ -419,28 +447,30 @@ export function createGitVcsAdapter({
         },
       },
       "stash-show": {
-        async load(input, { cwd }) {
-          const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+        async load(input, { cwd, signal }) {
+          const repoRoot = await resolveGitRepoRootAsync(input, { cwd, gitExecutable, signal });
           const repoName = basename(repoRoot);
-          const sourceCapability = createGitRevisionSourceCapability(
+          const sourceCapability = await createGitRevisionSourceCapabilityAsync(
             input,
             input.ref ?? "stash@{0}",
             repoRoot,
             gitExecutable,
+            signal,
           );
 
           return {
             repoRoot,
             sourceLabel: repoRoot,
             title: input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
-            patchText: runGitText({
+            patchText: await runGitTextAsync({
               input,
               args: buildGitStashShowArgs(
                 input,
-                resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+                await resolveGitColorMovedOptionsAsync(input, { cwd, gitExecutable, signal }),
               ),
               cwd,
               gitExecutable,
+              signal,
             }),
             ...sourceCapability,
           };

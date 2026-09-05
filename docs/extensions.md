@@ -278,6 +278,22 @@ start watchers, processes, connections, and other long-lived resources from
 `startup`, and release them from `shutdown`. Extension-registry reloads create
 new instances and run that shutdown/startup pair around the replacement.
 
+An interactive history workspace owns one extension instance for its complete
+lifetime. Opening a commit review inside that workspace borrows the same
+instance: the factory and `startup` do not run again, and returning to history
+does not send `shutdown`. Review-specific `changeset_loaded` events still run
+for each opened commit. The owning history workspace sends the one eventual
+`shutdown` when it exits. This makes module-local clients and stores safe to
+share deliberately between retained history and its commit reviews without a
+review closing resources that history still uses.
+
+Keep mutable review-generation data keyed by the identities in event payloads
+or replace it on `changeset_loaded`; module scope is workspace state, not a
+fresh namespace per opened commit. An embedded review cannot replace its
+borrowed registry; extension replacement remains an operation of the owning
+workspace. A true owner-driven extension-registry reload creates a new instance
+and retires the replaced instance at that explicit ownership boundary.
+
 ### `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `19`). Branch on it if you want
@@ -561,6 +577,12 @@ The bundled Git and Jujutsu extensions implement this public capability today; S
 reports it as unsupported. Jujutsu supplies commit/change identities, bookmarks, tags, traversal,
 and native merge-review semantics without routing through a colocated Git repository. Third-party
 adapters use exactly the same contract.
+
+Every operation `load` receives `context.signal`. Use asynchronous subprocess
+APIs, pass cancellation through, and terminate plus reap provider processes when
+it aborts; a synchronous spawn blocks Hunk's renderer and prevents the abort
+handler from running. Watch signatures remain synchronous because the watch
+runtime calls them as short, noninteractive probes.
 
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:

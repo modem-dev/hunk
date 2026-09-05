@@ -7,6 +7,7 @@ import {
 } from "hunkdiff/extension";
 import { normalizePathForOS } from "../../../../lib/osPath";
 import { describeDiffTargets } from "../diffRange";
+import { runAbortableCommand } from "../asyncProcess";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
@@ -15,6 +16,7 @@ export interface RunSlTextOptions {
   args: string[];
   cwd?: string;
   slExecutable?: string;
+  signal?: AbortSignal;
 }
 
 /** Reject a Sapling revision that could be interpreted as a command option. */
@@ -238,6 +240,31 @@ export function runSlText(options: RunSlTextOptions) {
   return runSlCommand(options).stdout;
 }
 
+/** Run a Sapling command asynchronously so embedded review preparation stays cancellable. */
+export async function runSlTextAsync({
+  input,
+  args,
+  cwd = process.cwd(),
+  slExecutable = "sl",
+  signal,
+}: RunSlTextOptions): Promise<string> {
+  const command = [slExecutable, "--noninteractive", "--color", "never", ...args];
+  let result: Awaited<ReturnType<typeof runAbortableCommand>>;
+  try {
+    result = await runAbortableCommand(command, { cwd, signal });
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted();
+    throw translateSlSpawnFailure(input, error, slExecutable);
+  }
+  if (result.exitCode !== 0) {
+    throw translateSlExitFailure(
+      input,
+      result.stderr.trim() || `Command failed: ${command.join(" ")}`,
+    );
+  }
+  return result.stdout;
+}
+
 /** Return whether working-copy review should synthesize unknown Sapling files into the patch stream. */
 function shouldIncludeUntrackedFiles(input: ExtensionVcsDiffInput) {
   return !input.staged && !input.rangeEndpoints && input.options.excludeUntracked !== true;
@@ -309,6 +336,34 @@ export function listSlUntrackedFiles(
   );
 }
 
+/** Return unknown files without blocking review preparation. */
+export async function listSlUntrackedFilesAsync(
+  input: ExtensionVcsDiffInput,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    slExecutable = "sl",
+    signal,
+  }: Omit<RunSlTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+) {
+  validateSlDiffEndpoints(input);
+  if (!shouldIncludeUntrackedFiles(input)) return [];
+  const statusText = await runSlTextAsync({
+    input,
+    args: buildSlStatusArgs(input),
+    cwd,
+    slExecutable,
+    signal,
+  });
+  const untrackedFiles = parseUntrackedFilePaths(statusText);
+  if (untrackedFiles.length === 0) return [];
+  const normalizedRepoRoot =
+    repoRoot ?? (await resolveSlRepoRootAsync(input, { cwd, slExecutable, signal }));
+  return untrackedFiles.filter((filePath) =>
+    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  );
+}
+
 /** Resolve the repo root by running `sl root`. */
 export function resolveSlRepoRoot(
   input: SlBackedInput,
@@ -320,4 +375,12 @@ export function resolveSlRepoRoot(
     ...options,
   }).trim();
   return normalizePathForOS(repoRoot);
+}
+
+/** Resolve the Sapling repository root without blocking renderer input. */
+export async function resolveSlRepoRootAsync(
+  input: SlBackedInput,
+  options: Omit<RunSlTextOptions, "input" | "args"> = {},
+) {
+  return normalizePathForOS((await runSlTextAsync({ input, args: ["root"], ...options })).trim());
 }

@@ -5,8 +5,11 @@ import {
   buildSlShowArgs,
   createSlStagedError,
   listSlUntrackedFiles,
+  listSlUntrackedFilesAsync,
   resolveSlRepoRoot,
+  resolveSlRepoRootAsync,
   runSlText,
+  runSlTextAsync,
 } from "./commands";
 import { describeDiffRange } from "../diffRange";
 import {
@@ -76,20 +79,20 @@ export const SaplingVcsAdapter = {
   detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 100,
   operations: {
     "working-tree-diff": {
-      async load(input, { cwd }) {
+      async load(input, { cwd, signal }) {
         if (input.staged) {
           throw createSlStagedError(input);
         }
         const diffArgs = buildSlDiffArgs(input);
-        const repoRoot = resolveSlRepoRoot(input, { cwd });
+        const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
         const repoName = basename(repoRoot);
         const range = describeDiffRange(input);
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: range ? `${repoName} ${range}` : `${repoName} working copy`,
-          patchText: runSlText({ input, args: diffArgs, cwd }),
-          untrackedPaths: listSlUntrackedFiles(input, { cwd, repoRoot }),
+          patchText: await runSlTextAsync({ input, args: diffArgs, cwd, signal }),
+          untrackedPaths: await listSlUntrackedFilesAsync(input, { cwd, repoRoot, signal }),
         };
       },
       watchSignature(input, { cwd }) {
@@ -102,15 +105,15 @@ export const SaplingVcsAdapter = {
       },
     },
     "revision-show": {
-      async load(input, { cwd }) {
-        const repoRoot = resolveSlRepoRoot(input, { cwd });
+      async load(input, { cwd, signal }) {
+        const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
         const repoName = basename(repoRoot);
         const revset = input.ref ?? ".";
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: `${repoName} show ${revset}`,
-          patchText: runSlText({ input, args: buildSlShowArgs(input), cwd }),
+          patchText: await runSlTextAsync({ input, args: buildSlShowArgs(input), cwd, signal }),
         };
       },
       watchSignature(input, { cwd }) {

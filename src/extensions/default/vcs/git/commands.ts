@@ -9,6 +9,7 @@ import {
 import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "../../../../lib/largeFile";
 import { normalizePathForOS } from "../../../../lib/osPath";
 import { describeDiffRange, describeDiffTargets } from "../diffRange";
+import { runAbortableCommand } from "../asyncProcess";
 
 /**
  * Every Git command Hunk runs, and the failures they translate into.
@@ -31,6 +32,7 @@ export interface RunGitTextOptions {
   cwd?: string;
   gitExecutable?: string;
   preventOptionalLocks?: boolean;
+  signal?: AbortSignal;
 }
 
 interface RunGitCommandResult {
@@ -513,6 +515,41 @@ export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;
 }
 
+/** Run one Git command asynchronously so embedded review preparation remains cancellable. */
+async function runGitCommandAsync({
+  input,
+  args,
+  cwd = process.cwd(),
+  gitExecutable = "git",
+  preventOptionalLocks = false,
+  signal,
+  acceptedExitCodes = [0],
+}: RunGitCommandOptions): Promise<RunGitCommandResult> {
+  let result: Awaited<ReturnType<typeof runAbortableCommand>>;
+  try {
+    result = await runAbortableCommand([gitExecutable, ...args], {
+      cwd,
+      signal,
+      env: preventOptionalLocks ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : undefined,
+    });
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted();
+    throw translateGitSpawnFailure(input, error, gitExecutable);
+  }
+  if (!acceptedExitCodes.includes(result.exitCode)) {
+    throw translateGitExitFailure(
+      input,
+      result.stderr.trim() || `Command failed: ${gitExecutable} ${args.join(" ")}`,
+    );
+  }
+  return result;
+}
+
+/** Run one Git command asynchronously and return its decoded stdout. */
+export async function runGitTextAsync(options: RunGitTextOptions): Promise<string> {
+  return (await runGitCommandAsync(options)).stdout;
+}
+
 const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
 const GIT_BOOLEAN_FALSE_VALUES = new Set(["false", "no", "off", "0", "never"]);
 
@@ -577,6 +614,27 @@ export function resolveGitColorMovedOptions(
     mode,
     whitespaceMode,
   };
+}
+
+/** Resolve moved-line configuration without blocking an embedded renderer. */
+export async function resolveGitColorMovedOptionsAsync(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+): Promise<GitColorMovedOptions | null> {
+  const readConfig = async (key: string) => {
+    const result = await runGitCommandAsync({
+      input,
+      args: ["config", "--get", key],
+      ...options,
+      acceptedExitCodes: [0, 1],
+    });
+    return result.exitCode === 0 ? result.stdout.trim() || undefined : undefined;
+  };
+  const gitMode = normalizeGitColorMovedMode(await readConfig("diff.colorMoved"));
+  if (gitMode === null) return null;
+  const mode = gitMode ?? (input.options.colorMoved ? "zebra" : undefined);
+  if (!mode) return null;
+  return { mode, whitespaceMode: await readConfig("diff.colorMovedWS") };
 }
 
 /**
@@ -748,6 +806,63 @@ export function listGitUntrackedFiles(
 
   const normalizedRepoRoot =
     repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks });
+  return untrackedFiles.filter((filePath) =>
+    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  );
+}
+
+/** Return untracked files without blocking review preparation. */
+export async function listGitUntrackedFilesAsync(
+  input: ExtensionVcsDiffInput,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+    preventOptionalLocks = false,
+    signal,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+) {
+  if (input.staged || input.options.excludeUntracked === true) return [];
+  const range = requireGitDiffRangeArg(input);
+  if (range) {
+    const revs = (
+      await runGitTextAsync({
+        input,
+        args: ["rev-parse", "--revs-only", requireGitRevisionArg(input, range)],
+        cwd: repoRoot ?? cwd,
+        gitExecutable,
+        preventOptionalLocks,
+        signal,
+      })
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (
+      revs.filter((line) => !line.startsWith("^")).length !== 1 ||
+      revs.some((line) => line.startsWith("^"))
+    ) {
+      return [];
+    }
+  }
+  const statusText = await runGitTextAsync({
+    input,
+    args: buildGitStatusArgs(input),
+    cwd,
+    gitExecutable,
+    preventOptionalLocks,
+    signal,
+  });
+  const untrackedFiles = parseUntrackedFilePaths(statusText);
+  if (untrackedFiles.length === 0) return [];
+  const normalizedRepoRoot =
+    repoRoot ??
+    (await resolveGitRepoRootAsync(input, {
+      cwd,
+      gitExecutable,
+      preventOptionalLocks,
+      signal,
+    }));
   return untrackedFiles.filter((filePath) =>
     isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
@@ -990,5 +1105,125 @@ export function resolveGitDiffEndpoints(
   // old/new pair (octopus merges, multi-positive sets) have no safe mapping.
   // Returning null disables source-by-ref reads so we never render source
   // from the wrong revision.
+  return null;
+}
+
+/** Resolve a Git repository root without blocking renderer input. */
+export async function resolveGitRepoRootAsync(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  return normalizePathForOS(
+    (await runGitTextAsync({ input, args: ["rev-parse", "--show-toplevel"], ...options })).trim(),
+  );
+}
+
+/** Resolve one exact commit ref without blocking renderer input. */
+export async function resolveGitCommitRefAsync(
+  input: GitBackedInput,
+  ref: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  return (
+    await runGitTextAsync({
+      input,
+      args: ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+      ...options,
+    })
+  )
+    .split("\n")[0]!
+    .trim();
+}
+
+/** Resolve old/new Git endpoints asynchronously for review-load source capabilities. */
+export async function resolveGitDiffEndpointsAsync(
+  input: ExtensionVcsDiffInput,
+  {
+    cwd = process.cwd(),
+    gitExecutable = "git",
+    repoRoot,
+    signal,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+): Promise<GitDiffEndpoints | null> {
+  const range = requireGitDiffRangeArg(input);
+  const commandCwd = repoRoot ?? cwd;
+  const resolveRef = (ref: string) =>
+    resolveGitCommitRefAsync(input, ref, { cwd: commandCwd, gitExecutable, signal });
+  const resolveRevisions = async (value: string) => {
+    const revs = (
+      await runGitTextAsync({
+        input,
+        args: ["rev-parse", "--revs-only", requireGitRevisionArg(input, value)],
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+      })
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return {
+      positives: revs.filter((rev) => !rev.startsWith("^")),
+      negatives: revs.filter((rev) => rev.startsWith("^")).map((rev) => rev.slice(1)),
+    };
+  };
+
+  if (input.staged) {
+    if (!range) {
+      const result = await runGitCommandAsync({
+        input,
+        args: ["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+        acceptedExitCodes: [0, 1, 128],
+      });
+      const headRef = result.exitCode === 0 ? result.stdout.split("\n")[0]!.trim() : null;
+      if (!headRef && !isUnknownRevisionMessage(result.stderr)) {
+        throw translateGitExitFailure(
+          input,
+          result.stderr.trim() || "Could not resolve Git ref HEAD.",
+        );
+      }
+      return {
+        old: headRef ? { kind: "git-ref", ref: headRef } : { kind: "none" },
+        new: { kind: "index" },
+      };
+    }
+    const { positives, negatives } = await resolveRevisions(range);
+    return positives.length === 1 && negatives.length === 0
+      ? { old: { kind: "git-ref", ref: positives[0]! }, new: { kind: "index" } }
+      : null;
+  }
+  if (!range) return { old: { kind: "index" }, new: { kind: "worktree" } };
+  const symmetric = parseSymmetricDiffRange(range);
+  if (symmetric) {
+    const mergeBase = (
+      await runGitTextAsync({
+        input,
+        args: ["merge-base", symmetric.left, symmetric.right],
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+      })
+    )
+      .split("\n")[0]
+      ?.trim();
+    if (!mergeBase) return null;
+    return {
+      old: { kind: "git-ref", ref: mergeBase },
+      new: { kind: "git-ref", ref: await resolveRef(symmetric.right) },
+    };
+  }
+  const { positives, negatives } = await resolveRevisions(range);
+  if (positives.length === 1 && negatives.length === 0) {
+    return { old: { kind: "git-ref", ref: positives[0]! }, new: { kind: "worktree" } };
+  }
+  if (positives.length === 1 && negatives.length === 1) {
+    return {
+      old: { kind: "git-ref", ref: negatives[0]! },
+      new: { kind: "git-ref", ref: positives[0]! },
+    };
+  }
   return null;
 }

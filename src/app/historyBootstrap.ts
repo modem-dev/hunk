@@ -31,6 +31,8 @@ export interface HistoryBootstrap {
   startupCwd: string;
   repoRoot: string;
   extensions: ExtensionLoadResult;
+  /** History-owned extension authority borrowed by embedded reviews. */
+  extensionSession: ExtensionLoadResult;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
   planReview(
@@ -133,6 +135,7 @@ export async function loadHistoryBootstrap({
     startupCwd: cwd,
     repoRoot,
     extensions: resolved.extensions,
+    extensionSession: resolved.extensions,
     customThemes: sessionThemes.themes,
     notices: [
       ...(mergeStartupNotices(resolved.configured.startupNotices, resolved.extensions) ?? []).map(

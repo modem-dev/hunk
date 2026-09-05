@@ -141,6 +141,8 @@ export interface StartupDeps {
   terminalThemeMode?: "dark" | "light";
   /** Cancel provider-backed startup for an abandoned embedded surface. */
   signal?: AbortSignal;
+  /** Borrow the owning history session's already-loaded extension authority. */
+  borrowedExtensionLoad?: import("../extensions/types").ExtensionLoadResult;
 }
 
 /** Carry the invocation's authoritative extension paths into a delegated review input. */
@@ -207,13 +209,15 @@ export async function prepareStartupPlan(
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
-  let preloadedExtensions: import("../extensions/types").ExtensionLoadResult | undefined;
+  let preloadedExtensions: import("../extensions/types").ExtensionLoadResult | undefined =
+    deps.borrowedExtensionLoad;
+  const ownsPreloadedExtensions = !deps.borrowedExtensionLoad;
   let delegatedDiscoveryCatalog: VcsCatalog | undefined;
   let delegatedReview: ExtensionReviewDescriptor | undefined;
 
   /** Retire startup-owned extension state before returning a non-app plan. */
   const retirePreloadedExtensions = async () => {
-    if (!preloadedExtensions) return;
+    if (!preloadedExtensions || !ownsPreloadedExtensions) return;
     await (await import("../extensions/events")).retireExtensionLoadResult(preloadedExtensions);
     preloadedExtensions = undefined;
   };
@@ -592,7 +596,8 @@ export async function prepareStartupPlan(
       env,
       baseVcsCatalog,
       discoveryCatalog: delegatedDiscoveryCatalog,
-      previousLoad: preloadedExtensions,
+      previousLoad: deps.borrowedExtensionLoad ? undefined : preloadedExtensions,
+      borrowedLoad: deps.borrowedExtensionLoad,
       assertActive: () => deps.signal?.throwIfAborted(),
     },
     { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
