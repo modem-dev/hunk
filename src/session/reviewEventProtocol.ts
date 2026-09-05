@@ -119,7 +119,7 @@ export function parseReviewEventId(
   if (typeof value !== "string" || value.length > MAX_REVIEW_EVENT_ID_BYTES) {
     return undefined;
   }
-  const match = /^revent:([a-z-]+):(.+)@(\d{1,15})$/.exec(value);
+  const match = /^revent:([a-z-]+):(.+)@(\d{1,16})$/.exec(value);
   if (!match) {
     return undefined;
   }
