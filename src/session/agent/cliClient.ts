@@ -496,10 +496,10 @@ export function formatReviewOutput(review: SessionReview) {
     `Agent notes visible: ${review.showAgentNotes ? "yes" : "no"}`,
     `Live comments: ${review.liveCommentCount}`,
     `Review notes: ${review.reviewNoteCount ?? review.reviewNotes?.length ?? 0}`,
-    ...(review.reviewNotes
+    ...((review.reviewNotes?.length ?? 0) > 0
       ? [
           "Notes:",
-          ...review.reviewNotes.map(
+          ...review.reviewNotes!.map(
             (note) =>
               `  - ${note.noteId} [${note.source}] ${formatSessionPath(note.filePath)}: ${note.body}`,
           ),
@@ -509,6 +509,7 @@ export function formatReviewOutput(review: SessionReview) {
     ...review.files.flatMap((file) => [
       `  - ${formatSessionPath(file.path)} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
       ...file.hunks.map((hunk) => `      hunk ${hunk.index + 1}: ${hunk.header}`),
+      ...(file.patch === undefined ? [] : ["      patch:", sanitizeTerminalText(file.patch)]),
     ]),
     "",
   ].join("\n");

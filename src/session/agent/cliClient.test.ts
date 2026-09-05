@@ -522,6 +522,7 @@ describe("Hunk session CLI formatters", () => {
       additions: 2,
       deletions: 1,
       hunkCount: 2,
+      patch: undefined,
       hunks: [
         createTestSessionReviewHunk({ index: 0, header: "@@ -1,1 +1,2 @@" }),
         createTestSessionReviewHunk({ index: 1, header: "@@ -10,1 +11,1 @@" }),
@@ -533,6 +534,7 @@ describe("Hunk session CLI formatters", () => {
       additions: 0,
       deletions: 1,
       hunkCount: 1,
+      patch: undefined,
     });
 
     expect(
@@ -567,6 +569,72 @@ describe("Hunk session CLI formatters", () => {
         "      hunk 1: @@ -1,1 +1,1 @@",
         "",
       ].join("\n"),
+    );
+  });
+
+  test("review output includes resolved patch bodies without changing their diff lines", () => {
+    const output = formatReviewOutput(
+      createTestSessionReview({
+        files: [
+          createTestSessionReviewFile({
+            path: "added.txt",
+            patch: [
+              "diff --git a/added.txt b/added.txt",
+              "--- /dev/null",
+              "+++ b/added.txt",
+              "@@ -0,0 +1,2 @@",
+              "+first",
+              "+second",
+            ].join("\n"),
+          }),
+        ],
+      }),
+    );
+
+    expect(output).toContain(
+      "      patch:\ndiff --git a/added.txt b/added.txt\n--- /dev/null\n+++ b/added.txt\n@@ -0,0 +1,2 @@\n+first\n+second\n",
+    );
+  });
+
+  test("review output neutralizes patch controls while preserving diff layout", () => {
+    const output = formatReviewOutput(
+      createTestSessionReview({
+        files: [
+          createTestSessionReviewFile({
+            path: "unsafe.txt",
+            patch: "@@ -0,0 +1 @@\n+before\x1b[2Jafter\n+\tindented",
+          }),
+        ],
+      }),
+    );
+
+    expect(output).not.toContain("\x1b");
+    expect(output).toContain("@@ -0,0 +1 @@\n+beforeafter\n+\tindented\n");
+  });
+
+  test("review output renders populated notes but omits an empty Notes section", () => {
+    const withoutNotes = formatReviewOutput(createTestSessionReview({ reviewNotes: [] }));
+    const withNotes = formatReviewOutput(
+      createTestSessionReview({
+        reviewNoteCount: 1,
+        reviewNotes: [
+          {
+            noteId: "user:1",
+            source: "user",
+            filePath: "src/app.ts",
+            body: "Please simplify this.",
+            author: "user",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: true,
+          },
+        ],
+      }),
+    );
+
+    expect(withoutNotes).toContain("Review notes: 0\nFiles:");
+    expect(withoutNotes).not.toContain("Notes:");
+    expect(withNotes).toContain(
+      "Review notes: 1\nNotes:\n  - user:1 [user] src/app.ts: Please simplify this.\nFiles:",
     );
   });
 
